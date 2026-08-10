@@ -24,6 +24,7 @@ import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder } from '~/data/materialConsumeReturn'
 
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -38,8 +39,8 @@ function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-rec
 type Flow = 'default' | 'production-request'
 const flow = ref<Flow>(route.query.source === 'pr' ? 'production-request' : 'default')
 const flowOptions: { value: Flow; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'production-request', label: 'From production request' },
+  { value: 'default', label: t('Default') },
+  { value: 'production-request', label: t('From production request') },
 ]
 const fromProductionRequest = computed(() => flow.value === 'production-request')
 
@@ -66,15 +67,15 @@ const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate
 
 // ── Header status → primary action ──────────────────────────────────────────────
 const STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  'not started': 'Not started', 'in progress': 'In progress', 'partially produced': 'Partially produced',
-  'partially completed': 'Partially completed', 'completed': 'Completed', 'canceled': 'Canceled',
+  'not started': t('Not started'), 'in progress': t('In progress'), 'partially produced': t('Partially produced'),
+  'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
 }
 const primaryAction = computed(() => {
   switch (wo.value?.status) {
-    case 'not started': return 'Start work order'
+    case 'not started': return t('Start work order')
     case 'in progress':
-    case 'partially produced': return 'Complete work order'
-    case 'partially completed': return 'Complete work order'
+    case 'partially produced': return t('Complete work order')
+    case 'partially completed': return t('Complete work order')
     default: return '' // completed / canceled → no primary action
   }
 })
@@ -262,12 +263,12 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">Work orders</button>
+        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Work Order #{{ wo.number.split('-').pop() }}</h1>
+          <h1 class="detail-title">{{ t('Work order') }} #{{ wo.number.split('-').pop() }}</h1>
           <ErpStatusBadge
             :status="wo.status"
-            :label="wo.status === 'in progress' ? 'In progress' : undefined"
+            :label="wo.status === 'in progress' ? t('In progress') : undefined"
             badge-for="additionalInformation" size="md"
           />
         </div>
@@ -278,7 +279,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--secondary">
-              Actions
+              {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -289,14 +290,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
                 :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
-              >{{ item }}</MpPopoverListItem>
+              >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
         <button class="detail-btn detail-btn--secondary detail-btn--icon">
           <MpIcon name="hierarchy" size="sm" />
-          View work order hierarchy
+          {{ t('View work order hierarchy') }}
         </button>
 
         <button v-if="primaryAction" class="detail-btn detail-btn--primary">{{ primaryAction }}</button>
@@ -318,25 +319,25 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
-        <h2 class="wod-section-title">Work order info</h2>
+        <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
         <div class="wod-info-grid">
           <div class="content-list-col">
-            <ContentList label="BOM name" :value="wo.bomName" />
-            <ContentList label="BOM no." :value="bomNo" />
-            <ContentList label="Work order no." :value="`Work Order #${wo.number.split('-').pop()}`" />
+            <ContentList :label="t('BOM name')" :value="wo.bomName" />
+            <ContentList :label="t('BOM no.')" :value="bomNo" />
+            <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Type" :value="wo.type" />
-            <ContentList label="Track routing" :value="wo.trackRouting ? 'Yes' : 'No'" />
-            <ContentList label="Produced qty" :value="`${wo.producedQty}`" />
+            <ContentList :label="t('Type')" :value="wo.type" />
+            <ContentList :label="t('Track routing')" :value="wo.trackRouting ? t('Yes') : t('No')" />
+            <ContentList :label="t('Produced qty')" :value="`${wo.producedQty}`" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Production plan dates" :value="planRange" />
-            <ContentList label="Start date" :value="showStart ? formatDate(wo.startDate) : '—'" />
-            <ContentList label="End date" :value="showEnd ? formatDate(wo.endDate) : '—'" />
+            <ContentList :label="t('Production plan dates')" :value="planRange" />
+            <ContentList :label="t('Start date')" :value="showStart ? formatDate(wo.startDate) : '—'" />
+            <ContentList :label="t('End date')" :value="showEnd ? formatDate(wo.endDate) : '—'" />
           </div>
           <div class="content-list-col">
-            <ContentList :label="`Attachments`">
+            <ContentList :label="t('Attachments')">
               <div class="wod-attach-list">
                 <a v-for="a in attachments" :key="a.name" class="wod-attach" @click.prevent>
                   <MpIcon name="pdf-document" size="sm" />
@@ -351,7 +352,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
       <!-- ── Raw materials ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
-          <h2 class="wod-section-title">Raw materials</h2>
+          <h2 class="wod-section-title">{{ t('Raw materials') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.raw">
@@ -359,15 +360,15 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
             <table class="wod-table">
               <thead>
                 <tr>
-                  <th class="wod-th">Product</th>
-                  <th class="wod-th wod-th--num">Purchase cost</th>
-                  <th class="wod-th">Warehouse</th>
-                  <th class="wod-th wod-th--num">Needed qty</th>
-                  <th class="wod-th wod-th--num">Adjusted qty</th>
-                  <th class="wod-th wod-th--num">Consumed qty</th>
-                  <th class="wod-th wod-th--num">Difference</th>
-                  <th class="wod-th">Unit</th>
-                  <th class="wod-th wod-th--num">Estimated cost</th>
+                  <th class="wod-th">{{ t('Product') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
+                  <th class="wod-th">{{ t('Warehouse') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Adjusted qty') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Difference') }}</th>
+                  <th class="wod-th">{{ t('Unit') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -387,14 +388,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Estimated raw materials subtotal</span><span class="wod-amount">{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span class="wod-amount">{{ formatIDR(rawSubtotal) }}</span></div>
         </template>
       </section>
 
       <!-- ── Production cost ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.cost = !collapsed.cost">
-          <h2 class="wod-section-title">Production cost</h2>
+          <h2 class="wod-section-title">{{ t('Production cost') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.cost">
@@ -403,11 +404,11 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               <tbody>
                 <template v-for="c in productionCost" :key="c.group">
                   <tr class="wod-subhead-row">
-                    <th class="wod-th">{{ c.group }}</th>
-                    <th class="wod-th">Cost driver</th>
-                    <th class="wod-th wod-th--num">Estimated unit cost</th>
-                    <th class="wod-th">Multiplier</th>
-                    <th class="wod-th wod-th--num">Amount</th>
+                    <th class="wod-th">{{ t(c.group) }}</th>
+                    <th class="wod-th">{{ t('Cost driver') }}</th>
+                    <th class="wod-th wod-th--num">{{ t('Estimated unit cost') }}</th>
+                    <th class="wod-th">{{ t('Multiplier') }}</th>
+                    <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                   </tr>
                   <tr class="wod-tr">
                     <td class="wod-td">{{ c.account || '—' }}</td>
@@ -420,14 +421,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Production cost subtotal</span><span class="wod-amount">{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Production cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(productionCostSubtotal) }}</span></div>
         </template>
       </section>
 
       <!-- ── Routing ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.routing = !collapsed.routing">
-          <h2 class="wod-section-title">Routing</h2>
+          <h2 class="wod-section-title">{{ t('Routing') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.routing">
@@ -435,14 +436,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
             <table class="wod-table">
               <thead>
                 <tr>
-                  <th class="wod-th">Process</th>
-                  <th class="wod-th">Description</th>
-                  <th class="wod-th">Account mapping</th>
-                  <th class="wod-th">Production plan dates</th>
-                  <th class="wod-th">Start date</th>
-                  <th class="wod-th">End date</th>
-                  <th class="wod-th">Status</th>
-                  <th class="wod-th wod-th--num">Amount</th>
+                  <th class="wod-th">{{ t('Process') }}</th>
+                  <th class="wod-th">{{ t('Description') }}</th>
+                  <th class="wod-th">{{ t('Account mapping') }}</th>
+                  <th class="wod-th">{{ t('Production plan dates') }}</th>
+                  <th class="wod-th">{{ t('Start date') }}</th>
+                  <th class="wod-th">{{ t('End date') }}</th>
+                  <th class="wod-th">{{ t('Status') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -459,27 +460,27 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Routing cost subtotal</span><span class="wod-amount">{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Routing cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(routingSubtotal) }}</span></div>
         </template>
 
         <!-- Cost summary -->
         <div class="wod-summary">
-          <div class="wod-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-          <div class="wod-summary-row wod-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+          <div class="wod-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="wod-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="wod-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="wod-summary-row wod-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
 
       <!-- ── Finished goods ── -->
       <section class="wod-section wod-section--last">
         <button class="wod-section-head" @click="collapsed.finished = !collapsed.finished">
-          <h2 class="wod-section-title">Finished goods</h2>
+          <h2 class="wod-section-title">{{ t('Finished goods') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.finished }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.finished">
           <!-- Main output — shares its column widths with Other outputs (same colgroup) -->
-          <h3 class="wod-subsection-title">Main output</h3>
+          <h3 class="wod-subsection-title">{{ t('Main output') }}</h3>
           <div class="wod-table-scroll">
             <table class="wod-table wod-table--outputs">
               <colgroup>
@@ -488,9 +489,9 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wod-th">Product</th><th class="wod-th">SKU</th>
-                  <th class="wod-th wod-th--num">Produced qty</th><th class="wod-th">Unit</th>
-                  <th class="wod-th wod-th--num">Percentage</th><th class="wod-th wod-th--num">Estimated cost</th>
+                  <th class="wod-th">{{ t('Product') }}</th><th class="wod-th">{{ t('SKU') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Produced qty') }}</th><th class="wod-th">{{ t('Unit') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Percentage') }}</th><th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -505,10 +506,10 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Estimated main output subtotal</span><span class="wod-amount">{{ formatIDR(mainOutputSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Estimated main output subtotal') }}</span><span class="wod-amount">{{ formatIDR(mainOutputSubtotal) }}</span></div>
 
           <!-- Other outputs — same column widths as Main output -->
-          <h3 class="wod-subsection-title">Other outputs</h3>
+          <h3 class="wod-subsection-title">{{ t('Other outputs') }}</h3>
           <div class="wod-table-scroll">
             <table class="wod-table wod-table--outputs">
               <colgroup>
@@ -517,9 +518,9 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wod-th">Product</th><th class="wod-th">SKU</th>
-                  <th class="wod-th wod-th--num">Produced qty</th><th class="wod-th">Unit</th>
-                  <th class="wod-th wod-th--num">Percentage</th><th class="wod-th wod-th--num">Estimated cost</th>
+                  <th class="wod-th">{{ t('Product') }}</th><th class="wod-th">{{ t('SKU') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Produced qty') }}</th><th class="wod-th">{{ t('Unit') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Percentage') }}</th><th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -534,16 +535,16 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Estimated other outputs subtotal</span><span class="wod-amount">{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span class="wod-amount">{{ formatIDR(otherOutputsSubtotal) }}</span></div>
 
           <!-- Production waste -->
-          <h3 class="wod-subsection-title">Production waste</h3>
+          <h3 class="wod-subsection-title">{{ t('Production waste') }}</h3>
           <div class="wod-table-scroll">
             <table class="wod-table">
               <thead>
                 <tr>
-                  <th class="wod-th">Account mapping</th><th class="wod-th">Allocation method</th>
-                  <th class="wod-th wod-th--num">Percentage</th><th class="wod-th wod-th--num">Amount</th>
+                  <th class="wod-th">{{ t('Account mapping') }}</th><th class="wod-th">{{ t('Allocation method') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Percentage') }}</th><th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -556,14 +557,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>Estimated production waste subtotal</span><span class="wod-amount">{{ formatIDR(wasteSubtotal) }}</span></div>
+          <div class="wod-subtotal-row"><span>{{ t('Estimated production waste subtotal') }}</span><span class="wod-amount">{{ formatIDR(wasteSubtotal) }}</span></div>
 
           <!-- Finished goods summary -->
           <div class="wod-summary">
-            <div class="wod-summary-row"><span>Estimated main output subtotal</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
-            <div class="wod-summary-row"><span>Estimated other outputs subtotal</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
-            <div class="wod-summary-row"><span>Estimated production waste subtotal</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
-            <div class="wod-summary-row wod-summary-row--total"><span>Estimated finished goods total</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
+            <div class="wod-summary-row"><span>{{ t('Estimated main output subtotal') }}</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
+            <div class="wod-summary-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+            <div class="wod-summary-row"><span>{{ t('Estimated production waste subtotal') }}</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
+            <div class="wod-summary-row wod-summary-row--total"><span>{{ t('Estimated finished goods total') }}</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
           </div>
         </template>
       </section>
@@ -576,36 +577,36 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
             class="wod-bottom-tab" :class="{ 'wod-bottom-tab--active': activeBottomTab === tab }"
             role="tab" :aria-selected="activeBottomTab === tab"
             @click="activeBottomTab = tab"
-          >{{ tab }}</button>
+          >{{ t(tab) }}</button>
         </div>
 
         <div v-if="activeBottomTab === 'Linked transactions' && fromProductionRequest">
-          <h3 class="wod-subsection-title">Production request</h3>
+          <h3 class="wod-subsection-title">{{ t('Production request') }}</h3>
           <div class="wod-table-scroll">
             <table class="wod-table">
               <thead>
                 <tr>
-                  <th class="wod-th">Number</th><th class="wod-th wod-th--num">Qty to produce</th>
-                  <th class="wod-th wod-th--num">Produced qty</th><th class="wod-th">Unit</th>
-                  <th class="wod-th">Due date</th><th class="wod-th">Status</th>
+                  <th class="wod-th">{{ t('Number') }}</th><th class="wod-th wod-th--num">{{ t('Qty to produce') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Processed qty') }}</th><th class="wod-th">{{ t('Unit') }}</th>
+                  <th class="wod-th">{{ t('Due date') }}</th><th class="wod-th">{{ t('Status') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="t in workOrderLinks" :key="t.number" class="wod-tr">
-                  <td class="wod-td">{{ t.number }}</td>
-                  <td class="wod-td wod-td--num">{{ t.qtyToProduce }}</td>
-                  <td class="wod-td wod-td--num">{{ t.fulfilledQty }}</td>
-                  <td class="wod-td">{{ t.unit }}</td>
-                  <td class="wod-td">{{ formatDate(t.dueDate) }}</td>
-                  <td class="wod-td"><ErpStatusBadge :status="t.status" /></td>
+                <tr v-for="link in workOrderLinks" :key="link.number" class="wod-tr">
+                  <td class="wod-td">{{ link.number }}</td>
+                  <td class="wod-td wod-td--num">{{ link.qtyToProduce }}</td>
+                  <td class="wod-td wod-td--num">{{ link.fulfilledQty }}</td>
+                  <td class="wod-td">{{ link.unit }}</td>
+                  <td class="wod-td">{{ formatDate(link.dueDate) }}</td>
+                  <td class="wod-td"><ErpStatusBadge :status="link.status" /></td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
         <div v-else class="wod-empty">
-          <p class="wod-empty-title">No partial production</p>
-          <p class="wod-empty-desc">Partial production records will appear here.</p>
+          <p class="wod-empty-title">{{ t('No partial production') }}</p>
+          <p class="wod-empty-desc">{{ t('Partial production records will appear here.') }}</p>
         </div>
       </section>
 
@@ -741,10 +742,10 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wod-flow-fab" aria-label="Change work order flow"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <button class="wod-flow-fab" :aria-label="t('Change work order flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
-        <p class="wod-flow-fab-heading">Work order flow</p>
+        <p class="wod-flow-fab-heading">{{ t('Work order flow') }}</p>
         <MpPopoverList>
           <MpPopoverListItem v-for="o in flowOptions" :key="o.value" :is-active="o.value === flow" @click="flow = o.value">{{ o.label }}</MpPopoverListItem>
         </MpPopoverList>
@@ -756,8 +757,8 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">Work orders</button>
-        <div class="detail-titlerow-left"><h1 class="detail-title">Work order not found</h1></div>
+        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Work order not found') }}</h1></div>
       </div>
     </header>
   </div>

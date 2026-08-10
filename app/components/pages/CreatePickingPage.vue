@@ -8,11 +8,12 @@ import {
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
-import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
+import { pickableOrders, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import {
-  addPickingTask, pickedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
+  addPickingTask, pickedQtyForOrderSku, committedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { orderSkuLines, productBySku } from '~/data/inventory'
 import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -22,6 +23,7 @@ import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
+const { t } = useLocale()
 
 // ─── Pickable orders (open / in progress) ──────────────────────────────────────
 const allPickable = computed<OutgoingOrder[]>(() => pickableOrders())
@@ -85,7 +87,6 @@ function isSerialTrackedSku(sku: string): boolean {
   const p = productBySku(sku)
   return p ? SERIAL_CATS.has(p.category) : false
 }
-
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
@@ -135,7 +136,10 @@ function orderLines(o: OutgoingOrder): SkuLine[] {
   const lines: SkuLine[] = []
   for (const l of orderSkuLines(o)) {
     if (covered.has(`${o.id}::${l.sku}`)) continue
-    const picked = pickedQtyForOrderSku(o.id, l.sku)
+    // `picked` = qty already committed elsewhere (finished tasks' actual picks +,
+    // when partial picking is on, open tasks' claimed qty) — so a new list offers
+    // only the unclaimed remainder, not the full order qty (PRD 1.2 D3).
+    const picked = committedQtyForOrderSku(o.id, l.sku)
     if (l.qty - picked <= 0) continue
     lines.push({
       sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
@@ -158,7 +162,8 @@ const orderTables = computed<OrderTable[]>(() =>
 // ─── Supervisor edits: include/exclude ANY SKU (checkbox, default on) + edit qty ──
 // A picking list can cover any subset of SKUs regardless of whether an order is a
 // marketplace order — the marketplace "must be complete" rule is enforced later, at
-// packing-task creation, not here.
+// packing-task creation, not here. Row-level (per SKU) only — By-orders is a
+// read-only breakdown of the same rows; edits only ever happen here, in Combined.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
 // When the warehouse doesn't allow partial picking, every SKU must be picked in
@@ -169,7 +174,7 @@ const partialPickingAllowed = computed(() =>
 const lockedKeys = computed(() =>
   partialPickingAllowed.value ? new Set<string>() : new Set(pickRows.value.map(g => g.key)),
 )
-const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
+const partialPickingLockedMsg = t("This warehouse doesn't allow partial picking.")
 function isLocked(key: string) { return lockedKeys.value.has(key) }
 function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
@@ -306,7 +311,7 @@ function targetQtyForSku(sku: string): number {
 const serialDrawerOrderQty = ref(0)
 function openSerialDrawer(sku: string) {
   if (!targetQtyForSku(sku)) {
-    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('Enter qty to pick first') , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = sku
@@ -420,6 +425,56 @@ function capForSku(sku: string): number {
   return row ? stockOf(row.key).cap : 0
 }
 
+/** How much of a merged row's qty-to-pick lands on each contributing order —
+ *  filled member-by-member in order (same rule doCreate() uses to split the
+ *  saved PickingLines), so the By-orders view always matches what gets saved. */
+function memberAllocations(row: MergedRow): Map<string, number> {
+  const map = new Map<string, number>()
+  let remaining = qtyToPick(row)
+  for (const m of row.members) {
+    const alloc = Math.min(m.qty, remaining)
+    map.set(m.orderId, (map.get(m.orderId) ?? 0) + alloc)
+    remaining -= alloc
+  }
+  return map
+}
+
+// ─── Picking list — by orders view (read-only breakdown of the same rows) ───────
+// Combined stays the single place edits (qty, exclude, batch/serial) happen;
+// By orders just re-renders those same rows split per contributing sales order,
+// mirroring CreatePackingPage.vue's order grouping (order no./customer/source).
+type ViewMode = 'combined' | 'orders'
+const viewMode = ref<ViewMode>('combined')
+interface ByOrderLine {
+  key: string; sku: string; product: string; desc: string; img: string; unit: string; bin: string
+  orderQty: number; pickedQty: number; toPick: number; excluded: boolean
+}
+interface OrderGroup { order: OutgoingOrder; source: string; isMarketplace: boolean; lines: ByOrderLine[] }
+const orderGroups = computed<OrderGroup[]>(() => {
+  const map = new Map<string, OrderGroup>()
+  for (const o of selectedOrders.value) {
+    map.set(o.id, { order: o, source: o.source, isMarketplace: isMarketplaceOrder(o), lines: [] })
+  }
+  for (const row of pickRows.value) {
+    const allocByOrder = memberAllocations(row)
+    for (const m of row.members) {
+      const g = map.get(m.orderId)
+      if (!g) continue
+      g.lines.push({
+        key: `${m.orderId}::${row.sku}`,
+        sku: row.sku, product: row.product, desc: row.desc, img: row.img, unit: row.unit, bin: row.bin,
+        orderQty: m.qty,
+        pickedQty: pickedQtyForOrderSku(m.orderId, row.sku),
+        toPick: isSelected(row.key) ? (allocByOrder.get(m.orderId) ?? 0) : 0,
+        excluded: !isSelected(row.key),
+      })
+    }
+  }
+  return [...map.values()]
+    .map(g => ({ ...g, lines: g.lines.sort((a, b) => a.bin.localeCompare(b.bin)) }))
+    .filter(g => g.lines.length)
+})
+
 const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
 const totalSkus       = computed(() => selectedRows.value.length)
 const totalToPick     = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
@@ -519,7 +574,7 @@ async function handleCreate() {
   if (!selectedOrders.value.length) valid = false
   if (!valid) { scrollToFirstError(); return }
   if (!selectedRows.value.length) {
-    toast.notify({ variant: 'error', title: 'You must include at least one SKU to pick', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('You must include at least one SKU to pick'), maxWidth: 'max-content' })
     return
   }
   if (isPartialPick.value) { showPartialConfirm.value = true; return }
@@ -541,8 +596,8 @@ async function doCreate() {
   const serialPicks: Record<string, PickingSerialPick[]> = {}
   for (const g of pickRows.value) {
     if (!isSelected(g.key)) continue
-    let remaining = qtyToPick(g)
-    if (remaining <= 0) continue
+    if (qtyToPick(g) <= 0) continue
+    const allocByOrder = memberAllocations(g)
 
     const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
       .filter(b => (b.counted ?? 0) > 0)
@@ -552,9 +607,8 @@ async function doCreate() {
     let serialIdx = 0
 
     for (const m of g.members) {
-      const alloc = Math.min(m.qty, remaining)
+      const alloc = allocByOrder.get(m.orderId) ?? 0
       if (alloc <= 0) continue
-      remaining -= alloc
       const lineKey = `${m.orderId}::${g.sku}`
       lines.push({
         key: lineKey, orderId: m.orderId, salesNo: m.salesNo,
@@ -621,10 +675,10 @@ async function doCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? 'Order details' : 'Picking' }}</button>
+          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New picking list</h1>
+          <h1 class="detail-title">{{ t('New picking list') }}</h1>
         </div>
       </div>
     </header>
@@ -635,31 +689,31 @@ async function doCreate() {
       <!-- Warehouse + Assignee -->
       <div class="pk-section pk-grid">
         <MpFormControl id="pk-warehouse" is-required :is-invalid="warehouseError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Warehouse</MpFormLabel>
+          <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
           <MpAutocomplete
             id="pk-warehouse-ac"
             v-model="warehouseId"
             :data="availableWarehouses"
             label-prop="name"
             value-prop="id"
-            placeholder="Select warehouse"
+            :placeholder="t('Select warehouse')"
             is-searchable use-portal is-full-width
             :is-clearable="!isWarehouseLocked"
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="pk-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Assignee</MpFormLabel>
+          <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
           <MpAutocomplete
             id="pk-assignee-ac"
             v-model="assigneeId"
             :data="ASSIGNEES"
             label-prop="name"
             value-prop="id"
-            placeholder="Select assignee"
+            :placeholder="t('Select assignee')"
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="assigneeError"
           >
@@ -673,36 +727,39 @@ async function doCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
       <!-- Picking list — a single list across the selected orders (sales order no.
            is irrelevant to picking; lines are ordered by storage location) -->
       <div v-if="selectedOrders.length" class="pk-sku-section">
-        <h2 class="pk-section-title">Picking list</h2>
-        <p class="pk-section-desc">Items to collect for this picking list. Pick any subset of SKUs and set the quantity to pick for each line.</p>
+        <h2 class="pk-section-title">{{ t('Picking list') }}</h2>
+        <p class="pk-section-desc">{{ t('Items to collect for this picking list. Pick any subset of SKUs and set the quantity to pick for each line.') }}</p>
         <div class="pk-summary">
           <div class="pk-stat">
-            <span class="pk-stat-label">Orders</span>
+            <span class="pk-stat-label">{{ t('Orders') }}</span>
             <span class="pk-stat-val">{{ formatNum(selectedOrders.length) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">SKU qty</span>
+            <span class="pk-stat-label">{{ t('SKU qty') }}</span>
             <span class="pk-stat-val">{{ formatNum(totalSkus) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">Qty to pick</span>
+            <span class="pk-stat-label">{{ t('Qty to pick') }}</span>
             <span class="pk-stat-val">{{ formatNum(totalToPick) }}</span>
           </div>
         </div>
 
         <div class="pk-filter-bar">
-          <span class="pk-sku-count">{{ totalSkus }} of {{ pickRows.length }} included</span>
-          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
+          <div class="detail-loc-toggle">
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
+          </div>
+          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">{{ t('Reset') }}</MpButton>
         </div>
 
-        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
+        <section v-if="viewMode === 'combined'" class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items pk-items--split">
               <colgroup>
@@ -718,13 +775,13 @@ async function doCreate() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pk-th">Product</th>
-                  <th class="pk-th">SKU</th>
-                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
-                  <th class="pk-th pk-th--num">Order qty</th>
-                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
-                  <th class="pk-th pk-th--num">Qty to pick</th>
-                  <th class="pk-th">Unit</th>
+                  <th class="pk-th">{{ t('Product') }}</th>
+                  <th class="pk-th">{{ t('SKU') }}</th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">{{ t('Storage location') }}</th>
+                  <th class="pk-th pk-th--num">{{ t('Order qty') }}</th>
+                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">{{ t('On other lists') }}</th>
+                  <th class="pk-th pk-th--num">{{ t('Qty to pick') }}</th>
+                  <th class="pk-th">{{ t('Unit') }}</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
                   <th class="pk-th pk-th--remove" aria-hidden="true" />
                 </tr>
@@ -745,12 +802,12 @@ async function doCreate() {
                        (their location is managed inside the drawer, per batch/serial unit). -->
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
-                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
+                      <MpTooltip :id="`tt-loc-${row.sku}`" :label="t('View via Manage batch')" placement="top" use-portal>
                         <span class="pk-loc-text">—</span>
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
-                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
+                      <MpTooltip :id="`tt-loc-${row.sku}`" :label="t('View via Manage serial numbers')" placement="top" use-portal>
                         <span class="pk-loc-text">—</span>
                       </MpTooltip>
                     </td>
@@ -769,7 +826,7 @@ async function doCreate() {
                       :value="targetQtyForSku(row.sku)"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
                       :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
-                      :aria-label="`Qty to pick for ${row.product}`"
+                      :aria-label="`${t('Qty to pick for')} ${row.product}`"
                       @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -780,7 +837,7 @@ async function doCreate() {
                       :value="targetQtyForSku(row.sku)"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
                       :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
-                      :aria-label="`Qty to pick for ${row.product}`"
+                      :aria-label="`${t('Qty to pick for')} ${row.product}`"
                       @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -801,14 +858,14 @@ async function doCreate() {
                   <!-- Action column: icon button for batch / serial management -->
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
-                      <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
+                      <MpTooltip :id="`tt-batch-${row.sku}`" :label="t('Manage batch')" placement="top" use-portal>
                         <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
-                      <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
+                      <MpTooltip :id="`tt-serial-${row.sku}`" :label="t('Manage serial numbers')" placement="top" use-portal>
                         <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
                           <MpIcon name="competencies" size="md" />
                         </button>
@@ -819,9 +876,9 @@ async function doCreate() {
 
                   <td class="pk-td pk-td--remove">
                     <template v-if="!isSelected(row.key)">
-                      <MpTooltip :id="`pk-rs-${row.key}`" label="Restore" placement="left" use-portal>
+                      <MpTooltip :id="`pk-rs-${row.key}`" :label="t('Restore')" placement="left" use-portal>
                         <MpButton
-                          :aria-label="`Restore ${row.product}`"
+                          :aria-label="`${t('Restore')} ${row.product}`"
                           variant="ghost" left-icon="add"
                           @click="toggleLine(row.key)"
                         />
@@ -830,11 +887,11 @@ async function doCreate() {
                     <template v-else>
                       <MpTooltip
                         :id="`pk-rm-${row.key}`"
-                        :label="isLocked(row.key) ? partialPickingLockedMsg : 'Remove'"
+                        :label="isLocked(row.key) ? partialPickingLockedMsg : t('Remove')"
                         placement="left" use-portal
                       >
                         <MpButton
-                          :aria-label="`Remove ${row.product}`"
+                          :aria-label="`${t('Remove')} ${row.product}`"
                           variant="ghost" left-icon="minus-circular"
                           @click="toggleLine(row.key)"
                         />
@@ -846,21 +903,89 @@ async function doCreate() {
             </table>
             <div ref="itemsSentinelEl" class="pk-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="pk-loading pk-items-loading">
-              <MpSpinner size="sm" /> Loading SKUs…
+              <MpSpinner size="sm" /> {{ t('Loading SKUs…') }}
             </div>
             <div class="pk-items-count">
-              <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+              <span>{{ t('Showing') }} {{ visibleRows.length }} {{ t('of') }} {{ pickRows.length }} {{ t('SKUs') }}</span>
             </div>
           </div>
         </section>
+
+        <!-- By orders view — read-only breakdown of the same rows, one section +
+             table per contributing sales order, header mirrors CreatePackingPage.vue's
+             order grouping (order no./customer/source). Editing (qty, exclude,
+             batch/serial) only ever happens in Combined; this view just reflects
+             whatever memberAllocations() (the same split doCreate() saves) works
+             out per order for the current Combined total. -->
+        <div v-else class="pk-orders-scroll">
+          <div v-for="group in orderGroups" :key="group.order.id" class="pk-order-block">
+            <div class="pk-order-head">
+              <span class="pk-order-no">{{ group.order.salesNo }}</span>
+              <span v-if="group.order.customer" class="pk-order-cust">{{ group.order.customer }}</span>
+              <span v-if="group.source" class="pk-order-source">
+                <SourceLabel :source="group.source" />
+                <MpTooltip
+                  v-if="group.isMarketplace"
+                  :id="`pk-mkt-${group.order.id}`"
+                  :label="t('Marketplace orders must be picked in full. Items can\'t be removed.')"
+                  placement="top"
+                  use-portal
+                >
+                  <span class="pk-source-info"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </div>
+            <section class="pk-items-section">
+              <div class="pk-items-scroll">
+                <table class="pk-items pk-items--split pk-items--order">
+                  <colgroup>
+                    <col /><!-- Product (only unfixed column — fills the rest, same width every table since every other column below is fixed) -->
+                    <col style="width: 120px" /><!-- SKU -->
+                    <col style="width: 110px" /><!-- Order qty -->
+                    <col v-if="hasPriorPicks" style="width: 110px" /><!-- Picked qty -->
+                    <col style="width: 130px" /><!-- Qty to pick -->
+                    <col style="width: 100px" /><!-- Unit -->
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pk-th">{{ t('Product') }}</th>
+                      <th class="pk-th">{{ t('SKU') }}</th>
+                      <th class="pk-th pk-th--num">{{ t('Order qty') }}</th>
+                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">{{ t('On other lists') }}</th>
+                      <th class="pk-th pk-th--num">{{ t('Qty to pick') }}</th>
+                      <th class="pk-th">{{ t('Unit') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="line in group.lines"
+                      :key="line.key"
+                      class="pk-item-row"
+                      :class="{ 'pk-item-row--off': line.excluded }"
+                    >
+                      <td class="pk-td">
+                        <ProductCell :name="line.product" :desc="line.desc" :image="line.img" />
+                      </td>
+                      <td class="pk-td"><span class="pk-sku-text">{{ line.sku }}</span></td>
+                      <td class="pk-td pk-td--num">{{ formatNum(line.orderQty) }}</td>
+                      <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(line.pickedQty) }}</td>
+                      <td class="pk-td pk-td--num">{{ formatNum(line.toPick) }}</td>
+                      <td class="pk-td">{{ line.unit }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
 
     </div><!-- /detail-stage -->
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': itemsOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
   </div>
 
@@ -897,19 +1022,18 @@ async function doCreate() {
     <MpModalOverlay />
     <MpModalContent>
       <MpModalHeader>
-        <span>Confirm partial pick</span>
+        <span>{{ t('Confirm partial pick') }}</span>
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
-          Total qty to pick (<strong>{{ totalToPick }}</strong>) is less than total order qty
-          (<strong>{{ totalOrderQty }}</strong>). The remaining items will not be picked in this task.
-          Are you sure you want to continue?
+          {{ t('Total qty to pick') }} (<strong>{{ totalToPick }}</strong>) {{ t('is less than total order qty') }}
+          (<strong>{{ totalOrderQty }}</strong>). {{ t('The remaining items will not be picked in this task. Are you sure you want to continue?') }}
         </p>
       </MpModalBody>
       <MpModalFooter>
-        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">Cancel</MpButton>
-        <MpButton variant="primary" is-rounded @click="doCreate">Continue</MpButton>
+        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doCreate">{{ t('Continue') }}</MpButton>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
@@ -1022,17 +1146,28 @@ async function doCreate() {
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pk-filter-bar { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
-.pk-sku-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+
+/* ── Combined / By orders toggle (copied verbatim from StockAdjustmentDetailsPage.vue / PickingTaskDetailsPage.vue) ── */
+.detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
 /* ── Picking list — per-order blocks ─────────────────────────────────────────── */
+/* By orders can stack many order blocks — unlike Combined's single section
+   (which fills the stage and scrolls internally), each block here just takes
+   its natural content height, and THIS wrapper is the one that scrolls. */
+.pk-orders-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head {
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
   margin-bottom: var(--mp-spacing-2);
 }
 .pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.pk-source-info { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
 .pk-short { color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Picking list table ──────────────────────────────────────────────────────── */
@@ -1061,6 +1196,12 @@ async function doCreate() {
    column gets left/right borders — no double border, no outer border on the ends. */
 .pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
 .pk-items--split .pk-td:last-child { border-right: none; }
+
+/* By orders: every order gets its own <table>, so table-layout: auto would size
+   each one's columns independently off its own content (misaligned widths across
+   orders). Forcing fixed layout + identical explicit widths on every column but
+   Product keeps every order's table lined up the same. */
+.pk-items--order { table-layout: fixed; }
 
 /* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {

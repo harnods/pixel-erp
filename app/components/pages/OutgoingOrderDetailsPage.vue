@@ -11,8 +11,8 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { outgoingOrders, outgoingStage, isMarketplaceOrder } from '~/data/outgoing'
-import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { outgoingOrders, outgoingStage, isMarketplaceOrder, canCancelOutboundOrder, canEditOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
+import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { deliveryTasks, marketplaceShipping, getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
@@ -22,6 +22,7 @@ import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 syncOutboundOrderStatuses()
 
@@ -137,12 +138,15 @@ const attachments = computed(() => {
   const n = (s % 3) + 1 // always 1–3 files
   return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
 })
+const lastEdit = computed(() => order.value?.editLog?.at(-1))
 const lastUpdatedBy = computed(() => {
   if (!order.value) return ''
+  if (lastEdit.value) return lastEdit.value.by
   return order.value.source === 'Outbound delivery' ? 'Rizal Candra' : NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]!
 })
 const lastUpdatedAt = computed(() => {
   if (!order.value) return new Date().toISOString()
+  if (lastEdit.value) return lastEdit.value.at
   if (order.value.source === 'Outbound delivery') return order.value.createdAt ?? order.value.transactionDate ?? order.value.dueDate
   return order.value.shippedDate ?? order.value.dueDate ?? new Date().toISOString()
 })
@@ -167,17 +171,27 @@ const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const o = order.value
   if (!o) return []
-  return [{
-    date: lastUpdatedAt.value,
-    user: lastUpdatedBy.value,
-    activity: 'Created',
-    details: [
-      { label: 'Transaction no.', value: o.salesNo },
-      { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
-      { label: 'Customer', value: o.customer ?? '—' },
-      { label: 'Warehouse', value: o.warehouseName },
-    ],
-  }]
+  // Edits first (newest at the top), then the original creation entry.
+  const edits = [...(o.editLog ?? [])].reverse().map((e) => ({
+    date: e.at,
+    user: e.by,
+    activity: 'Edited',
+    details: e.changes.length ? e.changes : [{ label: 'Order', value: 'Updated' }],
+  }))
+  return [
+    ...edits,
+    {
+      date: o.createdAt ?? o.transactionDate ?? o.dueDate,
+      user: lastUpdatedBy.value,
+      activity: 'Created',
+      details: [
+        { label: 'Transaction no.', value: o.salesNo },
+        { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
+        { label: 'Customer', value: o.customer ?? '—' },
+        { label: 'Warehouse', value: o.warehouseName },
+      ],
+    },
+  ]
 })
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function agingDays(startDate?: string, endDate?: string): number {
@@ -203,6 +217,29 @@ function goBack() { router.push('/outbound-delivery?tab=Requests') }
 function createPicking() {
   if (!order.value) return
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id, from: `order:${order.value.id}` } })
+}
+
+// ─── Cancel order + Release reserved (D2/D6) ───────────────────────────────────
+const canCancel = computed(() => !!order.value && canCancelOutboundOrder(order.value))
+const canEdit = computed(() => !!order.value && canEditOutboundOrder(order.value))
+function goEdit() { if (order.value) router.push(`/outbound-delivery/${order.value.id}/edit`) }
+const canRelease = computed(() => !!order.value && canReleaseReservedForOrder(order.value.id))
+const cancelModalOpen = ref(false)
+function askCancel() { cancelModalOpen.value = true }
+function confirmCancel() {
+  const o = order.value
+  if (o) {
+    const res = cancelOutboundOrder(o.id)
+    if (res.ok) toast.notify({ variant: 'success', title: `Order ${o.number} cancelled`, maxWidth: 'max-content' })
+    else toast.notify({ variant: 'error', title: t('Cannot cancel — a package has already shipped'), maxWidth: 'max-content' })
+  }
+  cancelModalOpen.value = false
+}
+function releaseReserved() {
+  const o = order.value
+  if (o && releaseReservedForCancelledOrder(o.id)) {
+    toast.notify({ variant: 'success', title: `Reserved stock released back to available for ${o.number}`, maxWidth: 'max-content' })
+  }
 }
 
 // ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
@@ -240,7 +277,7 @@ function confirmDirectPacking() {
     assignee,
   })
   closeDirectPacking()
-  toast.notify({ variant: 'success', title: 'Packing task created', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Packing task created'), maxWidth: 'max-content' })
   router.push(`/packing/${task.id}`)
 }
 
@@ -262,13 +299,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Outbound delivery</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Outbound delivery') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
-          <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="outgoingStage(order)" :type="order.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="ood-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -277,8 +314,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -289,7 +326,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <span class="detail-jump-item-number">{{ o.salesNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer ?? o.source }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -302,27 +339,25 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
       <section class="ood-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(transactionDate)" />
-          <ContentList label="Transaction no." :value="order.salesNo" />
-          <ContentList label="Customer" :value="order.customer ?? '—'" />
-          <ContentList label="Source"><SourceLabel :source="order.source" /></ContentList>
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(transactionDate)" />
+          <ContentList :label="t('Transaction no.')" :value="order.salesNo" />
+          <ContentList :label="t('Customer')" :value="order.customer ?? '—'" />
+          <ContentList :label="t('Source')"><SourceLabel :source="order.source" /></ContentList>
         </div>
         <div class="content-list-col">
-          <ContentList label="Due date" :value="dueDateDisplay" />
-          <ContentList label="Courier" :value="courier" />
-          <ContentList label="Tracking no." :value="trackingNo" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Due date')" :value="dueDateDisplay" />
+          <ContentList :label="t('Courier')" :value="courier" />
+          <ContentList :label="t('Tracking no.')" :value="trackingNo" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
-              <span>{{ order.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${order.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${order.warehouseId}`)">{{ order.warehouseName }}</a>
             </div>
           </ContentList>
+        </div>
+        <div v-if="order.status === 'canceled'" class="content-list-col">
+          <ContentList :label="t('Canceled date')" :value="order.canceledDate ? formatDateLong(order.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="order.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="order.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -333,13 +368,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <table class="detail-items">
               <thead>
                 <tr>
-                  <th class="detail-th">Product</th>
-                  <th class="detail-th">SKU</th>
-                  <th class="detail-th detail-th--num">Order qty</th>
-                  <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
-                  <th class="detail-th detail-th--num">Packed qty</th>
-                  <th class="detail-th detail-th--num">Shipped qty</th>
-                  <th class="detail-th">Unit</th>
+                  <th class="detail-th">{{ t('Product') }}</th>
+                  <th class="detail-th">{{ t('SKU') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Order qty') }}</th>
+                  <th v-if="!skippedPicking" class="detail-th detail-th--num">{{ t('Picked qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Packed qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Shipped qty') }}</th>
+                  <th class="detail-th">{{ t('Unit') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,24 +391,24 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </table>
             <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="detail-loading detail-items-loading">
-              <MpSpinner size="sm" /> Loading products…
+              <MpSpinner size="sm" /> {{ t('Loading products…') }}
             </div>
           </div>
           <div class="detail-items-count">
-            <span>Showing {{ visibleItems.length }} of {{ lineItems.length }} products</span>
+            <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ lineItems.length }} {{ t('products') }}</span>
           </div>
         </section>
       </div>
 
       <!-- Message / memo / attachment + audit -->
       <section class="detail-notes-left">
-        <ContentList v-if="!isManual" label="Message">
+        <ContentList v-if="!isManual" :label="t('Message')">
           <p class="detail-note-text">—</p>
         </ContentList>
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ order.memo || '—' }}</p>
         </ContentList>
-        <ContentList v-if="!isManual" :label="`Attachment (${attachments.length})`">
+        <ContentList v-if="!isManual" :label="`${t('Attachment')} (${attachments.length})`">
           <div v-if="attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -386,34 +421,25 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <p v-else class="detail-note-text">—</p>
         </ContentList>
       </section>
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ lastUpdatedBy }} on {{ formatUpdatedAt(lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(lastUpdatedAt) }}</a>
 
       <!-- Linked outbound tasks (only once at least one exists) -->
       <MpTabs v-if="hasLinked" id="ood-tabs" :default-value="0" variant-color="green" class="ood-tabs">
         <MpTabList>
-          <MpTab v-if="linkedPicking.length" id="ood-tab-pick" :value="0">Picking ({{ linkedPicking.length }})</MpTab>
-          <MpTab v-if="linkedPacking.length" id="ood-tab-pack" :value="1">Packing ({{ linkedPacking.length }})</MpTab>
-          <MpTab v-if="linkedShipments.length" id="ood-tab-ship" :value="2">Shipment ({{ linkedShipments.length }})</MpTab>
+          <MpTab v-if="linkedPicking.length" id="ood-tab-pick" :value="0">{{ t('Picking') }} ({{ linkedPicking.length }})</MpTab>
+          <MpTab v-if="linkedPacking.length" id="ood-tab-pack" :value="1">{{ t('Packing') }} ({{ linkedPacking.length }})</MpTab>
+          <MpTab v-if="linkedShipments.length" id="ood-tab-ship" :value="2">{{ t('Shipment') }} ({{ linkedShipments.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel v-if="linkedPicking.length" :value="0">
-            <h3 class="linked-section-title">Picking list tasks</h3>
+            <h3 class="linked-section-title">{{ t('Picking list tasks') }}</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Picked qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">{{ t('Number') }}</th><th class="detail-th">{{ t('Assignee') }}</th><th class="detail-th detail-th--num">{{ t('SKU qty') }}</th><th class="detail-th detail-th--num">{{ t('Picked qty') }}</th><th class="detail-th">{{ t('Status') }}</th><th class="detail-th">{{ t('Start date') }}</th><th class="detail-th">{{ t('End date') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPicking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="ood-link-num">{{ t.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${t.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link ood-link-num" @click.stop="router.push(`/picking/${t.id}`)">{{ t.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
@@ -433,23 +459,14 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </div>
           </MpTabPanel>
           <MpTabPanel v-if="linkedPacking.length" :value="1">
-            <h3 class="linked-section-title">Packing tasks</h3>
+            <h3 class="linked-section-title">{{ t('Packing tasks') }}</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">{{ t('Number') }}</th><th class="detail-th">{{ t('Assignee') }}</th><th class="detail-th detail-th--num">{{ t('SKU qty') }}</th><th class="detail-th detail-th--num">{{ t('Packed qty') }}</th><th class="detail-th">{{ t('Status') }}</th><th class="detail-th">{{ t('Start date') }}</th><th class="detail-th">{{ t('End date') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPacking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="ood-link-num">{{ t.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${t.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link ood-link-num" @click.stop="router.push(`/packing/${t.id}`)">{{ t.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
@@ -469,23 +486,14 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </div>
           </MpTabPanel>
           <MpTabPanel v-if="linkedShipments.length" :value="2">
-            <h3 class="linked-section-title">Shipments</h3>
+            <h3 class="linked-section-title">{{ t('Shipments') }}</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Shipment no.</th><th class="detail-th">Assignee</th><th class="detail-th">Warehouse</th><th class="detail-th">Transaction date</th></tr></thead>
+                <thead><tr><th class="detail-th">{{ t('Shipment no.') }}</th><th class="detail-th">{{ t('Assignee') }}</th><th class="detail-th">{{ t('Warehouse') }}</th><th class="detail-th">{{ t('Transaction date') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="h in linkedShipments" :key="h.shipmentSeq" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="ood-link-num">{{ h.shipmentNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link ood-link-num" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">{{ h.shipmentNo }}</a>
                     </td>
                     <td class="detail-td">{{ h.assignee }}</td>
                     <td class="detail-td">{{ h.warehouseName }}</td>
@@ -504,7 +512,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <MpPopover id="ood-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
-            Print
+            {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -512,17 +520,72 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print sales order</MpPopoverListItem>
-            <MpPopoverListItem v-if="linkedDelivery.length">Print delivery note</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print sales order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="linkedDelivery.length">{{ t('Print delivery note') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canPickOrder(order)" class="detail-btn detail-btn--primary" @click="createPicking">
-        Create picking list
-      </button>
-      <button v-if="canCreatePackingDirectlyForOrder(order)" class="detail-btn detail-btn--primary" @click="openDirectPacking">
-        Create packing
-      </button>
+      <!-- Create picking — split button; the chevron holds order-level actions
+           (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
+      <template v-if="canPickOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">{{ t('Create picking list') }}</button>
+          <MpPopover id="ood-actions-pick" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel order') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">{{ t('Release reserved') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="createPicking">{{ t('Create picking list') }}</button>
+      </template>
+
+      <!-- Create packing — same split treatment -->
+      <template v-else-if="canCreatePackingDirectlyForOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">{{ t('Create packing') }}</button>
+          <MpPopover id="ood-actions-pack" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel order') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">{{ t('Release reserved') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openDirectPacking">{{ t('Create packing') }}</button>
+      </template>
+
+      <!-- No create action left, but the order is still editable / cancellable / has reserved to release -->
+      <MpPopover v-else-if="canEdit || canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            {{ t('Actions') }}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canRelease" @click="releaseReserved">{{ t('Release reserved') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </footer>
 
     <ActivityLogModal
@@ -540,28 +603,45 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
     >
       <MpModalContent>
-        <MpModalHeader>Create packing?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ood-direct-pack-desc">Order {{ order.number }}'s full quantity will go into a packing task.</p>
+          <p class="ood-direct-pack-desc">{{ t('Order') }} {{ order.number }}{{ t("'s full quantity will go into a packing task.") }}</p>
           <MpFormControl id="ood-direct-pack-assignee" is-required :is-invalid="directPackAssigneeError">
-            <MpFormLabel>Assignee</MpFormLabel>
+            <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
             <MpAutocomplete
               id="ood-direct-pack-assignee-ac"
               v-model="directPackAssigneeId"
               :data="ASSIGNEES"
               label-prop="name"
               value-prop="id"
-              placeholder="Select assignee"
+              :placeholder="t('Select assignee')"
               is-searchable is-clearable use-portal is-full-width
               :is-invalid="directPackAssigneeError"
             />
-            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
           <div class="ood-modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">{{ t('Create packing') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Cancel order confirmation ── -->
+    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          {{ t('Order') }} {{ order?.number }} {{ t("will be cancelled. This can't be undone. Its reserved stock stays held until you Release reserved.") }}
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ood-modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelModalOpen = false">{{ t('Keep order') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel order') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -571,8 +651,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   </div>
 
   <div v-else class="ood-not-found">
-    <p>Order not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Outbound delivery</button>
+    <p>{{ t('Order not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Outbound delivery') }}</button>
   </div>
 </template>
 
@@ -587,7 +667,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
@@ -656,17 +736,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .ood-empty { color: var(--mp-text-secondary); }
 /* Number cell — "View details" chip on row hover (same as index tables) */
 .ood-linked .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.ood-linked .detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
@@ -678,6 +748,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+/* Split button — primary action + attached chevron dropdown (mirrors StockAdjustmentDetailsPage). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 
 .ood-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 

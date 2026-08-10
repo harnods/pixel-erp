@@ -10,12 +10,12 @@
   <MpPopover
     id="header-user-menu"
     placement="bottom-end"
+    trigger="click"
     use-portal
-    is-close-on-blur
     is-close-on-escape
-    is-focus-on-close
     v-slot="{ onClosePopover }"
-    @close="view = 'main'"
+    @open="onPopoverOpen"
+    @close="onPopoverClose"
   >
     <MpPopoverTrigger>
       <div class="erp-user" role="button" tabindex="0" aria-label="Open account menu">
@@ -50,7 +50,7 @@
             class="user-menu__row"
           >
             <MpIcon :name="item.icon" size="md" color="icon.brand" />
-            <span class="user-menu__label">{{ item.label }}</span>
+            <span class="user-menu__label">{{ t(item.label) }}</span>
           </button>
         </nav>
 
@@ -59,19 +59,20 @@
         <!-- Account controls -->
         <nav class="user-menu__group">
           <button type="button" class="user-menu__row">
-            <span class="user-menu__label">Switch company</span>
+            <span class="user-menu__label">{{ t('Switch company') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row" @click="view = 'wms'">
-            <span class="user-menu__label">Switch to WMS</span>
+            <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
+            <MpIcon name="chevrons-right" size="md" color="icon.default" />
+          </button>
+          <button type="button" class="user-menu__row" @click="view = 'language'">
+            <span class="user-menu__label">{{ t('Language') }}</span>
+            <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row">
-            <span class="user-menu__label">Language</span>
-            <span class="user-menu__value">English</span>
-          </button>
-          <button type="button" class="user-menu__row">
-            <span class="user-menu__label">Sign out</span>
+            <span class="user-menu__label">{{ t('Sign out') }}</span>
           </button>
         </nav>
 
@@ -80,31 +81,31 @@
         <!-- Prototype / demo controls -->
         <nav class="user-menu__group">
           <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
-            <span class="user-menu__label">Reset demo data</span>
+            <span class="user-menu__label">{{ t('Reset demo data') }}</span>
           </button>
           <button type="button" class="user-menu__row" @click="toggleReview(onClosePopover)">
-            <span class="user-menu__label">Review mode</span>
-            <span v-if="isReviewMode" class="user-menu__value">On</span>
+            <span class="user-menu__label">{{ t('Review mode') }}</span>
+            <span v-if="isReviewMode" class="user-menu__value">{{ t('On') }}</span>
           </button>
         </nav>
 
-        <p class="user-menu__company-id">Company ID: 680128</p>
+        <p class="user-menu__company-id">{{ t('Company ID: 680128') }}</p>
 
         <!-- Referral promo -->
         <a class="user-menu__promo" href="#" @click.prevent>
           <img class="user-menu__promo-art" :src="promoArt" alt="" />
           <span class="user-menu__promo-body">
-            <span class="user-menu__promo-title">Refer a friends,<br />earn cash reward</span>
+            <span class="user-menu__promo-title">{{ t('Refer a friends, earn cash reward') }}</span>
             <span class="user-menu__promo-cta">
-              Get started
+              {{ t('Get started') }}
               <MpIcon name="chevrons-right" size="sm" />
             </span>
           </span>
         </a>
       </template>
 
-      <!-- ── Switch to WMS: select scenario ────────────────── -->
-      <template v-else>
+      <!-- ── Change language ───────────────────────────────── -->
+      <template v-else-if="view === 'language'">
         <div class="user-menu__subhead">
           <button
             type="button"
@@ -114,7 +115,40 @@
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
           </button>
-          <span class="user-menu__subtitle">Select scenario</span>
+          <span class="user-menu__subtitle">{{ t('Change language') }}</span>
+        </div>
+
+        <nav class="user-menu__group">
+          <button
+            v-for="lang in languages"
+            :key="lang"
+            type="button"
+            class="user-menu__row"
+            @click="selectLanguage(lang)"
+          >
+            <span class="user-menu__label">{{ lang }}</span>
+            <MpIcon
+              v-if="lang === currentLanguage"
+              name="check"
+              size="md"
+              color="icon.brand"
+            />
+          </button>
+        </nav>
+      </template>
+
+      <!-- ── Switch to WMS: select scenario ────────────────── -->
+      <template v-else-if="view === 'wms'">
+        <div class="user-menu__subhead">
+          <button
+            type="button"
+            class="user-menu__back"
+            aria-label="Back"
+            @click="view = 'main'"
+          >
+            <MpIcon name="chevrons-left" size="md" color="icon.default" />
+          </button>
+          <span class="user-menu__subtitle">{{ t('Select scenario') }}</span>
         </div>
 
         <nav class="user-menu__group">
@@ -166,7 +200,29 @@ const primaryItems = [
 ] as const;
 
 // Which panel of the popover is showing: the account menu, or the WMS scenario picker.
-const view = ref<"main" | "wms">("main");
+const view = ref<"main" | "wms" | "language">("main");
+
+// Language switcher — wired to the global app locale (see useLocale).
+const { locale, setLocale, t } = useLocale();
+const languages = ["English", "Bahasa Indonesia"] as const;
+const currentLanguage = computed(() => (locale.value === "id" ? "Bahasa Indonesia" : "English"));
+function selectLanguage(lang: (typeof languages)[number]) {
+  setLocale(lang === "Bahasa Indonesia" ? "id" : "en");
+  view.value = "main";
+}
+
+// Reset to the main view when the popover closes, so reopening always starts on the
+// account menu. A click popover stays open while you interact (unlike hover, which
+// closed the moment a shorter sub-view shrank out from under the cursor) — the short
+// debounce just guards against any transient close→reopen from the portal.
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+function onPopoverOpen() {
+  if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+}
+function onPopoverClose() {
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = setTimeout(() => { view.value = "main"; resetTimer = null; }, 300);
+}
 
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
@@ -265,6 +321,10 @@ function toggleReview(closePopover: () => void) {
 :global(.mp-popover.user-menu) {
   /* Above the header (sticky 1100) and the table's sticky cells/headers */
   z-index: var(--mp-z-indices-popover, 1600);
+  /* Raise 6px so its top lines up with the quick-create ("+") popover — the
+     avatar+name trigger sits 6px lower than the +'s icon button, so floating-ui
+     otherwise drops this menu 6px below the shortcut menu. */
+  margin-top: -6px;
   width: 277px;
   padding: var(--mp-spacing-2) 0 0;
   background: var(--mp-colors-background-stage, #ffffff);

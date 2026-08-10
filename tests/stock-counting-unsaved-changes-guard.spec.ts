@@ -12,6 +12,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import StockCountingPage from '~/components/pages/StockCountingPage.vue'
 import { resolveNavigationAttempt, useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import { addWmsAdjustment, startWmsCount } from '~/data/wmsStockAdjustments'
+import '~/data/warehouseDetails'
 
 vi.stubGlobal('useRouter', () => ({ push: vi.fn() }))
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
@@ -21,6 +22,7 @@ vi.stubGlobal('IntersectionObserver', FakeObserver)
 const WAREHOUSE_ID = 'wh-006'
 const WAREHOUSE_NAME = 'Gudang Makassar Selatan'
 const PLAIN_SKU = '3004' // plain/untracked
+const SKU_BIN = 'Bin 02' // binForSku for 3004 at wh-006
 
 function mountCountingTask() {
   const adj = addWmsAdjustment({
@@ -30,6 +32,21 @@ function mountCountingTask() {
   })
   startWmsCount(adj.id)
   return mount(StockCountingPage, { props: { orderId: adj.id } })
+}
+
+async function scan(wrapper: ReturnType<typeof mount>, value: string) {
+  const input = wrapper.find('.scan-bar-input')
+  await input.setValue(value)
+  await input.trigger('keydown.enter')
+  await flushPromises()
+}
+
+// Counting requires scan-to-unlock: scan the bin (active), then the product barcode
+// — that unlocks the row's qty input for manual entry (and counts +1). Only then can
+// a manual qty be typed. Mirrors the receive/put-away scan-first flow.
+async function scanUnlock(wrapper: ReturnType<typeof mount>) {
+  await scan(wrapper, SKU_BIN)   // active bin
+  await scan(wrapper, PLAIN_SKU) // unlocks the row, counts 1
 }
 
 function confirmModalButton(text: string): HTMLElement {
@@ -44,6 +61,7 @@ describe('StockCountingPage — unsaved-changes guard is disabled on intentional
     const wrapper = mountCountingTask()
     await flushPromises()
 
+    await scanUnlock(wrapper)
     await wrapper.find('input.sc-qty-input').setValue('5') // dirty
 
     const finishBtn = Array.from(wrapper.findAll('button')).find((b) => b.text() === 'Finish counting')!
@@ -64,6 +82,7 @@ describe('StockCountingPage — unsaved-changes guard is disabled on intentional
     const wrapper = mountCountingTask()
     await flushPromises()
 
+    await scanUnlock(wrapper)
     await wrapper.find('input.sc-qty-input').setValue('5')
 
     const saveDraftBtn = Array.from(wrapper.findAll('button')).find((b) => b.text() === 'Save draft')!
@@ -81,6 +100,7 @@ describe('StockCountingPage — unsaved-changes guard is disabled on intentional
     const wrapper = mountCountingTask()
     await flushPromises()
 
+    await scanUnlock(wrapper)
     await wrapper.find('input.sc-qty-input').setValue('5') // dirty, nothing committed yet
 
     const modal = useUnsavedChangesModalState()
@@ -90,6 +110,34 @@ describe('StockCountingPage — unsaved-changes guard is disabled on intentional
 
     modal.chooseCancel()
     await pending
+    wrapper.unmount()
+  })
+
+  it('choosing Leave without saving does not re-prompt on a second beforeEach pass before the page unmounts', async () => {
+    // Regression: Vue Router can re-run beforeEach for the same navigation (a
+    // redirect, the destination normalizing its own URL/query on mount, ...)
+    // before the outgoing page's onUnmounted has actually cleared the guard.
+    // The operator already answered "leave this page behind?" once — a second
+    // pass mid-transition must not pop the modal right back up.
+    const wrapper = mountCountingTask()
+    await flushPromises()
+
+    await scanUnlock(wrapper)
+    await wrapper.find('input.sc-qty-input').setValue('5') // dirty, nothing committed
+
+    const modal = useUnsavedChangesModalState()
+    const first = resolveNavigationAttempt()
+    await Promise.resolve()
+    expect(modal.isOpen.value).toBe(true)
+    modal.chooseLeave()
+    await expect(first).resolves.toBe(true)
+    expect(modal.isOpen.value).toBe(false)
+
+    // Component instance hasn't unmounted yet — simulates the guard still
+    // being registered when the next beforeEach pass fires.
+    await expect(resolveNavigationAttempt()).resolves.toBe(true)
+    expect(modal.isOpen.value).toBe(false) // never reopened
+
     wrapper.unmount()
   })
 })

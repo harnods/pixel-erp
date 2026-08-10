@@ -14,7 +14,8 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask, type TaskLineItem } from '~/data/receivingTaskDetails'
 import {
-  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask,
+  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask, acknowledgeCanceledReceipt,
+  acknowledgeReceivingRearrangement,
   type ReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
@@ -30,6 +31,7 @@ type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed' | 'c
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 
 const entry = computed(() => findTaskWithPO(props.orderId))
 const task  = computed(() => entry.value?.task)
@@ -62,6 +64,7 @@ watch([() => props.orderId, lineItems], () => {
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
+const isCanceled = computed(() => localStatus.value === 'canceled')
 // Open tasks haven't started receiving yet — show only Purchase qty (no Received /
 // Outstanding columns, which are meaningless until receiving begins).
 const showReceivedCols = computed(() => localStatus.value !== 'open')
@@ -72,7 +75,7 @@ const linkedPutAway = computed(() => task.value ? getPutAwayForTask({ ...task.va
 // PO status — the REAL derived receipt status (single source), not a local guess.
 const poStatus = computed<string>(() => {
   const r = receipts.find(x => x.id === po.value?.receiptId)
-  return r?.status ?? 'on the way'
+  return r?.status ?? 'open'
 })
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
@@ -145,8 +148,49 @@ function createPutAway() {
 
 // ── Receiving actions ───────────────────────────────────────────────────────
 function startReceivingAndNavigate() {
+  if (needsRearrangement.value) {
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — view the changes before it can start'), maxWidth: 'max-content' })
+    return
+  }
   startReceiving(props.orderId)
   router.push(`/receiving/${props.orderId}/receive`)
+}
+
+// A PO qty reduction touched this task (its SKU spanned ≥2 Open receiving tasks,
+// or was the sole Open task) — it freezes. Unlike needsCancelAck below, this is a
+// plain self-serve review (no rebalancing decision to make), but — unlike a
+// one-click acknowledge — the operator must first open "View changes" to see the
+// per-SKU before/after table, then confirm via "Apply changes" in that modal.
+const needsRearrangement = computed(() => !!task.value?.needsRearrangement)
+const rearrangementChanges = computed(() => task.value?.rearrangementChanges ?? [])
+const viewChangesOpen = ref(false)
+function openViewChanges() { viewChangesOpen.value = true }
+function proceedRearrangementChanges() {
+  if (!task.value) return
+  acknowledgeReceivingRearrangement(task.value.id)
+  viewChangesOpen.value = false
+  toast.notify({ variant: 'success', title: t('Changes applied. This task can be started again'), maxWidth: 'max-content' })
+}
+
+// This task's own PO was canceled while it was in progress — real receiving
+// work may already exist, so it's never silently auto-canceled the way an
+// open task on the same PO would be. Continue receiving is blocked until the
+// operator explicitly acknowledges via the modal below — since this task
+// belongs to exactly ONE PO, acknowledging then cancels the task itself
+// (nothing left to receive once its one-and-only PO is gone).
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck)
+const ackCancelOpen = ref(false)
+function continueReceiving() {
+  if (needsCancelAck.value) { ackCancelOpen.value = true; return }
+  router.push(`/receiving/${props.orderId}/receive`)
+}
+function confirmAcknowledgeCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledReceipt(task.value.id)
+  ackCancelOpen.value = false
+  localStatus.value = 'canceled'
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
 }
 
 // Cancel — only while receiving hasn't finished yet (open/in progress). Once
@@ -159,8 +203,8 @@ function confirmCancel() {
   if (!task.value) return
   cancelReceivingTask(task.value.id)
   cancelOpen.value = false
+  localStatus.value = 'canceled' // stay on this detail page, now showing the canceled state
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
 }
 
 const pdfPreviewOpen = ref(false)
@@ -199,7 +243,7 @@ function agingLabel(): string {
   if (!task.value) return ''
   // Use local end date/status so the badge updates the moment receiving is saved.
   const d = taskAgingDays({ ...task.value, endDate: localEndDate.value ?? undefined, status: localStatus.value })
-  return d > 1 ? `${d} days` : ''
+  return d > 1 ? `${d} ${t('days')}` : ''
 }
 
 // ── Search filter ──────────────────────────────────────────────────────────
@@ -310,15 +354,13 @@ function goBack() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receiving</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receiving') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <!-- Pulse — only while in progress -->
-          <span v-if="isInProgress" class="rcvgd-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch task">
+              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -327,8 +369,8 @@ function goBack() {
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or PO…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -339,7 +381,7 @@ function goBack() {
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.purchaseNo }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -349,63 +391,96 @@ function goBack() {
 
       <!-- Last updated — only while in progress -->
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
-        <span class="rcvgd-last-updated-label">Last updated</span>
+        <span class="rcvgd-last-updated-label">{{ t('Last updated') }}</span>
         <span class="rcvgd-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
       </div>
     </header>
 
+    <!-- A PO qty reduction touched this task — it's frozen: Start receiving is
+         blocked until the operator reviews the change (View changes → Proceed
+         changes) — self-serve, no rebalancing decision to make, just awareness.
+         Sits between the title bar and the stage (not inside it). -->
+    <div v-if="needsRearrangement" class="rcvgd-rearrange-banner">
+      <svg class="rcvgd-rearrange-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <span class="rcvgd-rearrange-banner-text">
+        {{ t('This task is flagged Needs re-arrangement — view the changes before it can start') }}
+      </span>
+      <button class="btn-enterprise rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
+    </div>
+
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
+
+      <!-- Purchase order behind this task was canceled while real work already
+           exists for it (in progress, or already-committed on-hand stock from
+           pending put-away/completed) — so it isn't silently auto-canceled.
+           Continuing/acknowledging is blocked until this is acknowledged. -->
+      <div v-if="needsCancelAck" class="rcvgd-cancel-banner">
+        <svg class="rcvgd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="rcvgd-cancel-banner-text">
+          <template v-if="task.stockCommitted">
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. Its goods are already on-hand — acknowledging will cancel this task and reverse that stock via a stock adjustment.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
+          </template>
+        </span>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+      </div>
 
       <!-- ── Summary grid ── -->
       <section class="rcvgd-summary">
         <div class="content-list-col">
-          <ContentList label="Purchase order" :value="po.purchaseNo" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Purchase order')" :value="po.purchaseNo" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
-              <span>{{ po.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ po.warehouseName }}</a>
             </div>
           </ContentList>
-          <ContentList label="Assignee" :value="task.assignee" />
+          <ContentList :label="t('Assignee')" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
-          <ContentList label="End date">
+          <ContentList :label="t('Start date')" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
+          <ContentList :label="t('End date')">
             <span class="rcvgd-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="rcvgd-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
         </div>
+        <div v-if="isCanceled" class="content-list-col">
+          <ContentList :label="t('Canceled date')" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="task.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
+        </div>
       </section>
 
       <!-- ── Progress stats ── -->
       <section class="rcvgd-progress">
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">SKU qty</span>
+          <span class="rcvgd-progress-label">{{ t('SKU qty') }}</span>
           <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Purchase qty</span>
+          <span class="rcvgd-progress-label">{{ t('Purchase qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Expected qty</span>
+          <span class="rcvgd-progress-label">{{ t('Expected qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(expectedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Received qty</span>
+          <span class="rcvgd-progress-label">{{ t('Received qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Outstanding qty</span>
+          <span class="rcvgd-progress-label">{{ t('Remaining qty to receive') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
@@ -418,8 +493,8 @@ function goBack() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search..." />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+            <input v-model="itemSearch" class="rcvgd-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -430,24 +505,24 @@ function goBack() {
         <div ref="itemsScrollEl" class="detail-items-scroll">
           <table class="detail-items">
             <colgroup>
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
+              <col style="width: 26%" />
+              <col style="width: 10%" />
+              <col style="width: 11%" />
+              <col style="width: 11%" />
+              <col style="width: 11%" />
+              <col style="width: 15%" />
+              <col style="width: 8%" />
+              <col style="width: 56px" />
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th detail-th--num">Expected qty</th>
-                <th class="detail-th detail-th--num">Received qty</th>
-                <th class="detail-th detail-th--num">Outstanding qty</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Remaining qty to receive') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
                 <th class="detail-th detail-th--action"></th>
               </tr>
             </thead>
@@ -474,13 +549,13 @@ function goBack() {
                 <td class="detail-td">{{ item.unit }}</td>
                 <td class="detail-td detail-td--action">
                   <template v-if="localStatus !== 'open'">
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" label="View batch" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" :label="t('View batch')" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" label="View serial number" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" :label="t('View serial number')" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -491,11 +566,11 @@ function goBack() {
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span>
         </div>
       </section>
       </div>
@@ -503,13 +578,13 @@ function goBack() {
       <!-- ── Linked transactions ── -->
       <MpTabs id="rcvgd-tabs" :default-value="0" variant-color="green" class="rcvgd-tabs">
         <MpTabList>
-          <MpTab id="rcvgd-tab-po" :value="0">Linked transactions</MpTab>
-          <MpTab v-if="linkedPutAway.length" id="rcvgd-tab-pa" :value="1">Put-away ({{ linkedPutAway.length }})</MpTab>
+          <MpTab id="rcvgd-tab-po" :value="0">{{ t('Linked transactions') }}</MpTab>
+          <MpTab v-if="linkedPutAway.length" id="rcvgd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAway.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
 
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase order</h3>
+            <h3 class="linked-section-title">{{ t('Purchase order') }}</h3>
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
@@ -523,28 +598,19 @@ function goBack() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Warehouse</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Estimated arrival</th>
-                    <th class="detail-th">SKU qty</th>
-                    <th class="detail-th">Purchase qty</th>
-                    <th class="detail-th">Received qty</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Warehouse') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Estimated arrival') }}</th>
+                    <th class="detail-th">{{ t('SKU qty') }}</th>
+                    <th class="detail-th">{{ t('Purchase qty') }}</th>
+                    <th class="detail-th">{{ t('Received qty') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="rcvgd-linked-num">{{ po.purchaseNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link rcvgd-linked-num" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">{{ po.purchaseNo }}</a>
                     </td>
                     <td class="detail-td">{{ po.warehouseName }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="poStatus" /></td>
@@ -559,7 +625,7 @@ function goBack() {
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedPutAway.length" :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
@@ -574,29 +640,20 @@ function goBack() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">SKU qty</th>
-                    <th class="detail-th">Received qty</th>
-                    <th class="detail-th">Put-away qty</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('SKU qty') }}</th>
+                    <th class="detail-th">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Put-away qty') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pa in linkedPutAway" :key="pa.taskNo" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="rcvgd-linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link rcvgd-linked-num" @click.stop="router.push(`/put-away/${pa.id}`)">{{ pa.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
@@ -608,7 +665,7 @@ function goBack() {
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} days</span>
+                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -624,18 +681,49 @@ function goBack() {
 
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
-      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
-        Cancel
-      </button>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
-        Start receiving
-      </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/receiving/${orderId}/receive`)">
-        Continue receiving
-      </button>
+      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">{{ t('Print receiving slip') }}</button>
+      <!-- Cancel task is an order-level action → it lives in the primary action's
+           split-button dropdown, never as a standalone "Cancel" footer button. -->
+      <template v-if="localStatus === 'open'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
+          </MpTooltip>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+          <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
+        </MpTooltip>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+      </template>
+      <template v-else-if="localStatus === 'in progress'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">{{ t('Continue receiving') }}</button>
+          <MpPopover id="rcvgd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="continueReceiving">{{ t('Continue receiving') }}</button>
+      </template>
       <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
-        Create put-away
+        {{ t('Create put-away') }}
       </button>
     </footer>
 
@@ -645,12 +733,79 @@ function goBack() {
       <MpModalContent>
         <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          This receiving task will be canceled and can no longer be continued. This can't be undone.
+          {{ t('This receiving task will be canceled and can no longer be continued. This can\'t be undone.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Acknowledge canceled-PO confirmation ── -->
+    <MpModal id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Acknowledge canceled purchase order?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <template v-if="task?.stockCommitted">
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. Its goods were already
+            received into on-hand stock — acknowledging will cancel {{ task?.taskNo }} and reverse that stock via
+            a stock adjustment. This can't be undone.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. There's nothing left to
+            receive for it — acknowledging will cancel {{ task?.taskNo }} too. This can't be undone.
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── View changes — the per-SKU before/after table behind the Needs
+         Re-arrangement freeze; Apply changes is the actual acknowledge. ── -->
+    <MpModal id="rcvgd-view-changes" :is-open="viewChangesOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="viewChangesOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Review the changes') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="rcvgd-changes-intro">
+            {{ t('The purchase order behind this task was reduced. Review the quantity change below before this task can start.') }}
+          </p>
+          <div class="rcvgd-changes-table-wrap">
+            <table class="rcvgd-changes-table">
+              <thead>
+                <tr>
+                  <th class="rcvgd-changes-th">{{ t('Product') }}</th>
+                  <th class="rcvgd-changes-th rcvgd-changes-th--num">{{ t('Qty before') }}</th>
+                  <th class="rcvgd-changes-th rcvgd-changes-th--num">{{ t('Adjusted qty') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in rearrangementChanges" :key="c.sku" class="rcvgd-changes-tr">
+                  <td class="rcvgd-changes-td">
+                    <span class="rcvgd-changes-prod">{{ c.productName }}</span>
+                    <span class="rcvgd-changes-sku">{{ c.sku }}</span>
+                  </td>
+                  <td class="rcvgd-changes-td rcvgd-changes-td--num">{{ c.qtyBefore }}</td>
+                  <td class="rcvgd-changes-td rcvgd-changes-td--num">{{ c.qtyAfter }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Apply changes') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -661,7 +816,7 @@ function goBack() {
       :open="pdfPreviewOpen"
       :doc="pdfPreviewDoc"
       :filename="pdfPreviewFilename"
-      title="Receiving slip preview"
+      :title="t('Receiving slip preview')"
       @close="pdfPreviewOpen = false"
     />
 
@@ -669,8 +824,8 @@ function goBack() {
 
   <!-- Not found fallback -->
   <div v-else class="rcvgd-not-found">
-    <p>Receiving task not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Receiving</button>
+    <p>{{ t('Receiving task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Receiving') }}</button>
   </div>
 
   <ViewBatchDrawer
@@ -679,7 +834,7 @@ function goBack() {
     :sku="viewBatchItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :picked-batches="viewBatchItem.batchLines ?? []"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
@@ -691,7 +846,7 @@ function goBack() {
     :sku="viewSerialItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :counted-total="(viewSerialItem.serialNumbers ?? []).length"
     :picked-serials="(viewSerialItem.serialNumbers ?? []).map(serial => ({ serial, location: '' }))"
     :product-name="viewSerialItem.productName"
@@ -723,25 +878,6 @@ function goBack() {
   color: var(--mp-text-default);
 }
 
-/* Pulse dot — animated green ring for in-progress tasks */
-@keyframes rcvgd-pulse-ring {
-  0%   { transform: scale(0.85); opacity: 1; }
-  100% { transform: scale(1.8);  opacity: 0; }
-}
-.rcvgd-pulse {
-  position: relative; display: inline-flex;
-  width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-emerald-500, #10b981);
-  flex-shrink: 0;
-}
-.rcvgd-pulse::after {
-  content: ''; position: absolute; inset: 0;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-emerald-500, #10b981);
-  animation: rcvgd-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
 /* Last updated — top-right of title bar, in-progress only */
 .detail-bar-right {
   display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5);
@@ -752,7 +888,7 @@ function goBack() {
   line-height: var(--mp-line-heights-xs, 14px);
 }
 .rcvgd-last-updated-val {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -761,7 +897,7 @@ function goBack() {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -805,9 +941,77 @@ function goBack() {
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
 
+/* ── Canceled-PO acknowledge banner ──────────────────────────────────────── */
+.rcvgd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rcvgd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.rcvgd-cancel-banner-text { flex: 1; }
+.rcvgd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.rcvgd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── Needs Re-arrangement banner (warning, not danger — same severity tier as
+   the canceled-PO banner above; matches docs/patterns/details-page-format.md's
+   "info banner" region: first thing in the stage, right under the title bar) ── */
+.rcvgd-rearrange-banner {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  /* Full-bleed like .detail-bar/.detail-stage above and below it — no side
+     margin, horizontal inset comes from padding so it lines up with the
+     stage's own content width instead of sitting narrower than it. */
+  margin: var(--mp-spacing-4) 0 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rcvgd-rearrange-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.rcvgd-rearrange-banner-text { flex: 1; }
+.rcvgd-rearrange-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.rcvgd-rearrange-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── View changes modal — before/after table ─────────────────────────────── */
+.rcvgd-changes-intro {
+  margin: 0 0 var(--mp-spacing-4) 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-lg, 20px);
+}
+.rcvgd-changes-table-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
+.rcvgd-changes-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
+.rcvgd-changes-th {
+  height: var(--mp-sizes-7, 28px); text-align: left;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-3);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+.rcvgd-changes-th--num { text-align: right; }
+.rcvgd-changes-td {
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+}
+.rcvgd-changes-tr:last-child .rcvgd-changes-td { border-bottom: none; }
+.rcvgd-changes-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rcvgd-changes-prod { display: block; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.rcvgd-changes-sku { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 /* ── Summary grid ────────────────────────────────────────────────────────── */
 .rcvgd-summary {
-  display: grid; grid-template-columns: 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
+  display: grid; grid-template-columns: 244px 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
 }
 .content-list-col { display: flex; flex-direction: column; }
 
@@ -861,7 +1065,7 @@ function goBack() {
 .detail-items-sentinel { height: 1px; }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
-.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .detail-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -904,34 +1108,9 @@ function goBack() {
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
 .rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 .rcvgd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* Number cell — "View details" chip on row hover */
+/* Number cell — name links to the linked record's detail page */
 .rcvgd-linked .detail-td--number { position: relative; }
-.rcvgd-linked .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.rcvgd-linked .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.rcvgd-linked .row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.wh-link-wrap .row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
@@ -941,10 +1120,10 @@ function goBack() {
 .rcvgd-product-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcvgd-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -955,10 +1134,10 @@ function goBack() {
 }
 
 /* Received qty coloring */
-.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
 .rcvgd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .rcvgd-qty--zero    { color: var(--mp-text-placeholder); }
-.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* ── Sticky footer — canonical pattern ───────────────────────────────────── */
 .detail-footer {
@@ -984,6 +1163,17 @@ function goBack() {
   background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff);
 }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Start receiving while Needs Re-arrangement) — greyed
+ * out instead of staying full brand-green, so it visually reads as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 .detail-btn--ghost {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
 }

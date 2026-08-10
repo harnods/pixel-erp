@@ -1,6 +1,11 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
+/** 'bill' reviews as an Expense; 'invoice' as a Purchase invoice; 'receipt' as
+ *  a Payment receipt; 'bank_statement' as a Cash management bank statement;
+ *  'unclassified' gets the "Other documents" action list. */
+export type FileClassification = 'bill' | 'invoice' | 'receipt' | 'bank_statement' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
@@ -75,6 +80,76 @@ export interface PurchaseInvoice {
   tags?: string[]
 }
 
+export interface BillAttachment {
+  name: string
+  sizeKB: number
+  /** object URL — only valid for the current session (not persisted) */
+  url?: string
+}
+
+export interface BillLineItem {
+  account: string
+  description: string
+  tax: string
+  amount: number
+}
+
+/** Recorded when a bill is created already marked "I have paid this bill" —
+ * a bill created unpaid has no payment until one is added later. */
+export interface BillPayment {
+  paymentAccount: string
+  amountPaid: number
+  paymentDate: string
+  reference?: string
+}
+
+/** "Less: Withholding" deduction — see NewExpensePage's withholding rows. */
+export interface BillWithholding {
+  name: string
+  amount: number
+  account: string
+}
+
+export interface Bill {
+  id: string
+  number: number                            // rendered as "Expense #00001"
+  beneficiary: { id: string; name: string } // customer or vendor
+  category: string
+  date: string
+  dueDate: string
+  total: number         // bill total IDR (after withholding deduction, if any)
+  balanceDue: number    // remaining unpaid amount IDR (0 when fully paid)
+  status: BillStatus
+  tags?: string[]
+  memo?: string
+  attachments?: BillAttachment[]
+  lineItems?: BillLineItem[]
+  subtotal?: number
+  taxAmount?: number
+  withholding?: BillWithholding
+  /** only set when the bill was created (or later marked) as paid */
+  payment?: BillPayment
+  /** true once the payment has been matched against a bank transaction */
+  reconciled?: boolean
+}
+
+export interface ReviewFile {
+  id: string
+  file: string                               // uploaded filename
+  /** Document number as OCR read it off the file — format varies by document
+   *  (invoice numbers, kwitansi numbers, etc. are never uniform), and it's
+   *  absent when OCR couldn't extract one (typically unclassified files). */
+  number?: string
+  beneficiary: { id: string; name: string }  // customer or vendor
+  confidence: number                         // AI extraction confidence, 0-100
+  classification: FileClassification
+  date: string
+  amount: number
+  /** true while OCR is still extracting this file's fields — only the
+   *  filename is known yet, every other column renders a skeleton bar. */
+  processing?: boolean
+}
+
 export interface SalesOrderItem {
   product: string
   sku: string
@@ -143,4 +218,26 @@ export interface SalesDelivery {
   billingStatus: BillingStatus            // unbilled | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
+}
+
+export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'closed' | 'draft' | 'rejected' | 'approved'
+
+export interface PurchaseOrder {
+  id: string
+  number: string
+  vendor: Pick<Vendor, 'id' | 'name'>
+  date: string
+  dueDate: string
+  total: number
+  balance: number
+  status: PurchaseOrderStatus
+  itemCount: number
+  hasAttachment?: boolean
+  tags?: string[]
+  /** Set when this order was created via "Duplicate" — id of the source order. */
+  duplicatedFromId?: string
+  /** Set via the form's "Send to fulfillment" action. */
+  sentToFulfillment?: boolean
+  /** Set when this order is rejected — drives the persistent rejection banner. */
+  rejection?: { user: string; date: string; reason: string }
 }

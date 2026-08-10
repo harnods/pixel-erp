@@ -63,7 +63,7 @@
 
 /* ── Button size: sm ──────────────────────────────────────────────────────────── */
 .btn-enterprise--sm {
-  padding: var(--mp-spacing-1) var(--mp-spacing-3);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
 }
@@ -100,6 +100,17 @@
  */
 [data-pixel-component="MpToast"] {
   border-radius: var(--mp-radii-full, 999px) !important;
+}
+
+/* Toast label — MpToast's <p> has no white-space rule of its own, so a long
+   title wraps to a second line and breaks the pill (it also breaks the
+   toaster's centering fix above, which assumes single-line nowrap content).
+   Never let toast copy wrap; truncate with an ellipsis instead. */
+[data-pixel-component="MpToastLabel"] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* ── Form-field focus colour (global ERP override) ────────────────────────────
@@ -373,3 +384,17 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* ─── Table cell link ─────────────────────────────────────────────────────────
+   The identifier value in a table cell (e.g. an order no., product name) is a
+   text link that opens the row's detail/preview. Replaces the old row-hover
+   "View details" / "Open preview" chip. Underlines on hover; sits inline so it
+   still truncates via the cell's own .cell-text rule. */
+.cell-link {
+  /* !important so this utility wins over per-cell value classes that set their
+     own color (e.g. .rcv-po__no { color: var(--mp-text-default) }). */
+  color: var(--mp-text-link) !important;
+  cursor: pointer;
+  text-decoration: none;
+}
+.cell-link:hover { text-decoration: underline; }

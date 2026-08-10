@@ -76,6 +76,10 @@ const props = defineProps<{
    *  inherited as this drawer's own active bin when it opens, so the operator
    *  doesn't have to rescan a bin they already scanned on the page. */
   initialActiveBin?: string | null
+  /** Count mode only — a batch/serial barcode that triggered this drawer to
+   *  auto-open (page-level scan of a tracked SKU's specific code) is replayed
+   *  here on open, so that first scan isn't lost/needs re-scanning inside. */
+  initialScan?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -175,6 +179,12 @@ function seedRows(): void {
     // brand-new units. Show only what's actually been scanned/entered so far (this
     // task's own modelValue); never mix in unrelated already-in-stock serials.
     rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
+  } else if (!props.kind || props.kind === 'count') {
+    // Blind count: the operator never sees the expected/system serial list —
+    // only serials actually scanned (or previously confirmed, on reopening a
+    // draft) ever appear. There is no "not counted" row to surface; a serial
+    // that hasn't been scanned yet simply isn't in the list at all.
+    rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
   } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
@@ -186,9 +196,6 @@ function seedRows(): void {
       if (!seen.has(cs.serial)) result.push({ serial: cs.serial, counted: true })
     }
     rows.value = result
-  } else if (!props.kind || props.kind === 'count') {
-    // Stock count: pre-populate all warehouse SNs as not-counted; user scans to confirm each
-    rows.value = warehouseSerials.map(s => ({ serial: s, counted: false }))
   } else if (props.locationOnHand === 0) {
     rows.value = []
   } else {
@@ -212,7 +219,15 @@ function seedRows(): void {
   locActiveKey.value = null
 }
 
-watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) return
+  seedRows()
+  // Deferred: handleDrawerScan closes over consts (flashScanned's lastScannedKey,
+  // etc.) declared further down the script — calling it synchronously from this
+  // {immediate:true} watcher (which fires mid-setup, on first open) would hit
+  // those before their declarations run and throw a TDZ ReferenceError.
+  if (props.initialScan) nextTick(() => handleDrawerScan(props.initialScan!))
+}, { immediate: true })
 
 const product = computed(() => productBySku(props.sku))
 const warehouseStock = computed(() => {
@@ -227,8 +242,11 @@ const onHandCount = computed(() =>
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
 const countedCount = computed(() => rows.value.filter(r => r.counted && !r.fromPriorTask).length)
 const putAwayCount = computed(() => rows.value.filter(r => r.destLocId).length)
-// Info bar stats are driven by targetCount (what user entered in the form), not table state
-const difference = computed(() => props.targetCount - onHandCount.value)
+// Info bar stats are driven by targetCount (what user entered in the form), not table
+// state — except count mode's own Counted/Difference, which must track the live
+// blind-count tally (countedCount), since targetCount there is just the system's
+// prior on-hand figure passed through for the "On hand" stat, not a real count.
+const difference = computed(() => (isCountMode.value ? countedCount.value : props.targetCount) - onHandCount.value)
 const isInOut = computed(() =>
   props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
 )
@@ -312,7 +330,7 @@ function addToList() {
     // pattern as the dupes/already-received cases below), not a hard all-or-nothing block.
     let overLimit: string[] = []
     if (isReceiving.value) {
-      const budget = Math.max(0, receivingMaxCount.value - existing.size)
+      const budget = Math.max(0, (props.targetCount ?? 0) - existing.size)
       if (newOnes.length > budget) {
         overLimit = newOnes.slice(budget)
         newOnes = newOnes.slice(0, budget)
@@ -323,7 +341,7 @@ function addToList() {
     } else if (dupes.length) {
       addError.value = `Already in list: ${dupes.join(', ')}`
     } else if (overLimit.length) {
-      addError.value = `Exceeds purchase qty, not added: ${overLimit.join(', ')}`
+      addError.value = `Exceeds expected qty, not added: ${overLimit.join(', ')}`
     } else {
       addError.value = ''
     }
@@ -344,7 +362,10 @@ watch(inputText, (val) => { if (val) addError.value = '' })
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
   if ((isTransfer.value || isPicking.value) && !row.counted && countedCount.value >= props.targetCount) return
-  if (isReceiving.value && row.counted) {
+  // Receiving and blind count never show a "not counted" row — undoing one
+  // removes it from the list outright instead of flipping a flag that would
+  // otherwise have nothing to render.
+  if ((isReceiving.value || isCountMode.value) && row.counted) {
     rows.value = rows.value.filter(r => r.serial !== row.serial)
     saveError.value = ''
     return
@@ -398,14 +419,21 @@ function handleDrawerScan(rawValue: string) {
       notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
       return
     }
+    // Receiving: a serial that already resolves to this SKU's real stock is one the
+    // system already knows about — receiving it again would double-count an existing
+    // unit, so reject it (error beep) instead of the misleading "not found" fallback.
+    if (isReceiving.value && resolved?.kind === 'serial' && resolved.sku === props.sku) {
+      notifyScanError(`"${v}" already exists in the system`)
+      return
+    }
     if (acceptsNewSerials.value && !resolved) {
       const blocked = new Set((props.blockedSerials ?? []).map(normalizeCode))
       if (isReceiving.value && blocked.has(normalizeCode(v))) {
         notifyScanError(`"${v}" was already received in a prior task`)
         return
       }
-      if (isReceiving.value && rows.value.length >= receivingMaxCount.value) {
-        notifyScanError(`"${v}": purchase qty already fully received`)
+      if (isReceiving.value && rows.value.length >= (props.targetCount ?? 0)) {
+        notifyScanError(`"${v}": expected qty already fully received`)
         return
       }
       rows.value.push({ serial: v, counted: true })
@@ -556,8 +584,12 @@ function setDestLoc(row: SerialRow, locId: string) {
   row.destLocId = locId
   locActiveKey.value = null
 }
+// Count mode: blind count only ever lists rows that are counted (an uncounted
+// serial is simply absent, never shown), so a Status column would just repeat
+// "Counted" on every row — pure noise. Other kinds always show it.
+const showStatusColumn = computed(() => !isCountMode.value || rows.value.some(r => !r.counted))
 const colspanCount = computed(() =>
-  3 + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
+  2 + (showStatusColumn.value ? 1 : 0) + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
 )
 
 function handleCancel() {
@@ -570,7 +602,7 @@ async function handleSave() {
       saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers selected — that's more than the qty to pick.`
       return
     }
-  } else if (!isReceiving.value && countedCount.value !== effectiveTargetCount.value) {
+  } else if (!isReceiving.value && !isCountMode.value && countedCount.value !== effectiveTargetCount.value) {
     saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
@@ -640,7 +672,7 @@ async function handleSave() {
                 <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
               <div v-if="isReceiving" class="msn-stat">
-                <span class="msn-stat-label">Outstanding qty</span>
+                <span class="msn-stat-label">Remaining qty to receive</span>
                 <span class="msn-stat-value">{{ fmtSerial(Math.max(0, targetCount - countedCount)) }}</span>
               </div>
               <div v-if="isPutAway" class="msn-stat">
@@ -651,8 +683,16 @@ async function handleSave() {
             <!-- stock count stats -->
             <template v-else-if="!isInOut">
               <div class="msn-stat">
-                <span class="msn-stat-label">Counted qty</span>
-                <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+                <span class="msn-stat-label">On hand</span>
+                <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
+              </div>
+              <div class="msn-stat">
+                <span class="msn-stat-label">Counted</span>
+                <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
+              </div>
+              <div class="msn-stat" :class="{ 'msn-stat--pos': difference > 0, 'msn-stat--neg': difference < 0 }">
+                <span class="msn-stat-label">Difference</span>
+                <span class="msn-stat-value">{{ fmtDiff(difference) }}</span>
               </div>
             </template>
             <!-- transfer stats -->
@@ -695,8 +735,11 @@ async function handleSave() {
           </div>
         </div>
 
-        <div v-if="!isTransfer && !isPicking" class="msn-form-section">
-          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
+        <div v-if="!isTransfer && !isPicking && !isCountMode" class="msn-form-section">
+          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins.
+               Also hidden for count (blind count): every serial must come from an actual scan —
+               a typed/pasted list would let the operator register one they never physically
+               checked, defeating the point of a blind count. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
             <MpTooltip
@@ -767,12 +810,14 @@ async function handleSave() {
             @click="resetPicked"
           >Reset count</button>
         </ScanBar>
+        <p v-if="isPutAway || isPicking" class="msn-scan-caption">Scan the storage location first before scanning the serial number.</p>
 
         <template v-if="rows.length === 0">
           <div class="msn-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="msn-empty-title">No serial numbers yet</p>
-            <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+            <p v-if="isCountMode" class="msn-empty-desc">Scan a barcode to add a serial number.</p>
+            <p v-else class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
           </div>
         </template>
 
@@ -806,15 +851,18 @@ async function handleSave() {
               <col class="msn-col-serial" />
               <col v-if="hasOriginLoc" class="msn-col-from-bin" />
               <col v-if="hasDestLoc" class="msn-col-to-bin" />
-              <col class="msn-col-status" />
+              <col v-if="showStatusColumn" class="msn-col-status" />
               <col class="msn-col-toggle" />
             </colgroup>
             <thead>
               <tr>
-                <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
+                <!-- Blind count: no "/ target" — the operator is only ever told how
+                     many they've scanned, never how many the system expects. -->
+                <th v-if="isCountMode" class="msn-th">SERIAL NUMBER ({{ countedCount }})</th>
+                <th v-else class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
-                <th class="msn-th">STATUS</th>
+                <th v-if="showStatusColumn" class="msn-th">STATUS</th>
                 <th class="msn-th msn-th--del" />
               </tr>
             </thead>
@@ -835,12 +883,10 @@ async function handleSave() {
                       'msn-tr--own-reserved': row.plannedOwn || (row.counted && !(isPicking && executionMode)),
                       'msn-tr--reserved': row.reserved,
                     }
-                  : isCountMode
-                    ? { 'msn-tr--selected': row.counted }
-                    : { 'msn-tr--removed': !row.counted },
+                  : { 'msn-tr--removed': !row.counted },
                   { 'msn-tr--scanned': lastScannedKey === row.serial }]"
               >
-                <td class="msn-td" :class="{ 'msn-td--strike': !isCountMode && !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
+                <td class="msn-td" :class="{ 'msn-td--strike': !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
                 <td v-if="hasOriginLoc" class="msn-td msn-td--from-bin">
                   <span class="msn-bin-text" :title="row.originLocation">{{ row.originLocation ?? '—' }}</span>
                 </td>
@@ -891,7 +937,7 @@ async function handleSave() {
                     </MpPopover>
                   </template>
                 </td>
-                <td class="msn-td msn-td--status">
+                <td v-if="showStatusColumn" class="msn-td msn-td--status">
                   <template v-if="isTransfer || isPicking">
                     <MpTooltip
                       v-if="row.reserved"
@@ -908,6 +954,10 @@ async function handleSave() {
                   <template v-else-if="isPutAway">
                     <MpBadge v-if="row.destLocId" for="tableStatus" type="success">Assigned</MpBadge>
                     <MpBadge v-else for="tableStatus" type="warning">Received</MpBadge>
+                  </template>
+                  <template v-else-if="isCountMode">
+                    <span v-if="row.counted" class="msn-status-text msn-status-text--success">Counted</span>
+                    <span v-else class="msn-status-text msn-status-text--danger">Not counted</span>
                   </template>
                   <template v-else>
                     <MpBadge v-if="row.counted" for="tableStatus" type="success">Counted</MpBadge>
@@ -1090,6 +1140,9 @@ async function handleSave() {
    so the toggle ("Add") column always lands flush against the table's right edge. */
 .msn-col-serial { /* fills remaining */ }
 .msn-col-status { width: 120px; }
+.msn-status-text { font-size: var(--mp-font-sizes-sm); }
+.msn-status-text--success { color: var(--mp-text-success, #18794e); }
+.msn-status-text--danger { color: var(--mp-text-danger, #a8352d); }
 .msn-col-toggle { width: 44px; }
 .msn-col-from-bin { /* fills remaining, alongside serial */ }
 .msn-col-to-bin { /* fills remaining, alongside serial */ }
@@ -1105,10 +1158,8 @@ async function handleSave() {
 }
 .msn-th--del { padding: 0; }
 
-/* Column borders — added whenever a location column is present, regardless of
-   whether it's an editable picker (form) or a plain read-only display. */
-.msn-table--locs .msn-th { border-right: 1px solid var(--mp-border-default); }
-.msn-table--locs .msn-th:last-child { border-right: none; }
+/* Body cells carry the right dividers (see .msn-td). The form-table header stays
+   white with border-bottom only — no side borders on th. */
 
 .msn-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
@@ -1121,7 +1172,6 @@ async function handleSave() {
 .msn-td:last-child { border-right: none; }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
-.msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--confirmed .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--own-reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); }
 .msn-tr--reserved .msn-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
@@ -1146,6 +1196,7 @@ async function handleSave() {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .msn-active-bin-clear:hover { opacity: 1; }
+.msn-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 
 /* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
    put-away's destination bin). Read-only location display (picking) stays plain:

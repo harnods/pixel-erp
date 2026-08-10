@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { toast } from '@mekari/pixel3'
 
 const router = useRouter()
+const { t } = useLocale()
 
 const formatOpen = ref(false)
 const uploadedFile = ref<File | null>(null)
@@ -62,13 +63,13 @@ function doImport() {
   uploadError.value = 'none'
 
   if (importScenario.value === 'success') {
-    toast.notify({ variant: 'success', title: 'Warehouse data imported' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Warehouse data imported') , maxWidth: 'max-content'})
     router.push('/warehouses')
   } else if (importScenario.value === 'partial') {
-    toast.notify({ variant: 'error', title: '3 rows failed to import. Download the error file to fix.' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('3 rows failed to import. Download the error file to fix.') , maxWidth: 'max-content'})
     router.push('/warehouses')
   } else {
-    toast.notify({ variant: 'error', title: 'Import failed, please try again' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('Import failed, please try again') , maxWidth: 'max-content'})
   }
 }
 
@@ -96,8 +97,8 @@ function fmtBytes(bytes: number) {
     <!-- ── Page title bar (neutral-subtle bg, 72px, matches ErpTablePage title pattern) ── -->
     <div class="iw-titlebar">
       <div class="iw-titlebar-left">
-        <button class="iw-breadcrumb" @click="goBack">Warehouses</button>
-        <h1 class="iw-title">Import warehouses</h1>
+        <button class="iw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <h1 class="iw-title">{{ t('Import warehouses') }}</h1>
       </div>
     </div>
 
@@ -105,7 +106,7 @@ function fmtBytes(bytes: number) {
     <div class="iw-stage">
       <div class="iw-wrapper">
 
-        <p class="iw-intro">Follow these steps to import your warehouse data.</p>
+        <p class="iw-intro">{{ t('Follow these steps to import your warehouse data.') }}</p>
 
         <div class="iw-form-group">
 
@@ -119,16 +120,16 @@ function fmtBytes(bytes: number) {
               </div>
               <div class="iw-step-body">
                 <div class="iw-step-header">
-                  <p class="iw-step-title">Download the template</p>
-                  <p class="iw-step-desc">Use this template to fill in your warehouse data.</p>
+                  <p class="iw-step-title">{{ t('Download the template') }}</p>
+                  <p class="iw-step-desc">{{ t('Use this template to fill in your warehouse data.') }}</p>
                   <div class="iw-spacer" />
                 </div>
                 <div class="iw-step-form">
-                  <button class="iw-btn-download">Download template file</button>
+                  <button class="iw-btn-download">{{ t('Download template file') }}</button>
                   <!-- Accordion: Format requirements -->
                   <div class="iw-accordion" :class="{ 'iw-accordion--open': formatOpen }">
                     <button class="iw-accordion-header" @click="formatOpen = !formatOpen">
-                      <span class="iw-accordion-label">Format requirements</span>
+                      <span class="iw-accordion-label">{{ t('Format requirements') }}</span>
                       <svg
                         class="iw-accordion-chevron"
                         :class="{ 'iw-accordion-chevron--open': formatOpen }"
@@ -139,15 +140,15 @@ function fmtBytes(bytes: number) {
                     </button>
                     <div v-if="formatOpen" class="iw-accordion-body">
                       <ul class="iw-accordion-list">
-                        <li>Date format: DD/MM/YYYY</li>
-                        <li>Maximum 1.000 rows per file</li>
-                        <li>Do not use thousand separators (e.g. 1000, not 1.000)</li>
-                        <li>Use a period for decimals (e.g. 10.5)</li>
-                        <li>Do not include currency symbols (Rp, $, etc.)</li>
-                        <li>Tip: When entering numbers in spreadsheet, add a backtick (`) before the value to prevent auto-formatting. Example: `6-6003</li>
+                        <li>{{ t('Date format: DD/MM/YYYY') }}</li>
+                        <li>{{ t('Maximum 1.000 rows per file') }}</li>
+                        <li>{{ t('Do not use thousand separators (e.g. 1000, not 1.000)') }}</li>
+                        <li>{{ t('Use a period for decimals (e.g. 10.5)') }}</li>
+                        <li>{{ t('Do not include currency symbols (Rp, $, etc.)') }}</li>
+                        <li>{{ t('Tip: When entering numbers in spreadsheet, add a backtick (`) before the value to prevent auto-formatting. Example: `6-6003') }}</li>
                       </ul>
                       <p class="iw-accordion-help">
-                        Need help? <a class="iw-accordion-help-link" href="#">Check the import guide</a>
+                        {{ t('Need help?') }} <a class="iw-accordion-help-link" href="#">{{ t('Check the import guide') }}</a>
                       </p>
                     </div>
                   </div>
@@ -162,8 +163,8 @@ function fmtBytes(bytes: number) {
               </div>
               <div class="iw-step-body">
                 <div class="iw-step-header">
-                  <p class="iw-step-title">Upload your file</p>
-                  <p class="iw-step-desc">Upload the completed template file to import your warehouses.</p>
+                  <p class="iw-step-title">{{ t('Upload your file') }}</p>
+                  <p class="iw-step-desc">{{ t('Upload the completed template file to import your warehouses.') }}</p>
                   <div class="iw-spacer" />
                 </div>
 
@@ -194,23 +195,23 @@ function fmtBytes(bytes: number) {
                   </div>
                   <div class="iw-dropzone-copy">
                     <p class="iw-dropzone-cta">
-                      Drop your file here or
+                      {{ t('Drop your file here or') }}
                       <label class="iw-dropzone-link">
-                        choose
+                        {{ t('choose') }}
                         <input type="file" accept=".csv,.xls,.xlsx" @change="onFileInput" hidden />
                       </label>
                     </p>
-                    <p class="iw-dropzone-hint">Supported formats: CSV, XLS, XLSX.</p>
-                    <p class="iw-dropzone-hint">Maximum file size 10 MB.</p>
+                    <p class="iw-dropzone-hint">{{ t('Supported formats: CSV, XLS, XLSX.') }}</p>
+                    <p class="iw-dropzone-hint">{{ t('Maximum file size 10 MB.') }}</p>
                   </div>
                   <p v-if="uploadError === 'no-file'" class="iw-dropzone-error">
-                    You must upload file
+                    {{ t('You must upload file') }}
                   </p>
                   <p v-if="uploadError === 'format'" class="iw-dropzone-error">
-                    File must be in CSV, XLS, or XLSX format
+                    {{ t('File must be in CSV, XLS, or XLSX format') }}
                   </p>
                   <p v-if="uploadError === 'size'" class="iw-dropzone-error">
-                    File size must not exceed 10 MB
+                    {{ t('File size must not exceed 10 MB') }}
                   </p>
                 </div>
 
@@ -224,7 +225,7 @@ function fmtBytes(bytes: number) {
                     <span class="iw-file-name">{{ uploadedFile.name }}</span>
                     <span class="iw-file-size">{{ fmtBytes(uploadedFile.size) }}</span>
                   </div>
-                  <button class="iw-file-remove" aria-label="Remove file" @click="removeFile">
+                  <button class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
@@ -239,11 +240,11 @@ function fmtBytes(bytes: number) {
           <!-- ── Action group ── -->
           <div class="iw-action-group">
             <div class="iw-action-right">
-              <button class="iw-btn-cancel" @click="goBack">Cancel</button>
+              <button class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
               <button
                 class="iw-btn-import"
                 @click="doImport"
-              >Import</button>
+              >{{ t('Import') }}</button>
             </div>
           </div>
 
@@ -256,24 +257,24 @@ function fmtBytes(bytes: number) {
     <div class="iw-fab-wrap">
       <div v-if="fabOpen" class="iw-fab-menu">
         <div class="iw-fab-group">
-          <p class="iw-fab-group-label">Import outcome</p>
+          <p class="iw-fab-group-label">{{ t('Import outcome') }}</p>
           <button
             v-for="s in (['success', 'partial', 'error'] as const)"
             :key="s"
             class="iw-fab-item"
             :class="{ 'iw-fab-item--active': importScenario === s }"
             @click="applyScenario(s)"
-          >{{ s === 'success' ? 'Success' : s === 'partial' ? 'Partial (3 rows failed)' : 'Import failed' }}</button>
+          >{{ s === 'success' ? t('Success') : s === 'partial' ? t('Partial (3 rows failed)') : t('Import failed') }}</button>
         </div>
         <div class="iw-fab-divider" />
         <div class="iw-fab-group">
-          <p class="iw-fab-group-label">Dropzone state</p>
-          <button class="iw-fab-item" @click="applyFileSelected">File selected</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('format')">Wrong format</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('size')">File too large</button>
+          <p class="iw-fab-group-label">{{ t('Dropzone state') }}</p>
+          <button class="iw-fab-item" @click="applyFileSelected">{{ t('File selected') }}</button>
+          <button class="iw-fab-item" @click="applyDropzoneError('format')">{{ t('Wrong format') }}</button>
+          <button class="iw-fab-item" @click="applyDropzoneError('size')">{{ t('File too large') }}</button>
         </div>
       </div>
-      <button class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" aria-label="Preview scenarios" @click="fabOpen = !fabOpen">
+      <button class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" :aria-label="t('Preview scenarios')" @click="fabOpen = !fabOpen">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
           <circle cx="12" cy="12" r="1.5" fill="currentColor"/>

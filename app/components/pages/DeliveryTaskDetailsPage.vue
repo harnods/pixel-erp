@@ -22,6 +22,7 @@ import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const task = computed(() => getDeliveryTask(props.orderId))
 const lineItems = computed(() => task.value ? getDeliveryLineItems(task.value) : [])
@@ -90,7 +91,7 @@ function expireHours(o: { dueDate: string }): number | null {
 }
 
 function printDeliveryNote() {
-  toast.notify({ variant: 'success', title: 'Delivery note sent to printer' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Delivery note sent to printer') , maxWidth: 'max-content'})
 }
 // Handover to courier is now a full-page bulk flow (see HandoverToCourierPage.vue) —
 // this just seeds it with this one delivery.
@@ -157,13 +158,13 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Shipping') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
           <MpPopover id="del-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch delivery">
+              <button class="detail-jump-chevron" :aria-label="t('Switch delivery')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -172,8 +173,8 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search delivery or sales order…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -184,7 +185,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.salesNo }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No deliveries found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No deliveries found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -197,32 +198,30 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 
       <section class="del-summary">
         <div class="content-list-col">
-          <ContentList label="Sales order" :value="task.salesNo" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Sales order')" :value="task.salesNo" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
-              <span>{{ task.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
             </div>
           </ContentList>
-          <ContentList label="Assignee" :value="task.assignee" />
+          <ContentList :label="t('Assignee')" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Courier" :value="task.courier ?? '—'" />
-          <ContentList label="Tracking no." :value="task.trackingNo ?? '—'" />
-          <ContentList label="Ship date" :value="task.shippedDate ? formatDateTimeLong(task.shippedDate) : '—'" />
+          <ContentList :label="t('Courier')" :value="task.courier ?? '—'" />
+          <ContentList :label="t('Tracking no.')" :value="task.trackingNo ?? '—'" />
+          <ContentList :label="t('Ship date')" :value="task.shippedDate ? formatDateTimeLong(task.shippedDate) : '—'" />
+        </div>
+        <div v-if="status === 'canceled'" class="content-list-col">
+          <ContentList :label="t('Canceled date')" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="task.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
         </div>
       </section>
 
       <section class="del-progress">
-        <div class="del-progress-stat"><span class="del-progress-label">SKU qty</span><span class="del-progress-val">{{ task.skuQty }}</span></div>
-        <div class="del-progress-stat"><span class="del-progress-label">To ship qty</span><span class="del-progress-val">{{ fmt(shipTotal) }}</span></div>
-        <div class="del-progress-stat"><span class="del-progress-label">Shipped qty</span><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">{{ t('SKU qty') }}</span><span class="del-progress-val">{{ task.skuQty }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">{{ t('To ship qty') }}</span><span class="del-progress-val">{{ fmt(shipTotal) }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">{{ t('Shipped qty') }}</span><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span></div>
       </section>
 
       <div class="del-table-wrap">
@@ -231,8 +230,8 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="del-search" type="text" placeholder="Search..." />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+            <input v-model="itemSearch" class="del-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -251,10 +250,10 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
               </colgroup>
               <thead>
                 <tr>
-                  <th class="detail-th">Product</th>
-                  <th class="detail-th">SKU</th>
-                  <th class="detail-th detail-th--num">Qty</th>
-                  <th class="detail-th">Unit</th>
+                  <th class="detail-th">{{ t('Product') }}</th>
+                  <th class="detail-th">{{ t('SKU') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
+                  <th class="detail-th">{{ t('Unit') }}</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
@@ -265,13 +264,13 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                   <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
                   <td class="detail-td">{{ item.unit }}</td>
                   <td class="detail-td detail-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`del-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
-                      <button class="del-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`del-tt-batch-${item.key}`" :label="t('View batch')" placement="top" use-portal>
+                      <button class="del-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`del-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
-                      <button class="del-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`del-tt-serial-${item.key}`" :label="t('View serial number')" placement="top" use-portal>
+                      <button class="del-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -280,47 +279,38 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
-            <div v-if="loadingMore" class="detail-loading detail-items-loading"><MpSpinner size="sm" /> Loading products…</div>
+            <div v-if="loadingMore" class="detail-loading detail-items-loading"><MpSpinner size="sm" /> {{ t('Loading products…') }}</div>
           </div>
-          <div class="detail-items-count"><span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span></div>
+          <div class="detail-items-count"><span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span></div>
         </section>
       </div>
 
       <!-- Linked transactions -->
       <MpTabs id="del-tabs" :default-value="0" variant-color="green" class="del-tabs">
         <MpTabList>
-          <MpTab id="del-tab-so" :value="0">Sales order ({{ linkedOrder ? 1 : 0 }})</MpTab>
-          <MpTab id="del-tab-pick" :value="1">Picking ({{ linkedPickings.length }})</MpTab>
-          <MpTab id="del-tab-pack" :value="2">Packing ({{ linkedPackings.length }})</MpTab>
+          <MpTab id="del-tab-so" :value="0">{{ t('Sales order') }} ({{ linkedOrder ? 1 : 0 }})</MpTab>
+          <MpTab id="del-tab-pick" :value="1">{{ t('Picking') }} ({{ linkedPickings.length }})</MpTab>
+          <MpTab id="del-tab-pack" :value="2">{{ t('Packing') }} ({{ linkedPackings.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <!-- Sales order -->
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Sales order</h3>
+            <h3 class="linked-section-title">{{ t('Sales order') }}</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
                 <thead><tr>
-                  <th class="detail-th">Number</th>
-                  <th class="detail-th">Customer</th>
-                  <th class="detail-th">Source</th>
-                  <th class="detail-th detail-th--num">SKU qty</th>
-                  <th class="detail-th detail-th--num">Order qty</th>
-                  <th class="detail-th">Status</th>
-                  <th class="detail-th">Due date</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Customer') }}</th>
+                  <th class="detail-th">{{ t('Source') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('SKU qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Order qty') }}</th>
+                  <th class="detail-th">{{ t('Status') }}</th>
+                  <th class="detail-th">{{ t('Due date') }}</th>
                 </tr></thead>
                 <tbody>
                   <tr v-if="linkedOrder" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="del-link-num">{{ linkedOrder.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link del-link-num" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">{{ linkedOrder.salesNo }}</a>
                     </td>
                     <td class="detail-td">{{ linkedOrder.customer ?? '—' }}</td>
                     <td class="detail-td"><SourceLabel :source="linkedOrder.source" /></td>
@@ -330,7 +320,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                     <td class="detail-td">
                       <span class="del-due">
                         <span>{{ dueDisplay(linkedOrder) }}</span>
-                        <span v-if="expireHours(linkedOrder) !== null" class="del-due-expire">Expire in {{ expireHours(linkedOrder) }} hours</span>
+                        <span v-if="expireHours(linkedOrder) !== null" class="del-due-expire">{{ t('Expire in') }} {{ expireHours(linkedOrder) }} {{ t('hours') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -341,31 +331,22 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
           </MpTabPanel>
           <!-- Picking -->
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Picking {{ linkedPickings.length > 1 ? 'tasks' : 'task' }}</h3>
+            <h3 class="linked-section-title">{{ t('Picking') }} {{ linkedPickings.length > 1 ? t('tasks') : t('task') }}</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
                 <thead><tr>
-                  <th class="detail-th">Number</th>
-                  <th class="detail-th">Assignee</th>
-                  <th class="detail-th detail-th--num">SKU qty</th>
-                  <th class="detail-th detail-th--num">Picked qty</th>
-                  <th class="detail-th">Status</th>
-                  <th class="detail-th">Start date</th>
-                  <th class="detail-th">End date</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Assignee') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('SKU qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Picked qty') }}</th>
+                  <th class="detail-th">{{ t('Status') }}</th>
+                  <th class="detail-th">{{ t('Start date') }}</th>
+                  <th class="detail-th">{{ t('End date') }}</th>
                 </tr></thead>
                 <tbody>
                   <tr v-for="lp in linkedPickings" :key="lp.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="del-link-num">{{ lp.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${lp.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link del-link-num" @click.stop="router.push(`/picking/${lp.id}`)">{{ lp.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ lp.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(lp.skuQty) }}</td>
@@ -376,7 +357,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                       <span class="linked-end">
                         <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -387,31 +368,22 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
           </MpTabPanel>
           <!-- Packing -->
           <MpTabPanel :value="2">
-            <h3 class="linked-section-title">Packing {{ linkedPackings.length > 1 ? 'tasks' : 'task' }}</h3>
+            <h3 class="linked-section-title">{{ t('Packing') }} {{ linkedPackings.length > 1 ? t('tasks') : t('task') }}</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
                 <thead><tr>
-                  <th class="detail-th">Number</th>
-                  <th class="detail-th">Assignee</th>
-                  <th class="detail-th detail-th--num">SKU qty</th>
-                  <th class="detail-th detail-th--num">Packed qty</th>
-                  <th class="detail-th">Status</th>
-                  <th class="detail-th">Start date</th>
-                  <th class="detail-th">End date</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Assignee') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('SKU qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Packed qty') }}</th>
+                  <th class="detail-th">{{ t('Status') }}</th>
+                  <th class="detail-th">{{ t('Start date') }}</th>
+                  <th class="detail-th">{{ t('End date') }}</th>
                 </tr></thead>
                 <tbody>
                   <tr v-for="lp in linkedPackings" :key="lp.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="del-link-num">{{ lp.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${lp.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link del-link-num" @click.stop="router.push(`/packing/${lp.id}`)">{{ lp.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ lp.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(lp.skuQty) }}</td>
@@ -422,7 +394,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                       <span class="linked-end">
                         <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -440,7 +412,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
       <MpPopover id="del-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
-            Print
+            {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -448,21 +420,21 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print delivery note</MpPopoverListItem>
-            <MpPopoverListItem>Print shipping label</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print delivery note') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print shipping label') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
       <button v-if="isPending" class="detail-btn detail-btn--primary" @click="goHandover">
-        Create shipment
+        {{ t('Create shipment') }}
       </button>
     </footer>
 
   </div>
 
   <div v-else class="del-not-found">
-    <p>Delivery not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Ready to ship</button>
+    <p>{{ t('Delivery not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Shipping') }}</button>
   </div>
 
   <ViewBatchDrawer
@@ -471,9 +443,9 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     :sku="viewBatchItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Packed qty"
+    :qty-label="t('Packed qty')"
     :order-qty="viewBatchItem.orderQty"
-    planned-qty-label="Picked qty"
+    :planned-qty-label="t('Picked qty')"
     :qty-to-pick="(viewBatchItem.batchPicks ?? []).reduce((s, b) => s + b.qty, 0)"
     :planned-batches="viewBatchItem.batchPicks ?? []"
     :picked-batches="viewBatchItem.batchPicks ?? []"
@@ -490,9 +462,9 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     kind="packing"
     :counted-total="(viewSerialItem.serialPicks ?? []).length"
     :order-qty="viewSerialItem.orderQty"
-    planned-qty-label="Picked qty"
+    :planned-qty-label="t('Picked qty')"
     :qty-to-pick="(viewSerialItem.serialPicks ?? []).length"
-    qty-label="Packed qty"
+    :qty-label="t('Packed qty')"
     :planned-serials="viewSerialItem.serialPicks ?? []"
     :picked-serials="viewSerialItem.serialPicks ?? []"
     :shipped-qty="viewSerialItem.shippedElsewhere"
@@ -510,7 +482,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -571,24 +543,14 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .del-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .del-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.del-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.del-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
 .del-linked-wrap { overflow-x: auto; }
 .del-linked { width: 100%; border-collapse: collapse; }
 .del-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .del-empty { color: var(--mp-text-secondary); }
 /* Number cell — "View details" chip on row hover (same as index tables) */
 .del-linked .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.del-linked .detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }

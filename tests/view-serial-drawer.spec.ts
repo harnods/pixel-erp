@@ -259,4 +259,24 @@ describe('ViewSerialDrawer — statusPlannedLabel/statusPickedLabel (put-away de
     expect(bodyRow(wrapper, 'SN002')?.text()).not.toContain('Reserved')
     wrapper.unmount()
   })
+
+  // Match-order verify mode (start packing): bin/location is no longer relevant,
+  // so the Location column is dropped — but picking/delivery/put-away keep it.
+  it('verify mode (match order) hides the Location column; picking view keeps it', () => {
+    const verify = mountDrawer({
+      pickedSerials: [{ serial: 'SN001', location: 'Bin 01' }],
+      verifiedSerials: [],
+    })
+    expect(headerRow(verify)).not.toContain('Location')
+    expect(headerRow(verify)).toContain('Serial number')
+    expect(verify.find('tbody tr')?.text()).not.toContain('Bin 01')
+    verify.unmount()
+
+    const picking = mountDrawer({
+      plannedSerials: [{ serial: 'SN001', location: 'Bin 01' }],
+      pickedSerials: [{ serial: 'SN001', location: 'Bin 01' }],
+    })
+    expect(headerRow(picking)).toContain('Location')
+    picking.unmount()
+  })
 })

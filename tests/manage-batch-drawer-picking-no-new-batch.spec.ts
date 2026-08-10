@@ -27,8 +27,13 @@ function mountDrawer(props: Record<string, unknown>) {
   })
 }
 
+// Excludes the "Select batch" trigger row (tr.mbd-tr.mbd-tr--select) — it's a
+// constant fixture of the table shell, not a batch, and (since blind count)
+// only appears once the table itself renders (rows.length > 0 for count mode),
+// so leaving it in the count would skew a before/after delta the instant the
+// table transitions from the empty state to actually showing rows.
 function rowCount(wrapper: ReturnType<typeof mount>): number {
-  return wrapper.findAll('tbody tr.mbd-tr').length
+  return wrapper.findAll('tbody tr.mbd-tr:not(.mbd-tr--select)').length
 }
 
 async function scan(value: string) {

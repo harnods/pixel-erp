@@ -37,7 +37,12 @@ export const IN_OUT_CATEGORIES: AdjustmentCategory[] = [
   'Production output', 'Waste/damaged', 'General', 'Opening balance',
 ]
 
-export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress' | 'canceled'
+// 'counted' = WMS-only: the operator finished counting but a manager still needs
+// to review it (one step below 'completed') — see wmsStockAdjustments.ts.
+// 'closed' = WMS cycle count only: an operator (not a manager) deliberately
+// ended a not-yet-submitted count task — distinct from 'canceled', which is
+// the generic ERP "this record never happened" terminal state.
+export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress' | 'counted' | 'canceled' | 'closed'
 
 // Offsetting GL account shown per row — derived from the category.
 const ACCOUNT_BY_CATEGORY: Record<AdjustmentCategory, string> = {
@@ -200,14 +205,14 @@ function generate(count = 26): StockAdjustment[] {
         endDate: countStatus === 'completed'
           ? isoOffsetDT(-startDaysAgo, endHour, startMin)
           : undefined,
-        linkedCycleCountId: `wsa-${String((hash100(i * 31 + 11) % 14) + 1).padStart(3, '0')}`,
+        linkedCycleCountId: `cc-${String((hash100(i * 31 + 11) % 14) + 1).padStart(3, '0')}`,
       }),
     })
   }
   return out
 }
 
-const KEY = 'stock-adjustments-v3'
+const KEY = 'stock-adjustments-v4'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const stockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -437,9 +442,14 @@ export interface AdjustmentInput {
   endDate?: string
   /** Set when posting from a WMS Cycle Count task */
   linkedCycleCountId?: string
+  /** Override the default 'draft' status — used when auto-generating a completed
+   *  record from an already-approved WMS cycle count (see approveWmsAdjustment). */
+  status?: AdjustmentStatus
+  approvedBy?: string
+  approvedAt?: string
 }
 
-/** Create a new (awaiting-approval) adjustment from the create form. */
+/** Create a new (awaiting-approval, unless `status` is overridden) adjustment. */
 export function addAdjustment(input: AdjustmentInput): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
@@ -451,11 +461,13 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
     warehouseName: input.warehouseName,
     category: input.category,
     account: accountForCategory(input.category),
-    status: 'draft',
+    status: input.status ?? 'draft',
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
     linkedCycleCountId: input.linkedCycleCountId,
+    approvedBy: input.approvedBy,
+    approvedAt: input.approvedAt,
   }
   stockAdjustments.unshift(adj)
   persistAdjustments()

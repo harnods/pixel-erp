@@ -110,7 +110,7 @@ describe('ReceiveItemsPage — a second task\'s Outstanding qty is correct once,
     const wrapper = mount(ReceiveItemsPage, { props: { orderId: task2.id } })
     await flushPromises()
 
-    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
+    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Remaining qty to receive'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('68') // 98 - 30, not 0 (double-subtracted) or 98 (unsubtracted)
     wrapper.unmount()
   })

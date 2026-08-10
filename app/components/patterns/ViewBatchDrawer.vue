@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { MpIcon } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -83,9 +84,21 @@ const props = defineProps<{
   qtyBeforeLocation?: boolean
   productName: string
   productImg: string
+  /** Packing match-order verify mode: total units scanned/verified so far for
+   *  this line. When provided, the drawer shows a scan bar (emits 'scan') and a
+   *  "Verified x/y" stat so the operator confirms each batch matches the pick. */
+  verifiedQty?: number
+  /** Count mode only — hides the On hand qty stat/column (and Difference, which is
+   *  derived from it) while a cycle count is still blind — the operator shouldn't
+   *  be able to see the system's on-hand record before the count reaches Awaiting
+   *  approval, where the reviewing manager needs it. Other kinds never pass this. */
+  hideOnHand?: boolean
 }>()
 
-const emit = defineEmits<{ 'update:open': [boolean] }>()
+const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
+const { t } = useLocale()
+function onScan(raw: string) { emit('scan', raw) }
+const isVerify = computed(() => props.verifiedQty !== undefined)
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 // batchPicks is ONE field, not "plan" + "actual" side by side — endPicking/
@@ -229,6 +242,10 @@ const rows = computed<BatchRow[]>(() => {
   }))
 })
 
+// Column separators only when a batch actually splits across 2+ bins (put-away) —
+// a non-split table (count / in-out / single-bin) must have no left/right borders.
+const isSplit = computed(() => rows.value.some(r => r.groupSize > 1))
+
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
 const totalPicked = computed(() => rows.value.reduce((s, r) => s + r.value, 0))
 const totalDelta = computed(() => props.deltaTotal ?? 0)
@@ -250,11 +267,11 @@ function close() { emit('update:open', false) }
 <template>
   <Transition name="vbd">
   <div v-if="open" class="vbd-overlay" @click.self="close">
-    <div class="vbd-panel" role="dialog" aria-label="View batch">
+    <div class="vbd-panel" role="dialog" :aria-label="t('View batch')">
 
       <header class="vbd-header">
-        <h2 class="vbd-title">Batch detail</h2>
-        <button class="vbd-close" type="button" aria-label="Close" @click="close">
+        <h2 class="vbd-title">{{ t('Batch detail') }}</h2>
+        <button class="vbd-close" type="button" :aria-label="t('Close')" @click="close">
           <MpIcon name="close" size="md" />
         </button>
       </header>
@@ -275,46 +292,54 @@ function close() { emit('update:open', false) }
             <!-- packing mode stats -->
             <template v-if="isPacking">
               <div v-if="orderQty !== undefined" class="vbd-stat">
-                <span class="vbd-stat-label">Order qty</span>
+                <span class="vbd-stat-label">{{ t('Order qty') }}</span>
                 <span class="vbd-stat-value">{{ fmt(orderQty) }}</span>
               </div>
               <div v-if="qtyToPick !== undefined" class="vbd-stat">
-                <span class="vbd-stat-label">{{ plannedQtyLabel }}</span>
+                <span class="vbd-stat-label">{{ t(plannedQtyLabel) }}</span>
                 <span class="vbd-stat-value">{{ fmt(qtyToPick) }}</span>
               </div>
               <div class="vbd-stat">
-                <span class="vbd-stat-label">{{ qtyLabel }}</span>
+                <span class="vbd-stat-label">{{ t(qtyLabel) }}</span>
                 <span class="vbd-stat-value">{{ fmt(pickedQty ?? totalPicked) }}</span>
               </div>
+              <!-- Match-order verify (packing): show how many units have been packed
+                   (scanned/verified) so far, alongside the Picked qty above. -->
+              <div v-if="isVerify" class="vbd-stat">
+                <span class="vbd-stat-label">{{ t('Packed qty') }}</span>
+                <span class="vbd-stat-value">{{ fmt(verifiedQty ?? 0) }}</span>
+              </div>
               <div v-if="shippedQty !== undefined && shippedQty > 0" class="vbd-stat">
-                <span class="vbd-stat-label">Previously shipped</span>
+                <span class="vbd-stat-label">{{ t('Previously shipped') }}</span>
                 <span class="vbd-stat-value">{{ fmt(shippedQty) }}</span>
               </div>
             </template>
             <template v-else>
-              <div class="vbd-stat">
-                <span class="vbd-stat-label">On hand qty</span>
+              <div v-if="!hideOnHand" class="vbd-stat">
+                <span class="vbd-stat-label">{{ t('On hand qty') }}</span>
                 <span class="vbd-stat-value">{{ fmt(totalOnHand) }}</span>
               </div>
               <!-- count mode stats -->
               <template v-if="!isInOut">
                 <div class="vbd-stat">
-                  <span class="vbd-stat-label">Counted qty</span>
+                  <span class="vbd-stat-label">{{ t('Counted qty') }}</span>
                   <span class="vbd-stat-value">{{ fmt(totalCounted) }}</span>
                 </div>
-                <div class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
-                  <span class="vbd-stat-label">Difference</span>
+                <!-- Difference is derived from on-hand — hidden alongside it, or the
+                     operator could back-calculate the figure it's meant to hide. -->
+                <div v-if="!hideOnHand" class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
+                  <span class="vbd-stat-label">{{ t('Difference') }}</span>
                   <span class="vbd-stat-value">{{ fmtDiff(difference) }}</span>
                 </div>
               </template>
               <!-- in-out mode stats -->
               <template v-else>
                 <div class="vbd-stat" :class="{ 'vbd-stat--pos': totalDelta > 0, 'vbd-stat--neg': totalDelta < 0 }">
-                  <span class="vbd-stat-label">Stock in/out qty</span>
+                  <span class="vbd-stat-label">{{ t('Stock in/out qty') }}</span>
                   <span class="vbd-stat-value">{{ fmtDelta(totalDelta) }}</span>
                 </div>
                 <div class="vbd-stat">
-                  <span class="vbd-stat-label">New on hand qty</span>
+                  <span class="vbd-stat-label">{{ t('New on hand qty') }}</span>
                   <span class="vbd-stat-value">{{ fmt(totalNewOnHand) }}</span>
                 </div>
               </template>
@@ -322,20 +347,25 @@ function close() { emit('update:open', false) }
           </div>
         </div>
 
+        <!-- Match-order verify: scan each batch to confirm it matches the pick -->
+        <div v-if="isVerify" class="vbd-scan">
+          <ScanBar :placeholder="t('Scan batch number to verify…')" @scan="onScan" />
+        </div>
+
         <!-- Table -->
         <div class="vbd-table-wrap">
-          <table class="vbd-table">
+          <table class="vbd-table" :class="{ 'vbd-table--split': isSplit }">
             <colgroup>
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
-              <col v-if="!isPacking" class="vbd-col-num" />
+              <col v-if="!isPacking && !hideOnHand" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
               </template>
               <template v-else>
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
@@ -344,25 +374,25 @@ function close() { emit('update:open', false) }
             </colgroup>
             <thead>
               <tr>
-                <th class="vbd-th">Batch</th>
-                <th class="vbd-th">Expiry date</th>
-                <th class="vbd-th">Description</th>
-                <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
+                <th class="vbd-th">{{ t('Batch') }}</th>
+                <th class="vbd-th">{{ t('Expiry date') }}</th>
+                <th class="vbd-th">{{ t('Description') }}</th>
+                <th v-if="!isPacking && !hideOnHand" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
                 <template v-if="qtyBeforeLocation">
-                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
                 </template>
                 <template v-else>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
-                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
+                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
                 </template>
-                <th v-if="isPacking" class="vbd-th vbd-th--num">{{ hasPlanned ? qtyLabel : tableQtyLabel }}</th>
-                <th v-if="!isPacking && !isInOut" class="vbd-th vbd-th--num">Counted qty</th>
+                <th v-if="isPacking" class="vbd-th vbd-th--num">{{ t(hasPlanned ? qtyLabel : tableQtyLabel) }}</th>
+                <th v-if="!isPacking && !isInOut" class="vbd-th vbd-th--num">{{ t('Counted qty') }}</th>
                 <template v-if="!isPacking && isInOut">
-                  <th class="vbd-th vbd-th--num">Stock in/out qty</th>
-                  <th class="vbd-th vbd-th--num">New on hand qty</th>
+                  <th class="vbd-th vbd-th--num">{{ t('Stock in/out qty') }}</th>
+                  <th class="vbd-th vbd-th--num">{{ t('New on hand qty') }}</th>
                 </template>
-                <th class="vbd-th vbd-th--unit">Unit</th>
+                <th class="vbd-th vbd-th--unit">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -370,13 +400,13 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
-                <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
+                <td v-if="!isPacking && !hideOnHand" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
@@ -389,7 +419,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isPacking ? (hasPlanned ? 7 : 6) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
+                <td :colspan="isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
               </tr>
             </tbody>
           </table>
@@ -473,6 +503,7 @@ function close() { emit('update:open', false) }
 .vbd-stat--pos .vbd-stat-value { color: var(--mp-text-success, #18794e); }
 .vbd-stat--neg .vbd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vbd-scan { margin-bottom: var(--mp-spacing-3); }
 .vbd-table-wrap {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
@@ -517,9 +548,9 @@ function close() { emit('update:open', false) }
    for its border-right: none, since a groupIndex > 0 row renders fewer <td>s
    than the header and its own last rendered cell isn't reliably the table's
    true right edge. */
-.vbd-table .vbd-th,
-.vbd-table .vbd-td { border-right: 1px solid var(--mp-border-default); }
-.vbd-th--unit,
-.vbd-td--unit { border-right: none; }
+.vbd-table--split .vbd-th,
+.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default); }
+.vbd-table--split .vbd-th--unit,
+.vbd-table--split .vbd-td--unit { border-right: none; }
 
 </style>

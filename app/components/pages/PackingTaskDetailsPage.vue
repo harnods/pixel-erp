@@ -23,9 +23,11 @@ import {
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import { packingBlockedOnSourceLabel } from '~/data/shippingLabels'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -33,6 +35,7 @@ type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const task = computed(() => getPackingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : [])
@@ -116,7 +119,14 @@ const lastUpdated = computed(() => {
   return new Date(base + Math.floor(progress * 3 * 60 * 60 * 1000)).toISOString()
 })
 
+// D4 AC#8 — blocked while the warehouse requires the order-source (marketplace)
+// shipping label and it hasn't arrived yet; releases automatically once it lands.
+const sourceLabelGated = computed(() => packingBlockedOnSourceLabel(linkedOrder.value))
 function startPackingAndNavigate() {
+  if (sourceLabelGated.value) {
+    toast.notify({ variant: 'error', title: t('This order is waiting for the marketplace shipping label — packing cannot start yet'), maxWidth: 'max-content' })
+    return
+  }
   startPacking(props.orderId)
   router.push(`/packing/${props.orderId}/pack`)
 }
@@ -130,8 +140,22 @@ function confirmCancel() {
   if (!task.value) return
   cancelPackingTask(task.value.id)
   cancelOpen.value = false
+  localStatus.value = 'canceled' // stay on this detail page, now showing the canceled state
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
+}
+
+// Release reserved — text link on the Reason line when this task was cancelled
+// because its order was cancelled and that order still holds reserved stock.
+// Disappears once released (canReleaseReservedForOrder = false).
+const canReleaseReserved = computed(() => {
+  const id = task.value?.salesOrderId
+  return !!id && canReleaseReservedForOrder(id)
+})
+function releaseReservedFromTask() {
+  const id = task.value?.salesOrderId
+  if (id && releaseReservedForCancelledOrder(id)) {
+    toast.notify({ variant: 'success', title: t('Reserved stock released'), maxWidth: 'max-content' })
+  }
 }
 
 const pdfPreviewOpen = ref(false)
@@ -149,6 +173,12 @@ async function printPackingList() {
   pdfPreviewFilename.value = `Packing List - ${task.value.taskNo}.pdf`
   pdfPreviewOpen.value = true
 }
+
+// Print shipping label (source/marketplace or WMS label; D9 duplicate guard).
+// Clickable even when the marketplace label hasn't arrived (project no-disabled
+// rule) — the handler then toasts "Waiting for marketplace shipping label".
+const { pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels } = usePrintShippingLabel()
+function printShipLabel() { printShippingLabels(linkedOrder.value ? [linkedOrder.value] : []) }
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
 function viewDelivery() {
@@ -199,7 +229,7 @@ const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.valu
  *  "reservation not yet confirmed" gate is needed here. Packing has no
  *  per-bin PACKED breakdown anywhere in its data model (packedByKey is a
  *  flat total per line) — only Storage location/Picked qty ever split;
- *  Packed qty/Outstanding qty/Unit stay merged regardless. */
+ *  Packed qty/Remaining qty to pack/Unit stay merged regardless. */
 /** Storage location(s) to DISPLAY for a batch/serial-tracked line — real bin(s)
  *  it was actually picked from, replacing the old generic binForSku()
  *  fallback (a warehouse-wide default location for the SKU, unrelated to
@@ -236,7 +266,7 @@ interface PackRowWithMeta {
   groupSize: number
 }
 /** Expands each visible line into one row per bin actually used (Storage
- *  location/Picked qty split per bin, Product/SKU/Packed qty/Outstanding qty/
+ *  location/Picked qty split per bin, Product/SKU/Packed qty/Remaining qty to pack/
  *  Unit/Action merged via groupIndex/groupSize) — or a single row when
  *  there's nothing to split (0 or 1 bin used), matching Picking's same
  *  pattern. */
@@ -307,14 +337,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Packing</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Packing') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <span v-if="isInProgress" class="pck-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="pck-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch task">
+              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -323,8 +352,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or sales order…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -335,7 +364,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.salesNo }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -343,7 +372,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         </div>
       </div>
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
-        <span class="pck-last-updated-label">Last updated</span>
+        <span class="pck-last-updated-label">{{ t('Last updated') }}</span>
         <span class="pck-last-updated-val">{{ formatDateTimeLong(lastUpdated) }}</span>
       </div>
     </header>
@@ -352,28 +381,27 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
       <section class="pck-summary">
         <div class="content-list-col">
-          <ContentList label="Sales order" :value="task.salesNo" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Sales order')" :value="task.salesNo" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
-              <span>{{ task.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
             </div>
           </ContentList>
-          <ContentList label="Assignee" :value="task.assignee" />
+          <ContentList :label="t('Assignee')" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
+          <ContentList :label="t('Start date')" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <template v-if="localStatus === 'canceled'">
-            <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList :label="t('Canceled date')" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+            <ContentList :label="t('Reason')">
+              <span class="pck-reason">
+                <span>{{ task.canceledReason ?? '—' }}</span>
+                <button v-if="canReleaseReserved" type="button" class="pck-reason-release" @click="releaseReservedFromTask">{{ t('Release reserved') }}</button>
+              </span>
+            </ContentList>
+            <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
           </template>
-          <ContentList v-else label="End date">
+          <ContentList v-else :label="t('End date')">
             <span class="pck-end-cell">
               <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pck-aging">{{ agingLabel() }}</span>
@@ -383,10 +411,10 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       </section>
 
       <section class="pck-progress">
-        <div class="pck-progress-stat"><span class="pck-progress-label">SKU qty</span><span class="pck-progress-val">{{ task.skuQty }}</span></div>
-        <div v-if="!skippedPicking" class="pck-progress-stat"><span class="pck-progress-label">Picked qty</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-label">Packed qty</span><span class="pck-progress-val">{{ fmt(packedTotal) }}</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-label">Outstanding qty</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-label">{{ t('SKU qty') }}</span><span class="pck-progress-val">{{ task.skuQty }}</span></div>
+        <div v-if="!skippedPicking" class="pck-progress-stat"><span class="pck-progress-label">{{ t('Picked qty') }}</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-label">{{ t('Packed qty') }}</span><span class="pck-progress-val">{{ fmt(packedTotal) }}</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-label">{{ t('Remaining qty to pack') }}</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
       </section>
 
       <div class="pck-table-wrap">
@@ -395,8 +423,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pck-search" type="text" placeholder="Search..." />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+            <input v-model="itemSearch" class="pck-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -408,13 +436,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             <table class="detail-items">
               <thead>
                 <tr>
-                  <th class="detail-th">Product</th>
-                  <th class="detail-th">SKU</th>
-                  <th class="detail-th">Storage location</th>
-                  <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
-                  <th class="detail-th detail-th--num">Packed qty</th>
-                  <th class="detail-th detail-th--num">Outstanding qty</th>
-                  <th class="detail-th">Unit</th>
+                  <th class="detail-th">{{ t('Product') }}</th>
+                  <th class="detail-th">{{ t('SKU') }}</th>
+                  <th class="detail-th">{{ t('Storage location') }}</th>
+                  <th v-if="!skippedPicking" class="detail-th detail-th--num">{{ t('Picked qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Packed qty') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Remaining qty to pack') }}</th>
+                  <th class="detail-th">{{ t('Unit') }}</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
@@ -464,13 +492,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.unit }}</td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
                     <template v-if="!skippedPicking">
-                      <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pck-tt-batch-${row.item.key}`" label="View batch" placement="top" use-portal>
-                        <button class="pck-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row.item)">
+                      <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pck-tt-batch-${row.item.key}`" :label="t('View batch')" placement="top" use-portal>
+                        <button class="pck-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row.item)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
-                      <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pck-tt-serial-${row.item.key}`" label="View serial number" placement="top" use-portal>
-                        <button class="pck-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row.item)">
+                      <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pck-tt-serial-${row.item.key}`" :label="t('View serial number')" placement="top" use-portal>
+                        <button class="pck-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row.item)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
@@ -480,39 +508,30 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
-            <div v-if="loadingMore" class="detail-loading detail-items-loading"><MpSpinner size="sm" /> Loading products…</div>
+            <div v-if="loadingMore" class="detail-loading detail-items-loading"><MpSpinner size="sm" /> {{ t('Loading products…') }}</div>
           </div>
-          <div class="detail-items-count"><span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span></div>
+          <div class="detail-items-count"><span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span></div>
         </section>
       </div>
 
       <MpTabs id="pck-tabs" :default-value="0" variant-color="green" class="pck-tabs">
         <MpTabList>
-          <MpTab id="pck-tab-so" :value="0">Sales order ({{ linkedOrder ? 1 : 0 }})</MpTab>
-          <MpTab v-if="linkedPickings.length" id="pck-tab-pick" :value="1">Picking ({{ linkedPickings.length }})</MpTab>
-          <MpTab v-if="linkedShipments.length" id="pck-tab-ship" :value="2">Shipment ({{ linkedShipments.length }})</MpTab>
+          <MpTab id="pck-tab-so" :value="0">{{ t('Sales order') }} ({{ linkedOrder ? 1 : 0 }})</MpTab>
+          <MpTab v-if="linkedPickings.length" id="pck-tab-pick" :value="1">{{ t('Picking') }} ({{ linkedPickings.length }})</MpTab>
+          <MpTab v-if="linkedShipments.length" id="pck-tab-ship" :value="2">{{ t('Shipment') }} ({{ linkedShipments.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Sales order</h3>
+            <h3 class="linked-section-title">{{ t('Sales order') }}</h3>
             <div class="pck-linked-wrap">
               <table class="pck-linked">
                 <thead>
-                  <tr><th class="detail-th">Number</th><th class="detail-th">Customer</th><th class="detail-th">Source</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Order qty</th><th class="detail-th">Status</th><th class="detail-th">Due date</th></tr>
+                  <tr><th class="detail-th">{{ t('Number') }}</th><th class="detail-th">{{ t('Customer') }}</th><th class="detail-th">{{ t('Source') }}</th><th class="detail-th detail-th--num">{{ t('SKU qty') }}</th><th class="detail-th detail-th--num">{{ t('Order qty') }}</th><th class="detail-th">{{ t('Status') }}</th><th class="detail-th">{{ t('Due date') }}</th></tr>
                 </thead>
                 <tbody>
                   <tr v-if="linkedOrder" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pck-linked-num">{{ linkedOrder.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pck-linked-num" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">{{ linkedOrder.salesNo }}</a>
                     </td>
                     <td class="detail-td">{{ linkedOrder.customer ?? '—' }}</td>
                     <td class="detail-td"><SourceLabel :source="linkedOrder.source" /></td>
@@ -522,7 +541,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                     <td class="detail-td">
                       <span class="pck-due">
                         <span>{{ dueDisplay(linkedOrder) }}</span>
-                        <span v-if="expireHours(linkedOrder) !== null" class="pck-due-expire">Expire in {{ expireHours(linkedOrder) }} hours</span>
+                        <span v-if="expireHours(linkedOrder) !== null" class="pck-due-expire">{{ t('Expire in') }} {{ expireHours(linkedOrder) }} {{ t('hours') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -532,25 +551,16 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedPickings.length" :value="1">
-            <h3 class="linked-section-title">Picking {{ linkedPickings.length > 1 ? 'tasks' : 'task' }}</h3>
+            <h3 class="linked-section-title">{{ t('Picking') }} {{ linkedPickings.length > 1 ? t('tasks') : t('task') }}</h3>
             <div class="pck-linked-wrap">
               <table class="pck-linked">
                 <thead>
-                  <tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Picked qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr>
+                  <tr><th class="detail-th">{{ t('Number') }}</th><th class="detail-th">{{ t('Assignee') }}</th><th class="detail-th detail-th--num">{{ t('SKU qty') }}</th><th class="detail-th detail-th--num">{{ t('Picked qty') }}</th><th class="detail-th">{{ t('Status') }}</th><th class="detail-th">{{ t('Start date') }}</th><th class="detail-th">{{ t('End date') }}</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="lp in linkedPickings" :key="lp.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pck-linked-num">{{ lp.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${lp.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pck-linked-num" @click.stop="router.push(`/picking/${lp.id}`)">{{ lp.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ lp.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(lp.skuQty) }}</td>
@@ -561,7 +571,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                       <span class="linked-end">
                         <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -571,25 +581,16 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedShipments.length" :value="2">
-            <h3 class="linked-section-title">Shipment</h3>
+            <h3 class="linked-section-title">{{ t('Shipment') }}</h3>
             <div class="pck-linked-wrap">
               <table class="pck-linked">
                 <thead>
-                  <tr><th class="detail-th">Shipment no.</th><th class="detail-th">Assignee</th><th class="detail-th">Warehouse</th><th class="detail-th">Transaction date</th></tr>
+                  <tr><th class="detail-th">{{ t('Shipment no.') }}</th><th class="detail-th">{{ t('Assignee') }}</th><th class="detail-th">{{ t('Warehouse') }}</th><th class="detail-th">{{ t('Transaction date') }}</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="h in linkedShipments" :key="h.shipmentSeq" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pck-linked-num">{{ h.shipmentNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pck-linked-num" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">{{ h.shipmentNo }}</a>
                     </td>
                     <td class="detail-td">{{ h.assignee }}</td>
                     <td class="detail-td">{{ h.warehouseName }}</td>
@@ -608,7 +609,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       <MpPopover id="pck-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
-            Print
+            {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -616,22 +617,53 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="printPackingList">Print packing list</MpPopoverListItem>
-            <MpPopoverListItem v-if="isMarketplaceOrder(linkedOrder)">Print shipping label</MpPopoverListItem>
+            <MpPopoverListItem @click="printPackingList">{{ t('Print packing list') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="printShipLabel">{{ t('Print shipping label') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
-        Cancel
-      </button>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">
-        Match order
-      </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">
-        Continue matching
-      </button>
+      <!-- Cancel task lives in the primary action's split-button dropdown, never as a
+           standalone "Cancel" footer button. -->
+      <template v-if="localStatus === 'open'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <MpTooltip v-if="sourceLabelGated" id="pck-start-tt-split" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Match order') }}</button>
+          </MpTooltip>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+          <MpPopover id="pck-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <MpTooltip v-else-if="sourceLabelGated" id="pck-start-tt-solo" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Match order') }}</button>
+        </MpTooltip>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+      </template>
+      <template v-else-if="localStatus === 'in progress'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</button>
+          <MpPopover id="pck-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</button>
+      </template>
       <button v-else-if="localStatus === 'completed' && linkedDelivery.length" class="detail-btn detail-btn--primary" @click="viewDelivery">
-        View delivery
+        {{ t('View delivery') }}
       </button>
     </footer>
 
@@ -639,14 +671,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     <MpModal id="pck-cancel" :is-open="cancelOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
-        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Cancel') }} {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          This packing task will be canceled and can no longer be continued. This can't be undone.
+          {{ t('This packing task will be canceled and can no longer be continued. This can\'t be undone.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -656,8 +688,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
   </div>
 
   <div v-else class="pck-not-found">
-    <p>Packing task not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Packing</button>
+    <p>{{ t('Packing task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Packing') }}</button>
   </div>
 
   <ViewBatchDrawer
@@ -689,8 +721,16 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     :open="pdfPreviewOpen"
     :doc="pdfPreviewDoc"
     :filename="pdfPreviewFilename"
-    title="Packing list preview"
+    :title="t('Packing list preview')"
     @close="pdfPreviewOpen = false"
+  />
+
+  <PdfPreviewModal
+    :open="shipLabelOpen"
+    :doc="shipLabelDoc"
+    :filename="shipLabelName"
+    :title="t('Shipping label preview')"
+    @close="shipLabelOpen = false"
   />
 </template>
 
@@ -707,15 +747,11 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
-@keyframes pck-pulse-ring { 0% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
-.pck-pulse { position: relative; display: inline-flex; width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px); border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); flex-shrink: 0; }
-.pck-pulse::after { content: ''; position: absolute; inset: 0; border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); animation: pck-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }
 .pck-last-updated-label { font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }
-.pck-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pck-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -743,6 +779,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .content-list-col { display: flex; flex-direction: column; }
 .pck-end-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .pck-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f1f5f9); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
+.pck-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pck-reason-release { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
+.pck-reason-release:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pck-progress { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pck-progress-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-28, 112px); }
@@ -795,7 +834,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
 .pck-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pck-qty--zero { color: var(--mp-text-placeholder); }
-.pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 
 .detail-td--action { text-align: center; white-space: nowrap; }
 /* Sticky action column — stays visible when the table scrolls wider than the stage */
@@ -813,19 +852,17 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-linked { width: 100%; border-collapse: collapse; }
 .pck-linked-num { color: var(--mp-text-link); }
 .pck-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.pck-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.pck-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
 .pck-linked .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn { position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary); }
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
@@ -833,6 +870,15 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Match order while waiting for the marketplace shipping
+ * label) — greyed out instead of staying full brand-green, so it visually reads
+ * as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
 
 .pck-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

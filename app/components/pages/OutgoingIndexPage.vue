@@ -13,11 +13,11 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, cancelOutgoingOrder, type OutgoingOrder } from '~/data/outgoing'
+import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canCancelOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
 import { canPickOrder, getPickingForOrder } from '~/data/pickingTasks'
 import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder, getPackingForOrder } from '~/data/packingTasks'
 import { getDeliveryForOrder } from '~/data/deliveryTasks'
-import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { warehouses } from '~/data/warehouses'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 
@@ -25,13 +25,14 @@ import { getWarehouseOperators } from '~/data/warehouseTeam'
 syncOutboundOrderStatuses()
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Demo scenario state (FAB) ─────────────────────────────────────────────────
 type DemoState = 'empty' | 'data'
 const demoState = ref<DemoState>('data')
 const demoStates: { value: DemoState; label: string }[] = [
-  { value: 'data', label: 'With data' },
-  { value: 'empty', label: 'Empty state' },
+  { value: 'data', label: t('With data') },
+  { value: 'empty', label: t('Empty state') },
 ]
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
@@ -67,13 +68,12 @@ const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...bas
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
-// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
-// the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['Open', 'In process', 'Partially shipped']
+// Status — multi-select, nothing pre-selected: the default view shows ALL statuses
+// (empty filter = show everything). Pick specific statuses to narrow it down.
+const STATUS_OPTIONS = ['Pending', 'Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
 const STATUS_LABELS: Record<string, string> = {}
 function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
-const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
     ? statusFilter.value.filter(x => x !== s)
@@ -86,11 +86,8 @@ const statusLabel = computed(() => {
   if (n === 1) return statusOptionLabel(statusFilter.value[0])
   return `${n} statuses`
 })
-const statusIsDefault = computed(() =>
-  statusFilter.value.length === DEFAULT_STATUSES.length
-  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
-)
-function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+const statusIsDefault = computed(() => statusFilter.value.length === 0)
+function resetStatus() { statusFilter.value = [] }
 
 const warehouseFilter = ref<string[]>([])
 // Mirror into the shared singleton so the tab bar's count badges (Requests (N),
@@ -194,7 +191,7 @@ const {
     const matchesSearch = !s
       || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesStatus = statusFilter.value.includes(outgoingStage(row))
+    const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(outgoingStage(row))
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     let matchesDue = true
     const range = dueRange.value
@@ -244,6 +241,14 @@ function hasShipment(orderId: string): boolean {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
+// Deep-link from WMS Overview: ?status=Pending|Open|Completed pre-filters the list.
+onMounted(() => {
+  const s = route.query.status
+  if (typeof s === 'string' && STATUS_OPTIONS.includes(s)) {
+    statusFilter.value = [s]
+  }
+})
 function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row.id}`) }
 
 // Create a picking list for a single order → prefill the create form (warehouse
@@ -292,7 +297,7 @@ function confirmDirectPacking() {
     assignee,
   })
   closeDirectPacking()
-  toast.notify({ variant: 'success', title: 'Packing task created', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Packing task created'), maxWidth: 'max-content' })
   router.push(`/packing/${task.id}`)
 }
 
@@ -324,8 +329,11 @@ function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(','), from: 'requests' } })
 }
 
-// Only open orders can be cancelled.
-function canCancelOrder(o: OutgoingOrder) { return o.status === 'open' }
+// Only orders with no work started yet can be cancelled (previously just "open" —
+// now split into Pending/Open, both still count as "nothing started").
+// D2 AC#5 — cancellable as long as nothing has shipped (pending/open/in-progress);
+// blocked once partially shipped or completed.
+function canCancelOrder(o: OutgoingOrder) { return canCancelOutboundOrder(o) }
 function cancelableSelection(selectedRows: Set<number>) { return selectedOrdersOf(selectedRows).filter(canCancelOrder) }
 function bulkCancelable(selectedRows: Set<number>) { return cancelableSelection(selectedRows).length > 0 }
 
@@ -342,8 +350,8 @@ function askBulkCancel(selectedRows: Set<number>, deselectAll: () => void) {
 }
 function confirmBulkCancel() {
   const n = _bulkCancelOrders.length
-  for (const o of _bulkCancelOrders) cancelOutgoingOrder(o.id)
-  toast.notify({ variant: 'success', title: `${n} order${n > 1 ? 's' : ''} cancelled` })
+  for (const o of _bulkCancelOrders) cancelOutboundOrder(o.id)
+  toast.notify({ variant: 'success', title: `${n} order${n > 1 ? 's' : ''} cancelled`, maxWidth: 'max-content' })
   _bulkCancelOrders = []
   _bulkDeselect?.()
   _bulkDeselect = null
@@ -352,12 +360,21 @@ function confirmBulkCancel() {
 
 const cancelModalOpen = ref(false)
 const orderToCancel = ref<OutgoingOrder | null>(null)
+function releaseReserved(row: OutgoingOrder) {
+  if (releaseReservedForCancelledOrder(row.id)) {
+    toast.notify({ variant: 'success', title: `Reserved stock released back to available for ${row.number}`, maxWidth: 'max-content' })
+  }
+}
 function openCancelModal(row: OutgoingOrder) { orderToCancel.value = row; cancelModalOpen.value = true }
 function closeCancelModal() { cancelModalOpen.value = false; orderToCancel.value = null }
 function confirmCancelOrder() {
   if (orderToCancel.value) {
-    cancelOutgoingOrder(orderToCancel.value.id)
-    toast.notify({ variant: 'success', title: `Order ${orderToCancel.value.number} cancelled` })
+    const res = cancelOutboundOrder(orderToCancel.value.id)
+    if (res.ok) {
+      toast.notify({ variant: 'success', title: `Order ${orderToCancel.value.number} cancelled`, maxWidth: 'max-content' })
+    } else {
+      toast.notify({ variant: 'error', title: t('Cannot cancel — a package has already shipped'), maxWidth: 'max-content' })
+    }
   }
   closeCancelModal()
 }
@@ -394,18 +411,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkCreatePicking(selectedRows as Set<number>, deselectAll)"
       >
-        Create picking list
+        {{ t('Create picking list') }}
       </button>
       <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="out-bulk-hint">
-        Select orders from a single warehouse to create a picking list
+        {{ t('Select orders from a single warehouse to create a picking list') }}
       </span>
       <button
         v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        :class="css({ color: 'var(--mp-text-critical)' })"
+        :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
         @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
       >
-        Cancel order
+        {{ t('Cancel order') }}
       </button>
     </template>
     <!-- ── Filter bar ── -->
@@ -415,7 +432,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover v-if="!isScoped" id="out-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="out-wh-select" placeholder="Warehouse"
+              id="out-wh-select" :placeholder="t('Warehouse')"
               :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
@@ -430,8 +447,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -441,7 +459,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="out-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="out-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              id="out-status-select" :placeholder="t('Status')" :model-value="statusFilter.length ? 'set' : ''" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="resetStatus"
             >
               <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
@@ -455,8 +473,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(s)"
                   @change="toggleStatus(s)"
                   @click.stop
-                />
-                <span>{{ statusOptionLabel(s) }}</span>
+                >
+                  {{ statusOptionLabel(s) }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -466,7 +485,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="out-due-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="out-due-select" placeholder="Due date" :model-value="duePreset" is-clearable
+              id="out-due-select" :placeholder="t('Due date')" :model-value="duePreset" is-clearable
               :class="css({ width: '200px' })" @mousedown.prevent @clear="clearDue"
             >
               <option v-if="duePreset" :value="duePreset">{{ dueLabel }}</option>
@@ -482,8 +501,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </MpPopoverList>
             <!-- Custom date range inputs -->
             <div v-if="duePreset === 'custom'" class="due-custom">
-              <MpDatePicker id="out-due-from" v-model="customFrom" placeholder="From" format="DD/MM/YYYY" use-portal />
-              <MpDatePicker id="out-due-to" v-model="customTo" placeholder="To" format="DD/MM/YYYY" use-portal />
+              <MpDatePicker id="out-due-from" v-model="customFrom" :placeholder="t('From')" format="DD/MM/YYYY" use-portal />
+              <MpDatePicker id="out-due-to" v-model="customTo" :placeholder="t('To')" format="DD/MM/YYYY" use-portal />
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -491,8 +510,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-out-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-out-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -500,8 +519,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="out-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-out-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export">
+          <MpTooltip id="tt-out-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -511,8 +530,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -523,19 +542,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Cell: Sales no. — View details chip on hover ── -->
     <template #cell-salesNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="out-so">
-          <span class="cell-text out-so__no">{{ value }}</span>
-          <span v-if="colVis.memo && (row as unknown as OutgoingOrder).memo" class="out-so__memo">{{ (row as unknown as OutgoingOrder).memo }}</span>
-        </span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as OutgoingOrder)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <span class="out-so">
+        <a class="cell-link cell-text out-so__no" @click.stop="viewDetails(row as unknown as OutgoingOrder)">{{ value }}</a>
+        <span v-if="colVis.memo && (row as unknown as OutgoingOrder).memo" class="out-so__memo">{{ (row as unknown as OutgoingOrder).memo }}</span>
+      </span>
     </template>
 
     <!-- ── Source (ERP Sales Order / Manual / Desty marketplace) ── -->
@@ -545,21 +555,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — wrap to 2 lines instead of bleeding; View details chip on hover ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="out-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as OutgoingOrder).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link out-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as OutgoingOrder).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
     </template>
 
     <!-- ── Icon indicators — picking list + packing task badges ── -->
@@ -568,11 +569,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpTooltip
           v-if="hasPickingList((row as unknown as OutgoingOrder).id)"
           :id="`tt-picklist-${row.id}`"
-          label="Picking list created"
+          :label="t('Picking list created')"
           placement="top"
           use-portal
         >
-          <span class="out-icon-indicator" aria-label="Picking list created">
+          <span class="out-icon-indicator" :aria-label="t('Picking list created')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <g clip-path="url(#pl-clip)">
               <path d="M11.2305 1.52879C11.2305 1.11458 10.8947 0.778794 10.4805 0.778794C10.0663 0.778794 9.73054 1.11458 9.73054 1.52879H10.4805H11.2305ZM10.8468 6.44705L10.5573 5.75519L10.5573 5.7552L10.8468 6.44705ZM12.5409 5.73816L12.2514 5.04628L12.2513 5.0463L12.5409 5.73816ZM12.7449 5.73816L13.0344 5.04629L13.0344 5.04628L12.7449 5.73816ZM14.4389 6.44705L14.1494 7.13892L14.1494 7.13892L14.4389 6.44705ZM15.5552 1.52883C15.5552 1.11461 15.2195 0.778826 14.8052 0.778826C14.391 0.778826 14.0552 1.11461 14.0552 1.52883H14.8052H15.5552ZM1.59144 8.79663C1.17802 8.8222 0.863606 9.17809 0.889184 9.59151C0.914763 10.0049 1.27064 10.3193 1.68407 10.2938L1.63775 9.54519L1.59144 8.79663ZM2.57986 9.48691L2.62617 10.2355H2.62618L2.57986 9.48691ZM5.8146 9.78686L5.99778 9.05957L5.99777 9.05957L5.8146 9.78686ZM7.37888 10.1808L7.1957 10.9081L7.19571 10.9081L7.37888 10.1808ZM8.70263 12.0717L9.4487 12.1484V12.1484L8.70263 12.0717ZM6.63788 13.6275L6.50596 14.3658L6.50596 14.3658L6.63788 13.6275ZM5.16212 13.3638L5.29403 12.6255C4.88637 12.5527 4.49682 12.824 4.42385 13.2317C4.35088 13.6393 4.62212 14.029 5.02974 14.1021L5.16212 13.3638ZM10.3654 14.2969L10.233 15.0351C10.3344 15.0533 10.4384 15.0504 10.5386 15.0266L10.3654 14.2969ZM15.7548 13.0178L15.5816 12.288L15.5816 12.288L15.7548 13.0178ZM17.7343 14.2021L18.4592 14.0098L18.4592 14.0098L17.7343 14.2021ZM16.7588 16.1576L17.0412 16.8524L17.0412 16.8524L16.7588 16.1576ZM12.4478 17.9092L12.1655 17.2143L12.1655 17.2143L12.4478 17.9092ZM5.8803 18.0591L6.13061 17.3521L6.13061 17.3521L5.8803 18.0591ZM1.66102 15.7697C1.27055 15.6315 0.841954 15.836 0.703714 16.2264C0.565475 16.6169 0.769943 17.0455 1.16041 17.1837L1.41071 16.4767L1.66102 15.7697ZM17.7251 10.5913C17.6949 11.0044 18.0053 11.3638 18.4184 11.394C18.8315 11.4242 19.1909 11.1138 19.2211 10.7007L18.4731 10.646L17.7251 10.5913ZM18.2536 2.67622L18.9956 2.56653L18.9956 2.56647L18.2536 2.67622ZM17.3966 1.8055L17.2799 2.54637L17.2799 2.54638L17.3966 1.8055ZM7.88887 1.8055L8.0055 2.54638H8.0055L7.88887 1.8055ZM7.03183 2.6763L7.77377 2.786L7.77377 2.786L7.03183 2.6763ZM5.94741 7.09672C5.9444 7.51093 6.27774 7.84915 6.69194 7.85216C7.10614 7.85517 7.44436 7.52183 7.44737 7.10763L6.69739 7.10218L5.94741 7.09672ZM10.4805 1.52879H9.73054V6.20326H10.4805H11.2305V1.52879H10.4805ZM10.4805 6.20326H9.73054C9.73054 6.92772 10.4681 7.41859 11.1364 7.13891L10.8468 6.44705L10.5573 5.7552C10.8773 5.62127 11.2305 5.85633 11.2305 6.20326H10.4805ZM10.8468 6.44705L11.1364 7.13892L12.8304 6.43002L12.5409 5.73816L12.2513 5.0463L10.5573 5.75519L10.8468 6.44705ZM12.5409 5.73816L12.8303 6.43004C12.7104 6.48022 12.5754 6.48022 12.4554 6.43003L12.7449 5.73816L13.0344 5.04628C12.7839 4.94147 12.5019 4.94147 12.2514 5.04628L12.5409 5.73816ZM12.7449 5.73816L12.4554 6.43002L14.1494 7.13892L14.4389 6.44705L14.7285 5.75519L13.0344 5.04629L12.7449 5.73816ZM14.4389 6.44705L14.1494 7.13892C14.8178 7.41858 15.5552 6.92767 15.5552 6.20326H14.8052H14.0552C14.0552 5.85638 14.4084 5.62128 14.7284 5.75518L14.4389 6.44705ZM14.8052 6.20326H15.5552V1.52883H14.8052H14.0552V6.20326H14.8052ZM1.63775 9.54519L1.68407 10.2938L2.62617 10.2355L2.57986 9.48691L2.53355 8.73834L1.59144 8.79663L1.63775 9.54519ZM2.57986 9.48691L2.62618 10.2355C3.6363 10.173 4.65002 10.267 5.63143 10.5141L5.8146 9.78686L5.99777 9.05957C4.86648 8.77465 3.69794 8.66629 2.53354 8.73834L2.57986 9.48691ZM5.8146 9.78686L5.63142 10.5141L7.1957 10.9081L7.37888 10.1808L7.56206 9.45355L5.99778 9.05957L5.8146 9.78686ZM7.37888 10.1808L7.19571 10.9081C7.68407 11.0311 8.0081 11.494 7.95657 11.995L8.70263 12.0717L9.4487 12.1484C9.57648 10.9062 8.77302 9.75854 7.56205 9.45355L7.37888 10.1808ZM8.70263 12.0717L7.95657 11.995C7.89624 12.5814 7.35015 12.9929 6.76979 12.8892L6.63788 13.6275L6.50596 14.3658C7.94501 14.6229 9.2991 13.6026 9.4487 12.1484L8.70263 12.0717ZM6.63788 13.6275L6.76979 12.8892L5.29403 12.6255L5.16212 13.3638L5.0302 14.1021L6.50596 14.3658L6.63788 13.6275ZM5.16212 13.3638L5.02974 14.1021L10.233 15.0351L10.3654 14.2969L10.4978 13.5587L5.2945 12.6256L5.16212 13.3638ZM10.3654 14.2969L10.5386 15.0266L15.928 13.7475L15.7548 13.0178L15.5816 12.288L10.1922 13.5672L10.3654 14.2969ZM15.7548 13.0178L15.928 13.7475C16.4043 13.6345 16.8839 13.9214 17.0094 14.3945L17.7343 14.2021L18.4592 14.0098C18.1252 12.7509 16.8491 11.9873 15.5816 12.288L15.7548 13.0178ZM17.7343 14.2021L17.0094 14.3945C17.126 14.834 16.8977 15.2916 16.4765 15.4628L16.7588 16.1576L17.0412 16.8524C18.1621 16.3969 18.7695 15.1792 18.4592 14.0098L17.7343 14.2021ZM16.7588 16.1576L16.4765 15.4628L12.1655 17.2143L12.4478 17.9092L12.7301 18.604L17.0412 16.8524L16.7588 16.1576ZM12.4478 17.9092L12.1655 17.2143C10.2385 17.9973 8.09131 18.0463 6.13061 17.3521L5.8803 18.0591L5.62999 18.7661C7.93679 19.5829 10.463 19.5251 12.7301 18.604L12.4478 17.9092ZM5.8803 18.0591L6.13061 17.3521L1.66102 15.7697L1.41071 16.4767L1.16041 17.1837L5.62999 18.7661L5.8803 18.0591ZM18.4731 10.646L19.2211 10.7007C19.3041 9.56623 19.3392 8.43576 19.3392 7.41072H18.5892H17.8392C17.8392 8.40316 17.8052 9.49691 17.7251 10.5913L18.4731 10.646ZM18.5892 7.41072H19.3392C19.3392 5.71951 19.2439 4.24599 18.9956 2.56653L18.2536 2.67622L17.5117 2.78591C17.7481 4.38495 17.8392 5.78461 17.8392 7.41072H18.5892ZM18.2536 2.67622L18.9956 2.56647C18.8823 1.80107 18.2889 1.18673 17.5132 1.06462L17.3966 1.8055L17.2799 2.54638C17.3962 2.56469 17.4928 2.65811 17.5117 2.78598L18.2536 2.67622ZM17.3966 1.8055L17.5132 1.06463C15.9657 0.820997 14.3106 0.714272 12.6427 0.714272V1.46427V2.21427C14.2496 2.21427 15.8249 2.3173 17.2799 2.54637L17.3966 1.8055ZM12.6427 1.46427V0.714272C10.9749 0.714272 9.31981 0.820997 7.77224 1.06462L7.88887 1.8055L8.0055 2.54638C9.46062 2.3173 11.0358 2.21427 12.6427 2.21427V1.46427ZM7.88887 1.8055L7.77224 1.06462C6.9965 1.18675 6.40305 1.80126 6.2899 2.56661L7.03183 2.6763L7.77377 2.786C7.79268 2.65811 7.88928 2.56467 8.0055 2.54638L7.88887 1.8055ZM7.03183 2.6763L6.2899 2.5666C6.05718 4.14053 5.95877 5.53415 5.94741 7.09672L6.69739 7.10218L7.44737 7.10763C7.45827 5.60924 7.55204 4.28556 7.77377 2.786L7.03183 2.6763Z" fill="currentColor"/>
@@ -586,11 +587,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpTooltip
           v-if="hasPackingTask((row as unknown as OutgoingOrder).id)"
           :id="`tt-packtask-${row.id}`"
-          label="Packing task created"
+          :label="t('Packing task created')"
           placement="top"
           use-portal
         >
-          <span class="out-icon-indicator" aria-label="Packing task created">
+          <span class="out-icon-indicator" :aria-label="t('Packing task created')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <g clip-path="url(#pt-clip)">
                 <path d="M2.40711 7.72822C2.75157 6.54028 3.29326 5.44152 3.82046 4.37214C4.08056 3.84458 4.33712 3.32416 4.56474 2.8037C4.76946 2.33564 5.20689 1.99844 5.72079 1.95301C7.1385 1.82768 8.30968 1.74107 9.99988 1.74107C11.6747 1.74107 12.8399 1.8261 14.2403 1.94959C14.7739 1.99665 15.2218 2.35856 15.4226 2.84938C15.6759 3.46852 15.9734 4.06607 16.2769 4.67586C16.7475 5.62099 17.2326 6.5955 17.5907 7.72528" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -607,11 +608,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpTooltip
           v-if="hasShipment((row as unknown as OutgoingOrder).id)"
           :id="`tt-shipment-${row.id}`"
-          label="Shipment created"
+          :label="t('Shipment created')"
           placement="top"
           use-portal
         >
-          <span class="out-icon-indicator" aria-label="Shipment created">
+          <span class="out-icon-indicator" :aria-label="t('Shipment created')">
             <MpIcon name="truck" size="20px" />
           </span>
         </MpTooltip>
@@ -627,7 +628,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="out-due">
         <span>{{ dueDisplay(row as unknown as OutgoingOrder) }}</span>
         <span v-if="expireHours(row as unknown as OutgoingOrder) !== null" class="out-due-expire">
-          Expire in {{ expireHours(row as unknown as OutgoingOrder) }} hours
+          {{ t('Expire in') }} {{ expireHours(row as unknown as OutgoingOrder) }} {{ t('hours') }}
         </span>
       </span>
     </template>
@@ -636,7 +637,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`out-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -644,20 +645,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as OutgoingOrder)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as OutgoingOrder)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canPickOrder(row as unknown as OutgoingOrder)"
               @click="createPicking(row as unknown as OutgoingOrder)"
-            >Create picking list</MpPopoverListItem>
+            >{{ t('Create picking list') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCreatePackingDirectlyForOrder(row as unknown as OutgoingOrder)"
               @click="openDirectPacking(row as unknown as OutgoingOrder)"
-            >Create packing</MpPopoverListItem>
+            >{{ t('Create packing') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancelOrder(row as unknown as OutgoingOrder)"
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="openCancelModal(row as unknown as OutgoingOrder)"
-            >Cancel order</MpPopoverListItem>
+            >{{ t('Cancel order') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canReleaseReservedForOrder((row as unknown as OutgoingOrder).id)"
+              @click="releaseReserved(row as unknown as OutgoingOrder)"
+            >{{ t('Release reserved') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -667,8 +672,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No outgoing orders</p>
-        <p class="empty-full-desc">Outgoing orders will appear here.</p>
+        <p class="empty-full-title">{{ t('No outgoing orders') }}</p>
+        <p class="empty-full-desc">{{ t('Outgoing orders will appear here.') }}</p>
       </div>
     </template>
   </ErpTablePage>
@@ -679,14 +684,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
-      <MpModalHeader>Cancel order?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        Order {{ orderToCancel?.number }} will be cancelled. This can't be undone.
+        {{ t('Order') }} {{ orderToCancel?.number }} {{ t("will be cancelled. This can't be undone.") }}
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep order</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelOrder">Cancel order</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep order') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelOrder">{{ t('Cancel order') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -705,7 +710,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">Keep orders</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">{{ t('Keep orders') }}</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel order{{ bulkCancelCount > 1 ? 's' : '' }}</button>
         </div>
       </MpModalFooter>
@@ -721,30 +726,30 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
   >
     <MpModalContent>
-      <MpModalHeader>Create packing?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <p class="out-direct-pack-desc">
-          Order {{ directPackOrder?.number }}'s full quantity will go into a packing task.
+          {{ t('Order') }} {{ directPackOrder?.number }}{{ t("'s full quantity will go into a packing task.") }}
         </p>
         <MpFormControl id="out-direct-pack-assignee" is-required :is-invalid="directPackAssigneeError">
-          <MpFormLabel>Assignee</MpFormLabel>
+          <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
           <MpAutocomplete
             id="out-direct-pack-assignee-ac"
             v-model="directPackAssigneeId"
             :data="ASSIGNEES"
             label-prop="name"
             value-prop="id"
-            placeholder="Select assignee"
+            :placeholder="t('Select assignee')"
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="directPackAssigneeError"
           />
-          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
         </MpFormControl>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">{{ t('Create packing') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -754,12 +759,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="out-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state">
+      <button class="demo-fab" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="s in demoStates" :key="s.value"
@@ -830,8 +835,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border-top: 1px solid var(--mp-border-default);
 }
 
-/* Number cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number cell — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Warehouse — wrap to 2 lines (clamp) instead of overflowing into the next column */
@@ -861,7 +865,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .out-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .out-due-expire {
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
-  color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium);
+  color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500);
 }
 
 /* Icon indicators cell — picking list + packing task */
@@ -886,18 +890,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; white-space: normal; color: var(--mp-text-default);
 }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row
    (10px vertical padding + 20px control = 40px → row stays middle-aligned). */

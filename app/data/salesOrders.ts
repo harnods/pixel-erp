@@ -1,5 +1,6 @@
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
 import { CATALOG } from './catalog'
+import { customers } from './customers'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -11,33 +12,10 @@ import { CATALOG } from './catalog'
  * so the index row and the detail view always agree.
  */
 
-const CUSTOMERS: { id: string; name: string }[] = [
-  { id: 'C001', name: 'Anomali Coffee' },
-  { id: 'C002', name: 'Tanamera Coffee Roastery' },
-  { id: 'C003', name: 'Hotel Mulia Senayan' },
-  { id: 'C004', name: 'Fore Coffee Thamrin' },
-  { id: 'C005', name: 'Djournal Coffee' },
-  { id: 'C006', name: 'Kopi Kenangan Pusat' },
-  { id: 'C007', name: 'Common Grounds PIK' },
-  { id: 'C008', name: 'Titik Temu Coffee' },
-  { id: 'C009', name: 'Maxx Coffee Lippo Mall' },
-  { id: 'C010', name: 'Janji Jiwa Kemang' },
-  { id: 'C011', name: 'Tuku Coffee Cipete' },
-  { id: 'C012', name: 'Coffee Cult Bali' },
-  { id: 'C013', name: 'Excelso Grand Indonesia' },
-  { id: 'C014', name: 'GoWork Office Tower' },
-  { id: 'C015', name: 'Distributor Sentra Boga' },
-  { id: 'C016', name: 'Warung Kopi Modern' },
-  { id: 'C017', name: 'Santika Premiere Hotel' },
-  { id: 'C018', name: 'Kopi Nako Bintaro' },
-  { id: 'C019', name: 'Retail Mart Segar' },
-  { id: 'C020', name: 'Toko Mesin Kopi Bandung' },
-  { id: 'C021', name: 'Resto Bumbu Desa' },
-  { id: 'C022', name: 'Cafe Halaman Jogja' },
-  { id: 'C023', name: 'Filosofi Kopi Melawai' },
-  { id: 'C024', name: 'One Eighty Coffee' },
-  { id: 'C025', name: 'Pochi Coffee Roasters' },
-]
+/** Customers come from the shared master (`customers.ts`) — same ids the WMS
+ *  outbound module uses, so a sales order and its dispatch resolve to one
+ *  company. Sales orders only need id + name here. */
+const CUSTOMERS: { id: string; name: string }[] = customers.map((c) => ({ id: c.id, name: c.name }))
 
 const STATUSES: SalesOrderStatus[] = ['open', 'partially processed', 'closed', 'voided']
 

@@ -13,7 +13,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
@@ -23,6 +23,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const entry     = computed(() => findTaskWithPO(props.orderId))
 const task      = computed(() => entry.value?.task)
@@ -249,6 +250,15 @@ function handleScan(rawValue: string) {
   for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
     const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
+      // Expected qty (targetQty) is the hard cap — a batch re-scan must never push
+      // the SKU's received total past what the task expects, matching the plain-SKU
+      // and SN caps (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+      const batchItem = lineItems.value.find(it => sameCode(it.skuCode, skuCode))
+      const receivedTotal = batches.reduce((s, b) => s + (b.counted ?? 0), 0)
+      if (batchItem && receivedTotal >= batchItem.targetQty) {
+        notifyScanError(`${skuCode}: expected qty already fully received`)
+        return
+      }
       const newCounted = (batches[bIdx]!.counted ?? 0) + 1
       const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
       batchLinesBySku.value = { ...batchLinesBySku.value, [skuCode]: updated }
@@ -282,15 +292,11 @@ function handleScan(rawValue: string) {
     openSerialDrawer(sku)
     return
   }
+  // Expected qty (targetQty) is the hard cap — a task may never receive past what
+  // it expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
   const current = draftQty.value[sku] ?? 0
-  if (current >= item.expectedQty) {
-    notifyScanError(`${sku}: purchase qty already fully received`)
-    return
-  }
-  // Past Expected qty but still within Purchase qty — confirm before counting
-  // it, rather than silently accepting an over-expected unit.
   if (current >= item.targetQty) {
-    exceedTargetConfirm.value = { sku, productName: item.productName, targetQty: item.targetQty }
+    notifyScanError(`${sku}: expected qty already fully received`)
     return
   }
   incrementDraftQty(sku)
@@ -304,17 +310,6 @@ function incrementDraftQty(sku: string) {
   flashRowId.value = sku
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
-}
-
-// ── Confirm counting a scan past Expected qty (still within Purchase qty) ──────
-const exceedTargetConfirm = ref<{ sku: string; productName: string; targetQty: number } | null>(null)
-function confirmExceedTarget() {
-  if (!exceedTargetConfirm.value) return
-  incrementDraftQty(exceedTargetConfirm.value.sku)
-  exceedTargetConfirm.value = null
-}
-function cancelExceedTarget() {
-  exceedTargetConfirm.value = null
 }
 
 const showQtyErrors = ref(false)
@@ -335,7 +330,7 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'error', title: 'You must fill in received qty for at least one item', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Receive at least one item to finish, or cancel the task instead.'), maxWidth: 'max-content' })
     return
   }
   showConfirm.value = true
@@ -380,10 +375,10 @@ function commitReceiving(createPutAway = false) {
     })
   } else {
     const title = !complete
-      ? 'Receiving finished (items short)'
+      ? t('Receiving finished (items short)')
       : putAwayEnabledForTask.value
-        ? 'Receiving finished, awaiting put-away'
-        : 'Receiving finished'
+        ? t('Receiving finished, awaiting put-away')
+        : t('Receiving finished')
     toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
     router.push(`/receiving/${props.orderId}`)
   }
@@ -391,7 +386,7 @@ function commitReceiving(createPutAway = false) {
 
 function saveDraft() {
   saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
-  toast.notify({ variant: 'success', title: 'Receiving draft saved' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Receiving draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/receiving/${props.orderId}`)
 }
@@ -409,12 +404,26 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => draftReceivedTotal.value > 0,
   saveDraft: () => {
     saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
-    toast.notify({ variant: 'success', title: 'Receiving draft saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Receiving draft saved'), maxWidth: 'max-content' })
   },
 })
 
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
 function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
+
+// Defense in depth — the details page already blocks navigating here via
+// Continue receiving until acknowledged, but a direct URL visit must be
+// blocked the same way. Since this task belongs to exactly ONE PO,
+// acknowledging cancels the task itself (nothing left to receive once its
+// one-and-only PO is gone) — there's no receive UI to fall back into here,
+// so this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledReceipt(task.value.id)
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
+}
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl          = ref<HTMLElement | null>(null)
@@ -448,18 +457,25 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task && po" class="detail-page">
+  <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
+    <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
+    <p>{{ t('There\'s nothing left to receive for it — acknowledging will cancel this task too.') }}</p>
+    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</button>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to task') }}</button>
+  </div>
+
+  <div v-else-if="task && po" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceiving">Receiving</button>
+          <button class="detail-breadcrumb" @click="goReceiving">{{ t('Receiving') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Receive items</h1>
+          <h1 class="detail-title">{{ t('Receive items') }}</h1>
         </div>
       </div>
     </header>
@@ -469,32 +485,32 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <!-- PO header -->
       <div class="ri-header">
-        <ContentList label="Purchase order" :value="po.purchaseNo" />
-        <ContentList label="Warehouse" :value="po.warehouseName" />
-        <ContentList label="Assignee" :value="task.assignee" />
-        <ContentList label="Start date" :value="startDateLabel" />
+        <ContentList :label="t('Purchase order')" :value="po.purchaseNo" />
+        <ContentList :label="t('Warehouse')" :value="po.warehouseName" />
+        <ContentList :label="t('Assignee')" :value="task.assignee" />
+        <ContentList :label="t('Start date')" :value="startDateLabel" />
       </div>
 
       <!-- Live summary -->
       <div class="ri-summary">
         <div class="ri-stat">
-          <span class="ri-stat-label">SKU qty</span>
+          <span class="ri-stat-label">{{ t('SKU qty') }}</span>
           <span class="ri-stat-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-label">Purchase qty</span>
+          <span class="ri-stat-label">{{ t('Purchase qty') }}</span>
           <span class="ri-stat-val">{{ fmt(purchaseTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-label">Received qty</span>
+          <span class="ri-stat-label">{{ t('Received qty') }}</span>
           <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
           <span class="ri-stat-label">
-            Outstanding qty
+            {{ t('Remaining qty to receive') }}
             <MpTooltip
               id="ri-tt-outstanding"
-              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative outstanding."
+              :label="t('Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative remaining qty.')"
               placement="top"
               use-portal
             >
@@ -511,14 +527,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         <!-- Filter bar -->
         <div class="ri-filter-bar">
           <div class="ri-filter-bar-left">
-            <span class="ri-editing-hint">Enter the received qty for each item. For serial-tracked SKUs, use Manage serial number.</span>
+            <span class="ri-editing-hint">{{ t('Enter the received qty for each item. For serial-tracked SKUs, use Manage serial number.') }}</span>
           </div>
           <div class="ri-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="ri-search" type="text" placeholder="Search product or SKU…" />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="ri-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -527,31 +543,31 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- Scan bar -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleScan" />
+        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan" />
 
         <!-- SKU table -->
         <section class="ri-items-section" :class="{ 'ri-items-section--bordered': isProgressive }">
           <div ref="itemsScrollEl" class="ri-items-scroll">
             <table class="ri-items">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                <col style="width: 26%" />
+                <col style="width: 10%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 15%" />
+                <col style="width: 8%" />
+                <col style="width: 56px" />
               </colgroup>
               <thead>
                 <tr>
-                  <th class="ri-th">Product</th>
-                  <th class="ri-th">SKU</th>
-                  <th class="ri-th ri-th--num">Purchase qty</th>
-                  <th class="ri-th ri-th--num">Expected qty</th>
-                  <th class="ri-th ri-th--num">Received qty</th>
-                  <th class="ri-th ri-th--num">Outstanding qty</th>
-                  <th class="ri-th">Unit</th>
+                  <th class="ri-th">{{ t('Product') }}</th>
+                  <th class="ri-th">{{ t('SKU') }}</th>
+                  <th class="ri-th ri-th--num">{{ t('Purchase qty') }}</th>
+                  <th class="ri-th ri-th--num">{{ t('Expected qty') }}</th>
+                  <th class="ri-th ri-th--num">{{ t('Received qty') }}</th>
+                  <th class="ri-th ri-th--num">{{ t('Remaining qty to receive') }}</th>
+                  <th class="ri-th">{{ t('Unit') }}</th>
                   <th class="ri-th"></th>
                 </tr>
               </thead>
@@ -584,16 +600,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     <MpTooltip
                       v-if="qtyScanRequired(item.targetQty)"
                       :id="`ri-tt-scan-${item.skuCode}`"
-                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      :label="t('Qty at or below the scan threshold — scan the barcode instead of typing')"
                       placement="top"
                       use-portal
                     >
                       <input
                         class="ri-qty-input"
                         type="number" min="0"
-                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :max="item.targetQty"
                         :value="draftQty[item.skuCode] ?? 0"
-                        :aria-label="`Received qty for ${item.productName}`"
+                        :aria-label="`${t('Received qty for')} ${item.productName}`"
                         disabled
                       />
                     </MpTooltip>
@@ -601,29 +617,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       v-else
                       class="ri-qty-input"
                       type="number" min="0"
-                      :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                      :max="item.targetQty"
                       :value="draftQty[item.skuCode] ?? 0"
-                      :aria-label="`Received qty for ${item.productName}`"
-                      @input="onQtyInput(item.skuCode, item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0), $event)"
+                      :aria-label="`${t('Received qty for')} ${item.productName}`"
+                      @input="onQtyInput(item.skuCode, item.targetQty, $event)"
                     />
                   </td>
                   <td class="ri-td ri-td--num">
-                    <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
-                      {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
+                    <span :class="item.targetQty - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
+                      {{ fmt(item.targetQty - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
                   </td>
                   <td class="ri-td">{{ item.unit }}</td>
                   <!-- Manage action column — only for batch/serial SKUs -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
-                    <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" label="Manage batch" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(item.skuCode)">
+                    <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
+                      <button class="ri-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
-                    <MpTooltip :id="`ri-tt-serial-${item.skuCode}`" label="Manage serial numbers" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(item.skuCode)">
+                    <MpTooltip :id="`ri-tt-serial-${item.skuCode}`" :label="t('Manage serial numbers')" placement="top" use-portal>
+                      <button class="ri-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -631,17 +647,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <td v-else class="ri-td ri-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="ri-td ri-empty" colspan="8">No products match your search.</td>
+                  <td class="ri-td ri-empty" colspan="8">{{ t('No products match your search.') }}</td>
                 </tr>
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="ri-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="ri-loading ri-loading--inline">
-              <MpSpinner size="sm" /> Loading products…
+              <MpSpinner size="sm" /> {{ t('Loading products…') }}
             </div>
           </div>
           <div class="ri-items-count">
-            <span>Showing {{ pagedItems.length }} of {{ filteredItems.length }} products</span>
+            <span>{{ t('Showing') }} {{ pagedItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span>
           </div>
         </section>
 
@@ -651,16 +667,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="ri-btn ri-btn--ghost" @click="goBack">Cancel</button>
-      <button class="ri-btn ri-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="ri-btn ri-btn--primary" @click="endReceiving">Finish receiving</button>
+      <button class="ri-btn ri-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="ri-btn ri-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
+      <button class="ri-btn ri-btn--primary" @click="endReceiving">{{ t('Finish receiving') }}</button>
     </footer>
   </div>
 
   <!-- Not found -->
   <div v-else class="ri-not-found">
-    <p>Receiving task not found.</p>
-    <button class="detail-breadcrumb" @click="goReceiving">Back to Receiving</button>
+    <p>{{ t('Receiving task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goReceiving">{{ t('Back to Receiving') }}</button>
   </div>
 
   <!-- ── Finish receiving confirmation modal ── -->
@@ -674,7 +690,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   >
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'Finish receiving with outstanding items?' : 'Finish receiving task?' }}
+        {{ draftOutstanding > 0 ? t('Finish receiving with outstanding items?') : t('Finish receiving task?') }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
@@ -688,41 +704,13 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalBody>
       <MpModalFooter>
         <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? 'Continue receiving' : 'Cancel' }}</button>
+          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? t('Continue receiving') : t('Cancel') }}</button>
           <button
             class="ri-btn"
             :class="putAwayEnabledForTask ? 'ri-btn--secondary' : 'ri-btn--primary'"
             @click="commitReceiving(false)"
-          >{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
-          <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
-  <!-- ── Confirm counting a scan past Expected qty ── -->
-  <MpModal
-    id="ri-exceed-target"
-    :is-open="!!exceedTargetConfirm"
-    size="md"
-    is-close-on-esc
-    :is-keep-alive="false"
-    @close="cancelExceedTarget"
-  >
-    <MpModalContent>
-      <MpModalHeader>
-        Count this unit anyway?
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        {{ exceedTargetConfirm?.productName }} ({{ exceedTargetConfirm?.sku }}) has an expected qty of
-        {{ fmt(exceedTargetConfirm?.targetQty ?? 0) }}. This unit is beyond that — count it as received anyway?
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="cancelExceedTarget">Cancel</button>
-          <button class="ri-btn ri-btn--primary" @click="confirmExceedTarget">Count it</button>
+          >{{ draftOutstanding > 0 ? t('Finish as incomplete') : t('Save') }}</button>
+          <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">{{ t('Save & create put-away') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -827,7 +815,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .ri-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .ri-editing-hint {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal, 400);
   color: var(--mp-text-default);
 }
 .ri-search-wrap {
@@ -864,7 +852,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .ri-items thead .ri-th { position: sticky; top: 0; z-index: 1; }
 
-.ri-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.ri-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ri-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -892,10 +880,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-product-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .ri-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -928,8 +916,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Qty colors */
-.ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
-.ri-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium); }
+.ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
+.ri-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* Progressive pagination */
 .ri-sentinel { height: 1px; }
@@ -955,6 +943,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .ri-btn--ghost {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
 .ri-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .ri-btn--secondary {

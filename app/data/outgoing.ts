@@ -1,9 +1,11 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
+import { customers } from "./customers";
+import { salesOrders } from "./salesOrders";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 import { getWarehouseConfig } from './warehouseConfig'
-import { orderSkuLines } from './inventory'
+import { orderSkuLines, productBySku } from './inventory'
 import {
   getWarehouseDetail,
   autoSelectLocationBins,
@@ -12,10 +14,15 @@ import {
   reserveStock,
   releaseReservationsForTask,
   getReservationsForOrder,
+  hasReservationsForTask,
+  reservedQtyForTask,
 } from './warehouseDetails'
 
-/** Outbound order status. */
+/** Pending = no picking/packing task yet · Open = task(s) created, none started ·
+ *  In progress = at least one task started · Partially shipped = some qty shipped,
+ *  short of full · Completed = fully shipped · Canceled = voided. */
 export type OutgoingStatus =
+  | "pending"
   | "open"
   | "in progress"
   | "partially shipped"
@@ -32,9 +39,20 @@ export interface OutgoingOrder {
   number: string;
   /** source sales order number, e.g. "Sales Order #10090" */
   salesNo: string;
+  /** FK into the ERP sales orders (`salesOrders.ts`) that this dispatch fulfils.
+   *  Set for ERP-sourced orders; undefined for marketplace ("#SO…") / manual
+   *  dispatches that have no ERP sales order behind them. When set, `salesNo`
+   *  and `customer`/`customerId` are inherited from the linked sales order. */
+  salesOrderId?: string;
   /** where the order originated: "Sales Order" (ERP), "Manual", or a Desty
    *  marketplace channel "{Marketplace}: {store name}" (e.g. "Shopee: Central Perk"). */
   source: string;
+  /** SOURCE shipping label (resi/AWB) that came with the order — set for
+   *  marketplace orders whose channel has already issued the label; UNDEFINED
+   *  while a marketplace order is still waiting for its label (Print Shipping
+   *  Label is disabled until it lands). ERP/Manual orders leave this undefined and
+   *  use the WMS-generated shipping label instead. See data/shippingLabels.ts. */
+  shippingLabel?: string;
   warehouseId: string;
   warehouseName: string;
   /** distinct SKUs ordered */
@@ -43,7 +61,11 @@ export interface OutgoingOrder {
   orderQty: number;
   /** units shipped so far (0 = none, < orderQty = partial, = orderQty = full) */
   shippedQty: number;
-  status: string;
+  /** shipped units PER SKU (derived by syncOutboundOrderStatuses from completed
+   *  shipments) — lets reserveOrder avoid re-reserving stock that has already left
+   *  when a partially-shipped order is re-evaluated (it's still "pickable"). */
+  shippedBySku?: Record<string, number>;
+  status: OutgoingStatus;
   /** ISO date the goods fully left the warehouse (completed orders only) */
   shippedDate?: string;
   /** ISO date the order was canceled (canceled orders only) */
@@ -52,19 +74,41 @@ export interface OutgoingOrder {
   canceledReason?: string;
   /** who canceled the order (canceled orders only) */
   canceledBy?: string;
+  /** D6 — reserved-stock release audit. A cancelled order does NOT auto-release its
+   *  reservation; a user triggers "Release Reserved" to return the still-held
+   *  (un-shipped) reserved qty to Available. These record that release for audit and
+   *  prevent re-release (a released reservation can't be re-held). */
+  reservedReleasedDate?: string;
+  reservedReleasedBy?: string;
+  reservedReleasedQty?: number;
   /** ISO date the order is due to leave the warehouse */
   dueDate: string;
   /** free-text memo the back-office writes on the order (optional) — e.g.
    *  "BATCH # 35 -- 31/03/2026 - 2 Koli". */
   memo?: string;
-  /** customer — set on user-created orders; seed orders derive it by hash. */
+  /** customer display name — set on user-created orders; seed orders derive it
+   *  from the customer master by hash. Kept alongside `customerId` for cheap
+   *  display without a lookup. */
   customer?: string;
+  /** FK into the shared customer master (`customers.ts`) — the same id the ERP
+   *  sales order for this dispatch resolves to. */
+  customerId?: string;
   /** ISO date the order was created (user-created orders only). */
   transactionDate?: string;
   /** Full ISO timestamp of creation — set on user-created orders for accurate audit display. */
   createdAt?: string;
   /** Actual line items — stored for user-created orders; seed orders derive via orderSkuLines(). */
   lines?: StoredOrderLine[];
+  /** D7 — audit trail of edits to the order (newest last). Each entry lists the
+   *  field changes as "old → new" so the activity log shows exactly what changed. */
+  editLog?: OutgoingEditEntry[];
+}
+
+/** One recorded edit: who, when, and the individual field changes ("apa ke apa"). */
+export interface OutgoingEditEntry {
+  at: string;
+  by: string;
+  changes: { label: string; value: string }[];
 }
 
 export interface StoredOrderLine {
@@ -102,10 +146,10 @@ function generateMemo(i: number, dueIso: string): string | undefined {
 }
 
 // Units shipped so far, derived from the status:
-//  - open / in progress → 0 (nothing has left yet)
+//  - pending/open/in progress → 0 (nothing has left yet)
 //  - partially shipped → shipped short of the full qty (varied, never full)
 //  - completed → shipped in full (or accepted short)
-function computeShipped(i: number, status: string, orderQty: number): number {
+function computeShipped(i: number, status: OutgoingStatus, orderQty: number): number {
   switch (status) {
     case "completed":
       // ~4 of 10 completed orders shipped short (accepted as partial)
@@ -122,7 +166,7 @@ function computeShipped(i: number, status: string, orderQty: number): number {
       return Math.min(orderQty - 1, Math.max(1, Math.round(orderQty * f)));
     }
     default:
-      return 0; // open / in progress
+      return 0; // pending / open / in progress
   }
 }
 
@@ -164,20 +208,34 @@ export function isMarketplaceOrder(o: OutgoingOrder | undefined | null): boolean
 }
 
 // Customers the outbound orders ship to (parallels the receipt vendor).
-const CUSTOMERS = [
-  'Anomali Coffee', 'Tanamera Coffee Roastery', 'Hotel Mulia Senayan',
-  'Fore Coffee Thamrin', 'Djournal Coffee', 'Kopi Kenangan Pusat',
-  'Common Grounds PIK', 'Titik Temu Coffee', 'Maxx Coffee Lippo Mall',
-  'Janji Jiwa Kemang', 'Tuku Coffee Cipete', 'Excelso Grand Indonesia',
-]
+// Customers the outbound orders ship to, drawn from the shared customer master
+// (customers.ts) — the SAME records the ERP sales orders use, so a dispatch and
+// its sales order resolve to one company id. `CUST_BY_NAME` lets the fixed demo
+// orders below attach a real FK from their display name.
+const CUSTOMERS = customers.map((c) => ({ id: c.id, name: c.name }))
+const CUST_BY_NAME = new Map(customers.map((c) => [c.name, c.id]))
 
 /**
- * Status for order i — weighted to feel like a real outbound queue: mostly Open +
- * Completed, fewer In progress / Partially shipped. Canceled is appended separately.
+ * Link an ERP-sourced dispatch to a real sales order (`salesOrders.ts`) at a
+ * fixed index — so the dispatch's `salesNo`, `customer`/`customerId`, and
+ * `salesOrderId` all come from one authoritative record. The seed generators
+ * pass disjoint index ranges so no two dispatches claim the same sales order.
  */
-function statusFor(i: number): string {
+function erpSalesOrderAt(index: number) {
+  return salesOrders[index % salesOrders.length]!
+}
+
+/**
+ * Status for order i — weighted to feel like a real outbound queue: mostly Pending +
+ * Completed, fewer In progress / Partially shipped. Canceled is appended separately.
+ * This is the PRE-task seed value; seedTasks() (pickingTasks.ts/packingTasks.ts) reads
+ * it to decide what tasks to attach, then syncOutboundOrderStatuses() re-derives the
+ * real status (Pending/Open/In progress/Partially shipped/Completed) from those tasks
+ * on every page mount — so "pending" here just means "no task ended (or started) yet".
+ */
+function statusFor(i: number): OutgoingStatus {
   const h = hash100(i);
-  if (h < 30) return "open";              // ~30% awaiting fulfillment
+  if (h < 30) return "pending";           // ~30% awaiting fulfillment
   if (h < 52) return "in progress";       // ~22% being picked/packed
   if (h < 67) return "partially shipped"; // ~15% shipped short
   return "completed";                     // ~33% fully shipped
@@ -207,28 +265,41 @@ function generateOrders(count = 42): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(i + 1, s); // 1..5 units per SKU
     // Sales no. comes from two sources, each with its own format:
-    //  - ERP Sales Order menu → "Sales Order #10090"
-    //  - Desty (marketplace fulfillment) → "#SO060"
-    const salesNo = fromDesty
-      ? `#SO${String(60 + i).padStart(3, "0")}`
-      : `Sales Order #${10090 + i}`;
+    //  - ERP Sales Order menu → real sales order (FK), "Sales Order #10090"
+    //  - Desty (marketplace fulfillment) → "#SO060", no ERP sales order
+    const so = fromDesty ? undefined : erpSalesOrderAt(i); // ERP index range: 0–41
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(60 + i).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
+    // Marketplace source label (resi/AWB): almost always present (the channel
+    // issues it up front), so Print Shipping Label works out of the box. Only a
+    // small share of in-warehouse marketplace orders are still waiting for the
+    // label (so the disabled/"waiting" state is still demonstrable). ERP/manual = none.
+    const waitingLabel = fromDesty && !hasLeft && hash100(i * 41) % 10 === 0;
+    const shippingLabel = fromDesty && !waitingLabel
+      ? `SPXID${String(40000000 + i * 137).padStart(11, "0")}`
+      : undefined;
     out.push({
       id: `out-${String(i + 1).padStart(3, "0")}`,
       number: `OUT-2026-${String(i + 1).padStart(4, "0")}`,
       salesNo,
       source,
+      shippingLabel,
       warehouseId: wh.id,
       warehouseName: wh.name,
       skuQty,
       orderQty,
       shippedQty: computeShipped(i, status, orderQty),
       status,
-      // completed orders fully shipped between due date and today
-      shippedDate: status === "completed" ? isoOffset(-((i % 10) + 1)) : undefined,
+      // Completed orders shipped 1..88 days ago (spread, so date-range filters on
+      // the Overview / Reports are meaningful rather than all bunched at "recent").
+      shippedDate: status === "completed" ? isoOffset(-(1 + ((i * 37) % 88))) : undefined,
       dueDate,
       memo: generateMemo(i, isoOffset(offset)),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -254,25 +325,31 @@ function generateShipped(count = 10): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(seed, s);
     const fromDesty = hash100(i * 7 + 13) % 100 < 38;
-    const salesNo = fromDesty
-      ? `#SO${String(140 + k).padStart(3, "0")}`
-      : `Sales Order #${10150 + k}`;
+    const so = fromDesty ? undefined : erpSalesOrderAt(50 + k); // ERP index range: 50–59
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(140 + k).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
     out.push({
       id,
       number: `OUT-2026-${String(800 + k).padStart(4, "0")}`,
       salesNo,
       source,
+      // Shipped marketplace orders always carry their source label (the channel
+      // issued it before it left) so Print Shipping Label works on these too.
+      shippingLabel: fromDesty ? `SPXID${String(50000000 + k * 211).padStart(11, "0")}` : undefined,
       warehouseId: wh.id,
       warehouseName: wh.name,
       skuQty,
       orderQty,
       shippedQty: 0, // re-derived by the sync from the delivery tasks
       status: partial ? "partially shipped" : "completed",
-      shippedDate: isoOffset(-((k % 10) + 1)),
+      shippedDate: isoOffset(-(1 + ((k * 37) % 88))),
       dueDate: isoOffset(-((k % 12) + 2)),
       memo: generateMemo(i, isoOffset(-((k % 12) + 2))),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -297,9 +374,10 @@ function generateCanceled(count = 7): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(k + 1, s); // 1..5 units per SKU
     const fromDesty = hash100(i * 7 + 13) % 100 < 38;
-    const salesNo = fromDesty
-      ? `#SO${String(180 + k).padStart(3, "0")}`
-      : `Sales Order #${10210 + k}`;
+    const so = fromDesty ? undefined : erpSalesOrderAt(70 + k); // ERP index range: 70–76
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(180 + k).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
     out.push({
       id: `out-cx-${String(k + 1).padStart(3, "0")}`,
@@ -317,7 +395,9 @@ function generateCanceled(count = 7): OutgoingOrder[] {
       canceledBy: ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah'][hash100(i * 31) % 4],
       dueDate: isoOffset(-((k % 12) + 3)),
       memo: generateMemo(i, isoOffset(0)),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -360,7 +440,11 @@ function reserveOrder(order: OutgoingOrder): void {
       // Plain SKU — a bare qty reservation, nothing to validate it against.
       return sum + r.qty;
     }, 0);
-    const remaining = line.qty - already;
+    // Subtract units that already SHIPPED (goods gone, reservation consumed at
+    // shipment completion) — a partially-shipped order is still "pickable", so
+    // without this it would re-reserve the shipped-and-gone quantity.
+    const shipped = order.shippedBySku?.[line.sku] ?? 0;
+    const remaining = line.qty - shipped - already;
     if (remaining <= 0) continue;
     const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, remaining).map((b) => b.location);
     if (item.batches?.length) {
@@ -387,21 +471,26 @@ function reserveOrder(order: OutgoingOrder): void {
  * them deterministically from skuQty, with no control over which land here).
  */
 function generateTrackingScenario(): OutgoingOrder[] {
+  // Link to a real sales order (free index, not claimed by any generator) so this
+  // ERP-sourced demo dispatch carries a valid salesOrderId FK + inherited customer.
+  const demoSo = erpSalesOrderAt(90);
   return [
     {
       id: "out-demo-001",
       number: "OUT-2026-0700",
-      salesNo: "Sales Order #10199",
+      salesNo: `Sales Order #${demoSo.number}`,
       source: "Sales Order",
+      salesOrderId: demoSo.id,
       warehouseId: "wh-006",
       warehouseName: "Gudang Makassar Selatan",
       skuQty: 3,
       orderQty: 9,
       shippedQty: 0,
-      status: "open",
+      status: "pending",
       dueDate: isoOffset(7),
       memo: "For demo 001",
-      customer: "Anomali Coffee",
+      customer: demoSo.customer.name,
+      customerId: demoSo.customer.id,
       lines: [
         {
           sku: "1003",
@@ -432,22 +521,145 @@ function generateTrackingScenario(): OutgoingOrder[] {
   ];
 }
 
+/**
+ * Demo scenario: TWO sales orders at Gudang Jakarta Pusat (wh-001) — one
+ * regular ERP order, one Desty marketplace order — meant to be bundled into a
+ * single Open picking task (see seedMultiOrderPickingDemo() in
+ * pickingTasks.ts), exercising the Combined/By orders toggle on
+ * PickingTaskDetailsPage.vue with a real multi-order task. Each order draws
+ * from its own distinct SKUs (no SKU shared between the two) so their demand
+ * never compounds against the same stock line. Verified via
+ * tests/data-integrity.spec.ts (available ≥ demand for every SKU/warehouse
+ * pair, post-reservation) against the live seed at wh-001: 3001 available 9,
+ * 3002 available 20, 3005 available 21, 3006 available 22 — this demo only
+ * ever claims 3 of 3001, 2 of 3002, 3 of 3005, 2 of 3006.
+ */
+function generateMultiOrderPickingScenario(): OutgoingOrder[] {
+  // Regular ERP order of the pair → real sales order FK (free index 91).
+  const demoSo = erpSalesOrderAt(91);
+  return [
+    {
+      id: "out-demo-multi-a",
+      number: "OUT-2026-0701",
+      salesNo: `Sales Order #${demoSo.number}`,
+      source: "Sales Order",
+      salesOrderId: demoSo.id,
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 6,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: isoOffset(5),
+      memo: "For demo multi-order picking (regular)",
+      customer: demoSo.customer.name,
+      customerId: demoSo.customer.id,
+      lines: [
+        {
+          sku: "3001",
+          productName: "Milk Frothing Pitcher 600ml",
+          desc: "Stainless steel, sharp spout, latte art",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/milk-steaming-pitcher_7a0b6d9d-dc2f-410b-83e8-0c0caf6403e5.jpg",
+          unit: "Unit",
+          qty: 3,
+        },
+        {
+          sku: "3005",
+          productName: "Paper Filter V60 02 (100 pcs)",
+          desc: "Natural unbleached, cone shape",
+          img: "https://cdn.shopify.com/s/files/1/0801/9439/files/0129_hariometeo_112_2485daae-afa0-42da-b4d9-97fb436ffc99.jpg",
+          unit: "Box",
+          qty: 3,
+        },
+      ],
+    },
+    {
+      id: "out-demo-multi-b",
+      number: "OUT-2026-0702",
+      salesNo: "#SO201",
+      source: "Shopee: Central Perk",
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 4,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: `${isoOffset(1)}T23:59:00`,
+      memo: "For demo multi-order picking (marketplace)",
+      customer: "Fore Coffee Thamrin",
+      customerId: CUST_BY_NAME.get("Fore Coffee Thamrin"),
+      lines: [
+        {
+          sku: "3002",
+          productName: "Tamper 58mm Flat Base",
+          desc: "Anodized aluminium handle, calibrated",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/Lucca-Stainless-Steel-Espresso-Tamper-05.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+        {
+          sku: "3006",
+          productName: "Knock Box Drawer Stainless",
+          desc: "2.4 L capacity, rubber knock bar",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/files/LUCCA-Knock-Box-Small-Black-by-Clive-Coffee.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+      ],
+    },
+    {
+      // Demo for D3 partial picking + D7 edit-reallocation: one SKU, qty 7, in a
+      // warehouse with allowPartialPicking on. seedPartialSplitPickingDemo() hangs
+      // two Open picking tasks (4 + 3) off it, so editing the order 7 → 5 exercises
+      // the D7 drain-smallest-first reallocation. Direct (Manual) source so it's
+      // editable in the WMS surface.
+      id: "out-demo-partial-split",
+      number: "OUT-2026-0703",
+      salesNo: "Split Picking Demo",
+      source: "Manual",
+      warehouseId: "wh-006",
+      warehouseName: "Gudang Makassar Selatan",
+      skuQty: 1,
+      orderQty: 7,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: isoOffset(4),
+      memo: "Demo: SKU split across 2 picking tasks (D3), then edit qty to test D7",
+      customer: "Fore Coffee Thamrin",
+      customerId: CUST_BY_NAME.get("Fore Coffee Thamrin"),
+      lines: [
+        {
+          sku: "3001",
+          productName: "Milk Frothing Pitcher 600ml",
+          desc: "Stainless steel, sharp spout, latte art",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/milk-steaming-pitcher_7a0b6d9d-dc2f-410b-83e8-0c0caf6403e5.jpg",
+          unit: "Unit",
+          qty: 7,
+        },
+      ],
+    },
+  ];
+}
+
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
+const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v5");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [
+    ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
+    ...generateOrders(), ...generateShipped(3), ...generateCanceled(),
+  ],
 );
 
-// Open / in-process / partially-shipped orders are pickable. (A partially shipped
-// order flips to that status the moment ANY of it ships — even if most of it was
-// never picked at all — so it still needs to allow further pick lists for whatever
+// Pending / open / in-process / partially-shipped orders are pickable. (A partially
+// shipped order flips to that status the moment ANY of it ships — even if most of it
+// was never picked at all — so it still needs to allow further pick lists for whatever
 // SKU/qty remains uncovered; the per-SKU/qty check lives in pickingTasks.canPickOrder.
 // "completed" is excluded on purpose: shippedTotal >= orderQty there, so nothing
 // can possibly be left to pick.)
-const PICKABLE_STATUSES = ["open", "in progress", "partially shipped"];
+const PICKABLE_STATUSES = ["pending", "open", "in progress", "partially shipped"];
 
 /**
  * Reserve every currently pickable (open / in-process) order — stands in for
@@ -477,7 +689,7 @@ export const shippedSeeds: ShippedSeed[] = outgoingOrders
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {
-  saveSnapshot("outgoing", outgoingOrders);
+  saveSnapshot("outgoing-v5", outgoingOrders);
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;
@@ -516,12 +728,107 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
   order.canceledDate = isoOffset(0);
   if (reason) order.canceledReason = reason;
   order.canceledBy = canceledBy;
-  releaseReservationsForTask(orderId);
+  // D6 AC#1 — cancel does NOT auto-release the reservation: the reserved qty stays
+  // out of Available until a user explicitly runs "Release Reserved". (No
+  // releaseReservationsForTask here on purpose.)
   persistOutgoing();
+}
+
+/** D2 cancel gate — an outbound order can be cancelled while NOTHING has truly
+ *  shipped (shippedQty is only posted once a shipment is COMPLETED). A partially/
+ *  fully shipped order is terminal for cancel (posting guard). */
+export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** D7 edit gate — an outbound order is editable while nothing has shipped and it
+ *  isn't cancelled. (Prototype: all sources editable; the PRD restricts this to
+ *  Direct outbound, but the demo allows any.) The per-SKU add/remove rules vs
+ *  picking state are enforced in editOutboundOrder (outboundSync). */
+export function canEditOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** Apply an edit's new SKU lines (+ optional header fields) to an order and persist.
+ *  Reservation sync (reserve added / release removed) is orchestrated by
+ *  editOutboundOrder in outboundSync — this only writes the order record. */
+export function updateOutgoingOrderLines(
+  orderId: string,
+  lines: { sku: string; qty: number }[],
+  header?: { customer?: string; dueDate?: string; memo?: string },
+): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.lines = lines
+    .filter((l) => l.qty > 0)
+    .map((l) => {
+      const p = productBySku(l.sku);
+      return {
+        sku: l.sku,
+        productName: p?.name ?? l.sku,
+        desc: p?.desc ?? "",
+        img: p?.img ?? "",
+        unit: p?.unit ?? "Unit",
+        qty: l.qty,
+      };
+    });
+  order.orderQty = order.lines.reduce((s, l) => s + l.qty, 0);
+  order.skuQty = order.lines.length;
+  if (header) {
+    if (header.customer !== undefined) order.customer = header.customer;
+    if (header.dueDate !== undefined) order.dueDate = header.dueDate;
+    if (header.memo !== undefined) order.memo = header.memo;
+  }
+  persistOutgoing();
+}
+
+/** D7 — append an edit entry to the order's audit trail. `changes` is the list of
+ *  "apa ke apa" field diffs (empty → no-op, so a no-change save records nothing). */
+export function recordOutgoingEdit(
+  orderId: string,
+  changes: { label: string; value: string }[],
+  by = "Rizal Candra",
+): void {
+  if (!changes.length) return;
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  (order.editLog ??= []).push({ at: new Date().toISOString(), by, changes });
+  persistOutgoing();
+}
+
+/** D6 — can this cancelled order's reserved stock still be released? Only when it's
+ *  cancelled, nothing shipped, the release hasn't already run, and it actually still
+ *  holds a reservation. */
+export function canReleaseReservedForOrder(orderId: string): boolean {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return false;
+  return (
+    order.status === "canceled" &&
+    !order.reservedReleasedDate &&
+    (order.shippedQty ?? 0) === 0 &&
+    hasReservationsForTask(orderId)
+  );
+}
+
+/** D6 — return a cancelled order's still-held (un-shipped) reserved qty to Available.
+ *  On-hand never moves (nothing was ever deducted for a reservation); no JE. Records
+ *  actor/timestamp/qty for audit and is idempotent (a second call is a no-op). Returns
+ *  true only when it actually released something. */
+export function releaseReservedForCancelledOrder(orderId: string, releasedBy = "Rizal Candra"): boolean {
+  if (!canReleaseReservedForOrder(orderId)) return false;
+  const order = outgoingOrders.find((o) => o.id === orderId)!;
+  const releasedQty = reservedQtyForTask(orderId);
+  releaseReservationsForTask(orderId);
+  order.reservedReleasedQty = releasedQty;
+  order.reservedReleasedDate = new Date().toISOString();
+  order.reservedReleasedBy = releasedBy;
+  persistOutgoing();
+  return true;
 }
 
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
+  pending: "Pending",
   open: "Open",
   "in progress": "In process",
   "partially shipped": "Partially shipped",

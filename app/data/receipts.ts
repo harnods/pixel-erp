@@ -3,6 +3,21 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY, VENDORS } from './master'
 
+/** Pending = no receiving task yet · Open = task(s) created, none started ·
+ *  In progress = at least one task started, OR every line is fully received
+ *  but put-away hasn't genuinely finished yet (see ReceivingTask.stockCommitted
+ *  — "Pending put-away" itself is a receiving-task status, not a PO one) ·
+ *  Partial reception = at least one task ended short of full qty · Completed =
+ *  full qty received AND (put-away disabled, or put-away genuinely finished) ·
+ *  Canceled = voided. */
+export type ReceiptStatus =
+  | "pending"
+  | "open"
+  | "in progress"
+  | "partial reception"
+  | "completed"
+  | "canceled";
+
 /** An inbound goods receipt (Inbound delivery → Receipt). */
 export interface Receipt {
   id: string;
@@ -18,7 +33,7 @@ export interface Receipt {
   purchaseQty: number;
   /** units actually received so far (0 = none, < purchaseQty = partial, = purchaseQty = full) */
   receivedQty: number;
-  status: string;
+  status: ReceiptStatus;
   /** ISO date the goods were fully received (completed receipts only) */
   receivedDate?: string;
   /** ISO date the PO was canceled (canceled receipts only) */
@@ -41,6 +56,19 @@ export interface Receipt {
    *  falls back to its hash-derived mix for those instead (skuQty/purchaseQty
    *  alone can't reconstruct which actual products were on the PO). */
   lineItems?: { productId: string; qty: number }[];
+  /** Edit history (newest first) — one entry per successful Edit order save,
+   *  shown in the PO's Activity log alongside its "Created" entry. Populated
+   *  by editInboundReceipt (inboundSync.ts), which computes the actual
+   *  before → after diff. */
+  editHistory?: ReceiptEditLogEntry[];
+}
+
+/** One Edit order save — what changed, as ready-to-display "label: old → new"
+ *  pairs (see ActivityLogModal). */
+export interface ReceiptEditLogEntry {
+  date: string;
+  user: string;
+  changes: { label: string; value: string }[];
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.
@@ -69,11 +97,10 @@ function generateMemo(i: number, arrivalIso: string): string | undefined {
 }
 
 // Units received so far, derived from the stage:
-//  - on the way → 0 (nothing arrived yet)
-//  - receiving → partway through
+//  - pending/open/in progress → 0 (nothing ended yet)
 //  - partial reception → receiving was closed short of the full qty (varied, never full)
 //  - completed → received in full
-function computeReceived(i: number, status: string, purchaseQty: number): number {
+function computeReceived(i: number, status: ReceiptStatus, purchaseQty: number): number {
   switch (status) {
     case "completed":
       // ~4 of 10 completed POs were closed short (accepted as partial)
@@ -83,8 +110,6 @@ function computeReceived(i: number, status: string, purchaseQty: number): number
         return Math.min(purchaseQty - 1, Math.max(1, Math.round(purchaseQty * f)));
       }
       return purchaseQty;
-    case "receiving":
-      return Math.round(purchaseQty * 0.4);
     case "partial reception": {
       const fractions = [0.35, 0.5, 0.6, 0.75, 0.45, 0.8, 0.55, 0.3];
       const f = fractions[i % fractions.length];
@@ -92,7 +117,7 @@ function computeReceived(i: number, status: string, purchaseQty: number): number
       return Math.min(purchaseQty - 1, Math.max(1, Math.round(purchaseQty * f)));
     }
     default:
-      return 0; // on the way
+      return 0; // pending / open / in progress — seedTasks() derives the real split
   }
 }
 
@@ -120,18 +145,21 @@ function hashId(id: string): number {
   return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
 }
 
-// Future arrival windows for not-yet-arrived (on the way) POs — spread so each
+// Future arrival windows for not-yet-arrived (pending) POs — spread so each
 // arrival-date preset (today / tomorrow / next 7 days / this month / beyond) hits some.
 const FUTURE_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 18, 23, 27, 34, 40];
 
 /**
  * Status for receipt i — weighted to feel like a real inbound queue rather than a
- * strict cycle: mostly On the way + Completed, fewer Partial reception. "receiving"
- * isn't used here (it has no list of its own), so every receipt is visible.
+ * strict cycle: mostly Pending + Completed, fewer Partial reception. This is the
+ * PRE-task seed value; seedTasks() (receivingTasks.ts) reads it to decide what
+ * tasks to attach, then initInbound() re-derives the real status (Pending / Open
+ * / In progress / Partial reception / Completed) from those tasks via
+ * recomputeReceiptStatus() — so "pending" here just means "no ended task yet".
  */
-function statusFor(i: number): string {
+function statusFor(i: number): ReceiptStatus {
   const h = hash100(i);
-  if (h < 42) return "on the way";       // ~42% awaiting arrival
+  if (h < 42) return "pending";           // ~42% not yet started
   if (h < 64) return "partial reception"; // ~22% received short
   return "completed";                     // ~36% fully received
 }
@@ -142,9 +170,9 @@ function generateReceipts(count = 42): Receipt[] {
   for (let i = 0; i < count; i++) {
     const wh = RECEIVING_WAREHOUSES[i % RECEIVING_WAREHOUSES.length];
     const status = statusFor(i);
-    // Arrival makes sense per status: on the way → still to come (future);
+    // Arrival makes sense per status: pending → still to come (future);
     // arrived states (partial / completed) → a recent past date.
-    const arrived = status !== "on the way";
+    const arrived = status !== "pending";
     const offset = arrived
       ? -(((i * 7) % 26) + 2)                       // 2–27 days ago
       : FUTURE_OFFSETS[i % FUTURE_OFFSETS.length];  // upcoming
@@ -197,7 +225,7 @@ function generateDemoInbound(): Receipt[] {
     skuQty: 3,
     purchaseQty: 6,
     receivedQty: 0,
-    status: 'on the way',
+    status: 'pending',
     estimatedArrival: isoOffset(2),
     memo: 'Demo PO: 1 batch-tracked, 1 serial-tracked, 1 plain SKU (qty 2 each) — for partial receiving test',
     trackingNos: [],
@@ -253,7 +281,7 @@ function generateCanceled(count = 7): Receipt[] {
 // full snapshot so seed records mutated by the flow (status derivation, received
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const receiptSnapshot = loadSnapshot<Receipt>("receipts-v2");
+const receiptSnapshot = loadSnapshot<Receipt>("receipts-v4");
 const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled()];
 // Keep the demo inbound PO pinned at the very top of the list, regardless of
 // where a persisted snapshot from an earlier session happened to leave it.
@@ -266,7 +294,7 @@ export const receipts = reactive<Receipt[]>(initialReceipts);
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {
-  saveSnapshot("receipts-v2", receipts);
+  saveSnapshot("receipts-v4", receipts);
 }
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;
@@ -310,9 +338,79 @@ export function closeReceipt(id: string): void {
 }
 
 /** A receipt can only be canceled while not yet completed/already-canceled — once
- *  fully received, it's a permanent record of what actually came in. */
+ *  fully received, it's a permanent record of what actually came in. NOTE: user-facing
+ *  cancel is additionally hidden for "partial reception" (see canCloseReceipt) — per WMS
+ *  PRD 1.1 C1 AC#5 a partially-received inbound is *closed* (accept-as-final), not
+ *  cancelled. The data-layer cancel path stays available for the internal cascade. */
 export function canCancelReceipt(r: Receipt): boolean {
   return r.status !== "completed" && r.status !== "canceled";
+}
+
+/** A partially-received receipt is *closed* (accept-as-final, close-forward) rather than
+ *  cancelled — PRD C1 AC#5/AC#8. This is the user-facing action for "partial reception";
+ *  it supersedes Cancel in the UI. */
+export function canCloseReceipt(r: Receipt): boolean {
+  return r.status === "partial reception";
+}
+
+/**
+ * Edit gate (PRD C2 AC#4) — a receipt is editable while it isn't completed or
+ * cancelled; a closed/terminal PO is a permanent record. Per-SKU add/remove
+ * rules against receiving state are enforced in editInboundReceipt
+ * (inboundSync.ts), not here.
+ *
+ * Demo note: the PRD restricts editing to Direct Inbound only — an
+ * external-source Inbound (ERP PO / Desty PO) is read-only in WMS, changed
+ * only via the source hitting the A7 update endpoint. This prototype allows
+ * editing regardless of source, since there's no real external system here to
+ * push changes back.
+ */
+export function canEditReceipt(r: Receipt): boolean {
+  return r.status !== "completed" && r.status !== "canceled";
+}
+
+/**
+ * Apply an edit's new line items (+ optional header fields) to a receipt and
+ * persist. Writing `lineItems` here is also what "materializes" a seed
+ * receipt's line items for the first time — lineItemsForReceipt() already
+ * prefers a real `lineItems` array over its hash-derived fallback once one
+ * exists (same pattern as user-created receipts from Create receipt).
+ * Lock validation happens in editInboundReceipt (inboundSync) — this only
+ * writes the record.
+ */
+export function updateReceiptLines(
+  receiptId: string,
+  lines: { productId: string; qty: number }[],
+  header?: { vendor?: string; estimatedArrival?: string; memo?: string; trackingNos?: string[] },
+): void {
+  const r = receipts.find((x) => x.id === receiptId);
+  if (!r) return;
+  r.lineItems = lines.filter((l) => l.qty > 0);
+  r.skuQty = r.lineItems.length;
+  r.purchaseQty = r.lineItems.reduce((s, l) => s + l.qty, 0);
+  if (header) {
+    if (header.vendor !== undefined) r.vendor = header.vendor;
+    if (header.estimatedArrival !== undefined) r.estimatedArrival = header.estimatedArrival;
+    if (header.memo !== undefined) r.memo = header.memo;
+    if (header.trackingNos !== undefined) r.trackingNos = header.trackingNos;
+  }
+  persistReceipts();
+}
+
+/**
+ * Append one Edit order entry to the PO's activity log (shown via
+ * ActivityLogModal). The actual before → after diff is computed by the
+ * caller (editInboundReceipt in inboundSync.ts, which has both the old and
+ * new line items in scope) — this only records it. A no-op when there's
+ * nothing to log (e.g. Save with no real changes).
+ */
+export function appendReceiptEditLog(receiptId: string, changes: { label: string; value: string }[]): void {
+  if (!changes.length) return;
+  const r = receipts.find((x) => x.id === receiptId);
+  if (!r) return;
+  if (!r.editHistory) r.editHistory = [];
+  r.editHistory.unshift({ date: new Date().toISOString(), user: "Rizal Candra", changes });
+  persistReceipts();
 }
 
 /** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */
@@ -342,8 +440,9 @@ export function deleteReceipt(id: string): void {
 
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
-  "on the way": "On the way",
-  receiving: "Receiving",
+  pending: "Pending",
+  open: "Open",
+  "in progress": "In progress",
   "partial reception": "Partial reception",
   completed: "Completed",
   canceled: "Canceled",
@@ -375,7 +474,7 @@ export function receiptsForStage(stage: string, warehouseIds?: string[]): Receip
   );
 }
 
-/** Stage label for a receipt (e.g. "on the way" → "On the way"). */
+/** Stage label for a receipt (e.g. "pending" → "Pending"). */
 export function receiptStage(r: Receipt): string {
   return STATUS_TO_STAGE[r.status] ?? r.status;
 }

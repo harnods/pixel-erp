@@ -12,7 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, closeReceipt, isManualReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStage, closeReceipt, isManualReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -21,27 +21,38 @@ import { receivedSummaryForReceipt, canCreateReceivingTask, receivingTasksForRec
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 const isManual = computed(() => !!currentReceipt.value && isManualReceipt(currentReceipt.value))
 const hasActiveReceivingTasks = computed(() =>
   receivingTasksForReceipt(props.orderId).some(t => t.status === 'open' || t.status === 'in progress')
 )
+// Edit order — order-level action, same dropdown as Close receipt (mirrors
+// the outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
   if (!d) return []
-  return [{
+  const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
-    activity: 'Created',
+    activity: t('Created'),
     details: [
-      { label: 'Transaction no.', value: d.purchaseNo },
-      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
-      { label: 'Vendor', value: d.vendor ?? '—' },
-      { label: 'Warehouse', value: d.warehouseName },
+      { label: t('Transaction no.'), value: d.purchaseNo },
+      { label: t('Transaction date'), value: formatDateLong(d.transactionDate) },
+      { label: t('Vendor'), value: d.vendor ?? '—' },
+      { label: t('Warehouse'), value: d.warehouseName },
     ],
-  }]
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: t('Edited'), details: e.changes,
+  }))
+  return [...edits, created]
 })
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStage('Partial reception').find((r) => r.id === props.orderId),
@@ -198,13 +209,13 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receipts') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
           <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="prd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -213,8 +224,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -225,7 +236,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     <span class="detail-jump-item-number">{{ o.purchaseNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.warehouseName }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -240,24 +251,17 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       <!-- ── Header summary (2 columns) ── -->
       <section class="rcd-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(detail.transactionDate)" />
-          <ContentList label="Transaction no." :value="detail.purchaseNo" />
-          <ContentList label="Vendor" :value="detail.vendor" />
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(detail.transactionDate)" />
+          <ContentList :label="t('Transaction no.')" :value="detail.purchaseNo" />
+          <ContentList :label="t('Vendor')" :value="detail.vendor" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
-          <ContentList label="Ship via" :value="detail.shipVia" />
-          <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Estimated arrival date')" :value="formatDateLong(detail.estimatedArrival)" />
+          <ContentList :label="t('Ship via')" :value="detail.shipVia" />
+          <ContentList :label="t('Tracking no.')" :value="trackingText(detail.trackingNos)" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
-              <span>{{ detail.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">{{ detail.warehouseName }}</a>
             </div>
           </ContentList>
         </div>
@@ -278,13 +282,13 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th detail-th--num">Received qty</th>
-                <th class="detail-th detail-th--num">Put-away qty</th>
-                <th class="detail-th">Unit</th>
-                <th class="detail-th">Received by</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Put-away qty') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
+                <th class="detail-th">{{ t('Received by') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -305,20 +309,20 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ allItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ allItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
       <!-- ── Memo + attachment ── -->
       <section class="rcd-notes">
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ detail.memo }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${detail.attachments.length})`">
+        <ContentList :label="`${t('Attachment')} (${detail.attachments.length})`">
           <div v-if="detail.attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in detail.attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -333,17 +337,17 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ detail.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
       <!-- ── Linked purchase receivings + put-away tabs ── -->
       <MpTabs id="prd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="prd-tab-pr" :value="0">Purchase receiving ({{ linkedReceivings.length }})</MpTab>
-          <MpTab id="prd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+          <MpTab id="prd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ linkedReceivings.length }})</MpTab>
+          <MpTab id="prd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAways.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
@@ -359,30 +363,21 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pr in linkedReceivings" :key="pr.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="linked-num">{{ pr.receivingNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link linked-num" @click.stop="router.push(`/receiving/${pr.taskId}`)">{{ pr.receivingNo }}</a>
                     </td>
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
@@ -395,7 +390,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -406,7 +401,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
           <!-- Put-away panel -->
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
@@ -421,29 +416,20 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th detail-th--num">SKU qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th detail-th--num">Put-away qty</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('SKU qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Put-away qty') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pa in linkedPutAways" :key="pa.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link linked-num" @click.stop="router.push(`/put-away/${pa.id}`)">{{ pa.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
@@ -455,7 +441,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -474,7 +460,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       <MpPopover id="prd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
-            Print
+            {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -482,21 +468,21 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print PDF</MpPopoverListItem>
-            <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
 
       <!-- Create purchase receiving (primary split button) — hidden once every SKU
-           is already covered by a receiving task; Close stands alone. -->
+           is already covered by a receiving task; Edit/Close live in the dropdown. -->
       <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
         <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
-          Create purchase receiving
+          {{ t('Create purchase receiving') }}
         </button>
         <MpPopover id="prd-pr-more" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary detail-split-chevron" aria-label="More">
+            <button class="detail-btn detail-btn--primary detail-split-chevron" :aria-label="t('More')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -504,12 +490,26 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
+              <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">{{ t('Close receipt') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
-      <button v-else-if="!isManual && !hasActiveReceivingTasks" class="detail-btn detail-btn--secondary" @click="openCloseModal">Close receipt</button>
+      <MpPopover v-else-if="canEdit || (!isManual && !hasActiveReceivingTasks)" id="prd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            {{ t('Actions') }}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">{{ t('Close receipt') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </div>
 
 
@@ -519,14 +519,14 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="dismissCloseModal"
     >
       <MpModalContent>
-        <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           Receipt {{ detail.purchaseNo }} will be closed with the quantity received so far. This can't be undone.
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="dismissCloseModal">Keep open</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmClose">Close receipt</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="dismissCloseModal">{{ t('Keep open') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmClose">{{ t('Close receipt') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -569,7 +569,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
@@ -650,7 +650,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
   width: 28px; height: 28px; border-radius: var(--mp-radii-sm); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcd-product-name {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -722,22 +722,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }

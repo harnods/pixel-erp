@@ -116,8 +116,9 @@ describe('ReceiveItemsPage — scan threshold basis is Expected qty (targetQty),
     const input = wrapper.find('input.ri-qty-input')
     expect(input.exists()).toBe(true)
     expect(input.attributes('disabled')).toBeDefined()
-    // The hard ceiling shown/enforced on the input stays Purchase qty, unchanged.
-    expect(input.attributes('max')).toBe('57')
+    // The hard ceiling shown/enforced on the input is Expected qty (targetQty),
+    // not Purchase qty — a task may never receive past what it expects.
+    expect(input.attributes('max')).toBe('40')
     wrapper.unmount()
   })
 
@@ -191,7 +192,7 @@ describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected 
 
     await scanSku(wrapper, sku, 8) // > targetQty (5), <= expectedQty/Purchase qty (87)
 
-    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
+    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Remaining qty to receive'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('0')
     wrapper.unmount()
   })
@@ -210,7 +211,7 @@ describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected 
 
     await scanSku(wrapper, sku, 3) // < targetQty (5)
 
-    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
+    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Remaining qty to receive'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('2')
     wrapper.unmount()
   })

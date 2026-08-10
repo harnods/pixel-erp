@@ -3,13 +3,24 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
-  MpTooltip, MpDatePicker, toast,
+  MpTooltip, MpDatePicker, MpSelect,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
-import { addOutgoing, nextDeliveryOrderNo } from '~/data/outgoing'
+import { couriers } from '~/data/couriers'
+import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder } from '~/data/outgoing'
+import { editOutboundOrder, proposeSkuReduction } from '~/data/outboundSync'
+import { orderSkuLines } from '~/data/inventory'
+import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
+import AllocateReductionModal, { type SkuReductionGroup } from '~/components/AllocateReductionModal.vue'
+
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editingOrder = computed(() => (isEdit.value ? outgoingOrders.find((o) => o.id === props.orderId) : undefined))
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -21,6 +32,7 @@ function toISODate(display: string) {
 }
 
 const router = useRouter()
+const { t } = useLocale()
 
 const warehouseOptions = computed(() =>
   warehouses
@@ -70,6 +82,14 @@ const shipVia = ref('')
 const trackingNo = ref('')
 const memo = ref('')
 
+// ── Courier picker (searchable MpPopover, sourced from master data couriers) ─
+const courierSearch = ref('')
+const couriersFiltered = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
+})
+function selectCourier(name: string) { shipVia.value = name }
+
 // ── Product line rows ─────────────────────────────────────────────────────
 interface LineRow {
   id: number
@@ -82,13 +102,29 @@ interface LineRow {
   unit: string
   qtyError: boolean
   qtyInsufficient: boolean
+  /** Edit mode — qty was set below what's already committed to a started picking task. */
+  qtyLocked: boolean
   productError: boolean
+  /** Edit mode — qty already committed to a started picking task: can't remove this
+   *  row or set qty below it (D7 AC#4). 0 = freely editable. */
+  lockedQty: number
+  /** Edit mode — the SKU's qty on the order when editing began. Its reservation is
+   *  already held, so only the INCREASE beyond it needs fresh Available (create = 0). */
+  origQty: number
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, productError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0 }
 }
+
+/** Tooltip/error text for an invalid qty cell (edit mode included). */
+function qtyErrorMsg(row: LineRow): string {
+  if (row.qtyLocked) return `${t('Can’t go below')} ${row.lockedQty} — ${t('already in a picking task')}`
+  if (row.qtyInsufficient) return `${t('Insufficient stock (only')} ${availableQty(row.productSku) + row.origQty} ${t('available)')}`
+  return ''
+}
+function qtyInvalid(row: LineRow): boolean { return row.qtyInsufficient || row.qtyLocked }
 
 function availableQty(sku: string): number {
   if (!warehouseId.value) return Infinity
@@ -100,7 +136,10 @@ function availableQty(sku: string): number {
 
 function checkQtyInsufficient(row: LineRow) {
   if (!row.productSku || !row.qty || Number(row.qty) < 1) { row.qtyInsufficient = false; return }
-  row.qtyInsufficient = Number(row.qty) > availableQty(row.productSku)
+  // Only the INCREASE beyond the already-reserved qty needs fresh Available — a
+  // reduction (or no change) is never insufficient (create mode: origQty = 0).
+  const delta = Number(row.qty) - row.origQty
+  row.qtyInsufficient = delta > 0 && delta > availableQty(row.productSku)
 }
 
 const rows = ref<LineRow[]>([makeRow()])
@@ -133,7 +172,41 @@ function onProductSelect(row: LineRow, id: string) {
 
 function removeRow(id: number) {
   if (rows.value.length === 1) return
+  const row = rows.value.find((r) => r.id === id)
+  if (row && row.lockedQty > 0) {
+    toast.notify({ variant: 'error', title: `${row.productName} ${t("is already being picked and can't be removed")}`, maxWidth: 'max-content' })
+    return
+  }
   rows.value = rows.value.filter((r) => r.id !== id)
+}
+
+// ── Edit mode — prefill from the order (warehouse locked, per-SKU picking lock) ──
+function prefillFromOrder() {
+  const o = editingOrder.value
+  if (!o) return
+  customer.value = o.customer ?? ''
+  warehouseId.value = o.warehouseId
+  transactionNo.value = o.salesNo
+  transactionDate.value = o.transactionDate ? toDisplayDate(o.transactionDate.slice(0, 10)) : todayDisplay
+  estimatedDelivery.value = o.dueDate ? toDisplayDate(o.dueDate) : todayDisplay
+  memo.value = o.memo ?? ''
+  const lines = orderSkuLines(o).map((l) => {
+    const cat = CATALOG.find((c) => c.sku === l.product.sku)
+    return {
+      id: rowSeq++,
+      productId: cat?.id ?? l.product.sku,
+      productName: l.product.name,
+      productSku: l.product.sku,
+      productImg: l.product.img,
+      description: l.product.desc,
+      qty: String(l.qty),
+      unit: l.product.unit,
+      qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false,
+      lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
+      origQty: l.qty,
+    } as LineRow
+  })
+  rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
 
 // ── Drag-and-drop row reorder ─────────────────────────────────────────────
@@ -194,7 +267,9 @@ async function validate(): Promise<boolean> {
     valid = false
   }
   for (const row of filledRows) {
+    row.qtyLocked = false
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
+    else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyLocked = true; valid = false } // can't drop below picked
     else row.qtyError = false
     checkQtyInsufficient(row)
     if (row.qtyInsufficient) valid = false
@@ -218,7 +293,7 @@ async function persist() {
     skuQty,
     orderQty,
     shippedQty: 0,
-    status: 'open',
+    status: 'pending',
     dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : txDate,
     memo: memo.value.trim() || undefined,
     customer: customer.value,
@@ -235,11 +310,91 @@ async function persist() {
   })
 }
 
+// ── D7 allocation step (AC#3/#4) ────────────────────────────────────────────
+const allocModalOpen = ref(false)
+const allocGroups = ref<SkuReductionGroup[]>([])
+
+/** Reductions that span ≥2 pending picking tasks need the operator to choose the
+ *  distribution (AC#4). Single-task / unassigned-only reductions apply directly (AC#1). */
+function computeAllocationGroups(): SkuReductionGroup[] {
+  const o = editingOrder.value
+  if (!o) return []
+  const oldBySku = new Map(orderSkuLines(o).map((l) => [l.product.sku, l.qty]))
+  const groups: SkuReductionGroup[] = []
+  for (const r of rows.value.filter((row) => row.productId)) {
+    const oldQty = oldBySku.get(r.productSku) ?? 0
+    const newQty = Number(r.qty) || 0
+    if (newQty >= oldQty) continue
+    const N = oldQty - newQty
+    const proposal = proposeSkuReduction(o.id, r.productSku, N)
+    if (proposal.exceedsRemovable) continue // editOutboundOrder rejects it with a clear toast
+    const R = Math.max(0, N - Math.min(N, proposal.unassigned)) // qty drawn from pending tasks
+    const pending = pendingPickingLinesForSku(o.id, r.productSku)
+    if (pending.length < 2 || R <= 0) continue // AC#1 — direct, no allocation step
+    const defaults = new Map(proposal.taskReductions.map((t) => [t.taskId, t.reduceBy]))
+    groups.push({
+      sku: r.productSku,
+      productName: r.productName,
+      toRemove: R,
+      tasks: pending.map((p) => {
+        const t = getPickingTask(p.taskId)
+        return {
+          taskId: p.taskId, taskNo: p.taskNo, currentQty: p.qty,
+          reduceBy: defaults.get(p.taskId) ?? 0,
+          soleLine: (t?.salesOrderIds.length === 1) && (t?.skuQty === 1),
+        }
+      }),
+    })
+  }
+  return groups
+}
+
+function onAllocConfirm(allocations: Record<string, { taskId: string; reduceBy: number }[]>) {
+  allocModalOpen.value = false
+  const ok = persistEdit(allocations)
+  if (!ok) return
+  toast.notify({ variant: 'success', title: t('Order updated'), maxWidth: 'max-content' })
+  router.push(`/outbound-delivery/${props.orderId}`)
+}
+
+/** Edit mode — apply changes via editOutboundOrder (D7 gates). Returns false (and
+ *  toasts) on rejection so the caller stays on the form (no partial apply). */
+function persistEdit(allocations?: Record<string, { taskId: string; reduceBy: number }[]>): boolean {
+  const o = editingOrder.value
+  if (!o) return false
+  const lines = rows.value.filter((r) => r.productId).map((r) => ({ sku: r.productSku, qty: Number(r.qty) || 0 }))
+  const res = editOutboundOrder(o.id, lines, {
+    customer: customer.value,
+    dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : undefined,
+    memo: memo.value.trim(),
+  }, allocations)
+  if (!res.ok) {
+    const msg = res.reason === 'NO_ALLOCATABLE_STOCK' ? t('Not enough stock to reserve the added quantity')
+      : res.reason === 'REDUCTION_EXCEEDS_REMOVABLE' ? `${t('Can’t reduce that much —')} ${res.locked ?? 0} ${t('is locked in active picking (only')} ${res.removable ?? 0} ${t('removable)')}`
+      : res.reason === 'INVALID_ALLOCATION' ? t('The per-task reduction doesn’t add up')
+      : res.reason === 'NOT_EDITABLE' ? t('This order can no longer be edited')
+      : t('Could not save the changes')
+    toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
+  if (isEdit.value) {
+    isSaving.value = false
+    const groups = computeAllocationGroups()
+    if (groups.length) { allocGroups.value = groups; allocModalOpen.value = true; return } // AC#4 — ask first
+    const ok = persistEdit()
+    if (!ok) return
+    toast.notify({ variant: 'success', title: t('Order updated'), maxWidth: 'max-content' })
+    router.push(`/outbound-delivery/${props.orderId}`)
+    return
+  }
   await persist()
-  toast.notify({ variant: 'success', title: 'Delivery order saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Delivery order saved'), maxWidth: 'max-content' })
   goRequests()
 }
 
@@ -247,7 +402,7 @@ async function handleSaveAndAdd() {
   if (!await validate()) return
   isSavingAndAdding.value = true
   await persist()
-  toast.notify({ variant: 'success', title: 'Delivery order saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Delivery order saved'), maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()
 }
@@ -261,6 +416,7 @@ function checkStageOverflow() {
 }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
+  if (isEdit.value) prefillFromOrder()
   nextTick(() => {
     checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -279,10 +435,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goRequests">Outbound delivery</button>
+          <button class="detail-breadcrumb" @click="goRequests">{{ t('Outbound delivery') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New delivery order</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit delivery order') : t('New delivery order') }}</h1>
         </div>
       </div>
     </header>
@@ -295,7 +451,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <div class="cr-header-1">
           <div class="cr-header-1-col">
             <MpFormControl id="cr-customer" class="cr-field-flex" is-required :is-invalid="customerError">
-              <MpFormLabel>Customer</MpFormLabel>
+              <MpFormLabel>{{ t('Customer') }}</MpFormLabel>
               <MpAutocomplete
                 id="cr-customer-ac"
                 v-model="customer"
@@ -309,10 +465,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 @button-action="onCustomerAdd"
               >
                 <template #buttonAction="{ currentSearch }">
-                  {{ currentSearch ? `Add "${currentSearch}" as a new customer` : 'Add new customer' }}
+                  {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new customer')}` : t('Add new customer') }}
                 </template>
               </MpAutocomplete>
-              <MpFormErrorMessage>You must select customer</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -322,7 +478,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 1: Transaction date → DO no. → Reference no. -->
           <div class="cr-col">
             <MpFormControl id="cr-txdate" is-required :is-invalid="transactionDateError">
-              <MpFormLabel>Transaction date</MpFormLabel>
+              <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
               <div class="cr-datepicker">
                 <MpDatePicker
                   id="cr-txdate-dp"
@@ -333,15 +489,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   @update:model-value="transactionDateError = false"
                 />
               </div>
-              <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select transaction date') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
-                <MpFormLabel>Transaction no.</MpFormLabel>
-                <span class="cr-label-icon" title="Auto-generated">
+                <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+                <span class="cr-label-icon" :title="t('Auto-generated')">
                   <MpIcon name="settings" size="sm" />
                 </span>
               </div>
@@ -357,7 +513,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-refno">
-              <MpFormLabel>Reference no.</MpFormLabel>
+              <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
               <MpInput
                 id="cr-refno-input"
                 v-model="referenceNo"
@@ -369,7 +525,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 2: Estimated delivery date → Courier → Tracking no. -->
           <div class="cr-col">
             <MpFormControl id="cr-delivery">
-              <MpFormLabel>Estimated delivery date</MpFormLabel>
+              <MpFormLabel>{{ t('Estimated delivery date') }}</MpFormLabel>
               <div class="cr-datepicker">
                 <MpDatePicker
                   id="cr-delivery-dp"
@@ -385,18 +541,31 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-shipvia">
-              <MpFormLabel>Courier</MpFormLabel>
-              <MpInput
-                id="cr-shipvia-input"
-                v-model="shipVia"
-                is-full-width
-              />
+              <MpFormLabel>{{ t('Courier') }}</MpFormLabel>
+              <MpPopover id="cr-courier" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="courierSearch = ''">
+                <MpPopoverTrigger>
+                  <MpSelect id="cr-shipvia-input" :model-value="shipVia" :placeholder="t('Select courier')" is-full-width @mousedown.prevent>
+                    <option v-if="shipVia" :value="shipVia">{{ shipVia }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
+                  <div class="cr-courier-search-wrap">
+                    <input v-model="courierSearch" class="cr-courier-search" type="text" :placeholder="t('Search...')" autocomplete="off" />
+                  </div>
+                  <div class="cr-courier-list">
+                    <MpPopoverList>
+                      <MpPopoverListItem v-for="c in couriersFiltered" :key="c.id" :is-active="c.name === shipVia" @click="selectCourier(c.name)">{{ c.name }}</MpPopoverListItem>
+                    </MpPopoverList>
+                    <p v-if="!couriersFiltered.length" class="cr-courier-none">{{ t('No couriers found.') }}</p>
+                  </div>
+                </MpPopoverContent>
+              </MpPopover>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-trackno">
-              <MpFormLabel>Tracking no.</MpFormLabel>
+              <MpFormLabel>{{ t('Tracking no.') }}</MpFormLabel>
               <MpInput
                 id="cr-trackno-input"
                 v-model="trackingNo"
@@ -408,7 +577,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 3: Warehouse -->
           <div class="cr-col">
             <MpFormControl id="cr-warehouse" is-required :is-invalid="warehouseError">
-              <MpFormLabel>Warehouse</MpFormLabel>
+              <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
               <MpAutocomplete
                 id="cr-warehouse-ac"
                 v-model="warehouseId"
@@ -416,10 +585,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 label-prop="name"
                 value-prop="id"
                 is-searchable is-clearable use-portal is-full-width
+                :is-disabled="isEdit"
                 :is-invalid="warehouseError"
                 @update:model-value="warehouseError = false"
               />
-              <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -441,12 +611,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <thead>
                 <tr>
                   <th class="cr-th cr-th--drag" />
-                  <th class="cr-th">Product</th>
-                  <th v-if="hasAnyProduct" class="cr-th">SKU</th>
+                  <th class="cr-th">{{ t('Product') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('SKU') }}</th>
                   <th v-if="!hasAnyProduct" class="cr-th" />
-                  <th v-if="hasAnyProduct" class="cr-th">Description</th>
-                  <th v-if="hasAnyProduct" class="cr-th">Qty</th>
-                  <th v-if="hasAnyProduct" class="cr-th">Unit</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Description') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Qty') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Unit') }}</th>
                   <th class="cr-th cr-th--del" />
                 </tr>
               </thead>
@@ -473,7 +643,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpTooltip
                       v-if="row.productError"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      label="You must select product"
+                      :label="t('You must select product')"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -537,11 +707,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': row.qtyInsufficient }">
+                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': qtyInvalid(row) }">
                       <MpTooltip
-                        v-if="row.qtyInsufficient"
+                        v-if="qtyInvalid(row)"
                         :id="`cr-qty-tooltip-${row.id}`"
-                        :label="`Insufficient stock (${availableQty(row.productSku)} available)`"
+                        :label="qtyErrorMsg(row)"
                         placement="top"
                         use-portal
                         class="cr-qty-tooltip-wrap"
@@ -551,8 +721,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           v-model="row.qty"
                           type="number"
                           is-full-width
-                          :is-invalid="row.qtyError"
-                          @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
+                          :is-invalid="row.qtyError || qtyInvalid(row)"
+                          @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false; row.qtyLocked = false }"
                         />
                       </MpTooltip>
                       <MpInput
@@ -562,7 +732,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         type="number"
                         is-full-width
                         :is-invalid="row.qtyError"
-                        @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
+                        @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false; row.qtyLocked = false }"
                       />
                     </td>
                     <td class="cr-td cr-td--unit">{{ row.unit }}</td>
@@ -584,7 +754,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- ── Memo ───────────────────────────────────────────────────────── -->
         <div class="cr-section cr-section--gap-top cr-section--last">
           <MpFormControl id="cr-memo">
-            <MpFormLabel>Memo</MpFormLabel>
+            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea
               id="cr-memo-textarea"
               v-model="memo"
@@ -592,7 +762,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               :rows="4"
             />
           </MpFormControl>
-          <p class="cr-helper-text">Only visible to you and your team</p>
+          <p class="cr-helper-text">{{ t('Only visible to you and your team') }}</p>
         </div>
 
 
@@ -601,10 +771,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goRequests">Cancel</MpButton>
-      <button class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goRequests">{{ t('Cancel') }}</MpButton>
+      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
+
+    <!-- D7 AC#4 — choose how a multi-task SKU reduction is distributed -->
+    <AllocateReductionModal
+      :open="allocModalOpen"
+      :groups="allocGroups"
+      @close="allocModalOpen = false"
+      @confirm="onAllocConfirm"
+    />
   </div>
 </template>
 
@@ -675,6 +853,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-col { width: 318px; flex-shrink: 0; display: flex; flex-direction: column; }
 .cr-field-spacer { height: 16px; flex-shrink: 0; }
 
+/* Courier picker popover (searchable, from master data couriers) */
+.cr-courier-search-wrap { padding: var(--mp-spacing-3); }
+.cr-courier-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cr-courier-search::placeholder { color: var(--mp-text-placeholder); }
+.cr-courier-list { max-height: 260px; overflow-y: auto; }
+.cr-courier-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+
 .cr-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cr-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 
@@ -698,7 +883,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);

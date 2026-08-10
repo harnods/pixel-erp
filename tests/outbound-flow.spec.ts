@@ -5,7 +5,7 @@
  * asserting Order qty / Qty to pick / Picked qty / Packed qty at each transition.
  *
  * Expected lifecycle (confirmed against the actual data-layer code):
- *   1. Order created (status "open")            → EVERY SKU line gets reserved,
+ *   1. Order created (status "pending")          → EVERY SKU line gets reserved,
  *      batch/serial-tracked or plain — a plain SKU reservation just holds a bare
  *      qty (no batchNo/serials to pin it to), same anti-oversell purpose.
  *   2. Picking task created from the order       → toPickQty = order demand,
@@ -35,7 +35,7 @@ import {
 import {
   addPackingTask, startPacking, savePackingDraft, endPacking, getPackingTask,
 } from '~/data/packingTasks'
-import { addDeliveryTaskFromPackingTasks, getDeliveryForOrder, handoverToCourierBulk } from '~/data/deliveryTasks'
+import { addDeliveryTaskFromPackingTasks, getDeliveryForOrder, handoverToCourierBulk, completeShipment } from '~/data/deliveryTasks'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
@@ -54,7 +54,7 @@ function makeOrder(): OutgoingOrder {
     skuQty: 1,
     orderQty: ORDER_QTY,
     shippedQty: 0,
-    status: 'open',
+    status: 'pending',
     dueDate: '2026-08-01',
     lines: [{
       sku: SKU, productName: 'Coffee Scale 2kg / 0.1g', desc: '', img: '', unit: 'Unit', qty: ORDER_QTY,
@@ -69,7 +69,7 @@ describe('Outbound flow — Order qty / Qty to pick / Picked qty / Packed qty at
 
     const order = makeOrder()
     expect(order.orderQty).toBe(ORDER_QTY)
-    expect(order.status).toBe('open')
+    expect(order.status).toBe('pending') // no picking/packing task yet
 
     const after = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === SKU)!
     expect(after.available).toBe(availableBefore - ORDER_QTY)
@@ -276,7 +276,7 @@ describe('Outbound flow — Order qty / Qty to pick / Picked qty / Packed qty at
     expect(finishedPack.packedQty).toBe(1)
 
     const delivery = addDeliveryTaskFromPackingTasks([finishedPack], { assignee: 'Test Operator' })
-    handoverToCourierBulk([delivery.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' })
+    { const [s] = handoverToCourierBulk([delivery.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' }); completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-11', receivedBy: 'Rina' }) }
 
     syncOutboundOrderStatuses()
     expect(order.status).toBe('partially shipped')
@@ -304,7 +304,7 @@ describe('Outbound flow — Order qty / Qty to pick / Picked qty / Packed qty at
     startPacking(fullPack.id)
     endPacking(fullPack.id, { [fullLineKey]: ORDER_QTY })
     const fullDelivery = addDeliveryTaskFromPackingTasks([getPackingTask(fullPack.id)!], { assignee: 'Test Operator' })
-    handoverToCourierBulk([fullDelivery.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' })
+    { const [s] = handoverToCourierBulk([fullDelivery.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' }); completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-11', receivedBy: 'Rina' }) }
     syncOutboundOrderStatuses()
     expect(fullOrder.status).toBe('completed')
     expect(canPickOrder(fullOrder)).toBe(false)

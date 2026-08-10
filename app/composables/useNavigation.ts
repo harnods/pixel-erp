@@ -46,6 +46,16 @@ export function pathToLabel(path: string): string {
  */
 const activeMenuLabel = ref("");
 
+/**
+ * Sidebar-active override — for detail routes whose URL segment is shared by more
+ * than one menu item (e.g. /stock-adjustments/:id serves both the ERP "Stock
+ * adjustments" record AND WMS "Cycle counts"/"Stock in/out" tasks). The detail
+ * page sets this to the label it actually belongs to so the sidebar highlights
+ * the right section instead of deriving it from the URL alone; clears it on
+ * unmount so navigation elsewhere falls back to the normal URL-derived behavior.
+ */
+const activeSectionOverride = ref<string | null>(null);
+
 export const useNavigation = () => {
   const route = useRoute();
   const router = useRouter();
@@ -73,6 +83,11 @@ export const useNavigation = () => {
     activeMenuLabel.value = label;
   }
 
+  /** See `activeSectionOverride` above. Pass null to clear (e.g. on unmount). */
+  function setActiveSectionOverride(label: string | null) {
+    activeSectionOverride.value = label;
+  }
+
   /**
    * Navigate to a menu item by label.
    * @param label - the menu item label (e.g. 'Sales invoices', 'Home')
@@ -84,5 +99,5 @@ export const useNavigation = () => {
     }
   }
 
-  return { pageTitle, currentPageKey, navigate, setActiveMenuLabel };
+  return { pageTitle, currentPageKey, navigate, setActiveMenuLabel, activeSectionOverride, setActiveSectionOverride };
 };

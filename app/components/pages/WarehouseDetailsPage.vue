@@ -15,16 +15,22 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
-import BatchReservationsDrawer from '~/components/patterns/BatchReservationsDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
-import { getWarehouseDetail, getReservationsForBatch, type WarehouseStockItem } from '~/data/warehouseDetails'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeSheetPdf, type BarcodeLabelInfo } from '~/utils/barcodeLabelPdf'
+import { getBatchBarcode, setBatchBarcode } from '~/data/productDetails'
+import { generateNextBarcode } from '~/data/barcodeConfig'
+import type jsPDF from 'jspdf'
+import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
-import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
-import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { warehouses, getWarehouseActivity, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
+import { getStorageTree, type LocNode } from '~/data/storageLocations'
+import { archiveWarehousesSafe, deleteLocationSafe } from '~/data/integrityGuards'
 import {
   getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
   getAvailableUsersForWarehouse,
@@ -42,6 +48,7 @@ import { activeWmsAdjustmentsFor, reassignWmsAdjustments } from '~/data/wmsStock
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const route  = useRoute()
+const { t } = useLocale()
 
 // ── Tab persistence via URL query (?tab=products|batches|serial|transactions|locations)
 // Lets browser back/forward restore the exact tab the user was on.
@@ -80,11 +87,11 @@ const activityEntries = computed(() => {
     user: w.updatedBy,
     activity: 'Created',
     details: [
-      { label: 'Name', value: dash(w.name) },
-      { label: 'Code', value: dash(w.code) },
-      { label: 'PIC', value: w.pics.map((p) => p.name).join(', ') || EM_DASH },
-      { label: 'Address', value: dash(w.address) },
-      { label: 'Description', value: dash(w.description) },
+      { label: t('Name'), value: dash(w.name) },
+      { label: t('Code'), value: dash(w.code) },
+      { label: t('PIC'), value: w.pics.map((p) => p.name).join(', ') || EM_DASH },
+      { label: t('Address'), value: dash(w.address) },
+      { label: t('Description'), value: dash(w.description) },
     ],
   }
   return [...logged, createdBaseline]
@@ -115,11 +122,11 @@ const infoRows = computed(() => {
   const w = warehouse.value
   if (!w) return []
   return [
-    { key: 'name', label: 'Warehouse name', value: dash(w.name) },
-    { key: 'code', label: 'Warehouse code', value: dash(w.code) },
-    { key: 'pic', label: 'PIC', value: dash(w.pic) },
-    { key: 'address', label: 'Address', value: dash(w.address) },
-    { key: 'description', label: 'Description', value: dash(w.description) },
+    { key: 'name', label: t('Warehouse name'), value: dash(w.name) },
+    { key: 'code', label: t('Warehouse code'), value: dash(w.code) },
+    { key: 'pic', label: t('PIC'), value: dash(w.pic) },
+    { key: 'address', label: t('Address'), value: dash(w.address) },
+    { key: 'description', label: t('Description'), value: dash(w.description) },
   ]
 })
 
@@ -141,19 +148,23 @@ function goConfigure() {
 }
 function confirmArchive() {
   if (!warehouse.value) return
-  archiveWarehouses([warehouse.value.id])
+  const res = archiveWarehousesSafe([warehouse.value.id])
   archiveModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse archived' , maxWidth: 'max-content'})
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: t("Warehouse still has stock or open tasks and can't be archived") , maxWidth: 'max-content'})
+    return
+  }
+  toast.notify({ variant: 'success', title: t('Warehouse archived') , maxWidth: 'max-content'})
 }
 /** Unarchive is a low-friction, reversible action — no confirmation modal (matches the index). */
 function unarchive() {
   if (!warehouse.value) return
   unarchiveWarehouses([warehouse.value.id])
-  toast.notify({ variant: 'success', title: 'Warehouse unarchived' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Warehouse unarchived') , maxWidth: 'max-content'})
 }
 function confirmDelete() {
   deleteModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse deleted' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Warehouse deleted') , maxWidth: 'max-content'})
   router.push('/warehouses')
 }
 
@@ -251,7 +262,11 @@ function toggleLoc(node: LocNode) {
   expandedLoc.value = s
 }
 function deleteLoc(node: LocNode) {
-  if (warehouse.value) deleteLocation(warehouse.value.id, node.id)
+  if (!warehouse.value) return
+  const res = deleteLocationSafe(warehouse.value.id, node.id)
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: t("This location still holds stock and can't be deleted") , maxWidth: 'max-content'})
+  }
 }
 function viewLocation(node: LocNode) {
   if (warehouse.value) router.push(`/warehouses/${warehouse.value.id}/locations/${node.id}`)
@@ -270,6 +285,7 @@ function addSubLoc(node: LocNode) {
   newLocParentId.value = node.id
   newLocOpen.value = true
 }
+
 function onLocSaved(parentId: string | null) {
   if (parentId) expandedLoc.value = new Set([...expandedLoc.value, parentId])
 }
@@ -313,7 +329,7 @@ async function saveTeamMember() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   addTeamMember(props.orderId, { userId: teamUserIdDraft.value, addedBy: currentUserName.value })
-  toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Team member added'), maxWidth: 'max-content' })
   isSaving.value = false
   teamModalOpen.value = false
 }
@@ -350,7 +366,7 @@ function onRemoveTeamMember(member: WarehouseTeamMember) {
 function confirmRemoveTeamMember() {
   if (!memberToRemove.value) return
   if (memberActiveTaskCount.value > 0 && !reassignTargetId.value) {
-    toast.notify({ variant: 'error', title: 'Select team member to reassign tasks to', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Select team member to reassign tasks to'), maxWidth: 'max-content' })
     return
   }
   const wid = props.orderId
@@ -369,7 +385,7 @@ function confirmRemoveTeamMember() {
   removeTeamMember(memberToRemove.value.id)
   removeTeamModalOpen.value = false
   memberToRemove.value = null
-  toast.notify({ variant: 'success', title: `${fromName} removed from the team`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${fromName} ${t('removed from the team')}`, maxWidth: 'max-content' })
 }
 
 const search = ref('')
@@ -480,15 +496,15 @@ const expiryFrom  = ref('')    // DD/MM/YYYY — only used when preset === 'cust
 const expiryTo    = ref('')
 
 const expiryPresets = [
-  { label: 'Already expired',  value: 'expired'    },
-  { label: 'This month',       value: 'thismonth'  },
-  { label: 'Next 2 months',    value: 'next2m'     },
-  { label: 'Next 3 months',    value: 'next3m'     },
-  { label: 'Custom range',     value: 'custom'     },
+  { label: t('Already expired'),  value: 'expired'    },
+  { label: t('This month'),       value: 'thismonth'  },
+  { label: t('Next 2 months'),    value: 'next2m'     },
+  { label: t('Next 3 months'),    value: 'next3m'     },
+  { label: t('Custom range'),     value: 'custom'     },
 ]
 const expiryLabel = computed(() => {
   if (expiryPreset.value === 'custom')
-    return expiryFrom.value && expiryTo.value ? `${expiryFrom.value} – ${expiryTo.value}` : 'Custom range'
+    return expiryFrom.value && expiryTo.value ? `${expiryFrom.value} – ${expiryTo.value}` : t('Custom range')
   return expiryPresets.find((o) => o.value === expiryPreset.value)?.label ?? ''
 })
 
@@ -537,7 +553,7 @@ const filteredBatchProducts = computed(() => {
 })
 
 function isBatchExpanded(id: string) { return expandedBatches.value.has(id) }
-function batchCountLabel(n: number) { return `${n} ${n === 1 ? 'batch' : 'batches'}` }
+function batchCountLabel(n: number) { return `${n} ${n === 1 ? t('batch') : t('batches')}` }
 
 // ── Serial numbers tab (grouped, expandable per product) ───────────────────────
 const serialSearch = ref('')
@@ -552,7 +568,57 @@ const filteredSerialProducts = computed(() => {
     (s) => s.name.toLowerCase().includes(q) || s.sku.toLowerCase().includes(q),
   )
 })
-function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
+function serialCountLabel(n: number) { return `${n} ${n === 1 ? t('serial number') : t('serial numbers')}` }
+
+// ── Print all barcode (per tab) ───────────────────────────────────────────────
+const printBarcodeOptionsOpen = ref(false)
+const printLabels = ref<BarcodeLabelInfo[]>([])
+const printFilename = ref('')
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintAll(labels: BarcodeLabelInfo[], scope: string) {
+  if (!labels.length) return
+  printLabels.value = labels
+  printFilename.value = `Barcodes - ${warehouse.value?.name ?? 'warehouse'} (${scope}).pdf`
+  printBarcodeOptionsOpen.value = true
+}
+// Plain-SKU products — one label per SKU (the SKU's own barcode).
+function printAllPlainBarcodes() {
+  openPrintAll(
+    filteredStock.value.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
+    'products',
+  )
+}
+// Batch products — one label per batch (each batch's own barcode, generated on first use).
+function printAllBatchBarcodes() {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredBatchProducts.value) {
+    for (const b of s.batches ?? []) {
+      let barcode = getBatchBarcode(s.sku, b.batchNo)
+      if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(s.sku, b.batchNo, barcode) }
+      labels.push({ barcode, batchNo: b.batchNo, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'batches')
+}
+// Serial products — one label per serial (available + reserved); the SN is its barcode.
+function printAllSerialBarcodes() {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredSerialProducts.value) {
+    for (const u of [...(s.serials?.available ?? []), ...(s.serials?.reserved ?? [])]) {
+      labels.push({ barcode: u.serial, batchNo: u.serial, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'serial numbers')
+}
+async function confirmPrintAllBarcodes({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  printBarcodeOptionsOpen.value = false
+  barcodePreviewDoc.value = await generateBarcodeSheetPdf(printLabels.value, columns, qty)
+  barcodePreviewFilename.value = printFilename.value
+  barcodePreviewOpen.value = true
+}
+
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
 // Min. stock and Unit are rowspan'd across a group's batch rows, so a child row never
 // gets its own cell for them — its actual last <td> is only the table's true right edge
@@ -608,27 +674,13 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
   serialDrawerOpen.value    = true
 }
 
-// ── Batch reservations drawer (temporary design) ────────────────────────────
-const batchReservationsProduct = ref<WarehouseStockItem | null>(null)
-const batchReservationsBatchNo = ref('')
-const batchReservationsOpen    = ref(false)
-function openBatchReservations(p: WarehouseStockItem, batchNo: string) {
-  batchReservationsProduct.value = p
-  batchReservationsBatchNo.value = batchNo
-  batchReservationsOpen.value    = true
+// ── View batch details ───────────────────────────────────────────────────────
+// Same page/format as the Products batch details, but STAYS under /warehouses so
+// the warehouse context (path + breadcrumb) is kept and the qty shown is this
+// warehouse's lot. BatchDetailsPage renders warehouse-scoped mode from this id.
+function viewBatch(p: WarehouseStockItem, batchNo: string) {
+  router.push(`/warehouses/${props.orderId}/batches/${p.sku}/${encodeURIComponent(batchNo)}`)
 }
-const batchReservationRows = computed(() => {
-  const p = batchReservationsProduct.value
-  if (!p) return []
-  return getReservationsForBatch(props.orderId, p.sku, batchReservationsBatchNo.value).map((r) => {
-    const order = outgoingOrders.find((o) => o.id === r.taskId)
-    return {
-      salesNo: order?.salesNo ?? r.taskId,
-      orderNumber: order?.number ?? r.taskId,
-      qty: r.qty,
-    }
-  })
-})
 
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
@@ -643,9 +695,9 @@ function isExpiryWarning(iso: string) {
 function expiryTooltip(iso: string) {
   const d = formatDateNumeric(iso)
   const days = daysToExpiry(iso)
-  if (days < 0) return `Expired on ${d}`
-  if (days === 0) return `Expires today (${d})`
-  return `Expiring in ${days} day${days === 1 ? '' : 's'} (${d})`
+  if (days < 0) return `${t('Expired on')} ${d}`
+  if (days === 0) return `${t('Expires today')} (${d})`
+  return `${t('Expiring in')} ${days} ${days === 1 ? t('day') : t('days')} (${d})`
 }
 
 function formatNum(n: number) {
@@ -732,16 +784,16 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <!-- ── Title bar (breadcrumb + title + Actions dropdown) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button v-if="showBreadcrumb" class="detail-breadcrumb" @click="goBack">Warehouses</button>
+        <button v-if="showBreadcrumb" class="detail-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ warehouse.name }}</h1>
-          <MpBadge v-if="warehouse.isDefault" for="additionalInformation" type="information" size="sm">Default</MpBadge>
-          <MpBadge v-else-if="isArchived" for="additionalInformation" type="announcement" size="sm">Archived</MpBadge>
+          <MpBadge v-if="warehouse.isDefault" for="additionalInformation" type="information" size="sm">{{ t('Default') }}</MpBadge>
+          <MpBadge v-else-if="isArchived" for="additionalInformation" type="announcement" size="sm">{{ t('Archived') }}</MpBadge>
 
           <!-- Chevron → jump-to-warehouse switcher -->
           <MpPopover id="wh-detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch warehouse">
+              <button class="detail-jump-chevron" :aria-label="t('Switch warehouse')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -750,8 +802,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search warehouse…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -762,7 +814,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <span class="detail-jump-item-name">{{ w.name }}</span>
                     <span class="detail-jump-item-sub">{{ w.code }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No warehouses found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No warehouses found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -774,7 +826,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       <MpPopover id="wh-detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -782,19 +834,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="goEdit">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="goEdit">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canArchive" @click="isArchived ? unarchive() : (archiveModalOpen = true)">
-              {{ isArchived ? 'Unarchive' : 'Archive' }}
+              {{ isArchived ? t('Unarchive') : t('Archive') }}
             </MpPopoverListItem>
             <MpPopoverListItem
               v-if="canDelete"
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="deleteModalOpen = true"
             >
-              Delete
+              {{ t('Delete') }}
             </MpPopoverListItem>
             <div class="wh-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem @click="goConfigure">Configure warehouse</MpPopoverListItem>
+            <MpPopoverListItem @click="goConfigure">{{ t('Configure warehouse') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -805,7 +857,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
       <!-- ── Warehouse info ── -->
       <section class="wh-info">
-        <h2 class="wh-info-title">Warehouse info</h2>
+        <h2 class="wh-info-title">{{ t('Warehouse info') }}</h2>
         <dl class="wh-info-list">
           <div v-for="row in infoRows" :key="row.label" class="wh-info-row">
             <dt class="wh-info-label">{{ row.label }}</dt>
@@ -819,19 +871,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           </div>
         </dl>
         <a class="detail-updated" @click.prevent="activityOpen = true">
-          Last updated by {{ warehouse.updatedBy }} on {{ formatUpdatedAt(warehouse.updatedAt) }}
+          {{ t('Last updated by') }} {{ warehouse.updatedBy }} {{ t('on') }} {{ formatUpdatedAt(warehouse.updatedAt) }}
         </a>
       </section>
 
       <!-- ── Tabs ── -->
       <MpTabs id="wh-detail-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="wh-tab-products" value="products">Products</MpTab>
-          <MpTab v-if="hasBatchTab" id="wh-tab-batches" value="batches">Batches</MpTab>
-          <MpTab v-if="hasSerialTab" id="wh-tab-serial" value="serial">Serial numbers</MpTab>
-          <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">Transactions</MpTab>
-          <MpTab id="wh-tab-locations" value="locations">Storage locations</MpTab>
-          <MpTab id="wh-tab-team" value="team">Team</MpTab>
+          <MpTab id="wh-tab-products" value="products">{{ t('Products') }}</MpTab>
+          <MpTab v-if="hasBatchTab" id="wh-tab-batches" value="batches">{{ t('Batches') }}</MpTab>
+          <MpTab v-if="hasSerialTab" id="wh-tab-serial" value="serial">{{ t('Serial numbers') }}</MpTab>
+          <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">{{ t('Transactions') }}</MpTab>
+          <MpTab id="wh-tab-locations" value="locations">{{ t('Storage locations') }}</MpTab>
+          <MpTab id="wh-tab-team" value="team">{{ t('Team') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="products">
@@ -856,8 +908,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <!-- toolbar: airene · columns · export · search (right-aligned) -->
               <template #filters>
                 <div class="wh-toolbar">
-                  <MpTooltip id="wh-tt-airene" label="Ask Airene" placement="bottom" use-portal>
-                    <button class="wh-tool-btn wh-tool-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+                  <MpTooltip id="wh-tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+                    <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                         <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                         <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -865,20 +917,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </button>
                   </MpTooltip>
                   <ColumnSettingsMenu id="wh-tt-columns" :items="stockColItems" :visibility="stockColVisibility" />
-                  <MpTooltip id="wh-tt-export" label="Export" placement="bottom" use-portal>
-                    <button class="wh-tool-btn" aria-label="Export">
+                  <MpTooltip id="wh-tt-export" :label="t('Export')" placement="bottom" use-portal>
+                    <button class="wh-tool-btn" :aria-label="t('Export')">
                       <MpIcon name="download" size="md" />
                     </button>
                   </MpTooltip>
                   <div class="wh-search">
                     <MpIcon name="search" size="md" />
-                    <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
-                    <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+                    <input v-model="search" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                    <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                       </svg>
                     </button>
                   </div>
+                  <button v-if="filteredStock.length" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">{{ t('Print all barcode') }}</button>
                 </div>
               </template>
 
@@ -888,17 +941,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <div class="wh-product">
                     <img class="wh-thumb" :src="(row as any).photo" :alt="(row as any).name" loading="lazy" />
                     <span class="wh-product-text">
-                      <span class="wh-product-name">{{ (row as any).name }}</span>
+                      <a class="cell-link wh-product-name" @click.stop>{{ (row as any).name }}</a>
                       <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                     </span>
                   </div>
-                  <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
                 </div>
               </template>
 
@@ -931,7 +977,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <li v-for="cat in (expandedCategories.has((row as any).id) ? (row as any).categories : (row as any).categories.slice(0, CAT_MAX))" :key="cat" class="wh-cat-item">{{ cat }}</li>
                   </ul>
                   <button v-if="(row as any).categories.length > CAT_MAX" class="wh-cat-toggle" type="button" @click.stop="toggleCategories((row as any).id)">
-                    {{ expandedCategories.has((row as any).id) ? 'View less' : `+${(row as any).categories.length - CAT_MAX} more` }}
+                    {{ expandedCategories.has((row as any).id) ? t('View less') : `+${(row as any).categories.length - CAT_MAX} ${t('more')}` }}
                   </button>
                 </template>
                 <template v-else>{{ (row as any).category }}</template>
@@ -954,7 +1000,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #actions="{ row }">
                 <MpPopover :id="`wh-stock-${(row as any).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
-                    <button class="row-kebab" aria-label="More actions">
+                    <button class="row-kebab" :aria-label="t('More actions')">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <circle cx="12" cy="5" r="2" />
                         <circle cx="12" cy="12" r="2" />
@@ -964,8 +1010,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
-                      <MpPopoverListItem>View product</MpPopoverListItem>
-                      <MpPopoverListItem>Adjust stock</MpPopoverListItem>
+                      <MpPopoverListItem>{{ t('View product') }}</MpPopoverListItem>
+                      <MpPopoverListItem>{{ t('Adjust stock') }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -975,8 +1021,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #empty>
                 <div class="empty-full">
                   <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-                  <p class="empty-full-title">No products</p>
-                  <p class="empty-full-desc">Products in this warehouse will appear here.</p>
+                  <p class="empty-full-title">{{ t('No products') }}</p>
+                  <p class="empty-full-desc">{{ t('Products in this warehouse will appear here.') }}</p>
                 </div>
               </template>
             </ErpTablePage>
@@ -991,7 +1037,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <MpPopoverTrigger>
                     <MpSelect
                       id="wh-expiry-select"
-                      placeholder="Expiry date range"
+                      :placeholder="t('Expiry date range')"
                       :model-value="expiryPreset"
                       is-clearable
                       @mousedown.prevent
@@ -1010,15 +1056,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       >{{ opt.label }}</MpPopoverListItem>
                     </MpPopoverList>
                     <div v-if="expiryPreset === 'custom'" class="wh-expiry-custom">
-                      <MpDatePicker id="wh-expiry-from" v-model="expiryFrom" placeholder="From" format="DD/MM/YYYY" use-portal />
-                      <MpDatePicker id="wh-expiry-to"   v-model="expiryTo"   placeholder="To"   format="DD/MM/YYYY" use-portal />
+                      <MpDatePicker id="wh-expiry-from" v-model="expiryFrom" :placeholder="t('From')" format="DD/MM/YYYY" use-portal />
+                      <MpDatePicker id="wh-expiry-to"   v-model="expiryTo"   :placeholder="t('To')"   format="DD/MM/YYYY" use-portal />
                     </div>
                   </MpPopoverContent>
                 </MpPopover>
               </div>
               <div class="wh-toolbar">
-                <MpTooltip id="wh-bt-airene" label="Ask Airene" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+                <MpTooltip id="wh-bt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -1026,18 +1072,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   </button>
                 </MpTooltip>
                 <ColumnSettingsMenu id="wh-bt-columns" :items="batchColItems" :visibility="batchColVisibility" />
-                <MpTooltip id="wh-bt-export" label="Export" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                <MpTooltip id="wh-bt-export" :label="t('Export')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
-                  <input v-model="batchSearch" class="wh-search-input" type="text" placeholder="Search..." />
-                  <button v-if="batchSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="batchSearch = ''">
+                  <input v-model="batchSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                  <button v-if="batchSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="batchSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
                   </button>
                 </div>
+                <button v-if="filteredBatchProducts.length" class="wh-print-all-btn" type="button" @click="printAllBatchBarcodes">{{ t('Print all barcode') }}</button>
               </div>
             </div>
 
@@ -1059,17 +1106,17 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="wh-bth">Product</th>
-                    <th v-if="batchColVisibility.sku" class="wh-bth">SKU</th>
-                    <th v-if="batchColVisibility.batch" class="wh-bth">Batch</th>
-                    <th v-if="batchColVisibility.location" class="wh-bth">Location</th>
-                    <th v-if="batchColVisibility.expiry" class="wh-bth">Expiry date</th>
-                    <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">On hand qty</th>
-                    <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">Reserved qty</th>
-                    <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">Available qty</th>
-                    <th v-if="batchColVisibility.minStock" class="wh-bth wh-bth--num">Min. stock</th>
-                    <th v-if="batchColVisibility.unit" class="wh-bth">Unit</th>
-                    <th v-if="batchColVisibility.lastUpdated" class="wh-bth">Last updated</th>
+                    <th class="wh-bth">{{ t('Product') }}</th>
+                    <th v-if="batchColVisibility.sku" class="wh-bth">{{ t('SKU') }}</th>
+                    <th v-if="batchColVisibility.batch" class="wh-bth">{{ t('Batch') }}</th>
+                    <th v-if="batchColVisibility.location" class="wh-bth">{{ t('Location') }}</th>
+                    <th v-if="batchColVisibility.expiry" class="wh-bth">{{ t('Expiry date') }}</th>
+                    <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">{{ t('On hand qty') }}</th>
+                    <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">{{ t('Reserved qty') }}</th>
+                    <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">{{ t('Available qty') }}</th>
+                    <th v-if="batchColVisibility.minStock" class="wh-bth wh-bth--num">{{ t('Min. stock') }}</th>
+                    <th v-if="batchColVisibility.unit" class="wh-bth">{{ t('Unit') }}</th>
+                    <th v-if="batchColVisibility.lastUpdated" class="wh-bth">{{ t('Last updated') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1084,7 +1131,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         <div class="wh-batch-product">
                           <button
                             class="wh-expand-btn"
-                            :aria-label="isBatchExpanded(p.id) ? 'Collapse' : 'Expand'"
+                            :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
                           >
                             <svg
                               width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
@@ -1096,18 +1143,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
-                              <span class="wh-product-name">{{ p.name }}</span>
+                              <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                               <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
                       </td>
                       <td v-if="batchColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">
                         {{ p.sku }}
@@ -1125,14 +1165,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <!-- batch rows (only when expanded) -->
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
-                        <span>{{ b.batchNo }}</span>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop="openBatchReservations(p, b.batchNo)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a class="cell-link" @click.stop="viewBatch(p, b.batchNo)">{{ b.batchNo }}</a>
                       </td>
                       <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
                       <td v-if="batchColVisibility.expiry" class="wh-btd">
@@ -1164,8 +1197,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- empty state (no horizontal scroll — replaces the table entirely) -->
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No batches</p>
-              <p class="empty-full-desc">Batch-tracked products in this warehouse will appear here.</p>
+              <p class="empty-full-title">{{ t('No batches') }}</p>
+              <p class="empty-full-desc">{{ t('Batch-tracked products in this warehouse will appear here.') }}</p>
             </div>
 
             <ErpPagination
@@ -1179,8 +1212,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- toolbar: airene · columns · export · search (right-aligned) -->
             <div class="wh-filter-bar wh-filter-bar--end">
               <div class="wh-toolbar">
-                <MpTooltip id="wh-st-airene" label="Ask Airene" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+                <MpTooltip id="wh-st-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -1188,18 +1221,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   </button>
                 </MpTooltip>
                 <ColumnSettingsMenu id="wh-st-columns" :items="serialColItems" :visibility="serialColVisibility" />
-                <MpTooltip id="wh-st-export" label="Export" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                <MpTooltip id="wh-st-export" :label="t('Export')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
-                  <input v-model="serialSearch" class="wh-search-input" type="text" placeholder="Search..." />
-                  <button v-if="serialSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="serialSearch = ''">
+                  <input v-model="serialSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                  <button v-if="serialSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
                   </button>
                 </div>
+                <button v-if="filteredSerialProducts.length" class="wh-print-all-btn" type="button" @click="printAllSerialBarcodes">{{ t('Print all barcode') }}</button>
               </div>
             </div>
 
@@ -1217,13 +1251,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="wh-bth">Product</th>
-                    <th v-if="serialColVisibility.sku" class="wh-bth">SKU</th>
-                    <th v-if="serialColVisibility.available" class="wh-bth">Available qty</th>
-                    <th v-if="serialColVisibility.reserved" class="wh-bth">Reserved qty</th>
-                    <th v-if="serialColVisibility.minStock" class="wh-bth wh-bth--num">Min. stock</th>
-                    <th v-if="serialColVisibility.unit" class="wh-bth">Unit</th>
-                    <th v-if="serialColVisibility.lastUpdated" class="wh-bth">Last updated</th>
+                    <th class="wh-bth">{{ t('Product') }}</th>
+                    <th v-if="serialColVisibility.sku" class="wh-bth">{{ t('SKU') }}</th>
+                    <th v-if="serialColVisibility.available" class="wh-bth">{{ t('Available qty') }}</th>
+                    <th v-if="serialColVisibility.reserved" class="wh-bth">{{ t('Reserved qty') }}</th>
+                    <th v-if="serialColVisibility.minStock" class="wh-bth wh-bth--num">{{ t('Min. stock') }}</th>
+                    <th v-if="serialColVisibility.unit" class="wh-bth">{{ t('Unit') }}</th>
+                    <th v-if="serialColVisibility.lastUpdated" class="wh-bth">{{ t('Last updated') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1234,35 +1268,18 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
-                              <span class="wh-product-name">{{ p.name }}</span>
+                              <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                               <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
                       </td>
                       <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku">{{ p.sku }}</td>
                       <td v-if="serialColVisibility.available" class="wh-btd">
-                        <div class="cell-with-action">
-                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.available.length) }}</span>
-                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'available')">
-                            <span class="row-hover-btn__label">VIEW DETAILS</span>
-                          </button>
-                        </div>
+                        <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'available')">{{ serialCountLabel(p.serials.available.length) }}</a>
                       </td>
                       <td v-if="serialColVisibility.reserved" class="wh-btd">
-                        <div class="cell-with-action">
-                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.reserved.length) }}</span>
-                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'reserved')">
-                            <span class="row-hover-btn__label">VIEW DETAILS</span>
-                          </button>
-                        </div>
+                        <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'reserved')">{{ serialCountLabel(p.serials.reserved.length) }}</a>
                       </td>
                       <td v-if="serialColVisibility.minStock" class="wh-btd wh-btd--num">{{ formatNum(p.minStock) }}</td>
                       <td v-if="serialColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
@@ -1276,8 +1293,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- empty state (no horizontal scroll — replaces the table entirely) -->
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No serial numbers</p>
-              <p class="empty-full-desc">Serial-tracked products in this warehouse will appear here.</p>
+              <p class="empty-full-title">{{ t('No serial numbers') }}</p>
+              <p class="empty-full-desc">{{ t('Serial-tracked products in this warehouse will appear here.') }}</p>
             </div>
 
             <ErpPagination
@@ -1291,12 +1308,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- toolbar: date range + type filter (left) | airene · export · search (right) -->
             <div class="wh-filter-bar">
               <div class="wh-tx-filters">
-                <MpDatePicker id="wh-tx-range" v-model="txDateRange" placeholder="Date range" format="DD/MM/YYYY" is-range is-clearable use-portal />
+                <MpDatePicker id="wh-tx-range" v-model="txDateRange" :placeholder="t('Date range')" format="DD/MM/YYYY" is-range is-clearable use-portal />
                 <MpPopover id="wh-tx-type-pop" :is-close-on-select="false" use-portal placement="bottom-start">
                   <MpPopoverTrigger>
                     <MpSelect
                       id="wh-tx-type"
-                      placeholder="Transaction type"
+                      :placeholder="t('Transaction type')"
                       :model-value="txTypeFilter"
                       is-clearable
                       class="wh-tx-type-select"
@@ -1319,21 +1336,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </MpPopover>
               </div>
               <div class="wh-toolbar">
-                <MpTooltip id="wh-tx-airene" label="Ask Airene" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+                <MpTooltip id="wh-tx-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                     </svg>
                   </button>
                 </MpTooltip>
-                <MpTooltip id="wh-tx-export" label="Export" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                <MpTooltip id="wh-tx-export" :label="t('Export')" placement="bottom" use-portal>
+                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
-                  <input v-model="txSearch" class="wh-search-input" type="text" placeholder="Search..." />
-                  <button v-if="txSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="txSearch = ''">
+                  <input v-model="txSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                  <button v-if="txSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="txSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -1352,9 +1369,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="wh-bth">Number</th>
-                    <th class="wh-bth">Date</th>
-                    <th class="wh-bth wh-bth--num">SKU qty</th>
+                    <th class="wh-bth">{{ t('Number') }}</th>
+                    <th class="wh-bth">{{ t('Date') }}</th>
+                    <th class="wh-bth wh-bth--num">{{ t('SKU qty') }}</th>
                     <th class="wh-bth" />
                   </tr>
                 </thead>
@@ -1362,14 +1379,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="wh-batch-group-row wh-tx-row">
                     <td class="wh-btd">
                       <div class="cell-with-action">
-                        <span>{{ tx.number }}</span>
-                        <button v-if="tx.link" class="row-hover-btn" @click.stop="router.push(tx.link)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a v-if="tx.link" class="cell-link" @click.stop="router.push(tx.link)">{{ tx.number }}</a>
+                        <span v-else>{{ tx.number }}</span>
                       </div>
                     </td>
                     <td class="wh-btd">{{ formatDate(tx.date) }}</td>
@@ -1381,8 +1392,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No transactions</p>
-              <p class="empty-full-desc">Transactions in this warehouse will appear here.</p>
+              <p class="empty-full-title">{{ t('No transactions') }}</p>
+              <p class="empty-full-desc">{{ t('Transactions in this warehouse will appear here.') }}</p>
             </div>
 
             <ErpPagination
@@ -1400,23 +1411,23 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- empty state (e.g. the default warehouse has no locations) -->
             <div v-if="!locTree.length" class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No storage locations</p>
-              <p class="empty-full-desc">Storage locations for this warehouse will appear here.</p>
-              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openNewLoc">New location</MpButton>
+              <p class="empty-full-title">{{ t('No storage locations') }}</p>
+              <p class="empty-full-desc">{{ t('Storage locations for this warehouse will appear here.') }}</p>
+              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openNewLoc">{{ t('New location') }}</MpButton>
             </div>
 
             <template v-else>
             <div class="wh-loc-filterbar">
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
-                <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search location..." />
-                <button v-if="locSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="locSearch = ''">
+                <input v-model="locSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                <button v-if="locSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="locSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
                 </button>
               </div>
-              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">New location</MpButton>
+              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">{{ t('New location') }}</MpButton>
             </div>
 
             <div class="wh-loc-scroll">
@@ -1428,8 +1439,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="wh-bth">Location name</th>
-                    <th class="wh-bth">SKU qty</th>
+                    <th class="wh-bth">{{ t('Location name') }}</th>
+                    <th class="wh-bth">{{ t('SKU qty') }}</th>
                     <th class="wh-bth" />
                   </tr>
                 </thead>
@@ -1464,21 +1475,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                             :class="row.node.type === 'Storage' ? 'wh-loc-type-icon--storage' : 'wh-loc-type-icon--org'"
                           />
                         </MpTooltip>
-                        <span class="wh-loc-name-text">{{ row.node.name }}</span>
-                        <button class="wh-loc-view" @click.stop="viewLocation(row.node)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a class="cell-link wh-loc-name-text" @click.stop="viewLocation(row.node)">{{ row.node.name }}</a>
                       </div>
                     </td>
                     <td class="wh-btd">{{ formatNum(row.node.skuQty) }}</td>
                     <td class="wh-btd wh-loc-td--action">
                       <MpPopover :id="`wh-loc-actions-${row.node.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                          <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
@@ -1486,15 +1490,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
-                            <MpPopoverListItem @click="addSubLoc(row.node)">Add sub-location</MpPopoverListItem>
-                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteLoc(row.node)">Delete</MpPopoverListItem>
+                            <MpPopoverListItem @click="addSubLoc(row.node)">{{ t('Add sub-location') }}</MpPopoverListItem>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteLoc(row.node)">{{ t('Delete') }}</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
                     </td>
                   </tr>
                   <tr v-if="!flatLocations.length">
-                    <td class="wh-btd wh-loc-empty" colspan="3">No storage locations found.</td>
+                    <td class="wh-btd wh-loc-empty" colspan="3">{{ t('No storage locations found.') }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1507,23 +1511,23 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <MpTabPanel value="team">
             <div v-if="!team.length" class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No team members</p>
-              <p class="empty-full-desc">Add managers and operators to this warehouse. Task assignees are picked from its operators.</p>
-              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openAddTeamMember">Add team member</MpButton>
+              <p class="empty-full-title">{{ t('No team members') }}</p>
+              <p class="empty-full-desc">{{ t('Add managers and operators to this warehouse. Task assignees are picked from its operators.') }}</p>
+              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openAddTeamMember">{{ t('Add team member') }}</MpButton>
             </div>
 
             <template v-else>
             <div class="wh-loc-filterbar">
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
-                <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search name..." />
-                <button v-if="teamSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="teamSearch = ''">
+                <input v-model="teamSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
+                <button v-if="teamSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="teamSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
                 </button>
               </div>
-              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">Add team member</MpButton>
+              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">{{ t('Add team member') }}</MpButton>
             </div>
 
             <div class="wh-loc-scroll">
@@ -1537,10 +1541,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="wh-bth">Name</th>
-                    <th class="wh-bth">Role</th>
-                    <th class="wh-bth">Date added</th>
-                    <th class="wh-bth">Added by</th>
+                    <th class="wh-bth">{{ t('Name') }}</th>
+                    <th class="wh-bth">{{ t('Role') }}</th>
+                    <th class="wh-bth">{{ t('Date added') }}</th>
+                    <th class="wh-bth">{{ t('Added by') }}</th>
                     <th class="wh-bth" />
                   </tr>
                 </thead>
@@ -1555,13 +1559,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         <span class="wh-loc-name-text">{{ member.name }}</span>
                       </div>
                     </td>
-                    <td class="wh-btd">{{ member.role === 'manager' ? 'Manager' : 'Operator' }}</td>
+                    <td class="wh-btd">{{ member.role === 'manager' ? t('Manager') : t('Operator') }}</td>
                     <td class="wh-btd">{{ formatDate(member.addedAt) }}</td>
                     <td class="wh-btd">{{ member.addedBy }}</td>
                     <td class="wh-btd wh-loc-td--action">
                       <MpPopover :id="`wh-team-actions-${member.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                          <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
@@ -1569,14 +1573,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
-                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="onRemoveTeamMember(member)">Remove</MpPopoverListItem>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="onRemoveTeamMember(member)">{{ t('Remove') }}</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
                     </td>
                   </tr>
                   <tr v-if="!filteredTeam.length">
-                    <td class="wh-btd wh-loc-empty" colspan="5">No team members found.</td>
+                    <td class="wh-btd wh-loc-empty" colspan="5">{{ t('No team members found.') }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1600,26 +1604,26 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          Archive warehouse?
+          {{ t('Archive warehouse?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <div class="archive-modal-body">
-            <p>Archiving this warehouse will:</p>
+            <p>{{ t('Archiving this warehouse will:') }}</p>
             <ul>
-              <li>Hide it from all transaction forms.</li>
-              <li>Stop recurring transactions in Sales and Purchases.</li>
-              <li>Block draft transactions linked to this warehouse from being approved.</li>
-              <li>Disable multilevel storage.</li>
-              <li>May cause sync issues with Moka POS.</li>
+              <li>{{ t('Hide it from all transaction forms.') }}</li>
+              <li>{{ t('Stop recurring transactions in Sales and Purchases.') }}</li>
+              <li>{{ t('Block draft transactions linked to this warehouse from being approved.') }}</li>
+              <li>{{ t('Disable multilevel storage.') }}</li>
+              <li>{{ t('May cause sync issues with Moka POS.') }}</li>
             </ul>
-            <p class="archive-modal-body__note">To avoid disruption, reassign open transactions to another warehouse before archiving.</p>
+            <p class="archive-modal-body__note">{{ t('To avoid disruption, reassign open transactions to another warehouse before archiving.') }}</p>
           </div>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">Archive</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">{{ t('Archive') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1638,16 +1642,16 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          Delete warehouse?
+          {{ t('Delete warehouse?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          Deleted warehouse cannot be restored.
+          {{ t('Deleted warehouse cannot be restored.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1666,19 +1670,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          Add team member
+          {{ t('Add team member') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <MpFormControl id="wh-team-user" is-required :is-invalid="teamUserError">
-            <MpFormLabel>User</MpFormLabel>
+            <MpFormLabel>{{ t('User') }}</MpFormLabel>
             <MpAutocomplete
               id="wh-team-user-ac"
               v-model="teamUserIdDraft"
               :data="availableTeamUsers"
               label-prop="name"
               value-prop="id"
-              placeholder="Select user"
+              :placeholder="t('Select user')"
               use-portal
               is-full-width
               :is-invalid="teamUserError"
@@ -1687,21 +1691,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #default="{ item }">
                 <MpFlex direction="column" gap="0">
                   <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
-                  <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                  <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? t('Manager') : t('Operator') }}</MpText>
                 </MpFlex>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select user</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select user') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl v-if="selectedTeamUser" id="wh-team-role-display" :class="css({ marginTop: '16px' })">
-            <MpFormLabel>Role</MpFormLabel>
-            <div class="wh-team-modal-role">{{ selectedTeamUser.role === 'manager' ? 'Manager' : 'Operator' }}</div>
+            <MpFormLabel>{{ t('Role') }}</MpFormLabel>
+            <div class="wh-team-modal-role">{{ selectedTeamUser.role === 'manager' ? t('Manager') : t('Operator') }}</div>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? t('Saving…') : t('Save') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1719,34 +1723,34 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          Remove team member?
+          {{ t('Remove team member?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <template v-if="memberActiveTaskCount === 0">
-            <p>{{ memberToRemove?.name }} will be removed from this warehouse's team.</p>
+            <p>{{ memberToRemove?.name }} {{ t("will be removed from this warehouse's team.") }}</p>
           </template>
           <template v-else-if="reassignOptions.length === 0">
-            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong> that must be completed or cancelled before removal. There are no other team members to reassign to.</p>
+            <p class="remove-team-warn">{{ memberToRemove?.name }} {{ t('has') }} <strong>{{ memberActiveTaskCount }} {{ memberActiveTaskCount > 1 ? t('active tasks') : t('active task') }}</strong> {{ t('that must be completed or cancelled before removal. There are no other team members to reassign to.') }}</p>
           </template>
           <template v-else>
-            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong>. Reassign all tasks before removing.</p>
+            <p class="remove-team-warn">{{ memberToRemove?.name }} {{ t('has') }} <strong>{{ memberActiveTaskCount }} {{ memberActiveTaskCount > 1 ? t('active tasks') : t('active task') }}</strong>. {{ t('Reassign all tasks before removing.') }}</p>
             <MpFormControl id="wh-remove-reassign" is-required :class="css({ marginTop: '16px' })">
-              <MpFormLabel>Reassign tasks to</MpFormLabel>
+              <MpFormLabel>{{ t('Reassign tasks to') }}</MpFormLabel>
               <MpAutocomplete
                 id="wh-remove-reassign-ac"
                 v-model="reassignTargetId"
                 :data="reassignOptions"
                 label-prop="name"
                 value-prop="id"
-                placeholder="Select team member"
+                :placeholder="t('Select team member')"
                 use-portal
                 is-full-width
               >
                 <template #default="{ item }">
                   <MpFlex direction="column" gap="0">
                     <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
-                    <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                    <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? t('Manager') : t('Operator') }}</MpText>
                   </MpFlex>
                 </template>
               </MpAutocomplete>
@@ -1755,12 +1759,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">{{ t('Cancel') }}</button>
             <button
               v-if="memberActiveTaskCount === 0 || reassignOptions.length > 0"
               class="btn-enterprise btn-enterprise--danger"
               @click="confirmRemoveTeamMember"
-            >Remove</button>
+            >{{ t('Remove') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1793,14 +1797,17 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       @update:open="serialDrawerOpen = $event"
     />
 
-    <BatchReservationsDrawer
-      :open="batchReservationsOpen"
-      :product-name="batchReservationsProduct?.name ?? ''"
-      :product-img="batchReservationsProduct?.photo ?? ''"
-      :sku="batchReservationsProduct?.sku ?? ''"
-      :batch-no="batchReservationsBatchNo"
-      :rows="batchReservationRows"
-      @update:open="batchReservationsOpen = $event"
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintAllBarcodes"
+    />
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      :title="t('Barcode preview')"
+      @close="barcodePreviewOpen = false"
     />
 
   </div>
@@ -1822,19 +1829,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-/* "View details" chip sits inline right after the location name. Kept in layout with
-   visibility (not display) + a fixed height so revealing it on hover never shifts
-   the row height. */
-.wh-loc-view {
-  visibility: hidden;
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
-  margin-left: var(--mp-spacing-2); flex-shrink: 0;
-  height: 20px; box-sizing: border-box; padding: 0 var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
-}
-.wh-loc-view .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
-.wh-loc-row:hover .wh-loc-view { visibility: visible; }
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }
@@ -2076,7 +2070,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-tx-type-select { min-width: 200px; }
 .wh-tx-table { min-width: unset; width: 100%; }
 .wh-tx-row td.wh-btd { font-size: var(--mp-font-sizes-md); }
-.wh-tx-row:hover .row-hover-btn { display: flex; }
 .wh-expiry-custom {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
@@ -2101,10 +2094,20 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .wh-tool-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-tool-btn--airene { color: var(--mp-airene-default, #651fff); }
+/* Secondary text button in a toolbar (Print all barcode) — matches search height. */
+.wh-print-all-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0;
+  height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-4);
+  border: 1px solid var(--mp-text-default, #080d0e); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.wh-print-all-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wh-search {
   display: flex;
   align-items: center;
@@ -2135,33 +2138,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* ── Product cell (Name column: product photo + name + subtitle) ── */
 .cell-with-action { position: relative; display: flex; align-items: flex-start; width: 100%; min-width: 0; }
 .wh-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
-/* "View details" chip — revealed on row hover (ErpTablePage row-hover pattern) */
-.row-hover-btn {
-  position: absolute;
-  right: var(--mp-spacing-4);   /* 16px gap from the cell's right edge */
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase;
-  color: var(--mp-text-secondary);
-}
-/* reveal on hovering the Name cell — self-contained (same scope), so it works
-   even though the Name column is position:sticky and rendered via a slot */
-.cell-with-action:hover .row-hover-btn { display: flex; }
-/* also reveal on full-row hover where that selector resolves (parity with index) */
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 .wh-thumb {
   flex-shrink: 0;
   width: var(--mp-sizes-8, 32px);
@@ -2241,7 +2217,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   cursor: pointer;
   border-radius: var(--mp-radii-sm);
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .wh-expand-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-expand-chevron { transition: transform 0.15s ease; }
@@ -2250,12 +2226,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-batch-summary { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .wh-serial-count { color: var(--mp-text-default); }
 .wh-btd.wh-btd--top { vertical-align: top; }
-/* "View details" chip on hover — Product cell + each Batch cell */
 .wh-batch-cell { position: relative; }
-.wh-batch-cell:hover .row-hover-btn { display: flex; }
-/* the Product cell is a tall (rowspan) merged cell → anchor the chip near the
-   top so it sits beside the product name, not the middle of the whole group */
-.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 .wh-batch-no { color: var(--mp-text-default); }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }
@@ -2271,7 +2242,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 

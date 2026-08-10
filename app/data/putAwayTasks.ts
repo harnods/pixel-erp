@@ -1,15 +1,18 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
+import { receipts } from "./receipts";
 import {
   receivingTaskRefsForWarehouse,
   receivingTasksForReceipt,
   getReceivingTask,
   linkPutAway,
+  revertPutAwayLink,
   completeReceivingWithoutPutAway,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { getWarehouseDetail, registerNewBatch, receiveNewSerials, applyStockInOut } from "./warehouseDetails";
+import { markStockCommitted } from "./receivingTasks";
 
 /**
  * A put-away task — once goods are received they must be moved from the receiving
@@ -51,6 +54,8 @@ export interface PutAwayTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** A SKU shared by 2+ bundled receiving tasks is ONE merged entry (qty
    *  summed) — put-away doesn't track which specific receiving task a unit
    *  came from, only which bin it ends up in. */
@@ -59,6 +64,16 @@ export interface PutAwayTask {
   batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
   /** Per-SKU serial destination assignments (serial-tracked SKUs), draft or final. */
   serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
+  /** This task's source receiving task's OWN PO was canceled while this
+   *  put-away was still open/in progress — endPutAway (the only thing that
+   *  commits real stock) never ran, so nothing needs reversing. Blocks
+   *  Start/Continue put-away until the operator explicitly acknowledges (see
+   *  acknowledgeCanceledPutAway below), which cancels this task AND its
+   *  linked receiving task(s) too — nothing left to put away once the PO is
+   *  gone. Never set once this task is already "completed" (see
+   *  cancelInboundReceipt in inboundSync.ts — a completed put-away's
+   *  receiving task gets flagged directly instead, since real stock exists). */
+  needsCancelAck?: boolean;
 }
 
 const ZONES = ["A", "B", "C", "D"];
@@ -78,38 +93,61 @@ function receivedUnits(taskIds: string[]): number {
   return taskIds.reduce((sum, id) => sum + (getReceivingTask(id)?.receivedQty ?? 0), 0);
 }
 
-// ── Seed: one Open put-away per warehouse for its FIRST pending task ──────────────
-// That receiving task becomes Completed (state E); any other pending tasks stay
-// pending (state D), so both states are demonstrable.
+// Put-away timestamps: it happens shortly after receiving finished and takes
+// 20 min–3 h. Derived from the receiving task's endDate so put-away durations are
+// real (and spread across the same window), giving the Overview a real average.
+function putAwayDates(recvEndIso: string, h: number): { start: string; end: string } {
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const fmt = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:00`;
+  const start = new Date(recvEndIso);
+  start.setHours(start.getHours() + 1 + (h % 5)); // 1–5 h after receiving finished
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + 20 + ((h * 7) % 160)); // 20–180 min to put away
+  return { start: fmt(start), end: fmt(end) };
+}
+function hashStr(s: string): number {
+  return s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+}
+
+// ── Seed: a put-away per received task. Most are Completed (with real start/end
+// timestamps); the first per warehouse stays Open so both states are demonstrable.
 function seedTasks(): PutAwayTask[] {
   const out: PutAwayTask[] = [];
   let seq = 20090;
   PUTAWAY_WAREHOUSES.forEach((wh, p) => {
     const pending = pendingRefs(wh.id);
     if (!pending.length) return;
-    const rtasks = pending.slice(0, 1); // 1:1 for the seed; bundling is allowed in-app
     const zone = ZONES[p % ZONES.length]!;
-    out.push({
-      id: `pa-${p}`,
-      taskNo: `Put-away #${seq++}`,
-      receivingTaskIds: rtasks.map((r) => r.id),
-      receivingTaskNos: rtasks.map((r) => r.no),
-      warehouseId: wh.id,
-      warehouseName: wh.name,
-      assignee: operatorForWarehouse(wh.id, p),
-      itemQty: receivedUnits(rtasks.map((r) => r.id)),
-      destination: `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`,
-      status: "open",
+    pending.forEach((ref, idx) => {
+      const h = hashStr(ref.id) + idx;
+      const recvEnd = getReceivingTask(ref.id)?.endDate;
+      // Keep the first task per warehouse Open (demo); complete the rest.
+      const done = idx > 0 && !!recvEnd;
+      const dates = done ? putAwayDates(recvEnd!, h) : undefined;
+      out.push({
+        id: `pa-${p}-${idx}`,
+        taskNo: `Put-away #${seq++}`,
+        receivingTaskIds: [ref.id],
+        receivingTaskNos: [ref.no],
+        warehouseId: wh.id,
+        warehouseName: wh.name,
+        assignee: operatorForWarehouse(wh.id, p + idx),
+        itemQty: receivedUnits([ref.id]),
+        destination: `${zone}-${String(((p + idx) % 9) + 1).padStart(2, "0")}-${String(((p + idx) % 5) + 1).padStart(2, "0")}`,
+        status: done ? "completed" : "open",
+        startDate: dates?.start,
+        endDate: dates?.end,
+      });
     });
   });
   return out;
 }
 
-const snapshot = loadSnapshot<PutAwayTask>("putaway");
+const snapshot = loadSnapshot<PutAwayTask>("putaway-v4");
 export const putAwayTasks = reactive<PutAwayTask[]>(snapshot ?? seedTasks());
 
 function persistPutAways(): void {
-  saveSnapshot("putaway", putAwayTasks);
+  saveSnapshot("putaway-v4", putAwayTasks);
 }
 
 // On first load, mark each seed put-away's receiving task(s) Completed.
@@ -263,6 +301,7 @@ export function endPutAway(
     }
   }
   persistPutAways();
+  markStockCommitted(t.receivingTaskIds);
 }
 
 /** A put-away task can only be canceled while not yet completed — endPutAway()
@@ -272,12 +311,97 @@ export function canCancelPutAway(t: PutAwayTask): boolean {
   return t.status === 'open' || t.status === 'in progress';
 }
 
-export function cancelPutAway(taskId: string, reason?: string): void {
+/** Whether the receipt (Inbound parent) behind a receiving task has been cancelled. */
+function receiptIsCanceled(receiptId: string | undefined): boolean {
+  return !!receiptId && receipts.find((r) => r.id === receiptId)?.status === "canceled";
+}
+
+/** Does this put-away still serve at least one LIVE (non-cancelled) order? */
+function putAwayHasLiveOrder(t: PutAwayTask): boolean {
+  return t.receivingTaskIds.some((rid) => {
+    const rt = getReceivingTask(rid);
+    return rt && !receiptIsCanceled(rt.receiptId);
+  });
+}
+
+/**
+ * A SHARED put-away just had one of its Inbounds cancelled — drop that Inbound's receiving
+ * task(s) so the task proceeds with the remaining orders' lines (WMS PRD 1.1 C1 AC#6:
+ * "the other Inbounds sharing the putaway task are never affected"). Recomputes itemQty.
+ */
+export function removeReceivingTasksFromPutAway(putAwayId: string, taskIds: string[]): void {
+  const t = getPutAwayTask(putAwayId);
+  if (!t) return;
+  const drop = new Set(taskIds);
+  const pairs = t.receivingTaskIds.map((id, i) => ({ id, no: t.receivingTaskNos[i]! }));
+  const kept = pairs.filter((p) => !drop.has(p.id));
+  if (kept.length === t.receivingTaskIds.length) return; // nothing to remove
+  t.receivingTaskIds = kept.map((p) => p.id);
+  t.receivingTaskNos = kept.map((p) => p.no);
+  t.itemQty = receivedUnits(t.receivingTaskIds);
+  persistPutAways();
+}
+
+export function cancelPutAway(
+  taskId: string,
+  reason?: string,
+  opts?: { revertReceiving?: boolean },
+): void {
   const t = getPutAwayTask(taskId);
   if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
+  // Manual cancel (PO still live): send each source receiving task back to "pending
+  // put-away" so the operator can create a fresh put-away. PO-cancel cascade passes
+  // revertReceiving:false — the order is gone, so a completed receiving stays completed.
+  if (opts?.revertReceiving !== false) {
+    for (const rid of t.receivingTaskIds) revertPutAwayLink(rid, t.id);
+  }
+  persistPutAways();
+}
+
+/**
+ * This task's source receiving task's own PO was just canceled while the
+ * put-away was still open/in progress — called only from cancelInboundReceipt
+ * (inboundSync.ts). Since endPutAway (the only thing that commits real stock)
+ * never ran, there's nothing to reconcile — but real work (Start/Continue put-
+ * away) may already be underway, so it isn't silently auto-canceled. Blocks
+ * Start/Continue put-away until the operator explicitly acknowledges.
+ */
+export function flagPutAwayCanceledPoAck(taskId: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = true;
+  persistPutAways();
+}
+
+/**
+ * Operator acknowledges that this put-away's source PO was canceled. Cancels ONLY the
+ * put-away itself. Its linked receiving task(s) already reached "completed" (real
+ * receiving work happened) — a done task is a permanent record and MUST stay completed,
+ * never flip to canceled just because the PO was voided. No stock reversal needed:
+ * endPutAway never ran for this task, so nothing was ever committed. No-op if unflagged.
+ */
+export function acknowledgeCanceledPutAway(taskId: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t || !t.needsCancelAck) return;
+  t.needsCancelAck = false;
+  // SHARED put-away: the cancelled order's receiving lines were already dropped at cancel
+  // time, and other live orders remain → keep the task running (do NOT cancel it). The
+  // operator can Start/Continue put-away for the surviving orders (PRD C1 AC#6).
+  if (putAwayHasLiveOrder(t)) {
+    persistPutAways();
+    return;
+  }
+  // No live order left → cancel the whole put-away. Its source receiving task(s) stay
+  // "completed" (done work is never reverted); the canceled put-away remains in their
+  // linked transactions as an audit record.
+  t.status = 'canceled';
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = 'Purchase order was canceled';
   persistPutAways();
 }
 

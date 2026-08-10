@@ -18,6 +18,7 @@ import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
+const { t } = useLocale()
 
 // ─── All pending put-away tasks (flat) ────────────────────────────────────────
 interface FlatTask {
@@ -318,10 +319,10 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPutAway">Put-away</button>
+          <button class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New put-away</h1>
+          <h1 class="detail-title">{{ t('New put-away') }}</h1>
         </div>
       </div>
     </header>
@@ -333,32 +334,32 @@ async function handleCreate() {
       <div class="pa-section pa-grid">
         <!-- Warehouse -->
         <MpFormControl id="pa-warehouse" is-required :is-invalid="warehouseError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Warehouse</MpFormLabel>
+          <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
           <MpAutocomplete
             id="pa-warehouse-ac"
             v-model="warehouseId"
             :data="availableWarehouses"
             label-prop="name"
             value-prop="id"
-            placeholder="Select warehouse"
+            :placeholder="t('Select warehouse')"
             is-searchable use-portal is-full-width
             :is-clearable="!isWarehouseLocked"
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
         </MpFormControl>
 
         <!-- Assignee -->
         <MpFormControl id="pa-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Assignee</MpFormLabel>
+          <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
           <MpAutocomplete
             id="pa-assignee-ac"
             v-model="assigneeId"
             :data="ASSIGNEES"
             label-prop="name"
             value-prop="id"
-            placeholder="Select assignee"
+            :placeholder="t('Select assignee')"
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="assigneeError"
           >
@@ -372,21 +373,21 @@ async function handleCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
       <!-- Receiving tasks — only shown after warehouse is selected -->
       <div v-if="warehouseId" class="pa-tasks-section">
-        <h2 class="pa-section-title">Receiving tasks</h2>
+        <h2 class="pa-section-title">{{ t('Receiving tasks') }}</h2>
 
         <!-- Error -->
-        <p v-if="taskSelectionError" class="pa-tasks-error">You must select at least one receiving task</p>
+        <p v-if="taskSelectionError" class="pa-tasks-error">{{ t('You must select at least one receiving task') }}</p>
 
         <!-- Empty state — no pending tasks for this warehouse -->
         <div v-if="!pendingTasks.length" class="pa-empty">
-          <p class="pa-empty-title">No pending tasks</p>
-          <p class="pa-empty-desc">No receiving tasks are pending put-away for this warehouse.</p>
+          <p class="pa-empty-title">{{ t('No pending tasks') }}</p>
+          <p class="pa-empty-desc">{{ t('No receiving tasks are pending put-away for this warehouse.') }}</p>
         </div>
 
         <!-- Tasks table — border only when >10 rows -->
@@ -409,12 +410,12 @@ async function handleCreate() {
                       @change="toggleAll"
                       @click.stop
                     />
-                    Purchase receiving no.
+                    {{ t('Purchase receiving no.') }}
                   </div>
                 </th>
-                <th class="pa-th">Purchase order no.</th>
-                <th class="pa-th">Sku qty</th>
-                <th class="pa-th">Received qty</th>
+                <th class="pa-th">{{ t('Purchase order no.') }}</th>
+                <th class="pa-th">{{ t('Sku qty') }}</th>
+                <th class="pa-th">{{ t('Received qty') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -446,16 +447,16 @@ async function handleCreate() {
 
         <!-- Selection summary -->
         <p v-if="selectedTasks.length" class="pa-selection-summary">
-          {{ selectedTasks.length }} task{{ selectedTasks.length > 1 ? 's' : '' }} selected
+          {{ selectedTasks.length }} {{ selectedTasks.length > 1 ? t('tasks') : t('task') }} {{ t('selected') }}
           &nbsp;·&nbsp;
-          {{ formatNum(skuRows.length) }} SKU{{ skuRows.length !== 1 ? 's' : '' }}
+          {{ formatNum(skuRows.length) }} {{ skuRows.length !== 1 ? t('SKUs') : t('SKU') }}
         </p>
       </div>
 
       <!-- SKU table — only when tasks are selected -->
       <div v-if="selectedTasks.length" class="pa-sku-section">
-        <h2 class="pa-section-title">SKU to put away</h2>
-        <p class="pa-section-desc">Review the SKUs included in this put-away task.</p>
+        <h2 class="pa-section-title">{{ t('SKU to put away') }}</h2>
+        <p class="pa-section-desc">{{ t('Review the SKUs included in this put-away task.') }}</p>
 
         <section class="pa-items-section" :class="{ 'pa-items-section--bordered': isProgressive }">
           <div ref="skusScrollEl" class="pa-items-scroll">
@@ -470,11 +471,11 @@ async function handleCreate() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pa-th">Product</th>
-                  <th class="pa-th">SKU</th>
-                  <th class="pa-th">Receiving task</th>
-                  <th class="pa-th pa-th--num">Qty</th>
-                  <th class="pa-th">Unit</th>
+                  <th class="pa-th">{{ t('Product') }}</th>
+                  <th class="pa-th">{{ t('SKU') }}</th>
+                  <th class="pa-th">{{ t('Receiving task') }}</th>
+                  <th class="pa-th pa-th--num">{{ t('Qty') }}</th>
+                  <th class="pa-th">{{ t('Unit') }}</th>
                   <th class="pa-th pa-th--action"></th>
                 </tr>
               </thead>
@@ -488,13 +489,13 @@ async function handleCreate() {
                   <td class="pa-td pa-td--num">{{ formatNum(row.receivedQty) }}</td>
                   <td class="pa-td">{{ row.unit }}</td>
                   <td class="pa-td pa-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pa-tt-batch-${row.rowKey}`" label="View batch" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row)">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pa-tt-batch-${row.rowKey}`" :label="t('View batch')" placement="top" use-portal>
+                      <button class="pa-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pa-tt-serial-${row.rowKey}`" label="View serial number" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pa-tt-serial-${row.rowKey}`" :label="t('View serial number')" placement="top" use-portal>
+                      <button class="pa-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -504,11 +505,11 @@ async function handleCreate() {
             </table>
             <div ref="skusSentinelEl" class="pa-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="pa-loading pa-items-loading">
-              <MpSpinner size="sm" /> Loading SKUs…
+              <MpSpinner size="sm" /> {{ t('Loading SKUs…') }}
             </div>
           </div>
           <div v-if="isProgressive" class="pa-items-count">
-            Showing {{ pagedSkus.length }} of {{ skuRows.length }} SKUs
+            {{ t('Showing') }} {{ pagedSkus.length }} {{ t('of') }} {{ skuRows.length }} {{ t('SKUs') }}
           </div>
         </section>
       </div>
@@ -517,8 +518,8 @@ async function handleCreate() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goPutAway">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goPutAway">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
   </div>
 
@@ -528,7 +529,7 @@ async function handleCreate() {
     :sku="viewBatchItem.skuCode"
     :warehouse-id="warehouseId"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :picked-batches="viewBatchItem.batchLines ?? []"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
@@ -540,7 +541,7 @@ async function handleCreate() {
     :sku="viewSerialItem.skuCode"
     :warehouse-id="warehouseId"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :counted-total="(viewSerialItem.serialNumbers ?? []).length"
     :picked-serials="(viewSerialItem.serialNumbers ?? []).map(serial => ({ serial, location: '' }))"
     :product-name="viewSerialItem.productName"
@@ -646,14 +647,6 @@ async function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-/* Every column gets a left/right border; Action (always the true rightmost
-   column) gets border-right: none instead, since its right edge is the
-   table's own outer edge. */
-.pa-items .pa-th,
-.pa-items .pa-td { border-right: 1px solid var(--mp-border-default); }
-.pa-items .pa-th--action { border-right: none; }
-.pa-items .pa-td--action { border-right: none; }
-
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
 .pa-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -694,11 +687,11 @@ async function handleCreate() {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
   object-fit: cover; background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .pa-product-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .pa-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pa-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

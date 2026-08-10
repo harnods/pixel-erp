@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpIcon, MpSpinner, css,
+  MpIcon, MpSpinner, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -12,7 +12,8 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, cancelReceipt, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStages, isManualReceipt, deleteReceipt, canCancelReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
@@ -20,25 +21,32 @@ import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
   if (!d) return []
-  return [{
+  const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
-    activity: 'Created',
+    activity: t('Created'),
     details: [
-      { label: 'Transaction no.', value: d.purchaseNo },
-      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
-      { label: 'Vendor', value: d.vendor ?? '—' },
-      { label: 'Warehouse', value: d.warehouseName },
+      { label: t('Transaction no.'), value: d.purchaseNo },
+      { label: t('Transaction date'), value: formatDateLong(d.transactionDate) },
+      { label: t('Vendor'), value: d.vendor ?? '—' },
+      { label: t('Warehouse'), value: d.warehouseName },
     ],
-  }]
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: t('Edited'), details: e.changes,
+  }))
+  return [...edits, created]
 })
 const receipt = computed<Receipt | undefined>(() =>
-  receiptsForStage('On the way').find((r) => r.id === props.orderId),
+  receiptsForStages(['Pending', 'Open', 'In progress']).find((r) => r.id === props.orderId),
 )
 const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 
@@ -111,7 +119,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
 const jumpResults = computed(() => {
-  const all = receiptsForStage('On the way')
+  const all = receiptsForStages(['Pending', 'Open', 'In progress'])
   const q = jumpSearch.value.trim().toLowerCase()
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
@@ -166,12 +174,31 @@ const hasActiveReceivingTasks = computed(() =>
 )
 
 const cancelModalOpen = ref(false)
+// A partially-received PO is "closed" (accept partial, stop the rest); any other
+// still-open PO is plainly "cancelled" — same underlying action, different wording.
+const isPartialClose = computed(() => currentReceipt.value?.status === 'partial reception')
+// Cancel-receipt is an order-level action → it lives in the primary split-button's
+// dropdown, never as a standalone footer button (mirrors the outbound order detail).
+// Manual (Direct Inbound) receipts are cancellable too — they keep Delete as well,
+// so an operator can either void-and-keep (Cancel) or hard-remove (Delete).
+const canCancelAction = computed(() => !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
+const cancelActionLabel = computed(() => (isPartialClose.value ? t('Close receipt') : t('Cancel receipt')))
 function openCloseReceiptModal() { cancelModalOpen.value = true }
+// Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
+// outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 function closeCancelModal() { cancelModalOpen.value = false }
 function confirmCancel() {
-  cancelReceipt(props.orderId)
+  const wasPartial = isPartialClose.value // capture before status flips to 'canceled'
+  const result = cancelInboundReceipt(props.orderId)
   closeCancelModal()
-  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+  if (!result.ok) {
+    toast.notify({ variant: 'error', title: t("This receipt can't be canceled"), maxWidth: 'max-content' })
+    return
+  }
+  // Stay on this detail page — currentReceipt is now 'canceled' and the header shows it.
+  toast.notify({ variant: 'success', title: `${t('Receipt')} ${wasPartial ? t('closed') : t('cancelled')}`, maxWidth: 'max-content' })
 }
 
 // Manually-created receipts (New receipt form) have no real PO behind them, so they
@@ -193,13 +220,13 @@ function confirmDelete() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receipts') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
-          <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="receipt" :status="receipt.status" :type="receipt.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -208,8 +235,8 @@ function confirmDelete() {
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -220,7 +247,7 @@ function confirmDelete() {
                     <span class="detail-jump-item-number">{{ o.purchaseNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.warehouseName }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -235,26 +262,22 @@ function confirmDelete() {
       <!-- ── Header summary (2 columns) ── -->
       <section class="rcd-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(detail.transactionDate)" />
-          <ContentList label="Transaction no." :value="detail.purchaseNo" />
-          <ContentList label="Vendor" :value="detail.vendor" />
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(detail.transactionDate)" />
+          <ContentList :label="t('Transaction no.')" :value="detail.purchaseNo" />
+          <ContentList :label="t('Vendor')" :value="detail.vendor" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
-          <ContentList label="Ship via" :value="detail.shipVia" />
-          <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse">
-            <div class="wh-link-wrap">
-              <span>{{ detail.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
-            </div>
+          <ContentList :label="t('Estimated arrival date')" :value="formatDateLong(detail.estimatedArrival)" />
+          <ContentList :label="t('Ship via')" :value="detail.shipVia" />
+          <ContentList :label="t('Tracking no.')" :value="trackingText(detail.trackingNos)" />
+          <ContentList :label="t('Warehouse')">
+            <a class="cell-link" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">{{ detail.warehouseName }}</a>
           </ContentList>
+        </div>
+        <div v-if="currentReceipt?.status === 'canceled'" class="content-list-col">
+          <ContentList :label="t('Canceled date')" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="currentReceipt.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="currentReceipt.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -270,10 +293,10 @@ function confirmDelete() {
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -291,20 +314,20 @@ function confirmDelete() {
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ allItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ allItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
       <!-- ── Memo + attachment ── -->
       <section class="rcd-notes">
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ detail.memo }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${detail.attachments.length})`">
+        <ContentList :label="`${t('Attachment')} (${detail.attachments.length})`">
           <div v-if="detail.attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in detail.attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -319,45 +342,36 @@ function confirmDelete() {
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ detail.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
       <!-- ── Receiving only (no put-away tasks) ── -->
       <MpTabs v-if="displayedReceivings.length > 0 && linkedPutAways.length === 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="rcd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pr in displayedReceivings" :key="pr.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="linked-num">{{ pr.receivingNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link linked-num" @click.stop="router.push(`/receiving/${pr.taskId}`)">{{ pr.receivingNo }}</a>
                     </td>
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
@@ -370,7 +384,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -384,41 +398,32 @@ function confirmDelete() {
       <!-- ── Receiving + put-away tabs ── -->
       <MpTabs v-else-if="displayedReceivings.length > 0 && linkedPutAways.length > 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
-          <MpTab id="rcd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+          <MpTab id="rcd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="rcd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAways.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pr in displayedReceivings" :key="pr.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="linked-num">{{ pr.receivingNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link linked-num" @click.stop="router.push(`/receiving/${pr.taskId}`)">{{ pr.receivingNo }}</a>
                     </td>
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
@@ -431,7 +436,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -440,34 +445,25 @@ function confirmDelete() {
             </div>
           </MpTabPanel>
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th detail-th--num">Item qty</th>
-                    <th class="detail-th">Destination</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Item qty') }}</th>
+                    <th class="detail-th">{{ t('Destination') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="pa in linkedPutAways" :key="pa.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link linked-num" @click.stop="router.push(`/put-away/${pa.id}`)">{{ pa.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pa.itemQty) }}</td>
@@ -478,7 +474,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -493,13 +489,47 @@ function confirmDelete() {
 
     <!-- ── Footer action bar — always at the bottom; border only when content scrolls ── -->
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary">Print PDF</button>
+      <button class="detail-btn detail-btn--secondary">{{ t('Print PDF') }}</button>
 
-      <button v-if="isManual" class="detail-btn detail-btn--secondary" @click="openDeleteModal">Delete</button>
-      <button v-if="!isManual && !hasActiveReceivingTasks && currentReceipt?.status === 'partial reception'" class="detail-btn detail-btn--secondary" @click="openCloseReceiptModal">Close receipt</button>
-      <button v-if="canCreateReceivingTask(orderId)" class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">
-        Create purchase receiving
-      </button>
+      <!-- Create purchase receiving — split button; the chevron holds the order-level
+           Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
+      <template v-if="canCreateReceivingTask(orderId)">
+        <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
+          <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">{{ t('Delete') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
+      </template>
+
+      <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
+      <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            {{ t('Actions') }}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">{{ t('Delete') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </div>
 
     <!-- ── Cancel confirmation modal ── -->
@@ -508,14 +538,15 @@ function confirmDelete() {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
     >
       <MpModalContent>
-        <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ isPartialClose ? t('Close receipt?') : t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.
+          <template v-if="isPartialClose">Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.</template>
+          <template v-else>Receipt {{ detail?.purchaseNo }} will be cancelled. Its receiving/put-away tasks are cancelled too. This can't be undone.</template>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Close receipt</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep receipt') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? t('Close receipt') : t('Cancel receipt') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -528,14 +559,14 @@ function confirmDelete() {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
     >
       <MpModalContent>
-        <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           Receipt {{ detail?.purchaseNo }} will be permanently deleted. This can't be undone.
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">{{ t('Keep receipt') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -580,7 +611,7 @@ function confirmDelete() {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
@@ -663,7 +694,7 @@ function confirmDelete() {
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
   width: 28px; height: 28px; border-radius: var(--mp-radii-sm); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcd-product-name {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -716,6 +747,11 @@ function confirmDelete() {
 .detail-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
 .detail-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
 
+/* Split button — primary action + chevron dropdown (order-level actions live here). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
+
 
 /* ── Linked purchase receivings tab ── */
 .detail-tabs { flex-shrink: 0; }
@@ -731,26 +767,9 @@ function confirmDelete() {
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 
-/* Number cell with "View details" chip on row hover */
+/* Number cell — value is a link to detail */
 .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
-
-/* Warehouse header field — hover chip to jump to the warehouse's own page */
-.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 /* End date aging badge */
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

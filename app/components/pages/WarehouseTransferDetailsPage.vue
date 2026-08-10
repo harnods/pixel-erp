@@ -15,19 +15,21 @@ import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
   transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
-  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
+  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer, canApproveTransfer,
+  type TransferApproveCheck,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 // Shared with the index page — "As user" (no Approve) vs "As manager" (can approve).
 const { viewAs, setViewAs } = useApprovalViewAs()
 const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
-  { value: 'user', label: 'As user' },
-  { value: 'manager', label: 'As manager' },
+  { value: 'user', label: t('As user') },
+  { value: 'manager', label: t('As manager') },
 ]
 
 const transfer = computed(() => getTransfer(props.orderId))
@@ -41,10 +43,24 @@ const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer
 const approvalLogOpen = ref(false)
 // Approve is only offered to a manager viewing a transfer that's still awaiting approval.
 const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'draft')
+// Map an approval refusal reason to a human-readable toast title.
+function approveErrorTitle(check: TransferApproveCheck): string {
+  if (check.ok) return t("Can't approve this transfer")
+  if (check.reason.startsWith('INSUFFICIENT_STOCK')) return t("Can't approve: not enough stock at origin")
+  if (check.reason === 'WAREHOUSE_ARCHIVED') return t("Can't approve: a warehouse involved is archived")
+  if (check.reason === 'SAME_WAREHOUSE') return t("Can't approve: origin and destination are the same")
+  return t("Can't approve this transfer")
+}
 function approve() {
   if (!transfer.value) return
-  approveTransfer(transfer.value.id)
-  toast.notify({ variant: 'success', title: `${transfer.value.number} approved` , maxWidth: 'max-content'})
+  const id = transfer.value.id
+  const wasDraft = transfer.value.status === 'draft'
+  const result = approveTransfer(id)
+  if (wasDraft && result === undefined) {
+    toast.notify({ variant: 'error', title: approveErrorTitle(canApproveTransfer(id)) , maxWidth: 'max-content'})
+    return
+  }
+  toast.notify({ variant: 'success', title: `${transfer.value.number} ${t('approved')}` , maxWidth: 'max-content'})
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
@@ -136,7 +152,7 @@ function askCancel() { cancelOpen.value = true }
 function confirmCancel() {
   cancelTransfer(props.orderId)
   cancelOpen.value = false
-  toast.notify({ variant: 'success', title: `${transfer.value?.number} canceled`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${transfer.value?.number} ${t('canceled')}`, maxWidth: 'max-content' })
   router.push('/warehouse-transfers')
 }
 
@@ -158,7 +174,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">All warehouse transfers</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('All warehouse transfers') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
           <ErpStatusBadge
@@ -167,7 +183,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -176,8 +192,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -188,7 +204,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <span class="detail-jump-item-number">{{ t.number }}</span>
                     <span class="detail-jump-item-customer">{{ t.originName }} → {{ t.destinationName }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -199,12 +215,12 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <!-- Right-side actions (warehouse transfer has an approval flow) —
            manager view adds a primary Approve button ahead of the icon actions. -->
       <div class="detail-titlerow-right">
-        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
-        <MpTooltip id="wtd-tt-tasks" label="Approval log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
+        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
+        <MpTooltip id="wtd-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
+          <button class="detail-icon-btn" :aria-label="t('Approval log')" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
         </MpTooltip>
-        <MpTooltip id="wtd-tt-comments" label="Comments" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Comments"><MpIcon name="comment" size="md" /></button>
+        <MpTooltip id="wtd-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
+          <button class="detail-icon-btn" :aria-label="t('Comments')"><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
       </div>
     </header>
@@ -214,37 +230,19 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <!-- Header summary -->
       <section class="wtd-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(transfer.date)" />
-          <ContentList label="Transaction no." :value="transfer.number" />
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(transfer.date)" />
+          <ContentList :label="t('Transaction no.')" :value="transfer.number" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Origin warehouse">
-            <div class="wh-link-wrap">
-              <span>{{ transfer.originName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.originId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
-            </div>
+          <ContentList :label="t('Origin warehouse')">
+            <a class="cell-link" @click.stop="router.push(`/warehouses/${transfer.originId}`)">{{ transfer.originName }}</a>
           </ContentList>
-          <ContentList label="Destination warehouse">
-            <div class="wh-link-wrap">
-              <span>{{ transfer.destinationName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.destinationId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
-            </div>
+          <ContentList :label="t('Destination warehouse')">
+            <a class="cell-link" @click.stop="router.push(`/warehouses/${transfer.destinationId}`)">{{ transfer.destinationName }}</a>
           </ContentList>
         </div>
         <div class="content-list-col">
-          <ContentList label="Tags">
+          <ContentList :label="t('Tags')">
             <ErpTagList v-if="transfer.tags.length" :tags="transfer.tags" />
             <span v-else class="detail-note-text">—</span>
           </ContentList>
@@ -257,10 +255,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <table class="detail-items">
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Transfer qty</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Transfer qty') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -274,20 +272,20 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ lineItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ lineItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
       <!-- Memo + attachment -->
       <section class="detail-notes-left">
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ memo || '—' }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${attachments.length})`">
+        <ContentList :label="`${t('Attachment')} (${attachments.length})`">
           <div v-if="attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -301,16 +299,16 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </ContentList>
       </section>
 
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ lastUpdatedBy }} on {{ formatUpdatedAt(lastUpdatedAt) }} (GMT+7)</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(lastUpdatedAt) }} (GMT+7)</a>
 
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
+      <button class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print PDF') }}</button>
       <MpPopover id="wtd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -318,15 +316,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
+            <MpPopoverListItem @click="preview">{{ t('Preview') }}</MpPopoverListItem>
             <div class="wtd-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem v-if="transfer.status === 'draft'" @click="editTransfer">Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
+            <MpPopoverListItem v-if="transfer.status === 'draft'" @click="editTransfer">{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancel"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="askCancel"
-            >Cancel</MpPopoverListItem>
+            >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -354,14 +352,14 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Cancel warehouse transfer?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Cancel warehouse transfer?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p>This transfer will be canceled and can no longer be approved. This can't be undone.</p>
+          <p>{{ t('This transfer will be canceled and can no longer be approved. This can\'t be undone.') }}</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep transfer</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel transfer</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep transfer') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel transfer') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -371,19 +369,19 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   </div>
 
   <div v-else class="wtd-not-found">
-    <p>Warehouse transfer not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to warehouse transfers</button>
+    <p>{{ t('Warehouse transfer not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to warehouse transfers') }}</button>
   </div>
 
   <!-- ── Demo scenario FAB (bottom-right) — shared with the index page ── -->
   <MpPopover id="wtd-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change approval view">
+      <button class="demo-fab" :aria-label="t('Change approval view')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Approval view</p>
+      <p class="demo-fab-heading">{{ t('Approval view') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="v in viewAsOptions" :key="v.value"
@@ -404,7 +402,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
 .detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -490,18 +488,4 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Warehouse header fields — hover chip to jump to the warehouse's own page */
-.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
 </style>

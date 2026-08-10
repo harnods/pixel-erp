@@ -11,6 +11,7 @@ import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { getWarehouseConfig } from "./warehouseConfig";
+import { packingBlockedOnSourceLabel } from "./shippingLabels";
 
 /**
  * A packing task — created once a picking task is COMPLETED. Picking can bundle
@@ -47,6 +48,8 @@ export interface PackingTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** packed qty per line key (set as the operator matches/sorts) */
   packedByKey?: Record<string, number>;
   /** Direct-mode only (no pickingTaskId) — the specific SKU+qty this task covers,
@@ -227,12 +230,17 @@ function seedShippedPacks(startSeq: number): PackingTask[] {
   return out;
 }
 
-const snapshot = loadSnapshot<PackingTask>("packing");
+const snapshot = loadSnapshot<PackingTask>("packing-v2");
 export const packingTasks = reactive<PackingTask[]>(snapshot ?? seedTasks());
 
 function persistPacking(): void {
-  saveSnapshot("packing", packingTasks);
+  saveSnapshot("packing-v2", packingTasks);
 }
+
+// Freeze the freshly-generated seed on first client load — the packing seed derives
+// from the (mutable) completed picking tasks, so a reload with no snapshot yet could
+// re-derive it against a changed picking set. Persisting immediately keeps it stable.
+if (!snapshot) persistPacking();
 
 let nextSeq = 40090 + packingTasks.length;
 function freshSeq(): number {
@@ -363,7 +371,7 @@ export function remainingSkusForOrder(order: OutgoingOrder): RemainingSkuLine[] 
  */
 export function canCreatePackingDirectlyForOrder(order: OutgoingOrder): boolean {
   if (getWarehouseConfig(order.warehouseId).pickingEnabled) return false;
-  if (order.status !== "open" && order.status !== "in progress") return false;
+  if (order.status !== "pending" && order.status !== "open" && order.status !== "in progress") return false;
   return remainingSkusForOrder(order).length > 0;
 }
 
@@ -435,10 +443,14 @@ function sumPacked(packed: Record<string, number>): number {
   return Object.values(packed).reduce((a, b) => a + (b || 0), 0);
 }
 
-/** Operator clicks "Match order" → in progress + start timestamp. */
+/** Operator clicks "Match order" → in progress + start timestamp. Refuses to
+ *  start while D4 AC#8 gates the task on the order-source shipping label
+ *  (defense-in-depth — the UI already disables the action in that state). */
 export function startPacking(taskId: string): void {
   const t = getPackingTask(taskId);
   if (!t || t.status !== "open") return;
+  const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+  if (packingBlockedOnSourceLabel(order)) return;
   t.status = "in progress";
   t.startDate = nowIso();
   persistPacking();
@@ -465,22 +477,29 @@ export function endPacking(taskId: string, packed?: Record<string, number>): voi
   persistPacking();
 }
 
-/** A packing task can only be canceled while packing hasn't finished yet —
- *  "completed" means endPacking() already committed real effects (packed
- *  units are what a delivery/shipment gets created from), so canceling at
- *  that point would silently make packed stock unaccounted for. */
+/** A packing task can only be MANUALLY canceled while packing hasn't finished yet —
+ *  "completed" means endPacking() already committed real effects (packed units are
+ *  what a delivery/shipment gets created from), so a manual cancel at that point
+ *  would silently make packed stock unaccounted for. */
 export function canCancelPackingTask(t: PackingTask): boolean {
   return t.status === "open" || t.status === "in progress";
 }
 
-/** Cancel a not-yet-finished packing task. Terminal state; the record itself
- *  is kept (never deleted) so it stays in the audit trail. */
-export function cancelPackingTask(taskId: string, reason?: string): void {
+/** Cancel a packing task. Terminal state; the record is kept (never deleted) so it
+ *  stays in the audit trail.
+ *
+ *  `force` skips the open/in-progress gate — used when the underlying ORDER is
+ *  cancelled: the task is void whatever its status (completed included), the
+ *  ready-to-ship delivery it fed is cancelled alongside, and its reserved stock is
+ *  order-owned (returned via Release reserved), so nothing goes unaccounted. */
+export function cancelPackingTask(taskId: string, reason?: string, force = false): void {
   const t = getPackingTask(taskId);
-  if (!t || !canCancelPackingTask(t)) return;
+  if (!t || t.status === "canceled") return;
+  if (!force && !canCancelPackingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
   persistPacking();
 }
 

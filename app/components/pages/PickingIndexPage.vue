@@ -9,23 +9,27 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { useTableState } from '~/composables/useTableState'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import { ordersByIds, anyLabelAvailable } from '~/data/shippingLabels'
 import {
   pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, startPicking,
-  canCancelPickingTask, cancelPickingTask, type PickingTask,
+  canCancelPickingTask, cancelPickingTask, isPickingFrozen, type PickingTask,
 } from '~/data/pickingTasks'
 import { getPackingForOrder, pickingTaskHasPacking } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Demo scenario state (FAB) ─────────────────────────────────────────────────
 type DemoState = 'empty' | 'data'
 const demoState = ref<DemoState>('data')
 const demoStates: { value: DemoState; label: string }[] = [
-  { value: 'data', label: 'With data' },
-  { value: 'empty', label: 'Empty state' },
+  { value: 'data', label: t('With data') },
+  { value: 'empty', label: t('Empty state') },
 ]
 const route = useRoute()
 
@@ -33,7 +37,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Picking task saved' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Picking task saved') , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -77,6 +81,13 @@ const activeWarehouseFilter = useActiveWarehouseFilter()
 watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 const statusFilter = ref<string[]>([])
+// Deep-link from WMS Overview: ?status=<task status> pre-filters the list.
+onMounted(() => {
+  const s = route.query.status
+  if (typeof s === 'string' && statusOptions.some(o => o.value === s)) {
+    statusFilter.value = [s]
+  }
+})
 
 const baseTasks = computed<PickingTask[]>(() =>
   demoState.value === 'data'
@@ -91,11 +102,11 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Open',            value: 'open' },
-  { label: 'In process',      value: 'in progress' },
-  { label: 'Partially picked', value: 'partially picked' },
-  { label: 'Completed',       value: 'completed' },
-  { label: 'Canceled',        value: 'canceled' },
+  { label: t('Open'),            value: 'open' },
+  { label: t('In process'),      value: 'in progress' },
+  { label: t('Partially picked'), value: 'partially picked' },
+  { label: t('Completed'),       value: 'completed' },
+  { label: t('Canceled'),        value: 'canceled' },
 ]
 const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length
@@ -156,6 +167,13 @@ function toggleExpand(id: string) {
 const router = useRouter()
 function viewDetails(row: PickingTask) { router.push(`/picking/${row.id}`) }
 function startPickingAndNavigate(row: PickingTask) {
+  // D7 AC#8 — a task frozen behind a Needs Re-arrangement flag can't be started
+  // from the list either; the operator must wait for a Warehouse Manager to clear
+  // it on the task's detail page.
+  if (isPickingFrozen(row)) {
+    toast.notify({ variant: 'error', title: t('This picking task changed and needs warehouse-manager re-arrangement before it can start'), maxWidth: 'max-content' })
+    return
+  }
   startPicking(row.id)
   router.push(`/picking/${row.id}/pick`)
 }
@@ -214,6 +232,18 @@ function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
   deselectAll()
 }
 
+// ─── Print shipping label (source/marketplace or WMS label; D9 duplicate guard) ──
+const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+function ordersForPicking(t: PickingTask) { return ordersByIds(t.salesOrderIds) }
+// Enabled unless every order behind the task is a marketplace order still waiting
+// for its source label (then there's nothing printable).
+function canPrintLabel(t: PickingTask): boolean { return anyLabelAvailable(ordersForPicking(t)) }
+function bulkPrintLabels(sel: Set<number>, deselectAll: () => void) {
+  const orders = ordersByIds(selectedPickingsOf(sel).flatMap(t => t.salesOrderIds))
+  printShippingLabels(orders)
+  deselectAll()
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -237,17 +267,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
-    <!-- ── Bulk bar → create packing for the selected finished picking lists ── -->
+    <!-- ── Bulk bar → create packing / print shipping labels for the selected lists ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         v-if="bulkPackable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkCreatePacking(selectedRows as Set<number>, deselectAll)"
       >
-        Create packing
+        {{ t('Create packing') }}
       </button>
-      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="pick-bulk-hint">
-        Select picking lists from a single warehouse to create packing
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="bulkPrintLabels(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Print shipping label') }}
+      </button>
+      <span v-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="pick-bulk-hint">
+        {{ t('Select picking lists from a single warehouse to create packing') }}
       </span>
     </template>
 
@@ -257,7 +293,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover v-if="!isScoped" id="pick-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pick-wh-select" placeholder="Warehouse"
+              id="pick-wh-select" :placeholder="t('Warehouse')"
               :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
@@ -272,8 +308,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -282,7 +319,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="pick-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pick-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              id="pick-status-select" :placeholder="t('Status')" :model-value="statusFilter.length ? 'set' : ''" is-clearable
               :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []"
             >
               <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
@@ -296,8 +333,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(opt.value)"
                   @change="toggleStatus(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -306,8 +344,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-pick-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-pick-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -315,16 +353,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="pick-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-pick-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+          <MpTooltip id="tt-pick-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
         </div>
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -335,16 +373,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Number — View details chip on hover ── -->
     <template #cell-taskNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text pick-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as PickingTask)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text pick-no" @click.stop="viewDetails(row as unknown as PickingTask)">{{ value }}</a>
     </template>
 
     <!-- ── Sales orders — expandable list ── -->
@@ -352,7 +381,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="pick-orders">
         <template v-if="expandedRows.has((row as unknown as PickingTask).id)">
           <span v-for="no in (value as string[])" :key="no" class="pick-orders__item">{{ no }}</span>
-          <button class="pick-orders__toggle" @click.stop="toggleExpand((row as unknown as PickingTask).id)">Show less</button>
+          <button class="pick-orders__toggle" @click.stop="toggleExpand((row as unknown as PickingTask).id)">{{ t('Show less') }}</button>
         </template>
         <template v-else>
           <span class="pick-orders__item">{{ (value as string[])[0] }}</span>
@@ -360,23 +389,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             v-if="(value as string[]).length > 1"
             class="pick-orders__toggle"
             @click.stop="toggleExpand((row as unknown as PickingTask).id)"
-          >+{{ (value as string[]).length - 1 }} more</button>
+          >+{{ (value as string[]).length - 1 }} {{ t('more') }}</button>
         </template>
       </span>
     </template>
 
     <!-- ── Warehouse — View details chip on hover ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="pick-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PickingTask).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link pick-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as PickingTask).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -385,7 +405,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-pickedQty="{ value }">{{ formatNum(value as number) }}</template>
 
     <!-- ── Status ── -->
-    <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
+    <template #cell-status="{ value, row }">
+      <div class="pick-status-cell">
+        <ErpStatusBadge :status="value as string" />
+        <ErpStatusBadge
+          v-if="isPickingFrozen(row as unknown as PickingTask)"
+          status="needs-rearrangement" type="critical" :label="t('Needs re-arrangement')"
+        />
+      </div>
+    </template>
 
     <!-- ── Icon indicators — packing task created ── -->
     <template #cell-icons="{ row }">
@@ -393,11 +421,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpTooltip
           v-if="pickingTaskHasPacking((row as unknown as PickingTask).id)"
           :id="`tt-packtask-${row.id}`"
-          label="Packing task created"
+          :label="t('Packing task created')"
           placement="top"
           use-portal
         >
-          <span class="pick-icon-indicator" aria-label="Packing task created">
+          <span class="pick-icon-indicator" :aria-label="t('Packing task created')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <g clip-path="url(#pt-clip)">
                 <path d="M2.40711 7.72822C2.75157 6.54028 3.29326 5.44152 3.82046 4.37214C4.08056 3.84458 4.33712 3.32416 4.56474 2.8037C4.76946 2.33564 5.20689 1.99844 5.72079 1.95301C7.1385 1.82768 8.30968 1.74107 9.99988 1.74107C11.6747 1.74107 12.8399 1.8261 14.2403 1.94959C14.7739 1.99665 15.2218 2.35856 15.4226 2.84938C15.6759 3.46852 15.9734 4.06607 16.2769 4.67586C16.7475 5.62099 17.2326 6.5955 17.5907 7.72528" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -420,7 +448,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="pick-end">
         <span v-if="(row as unknown as PickingTask).endDate">{{ formatDateTime((row as unknown as PickingTask).endDate) }}</span>
         <span v-else class="pick-end__ongoing">—</span>
-        <span v-if="agingDays(row as unknown as PickingTask) > 1" class="pick-aging">{{ agingDays(row as unknown as PickingTask) }} days</span>
+        <span v-if="agingDays(row as unknown as PickingTask) > 1" class="pick-aging">{{ agingDays(row as unknown as PickingTask) }} {{ t('days') }}</span>
       </span>
     </template>
 
@@ -428,7 +456,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`pick-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -436,24 +464,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as PickingTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as PickingTask)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as PickingTask).status === 'open'"
+              v-if="(row as unknown as PickingTask).status === 'open' && !isPickingFrozen(row as unknown as PickingTask)"
               @click="startPickingAndNavigate(row as unknown as PickingTask)"
-            >Start picking</MpPopoverListItem>
+            >{{ t('Start picking') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-else-if="(row as unknown as PickingTask).status === 'in progress'"
               @click="continuePicking(row as unknown as PickingTask)"
-            >Continue picking</MpPopoverListItem>
+            >{{ t('Continue picking') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="pickingEligibleForPacking(row as unknown as PickingTask)"
               @click="createPacking(row as unknown as PickingTask)"
-            >Create packing</MpPopoverListItem>
+            >{{ t('Create packing') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canPrintLabel(row as unknown as PickingTask)"
+              @click="printShippingLabels(ordersForPicking(row as unknown as PickingTask))"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else
+              :class="css({ opacity: 0.45, cursor: 'not-allowed' })"
+              :title="t('Waiting for marketplace shipping label')"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancelPickingTask(row as unknown as PickingTask)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as PickingTask)"
-            >Cancel</MpPopoverListItem>
+            >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -463,24 +500,32 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No picking tasks</p>
-        <p class="empty-full-desc">Orders waiting to be picked will appear here.</p>
+        <p class="empty-full-title">{{ t('No picking tasks') }}</p>
+        <p class="empty-full-desc">{{ t('Orders waiting to be picked will appear here.') }}</p>
       </div>
     </template>
   </ErpTablePage>
+
+  <PdfPreviewModal
+    :open="pdfOpen"
+    :doc="pdfDoc"
+    :filename="pdfFilename"
+    :title="t('Shipping label preview')"
+    @close="pdfOpen = false"
+  />
 
   <!-- ── Cancel confirmation modal ── -->
   <MpModal id="pick-cancel-modal" :is-open="cancelModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
-      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Cancel') }} {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        This picking task will be canceled and can no longer be continued. This can't be undone.
+        {{ t('This picking task will be canceled and can no longer be continued. This can\'t be undone.') }}
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep task') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">{{ t('Cancel task') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -490,10 +535,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="pick-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="s in demoStates" :key="s.value"
@@ -546,22 +591,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pick-no { color: var(--mp-text-default); }
 .pick-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Sales orders cell */
 .pick-orders { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); }
@@ -580,6 +612,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Icon indicators cell — packing task created */
 .pick-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
 .pick-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
+
+/* Status cell — Open + Needs re-arrangement badges stacked */
+.pick-status-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5); flex-wrap: wrap; }
 
 /* Start/End date + aging badge */
 .pick-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

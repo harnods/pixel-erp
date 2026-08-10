@@ -7,6 +7,7 @@ import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { getWarehouseSettings } from './warehouseSettings'
 import { effectiveLocationPriority } from './warehouseConfig'
+import { generateNextBarcode } from './barcodeConfig'
 
 // ── Persisted on-hand overlay ─────────────────────────────────────────────────
 // Stores absolute onHand values that override the deterministic generated base.
@@ -32,6 +33,29 @@ type BatchOverlay = Record<string, Record<string, ProductBatch[]>> // warehouseI
 const BATCH_OVERLAY_KEY = 'wh-batch-overlay-v1'
 const batchOverlay = reactive<BatchOverlay>(loadSnapshot<BatchOverlay>(BATCH_OVERLAY_KEY) ?? {})
 function persistBatchOverlay() { saveSnapshot(BATCH_OVERLAY_KEY, batchOverlay) }
+
+// ── Persisted storage-location (bin) barcode overlay ─────────────────────────
+// Only Storage-type locations (bins) get a barcode — Organizational nodes (Floor/
+// Zone/Aisle, …) are groupings, not a physical place something is scanned into.
+// Same as serials: generated (and persisted) the first time it's ever read.
+type LocationBarcodeOverlay = Record<string, string> // `${warehouseId}::${locId}` → barcode
+const LOCATION_BARCODE_KEY = 'wh-location-barcode-overlay-v1'
+const locationBarcodeOverlay = reactive<LocationBarcodeOverlay>(loadSnapshot<LocationBarcodeOverlay>(LOCATION_BARCODE_KEY) ?? {})
+function persistLocationBarcodeOverlay() { saveSnapshot(LOCATION_BARCODE_KEY, locationBarcodeOverlay) }
+function locationBarcodeKey(warehouseId: string, locId: string): string { return `${warehouseId}::${locId}` }
+
+/** The barcode for one Storage-type location — generated (and persisted) on first read.
+ *  Call only for `type === 'Storage'` nodes; Organizational nodes don't get one. */
+export function ensureLocationBarcode(warehouseId: string, locId: string): string {
+  const key = locationBarcodeKey(warehouseId, locId)
+  let barcode = locationBarcodeOverlay[key]
+  if (!barcode) {
+    barcode = generateNextBarcode('bin')
+    locationBarcodeOverlay[key] = barcode
+    persistLocationBarcodeOverlay()
+  }
+  return barcode
+}
 
 /**
  * Register a brand-new batch that isn't already in the warehouse's inventory —
@@ -61,6 +85,32 @@ export function registerNewBatch(
     reserved: 0,
     available: batch.onHand,
   })
+  persistBatchOverlay()
+}
+
+/**
+ * Reverse a specific overlay-added batch by `qty` — the exact inverse of
+ * registerNewBatch, used when a PO gets canceled after its goods were already
+ * put away (an in-progress or completed receiving task, acknowledged after
+ * its PO was canceled — see cancelInboundReceipt/acknowledgeCanceledReceipt
+ * in receivingTasks.ts/inboundSync.ts) and the batch THAT receiving task
+ * itself registered needs undoing. Reducing item.onHand directly (like a
+ * plain-SKU stock adjustment would) can't be used here — it would desync
+ * from the sum of item.batches, breaking the batch-sum-matches-item-total
+ * invariant. This only ever touches the overlay entry it's reversing; the
+ * deterministically-generated base batches are never modified — they were
+ * never added to by registerNewBatch either.
+ */
+export function unregisterBatch(warehouseId: string, sku: string, batchNo: string, qty: number): void {
+  const bySku = batchOverlay[warehouseId]?.[sku]
+  if (!bySku) return
+  const idx = bySku.findIndex((b) => b.batchNo === batchNo)
+  if (idx === -1) return
+  const b = bySku[idx]!
+  const take = Math.min(qty, b.onHand)
+  b.onHand -= take
+  b.available = Math.max(0, b.available - take)
+  if (b.onHand <= 0) bySku.splice(idx, 1)
   persistBatchOverlay()
 }
 
@@ -135,6 +185,15 @@ export function hasReservationsForTask(taskId: string): boolean {
   return stockReservations.some((r) => r.taskId === taskId)
 }
 
+/** Total reserved units an owner (order id) currently holds across every
+ *  SKU/batch/serial — used to record how much a manual "Release Reserved"
+ *  (D6) returned to Available for audit. */
+export function reservedQtyForTask(taskId: string): number {
+  return stockReservations
+    .filter((r) => r.taskId === taskId)
+    .reduce((sum, r) => sum + (r.serials?.length ?? r.qty), 0)
+}
+
 /** Every reservation an owner (order id) holds for a given SKU. */
 export function getReservationsForOrder(orderId: string, sku: string): StockReservation[] {
   return stockReservations.filter((r) => r.taskId === orderId && r.sku === sku)
@@ -166,6 +225,41 @@ export function releaseReservationsForOrderSku(orderId: string, sku: string): vo
   if (stockReservations.length !== before) persistReservations()
 }
 
+/**
+ * Consume `qty` units of an order's reservation for one SKU — used when a shipment
+ * is COMPLETED (goods physically leave). Unlike releaseReservationsForOrderSku
+ * (which drops the whole (order, sku) claim, returning it to Available), this
+ * removes only the shipped quantity: it reduces batch-record qty / drops serials
+ * FIFO across the order's reservation records for that SKU, deleting a record once
+ * emptied. The caller pairs this with applyStockInOut(-qty) so on-hand falls by the
+ * same amount and `available = onHand − reserved` stays put (the units left the
+ * building, they weren't returned to stock). Returns the qty actually consumed.
+ */
+export function consumeReservation(orderId: string, warehouseId: string, sku: string, qty: number): number {
+  let remaining = qty
+  let changed = false
+  for (let i = stockReservations.length - 1; i >= 0 && remaining > 0; i--) {
+    const r = stockReservations[i]!
+    if (r.taskId !== orderId || r.warehouseId !== warehouseId || r.sku !== sku) continue
+    if (r.serials?.length) {
+      const take = Math.min(r.serials.length, remaining)
+      r.serials = r.serials.slice(0, r.serials.length - take)
+      r.qty = r.serials.length
+      remaining -= take
+      changed = true
+      if (r.serials.length === 0) stockReservations.splice(i, 1)
+    } else {
+      const take = Math.min(r.qty, remaining)
+      r.qty -= take
+      remaining -= take
+      changed = true
+      if (r.qty <= 0) stockReservations.splice(i, 1)
+    }
+  }
+  if (changed) persistReservations()
+  return qty - remaining
+}
+
 export function applyStockCount(warehouseId: string, lines: { sku: string; qty: number }[]) {
   if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
   for (const l of lines) stockOverlay[warehouseId]![l.sku] = Math.max(0, l.qty)
@@ -180,6 +274,41 @@ export function applyStockInOut(warehouseId: string, lines: { sku: string; qty: 
     stockOverlay[warehouseId]![l.sku] = Math.max(0, current + l.qty)
   }
   persistOverlay()
+}
+
+/** Allocatable units for a SKU (onHand − reserved) — 0 if the SKU isn't stocked. */
+export function availableForSku(warehouseId: string, sku: string): number {
+  return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.available ?? 0
+}
+
+/** On-hand units for a SKU in a warehouse — 0 if the SKU isn't stocked. */
+export function onHandForSku(warehouseId: string, sku: string): number {
+  return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.onHand ?? 0
+}
+
+/**
+ * Would a stock-out (negative-qty lines) drive any SKU below zero on-hand, or
+ * below what's already reserved? `applyStockInOut` silently clamps at 0, which
+ * hides over-decrements — callers that must REJECT rather than swallow them
+ * (stock in/out, transfers) check this first. Returns the first offending SKU,
+ * or null when every line is safe.
+ */
+export function stockOutViolation(
+  warehouseId: string,
+  lines: { sku: string; qty: number }[],
+): { sku: string; requested: number; onHand: number; available: number } | null {
+  for (const l of lines) {
+    if (l.qty >= 0) continue
+    const out = -l.qty
+    const onHand = onHandForSku(warehouseId, l.sku)
+    const available = availableForSku(warehouseId, l.sku)
+    // Removing more than is on hand → negative stock; more than available →
+    // eating into reserved (already promised) stock. Both break the invariant.
+    if (out > onHand || out > available) {
+      return { sku: l.sku, requested: out, onHand, available }
+    }
+  }
+  return null
 }
 
 export function applyTransfer(
@@ -233,6 +362,24 @@ export function receiveNewSerials(warehouseId: string, sku: string, serials: str
     entry.removed = entry.removed.filter(s => s !== sn)
   }
   persistSerialOverlay()
+}
+
+/**
+ * Reverse specific serial units that were brought in via receiveNewSerials —
+ * the exact inverse, used when a PO gets canceled after its goods were
+ * already put away. Drops them from the "added" overlay list and reduces
+ * aggregate onHand by the same count via applyStockInOut (safe here — plain
+ * aggregate delta, no per-batch sum to desync, unlike unregisterBatch above).
+ */
+export function removeReceivedSerials(warehouseId: string, sku: string, serials: string[]): void {
+  const fresh = [...new Set(serials)].filter(Boolean)
+  if (!fresh.length) return
+  const entry = serialOverlay[warehouseId]?.[sku]
+  if (entry) {
+    entry.added = entry.added.filter((sn) => !fresh.includes(sn))
+    persistSerialOverlay()
+  }
+  applyStockInOut(warehouseId, [{ sku, qty: -fresh.length }])
 }
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
@@ -329,8 +476,8 @@ function binLocation(seed: number, i: number): string[] {
 // tampers, pitchers, …) are neither — they have no batches and no serials.
 const BATCH_CATEGORIES = new Set(['Green Beans', 'Roasted Beans'])
 const SERIAL_CATEGORIES = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
-function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
-function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
+export function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
+export function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
 
 // Sample products that belong to more than one category (sku → category list)
 const MULTI_CATEGORIES: Record<string, string[]> = {
@@ -384,6 +531,11 @@ const MIN_ONHAND_OVERRIDE: Record<string, number> = {
   'wh-001::2101': 15,  // total_reserved=6 demand=3
   'wh-001::2001': 11,  // total_reserved=4 demand=2
   'wh-001::3005': 21,  // total_reserved=9 demand=4
+  // ── exposed once wh-006 (Makassar Selatan) started carrying the FULL catalog:
+  // orders already demanded these SKUs from wh-006, but it didn't stock them before. ──
+  'wh-006::2004': 15,  // total_reserved=9 demand=4 → available 6 (≥ demand); kept < 20 (serial-drawer page size)
+  // ── out-demo-partial-split (D3/D7 demo): a 7-qty SKU-3001 order in wh-006 ──
+  'wh-006::3001': 20,  // covers the demo order's demand 7 with headroom (avail ≥ 7)
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the
@@ -433,7 +585,10 @@ function makeBatches(onHand: number, reserved: number, seed: number, i: number):
 
 // Serial units for a hardware product — a small, design-matching subset.
 function makeSerials(sku: string, onHand: number, reserved: number, seed: number, i: number): ProductSerials {
-  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+  // Full SKU (not just the first 3 chars) so serials are namespaced per SKU —
+  // SKUs sharing a 3-char prefix (2101, 2102, …) must never generate the same
+  // serial string, or resolveScan would map a scan to the wrong SKU.
+  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN')
   const mk = (qty: number, base: number) =>
     Array.from({ length: qty }, (_, k) => ({
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
@@ -460,9 +615,12 @@ function reconcileSerialQty(item: WarehouseStockItem): void {
   const delta = item.onHand - (item.serials.available.length + item.serials.reserved.length)
   if (delta === 0) return
   if (delta > 0) {
-    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN'
+    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN'
+    // Strip the exact prefix to get the numeric suffix — a plain replace(/\D/g)
+    // would keep the SKU's own digits for numeric SKUs (e.g. "2102") and blow up
+    // the next number, producing a double-prefixed serial.
     const nums = [...item.serials.available, ...item.serials.reserved]
-      .map((u) => parseInt(u.serial.replace(/\D/g, ''), 10))
+      .map((u) => parseInt(u.serial.startsWith(prefix) ? u.serial.slice(prefix.length) : u.serial.replace(/\D/g, ''), 10))
       .filter((n) => Number.isFinite(n))
     let next = (nums.length ? Math.max(...nums) : 0) + 1
     const loc = item.locations[0] ?? '—'
@@ -500,7 +658,10 @@ function generateStock(products: Product[], seed: number, warehouseId: string): 
     const onHandBase = isSerial
       ? ((i * 7 + seed * 3 + 2) % 9) + 1
       : ((i * 53 + seed * 7 + 17) % 21) + 5
-    const onHand = Math.max(onHandBase, MIN_ONHAND_OVERRIDE[`${warehouseId}::${c.sku}`] ?? 0)
+    // Gudang Makassar Selatan (wh-006) is the demo/QA warehouse — floor every product
+    // to at least 10 on hand so nothing shows up empty there.
+    const wh006Floor = warehouseId === "wh-006" ? 10 : 0
+    const onHand = Math.max(onHandBase, MIN_ONHAND_OVERRIDE[`${warehouseId}::${c.sku}`] ?? 0, wh006Floor)
     const reservedRaw = isSerial
       ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
       : (onHand > 8 ? (i * 13 + seed) % Math.max(1, Math.floor(onHand / 3)) : 0)
@@ -567,6 +728,10 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   // bin-split and reservation-application steps below then treat it exactly like
   // any other batch.
   const bOverlay = batchOverlay[id]
+  // batchNo → the operator-chosen bin it was registered into (registerNewBatch).
+  // Kept so the bin-split + round-robin below leave the batch in that exact bin
+  // instead of collapsing every batch onto a primary bin.
+  const pinnedBatchLoc: Record<string, Record<string, string>> = {} // sku → batchNo → location
   if (bOverlay) {
     for (const item of stock) {
       const extra = bOverlay[item.sku]
@@ -577,6 +742,7 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         item.batches.push({ ...nb })
         item.onHand += nb.onHand
         item.available += nb.onHand
+        ;(pinnedBatchLoc[item.sku] ??= {})[nb.batchNo] = nb.location || ''
       }
     }
   }
@@ -590,43 +756,69 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   stock.forEach((item, i) => {
     const loc = paths[i % L] ?? '—'
     const mlCfg = multiLoc.find((m) => m.idx === i)
-    let locs: string[]
+    let baseLocs: string[]
     if (mlCfg && L > 1) {
       // Pick `count` distinct paths spread across the tree using an even step
       const step = Math.max(1, Math.floor(L / mlCfg.count))
-      locs = [loc]
+      baseLocs = [loc]
       for (let k = 1; k < mlCfg.count; k++) {
         const candidate = paths[(i + step * k) % L]
-        if (candidate && !locs.includes(candidate)) locs.push(candidate)
+        if (candidate && !baseLocs.includes(candidate)) baseLocs.push(candidate)
       }
-      if (locs.length < 2) locs = [loc]
+      if (baseLocs.length < 2) baseLocs = [loc]
     } else {
-      locs = [loc]
+      baseLocs = [loc]
     }
-    item.locations = locs
+
+    // Overlay batches carry a real, operator-chosen bin. Hold their qty in THAT bin
+    // (creating it if the SKU never stocked there before) and split only the remaining
+    // generated qty across the base bins — so a batch added to a new bin genuinely
+    // lives there (item.bins gains it, reservations mirror to it) instead of being
+    // round-robined onto a primary bin.
+    const pinnedLoc = pinnedBatchLoc[item.sku] ?? {}
+    const pinnedList = (item.batches ?? [])
+      .filter((b) => b.batchNo in pinnedLoc)
+      .map((b) => ({ batchNo: b.batchNo, location: pinnedLoc[b.batchNo] || baseLocs[0] || loc, onHand: b.onHand }))
+    const pinnedOnHand = pinnedList.reduce((s, p) => s + p.onHand, 0)
+    const baseOnHand = Math.max(0, item.onHand - pinnedOnHand)
 
     // Real per-bin qty split — same weights the Products-tab display always used,
-    // now persisted so it's genuinely allocatable (reservations draw from it) instead
-    // of recomputed at render time. A single-loc item just mirrors its aggregate.
-    if (locs.length > 1) {
-      const ohParts = splitByWeight(item.onHand, locs.length)
-      const rvParts = splitByWeight(item.reserved, locs.length)
-      item.bins = locs.map((l, bi) => {
+    // now persisted so it's genuinely allocatable (reservations draw from it).
+    let bins: StockLocationBin[]
+    if (baseLocs.length > 1) {
+      const ohParts = splitByWeight(baseOnHand, baseLocs.length)
+      const rvParts = splitByWeight(item.reserved, baseLocs.length)
+      bins = baseLocs.map((l, bi) => {
         const oh = ohParts[bi] ?? 0
         const rv = Math.min(rvParts[bi] ?? 0, oh)
         return { location: l, onHand: oh, reserved: rv, available: oh - rv }
       })
     } else {
-      item.bins = [{ location: loc, onHand: item.onHand, reserved: item.reserved, available: item.available }]
+      bins = [{ location: loc, onHand: baseOnHand, reserved: Math.min(item.reserved, baseOnHand), available: Math.max(0, baseOnHand - item.reserved) }]
     }
+    // Add each pinned batch's qty to its own bin (create the bin if it's new).
+    for (const p of pinnedList) {
+      let bin = bins.find((b) => b.location === p.location)
+      if (!bin) { bin = { location: p.location, onHand: 0, reserved: 0, available: 0 }; bins.push(bin) }
+      bin.onHand += p.onHand
+      bin.available += p.onHand
+    }
+    item.bins = bins
+    item.locations = bins.map((b) => b.location)
 
-    // Distribute batches/serial units across the item's real bins (round-robin) —
-    // every batch/serial now lands in a bin that's actually one of this item's own,
-    // instead of all being forced into the single primary one.
-    item.batches?.forEach((b, bi) => { b.location = item.bins[bi % item.bins.length]!.location })
+    // Distribute the generated (non-pinned) batches/serials round-robin across the
+    // BASE bins; a pinned batch keeps the exact bin it was registered into.
+    const baseLocSet = new Set(baseLocs)
+    const rrBins = bins.filter((b) => baseLocSet.has(b.location))
+    const rr = rrBins.length ? rrBins : bins
+    let bidx = 0
+    item.batches?.forEach((b) => {
+      if (b.batchNo in pinnedLoc) { b.location = pinnedLoc[b.batchNo] || rr[0]!.location; return }
+      b.location = rr[bidx % rr.length]!.location; bidx++
+    })
     if (item.serials) {
-      item.serials.available.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
-      item.serials.reserved.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
+      item.serials.available.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
+      item.serials.reserved.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
     }
   })
   // Apply any persisted on-hand overrides from stock counts / in-out / transfers

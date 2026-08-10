@@ -253,13 +253,11 @@ function handleContinue() {
 .cwo-th {
   height: var(--mp-sizes-7, 28px);
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-default); text-align: left; white-space: nowrap;
 }
-.cwo-th:last-child { border-right: none; }
 .cwo-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 /* Read-only ("disabled") columns — gray fill so the editable column stands out */
 .cwo-td {

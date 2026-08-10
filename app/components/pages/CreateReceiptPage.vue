@@ -3,13 +3,24 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
-  MpDatePicker, MpTooltip, toast,
+  MpDatePicker, MpTooltip, MpSelect,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
-import { addReceipt, nextReceiptNo } from '~/data/receipts'
+import { couriers } from '~/data/couriers'
+import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
+import { editInboundReceipt, proposeReceivingReduction } from '~/data/inboundSync'
+import { lineItemsForReceipt } from '~/data/receiptLineItems'
+import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
 import { scrollToFirstError } from '~/utils/form'
+import AcknowledgeReceivingReductionModal, { type ReceivingReductionGroup } from '~/components/AcknowledgeReceivingReductionModal.vue'
+
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editingReceipt = computed(() => (isEdit.value ? receipts.find((r) => r.id === props.orderId) : undefined))
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -21,6 +32,7 @@ function toISODate(display: string) {
 }
 
 const router = useRouter()
+const { t } = useLocale()
 
 // ── Warehouse options ──────────────────────────────────────────────────────
 const warehouseOptions = computed(() =>
@@ -66,6 +78,14 @@ const referenceNo = ref('')
 const trackingNo = ref('')
 const memo = ref('')
 
+// ── Courier picker (searchable MpPopover, sourced from master data couriers) ─
+const courierSearch = ref('')
+const couriersFiltered = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
+})
+function selectCourier(name: string) { shipVia.value = name }
+
 // ── Product line rows ─────────────────────────────────────────────────────
 interface LineRow {
   id: number
@@ -78,11 +98,22 @@ interface LineRow {
   unit: string
   qtyError: boolean
   productError: boolean
+  /** Edit mode — qty was set below what's already been physically received. */
+  qtyLocked: boolean
+  /** Edit mode — qty already physically received for this SKU: can't remove
+   *  this row or set qty below it (PRD C2 AC#4). 0 = freely editable. */
+  lockedQty: number
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0 }
+}
+
+/** Tooltip/error text for a qty cell locked by receiving state (edit mode). */
+function qtyErrorMsg(row: LineRow): string {
+  if (row.qtyLocked) return `${t('Can\'t go below')} ${row.lockedQty} — ${t('already received')}`
+  return t('Qty must be at least 1')
 }
 
 const rows = ref<LineRow[]>([makeRow()])
@@ -115,7 +146,38 @@ function onProductSelect(row: LineRow, id: string) {
 
 function removeRow(id: number) {
   if (rows.value.length === 1) return
+  const row = rows.value.find((r) => r.id === id)
+  if (row && row.lockedQty > 0) {
+    toast.notify({ variant: 'error', title: `${row.productName} ${t('has already been received and can\'t be removed')}`, maxWidth: 'max-content' })
+    return
+  }
   rows.value = rows.value.filter((r) => r.id !== id)
+}
+
+// ── Edit mode — prefill from the receipt (per-SKU receiving lock) ──────────
+function prefillFromReceipt() {
+  const r = editingReceipt.value
+  if (!r) return
+  vendor.value = r.vendor ?? ''
+  transactionDate.value = todayDisplay
+  warehouseId.value = r.warehouseId
+  transactionNo.value = r.purchaseNo
+  estimatedArrival.value = r.estimatedArrival ? toDisplayDate(r.estimatedArrival) : todayDisplay
+  trackingNo.value = r.trackingNos[0] ?? ''
+  memo.value = r.memo ?? ''
+  const lines = lineItemsForReceipt(r).map((l) => ({
+    id: rowSeq++,
+    productId: l.productId,
+    productName: l.productName,
+    productSku: l.sku,
+    productImg: l.image,
+    description: l.productDesc,
+    qty: String(l.purchaseQty),
+    unit: l.unit,
+    qtyError: false, productError: false, qtyLocked: false,
+    lockedQty: lockedReceivingQtyForSku(r.id, l.sku),
+  } as LineRow))
+  rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
 
 // ── Drag-and-drop row reorder ─────────────────────────────────────────────
@@ -165,7 +227,9 @@ async function validate(): Promise<boolean> {
     valid = false
   } else {
     for (const row of filledRows) {
+      row.qtyLocked = false
       if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
+      else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyLocked = true; valid = false } // can't drop below received
       else row.qtyError = false
     }
   }
@@ -204,7 +268,7 @@ async function persist() {
     skuQty,
     purchaseQty,
     receivedQty: 0,
-    status: 'on the way',
+    status: 'pending',
     estimatedArrival: estimatedArrival.value ? toISODate(estimatedArrival.value) : txDate,
     vendor: vendor.value,
     trackingNos: trackingNo.value ? [trackingNo.value] : [],
@@ -216,11 +280,94 @@ async function persist() {
   })
 }
 
+const allocModalOpen = ref(false)
+const allocGroups = ref<ReceivingReductionGroup[]>([])
+
+/** Reductions that span ≥2 Open receiving tasks need a read-only acknowledge step
+ *  (no override, unlike outbound). Single-task / unassigned-only reductions apply
+ *  directly (AC#1). */
+function computeAllocationGroups(): ReceivingReductionGroup[] {
+  const r = editingReceipt.value
+  if (!r) return []
+  const oldBySku = new Map(lineItemsForReceipt(r).map((l) => [l.sku, l.purchaseQty]))
+  const groups: ReceivingReductionGroup[] = []
+  for (const row of rows.value.filter((row) => row.productId)) {
+    const oldQty = oldBySku.get(row.productSku) ?? 0
+    const newQty = Number(row.qty) || 0
+    if (newQty >= oldQty) continue
+    const N = oldQty - newQty
+    const proposal = proposeReceivingReduction(r.id, row.productSku, N)
+    if (proposal.exceedsRemovable) continue // editInboundReceipt rejects it with a clear toast
+    const R = Math.max(0, N - Math.min(N, proposal.unassigned)) // qty drawn from open tasks
+    const open = openReceivingLinesForSku(r.id, row.productSku)
+    if (open.length < 2 || R <= 0) continue // AC#1 — direct, no allocation step
+    const byTask = new Map(proposal.taskReductions.map((t) => [t.taskId, t]))
+    groups.push({
+      sku: row.productSku,
+      productName: row.productName,
+      toRemove: R,
+      tasks: open.map((p) => {
+        const tr = byTask.get(p.taskId)
+        const reduceBy = tr?.reduceBy ?? 0
+        const t = getReceivingTask(p.taskId)
+        return {
+          taskNo: p.taskNo, currentQty: p.qty, reduceBy, resultQty: p.qty - reduceBy,
+          willCancel: reduceBy === p.qty && t?.items.length === 1,
+        }
+      }),
+    })
+  }
+  return groups
+}
+
+function onAllocConfirm() {
+  allocModalOpen.value = false
+  const ok = persistEdit()
+  if (!ok) return
+  toast.notify({ variant: 'success', title: t('Purchase order updated'), maxWidth: 'max-content' })
+  router.push(`/inbound-delivery/${props.orderId}`)
+}
+
+/** Edit mode — apply changes via editInboundReceipt (C2 AC#4 lock). Returns
+ *  false (and toasts) on rejection so the caller stays on the form (no
+ *  partial apply). */
+function persistEdit(): boolean {
+  const r = editingReceipt.value
+  if (!r) return false
+  const filledRows = rows.value.filter((row) => row.productId)
+  const lines = filledRows.map((row) => ({ productId: row.productId, qty: Number(row.qty) || 0 }))
+  const res = editInboundReceipt(r.id, lines, {
+    vendor: vendor.value,
+    estimatedArrival: estimatedArrival.value ? toISODate(estimatedArrival.value) : undefined,
+    memo: memo.value.trim(),
+    trackingNos: trackingNo.value ? [trackingNo.value] : [],
+  })
+  if (!res.ok) {
+    const msg = res.reason === 'SKU_LOCKED'
+      ? `${t('A SKU already received can\'t be removed or reduced below')} ${res.locked}${res.removable !== undefined ? ` — ${t('only')} ${res.removable} ${t('removable')}` : ''}`
+      : res.reason === 'NOT_EDITABLE' ? t('This PO can no longer be edited')
+      : t('Could not save the changes')
+    toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
+  if (isEdit.value) {
+    isSaving.value = false
+    const groups = computeAllocationGroups()
+    if (groups.length) { allocGroups.value = groups; allocModalOpen.value = true; return } // ask first
+    const ok = persistEdit()
+    if (!ok) return
+    toast.notify({ variant: 'success', title: t('Purchase order updated'), maxWidth: 'max-content' })
+    router.push(`/inbound-delivery/${props.orderId}`)
+    return
+  }
   await persist()
-  toast.notify({ variant: 'success', title: 'Receipt saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Receipt saved'), maxWidth: 'max-content' })
   isSaving.value = false
   goReceipts()
 }
@@ -229,7 +376,7 @@ async function handleSaveAndAdd() {
   if (!await validate()) return
   isSavingAndAdding.value = true
   await persist()
-  toast.notify({ variant: 'success', title: 'Receipt saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Receipt saved'), maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()
 }
@@ -243,6 +390,7 @@ function checkStageOverflow() {
 }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
+  if (isEdit.value) prefillFromReceipt()
   nextTick(() => {
     checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -261,10 +409,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">Inbound delivery</button>
+          <button class="detail-breadcrumb" @click="goReceipts">{{ t('Inbound delivery') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New receipt</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit purchase order') : t('New receipt') }}</h1>
         </div>
       </div>
     </header>
@@ -277,7 +425,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <div class="cr-header-1">
           <div class="cr-header-1-col">
             <MpFormControl id="cr-vendor" class="cr-field-flex" is-required :is-invalid="vendorError">
-              <MpFormLabel>Vendor</MpFormLabel>
+              <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
               <MpAutocomplete
                 id="cr-vendor-ac"
                 v-model="vendor"
@@ -291,10 +439,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 @button-action="onVendorAdd"
               >
                 <template #buttonAction="{ currentSearch }">
-                  {{ currentSearch ? `Add "${currentSearch}" as a new vendor` : 'Add new vendor' }}
+                  {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new vendor')}` : t('Add new vendor') }}
                 </template>
               </MpAutocomplete>
-              <MpFormErrorMessage>You must select vendor</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select vendor') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -304,7 +452,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 1: Transaction date → Transaction no. → Reference no. -->
           <div class="cr-col">
             <MpFormControl id="cr-txdate" is-required :is-invalid="transactionDateError">
-              <MpFormLabel>Transaction date</MpFormLabel>
+              <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
               <div class="cr-datepicker">
                 <MpDatePicker
                   id="cr-txdate-dp"
@@ -315,15 +463,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   @update:model-value="transactionDateError = false"
                 />
               </div>
-              <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select transaction date') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
-                <MpFormLabel>Transaction no.</MpFormLabel>
-                <span class="cr-label-icon" title="Auto-generated">
+                <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+                <span class="cr-label-icon" :title="t('Auto-generated')">
                   <MpIcon name="settings" size="sm" />
                 </span>
               </div>
@@ -339,7 +487,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-refno">
-              <MpFormLabel>Reference no.</MpFormLabel>
+              <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
               <MpInput id="cr-refno-input" v-model="referenceNo" is-full-width />
             </MpFormControl>
           </div>
@@ -347,7 +495,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 2: Estimated arrival → Ship via → Tracking no. -->
           <div class="cr-col">
             <MpFormControl id="cr-arrival">
-              <MpFormLabel>Estimated arrival date</MpFormLabel>
+              <MpFormLabel>{{ t('Estimated arrival date') }}</MpFormLabel>
               <div class="cr-datepicker">
                 <MpDatePicker
                   id="cr-arrival-dp"
@@ -363,14 +511,31 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-shipvia">
-              <MpFormLabel>Ship via</MpFormLabel>
-              <MpInput id="cr-shipvia-input" v-model="shipVia" is-full-width />
+              <MpFormLabel>{{ t('Courier') }}</MpFormLabel>
+              <MpPopover id="cr-courier" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="courierSearch = ''">
+                <MpPopoverTrigger>
+                  <MpSelect id="cr-shipvia-input" :model-value="shipVia" :placeholder="t('Select courier')" is-full-width @mousedown.prevent>
+                    <option v-if="shipVia" :value="shipVia">{{ shipVia }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
+                  <div class="cr-courier-search-wrap">
+                    <input v-model="courierSearch" class="cr-courier-search" type="text" :placeholder="t('Search...')" autocomplete="off" />
+                  </div>
+                  <div class="cr-courier-list">
+                    <MpPopoverList>
+                      <MpPopoverListItem v-for="c in couriersFiltered" :key="c.id" :is-active="c.name === shipVia" @click="selectCourier(c.name)">{{ c.name }}</MpPopoverListItem>
+                    </MpPopoverList>
+                    <p v-if="!couriersFiltered.length" class="cr-courier-none">{{ t('No couriers found') }}</p>
+                  </div>
+                </MpPopoverContent>
+              </MpPopover>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-trackno">
-              <MpFormLabel>Tracking no.</MpFormLabel>
+              <MpFormLabel>{{ t('Tracking no.') }}</MpFormLabel>
               <MpInput id="cr-trackno-input" v-model="trackingNo" is-full-width />
             </MpFormControl>
           </div>
@@ -378,7 +543,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Col 3: Warehouse -->
           <div class="cr-col">
             <MpFormControl id="cr-warehouse" is-required :is-invalid="warehouseError">
-              <MpFormLabel>Warehouse</MpFormLabel>
+              <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
               <MpAutocomplete
                 id="cr-warehouse-ac"
                 v-model="warehouseId"
@@ -386,10 +551,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 label-prop="name"
                 value-prop="id"
                 is-searchable is-clearable use-portal is-full-width
+                :is-disabled="isEdit"
                 :is-invalid="warehouseError"
                 @update:model-value="warehouseError = false"
               />
-              <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -411,12 +577,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <thead>
                 <tr>
                   <th class="cr-th cr-th--drag" />
-                  <th class="cr-th">Product</th>
-                  <th v-if="hasAnyProduct" class="cr-th">SKU</th>
+                  <th class="cr-th">{{ t('Product') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('SKU') }}</th>
                   <th v-if="!hasAnyProduct" class="cr-th" />
-                  <th v-if="hasAnyProduct" class="cr-th">Description</th>
-                  <th v-if="hasAnyProduct" class="cr-th">Qty</th>
-                  <th v-if="hasAnyProduct" class="cr-th">Unit</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Description') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Qty') }}</th>
+                  <th v-if="hasAnyProduct" class="cr-th">{{ t('Unit') }}</th>
                   <th class="cr-th cr-th--del" />
                 </tr>
               </thead>
@@ -444,7 +610,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpTooltip
                       v-if="row.productError"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      label="You must select product"
+                      :label="t('You must select product')"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -509,11 +675,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError }">
+                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError || row.qtyLocked }">
                       <MpTooltip
-                        v-if="row.qtyError"
+                        v-if="row.qtyError || row.qtyLocked"
                         :id="`cr-qty-tooltip-${row.id}`"
-                        label="Qty must be at least 1"
+                        :label="qtyErrorMsg(row)"
                         placement="top"
                         use-portal
                         class="cr-qty-tooltip-wrap"
@@ -523,7 +689,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           v-model="row.qty"
                           type="number"
                           is-full-width
-                          @update:model-value="row.qtyError = false"
+                          @update:model-value="() => { row.qtyError = false; row.qtyLocked = false }"
                         />
                       </MpTooltip>
                       <MpInput
@@ -532,7 +698,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         v-model="row.qty"
                         type="number"
                         is-full-width
-                        @update:model-value="row.qtyError = false"
+                        @update:model-value="() => { row.qtyError = false; row.qtyLocked = false }"
                       />
                     </td>
                     <td class="cr-td cr-td--unit">{{ row.unit }}</td>
@@ -556,7 +722,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- ── Memo ───────────────────────────────────────────────────────── -->
         <div class="cr-section cr-section--gap-top">
           <MpFormControl id="cr-memo">
-            <MpFormLabel>Memo</MpFormLabel>
+            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea
               id="cr-memo-textarea"
               v-model="memo"
@@ -564,7 +730,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               :rows="4"
             />
           </MpFormControl>
-          <p class="cr-helper-text">Only visible to you and your team</p>
+          <p class="cr-helper-text">{{ t('Only visible to you and your team') }}</p>
         </div>
 
       </div>
@@ -572,10 +738,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goReceipts">Cancel</MpButton>
-      <button class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goReceipts">{{ t('Cancel') }}</MpButton>
+      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
+
+    <AcknowledgeReceivingReductionModal
+      :open="allocModalOpen"
+      :groups="allocGroups"
+      @close="allocModalOpen = false"
+      @confirm="onAllocConfirm"
+    />
   </div>
 </template>
 
@@ -645,6 +818,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-col { width: 318px; flex-shrink: 0; display: flex; flex-direction: column; }
 .cr-field-spacer { height: 16px; flex-shrink: 0; }
 
+/* Courier picker popover (searchable, from master data couriers) */
+.cr-courier-search-wrap { padding: var(--mp-spacing-3); }
+.cr-courier-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cr-courier-search::placeholder { color: var(--mp-text-placeholder); }
+.cr-courier-list { max-height: 260px; overflow-y: auto; }
+.cr-courier-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+
 .cr-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cr-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 
@@ -668,7 +848,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);

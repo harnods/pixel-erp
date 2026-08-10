@@ -37,6 +37,7 @@ import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
 const slots = useSlots()
+const { t } = useLocale()
 
 export interface TableColumn {
   key: string
@@ -64,9 +65,12 @@ const props = withDefaults(defineProps<{
   hasAiChat?: boolean
   /** Show skeleton placeholder rows instead of data (e.g. first load) */
   loading?: boolean
-  /** True when a search/filter is active — switches the empty state to the inline
-   *  "No results found" variant (vs the full illustrated empty state). */
+  /** True when a text search is active. */
+  hasActiveSearch?: boolean
+  /** True when a status/dropdown filter is active. */
   hasActiveFilter?: boolean
+  /** Current search keyword — used to branch filter-only vs search empty state copy. */
+  search?: string
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
@@ -76,9 +80,19 @@ const props = withDefaults(defineProps<{
   /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
    *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
   bulkLabelPlural?: string
-  /** Override the sticky actions column width (default 44px) — use when the #actions
-   *  slot renders more than a single kebab button (several buttons in a row). */
+  /** Override the sticky actions column width (default 52px, fits a single kebab
+   *  button) — use when the #actions slot renders more than that (several buttons
+   *  in a row, or a kebab plus a labeled button like "Reconcile"). */
   actionsWidth?: string
+  /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
+   *  your filters". Defaults to the generic "No results match your filters". */
+  filterEmptyLabel?: string
+  /** Let the LAST column grow to absorb any leftover table width instead of staying
+   *  pinned to its declared `width` (table-layout:fixed otherwise distributes that
+   *  leftover proportionally across every column, including fixed-width ones like
+   *  the sticky actions column — see BillsReviewFilesPage.vue). Off by default so
+   *  every other page's column widths stay exactly as declared. */
+  lastColumnFlexible?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -86,12 +100,16 @@ const props = withDefaults(defineProps<{
   hasCheckbox: false,
   hasAiChat: false,
   loading: false,
+  hasActiveSearch: false,
   hasActiveFilter: false,
+  search: '',
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
+  filterEmptyLabel: undefined,
+  lastColumnFlexible: false,
 })
 
 const emit = defineEmits<{
@@ -101,8 +119,20 @@ const emit = defineEmits<{
   sortChange: [key: string, dir: 'asc' | 'desc']
   hideColumn: [key: string]
   clearFilters: []
+  clearSearch: []
+  clearAll: []
   selectionChange: [count: number]
 }>()
+
+// Column width — pinned to `col.width` exactly (width + minWidth), unless this is
+// the last column AND the page opted into `lastColumnFlexible`, in which case only
+// `minWidth` is set so it can grow into leftover table width instead of staying
+// fixed. See the `lastColumnFlexible` prop doc above.
+function colStyle(col: TableColumn, ci: number) {
+  if (!col.width) return {}
+  if (props.lastColumnFlexible && ci === props.columns.length - 1) return { minWidth: col.width }
+  return { width: col.width, minWidth: col.width }
+}
 
 // ERP column sort: picking the already-active direction clears the sort (back to
 // default order); otherwise apply the chosen direction. Empty key = unsorted.
@@ -124,7 +154,7 @@ const showSkeleton = computed(() => props.loading || paginating.value)
  *  state the table header is hidden so the empty state replaces the whole table.
  *  (The inline "no results" filtered state keeps the header.) */
 const isFullEmpty = computed(
-  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter,
+  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter && !props.hasActiveSearch,
 )
 
 /** Rows currently rendered — frozen during a pagination change so the OLD rows stay
@@ -334,6 +364,10 @@ const totalCols = computed(() =>
   (props.hasAiChat ? 1 : 0)
 )
 
+// Sticky actions column width — the actionsWidth prop, else the 52px default
+// (kept in script so the <col> inline style carries no hardcoded px).
+const actionsColWidth = computed(() => props.actionsWidth ?? '52px')
+
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
   const noun = props.bulkLabel ?? 'item'
@@ -368,11 +402,11 @@ const bulkCountLabel = computed(() => {
              Skipped on the full empty state so the table fits the container (no scroll). -->
         <colgroup v-if="!isFullEmpty">
           <col
-            v-for="col in columns"
+            v-for="(col, ci) in columns"
             :key="col.key"
-            :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+            :style="colStyle(col, ci)"
           />
-          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '44px', minWidth: actionsWidth ?? '44px' }" />
+          <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -424,7 +458,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--fixed':    col.isFixed,
               }"
               :data-col="col.key"
-              :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+              :style="colStyle(col, ci)"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
               <span class="th-inner">
@@ -436,7 +470,10 @@ const bulkCountLabel = computed(() => {
                   @change="toggleAll"
                   @click.stop
                 />
-                <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
+                <span v-if="!col.noHeader" class="th-label">{{ t(col.label) }}</span>
+                <!-- Optional per-column header extra (e.g. a settings icon) — opt-in via
+                     #header-<key>; most columns don't provide it, so nothing renders. -->
+                <slot :name="`header-${col.key}`" />
                 <!-- ERP column sort menu: hover reveals the icon; click opens options -->
                 <MpPopover
                   v-if="col.sortType"
@@ -480,6 +517,7 @@ const bulkCountLabel = computed(() => {
             <th
               v-if="$slots.actions && !loading"
               class="erp-th erp-th--actions erp-th--fixed"
+              :style="{ width: actionsWidth, minWidth: actionsWidth }"
             />
 
             <!-- AI chat th — outermost sticky right, 28px (hidden only on first-load skeleton) -->
@@ -537,6 +575,7 @@ const bulkCountLabel = computed(() => {
               <td
                 v-if="$slots.actions"
                 class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
               >
                 <slot name="actions" :row="row" />
               </td>
@@ -587,7 +626,11 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               <!-- match data-row columns during pagination; hidden on first load -->
-              <td v-if="$slots.actions && !loading" class="erp-td erp-td--actions erp-td--fixed" />
+              <td
+                v-if="$slots.actions && !loading"
+                class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
+              />
               <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />
             </tr>
           </template>
@@ -596,18 +639,18 @@ const bulkCountLabel = computed(() => {
           <tr v-else-if="displayRows.length === 0">
             <td
               class="erp-td erp-td--empty"
-              :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
+              :colspan="totalCols"
             >
               <!-- Inline empty — search/filter eliminated all results (same illustration as
                    the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-                <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ?? 'results'} match your filters` }}</p>
+                <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
-              <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
               <slot v-else name="empty">
+                <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
                 <div class="empty-default">
                   <p class="empty-title">No data yet</p>
                   <p class="empty-hint">There's nothing here yet.</p>
@@ -797,7 +840,16 @@ const bulkCountLabel = computed(() => {
   width: 100%;
   min-width: 0;
 }
-.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
+/* min-width defaults to auto here (not 0) — so plain text hugs its full width instead of
+   shrinking below the visible glyphs and letting them spill past the box. Slotted cells
+   that need to fill the column (e.g. a right-aligned chip) still get flex-grow. */
+.erp-cell-check > :last-child { flex: 1 1 auto; }
+/* The `:last-child` rule above assumes the last child is the wrapped cell
+   content — but when a cell's content is bare text (not wrapped in an
+   element, e.g. a plain date string), the checkbox <label> becomes the only
+   (and therefore "last") element child, so it wrongly inherits flex-shrink
+   and gets crushed. Pin the checkbox to its natural size unconditionally. */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -826,10 +878,19 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop) */
+/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop).
+   Default 52px (not --mp-sizes-11/44px) — matches the kebab-only pages that already
+   hardcode actions-width="52px" (BillsIndexPage, BillsReviewFilesPage), now the default
+   for every other kebab-only table too instead of each page redeclaring it.
+   max-width pins this too: table-layout:fixed distributes any leftover table width
+   (when column widths sum to less than the container, e.g. narrow tables like
+   WarehousesPage) proportionally across EVERY column, including ones with an
+   explicit width/min-width — without max-width the actions column silently grows
+   past 52px right along with the rest. */
 .erp-th--actions {
-  width: var(--erp-actions-width, var(--mp-sizes-11));
-  min-width: var(--erp-actions-width, var(--mp-sizes-11));
+  width: var(--erp-actions-width, 52px);
+  min-width: var(--erp-actions-width, 52px);
+  max-width: var(--erp-actions-width, 52px);
 }
 
 /* AI chat header column */
@@ -852,7 +913,7 @@ const bulkCountLabel = computed(() => {
 
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
 .erp-th--right .th-inner { flex-direction: row-reverse; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
@@ -960,10 +1021,11 @@ const bulkCountLabel = computed(() => {
 /* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
    Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
 .erp-td--actions {
-  width: var(--erp-actions-width, var(--mp-sizes-11));
-  min-width: var(--erp-actions-width, var(--mp-sizes-11));
+  width: var(--erp-actions-width, 52px);
+  min-width: var(--erp-actions-width, 52px);
+  max-width: var(--erp-actions-width, 52px);
   text-align: right;
-  padding: 2px var(--mp-spacing-2);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
 }
 
 /* AI chat cell */

@@ -2,11 +2,11 @@ import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
-import { applyStockCount, applyStockInOut } from './warehouseDetails'
+import { applyStockCount, applyStockInOut, getWarehouseDetail, stockOutViolation } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
 import {
-  accountForCategory, accountCodeFor,
+  accountForCategory, accountCodeFor, addAdjustment, stockAdjustments,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
   type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
   IN_OUT_CATEGORIES, adjustmentLineItems,
@@ -60,6 +60,7 @@ function countStatusFor(i: number): AdjustmentStatus {
   const v = hash100(i * 41 + 11)
   if (v < 25) return 'not_started'
   if (v < 55) return 'in_progress'
+  if (v < 80) return 'counted'
   return 'completed'
 }
 
@@ -85,7 +86,7 @@ function generate(count = 24): StockAdjustment[] {
     const durationDays = (hash100(i * 7 + 3) % 5) + 1
     const status = kind === 'count' ? countStatusFor(i) : 'completed'
     const record: StockAdjustment = {
-      id: `wsa-${String(i + 1).padStart(3, '0')}`,
+      id: `${kind === 'count' ? 'cc' : 'wsa'}-${String(i + 1).padStart(3, '0')}`,
       kind,
       number: `${kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${seq}`,
       date: isoOffset(-startDaysAgo),
@@ -102,10 +103,10 @@ function generate(count = 24): StockAdjustment[] {
       const startMin = (hash100(i * 29 + 2) % 4) * 15
       const endHour = 14 + (hash100(i * 31 + 3) % 5)
       const endMin = (hash100(i * 37 + 4) % 4) * 15
-      if (status === 'in_progress' || status === 'completed') {
+      if (status === 'in_progress' || status === 'counted' || status === 'completed') {
         record.startDate = isoOffsetTs(-startDaysAgo, startHour, startMin)
       }
-      if (status === 'completed') {
+      if (status === 'counted' || status === 'completed') {
         record.endDate = isoOffsetTs(-startDaysAgo + durationDays, endHour, endMin)
       }
     }
@@ -114,13 +115,43 @@ function generate(count = 24): StockAdjustment[] {
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v6'
+const KEY = 'wms-stock-adjustments-v7'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
 function persist(): void {
   saveSnapshot(KEY, wmsStockAdjustments)
 }
+
+const ACTOR = 'Rizal Candra'
+
+// approveWmsAdjustment() guarantees every completed cycle count mirrors into the
+// ERP Stock counts index (see below). Seed data generated directly as 'completed'
+// skips that runtime flow, so without this backfill a cycle count that's
+// "always been" completed (never actually approved this session) would show no
+// linked Stock count — breaking that same guarantee. Idempotent: only fills in
+// records that don't already have a mirror (from a prior run or real approval).
+function backfillCompletedMirrors(): void {
+  for (const a of wmsStockAdjustments) {
+    if (a.kind !== 'count' || a.status !== 'completed') continue
+    if (stockAdjustments.some((sa) => sa.linkedCycleCountId === a.id)) continue
+    const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+    addAdjustment({
+      kind: 'count',
+      date: (a.endDate ?? a.date).slice(0, 10),
+      warehouseId: a.warehouseId,
+      warehouseName: a.warehouseName,
+      category: 'Stock count',
+      tags: [],
+      lines,
+      linkedCycleCountId: a.id,
+      status: 'completed',
+      approvedBy: a.approvedBy ?? ACTOR,
+      approvedAt: a.approvedAt ?? a.endDate ?? a.date,
+    })
+  }
+}
+backfillCompletedMirrors()
 
 export function getWmsAdjustment(id: string): StockAdjustment | undefined {
   return wmsStockAdjustments.find((a) => a.id === id)
@@ -130,6 +161,16 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   const seen = new Map<string, string>()
   for (const a of wmsStockAdjustments) seen.set(a.warehouseId, a.warehouseName)
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
+}
+
+/** Count tasks still open (not yet counted, completed, or closed) — badge for the "Count task" tab. */
+export function openWmsCountTaskCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted' && a.status !== 'closed').length
+}
+
+/** Count tasks counted but not yet reviewed by a manager — badge for the "Awaiting approval" tab. */
+export function awaitingWmsCountApprovalCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status === 'counted').length
 }
 
 /** A WMS Stock In/Out record is completed the instant it's created (stock applies
@@ -151,6 +192,28 @@ export function cancelWmsAdjustment(id: string, reason?: string): void {
   persist()
 }
 
+/** Same eligibility as cancel — an operator can only close a count that hasn't
+ *  been submitted for approval yet. */
+export function canCloseWmsCount(a: StockAdjustment): boolean {
+  return a.kind === 'count' && (a.status === 'not_started' || a.status === 'in_progress')
+}
+
+/** Close a cycle count task the operator is walking away from mid-count — any
+ *  counted quantities saved so far are discarded (a.lines cleared) so the
+ *  details page shows every SKU as uncounted, not a stale partial result.
+ *  Terminal, view-only; the record itself is kept for the audit trail, same
+ *  as cancel — just a distinct status/label so it doesn't read as "never
+ *  happened" when real counting work may have gone into it. */
+export function closeWmsCount(id: string, reason?: string): void {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || !canCloseWmsCount(a)) return
+  a.status = 'closed'
+  a.lines = undefined
+  a.canceledDate = new Date().toISOString()
+  if (reason) a.canceledReason = reason
+  persist()
+}
+
 let addSeq = wmsStockAdjustments.length
 
 function nextSeqFor(kind: AdjustmentKind): number {
@@ -161,11 +224,16 @@ function nextSeqFor(kind: AdjustmentKind): number {
   return Math.max(20089, ...used) + 1
 }
 
-/** Create a WMS adjustment — applied to stock immediately, no approval step. */
-export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
+/** Create a WMS adjustment — applied to stock immediately, no approval step.
+ *  `skipStockMutation`: the caller already mutated stock itself (e.g. the
+ *  inbound PO-cancellation cascade, which must reverse batch/serial-tracked
+ *  SKUs via their own dedicated primitives — applyStockInOut only touches the
+ *  aggregate onHand and would desync a batch/serial SKU's per-unit bookkeeping)
+ *  — this just records the audited adjustment without mutating stock again. */
+export function addWmsAdjustment(input: AdjustmentInput & { skipStockMutation?: boolean }): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
-    id: `wsa-new-${n}`,
+    id: `${input.kind === 'count' ? 'cc' : 'wsa'}-new-${n}`,
     kind: input.kind,
     number: `${input.kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${nextSeqFor(input.kind)}`,
     date: input.date,
@@ -182,7 +250,7 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
     endDate: input.endDate,
   }
   // Count tasks: stock applied when counting is completed, not on creation.
-  if (input.kind === 'in-out') {
+  if (input.kind === 'in-out' && !input.skipStockMutation) {
     applyStockInOut(input.warehouseId, input.lines)
   }
   wmsStockAdjustments.unshift(adj)
@@ -190,11 +258,51 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
   return adj
 }
 
+export type WmsInOutCheck = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Can this stock in/out be applied? A negative ("out") line must not remove more
+ * than is on hand, nor eat into stock already reserved for open orders — either
+ * would break `available = onHand − reserved`. Positive ("in") lines are always
+ * fine. Cycle-count adjustments don't mutate stock here, so they always pass.
+ */
+export function canApplyWmsInOut(input: Pick<AdjustmentInput, 'kind' | 'warehouseId' | 'lines'>): WmsInOutCheck {
+  if (input.kind !== 'in-out') return { ok: true }
+  const v = stockOutViolation(input.warehouseId, input.lines)
+  if (v) {
+    return { ok: false, reason: `STOCK_OUT_EXCEEDS_AVAILABLE: ${v.sku} (out ${v.requested}, on-hand ${v.onHand}, available ${v.available})` }
+  }
+  return { ok: true }
+}
+
+/**
+ * Guarded `addWmsAdjustment`: for a stock in/out, refuses (without mutating
+ * stock) when the out-quantities would drive a SKU negative or below reserved.
+ * The UI calls this; the raw `addWmsAdjustment` stays for internal callers that
+ * pass `skipStockMutation` (e.g. the inbound cancel cascade).
+ */
+export function addWmsAdjustmentSafe(
+  input: AdjustmentInput & { skipStockMutation?: boolean },
+): { ok: true; adjustment: StockAdjustment } | { ok: false; reason: string } {
+  const check = canApplyWmsInOut(input)
+  if (!check.ok) return check
+  return { ok: true, adjustment: addWmsAdjustment(input) }
+}
+
 export function startWmsCount(id: string): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count' || a.status !== 'not_started') return a
   a.status = 'in_progress'
   a.startDate = new Date().toISOString()
+  // Freeze the plan as explicit zero-qty lines the moment counting actually
+  // starts — otherwise adjustmentLineItems() falls back to fabricating random
+  // "counted" numbers for any count with no real a.lines yet (meant to keep
+  // pre-seeded demo records looking busy), which would wrongly show up as if
+  // real progress had been made on a task nobody has touched, the instant its
+  // status flips to in_progress (even via Cancel, with nothing ever saved).
+  if (!a.lines) {
+    a.lines = adjustmentLineItems(a).map(l => ({ sku: l.sku, qty: 0, location: l.storageLocation }))
+  }
   persist()
   return a
 }
@@ -207,14 +315,46 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number;
   return a
 }
 
+// Finishing a count doesn't apply stock yet — it moves the task to "Counted"
+// (Awaiting approval tab) and waits for a manager to review it. Stock only
+// changes once approveWmsAdjustment runs.
 export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
-  a.status = 'completed'
+  a.status = 'counted'
   a.endDate = new Date().toISOString()
   a.lines = lines
-  applyStockCount(a.warehouseId, lines)
   persist()
+  return a
+}
+
+/** Manager approves a "Counted" task — applies the count to stock, marks it completed,
+ *  and mirrors it into the ERP Stock counts index as a completed record. */
+export function approveWmsAdjustment(id: string): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || a.status !== 'counted') return a
+  const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+  // Snapshot on-hand BEFORE applying the count — this is the "previous qty" the
+  // mirrored ERP record shows, same as the real state at the moment of approval.
+  const prevBySku = new Map((getWarehouseDetail(a.warehouseId)?.stock ?? []).map((s) => [s.sku, s.onHand]))
+  applyStockCount(a.warehouseId, lines)
+  a.status = 'completed'
+  a.approvedBy = ACTOR
+  a.approvedAt = new Date().toISOString()
+  persist()
+  addAdjustment({
+    kind: 'count',
+    date: new Date().toISOString().slice(0, 10),
+    warehouseId: a.warehouseId,
+    warehouseName: a.warehouseName,
+    category: 'Stock count',
+    tags: [],
+    lines: lines.map((l) => ({ ...l, prevQty: prevBySku.get(l.sku) ?? 0 })),
+    linkedCycleCountId: a.id,
+    status: 'completed',
+    approvedBy: a.approvedBy,
+    approvedAt: a.approvedAt,
+  })
   return a
 }
 

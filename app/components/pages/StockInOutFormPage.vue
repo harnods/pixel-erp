@@ -14,7 +14,7 @@ import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
-import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { addWmsAdjustmentSafe } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
@@ -299,8 +299,17 @@ async function handleSave() {
     memo: memo.value.trim() || undefined,
     lines,
   }
-  isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
-  toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
+  if (isWms.value) {
+    const res = addWmsAdjustmentSafe(input)
+    if (!res.ok) {
+      isSaving.value = false
+      toast.notify({ variant: 'error', title: "Cannot remove more than available stock" , maxWidth: 'max-content'})
+      return
+    }
+  } else {
+    addAdjustment(input)
+  }
+  toast.notify({ variant: 'success', title: 'Stock in/out saved' , maxWidth: 'max-content'})
   // Already saved — the router.push below is this function's own doing, not
   // the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -494,7 +503,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
                             <MpPopoverList>
                               <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" :is-active="opt.id === locRow.locationId" @click="selectLocation(row, li, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found</p>
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>
@@ -572,7 +581,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
                             <MpPopoverList>
                               <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" @click="selectPendingLoc(row, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found</p>
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>

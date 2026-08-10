@@ -78,6 +78,10 @@ const props = defineProps<{
    *  inherited as this drawer's own active bin when it opens, so the operator
    *  doesn't have to rescan a bin they already scanned on the page. */
   initialActiveBin?: string | null
+  /** Count mode only — a batch barcode that triggered this drawer to auto-open
+   *  (page-level scan of a tracked SKU's specific batch code) is replayed here
+   *  on open, so that first scan isn't lost/needs re-scanning inside. */
+  initialScan?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -158,45 +162,33 @@ function seedRows(): void {
     return
   }
 
-  // in-out / transfer / receiving / picking: start empty — user manually picks which
-  // batches to affect (put-away always arrives with a non-empty modelValue — the
-  // batches recorded at receiving — but falls back to empty here too if missing.)
-  if (props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking') {
-    rows.value = []
-    return
-  }
-
-  // count mode with zero bin on-hand: SKU not in this bin → start empty
-  if (props.locationOnHand === 0) {
-    rows.value = []
-    return
-  }
-
-  // count mode: seed all warehouse batches (all uncounted by default)
-  const wh = getWarehouseDetail(props.warehouseId)
-  const si = wh?.stock.find(s => s.sku === props.sku)
-  const batches = si?.batches ?? []
-  const unit = si?.unit ?? productBySku(props.sku)?.unit ?? ''
-
-  rows.value = batches.map((b, i) => ({
-    key: b.batchNo,
-    batchNo: b.batchNo,
-    expiryDate: b.expiryDate,
-    expiryDisplay: isoToDisplay(b.expiryDate),
-    desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
-    onHand: b.onHand,
-    counted: null,
-    unit,
-    location: b.location,
-    isNew: false,
-    originLocRows: [makeLocRow()],
-    destLocRows: [makeLocRow()],
-  }))
+  // Every other kind starts empty — the operator manually picks which batches to
+  // affect (put-away always arrives with a non-empty modelValue — the batches
+  // recorded at receiving — but falls back to empty here too if missing).
+  //
+  // Blind count: count mode used to pre-populate every warehouse batch as
+  // uncounted, so the operator saw the full expected batch list (and how many
+  // were still missing) before scanning anything. That's the opposite of a
+  // blind count — it should start with nothing, exactly like every other kind,
+  // and only ever show a batch once it's actually been scanned or manually
+  // added (handleDrawerScan/addWarehouseBatch/addNewBatch all still work against
+  // an empty starting table). The "On hand" baseline shown in the info bar is
+  // computed separately (countOnHandBaseline) precisely so it stays accurate
+  // even though the table itself starts empty.
+  rows.value = []
 }
 
 // { immediate: true } is required because the component mounts with open=true
 // (parent uses v-if="batchDrawerRow"), so a lazy watch never fires on first open.
-watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) return
+  seedRows()
+  // Deferred: handleDrawerScan closes over consts (flashScanned's lastScannedKey,
+  // newCounter, etc.) declared further down the script — calling it synchronously
+  // from this {immediate:true} watcher (which fires mid-setup, on first open)
+  // would hit those before their declarations run and throw a TDZ ReferenceError.
+  if (props.initialScan) nextTick(() => handleDrawerScan(props.initialScan!))
+}, { immediate: true })
 
 // ── Product info ─────────────────────────────────────────────────────────────────
 const product = computed(() => productBySku(props.sku))
@@ -216,14 +208,21 @@ const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
-// already only ever +1s an existing row, so it needs no changes). Picking/
-// receiving only — put-away's batch step has no scan bar at all (it's bin
-// allocation of an already-known qty, not a count), so it's out of scope.
+// already only ever +1s an existing row, so it needs no changes). This typing-
+// lockout applies to picking/receiving only — put-away DOES have a scan bar
+// (active-bin model), but its batch step is bin allocation of an already-known
+// qty, not a count, so the threshold lockout doesn't apply there.
 const scanRequiredForLine = computed(() =>
   (isPicking.value || isReceiving.value) && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
 )
 // receiving/put-away have no meaningful on-hand/new-on-hand concept — hide those stats/columns.
-const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+// Count mode: the operator shouldn't see the system's on-hand record while
+// counting — that's exactly what a blind count withholds, and it's reviewed
+// separately by the approving manager once the count reaches Awaiting
+// approval. Folded into the same flag receiving/put-away already use to hide
+// on-hand stats/columns that don't apply to them, for a different reason
+// (no on-hand concept at all there vs. deliberately hidden here).
+const hideStockStats = computed(() => isReceiving.value || isPutAway.value || isCountKind.value)
 // Picking shows Available qty (like transfer) but has no "new on hand" concept —
 // stock only actually leaves once the pick is fulfilled, not at drawer-save time.
 const showAfterStats = computed(() => !hideStockStats.value && !isPicking.value)
@@ -237,7 +236,9 @@ const qtyLabel = computed(() => {
   if (props.kind === 'picking') return 'Reserved qty'
   return 'Stock in/out qty'
 })
-const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : 'On hand qty')
+const isCountKind = computed(() => !props.kind || props.kind === 'count')
+const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : (isCountKind.value ? 'On hand' : 'On hand qty'))
+const countedLabel = computed(() => isCountKind.value ? 'Counted' : 'Counted qty')
 // Read-only "Qty to pick" column, next to Available qty — only meaningful once
 // actually executing a pick (planning IS the qty-to-pick input, nothing to show
 // alongside it) and only when the caller actually has a plan to show.
@@ -251,22 +252,38 @@ const totalCounted = computed(() => {
   if (!counted.length) return null
   return counted.reduce((s, r) => s + (r.counted ?? 0), 0)
 })
+// Count mode only — the SKU's true on-hand baseline, independent of which
+// batches happen to be in the table. Every other kind's "On hand"/"Available"
+// stat is meant to total up just the rows the operator has actively selected
+// (that's the whole point of those stats), but blind count's table starts
+// empty and fills in only as batches are scanned — if the info bar read off
+// totalOnHand there too, it would misreport 0 until the first scan instead of
+// the real system figure to count against. Falls back to locationOnHand when
+// counting inside a specific bin (0 there correctly means no stock at this bin).
+const countOnHandBaseline = computed(() => {
+  if (props.locationOnHand !== undefined) return props.locationOnHand
+  const wh = getWarehouseDetail(props.warehouseId)
+  const si = wh?.stock.find(s => s.sku === props.sku)
+  return (si?.batches ?? []).reduce((s, b) => s + b.onHand, 0)
+})
 const totalPutAwayQty = computed(() =>
   rows.value.reduce((s, r) =>
     s + r.destLocRows.reduce((rs, d) => rs + (d.locationId ? (Number(d.qty) || 0) : 0), 0), 0)
 )
 const totalDifference = computed(() => {
   if (totalCounted.value === null) return null
-  return totalCounted.value - totalOnHand.value
+  return totalCounted.value - countOnHandBaseline.value
 })
 // Live sum of what's currently allocated across batch rows — what Save will actually commit.
 const totalPickCount = computed(() => rows.value.reduce((s, r) => s + (r.counted ?? 0), 0))
 const pickMaxCount = computed(() => props.maxCount ?? props.targetCount ?? Infinity)
+// Receiving caps at Expected qty (targetCount); picking caps at Purchase/order qty.
+const overLimitCap = computed(() => isReceiving.value ? (props.targetCount ?? Infinity) : pickMaxCount.value)
 const pickOverLimit = computed(() =>
-  (isPicking.value || isReceiving.value) && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
+  (isPicking.value || isReceiving.value) && Number.isFinite(overLimitCap.value) && totalPickCount.value > overLimitCap.value,
 )
 const pickOverLimitMsg = computed(() => isReceiving.value
-  ? `Received qty (${totalPickCount.value}) exceeds the purchase qty (${pickMaxCount.value})`
+  ? `Received qty (${totalPickCount.value}) exceeds the expected qty (${overLimitCap.value})`
   : `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
@@ -389,6 +406,23 @@ function handleDrawerScan(rawValue: string) {
       playScanSuccessSound()
       return
     }
+  }
+
+  // Picking: once picked qty reaches the qty to pick, further batch scans are
+  // rejected — you can't pick more than the order needs (the reserved qty). The
+  // operator can still manually select a different batch to re-allocate within
+  // that ceiling, but a scan never pushes the total past it.
+  if (isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value >= pickMaxCount.value) {
+    notifyScanError(`Qty to pick already fully picked (${pickMaxCount.value})`)
+    return
+  }
+
+  // Receiving: hard cap at Expected qty (targetCount) — no scan (re-scan of an
+  // existing batch or a brand-new one) may push the total past what the task
+  // expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+  if (isReceiving.value && props.targetCount !== undefined && totalPickCount.value >= props.targetCount) {
+    notifyScanError(`Expected qty already fully received (${props.targetCount})`)
+    return
   }
 
   const existing = rows.value.find(r => sameCode(r.batchNo, v))
@@ -601,6 +635,17 @@ function paSelectLoc(row: WorkRow, lr: LocRow, locId: string) {
   if (row.destLocRows[row.destLocRows.length - 1]?.id === lr.id) row.destLocRows.push(makeLocRow())
 }
 
+// Closing the picker without selecting must drop this row's active-search state,
+// otherwise the input keeps showing the (empty) search string instead of falling
+// back to the already-chosen locationId — the bin appears to "detach" on reopen.
+// Mirrors PutAwayItemsPage/ManageSerialDrawer, which reset on close.
+function paCloseLoc(lr: LocRow) {
+  if (locActiveKey.value === `pa-${lr.id}`) {
+    locActiveKey.value = null
+    delete locSearches[`pa-${lr.id}`]
+  }
+}
+
 function paRemoveLocRow(row: WorkRow, lr: LocRow) {
   row.destLocRows = row.destLocRows.filter(r => r.id !== lr.id)
   if (!row.destLocRows.length) row.destLocRows = [makeLocRow()]
@@ -731,18 +776,6 @@ async function saveBatchLocDrawer() {
   batchLocRow.value = null
 }
 
-// ── Difference helpers ────────────────────────────────────────────────────────────
-function diffOf(row: WorkRow): number | null {
-  if (row.counted === null) return null
-  return row.counted - row.onHand
-}
-
-function diffLabel(row: WorkRow): string {
-  const d = diffOf(row)
-  if (d === null) return 'Uncounted'
-  return d > 0 ? `+${d.toLocaleString('id-ID')}` : d.toLocaleString('id-ID')
-}
-
 // Trailing-row colspan = every data column except the leading "select batch" cell:
 // expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
 const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
@@ -820,15 +853,16 @@ function fmtNum(n: number | null): string {
           <div class="mbd-info-stats">
             <div v-if="!hideStockStats" class="mbd-stat">
               <span class="mbd-stat-label">{{ onHandLabel }}</span>
-              <span class="mbd-stat-value">{{ totalOnHand.toLocaleString('id-ID') }}</span>
+              <span class="mbd-stat-value">{{ (isCountKind ? countOnHandBaseline : totalOnHand).toLocaleString('id-ID') }}</span>
             </div>
             <!-- stock count stats -->
             <template v-if="!isInOut">
               <div class="mbd-stat">
-                <span class="mbd-stat-label">Counted qty</span>
+                <span class="mbd-stat-label">{{ countedLabel }}</span>
                 <span class="mbd-stat-value">{{ fmtNum(totalCounted) }}</span>
               </div>
               <div
+                v-if="!isCountKind"
                 class="mbd-stat"
                 :class="{ 'mbd-stat--pos': (totalDifference ?? 0) > 0, 'mbd-stat--neg': (totalDifference ?? 0) < 0 }"
               >
@@ -878,7 +912,7 @@ function fmtNum(n: number | null): string {
                 </span>
               </div>
               <div v-if="isReceiving" class="mbd-stat">
-                <span class="mbd-stat-label">Outstanding qty</span>
+                <span class="mbd-stat-label">Remaining qty to receive</span>
                 <span class="mbd-stat-value">{{ Math.max(0, (props.targetCount ?? 0) - (totalCounted ?? 0)).toLocaleString('id-ID') }}</span>
               </div>
               <div v-if="isPutAway" class="mbd-stat">
@@ -893,11 +927,49 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
+        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
+             the "active bin", then scan a batch barcode to assign 1 unit of that
+             batch to the active bin (creating/incrementing its destLocRows entry) —
+             same active-bin model as the page-level scan bar in PutAwayItemsPage.
+             Reset count clears every row's destLocRows back to a single blank entry
+             (and drops the active bin), so it's safe to use in every mode. Rendered
+             even with zero rows — count mode's "genuinely unrecognized code" fallback
+             in handleDrawerScan is exactly how a first batch with no prior record
+             gets registered, so it can't be hidden behind the empty state. -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <button
+            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            type="button"
+            @click="resetPickedCount"
+          >Reset count</button>
+        </ScanBar>
+        <p v-if="isPutAway || isPicking" class="mbd-scan-caption">Scan the storage location first before scanning the batch number.</p>
+
         <template v-if="rows.length === 0 && !isInOut">
           <div class="mbd-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="mbd-empty-title">No batches yet</p>
-            <p class="mbd-empty-desc">Add a batch using the button above.</p>
+            <!-- Blind count: no manual add/select escape hatch — every batch row
+                 must come from an actual scan, otherwise the operator could
+                 register a batch (or a qty) they never physically checked. -->
+            <p v-if="isCountKind" class="mbd-empty-desc">Scan a batch barcode above.</p>
+            <template v-else>
+              <p class="mbd-empty-desc">Scan a batch barcode above, or add one manually.</p>
+              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addNewBatch">
+                <MpIcon name="add" size="sm" /> Add new batch
+              </button>
+            </template>
           </div>
         </template>
 
@@ -937,31 +1009,6 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
-        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
-             the "active bin", then scan a batch barcode to assign 1 unit of that
-             batch to the active bin (creating/incrementing its destLocRows entry) —
-             same active-bin model as the page-level scan bar in PutAwayItemsPage.
-             Reset count clears every row's destLocRows back to a single blank entry
-             (and drops the active bin), so it's safe to use in every mode. -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <span>{{ activeBin }}</span>
-            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-          <button
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-            type="button"
-            @click="resetPickedCount"
-          >Reset count</button>
-        </ScanBar>
-
         <!-- Table -->
         <div class="mbd-table-wrap">
 
@@ -996,7 +1043,7 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
                   <!-- Storage location picker -->
                   <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
-                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
+                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="paCloseLoc(lr)">
                       <MpTooltip
                         v-if="paLocMissing(lr)"
                         :id="`mbd-pa-loc-tooltip-${lr.id}`"
@@ -1109,7 +1156,7 @@ function fmtNum(n: number | null): string {
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="showOnHandColumn" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
-                <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : 'Counted qty') }}</th>
+                <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : countedLabel) }}</th>
                 <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
@@ -1222,17 +1269,10 @@ function fmtNum(n: number | null): string {
                   />
                 </td>
 
-                <!-- DIFFERENCE (count) / NEW ON HAND (in-out) -->
-                <td
-                  v-if="!isInOut"
-                  class="mbd-td mbd-td--num"
-                  :class="{
-                    'mbd-diff--pos': (diffOf(row) ?? 0) > 0,
-                    'mbd-diff--neg': (diffOf(row) ?? 0) < 0,
-                    'mbd-diff--uncounted': diffOf(row) === null,
-                  }"
-                >{{ diffLabel(row) }}</td>
-                <td v-else-if="showAfterStats" class="mbd-td mbd-td--num">
+                <!-- NEW ON HAND (in-out family only) — count mode never shows a per-row
+                     difference: it's derived from on-hand, which blind count withholds
+                     from the operator entirely (see hideStockStats). -->
+                <td v-if="showAfterStats" class="mbd-td mbd-td--num">
                   {{ newOnHandOf(row) !== null ? newOnHandOf(row)!.toLocaleString('id-ID') : '—' }}
                 </td>
 
@@ -1250,8 +1290,10 @@ function fmtNum(n: number | null): string {
               </template>
 
               <!-- Select batch row — same pattern as "Select product" in warehouse transfer.
-                   Hidden for put-away: the batches are a fixed fact from receiving. -->
-              <tr v-if="!isPutAway" class="mbd-tr mbd-tr--select">
+                   Hidden for put-away: the batches are a fixed fact from receiving. Hidden
+                   for count (blind count): every batch must come from an actual scan, never
+                   a picked-from-a-list shortcut that bypasses physically checking it. -->
+              <tr v-if="!isPutAway && !isCountKind" class="mbd-tr mbd-tr--select">
                 <td class="mbd-td mbd-td--select-cell">
                   <MpPopover id="mbd-select-batch" is-close-on-select use-portal>
                     <MpPopoverTrigger>
@@ -1604,7 +1646,12 @@ function fmtNum(n: number | null): string {
 }
 .mbd-col-batch   { width: 240px; }
 .mbd-col-expiry  { width: 172px; }
-.mbd-col-desc    { width: 120px; }
+/* No explicit width — under table-layout:fixed, when every other column is
+   pinned, the browser stretches ALL of them proportionally to fill the
+   table's 100%/min-width, so Del would land wider than 44px. Leaving
+   Description as the one flexible column (like ManageSerialDrawer's Serial
+   column) absorbs that leftover space instead, keeping Del exactly 44px. */
+.mbd-col-desc    { /* fills remaining */ }
 .mbd-col-location { width: 160px; }
 .mbd-col-num     { width: 150px; }
 .mbd-col-after   { width: 175px; }
@@ -1680,6 +1727,7 @@ function fmtNum(n: number | null): string {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .mbd-active-bin-clear:hover { opacity: 1; }
+.mbd-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
 /* White editable cells — focus ring via ::after (box-shadow: inset is painted

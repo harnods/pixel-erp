@@ -12,7 +12,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import {
-  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask,
+  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask, acknowledgeCanceledPutAway,
   type PutAwayBatchAssignment, type PutAwaySerialAssignment,
 } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -26,6 +26,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const task            = computed(() => getPutAwayTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -68,8 +69,19 @@ watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
   const seen = new Map<string, DraftRow>()
   lineItems.value.forEach(it => {
+    const stored = it.stored ?? 0
     if (!seen.has(it.skuCode)) {
-      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: 0, binLocation: it.binLocation })
+      // Seed the put-away qty from what a saved draft already stored (it.stored),
+      // not 0 — otherwise reopening/Continue put-away wiped the operator's progress
+      // (scan qty 1 → Save draft → Continue showed 0). Summed across the SKU's rows.
+      // Storage location starts EMPTY on a fresh put-away — the operator scans the bin
+      // (active-bin model), it isn't auto-filled — but a draft that already stored units
+      // into a bin keeps that bin so Continue put-away restores the real progress.
+      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: stored, binLocation: stored > 0 ? it.binLocation : '' })
+    } else {
+      const row = seen.get(it.skuCode)!
+      row.qty += stored
+      if (!row.binLocation && stored > 0) row.binLocation = it.binLocation
     }
   })
   draftRows.value = [...seen.values()]
@@ -236,7 +248,7 @@ const isProgressive = computed(() => filteredRows.value.length > PAGE_SIZE)
 
 // Group consecutive rows by skuCode for rowspan merging — a plain SKU's
 // "Split storage location" can insert extra rows sharing the same SKU (to
-// distribute qty across different BINS); Product/SKU/Receiving task/Received
+// distribute qty across different BINS); Product/SKU/Received
 // qty/Unit/Action all merge across the whole group, since none of them vary
 // per bin. Only Storage location/Put away qty stay per-row, since splitting
 // into different bins is the whole point.
@@ -412,9 +424,14 @@ function handleScan(rawValue: string) {
       return
     }
     const binRow = bin ? skuRows.find(r => sameCode(r.binLocation, bin)) : null
+    // An existing row for this SKU with no bin yet (the fresh-start seed row, whose
+    // storage location is now empty by default) should be FILLED by this scan — adopt
+    // its bin below — rather than leaving it stranded and auto-splitting a new row.
+    const emptyBinRow = withCapacity.some(r => !r.binLocation)
 
-    if (bin && !binRow) {
-      // Active bin differs from every existing row for this SKU → auto-split a new row for this bin.
+    if (bin && !binRow && !emptyBinRow) {
+      // Active bin differs from every existing row for this SKU (and none is unassigned)
+      // → auto-split a new row for this bin.
       const newRow: DraftRow = { id: newRowId(), skuCode: sku, qty: 1, binLocation: bin }
       const lastSkuIdx = draftRows.value.reduce((acc, r, i) => sameCode(r.skuCode, sku) ? i : acc, -1)
       const next = [...draftRows.value]
@@ -449,7 +466,7 @@ function handleScan(rawValue: string) {
     const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
       if (!bin) {
-        notifyScanError('Scan a bin first before scanning batch numbers')
+        notifyScanError(t('Scan a bin first before scanning batch numbers'))
         return
       }
       const batch = batches[bIdx]!
@@ -485,7 +502,7 @@ function handleScan(rawValue: string) {
     const idx = serials.findIndex(s => sameCode(s.serial, v))
     if (idx !== -1) {
       if (!bin) {
-        notifyScanError('Scan a bin first before scanning serial numbers')
+        notifyScanError(t('Scan a bin first before scanning serial numbers'))
         return
       }
       const updated = serials.map((s, i) => i === idx ? { ...s, destLocationId: bin } : s)
@@ -587,7 +604,7 @@ function postPutAway() {
   }
   const { items, assignments } = buildItemsAndAssignments()
   endPutAwayTask(props.orderId, items, assignments)
-  toast.notify({ variant: 'success', title: 'Put-away finished' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Put-away finished') , maxWidth: 'max-content'})
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -597,7 +614,7 @@ function postPutAway() {
 function saveDraft() {
   const { items, assignments } = buildItemsAndAssignments()
   savePutAwayDraft(props.orderId, items, assignments)
-  toast.notify({ variant: 'success', title: 'Put-away draft saved' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Put-away draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/put-away/${props.orderId}`)
 }
@@ -616,12 +633,25 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   saveDraft: () => {
     const { items, assignments } = buildItemsAndAssignments()
     savePutAwayDraft(props.orderId, items, assignments)
-    toast.notify({ variant: 'success', title: 'Put-away draft saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Put-away draft saved'), maxWidth: 'max-content' })
   },
 })
 
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
+
+// Defense in depth — the details page already blocks navigating here via
+// Start/Continue put-away until acknowledged, but a direct URL visit must be
+// blocked the same way. Acknowledging cancels this task AND its linked
+// receiving task(s) too — there's no put-away UI to fall back into here, so
+// this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledPutAway(task.value.id)
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
+}
 
 // ── Start date label ──────────────────────────────────────────────────────────
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
@@ -658,18 +688,25 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task" class="detail-page">
+  <div v-if="task && task.needsCancelAck" class="pi-not-found">
+    <p>{{ t('The purchase order behind this put-away\'s receiving task was canceled.') }}</p>
+    <p>{{ t('Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).') }}</p>
+    <button class="pi-btn pi-btn--primary" type="button" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</button>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to task') }}</button>
+  </div>
+
+  <div v-else-if="task" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPutAway">Put-away</button>
+          <button class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Put away items</h1>
+          <h1 class="detail-title">{{ t('Put away items') }}</h1>
         </div>
       </div>
     </header>
@@ -678,22 +715,22 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <div ref="stageEl" class="detail-stage">
 
       <div class="pi-header">
-        <ContentList label="Warehouse" :value="task.warehouseName" />
-        <ContentList label="Assignee" :value="task.assignee" />
-        <ContentList label="Start date" :value="startDateLabel" />
+        <ContentList :label="t('Warehouse')" :value="task.warehouseName" />
+        <ContentList :label="t('Assignee')" :value="task.assignee" />
+        <ContentList :label="t('Start date')" :value="startDateLabel" />
       </div>
 
       <div class="pi-summary">
         <div class="pi-stat">
-          <span class="pi-stat-label">SKU qty</span>
+          <span class="pi-stat-label">{{ t('SKU qty') }}</span>
           <span class="pi-stat-val">{{ fmt(skuQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-label">Received qty</span>
+          <span class="pi-stat-label">{{ t('Received qty') }}</span>
           <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-label">Put away qty</span>
+          <span class="pi-stat-label">{{ t('Put away qty') }}</span>
           <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
         </div>
       </div>
@@ -701,13 +738,13 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <div class="pi-sku-section">
 
         <div class="pi-filter-bar">
-          <span class="pi-editing-hint">Scan or enter the put away qty and confirm the storage location for each item.</span>
+          <span class="pi-editing-hint">{{ t('Scan or enter the put away qty and confirm the storage location for each item.') }}</span>
           <div class="pi-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pi-search" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="pi-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -716,13 +753,13 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- ── Scan bar ── -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
           <div v-if="activeBin" class="pi-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="pi-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+            <button class="pi-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
               </svg>
@@ -741,17 +778,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
-                <col />
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pi-th">Product</th>
-                  <th class="pi-th">SKU</th>
-                  <th class="pi-th">Receiving task</th>
-                  <th class="pi-th pi-th--num">Received qty</th>
-                  <th class="pi-th">Storage location</th>
-                  <th class="pi-th pi-th--num">Put away qty</th>
-                  <th class="pi-th">Unit</th>
+                  <th class="pi-th">{{ t('Product') }}</th>
+                  <th class="pi-th">{{ t('SKU') }}</th>
+                  <th class="pi-th pi-th--num">{{ t('Received qty') }}</th>
+                  <th class="pi-th">{{ t('Storage location') }}</th>
+                  <th class="pi-th pi-th--num">{{ t('Put away qty') }}</th>
+                  <th class="pi-th">{{ t('Unit') }}</th>
                   <th class="pi-th pi-th--action" aria-hidden="true" />
                 </tr>
               </thead>
@@ -767,11 +802,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Receiving task — every bundled receiving task this SKU's qty came
-                       from, joined together (traceability only; put-away itself no
-                       longer cares which specific one a unit came from). Merged
-                       across the whole SKU group, same as Product/SKU/Unit. -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.receivingTaskNos.join(', ') }}</td>
                   <!-- Received qty — this SKU's total across every bundled receiving
                        task, merged the same way. -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyByRowKey.get(rowKey(row)) ?? 0) }}</td>
@@ -800,7 +830,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                             type="text"
                             autocomplete="off"
                             :value="activeLocRowId === row.id ? locSearch : row.binLocation"
-                            placeholder="Select storage location"
+                            :placeholder="t('Select storage location')"
                             @focus="openLocPicker(row.id)"
                             @input="activeLocRowId = row.id; locSearch = ($event.target as HTMLInputElement).value"
                           />
@@ -811,7 +841,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
                         <template v-if="locOptionsFiltered(row.id).length">
-                          <p class="pi-loc-section-heading">Recommended locations</p>
+                          <p class="pi-loc-section-heading">{{ t('Recommended locations') }}</p>
                           <MpPopoverList>
                             <MpPopoverListItem v-for="loc in recommendedLocOptions(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
                           </MpPopoverList>
@@ -822,7 +852,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                             </MpPopoverList>
                           </template>
                         </template>
-                        <p v-else class="pi-loc-none">No locations found.</p>
+                        <p v-else class="pi-loc-none">{{ t('No locations found.') }}</p>
                       </MpPopoverContent>
                     </MpPopover>
                   </td>
@@ -847,7 +877,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     <MpTooltip
                       v-if="qtyScanRequired(remainingQtyFor(row))"
                       :id="`pi-tt-scan-${row.id}`"
-                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      :label="t('Qty at or below the scan threshold — scan the barcode instead of typing')"
                       placement="top"
                       use-portal
                     >
@@ -855,7 +885,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                         class="pi-qty-input"
                         type="number" min="0" :max="remainingQtyFor(row)"
                         :value="row.qty"
-                        :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                        :aria-label="`${t('Put away qty for')} ${itemBySkuCode.get(row.skuCode)?.productName}`"
                         disabled
                       />
                     </MpTooltip>
@@ -864,7 +894,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       class="pi-qty-input"
                       type="number" min="0" :max="remainingQtyFor(row)"
                       :value="row.qty"
-                      :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                      :aria-label="`${t('Put away qty for')} ${itemBySkuCode.get(row.skuCode)?.productName}`"
                       @input="onQtyInput(row.id, $event)"
                     />
                   </td>
@@ -874,15 +904,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                        per SKU (never split into multiple rows — only plain SKUs
                        can be, via "Split storage location" below). -->
                   <td v-if="isBatchTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
-                    <MpTooltip :id="`pi-tt-batch-${row.skuCode}`" label="Manage batch" placement="top" use-portal>
-                      <button class="pi-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(row.skuCode)">
+                    <MpTooltip :id="`pi-tt-batch-${row.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
-                    <MpTooltip :id="`pi-tt-serial-${row.skuCode}`" label="Manage serial numbers" placement="top" use-portal>
-                      <button class="pi-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(row.skuCode)">
+                    <MpTooltip :id="`pi-tt-serial-${row.skuCode}`" :label="t('Manage serial numbers')" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -895,7 +925,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
                     >
                       <MpPopoverTrigger>
-                        <button class="pi-row-kebab" aria-label="More actions">
+                        <button class="pi-row-kebab" :aria-label="t('More actions')">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                           </svg>
@@ -903,24 +933,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="splitRow(row.id)">Split storage location</MpPopoverListItem>
+                          <MpPopoverListItem @click="splitRow(row.id)">{{ t('Split storage location') }}</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
-                  <td class="pi-td pi-empty" colspan="8">No products match your search.</td>
+                  <td class="pi-td pi-empty" colspan="7">{{ t('No products match your search.') }}</td>
                 </tr>
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="pi-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="pi-loading">
-              <MpSpinner size="sm" /> Loading items…
+              <MpSpinner size="sm" /> {{ t('Loading items…') }}
             </div>
           </div>
           <div class="pi-items-count">
-            Showing {{ pagedRows.length }} of {{ filteredRows.length }} items
+            {{ t('Showing') }} {{ pagedRows.length }} {{ t('of') }} {{ filteredRows.length }} {{ t('items') }}
           </div>
         </section>
 
@@ -929,15 +959,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pi-btn pi-btn--ghost" @click="goBack">Cancel</button>
-      <button class="pi-btn pi-btn--secondary" @click="saveDraft">Save as draft</button>
-      <button class="pi-btn pi-btn--primary" @click="postPutAway">Finish put-away</button>
+      <button class="pi-btn pi-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="pi-btn pi-btn--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
+      <button class="pi-btn pi-btn--primary" @click="postPutAway">{{ t('Finish put-away') }}</button>
     </footer>
   </div>
 
   <div v-else class="pi-not-found">
-    <p>Put-away task not found.</p>
-    <button class="detail-breadcrumb" @click="goPutAway">Back to Put-away</button>
+    <p>{{ t('Put-away task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goPutAway">{{ t('Back to Put-away') }}</button>
   </div>
 
   <ManageBatchDrawer
@@ -1030,7 +1060,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5);
 }
 .pi-editing-hint {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal, 400);
   color: var(--mp-text-default); white-space: nowrap;
 }
 .pi-search-wrap {
@@ -1179,7 +1209,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
   line-height: var(--mp-line-heights-md); transition: background 0.15s;
 }
-.pi-btn--ghost     { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
+.pi-btn--ghost     { background: transparent; border-color: transparent; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 .pi-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pi-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .pi-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

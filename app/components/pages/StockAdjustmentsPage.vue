@@ -10,6 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
+import StockAdjustmentsFiltersDrawer, { type StockAdjustmentsFiltersValue } from '~/components/patterns/StockAdjustmentsFiltersDrawer.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 
 function formatAging(startIso?: string, endIso?: string): string {
@@ -26,16 +27,17 @@ function formatAging(startIso?: string, endIso?: string): string {
 }
 import {
   stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
-  adjustmentApprovalLog, canCancelAdjustment, cancelAdjustment, approveAdjustment, ADJUSTMENT_CATEGORIES,
+  adjustmentApprovalLog, adjustmentLineItems, canCancelAdjustment, cancelAdjustment, approveAdjustment, ADJUSTMENT_CATEGORIES,
   type StockAdjustment, type ApprovalLog,
 } from '~/data/stockAdjustments'
 import {
-  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount,
+  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount, approveWmsAdjustment,
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useLocale()
 const toggleAirene = inject<() => void>('toggleAirene')
 
 const { currentPageKey } = useNavigation()
@@ -62,8 +64,8 @@ function activeCancel(ids: string[]): void {
 // ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
 const { viewAs, setViewAs } = useApprovalViewAs()
 const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
-  { value: 'user', label: 'As user' },
-  { value: 'manager', label: 'As manager' },
+  { value: 'user', label: t('As user') },
+  { value: 'manager', label: t('As manager') },
 ]
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
@@ -75,6 +77,7 @@ const columns: TableColumn[] = [
   { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
   { key: 'tags',          label: 'Tags',         width: '200px' },
   { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
+  { key: 'totalSku',      label: 'Total SKU',    width: '110px', sortType: 'number', align: 'right' },
   { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',     width: '200px', sortType: 'date' },
   { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
@@ -99,6 +102,7 @@ const visibleColumns = computed(() =>
     && !(kindFilter.value === 'count' && !isErpStockCounts.value && !isAwaiting.value && c.key === 'date')
     && !((kindFilter.value !== 'count' || isErpStockCounts.value) && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
+    && !(c.key === 'totalSku' && currentPageKey.value !== 'Cycle counts')
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -110,10 +114,19 @@ const columnItems = [
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────
-const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
-const showCheckbox = computed(() => !(isAwaiting.value && viewAs.value === 'user'))
+// ERP's "Awaiting approval" (draft → manager approval) is a different workflow from
+// Cycle counts' "Awaiting approval" (counted → manager review) — kept separate so
+// the ERP-only manager UI (Approve button, approval log) never shows on Cycle counts,
+// which reuses the exact same table as its "Count task" tab, just filtered by status.
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval' && currentPageKey.value !== 'Cycle counts')
+const isCycleAwaiting = computed(() => currentPageKey.value === 'Cycle counts' && route.query.tab === 'Awaiting approval')
+// Drives the approval-actions UI (sticky actions column, Approve button, checkbox) —
+// shared by both awaiting-approval flavors; column visibility stays keyed to
+// `isAwaiting` alone so Cycle counts keeps the same columns as its Count task tab.
+const isAnyAwaiting = computed(() => isAwaiting.value || isCycleAwaiting.value)
+const showCheckbox = computed(() => !(isAnyAwaiting.value && viewAs.value === 'user'))
 const actionsWidth = computed(() => {
-  if (!isAwaiting.value) return undefined
+  if (!isAnyAwaiting.value) return undefined
   return viewAs.value === 'manager' ? '236px' : '148px'
 })
 
@@ -121,8 +134,8 @@ const actionsWidth = computed(() => {
 type DemoState = 'data' | 'empty'
 const demoState = ref<DemoState>('data')
 const demoStates: { value: DemoState; label: string }[] = [
-  { value: 'data', label: 'With data' },
-  { value: 'empty', label: 'Empty state' },
+  { value: 'data', label: t('With data') },
+  { value: 'empty', label: t('Empty state') },
 ]
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
@@ -134,18 +147,25 @@ function setDemoState(s: DemoState) {
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
-const statusFilter = ref('')
+const statusFilter = ref<string[]>([])
+const assigneeFilter = ref<string[]>([])
+// 'counted' (Awaiting approval) deliberately excluded — the Count task tab's
+// own base list always filters status !== 'counted' out (see baseRows below),
+// and the Awaiting approval tab hides this filter entirely (every row there
+// is already Counted) — so a "Counted" checkbox here could never match
+// anything, on either tab.
 const STATUS_OPTIONS = [
-  { value: 'not_started', label: 'Open' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'completed',   label: 'Completed'   },
+  { value: 'not_started', label: t('Open') },
+  { value: 'in_progress', label: t('In progress') },
+  { value: 'completed',   label: t('Completed')   },
+  { value: 'closed',      label: t('Closed')      },
 ]
 const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length
   if (n === 0) return ''
   if (n === 1) return whOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
-  return `${n} warehouses`
+  return `${n} ${t('warehouses')}`
 })
 function toggleWarehouse(id: string) {
   const idx = warehouseFilter.value.indexOf(id)
@@ -156,12 +176,45 @@ const categoryLabel = computed(() => {
   const n = categoryFilter.value.length
   if (n === 0) return ''
   if (n === 1) return categoryFilter.value[0]
-  return `${n} categories`
+  return `${n} ${t('categories')}`
 })
 function toggleCategory(cat: string) {
   const idx = categoryFilter.value.indexOf(cat)
   if (idx >= 0) categoryFilter.value = categoryFilter.value.filter(v => v !== cat)
   else categoryFilter.value = [...categoryFilter.value, cat]
+}
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return STATUS_OPTIONS.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} ${t('statuses')}`
+})
+function toggleStatus(id: string) {
+  const idx = statusFilter.value.indexOf(id)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(v => v !== id)
+  else statusFilter.value = [...statusFilter.value, id]
+}
+
+// ─── "All filters" drawer — wraps keyword/warehouse/assignee/status filters ───────
+const isFiltersDrawerOpen = ref(false)
+const drawerWarehouseOptions = computed(() => whOptions.value.map(o => ({ id: o.value, name: o.label })))
+const drawerStatusOptions = computed(() => STATUS_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const assigneeOptions = computed(() => {
+  const names = new Set<string>()
+  for (const a of activeList.value) { if (a.assignee) names.add(a.assignee) }
+  return [...names].sort().map(name => ({ id: name, name }))
+})
+const drawerValue = computed<StockAdjustmentsFiltersValue>(() => ({
+  keyword: search.value,
+  warehouseIds: warehouseFilter.value,
+  assignees: assigneeFilter.value,
+  statuses: statusFilter.value,
+}))
+function applyDrawerFilters(v: StockAdjustmentsFiltersValue) {
+  search.value = v.keyword
+  warehouseFilter.value = v.warehouseIds
+  assigneeFilter.value = v.assignees
+  statusFilter.value = v.statuses
 }
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
@@ -169,11 +222,16 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (demoState.value === 'empty') return []
   let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
+  else if (isCycleAwaiting.value) list = list.filter(a => a.status === 'counted')
+  else if (currentPageKey.value === 'Cycle counts') list = list.filter(a => a.status !== 'counted')
+  // Stock counts has no Awaiting approval tab — show every status in the one flat list.
+  else if (isErpStockCounts.value) { /* no status filter */ }
   else list = list.filter(a => a.status !== 'draft')
   if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
   if (categoryFilter.value.length) list = list.filter(a => categoryFilter.value.includes(a.category))
-  if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
+  if (statusFilter.value.length) list = list.filter(a => statusFilter.value.includes(a.status))
+  if (assigneeFilter.value.length) list = list.filter(a => a.assignee && assigneeFilter.value.includes(a.assignee))
   return list
 })
 
@@ -190,25 +248,34 @@ const {
     || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = '' }
-watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting], () => setPage(1))
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || statusFilter.value.length > 0 || assigneeFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = []; assigneeFilter.value = [] }
+watch([warehouseFilter, categoryFilter, statusFilter, assigneeFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
+// The Status filter is hidden on the Awaiting approval tab (every row is already
+// "Counted") — drop any leftover value so it can't silently zero out the table.
+watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = [] })
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
-function viewDetails(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}`) }
-function editAdjustment(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}/edit`) }
+// WMS cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id)
+// so the sidebar and breadcrumb reflect where they actually belong.
+function basePathFor(row: StockAdjustment): string {
+  return (isWmsPage.value && row.kind === 'count') ? '/cycle-counts' : '/stock-adjustments'
+}
+function viewDetails(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}`) }
+function editAdjustment(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}/edit`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 // WMS cycle counts only — Stock counts (ERP) and Stock in/out have no counting flow.
 function startCountingAndNavigate(row: StockAdjustment) {
   if (row.status === 'not_started') startWmsCount(row.id)
-  router.push(`/stock-adjustments/${row.id}/count`)
+  router.push(`${basePathFor(row)}/${row.id}/count`)
 }
 function newAdjustment(kind: 'count' | 'in-out') {
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
+function activeApprove(id: string) { isWmsPage.value ? approveWmsAdjustment(id) : approveAdjustment(id) }
 function approve(row: StockAdjustment) {
-  approveAdjustment(row.id)
-  toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
+  activeApprove(row.id)
+  toast.notify({ variant: 'success', title: `${row.number} ${t('approved')}` , maxWidth: 'max-content'})
 }
 
 // ─── Approval log modal ──────────────────────────────────────────────────────
@@ -227,9 +294,9 @@ function selectedAdjustmentsOf(sel: Set<number>): StockAdjustment[] {
 }
 function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedAdjustmentsOf(sel)
-  for (const row of rows) approveAdjustment(row.id)
+  for (const row of rows) activeApprove(row.id)
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: `${rows.length} ${t('adjustment')}${rows.length > 1 ? 's' : ''} ${t('approved')}` , maxWidth: 'max-content'})
 }
 
 // ─── Cancel (row kebab + bulk) → confirmation modal ────────────────────────────────
@@ -260,7 +327,7 @@ function confirmCancel() {
   activeCancel(cancelIds.value)
   _bulkDeselect?.()
   cancelOpen.value = false
-  toast.notify({ variant: 'success', title: `${n} adjustment${n > 1 ? 's' : ''} canceled`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${n} ${t('adjustment')}${n > 1 ? 's' : ''} ${t('canceled')}`, maxWidth: 'max-content' })
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -277,6 +344,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     :actions-width="actionsWidth"
     :has-checkbox="showCheckbox"
     :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"
@@ -294,7 +362,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="sa-warehouse-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-warehouse-select" placeholder="Warehouse"
+              id="sa-warehouse-select" :placeholder="t('Warehouse')"
               :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
@@ -309,8 +377,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -320,7 +389,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover v-if="kindFilter !== 'count' || isErpStockCounts" id="sa-category-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-category-select" placeholder="Category"
+              id="sa-category-select" :placeholder="t('Category')"
               :model-value="categoryFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="categoryFilter = []"
             >
@@ -335,45 +404,53 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="categoryFilter.includes(opt)"
                   @change="toggleCategory(opt)"
                   @click.stop
-                />
-                <span>{{ opt }}</span>
+                >
+                  {{ opt }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Status (WMS stock count only) -->
-        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts" id="sa-status-filter" is-close-on-select>
+        <!-- Status — multi-select (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
+        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="sa-status-select" :placeholder="t('Status')"
+              :model-value="statusFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ STATUS_OPTIONS.find(o => o.value === statusFilter)?.label }}</option>
+              <option v-if="statusFilter.length" value="__selected__">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in STATUS_OPTIONS" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`sa-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          All filters
+          {{ t('All filters') }}
         </button>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-sa-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-sa-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -381,16 +458,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="sa-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-sa-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+          <MpTooltip id="tt-sa-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
         </div>
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -402,11 +479,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Bulk bar → approve (manager, awaiting tab) + cancel ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
-        v-if="isAwaiting && viewAs === 'manager'"
+        v-if="isAnyAwaiting && viewAs === 'manager'"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
       >
-        Approve
+        {{ t('Approve') }}
       </button>
       <button
         v-if="bulkCancelable(selectedRows as Set<number>)"
@@ -414,23 +491,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         :class="css({ color: 'var(--mp-text-critical)' })"
         @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
       >
-        Cancel
+        {{ t('Cancel') }}
       </button>
     </template>
 
     <!-- ── Number — View details chip on hover; memo below when the toggle is on ── -->
     <template #cell-number="{ value, row }">
       <div class="sa-number-cell">
-        <div class="cell-with-action">
-          <span class="cell-text sa-link">{{ value }}</span>
-          <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as StockAdjustment)">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span class="row-hover-btn__label">VIEW DETAILS</span>
-          </button>
-        </div>
+        <a class="cell-link cell-text sa-link" @click.stop="viewDetails(row as unknown as StockAdjustment)">{{ value }}</a>
         <ClampText v-if="colVis.memo" :text="adjustmentMemo(row as unknown as StockAdjustment)" :lines="2" class="sa-memo" />
       </div>
     </template>
@@ -439,16 +507,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — View details chip → warehouse detail ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as StockAdjustment).warehouseId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop="viewWarehouse((row as unknown as StockAdjustment).warehouseId)">{{ value }}</a>
     </template>
 
     <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
@@ -466,6 +525,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
 
+    <template #cell-totalSku="{ row }">{{ adjustmentLineItems(row as unknown as StockAdjustment).length }}</template>
+
     <template #cell-status="{ value }">
       <ErpStatusBadge :status="value as string" />
     </template>
@@ -481,22 +542,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Actions ── -->
     <template #actions="{ row }">
       <!-- Awaiting approval, AS MANAGER — Approve + icon actions + kebab -->
-      <div v-if="isAwaiting && viewAs === 'manager'" class="sa-approval-actions">
+      <div v-if="isAnyAwaiting && viewAs === 'manager'" class="sa-approval-actions">
         <button
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
           @click.stop="approve(row as unknown as StockAdjustment)"
-        >Approve</button>
-        <MpTooltip :id="`sa-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
+        >{{ t('Approve') }}</button>
+        <MpTooltip :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
+          <button class="row-icon-ghost" :aria-label="t('Approval log')" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
             <MpIcon name="task-todo" size="md" />
           </button>
         </MpTooltip>
-        <MpTooltip :id="`sa-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Comments" @click.stop><MpIcon name="comment" size="md" /></button>
+        <MpTooltip :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
+          <button class="row-icon-ghost" :aria-label="t('Comments')" @click.stop><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
         <MpPopover :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <button class="row-kebab" aria-label="More actions">
+            <button class="row-kebab" :aria-label="t('More actions')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
               </svg>
@@ -504,38 +565,38 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
+              <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">{{ t('View details') }}</MpPopoverListItem>
               <MpPopoverListItem
                 v-if="isWmsPage && kindFilter === 'count' && (row as unknown as StockAdjustment).status === 'not_started'"
                 @click="startCountingAndNavigate(row as unknown as StockAdjustment)"
-              >Start counting</MpPopoverListItem>
+              >{{ t('Start counting') }}</MpPopoverListItem>
               <MpPopoverListItem
                 v-else-if="isWmsPage && kindFilter === 'count' && (row as unknown as StockAdjustment).status === 'in_progress'"
                 @click="startCountingAndNavigate(row as unknown as StockAdjustment)"
-              >Continue counting</MpPopoverListItem>
-              <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+              >{{ t('Continue counting') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem
                 v-if="canCancel(row as unknown as StockAdjustment)"
                 :class="css({ color: 'var(--mp-text-critical)' })"
                 @click="askCancelRow(row as unknown as StockAdjustment)"
-              >Cancel</MpPopoverListItem>
+              >{{ t('Cancel') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
 
       <!-- Awaiting approval, AS USER — Approval log + Comments + View details -->
-      <div v-else-if="isAwaiting" class="sa-approval-actions">
-        <MpTooltip :id="`sa-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
+      <div v-else-if="isAnyAwaiting" class="sa-approval-actions">
+        <MpTooltip :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
+          <button class="row-icon-ghost" :aria-label="t('Approval log')" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
             <MpIcon name="task-todo" size="md" />
           </button>
         </MpTooltip>
-        <MpTooltip :id="`sa-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Comments" @click.stop><MpIcon name="comment" size="md" /></button>
+        <MpTooltip :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
+          <button class="row-icon-ghost" :aria-label="t('Comments')" @click.stop><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
-        <MpTooltip :id="`sa-tt-view-${row.id}`" label="View details" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="View details" @click.stop="viewDetails(row as unknown as StockAdjustment)">
+        <MpTooltip :id="`sa-tt-view-${row.id}`" :label="t('View details')" placement="top" use-portal>
+          <button class="row-icon-ghost" :aria-label="t('View details')" @click.stop="viewDetails(row as unknown as StockAdjustment)">
             <svg width="20" height="20" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
@@ -547,7 +608,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <!-- All stock adjustments — kebab only -->
       <MpPopover v-else :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -555,8 +616,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
-            <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancel(row as unknown as StockAdjustment)"
               :class="css({ color: 'var(--mp-text-critical)' })"
@@ -572,24 +633,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">
-          {{ kindFilter === 'count' ? 'No stock counts' : kindFilter === 'in-out' ? 'No stock in/out' : 'No stock adjustments' }}
+          {{ kindFilter === 'count' ? t('No stock counts') : kindFilter === 'in-out' ? t('No stock in/out') : t('No stock adjustments') }}
         </p>
         <p class="empty-full-desc">
-          {{ kindFilter === 'count' ? 'Record on-hand stock counts for your warehouse. Create your first stock count to get started.'
-           : kindFilter === 'in-out' ? 'Record manual stock movements in or out of your warehouse. Create your first entry to get started.'
-           : 'Correct on-hand stock from counts or manual in/out. Create your first stock adjustment to get started.' }}
+          {{ kindFilter === 'count' ? t('Record on-hand stock counts for your warehouse. Create your first stock count to get started.')
+           : kindFilter === 'in-out' ? t('Record manual stock movements in or out of your warehouse. Create your first entry to get started.')
+           : t('Correct on-hand stock from counts or manual in/out. Create your first stock adjustment to get started.') }}
         </p>
         <template v-if="kindFilter === 'count'">
-          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('count')">New stock count</button>
+          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('count')">{{ t('New stock count') }}</button>
         </template>
         <template v-else-if="kindFilter === 'in-out'">
-          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('in-out')">New stock in/out</button>
+          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('in-out')">{{ t('New stock in/out') }}</button>
         </template>
         <template v-else>
           <MpPopover id="sa-empty-new" is-close-on-select use-portal placement="bottom">
             <MpPopoverTrigger>
               <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after empty-full-cta">
-                New stock adjustment
+                {{ t('New stock adjustment') }}
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -597,8 +658,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="newAdjustment('count')">Stock count</MpPopoverListItem>
-                <MpPopoverListItem @click="newAdjustment('in-out')">Stock in/out</MpPopoverListItem>
+                <MpPopoverListItem @click="newAdjustment('count')">{{ t('Stock count') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="newAdjustment('in-out')">{{ t('Stock in/out') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -613,14 +674,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
   >
     <MpModalContent>
-      <MpModalHeader>Cancel {{ cancelIds.length > 1 ? cancelIds.length + ' stock adjustments' : 'stock adjustment' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Cancel') }} {{ cancelIds.length > 1 ? cancelIds.length + ' ' + t('stock adjustments') : t('stock adjustment') }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p>{{ cancelIds.length > 1 ? 'These adjustments' : 'This adjustment' }} will be canceled and can no longer be approved. This can't be undone.</p>
+        <p>{{ cancelIds.length > 1 ? t('These adjustments') : t('This adjustment') }} {{ t('will be canceled and can no longer be approved. This cannot be undone.') }}</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep {{ cancelIds.length > 1 ? 'adjustments' : 'adjustment' }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel {{ cancelIds.length > 1 ? 'adjustments' : 'adjustment' }}</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep') }} {{ cancelIds.length > 1 ? t('adjustments') : t('adjustment') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel') }} {{ cancelIds.length > 1 ? t('adjustments') : t('adjustment') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -634,15 +695,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @close="approvalLogOpen = false"
   />
 
+  <!-- ── All filters drawer ── -->
+  <StockAdjustmentsFiltersDrawer
+    v-model:is-open="isFiltersDrawerOpen"
+    :model-value="drawerValue"
+    :warehouse-options="drawerWarehouseOptions"
+    :assignee-options="assigneeOptions"
+    :status-options="drawerStatusOptions"
+    :show-status="!isCycleAwaiting"
+    @apply="applyDrawerFilters"
+  />
+
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="sa-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state">
+      <button class="demo-fab" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="s in demoStates" :key="s.value"
@@ -650,7 +722,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         >{{ s.label }}</MpPopoverListItem>
       </MpPopoverList>
       <div style="height:1px;background:var(--mp-border-default);margin:var(--mp-spacing-1) 0;" />
-      <p class="demo-fab-heading">Approval view</p>
+      <p class="demo-fab-heading">{{ t('Approval view') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="v in viewAsOptions" :key="v.value"
@@ -715,8 +787,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
-/* Cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number / Warehouse cells — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sa-link { color: var(--mp-text-default); }
 
@@ -738,18 +809,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .sa-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .sa-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab */
 .row-kebab {

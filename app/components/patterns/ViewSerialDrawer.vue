@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { MpIcon, MpBadge, MpSpinner } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -74,11 +75,25 @@ const props = defineProps<{
    *  "Picked" (picking). Put-away passes "Assigned", matching ManageSerialDrawer's
    *  own put-away vocabulary for the same assigned-a-bin fact. */
   statusPickedLabel?: string
+  /** Packing match-order verify mode: the serials scanned so far. When provided,
+   *  the drawer shows a scan bar (emits 'scan') and a Verified/Not-scanned badge
+   *  per serial instead of the picking Picked/Reserved status. */
+  verifiedSerials?: string[]
+  /** Count mode only — hides On hand qty/Difference (and the "Not counted" filler
+   *  rows the count-mode row builder otherwise generates from live warehouse
+   *  stock) while a cycle count is still blind — the operator shouldn't be able
+   *  to see the system's on-hand serial list before the count reaches Awaiting
+   *  approval, where the reviewing manager needs it. Other kinds never pass this. */
+  hideOnHand?: boolean
 }>()
 
-const emit = defineEmits<{ 'update:open': [boolean] }>()
+const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
+const { t } = useLocale()
+function onScan(raw: string) { emit('scan', raw) }
 
 const isPacking = computed(() => props.kind === 'packing')
+const isVerify = computed(() => props.verifiedSerials !== undefined)
+const verifiedSet = computed(() => new Set(props.verifiedSerials ?? []))
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 const statusPlannedLabel = computed(() => props.statusPlannedLabel ?? 'Reserved')
@@ -86,7 +101,9 @@ const statusPickedLabel = computed(() => props.statusPickedLabel ?? 'Picked')
 // Packing mode normally has no status concept (just the picked list, as-is) — but
 // when plannedSerials is given (picking task view), rows carry a Reserved/Picked
 // status just like ManageSerialDrawer's picking-execution badges, so show the column.
-const hasStatus = computed(() => !isPacking.value || props.plannedSerials !== undefined)
+// Blind count (hideOnHand): every row is forced counted (see allRows below), so
+// the Counted/Not counted badge would just say "Counted" on every row — noise.
+const hasStatus = computed(() => (!isPacking.value && !props.hideOnHand) || props.plannedSerials !== undefined)
 
 const warehouseStock = computed(() => {
   const wh = getWarehouseDetail(props.warehouseId)
@@ -143,7 +160,7 @@ const allRows = computed<SerialRow[]>(() => {
   const rows: SerialRow[] = existing.map((u, i) => ({ serial: u.serial, location: loc ?? u.location, counted: i < counted }))
 
   if (counted > existing.length) {
-    const prefix = (props.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+    const prefix = (props.sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN')
     const fallbackLoc = loc ?? existing[0]?.location ?? '—'
     for (let i = existing.length; i < counted; i++) {
       rows.push({
@@ -154,7 +171,11 @@ const allRows = computed<SerialRow[]>(() => {
     }
   }
 
-  return rows
+  // Blind count: the rows above are reconstructed straight from live warehouse
+  // stock (every on-hand serial, most marked "Not counted") — showing that list
+  // would reveal exactly the on-hand figure the stats above are hidden to
+  // protect. Drop everything but what was actually counted.
+  return props.hideOnHand ? rows.filter(r => r.counted) : rows
 })
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -220,11 +241,11 @@ function close() { emit('update:open', false) }
 <template>
   <Transition name="vsd">
   <div v-if="open" class="vsd-overlay" @click.self="close">
-    <div class="vsd-panel" role="dialog" aria-label="View serial numbers">
+    <div class="vsd-panel" role="dialog" :aria-label="t('View serial numbers')">
 
       <header class="vsd-header">
-        <h2 class="vsd-title">Serial number detail</h2>
-        <button class="vsd-close" type="button" aria-label="Close" @click="close">
+        <h2 class="vsd-title">{{ t('Serial number detail') }}</h2>
+        <button class="vsd-close" type="button" :aria-label="t('Close')" @click="close">
           <MpIcon name="close" size="md" />
         </button>
       </header>
@@ -244,40 +265,54 @@ function close() { emit('update:open', false) }
           <div class="vsd-info-stats">
             <template v-if="isPacking">
               <div v-if="orderQty !== undefined" class="vsd-stat">
-                <span class="vsd-stat-label">Order qty</span>
+                <span class="vsd-stat-label">{{ t('Order qty') }}</span>
                 <span class="vsd-stat-value">{{ fmt(orderQty) }}</span>
               </div>
               <div v-if="qtyToPick !== undefined" class="vsd-stat">
-                <span class="vsd-stat-label">{{ plannedQtyLabel }}</span>
+                <span class="vsd-stat-label">{{ t(plannedQtyLabel) }}</span>
                 <span class="vsd-stat-value">{{ fmt(qtyToPick) }}</span>
               </div>
               <div class="vsd-stat">
-                <span class="vsd-stat-label">{{ qtyLabel }}</span>
+                <span class="vsd-stat-label">{{ t(qtyLabel) }}</span>
                 <span class="vsd-stat-value">{{ fmt(pickedQty ?? allRows.length) }}</span>
               </div>
+              <!-- Match-order verify (packing): how many units have been packed
+                   (scanned/verified) so far, alongside the Picked qty above. -->
+              <div v-if="isVerify" class="vsd-stat">
+                <span class="vsd-stat-label">{{ t('Packed qty') }}</span>
+                <span class="vsd-stat-value">{{ fmt(verifiedSet.size) }}</span>
+              </div>
               <div v-if="shippedQty !== undefined && shippedQty > 0" class="vsd-stat">
-                <span class="vsd-stat-label">Previously shipped</span>
+                <span class="vsd-stat-label">{{ t('Previously shipped') }}</span>
                 <span class="vsd-stat-value">{{ fmt(shippedQty) }}</span>
               </div>
             </template>
             <template v-else>
-              <div class="vsd-stat">
-                <span class="vsd-stat-label">Prev. on hand qty</span>
+              <div v-if="!hideOnHand" class="vsd-stat">
+                <span class="vsd-stat-label">{{ t('Prev. on hand qty') }}</span>
                 <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
               </div>
               <div class="vsd-stat">
-                <span class="vsd-stat-label">Counted qty</span>
+                <span class="vsd-stat-label">{{ t('Counted qty') }}</span>
                 <span class="vsd-stat-value">{{ fmt(countedTotal) }}</span>
               </div>
+              <!-- Difference is derived from on-hand — hidden alongside it, or the
+                   operator could back-calculate the figure it's meant to hide. -->
               <div
+                v-if="!hideOnHand"
                 class="vsd-stat"
                 :class="{ 'vsd-stat--pos': difference > 0, 'vsd-stat--neg': difference < 0 }"
               >
-                <span class="vsd-stat-label">Difference</span>
+                <span class="vsd-stat-label">{{ t('Difference') }}</span>
                 <span class="vsd-stat-value">{{ fmtDiff(difference) }}</span>
               </div>
             </template>
           </div>
+        </div>
+
+        <!-- Match-order verify: scan each serial to confirm it matches the pick -->
+        <div v-if="isVerify" class="vsd-scan">
+          <ScanBar :placeholder="t('Scan serial number to verify…')" @scan="onScan" />
         </div>
 
         <!-- Filter bar -->
@@ -287,8 +322,8 @@ function close() { emit('update:open', false) }
               <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
               <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="serialSearch" class="vsd-filter-search" type="text" placeholder="Search..." />
-            <button v-if="serialSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="serialSearch = ''">
+            <input v-model="serialSearch" class="vsd-filter-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="serialSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -301,41 +336,47 @@ function close() { emit('update:open', false) }
           <table class="vsd-table">
             <colgroup>
               <col class="vsd-col-sn" />
-              <col class="vsd-col-loc" />
+              <col v-if="!isVerify" class="vsd-col-loc" />
               <col v-if="hasStatus" class="vsd-col-status" />
             </colgroup>
             <thead>
               <tr>
-                <th class="vsd-th">Serial number</th>
-                <th class="vsd-th">Location</th>
-                <th v-if="hasStatus" class="vsd-th">Status</th>
+                <th class="vsd-th">{{ t('Serial number') }}</th>
+                <th v-if="!isVerify" class="vsd-th">{{ t('Location') }}</th>
+                <th v-if="hasStatus" class="vsd-th">{{ t('Status') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="vsd-tr" :class="{ 'vsd-tr--removed': !row.counted }">
                 <td class="vsd-td vsd-td--mono" :class="{ 'vsd-td--strike': !row.counted }">{{ row.serial }}</td>
-                <td class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
+                <td v-if="!isVerify" class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
                 <td v-if="isPacking && hasStatus" class="vsd-td vsd-td--status">
-                  <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">{{ statusPickedLabel }}</MpBadge>
-                  <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ statusPlannedLabel }}</MpBadge>
+                  <template v-if="isVerify">
+                    <MpBadge v-if="verifiedSet.has(row.serial)" for="tableStatus" type="completed">{{ t('Verified') }}</MpBadge>
+                    <MpBadge v-else for="tableStatus" type="warning">{{ t('Not scanned') }}</MpBadge>
+                  </template>
+                  <template v-else>
+                    <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">{{ t(statusPickedLabel) }}</MpBadge>
+                    <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ t(statusPlannedLabel) }}</MpBadge>
+                  </template>
                 </td>
-                <td v-else-if="!isPacking" class="vsd-td vsd-td--status">
-                  <MpBadge v-if="row.counted" variant="success">Counted</MpBadge>
-                  <MpBadge v-else variant="danger">Not counted</MpBadge>
+                <td v-else-if="!isPacking && hasStatus" class="vsd-td vsd-td--status">
+                  <MpBadge v-if="row.counted" variant="success">{{ t('Counted') }}</MpBadge>
+                  <MpBadge v-else variant="danger">{{ t('Not counted') }}</MpBadge>
                 </td>
               </tr>
               <tr v-if="!filteredRows.length" class="vsd-tr">
-                <td :colspan="hasStatus ? 3 : 2" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
+                <td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" class="vsd-td vsd-td--empty">{{ serialSearch ? t('No serial numbers match your search.') : t('No serial number data available.') }}</td>
               </tr>
-              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td :colspan="hasStatus ? 3 : 2" /></tr>
+              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" /></tr>
               <tr v-if="loadingMore" class="vsd-tr">
-                <td :colspan="hasStatus ? 3 : 2" class="vsd-td">
-                  <div class="vsd-loading-inner"><MpSpinner size="sm" /> Loading…</div>
+                <td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" class="vsd-td">
+                  <div class="vsd-loading-inner"><MpSpinner size="sm" /> {{ t('Loading…') }}</div>
                 </td>
               </tr>
             </tbody>
           </table>
-          <p class="vsd-count">Showing {{ visibleRows.length }} of {{ filteredRows.length }} serial numbers<template v-if="serialSearch"> (filtered from {{ allRows.length }})</template></p>
+          <p class="vsd-count">{{ t('Showing') }} {{ visibleRows.length }} {{ t('of') }} {{ filteredRows.length }} {{ t('serial numbers') }}<template v-if="serialSearch"> ({{ t('filtered from') }} {{ allRows.length }})</template></p>
         </div>
 
       </div>
@@ -418,6 +459,7 @@ function close() { emit('update:open', false) }
 .vsd-stat--pos .vsd-stat-value { color: var(--mp-text-success, #18794e); }
 .vsd-stat--neg .vsd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vsd-scan { margin-bottom: var(--mp-spacing-3); }
 .vsd-filter-bar { display: flex; justify-content: flex-end; }
 .vsd-filter-search-wrap {
   position: relative; display: flex; align-items: center;

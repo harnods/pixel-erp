@@ -3,7 +3,7 @@ import { warehouses } from './warehouses'
 import { warehouseProducts, productBySku, PRODUCTS, type Product } from './inventory'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
-import { applyTransfer } from './warehouseDetails'
+import { applyTransfer, availableForSku } from './warehouseDetails'
 
 /**
  * Warehouse transfers (ERP only) — stock moved between two of the company's own
@@ -300,9 +300,39 @@ export function awaitingApprovalCount(): number {
 }
 
 /** Approve a transfer — moves it out of "Awaiting approval" and logs the activity. */
+export type TransferApproveCheck = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Can this draft transfer be approved? Approval MOVES stock (applyTransfer), so
+ * it must be physically valid first: distinct origin/destination, neither side
+ * archived, and the origin must actually have enough allocatable stock for every
+ * line — otherwise the move would silently clamp origin to zero and invent stock
+ * at the destination.
+ */
+export function canApproveTransfer(id: string): TransferApproveCheck {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t) return { ok: false, reason: 'NOT_FOUND' }
+  if (t.status !== 'draft') return { ok: false, reason: 'NOT_DRAFT' }
+  if (t.originId === t.destinationId) return { ok: false, reason: 'SAME_WAREHOUSE' }
+  const origin = warehouses.find((w) => w.id === t.originId)
+  const dest = warehouses.find((w) => w.id === t.destinationId)
+  if (origin?.status === 'archived' || dest?.status === 'archived') {
+    return { ok: false, reason: 'WAREHOUSE_ARCHIVED' }
+  }
+  const lines = t.lines ?? transferLineItems(t).map((l) => ({ sku: l.sku, qty: l.qty }))
+  for (const l of lines) {
+    if (l.qty > availableForSku(t.originId, l.sku)) {
+      return { ok: false, reason: `INSUFFICIENT_STOCK: ${l.sku} (need ${l.qty}, have ${availableForSku(t.originId, l.sku)})` }
+    }
+  }
+  return { ok: true }
+}
+
 export function approveTransfer(id: string): WarehouseTransfer | undefined {
   const t = warehouseTransfers.find((x) => x.id === id)
   if (!t || t.status !== 'draft') return t
+  // Refuse a physically-impossible move rather than silently clamping stock.
+  if (!canApproveTransfer(id).ok) return undefined
   if (!t.activity?.length) {
     t.activity = [{
       date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
