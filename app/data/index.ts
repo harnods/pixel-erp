@@ -77,6 +77,8 @@ export * from './productionRequests'
 
 // ── Accounting (cash management) ────────────────────────────────────────────
 export * from './cashAccounts'
+export * from './bankStatementLines'
+export * from './bankStatementReviewFiles'
 
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'

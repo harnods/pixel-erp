@@ -14,7 +14,10 @@ import { cashAccounts } from '~/data'
 import type { CashAccount, CashAccountCurrency } from '~/data'
 
 const { t } = useLocale()
+const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
+
+function goToDetail(id: string) { router.push(`/cash-management/${id}`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -91,7 +94,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :search="search"
     :has-active-filter="hasActiveFilter"
     filter-empty-label="account"
-    actions-width="196px"
+    actions-width="204px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -169,7 +172,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #cell-name="{ row }">
       <div class="account-cell">
         <span class="account-cell__name">
-          <span class="account-cell__title">{{ (row as CashAccount).name }}</span>
+          <a class="cell-link account-cell__title" @click.stop="goToDetail((row as CashAccount).id)">{{ (row as CashAccount).name }}</a>
           <ErpStatusBadge v-if="(row as CashAccount).isConnected" status="active" label="Connected" />
         </span>
         <span v-if="(row as CashAccount).accountNumber" class="account-cell__number">
@@ -422,8 +425,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: var(--mp-radii-sm);
-  color: var(--mp-text-subtle);
+  border-radius: var(--mp-radii-md);
+  color: var(--mp-text-secondary);
   flex-shrink: 0;
 }
 .row-kebab:hover {

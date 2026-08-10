@@ -7,9 +7,13 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles, moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses } from '~/data'
+import {
+  reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles,
+  moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses, addProcessingReviewFile,
+} from '~/data'
 import type { ReviewFile, FileClassification } from '~/data'
 
 /** Which surface's review queue this table is showing. Both Expenses and
@@ -25,6 +29,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
 const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
+
+// Dragging a file anywhere onto this tab drops it into the queue as a
+// "processing" row — same entry point as the "Upload bills" import menu item.
+function onGlobalFileDrop(fileList: FileList) {
+  for (const f of Array.from(fileList)) addProcessingReviewFile(f.name, props.surface)
+}
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -456,6 +466,8 @@ function confirmBulkDelete() {
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
+
+  <GlobalFileDropOverlay @drop="onGlobalFileDrop" />
 </template>
 
 <style scoped>

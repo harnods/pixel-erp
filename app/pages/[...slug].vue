@@ -90,6 +90,8 @@ const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehouse
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
+const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
+const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
@@ -239,6 +241,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }
+  }
+  // /cash-management/review/:id → OCR review for an imported bank statement
+  if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
+    return { component: BankStatementReviewPage, id: segs[2]! }
+  }
+  // /cash-management/:id → account detail page (balances, statement, transactions)
+  if (segs.length >= 2 && segs[0] === 'cash-management') {
+    return { component: CashManagementDetailPage, id: segs[1]! }
   }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
@@ -1273,13 +1283,10 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--ai" @click="openUploadBills">
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start import-item--ai" @click="openUploadBills">
                   <span>Upload bills</span>
-                  <span class="ai-badge">
-                    <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
-                    <span class="ai-badge__label">AI</span>
-                  </span>
+                  <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
                 <input
                   ref="uploadBillsInputEl" type="file" class="visually-hidden-input"
@@ -1864,33 +1871,6 @@ function startResize(e: MouseEvent) {
   justify-content: flex-start;
 }
 
-/* AI badge */
-.ai-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  background: var(--mp-airene-badge-bg);
-  border: 1px solid var(--mp-airene-badge-border);
-  border-radius: var(--mp-radii-full, 999px);
-  padding: var(--mp-spacing-0\.5) var(--mp-spacing-1);
-  line-height: 1;
-}
-
-.ai-badge__icon {
-  display: block;
-  width: var(--mp-sizes-3, 12px);
-  height: var(--mp-sizes-3, 12px);
-  flex-shrink: 0;
-}
-
-.ai-badge__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-airene-bold);
-  white-space: nowrap;
-  margin-left: var(--mp-spacing-0\.5);
-}
 
 /* Forward bills section */
 .import-forward {

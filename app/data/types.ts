@@ -3,8 +3,9 @@
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
 export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
 /** 'bill' reviews as an Expense; 'invoice' as a Purchase invoice; 'receipt' as
- *  a Payment receipt; 'unclassified' gets the "Other documents" action list. */
-export type FileClassification = 'bill' | 'invoice' | 'receipt' | 'unclassified'
+ *  a Payment receipt; 'bank_statement' as a Cash management bank statement;
+ *  'unclassified' gets the "Other documents" action list. */
+export type FileClassification = 'bill' | 'invoice' | 'receipt' | 'bank_statement' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
