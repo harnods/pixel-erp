@@ -55,7 +55,7 @@ export interface Product {
 
 export interface SalesInvoice {
   id: string
-  number: string
+  number: number                          // rendered as "Sales Invoice #40001"
   customer: Pick<Customer, 'id' | 'name'>
   date: string          // ISO date string
   dueDate: string
@@ -65,6 +65,9 @@ export interface SalesInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  /** false for a small subset of invoices — those carry no PPN component at
+   *  all, so "Create tax document" has nothing to document and is hidden. */
+  hasPpn: boolean
 }
 
 export interface PurchaseInvoice {
@@ -150,6 +153,16 @@ export interface ReviewFile {
   processing?: boolean
 }
 
+/** A single stored sales invoice line: FKs to the invoice and to the product
+ *  master (`Product.id` / `CatalogItem.id`) — name, SKU, unit, and price are
+ *  never duplicated here, they're joined from the product record at read time. */
+export interface SalesInvoiceLineItem {
+  invoiceId: string        // FK -> SalesInvoice.id
+  productId: string        // FK -> Product.id (CATALOG.id)
+  qty: number
+  discountPct: number      // 0 = none
+}
+
 export interface SalesOrderItem {
   product: string
   sku: string
@@ -160,6 +173,9 @@ export interface SalesOrderItem {
   discountPct: number     // 0 = none
   amount: number          // qty * unitPrice, net of line discount (excl. tax)
 }
+
+/** A sales invoice line item, hydrated (joined against the product master) for display. */
+export type SILineItem = SalesOrderItem & { taxLabel: string }
 
 export interface SalesOrder {
   id: string

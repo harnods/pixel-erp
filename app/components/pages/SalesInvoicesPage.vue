@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { type Ref } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import {
+  MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  css, toast,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
-import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { salesInvoices } from '~/data'
+import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceFiltersValue } from '~/components/patterns/SalesInvoiceFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+import { salesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
+import { getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -28,6 +34,7 @@ const columns: TableColumn[] = [
   { key: 'customerName', label: t('Customer'),    width: '240px', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',      label: t('Due date'),    width: '108px',                                 sortType: 'date'   },
   { key: 'status',       label: t('Status'),      width: '160px',                                 sortType: 'text'   },
+  { key: 'djpStatus',    label: t('DJP status'),  width: '160px',                                 sortType: 'text'   },
   { key: 'balance',      label: t('Balance due'), width: '160px', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'total',        label: t('Total'),       width: '160px', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'tags',         label: t('Tags'),        width: '160px'                                  },
@@ -38,6 +45,9 @@ const columns: TableColumn[] = [
 type Row = SalesInvoice & {
   customerName: string
   attachment: boolean
+  hasTaxDocument: boolean
+  /** most recent tax document's status, or 'not-generated' when it has none. */
+  djpStatus: TaxDocumentStatus | 'not-generated'
   overdueLabel: string | null
 }
 
@@ -51,15 +61,52 @@ const rows = computed<Row[]>(() =>
           return days > 0 ? `${days} ${days !== 1 ? t('days') : t('day')}` : null
         })()
       : null
+    const taxDocs = getTaxDocumentsForInvoice(inv.id)
 
     return {
       ...inv,
       customerName: inv.customer.name,
       attachment:   inv.hasAttachment ?? false,
+      hasTaxDocument: taxDocs.length > 0,
+      djpStatus: taxDocs.length > 0 ? taxDocs[0]!.status : 'not-generated',
       overdueLabel,
     }
   })
 )
+
+// ─── "All filters" drawer — a second, independent filter layer, ANDed with the
+// toolbar's own Status select + search below (same pattern as TasksTablePage's
+// InboxFiltersDrawer wiring). ───────────────────────────────────────────────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<SalesInvoiceFiltersValue>(emptySalesInvoiceFilters())
+
+const keywordColumns = [
+  { key: 'number',       label: t('Number')   },
+  { key: 'customerName', label: t('Customer') },
+  { key: 'tags',         label: t('Tags')     },
+]
+const tagOptions = computed(() => [...new Set(salesInvoices.flatMap(inv => inv.tags ?? []))].sort())
+const djpStatusOptions = [
+  { value: 'not-generated', label: t('Not generated') },
+  ...(Object.keys(DJP_STATUS_CONFIG) as TaxDocumentStatus[]).map(value => ({ value, label: t(DJP_STATUS_CONFIG[value].label) })),
+]
+
+function applyDrawerFilters(v: SalesInvoiceFiltersValue) { Object.assign(appliedFilters, v) }
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+// Parses MpDatePicker's format="DD/MM/YYYY" string output.
+function parseDMY(s: string): Date {
+  const [d, m, y] = s.split('/').map(Number)
+  return new Date(y!, m! - 1, d!)
+}
+// "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
 
 // ─── Table state ──────────────────────────────────────────────────────────────
 
@@ -67,9 +114,44 @@ const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
-  filterFn: (row: Row, s, status) =>
-    (row.number.toLowerCase().includes(s) || row.customerName.toLowerCase().includes(s)) &&
-    (!status || row.status === status),
+  filterFn: (row: Row, s, status) => {
+    const matchesSearch = String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)
+    const matchesStatus = !status || row.status === status
+
+    // ── Drawer filters (independent of the toolbar's Status select / search) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || (row.tags ?? []).some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
+        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
+        : (row.tags ?? []).some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesTransactionDate = !f.transactionDate
+      || dayStart(new Date(row.date)).getTime() === dayStart(parseDMY(f.transactionDate)).getTime()
+    const matchesDueDate = !f.dueDate
+      || dayStart(new Date(row.dueDate)).getTime() === dayStart(parseDMY(f.dueDate)).getTime()
+    const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const rowTags = row.tags ?? []
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg)) : f.tags.every(tg => !rowTags.includes(tg)))
+    const matchesDjpStatus = f.djpStatus.length === 0 || f.djpStatus.includes(row.djpStatus)
+
+    return matchesSearch && matchesStatus
+      && matchesKeyword && matchesTransactionDate && matchesDueDate && matchesDrawerStatus
+      && matchesTotal && matchesTags && matchesDjpStatus
+  },
+})
+
+watch(appliedFilters, () => setPage(1))
+
+const isDrawerFilterActive = computed(() => {
+  const f = appliedFilters
+  return !!f.keyword || !!f.transactionDate || !!f.dueDate || f.status.length > 0
+    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== ''
+    || f.tags.length > 0 || f.djpStatus.length > 0
 })
 
 // ─── Filter options ───────────────────────────────────────────────────────────
@@ -80,6 +162,23 @@ const statusOptions = [
   { label: t('Open'),       value: 'open'    },
   { label: t('Overdue'),    value: 'overdue' },
 ]
+const drawerStatusOptions = [
+  { label: t('Open'),    value: 'open'    },
+  { label: t('Paid'),    value: 'paid'    },
+  { label: t('Overdue'), value: 'overdue' },
+]
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+
+const router = useRouter()
+function viewDetails(id: string) {
+  router.push(`/sales-invoices/${id}`)
+}
+
+// ─── Tax document popover (attachment-column icon) ─────────────────────────────
+function taxDocumentsFor(id: string) {
+  return getTaxDocumentsForInvoice(id)
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -98,12 +197,60 @@ function formatDate(iso: string) {
 }
 
 
-// Column show/hide (first column always on; Last updated appended, hidden by default)
+// Column show/hide (first column always on; Last updated appended, hidden by default;
+// DJP status also starts hidden — only shown once activated from column settings)
+const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpStatus'])
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── Bulk actions (selection bar) — mirrors BillsIndexPage's bulk pattern ──────
+
+function bulkSelectedInvoices(selectedRows: Set<number>): Row[] {
+  return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
+}
+
+// "Submit to DJP" only shows once every selected invoice has a tax document
+// AND that document's DJP status is Draft or Rejected — anything already
+// awaiting approval or approved has nothing left to (re-)submit.
+const SUBMITTABLE_DJP_STATUSES: TaxDocumentStatus[] = ['draft', 'rejected']
+function allSelectedSubmittableToDjp(selectedRows: Set<number>): boolean {
+  const selected = bulkSelectedInvoices(selectedRows)
+  return selected.length > 0 && selected.every(inv =>
+    inv.hasTaxDocument && SUBMITTABLE_DJP_STATUSES.includes(inv.djpStatus as TaxDocumentStatus),
+  )
+}
+function submitBulkToDjp(selectedRows: Set<number>, deselectAll: () => void) {
+  const selected = bulkSelectedInvoices(selectedRows)
+  if (!selected.length) return
+  for (const inv of selected) {
+    const doc = getTaxDocumentsForInvoice(inv.id)[0]
+    if (doc) updateTaxDocumentStatus(doc.id, 'awaiting-approval')
+  }
+  toast.notify({ variant: 'success', title: `${selected.length} ${t(selected.length !== 1 ? 'tax documents' : 'tax document')} ${t('submitted to DJP')}` })
+  deselectAll()
+}
+
+// Delete
+const bulkDeleteModalOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+const bulkDeleteCount = computed(() => bulkDeleteIds.value.length)
+let bulkDeleteDeselect: (() => void) | null = null
+
+function openBulkDeleteModal(selectedRows: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = bulkSelectedInvoices(selectedRows).map(inv => inv.id)
+  bulkDeleteDeselect = deselectAll
+  bulkDeleteModalOpen.value = true
+}
+function closeBulkDeleteModal() { bulkDeleteModalOpen.value = false }
+function confirmBulkDelete() {
+  const count = deleteSalesInvoices(bulkDeleteIds.value)
+  toast.notify({ variant: 'success', title: `${count} ${t(count !== 1 ? 'sales invoices' : 'sales invoice')} ${t('deleted')}` })
+  bulkDeleteDeselect?.()
+  closeBulkDeleteModal()
+}
 </script>
 
 <template>
@@ -117,6 +264,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     has-ai-chat
+    bulk-label="sales invoice"
     :search="search"
     :context-label="(row) => `${t('Sales Invoice')} #${row.number}`"
     @page-change="setPage"
@@ -125,6 +273,37 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @sort-change="setSort"
     @hide-column="hideColumn"
   >
+
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <MpPopover id="si-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+        <MpPopoverTrigger>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
+            {{ t('Actions') }}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-if="allSelectedSubmittableToDjp(selectedRows as Set<number>)"
+              @click="submitBulkToDjp(selectedRows as Set<number>, deselectAll)"
+            >{{ t('Submit to DJP') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+      <button
+        class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+        @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Delete') }}
+      </button>
+    </template>
 
     <!-- ── Stats section ── -->
     <template #stats>
@@ -212,11 +391,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </svg>
         </div>
 
-        <button class="filter-all-btn">
-          <!-- filter icon -->
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
+          <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
         </button>
       </div>
@@ -265,15 +441,63 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Cell: Number ── -->
-    <template #cell-number="{ value }">
-      <a class="cell-link cell-text" @click.stop>{{ value }}</a>
+    <template #cell-number="{ row, value }">
+      <a class="cell-link cell-text cell-number" @click.stop="viewDetails((row as Row).id)">{{ t('Sales Invoice') }} #{{ value }}</a>
     </template>
 
-    <!-- ── Cell: Attachment icon (narrow column, no header) ── -->
-    <template #cell-attachment="{ value }">
-      <MpIcon v-if="value" name="attachment" size="sm" class="attachment-icon" />
-      <!-- render empty placeholder so Vue never falls back to the raw boolean -->
-      <span v-else />
+    <!-- ── Cell: Attachment icon (narrow column, no header) — tax-document icon
+         stacks above it when the invoice has one or more tax documents ── -->
+    <template #cell-attachment="{ row, value }">
+      <div class="attachment-cell">
+        <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
+          <MpPopoverTrigger>
+            <button type="button" class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
+              <MpIcon name="doc" size="sm" />
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
+            <div class="taxdoc-popover">
+              <div class="taxdoc-popover-head">
+                <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
+                <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
+              </div>
+              <table class="taxdoc-popover-table">
+                <colgroup>
+                  <col style="width: 140px;" />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>{{ t('Date') }}</th>
+                    <th>
+                      <span class="taxdoc-popover-th">
+                        {{ t('Number') }}
+                        <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
+                          <MpIcon name="info" size="sm" />
+                        </MpTooltip>
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
+                    <td>{{ doc.date }}</td>
+                    <td>{{ formatTaxDocumentNumber(doc) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="taxdoc-popover-footer">
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
+                  {{ t('View details') }}
+                </button>
+              </div>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+        <MpIcon v-if="value" name="attachment" size="sm" class="attachment-icon" />
+        <!-- render empty placeholder so Vue never falls back to the raw boolean -->
+        <span v-if="!(row as Row).hasTaxDocument && !value" />
+      </div>
     </template>
 
     <!-- ── Cell: Customer ── -->
@@ -294,6 +518,19 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           {{ (row as Row).overdueLabel }}
         </span>
       </div>
+    </template>
+
+    <!-- ── Cell: DJP status — only rendered once a tax document has actually
+         been generated for the invoice; otherwise shows an em dash. ── -->
+    <template #cell-djpStatus="{ row }">
+      <ErpStatusBadge
+        v-if="(row as Row).hasTaxDocument"
+        :status="(row as Row).djpStatus"
+        :label="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label"
+        :type="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].type"
+      />
+      <!-- em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
+      <span v-else>—</span>
     </template>
 
     <!-- ── Cell: Balance Due ── -->
@@ -328,6 +565,46 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
   </ErpTablePage>
+
+  <SalesInvoiceFiltersDrawer
+    id="si-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="drawerStatusOptions"
+    :tag-options="tagOptions"
+    :djp-status-options="djpStatusOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
+
+  <!-- ── Bulk delete confirmation modal (same pattern as BillsIndexPage) ── -->
+  <MpModal
+    id="si-bulk-delete-modal"
+    :is-open="bulkDeleteModalOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeBulkDeleteModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Delete') }} {{ bulkDeleteCount }} {{ t(bulkDeleteCount !== 1 ? 'sales invoices' : 'sales invoice') }}?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ t('Deleted sales invoices cannot be restored.') }}
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">{{ t('Delete') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -435,6 +712,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   font-weight: var(--mp-font-weights-regular);
 }
 
+.cell-number {
+  color: var(--mp-text-default);
+}
+
 .cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -442,10 +723,73 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   min-width: 0;
 }
 
-/* Attachment icon */
+/* Attachment icon — the tax-document icon (when present) stacks above it */
+.attachment-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+}
 .attachment-icon {
   color: var(--mp-text-subtle);
 }
+.taxdoc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--mp-radii-sm);
+  cursor: pointer;
+  color: var(--mp-text-subtle);
+}
+.taxdoc-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+/* ── Tax document popover (Figma: E-Faktur node 4223-16211) ── */
+.taxdoc-popover { display: flex; flex-direction: column; gap: var(--mp-spacing-5); text-align: left; }
+.taxdoc-popover-head { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.taxdoc-popover-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl, 20px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.taxdoc-popover-subtitle {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+}
+.taxdoc-popover-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-lg, 8px);
+  overflow: hidden;
+}
+.taxdoc-popover-table th {
+  height: 28px;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  text-transform: uppercase;
+  text-align: left;
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.taxdoc-popover-th { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.taxdoc-popover-table td {
+  height: 40px;
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.taxdoc-popover-table tr:last-child td { border-bottom: none; }
+.taxdoc-popover-footer { display: flex; justify-content: flex-end; }
 
 /* Status cell: badge stacked above overdue sub-label */
 .status-cell {
@@ -567,6 +911,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information)) !important;
+  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  color: var(--mp-text-selected, var(--mp-text-information));
+}
 
 /* Icon button group */
 .filter-btn-group {
@@ -622,4 +971,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   border-radius: var(--mp-radii-full, 999px);
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Bulk delete modal footer */
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>
