@@ -57,6 +57,13 @@ export function getTaxDocumentsForInvoice(salesInvoiceId: string): TaxDocument[]
     .sort((a, b) => b.id.localeCompare(a.id))
 }
 
+/** True when the invoice already has a Down payment tax document on file —
+ *  gates CreateTaxDocumentDrawer's Settlement "Invoice number reference"
+ *  picker. A Settlement document doesn't itself count. */
+export function hasDownPaymentTaxDocument(salesInvoiceId: string): boolean {
+  return store.some(d => d.salesInvoiceId === salesInvoiceId && d.paymentStage === 'down-payment')
+}
+
 export function addTaxDocument(input: {
   salesInvoiceId: string
   date: string
