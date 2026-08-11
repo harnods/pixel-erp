@@ -20,7 +20,7 @@ import { useRouter } from 'vue-router'
 import {
   MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  toast, css,
+  MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
@@ -107,7 +107,7 @@ function goBack() {
     <!-- ── Title bar ── -->
     <div class="pen-titlebar">
       <div class="pen-titlebar-left">
-        <button type="button" class="pen-breadcrumb" @click="goBack">{{ t('Data migration') }}</button>
+        <MpTextlink id="pen-breadcrumb" as="a" class="pen-breadcrumb" @click.prevent="goBack">{{ t('Data migration') }}</MpTextlink>
         <h1 class="pen-title">{{ t('Products pending setup') }}</h1>
       </div>
     </div>
@@ -188,13 +188,13 @@ function goBack() {
           <div class="pen-table-wrap">
             <table class="pen-table">
               <colgroup>
-                <col style="width: 44px">
-                <col style="width: 260px">
-                <col style="width: 130px">
-                <col style="width: 130px">
-                <col style="width: 120px">
-                <col style="width: 300px">
-                <col style="width: 130px">
+                <col class="pen-col--check">
+                <col class="pen-col--product">
+                <col class="pen-col--seen">
+                <col class="pen-col--entries">
+                <col class="pen-col--qty">
+                <col class="pen-col--account">
+                <col class="pen-col--status">
               </colgroup>
               <thead>
                 <tr>
@@ -298,7 +298,7 @@ function goBack() {
 /* ── Title bar ── */
 .pen-titlebar {
   flex-shrink: 0;
-  height: 72px;
+  height: var(--mp-sizes-18, 72px);
   background: var(--mp-background-neutral-subtle);
   display: flex;
   align-items: center;
@@ -442,7 +442,31 @@ function goBack() {
   min-width: 1110px;
   border-collapse: collapse;
   table-layout: fixed;
+
+  /* Column geometry. Table widths are off the 4px Pixel size scale (no
+     --mp-sizes-* token covers 130px/260px/300px), so they live here as named
+     local constants rather than as magic numbers in inline style attributes. */
+  --pen-col-check: 44px;
+  --pen-col-product: 260px;
+  --pen-col-seen: 130px;
+  --pen-col-entries: 130px;
+  --pen-col-qty: 120px;
+  --pen-col-account: 300px;
+  --pen-col-status: 130px;
+
+  /* Row rhythm, likewise off the token scale: 10px keeps the 40px row height
+     with a 20px line box, and 2px is the tight name/SKU stack. */
+  --pen-cell-pad-y: 10px;
+  --pen-stack-gap: 2px;
 }
+
+.pen-col--check   { width: var(--pen-col-check); }
+.pen-col--product { width: var(--pen-col-product); }
+.pen-col--seen    { width: var(--pen-col-seen); }
+.pen-col--entries { width: var(--pen-col-entries); }
+.pen-col--qty     { width: var(--pen-col-qty); }
+.pen-col--account { width: var(--pen-col-account); }
+.pen-col--status  { width: var(--pen-col-status); }
 
 .pen-th {
   height: var(--mp-sizes-10, 40px);
@@ -465,7 +489,7 @@ function goBack() {
 .pen-req { color: var(--mp-text-danger); }
 
 .pen-td {
-  padding: 10px var(--mp-spacing-2);
+  padding: var(--pen-cell-pad-y) var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
   border-right: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral);
@@ -484,7 +508,7 @@ function goBack() {
 .pen-product {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--pen-stack-gap);
 }
 .pen-product-name { color: var(--mp-text-default); }
 .pen-product-sku {

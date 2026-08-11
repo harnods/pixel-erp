@@ -28,7 +28,7 @@ import {
   MpIcon, MpProgress, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalHeader, MpModalContent, MpModalBody, MpModalFooter, MpModalCloseButton,
-  MpButton, MpButtonGroup, MpSpinner, toast, css,
+  MpButton, MpButtonGroup, MpSpinner, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
@@ -283,7 +283,7 @@ onMounted(() => { showErrors.value = false })
     <!-- ── Title bar — 72px, neutral-subtle, breadcrumb above H1 ── -->
     <div class="cut-titlebar">
       <div class="cut-titlebar-left">
-        <button type="button" class="cut-breadcrumb" @click="goBack">{{ t('Data migration') }}</button>
+        <MpTextlink id="cut-breadcrumb" as="a" class="cut-breadcrumb" @click.prevent="goBack">{{ t('Data migration') }}</MpTextlink>
         <h1 class="cut-title">{{ t('Set up WMS products') }}</h1>
       </div>
     </div>
@@ -417,20 +417,20 @@ onMounted(() => { showErrors.value = false })
         <div class="cut-table-scroll">
           <table class="cut-table">
             <colgroup>
-              <col style="width: 264px">
-              <col style="width: 230px">
-              <col style="width: 140px">
-              <col style="width: 110px">
-              <col style="width: 130px">
-              <col style="width: 64px">
-              <col style="width: 120px">
-              <col style="width: 200px">
-              <col style="width: 130px">
-              <col style="width: 64px">
-              <col style="width: 120px">
-              <col style="width: 200px">
-              <col style="width: 130px">
-              <col style="width: 120px">
+              <col class="cut-col--product">
+              <col class="cut-col--account">
+              <col class="cut-col--value">
+              <col class="cut-col--qty">
+              <col class="cut-col--cost">
+              <col class="cut-col--flag">
+              <col class="cut-col--price">
+              <col class="cut-col--account-wide">
+              <col class="cut-col--tax">
+              <col class="cut-col--flag">
+              <col class="cut-col--price">
+              <col class="cut-col--account-wide">
+              <col class="cut-col--tax">
+              <col class="cut-col--status">
             </colgroup>
             <thead>
               <!-- Grouped header — a flat column run is more than a user can hold -->
@@ -847,7 +847,7 @@ onMounted(() => { showErrors.value = false })
 /* ── Title bar (page-title-bar.md variant C) ── */
 .cut-titlebar {
   flex-shrink: 0;
-  height: 72px;
+  height: var(--mp-sizes-18, 72px);
   background: var(--mp-background-neutral-subtle);
   display: flex;
   align-items: center;
@@ -993,7 +993,7 @@ onMounted(() => { showErrors.value = false })
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 280px;
+  width: var(--mp-sizes-65, 280px);
   height: var(--mp-sizes-10, 40px);
   padding: 0 var(--mp-spacing-3);
   background: var(--mp-background-neutral);
@@ -1014,11 +1014,13 @@ onMounted(() => { showErrors.value = false })
 }
 
 .cut-filter-trigger {
+  /* Trigger widths sit between the size tokens (180/280px) — named here. */
+  --cut-trigger-w: 180px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-2);
-  width: 180px;
+  width: var(--cut-trigger-w);
   height: var(--mp-sizes-10, 40px);
   padding: 0 var(--mp-spacing-3);
   background: var(--mp-background-neutral);
@@ -1078,7 +1080,38 @@ onMounted(() => { showErrors.value = false })
   min-width: 1900px;
   border-collapse: collapse;
   table-layout: fixed;
+
+  /* Column geometry. Table widths are off the 4px Pixel size scale (no
+     --mp-sizes-* token covers 110px/130px/230px/264px), so they live here as
+     named local constants rather than magic numbers in inline style attributes.
+     The Sales and Purchase groups reuse the same widths by design. */
+  --cut-col-product: 264px;
+  --cut-col-account: 230px;
+  --cut-col-value: 140px;
+  --cut-col-qty: 110px;
+  --cut-col-cost: 130px;
+  --cut-col-flag: 64px;
+  --cut-col-price: 120px;
+  --cut-col-account-wide: 200px;
+  --cut-col-tax: 130px;
+  --cut-col-status: 120px;
+
+  /* Row rhythm, likewise off the token scale: 10px keeps the 40px row height
+     with a 20px line box, and 2px is the tight name/SKU stack. */
+  --cut-cell-pad-y: 10px;
+  --cut-stack-gap: 2px;
 }
+
+.cut-col--product      { width: var(--cut-col-product); }
+.cut-col--account      { width: var(--cut-col-account); }
+.cut-col--value        { width: var(--cut-col-value); }
+.cut-col--qty          { width: var(--cut-col-qty); }
+.cut-col--cost         { width: var(--cut-col-cost); }
+.cut-col--flag         { width: var(--cut-col-flag); }
+.cut-col--price        { width: var(--cut-col-price); }
+.cut-col--account-wide { width: var(--cut-col-account-wide); }
+.cut-col--tax          { width: var(--cut-col-tax); }
+.cut-col--status       { width: var(--cut-col-status); }
 
 .cut-th {
   height: var(--mp-sizes-10, 40px);
@@ -1096,7 +1129,7 @@ onMounted(() => { showErrors.value = false })
 }
 .cut-th:last-child { border-right: none; }
 .cut-th--group {
-  height: 32px;
+  height: var(--mp-sizes-8, 32px);
   color: var(--mp-text-default);
   text-transform: none;
 }
@@ -1137,7 +1170,7 @@ onMounted(() => { showErrors.value = false })
 .cut-product {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--cut-stack-gap);
   min-width: 0;
 }
 
@@ -1155,7 +1188,7 @@ onMounted(() => { showErrors.value = false })
 .cut-product-reason { color: var(--mp-text-warning, var(--mp-text-secondary)); }
 
 .cut-td--status {
-  padding: 10px var(--mp-spacing-2);
+  padding: var(--cut-cell-pad-y) var(--mp-spacing-2);
   vertical-align: middle;
 }
 
@@ -1224,7 +1257,7 @@ onMounted(() => { showErrors.value = false })
 /* Read-only / derived cells read as calculated, per FormTable.md → Cell Types */
 .cut-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .cut-td--readonly {
-  padding: 10px var(--mp-spacing-2);
+  padding: var(--cut-cell-pad-y) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   color: var(--mp-text-secondary);
   vertical-align: middle;
@@ -1322,9 +1355,13 @@ onMounted(() => { showErrors.value = false })
   text-underline-offset: 2px;
 }
 .cut-dropzone-input {
+  /* Visually hidden but kept in the a11y tree: the label/dropzone drives it, so
+     it must stay focusable rather than display:none. 1px is the hidden-input
+     idiom, not a spacing value. */
+  --cut-hidden-size: 1px;
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: var(--cut-hidden-size);
+  height: var(--cut-hidden-size);
   opacity: 0;
   pointer-events: none;
 }

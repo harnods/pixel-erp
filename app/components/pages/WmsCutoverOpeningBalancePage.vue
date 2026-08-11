@@ -20,7 +20,7 @@
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpBanner, MpBannerIcon, MpBannerDescription, MpIcon } from '@mekari/pixel3'
+import { MpBanner, MpBannerIcon, MpBannerDescription, MpIcon, MpTextlink } from '@mekari/pixel3'
 import {
   computeOpeningBalance, openingBalanceTotal, cutoverState, openingBalanceDate,
   EKUITAS_SALDO_AWAL, CUTOVER_TOTAL_PRODUCTS, cutoverSetUpCount, seedCostBasis,
@@ -69,7 +69,7 @@ function goToJurnalOpeningBalance() {
     <!-- ── Title bar ── -->
     <div class="ob-titlebar">
       <div class="ob-titlebar-left">
-        <button type="button" class="ob-breadcrumb" @click="goBack">{{ t('Set up WMS products') }}</button>
+        <MpTextlink id="ob-breadcrumb" as="a" class="ob-breadcrumb" @click.prevent="goBack">{{ t('Set up WMS products') }}</MpTextlink>
         <h1 class="ob-title">{{ t('Opening balance') }}</h1>
       </div>
     </div>
@@ -224,7 +224,7 @@ function goToJurnalOpeningBalance() {
 /* ── Title bar ── */
 .ob-titlebar {
   flex-shrink: 0;
-  height: 72px;
+  height: var(--mp-sizes-18, 72px);
   background: var(--mp-background-neutral-subtle);
   display: flex;
   align-items: center;
@@ -349,7 +349,7 @@ function goToJurnalOpeningBalance() {
 .ob-th--num { text-align: right; width: 200px; }
 
 .ob-td {
-  height: 56px;
+  height: var(--mp-sizes-14, 56px);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral);
@@ -367,9 +367,11 @@ function goToJurnalOpeningBalance() {
 .ob-table tbody .ob-td { background: var(--mp-background-neutral-subtle); }
 
 .ob-acct {
+  /* 2px is off the 4px token scale — named here rather than left as a magic number. */
+  --ob-stack-gap: 2px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ob-stack-gap);
 }
 
 .ob-acct-code {
