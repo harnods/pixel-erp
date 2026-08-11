@@ -14,7 +14,8 @@
 | Rule | Value |
 |---|---|
 | Max form width | `558px` (6-column Pixel grid) — fields must not exceed this |
-| Column gap | `6` (`MpFlex gap="6"`) between fields |
+| Column gap | `6` (`MpFlex gap="6"`) between fields (horizontal, same row) |
+| Row gap | **`20px`** (`--mp-spacing-5`) between stacked fields — the standard vertical spacing for every form / filter drawer. |
 | Stage padding | `24px` (see `DESIGN.md` → Layout) |
 | Action group | Always **last**, primary + tertiary buttons |
 | Page title | Set via `useNavigation()` on mount |
@@ -101,6 +102,17 @@ Use the right surface:
 The control is an **`MpSelect`**; its dropdown is an **`MpPopover`** (options via
 `MpPopoverList` / `MpPopoverListItem`) — not the browser-native option list. Used
 for all selects, including the index-page filter bar's **quick filters**.
+
+### Active / selected option = BG FILL (not green text)
+
+The currently-selected option in ANY `MpPopover` dropdown must render with the
+**native `MpPopoverListItem :is-active` style: a `--mp-background-neutral-subtle`
+background fill** (`rgb(248,249,249)`), default text colour, normal weight. Do
+**not** hand-roll custom option buttons that only turn the text green — that is
+wrong. Always use `<MpPopoverList><MpPopoverListItem :is-active="…">` so the fill
+comes for free. If a control can't use `MpPopoverListItem` (e.g. the
+[AdvancedDateRangePicker](AdvancedDateRangePicker.md) preset sidebar), replicate
+exactly: `background: var(--mp-background-neutral-subtle)` + default text.
 
 ### ⚠️ Quick-filter rules (filter bar) — get these right
 

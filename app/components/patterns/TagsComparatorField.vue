@@ -10,11 +10,12 @@
  */
 import { MpIcon, MpButton, MpCheckbox, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
 
-export type TagsComparator = 'isAnyOf' | 'isNoneOf'
+export type TagsComparator = 'isAnyOf' | 'isAllOf' | 'isNoneOf'
 
-const COMPARATORS: TagsComparator[] = ['isAnyOf', 'isNoneOf']
+const COMPARATORS: TagsComparator[] = ['isAnyOf', 'isAllOf', 'isNoneOf']
 const COMPARATOR_LABELS: Record<TagsComparator, string> = {
   isAnyOf: 'Is any of',
+  isAllOf: 'Is all of',
   isNoneOf: 'Is none of',
 }
 
