@@ -107,6 +107,13 @@ function toggleAll() {
   rows.forEach(r => { r.selected = next })
 }
 
+// ── Empty state — before a warehouse is picked there's nothing to show qty
+// against (on-hand / consumed figures are per-warehouse), so the table body
+// shows a blank slate instead of the material rows (Figma: Table / New record
+// → Blank Slate). Column count matches the header cell count per mode.
+const hasWarehouse = computed(() => !!warehouseId.value)
+const colCount = computed(() => 3 + (isConsume.value ? 4 : 2) + 2)
+
 // ── Save ─────────────────────────────────────────────────────────────────────
 const CURRENT_USER = 'Rizal Candra'
 
@@ -236,7 +243,7 @@ function handleSave() {
                 <tr>
                   <th class="mr-th mr-th--check">
                     <div class="mr-check-wrap">
-                      <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
+                      <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" :is-disabled="!hasWarehouse" @change="toggleAll" />
                     </div>
                   </th>
                   <th class="mr-th">Product</th>
@@ -255,7 +262,19 @@ function handleSave() {
                   <th class="mr-th">Unit</th>
                 </tr>
               </thead>
-              <tbody>
+              <!-- Empty state — no warehouse picked yet, nothing to show on-hand/consumed against -->
+              <tbody v-if="!hasWarehouse">
+                <tr class="mr-tr mr-tr--empty">
+                  <td class="mr-td mr-td--empty" :colspan="colCount">
+                    <div class="mr-empty">
+                      <img src="/illustrations/empty-box.png" alt="" class="mr-empty-illustration" width="144" height="132" />
+                      <p class="mr-empty-title">No material to record</p>
+                      <p class="mr-empty-desc">Select warehouse first.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+              <tbody v-else>
                 <tr v-for="row in rows" :key="row.productId" class="mr-tr">
                   <td class="mr-td mr-td--check">
                     <div class="mr-check-wrap">
@@ -406,4 +425,12 @@ function handleSave() {
 .mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Empty state — before a warehouse is picked (Figma: Table / New record → Blank Slate) */
+.mr-tr--empty:hover { background: none; }
+.mr-td--empty { padding: var(--mp-spacing-6) var(--mp-spacing-4); border-right: none; white-space: normal; }
+.mr-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); }
+.mr-empty-illustration { width: 144px; height: 132px; object-fit: contain; }
+.mr-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.mr-empty-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
