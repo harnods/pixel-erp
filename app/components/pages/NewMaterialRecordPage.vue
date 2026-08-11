@@ -173,14 +173,8 @@ function handleSave() {
         <MpFormControl id="mr-type" is-required>
           <MpFormLabel>Record type</MpFormLabel>
           <div class="mr-radio-group">
-            <label class="mr-radio-item">
-              <MpRadio id="mr-type-consume" name="mr-type" value="consume" :is-checked="recordType === 'consume'" @change="recordType = 'consume'" />
-              <span>Consume</span>
-            </label>
-            <label class="mr-radio-item">
-              <MpRadio id="mr-type-return" name="mr-type" value="return" :is-checked="recordType === 'return'" @change="recordType = 'return'" />
-              <span>Return</span>
-            </label>
+            <MpRadio id="mr-type-consume" name="mr-type" value="consume" :is-checked="recordType === 'consume'" @change="recordType = 'consume'">Consume</MpRadio>
+            <MpRadio id="mr-type-return" name="mr-type" value="return" :is-checked="recordType === 'return'" @change="recordType = 'return'">Return</MpRadio>
           </div>
         </MpFormControl>
 
@@ -220,59 +214,76 @@ function handleSave() {
         </MpFormControl>
 
         <!-- ── Line items ── -->
-        <div class="mr-table-scroll">
-          <table class="mr-table" :class="{ 'mr-table--return': !isConsume }">
-            <thead>
-              <tr>
-                <th class="mr-th mr-th--check">
-                  <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
-                </th>
-                <th class="mr-th">Product</th>
-                <th class="mr-th">SKU</th>
+        <div class="mr-table-section">
+          <div class="mr-table-scroll">
+            <table class="mr-table">
+              <colgroup>
+                <col class="mr-col-check" />
+                <col class="mr-col-product" />
+                <col class="mr-col-sku" />
                 <template v-if="isConsume">
-                  <th class="mr-th mr-th--right">Needed qty</th>
-                  <th class="mr-th mr-th--right">Consumed qty</th>
-                  <th class="mr-th mr-th--right">On hand qty</th>
-                  <th class="mr-th">Qty to consume</th>
+                  <col class="mr-col-num" /><col class="mr-col-num" /><col class="mr-col-num" />
+                  <col class="mr-col-qty" />
                 </template>
                 <template v-else>
-                  <th class="mr-th mr-th--right">Consumed qty</th>
-                  <th class="mr-th">Qty to return</th>
+                  <col class="mr-col-num" />
+                  <col class="mr-col-qty" />
                 </template>
-                <th class="mr-th mr-th--right">Remaining qty</th>
-                <th class="mr-th">Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in rows" :key="row.productId" class="mr-tr">
-                <td class="mr-td mr-td--check">
-                  <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
-                </td>
-                <td class="mr-td">{{ row.product }}</td>
-                <td class="mr-td">{{ row.sku }}</td>
-                <template v-if="isConsume">
-                  <td class="mr-td mr-td--num">{{ row.neededQty }}</td>
-                  <td class="mr-td mr-td--num">{{ row.consumedQty }}</td>
-                  <td class="mr-td mr-td--num">{{ row.onHandQty }}</td>
-                  <td class="mr-td mr-td--input">
-                    <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
-                    <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
-                    <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                <col class="mr-col-num" />
+                <col class="mr-col-unit" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="mr-th mr-th--check">
+                    <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
+                  </th>
+                  <th class="mr-th">Product</th>
+                  <th class="mr-th">SKU</th>
+                  <template v-if="isConsume">
+                    <th class="mr-th mr-th--right">Needed qty</th>
+                    <th class="mr-th mr-th--right">Consumed qty</th>
+                    <th class="mr-th mr-th--right">On hand qty</th>
+                    <th class="mr-th">Qty to consume</th>
+                  </template>
+                  <template v-else>
+                    <th class="mr-th mr-th--right">Consumed qty</th>
+                    <th class="mr-th">Qty to return</th>
+                  </template>
+                  <th class="mr-th mr-th--right">Remaining qty</th>
+                  <th class="mr-th">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in rows" :key="row.productId" class="mr-tr">
+                  <td class="mr-td mr-td--check">
+                    <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
                   </td>
-                </template>
-                <template v-else>
-                  <td class="mr-td mr-td--num">{{ row.consumedQty }}</td>
-                  <td class="mr-td mr-td--input">
-                    <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
-                    <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
-                    <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
-                  </td>
-                </template>
-                <td class="mr-td mr-td--num">{{ remainingQty(row) }}</td>
-                <td class="mr-td">{{ row.unit }}</td>
-              </tr>
-            </tbody>
-          </table>
+                  <td class="mr-td mr-td--locked">{{ row.product }}</td>
+                  <td class="mr-td mr-td--locked">{{ row.sku }}</td>
+                  <template v-if="isConsume">
+                    <td class="mr-td mr-td--locked mr-td--num">{{ row.neededQty }}</td>
+                    <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
+                    <td class="mr-td mr-td--locked mr-td--num">{{ row.onHandQty }}</td>
+                    <td class="mr-td mr-td--input">
+                      <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                      <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
+                      <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
+                    <td class="mr-td mr-td--input">
+                      <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                      <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
+                      <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                    </td>
+                  </template>
+                  <td class="mr-td mr-td--locked mr-td--num">{{ remainingQty(row) }}</td>
+                  <td class="mr-td mr-td--locked">{{ row.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
@@ -330,8 +341,11 @@ function handleSave() {
 
 /* ── Body ─────────────────────────────────────────────────────────────────── */
 .mr-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); padding-top: var(--mp-spacing-2); }
-.mr-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-6); height: var(--mp-sizes-10, 40px); }
-.mr-radio-item { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* MpRadio already renders its own label (as the component's default slot) with a
+   built-in control→label gap — wrapping it in another <label>+<span> (the pattern
+   used elsewhere in the app) double-spaces it. Passing the text straight into the
+   slot keeps just Pixel's own spacing, so only the group's own gap needs setting. */
+.mr-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-4); height: var(--mp-sizes-10, 40px); }
 
 .mr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 318px)); gap: var(--mp-spacing-4) var(--mp-spacing-6); }
 .mr-datepicker { width: 100%; }
@@ -341,28 +355,50 @@ function handleSave() {
 .mr-memo-label-row { display: flex; align-items: center; justify-content: space-between; }
 .mr-memo-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* ── Line-item table ──────────────────────────────────────────────────────── */
-.mr-table-scroll { overflow-x: auto; border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default); }
-.mr-table { width: 100%; table-layout: auto; border-collapse: collapse; min-width: max-content; }
+/* ── Line-item table — follows the form-table pattern (docs/patterns/FormTable.md,
+   live reference: CreateReceiptPage.vue's .cr-table). ─────────────────────────── */
+.mr-table-section { border-bottom: 1px solid var(--mp-border-default); }
+.mr-table-scroll { overflow-x: auto; }
+.mr-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
+.mr-table tbody tr:last-child .mr-td { border-bottom: none; }
+
+.mr-col-check { width: 44px; }
+.mr-col-product { width: 240px; }
+.mr-col-sku { width: 120px; }
+.mr-col-num { width: 110px; }
+.mr-col-qty { width: 160px; }
+.mr-col-unit { width: 90px; }
+
 .mr-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase;
+  color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .mr-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.mr-th--check { width: 44px; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
+.mr-th--check { padding: 0; }
+
 .mr-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.mr-tr:last-child .mr-td { border-bottom: none; }
-.mr-td--check { width: 44px; padding: 10px var(--mp-spacing-2); }
+.mr-td:last-child { border-right: none; }
+.mr-td--check { padding: 0; text-align: center; }
+
+/* Read-only / calculated cells (product, SKU, needed/consumed/on-hand/remaining qty,
+   unit) — gray subtle background, same as .cr-td--sku / .cr-td--unit. */
+.mr-td--locked { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 .mr-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.mr-td--input { min-width: 160px; padding: var(--mp-spacing-1) var(--mp-spacing-2); vertical-align: top; }
-.mr-tracking { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+
+/* Editable qty cell — the input owns the full cell, cell owns the focus ring. */
+.mr-td--input { padding: 0; vertical-align: middle; white-space: normal; }
+.mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
+.mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 </style>
