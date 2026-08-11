@@ -40,13 +40,13 @@
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
-import wmsLogo from "~/assets/images/mekari-wms-logo.svg?url";
 
-// Swap the brand lockup to the WMS logo whenever a WMS scenario is active.
+// Brand lockup is always the Mekari ERP logo — the same across every view
+// (ERP and WMS standalone/ops); only the nav swaps per scenario, not the logo.
 const { activeScenario } = useScenario();
 const isWms = computed(() => activeScenario.value.startsWith("WMS"));
-const logoSrc = computed(() => (isWms.value ? wmsLogo : erpLogo));
-const logoAlt = computed(() => (isWms.value ? "Mekari WMS" : "Mekari ERP"));
+const logoSrc = erpLogo;
+const logoAlt = "Mekari ERP";
 
 // Warehouse label next to the logo whenever the user is scoped to a warehouse
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
