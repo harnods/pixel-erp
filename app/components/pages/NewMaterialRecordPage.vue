@@ -415,6 +415,11 @@ function handleSave() {
 .mr-td:last-child { border-right: none; }
 .mr-td--check { padding: 0; text-align: center; }
 .mr-check-wrap { display: flex; align-items: center; justify-content: center; }
+/* MpCheckbox's root is a flex row (control + label) with a gap between them even
+   when the label is empty — that leaves the visible 16px box sitting left of the
+   root's own center, so the wrap above centers the wrong box. Zero the gap (no
+   label is ever passed here) so the root's box IS the control's box. */
+.mr-check-wrap :deep(.mp-checkbox__root) { gap: 0; }
 
 /* Read-only / calculated cells (product, SKU, needed/consumed/on-hand/remaining qty,
    unit) — gray subtle background, same as .cr-td--sku / .cr-td--unit. */
