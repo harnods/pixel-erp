@@ -235,7 +235,9 @@ function handleSave() {
               <thead>
                 <tr>
                   <th class="mr-th mr-th--check">
-                    <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
+                    <div class="mr-check-wrap">
+                      <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
+                    </div>
                   </th>
                   <th class="mr-th">Product</th>
                   <th class="mr-th">SKU</th>
@@ -256,7 +258,9 @@ function handleSave() {
               <tbody>
                 <tr v-for="row in rows" :key="row.productId" class="mr-tr">
                   <td class="mr-td mr-td--check">
-                    <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
+                    <div class="mr-check-wrap">
+                      <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
+                    </div>
                   </td>
                   <td class="mr-td mr-td--locked">{{ row.product }}</td>
                   <td class="mr-td mr-td--locked">{{ row.sku }}</td>
@@ -345,7 +349,7 @@ function handleSave() {
    built-in control→label gap — wrapping it in another <label>+<span> (the pattern
    used elsewhere in the app) double-spaces it. Passing the text straight into the
    slot keeps just Pixel's own spacing, so only the group's own gap needs setting. */
-.mr-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-4); height: var(--mp-sizes-10, 40px); }
+.mr-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-8); height: var(--mp-sizes-10, 40px); }
 
 .mr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 318px)); gap: var(--mp-spacing-4) var(--mp-spacing-6); }
 .mr-datepicker { width: 100%; }
@@ -389,6 +393,7 @@ function handleSave() {
 }
 .mr-td:last-child { border-right: none; }
 .mr-td--check { padding: 0; text-align: center; }
+.mr-check-wrap { display: flex; align-items: center; justify-content: center; }
 
 /* Read-only / calculated cells (product, SKU, needed/consumed/on-hand/remaining qty,
    unit) — gray subtle background, same as .cr-td--sku / .cr-td--unit. */
