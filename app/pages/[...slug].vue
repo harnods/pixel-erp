@@ -85,6 +85,7 @@ const pageRegistry: Record<string, Component> = {
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
+const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -198,6 +199,7 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -348,6 +350,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /sales-invoices/new → New sales invoice form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
+    return { component: NewSalesInvoicePage, id: 'new' }
+  }
+  // /sales-invoices/:id → sales invoice detail
+  if (segs.length >= 2 && segs[0] === 'sales-invoices') {
+    return { component: SalesInvoiceDetailsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
@@ -679,6 +689,7 @@ const showNewWarehouseTransfer = computed(() =>
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
+function newSalesInvoice() { router.push('/sales-invoices/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -1067,7 +1078,7 @@ function startResize(e: MouseEvent) {
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
