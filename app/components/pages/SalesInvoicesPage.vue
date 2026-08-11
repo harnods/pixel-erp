@@ -99,10 +99,11 @@ const djpStatusOptions = computed(() => hasAnyTaxDocument.value
 function applyDrawerFilters(v: SalesInvoiceFiltersValue) { Object.assign(appliedFilters, v) }
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
-// Parses MpDatePicker's format="DD/MM/YYYY" string output.
-function parseDMY(s: string): Date {
-  const [d, m, y] = s.split('/').map(Number)
-  return new Date(y!, m! - 1, d!)
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
 }
 // "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
 function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
@@ -133,15 +134,15 @@ const {
         : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
         : (row.tags ?? []).some(tg => tg.toLowerCase().includes(kw))
     )
-    const matchesTransactionDate = !f.transactionDate
-      || dayStart(new Date(row.date)).getTime() === dayStart(parseDMY(f.transactionDate)).getTime()
-    const matchesDueDate = !f.dueDate
-      || dayStart(new Date(row.dueDate)).getTime() === dayStart(parseDMY(f.dueDate)).getTime()
+    const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
+    const matchesDueDate = matchesDateRange(row.dueDate, f.dueDate)
     const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
     const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
     const rowTags = row.tags ?? []
     const matchesTags = f.tags.length === 0
-      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg)) : f.tags.every(tg => !rowTags.includes(tg)))
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
     const matchesDjpStatus = f.djpStatus.length === 0 || f.djpStatus.includes(row.djpStatus)
 
     return matchesSearch && matchesStatus

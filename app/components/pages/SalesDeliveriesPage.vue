@@ -9,6 +9,8 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import SalesDeliveryFiltersDrawer, { emptySalesDeliveryFilters, type SalesDeliveryFiltersValue } from '~/components/patterns/SalesDeliveryFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesDeliveries } from '~/data'
 import type { SalesDelivery } from '~/data'
 
@@ -45,20 +47,83 @@ const rows = computed<Row[]>(() =>
 // tracks it reactively.
 const billingFilter = ref('')
 
+// ─── "All filters" drawer — a second, independent filter layer, ANDed with the
+// toolbar's own Fulfillment + Billing selects + search (same pattern as
+// BillsIndexPage). ────────────────────────────────────────────────────────────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<SalesDeliveryFiltersValue>(emptySalesDeliveryFilters())
+
+const keywordColumns = [
+  { key: 'number',       label: t('Number')   },
+  { key: 'customerName', label: t('Customer') },
+  { key: 'tags',         label: t('Tags')     },
+]
+const tagOptions = computed(() => [...new Set(salesDeliveries.flatMap(sd => sd.tags ?? []))].sort())
+
+function applyDrawerFilters(v: SalesDeliveryFiltersValue) { Object.assign(appliedFilters, v) }
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
+}
+// "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Row>(rows, {
   perPage: 25,
-  filterFn: (row, s, fulfillment) =>
-    (String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)) &&
-    (!fulfillment || row.fulfillmentStatus === fulfillment) &&
-    (!billingFilter.value || row.billingStatus === billingFilter.value),
+  filterFn: (row, s, fulfillment) => {
+    const matchesSearch = String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)
+    const matchesToolbar = (!fulfillment || row.fulfillmentStatus === fulfillment)
+      && (!billingFilter.value || row.billingStatus === billingFilter.value)
+
+    // ── Drawer filters (independent of the toolbar's selects / search) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
+        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
+        : rowTags.some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesDeliveryDate = matchesDateRange(row.date, f.deliveryDate)
+    const matchesFulfillment = f.fulfillmentStatus.length === 0 || f.fulfillmentStatus.includes(row.fulfillmentStatus)
+    const matchesBilling = f.billingStatus.length === 0 || f.billingStatus.includes(row.billingStatus)
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
+
+    return matchesSearch && matchesToolbar
+      && matchesKeyword && matchesDeliveryDate && matchesFulfillment && matchesBilling
+      && matchesTotal && matchesTags
+  },
 })
 
 // Billing filter change → back to page 1 (useTableState already watches statusFilter)
 watch(billingFilter, () => setPage(1))
+watch(appliedFilters, () => setPage(1))
+
+const isDrawerFilterActive = computed(() => {
+  const f = appliedFilters
+  return !!f.keyword || !!f.deliveryDate || f.fulfillmentStatus.length > 0 || f.billingStatus.length > 0
+    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '' || f.tags.length > 0
+})
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All …" entry; clearing (x) resets to show-all.
@@ -107,6 +172,7 @@ function clearFilters() {
   search.value = ''
   statusFilter.value = ''
   billingFilter.value = ''
+  Object.assign(appliedFilters, emptySalesDeliveryFilters())
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
@@ -127,7 +193,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
-    :has-active-filter="!!search || !!statusFilter || !!billingFilter"
+    :has-active-filter="!!search || !!statusFilter || !!billingFilter || isDrawerFilterActive"
     :search="search"
     has-checkbox
     :context-label="(row) => `${t('Sales Delivery')} #${row.number}`"
@@ -201,7 +267,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
         </button>
@@ -347,6 +413,18 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
   </ErpTablePage>
+
+  <SalesDeliveryFiltersDrawer
+    id="sd-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :fulfillment-options="fulfillmentOptions"
+    :billing-options="billingOptions"
+    :tag-options="tagOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
 
   <!-- ── Prototype preview FAB (bottom-right): toggle data vs empty-state view ── -->
   <div class="preview-fab-wrap">
@@ -519,6 +597,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information));
+  border-color: var(--mp-border-selected, var(--mp-border-information));
+  color: var(--mp-text-selected, var(--mp-text-information));
+}
 
 .filter-btn-group {
   display: flex;
