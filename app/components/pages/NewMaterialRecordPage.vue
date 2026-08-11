@@ -20,7 +20,10 @@ import {
 import { workOrders } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
+import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -60,11 +63,21 @@ interface MaterialRow {
   qtyValue: string
   selected: boolean
   trackingType?: 'serial' | 'batch'
+  /** Chosen via the Manage serial number drawer — same real per-warehouse serial
+   *  pool a work order's picking/transfer flows draw from (see ~/data/warehouseDetails).
+   *  The qty this row consumes/returns IS the size of this selection. */
+  serialSelection: CommittedSerial[]
+  /** Chosen via the Manage batch drawer — same real per-warehouse batch pool. */
+  batchSelection: CommittedBatch[]
 }
 
-function trackingTypeFor(i: number): 'serial' | 'batch' | undefined {
-  if (i % 4 === 3) return 'batch'
-  if (i % 3 === 2) return 'serial'
+// Tracking type is a real product attribute (category), not synthetic — same
+// rule the rest of the app (stock counts, transfers, picking) uses to decide
+// whether a SKU is batch- or serial-tracked.
+function trackingTypeFor(productId: string): 'serial' | 'batch' | undefined {
+  const category = catalogProduct(productId)?.category ?? ''
+  if (isSerialized(category)) return 'serial'
+  if (isBatchTracked(category)) return 'batch'
   return undefined
 }
 
@@ -76,7 +89,7 @@ function netConsumed(productId: string): number {
 }
 
 const rows = reactive<MaterialRow[]>(
-  (bom.value?.rawMaterials ?? []).map((r, i) => {
+  (bom.value?.rawMaterials ?? []).map((r) => {
     const p = catalogProduct(r.productId)
     return {
       productId: r.productId,
@@ -88,16 +101,54 @@ const rows = reactive<MaterialRow[]>(
       consumedQty: Math.max(0, netConsumed(r.productId)),
       qtyValue: '0',
       selected: true,
-      trackingType: trackingTypeFor(i),
+      trackingType: trackingTypeFor(r.productId),
+      serialSelection: [],
+      batchSelection: [],
     }
   }),
 )
 
 const num = (v: string) => Number(v) || 0
+// A tracked row's qty IS its drawer selection — typed qty only applies to
+// untracked rows (the drawer is the only way to change how much of a
+// batch/serial-tracked material this record consumes/returns).
+function effectiveQty(row: MaterialRow): number {
+  if (row.trackingType === 'serial') return row.serialSelection.length
+  if (row.trackingType === 'batch') return row.batchSelection.reduce((s, b) => s + (b.counted ?? 0), 0)
+  return num(row.qtyValue)
+}
 const remainingQty = (row: MaterialRow) =>
   isConsume.value
-    ? Math.max(0, row.onHandQty - num(row.qtyValue))
-    : Math.max(0, row.consumedQty - num(row.qtyValue))
+    ? Math.max(0, row.onHandQty - effectiveQty(row))
+    : Math.max(0, row.consumedQty - effectiveQty(row))
+
+// ── Manage serial number / Manage batch drawers ─────────────────────────────
+// The pool each drawer offers is the SKU's real per-warehouse stock (available +
+// already-reserved units) — the same source its work-order-creation reservation
+// would have drawn from. For a tracked row, "Qty to consume/return" is the
+// TARGET the operator types first; the drawer ('transfer' kind — every existing
+// unit selectable straight away, no scanning/bin steps, no ad-hoc new batch/
+// serial) then requires picking exactly that many specific units before it
+// will save — the row's real qty only becomes final once that's done
+// (effectiveQty reads off the drawer's own selection, not the typed target).
+const activeDrawerRow = ref<MaterialRow | null>(null)
+function openTracking(row: MaterialRow) {
+  if (!warehouseId.value) return
+  activeDrawerRow.value = row
+}
+function closeTracking() { activeDrawerRow.value = null }
+function onSerialDrawerSave(serials: CommittedSerial[]) {
+  if (activeDrawerRow.value) activeDrawerRow.value.serialSelection = serials
+}
+function onBatchDrawerSave(batches: CommittedBatch[]) {
+  if (activeDrawerRow.value) activeDrawerRow.value.batchSelection = batches
+}
+// Target passed to the drawer — the qty the operator typed for this row,
+// capped by what could ever be consumed (on hand) or returned (consumed so far).
+function drawerTargetCount(row: MaterialRow): number {
+  const ceiling = isConsume.value ? row.onHandQty : row.consumedQty
+  return Math.min(num(row.qtyValue), ceiling)
+}
 
 // ── Row selection (header checkbox) ─────────────────────────────────────────
 const allSelected = computed(() => rows.length > 0 && rows.every(r => r.selected))
@@ -137,7 +188,7 @@ function handleSave() {
   let saved = 0
   rows.forEach(row => {
     if (!row.selected) return
-    const qty = num(row.qtyValue)
+    const qty = effectiveQty(row)
     if (qty <= 0) return
     addMaterialConsumeReturnRecord({
       workOrderId: wo.value!.id,
@@ -290,16 +341,24 @@ function handleSave() {
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.onHandQty }}</td>
                     <td class="mr-td mr-td--input">
                       <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
-                      <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
-                      <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                      <template v-if="row.trackingType">
+                        <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
+                        <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
+                          {{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}
+                        </a>
+                      </template>
                     </td>
                   </template>
                   <template v-else>
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
                     <td class="mr-td mr-td--input">
                       <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
-                      <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
-                      <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                      <template v-if="row.trackingType">
+                        <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
+                        <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
+                          {{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}
+                        </a>
+                      </template>
                     </td>
                   </template>
                   <td class="mr-td mr-td--locked mr-td--num">{{ remainingQty(row) }}</td>
@@ -318,6 +377,33 @@ function handleSave() {
       <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
       <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
     </footer>
+
+    <!-- ── Manage serial number / Manage batch — reused as-is. kind="transfer":
+         every existing warehouse unit for the SKU is selectable immediately (no
+         scanning, no bin step, no ad-hoc "add new batch/serial") — the operator
+         just picks straight from the list up to the qty typed above. ── -->
+    <ManageSerialDrawer
+      v-if="activeDrawerRow && activeDrawerRow.trackingType === 'serial'"
+      :open="!!activeDrawerRow"
+      :sku="activeDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :target-count="drawerTargetCount(activeDrawerRow)"
+      kind="transfer"
+      :model-value="activeDrawerRow.serialSelection"
+      @update:open="(v: boolean) => { if (!v) closeTracking() }"
+      @save="onSerialDrawerSave"
+    />
+    <ManageBatchDrawer
+      v-if="activeDrawerRow && activeDrawerRow.trackingType === 'batch'"
+      :open="!!activeDrawerRow"
+      :sku="activeDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :target-count="drawerTargetCount(activeDrawerRow)"
+      kind="transfer"
+      :model-value="activeDrawerRow.batchSelection"
+      @update:open="(v: boolean) => { if (!v) closeTracking() }"
+      @save="onBatchDrawerSave"
+    />
   </div>
 
   <!-- Not found -->
@@ -426,12 +512,16 @@ function handleSave() {
 .mr-td--locked { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 .mr-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
-/* Editable qty cell — the input owns the full cell, cell owns the focus ring. */
-.mr-td--input { padding: 0; vertical-align: middle; white-space: normal; }
+/* Editable qty cell — the input owns the full cell, cell owns the focus ring.
+   Tracked rows stack a "N of target selected" hint + the Manage link underneath
+   the input, so top-align (not middle) once there's more than just the input. */
+.mr-td--input { padding: 0; vertical-align: top; white-space: normal; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
 .mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.mr-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
+.mr-tracking--disabled { color: var(--mp-text-disabled); cursor: not-allowed; pointer-events: none; }
 
 /* Empty state — before a warehouse is picked (Figma: Table / New record → Blank Slate) */
 .mr-tr--empty:hover { background: none; }
