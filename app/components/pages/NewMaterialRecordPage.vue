@@ -107,11 +107,12 @@ function toggleAll() {
   rows.forEach(r => { r.selected = next })
 }
 
-// ── Empty state — before a warehouse is picked there's nothing to show qty
-// against (on-hand / consumed figures are per-warehouse), so the table body
-// shows a blank slate instead of the material rows (Figma: Table / New record
-// → Blank Slate). Column count matches the header cell count per mode.
-const hasWarehouse = computed(() => !!warehouseId.value)
+// ── Empty state — Consume only. Before a warehouse is picked there's nothing
+// to show on-hand qty against, so the table shows a blank slate instead of
+// the material rows (Figma: Table / New record → Blank Slate). Return doesn't
+// depend on a source warehouse for its qty columns, so its rows load
+// immediately — the warehouse is still required, just validated on Save.
+const showEmptyState = computed(() => isConsume.value && !warehouseId.value)
 const colCount = computed(() => 3 + (isConsume.value ? 4 : 2) + 2)
 
 // ── Save ─────────────────────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ function handleSave() {
         </MpFormControl>
 
         <!-- ── Line items ── -->
-        <div class="mr-table-section">
+        <div class="mr-table-section" :class="{ 'mr-table-section--empty': showEmptyState }">
           <div class="mr-table-scroll">
             <table class="mr-table">
               <colgroup>
@@ -243,7 +244,7 @@ function handleSave() {
                 <tr>
                   <th class="mr-th mr-th--check">
                     <div class="mr-check-wrap">
-                      <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" :is-disabled="!hasWarehouse" @change="toggleAll" />
+                      <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" :is-disabled="showEmptyState" @change="toggleAll" />
                     </div>
                   </th>
                   <th class="mr-th">Product</th>
@@ -262,8 +263,8 @@ function handleSave() {
                   <th class="mr-th">Unit</th>
                 </tr>
               </thead>
-              <!-- Empty state — no warehouse picked yet, nothing to show on-hand/consumed against -->
-              <tbody v-if="!hasWarehouse">
+              <!-- Empty state — Consume only, no warehouse picked yet -->
+              <tbody v-if="showEmptyState">
                 <tr class="mr-tr mr-tr--empty">
                   <td class="mr-td mr-td--empty" :colspan="colCount">
                     <div class="mr-empty">
@@ -381,6 +382,7 @@ function handleSave() {
 /* ── Line-item table — follows the form-table pattern (docs/patterns/FormTable.md,
    live reference: CreateReceiptPage.vue's .cr-table). ─────────────────────────── */
 .mr-table-section { border-bottom: 1px solid var(--mp-border-default); }
+.mr-table-section--empty { border-bottom: none; }
 .mr-table-scroll { overflow-x: auto; }
 .mr-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 .mr-table tbody tr:last-child .mr-td { border-bottom: none; }
@@ -428,7 +430,7 @@ function handleSave() {
 
 /* Empty state — before a warehouse is picked (Figma: Table / New record → Blank Slate) */
 .mr-tr--empty:hover { background: none; }
-.mr-td--empty { padding: var(--mp-spacing-6) var(--mp-spacing-4); border-right: none; white-space: normal; }
+.mr-td--empty { padding: var(--mp-spacing-6) var(--mp-spacing-4); border-right: none; border-bottom: none; white-space: normal; }
 .mr-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); }
 .mr-empty-illustration { width: 144px; height: 132px; object-fit: contain; }
 .mr-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
