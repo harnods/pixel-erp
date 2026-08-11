@@ -22,8 +22,8 @@ import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
-import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
-import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
+import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -64,11 +64,11 @@ interface MaterialRow {
   selected: boolean
   trackingType?: 'serial' | 'batch'
   /** Chosen via the Manage serial number drawer — same real per-warehouse serial
-   *  pool a work order's picking/transfer flows draw from (see ~/data/warehouseDetails).
+   *  pool a work order's reservation would have drawn from (see ~/data/warehouseDetails).
    *  The qty this row consumes/returns IS the size of this selection. */
-  serialSelection: CommittedSerial[]
+  serialSelection: string[]
   /** Chosen via the Manage batch drawer — same real per-warehouse batch pool. */
-  batchSelection: CommittedBatch[]
+  batchSelection: PickedBatch[]
 }
 
 // Tracking type is a real product attribute (category), not synthetic — same
@@ -114,7 +114,7 @@ const num = (v: string) => Number(v) || 0
 // batch/serial-tracked material this record consumes/returns).
 function effectiveQty(row: MaterialRow): number {
   if (row.trackingType === 'serial') return row.serialSelection.length
-  if (row.trackingType === 'batch') return row.batchSelection.reduce((s, b) => s + (b.counted ?? 0), 0)
+  if (row.trackingType === 'batch') return row.batchSelection.reduce((s, b) => s + b.qty, 0)
   return num(row.qtyValue)
 }
 const remainingQty = (row: MaterialRow) =>
@@ -123,24 +123,25 @@ const remainingQty = (row: MaterialRow) =>
     : Math.max(0, row.consumedQty - effectiveQty(row))
 
 // ── Manage serial number / Manage batch drawers ─────────────────────────────
-// The pool each drawer offers is the SKU's real per-warehouse stock (available +
-// already-reserved units) — the same source its work-order-creation reservation
-// would have drawn from. For a tracked row, "Qty to consume/return" is the
-// TARGET the operator types first; the drawer ('transfer' kind — every existing
-// unit selectable straight away, no scanning/bin steps, no ad-hoc new batch/
-// serial) then requires picking exactly that many specific units before it
-// will save — the row's real qty only becomes final once that's done
-// (effectiveQty reads off the drawer's own selection, not the typed target).
+// The pool each drawer offers is the SKU's real per-warehouse stock — the same
+// source its work-order-creation reservation would have drawn from. No scanning:
+// PickSerialNumberDrawer / PickBatchDrawer are dedicated pattern components
+// (matching the Pixel library's PickSerialNumberDrawer / ManageBatchDrawer
+// Storybook layouts) — pick straight off the real list, nothing more. For a
+// tracked row, "Qty to consume/return" is the TARGET typed first; the drawer
+// then requires picking exactly that many specific units before it saves — the
+// row's real qty only becomes final once that's done (effectiveQty reads off
+// the drawer's own selection, not the typed target).
 const activeDrawerRow = ref<MaterialRow | null>(null)
 function openTracking(row: MaterialRow) {
   if (!warehouseId.value) return
   activeDrawerRow.value = row
 }
 function closeTracking() { activeDrawerRow.value = null }
-function onSerialDrawerSave(serials: CommittedSerial[]) {
+function onSerialDrawerSave(serials: string[]) {
   if (activeDrawerRow.value) activeDrawerRow.value.serialSelection = serials
 }
-function onBatchDrawerSave(batches: CommittedBatch[]) {
+function onBatchDrawerSave(batches: PickedBatch[]) {
   if (activeDrawerRow.value) activeDrawerRow.value.batchSelection = batches
 }
 // Target passed to the drawer — the qty the operator typed for this row,
@@ -148,6 +149,10 @@ function onBatchDrawerSave(batches: CommittedBatch[]) {
 function drawerTargetCount(row: MaterialRow): number {
   const ceiling = isConsume.value ? row.onHandQty : row.consumedQty
   return Math.min(num(row.qtyValue), ceiling)
+}
+const drawerWarehouseName = computed(() => warehouseOptions.find(w => w.id === warehouseId.value)?.name ?? '')
+function drawerProductImg(row: MaterialRow): string | undefined {
+  return catalogProduct(row.productId)?.img
 }
 
 // ── Row selection (header checkbox) ─────────────────────────────────────────
@@ -378,28 +383,32 @@ function handleSave() {
       <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
     </footer>
 
-    <!-- ── Manage serial number / Manage batch — reused as-is. kind="transfer":
-         every existing warehouse unit for the SKU is selectable immediately (no
-         scanning, no bin step, no ad-hoc "add new batch/serial") — the operator
-         just picks straight from the list up to the qty typed above. ── -->
-    <ManageSerialDrawer
+    <!-- ── Manage serial number / Manage batch — dedicated pattern components (no
+         scanning, no bins, no ad-hoc "add new"): pick straight from the SKU's
+         real warehouse stock up to the qty typed above. ── -->
+    <PickSerialNumberDrawer
       v-if="activeDrawerRow && activeDrawerRow.trackingType === 'serial'"
       :open="!!activeDrawerRow"
+      :product-name="activeDrawerRow.product"
+      :product-img="drawerProductImg(activeDrawerRow)"
       :sku="activeDrawerRow.sku"
       :warehouse-id="warehouseId"
+      :warehouse-name="drawerWarehouseName"
       :target-count="drawerTargetCount(activeDrawerRow)"
-      kind="transfer"
       :model-value="activeDrawerRow.serialSelection"
       @update:open="(v: boolean) => { if (!v) closeTracking() }"
       @save="onSerialDrawerSave"
     />
-    <ManageBatchDrawer
+    <PickBatchDrawer
       v-if="activeDrawerRow && activeDrawerRow.trackingType === 'batch'"
       :open="!!activeDrawerRow"
+      :product-name="activeDrawerRow.product"
+      :product-img="drawerProductImg(activeDrawerRow)"
       :sku="activeDrawerRow.sku"
       :warehouse-id="warehouseId"
+      :warehouse-name="drawerWarehouseName"
+      :unit="activeDrawerRow.unit"
       :target-count="drawerTargetCount(activeDrawerRow)"
-      kind="transfer"
       :model-value="activeDrawerRow.batchSelection"
       @update:open="(v: boolean) => { if (!v) closeTracking() }"
       @save="onBatchDrawerSave"
