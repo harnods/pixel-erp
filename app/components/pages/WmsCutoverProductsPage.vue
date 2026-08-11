@@ -781,7 +781,7 @@ onMounted(() => { showErrors.value = false })
                   <span class="cut-file-name">{{ importFile.name }}</span>
                   <span class="cut-file-size">{{ fmtBytes(importFile.size) }}</span>
                 </div>
-                <button type="button" class="cut-file-remove" :aria-label="t('Remove file')" @click="removeImportFile">
+                <button type="button" class="btn-enterprise btn-enterprise--plain cut-file-remove" :aria-label="t('Remove file')" @click="removeImportFile">
                   <MpIcon name="close" size="sm" />
                 </button>
               </div>
