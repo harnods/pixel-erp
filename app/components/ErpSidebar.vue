@@ -362,7 +362,18 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
-    { name: 'Dashboard', icon: 'dashboard' },
+    {
+      // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
+      // overview" has content today (Inbound/Outbound page tabs → analytics); the
+      // rest are placeholders for now.
+      name: 'Dashboard', icon: 'dashboard',
+      panelSubmenu: [[
+        { label: 'Business performance' },
+        { label: 'Custom dashboard' },
+        { label: 'Mekari Insight' },
+        { label: 'WMS analytics' },
+      ]],
+    },
     {
       name: 'Reports', icon: 'reports',
       flyoutOnHover: true,
@@ -464,7 +475,6 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
-          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
@@ -599,7 +609,6 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
       // WMS Standalone has no report index — the four reports (mirroring the ERP
       // report pages) sit directly in the level-2 panel, led by Overview.
       panelSubmenu: [[
-        { label: 'Overview', path: '/overview' },
         { label: 'Inbound timeliness', path: '/wms-report/inbound-timeliness' },
         { label: 'Inbound accuracy', path: '/wms-report/inbound-accuracy' },
         { label: 'Outbound timeliness', path: '/wms-report/outbound-timeliness' },
@@ -929,7 +938,11 @@ function handleNavClick(item: NavItem) {
       const firstItem = item.panelSubmenu[0][0]
       openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
       activePanelSubItem.value = firstItem.label
-      navigate(firstItem.to ?? firstItem.label)
+      // Honor a direct `path` (e.g. WMS Standalone Reports → /wms-report/:slug) —
+      // same as handlePanelSubItemClick; navigate(label) alone would derive a wrong
+      // route and land on a blank placeholder.
+      if (firstItem.path) router.push(firstItem.path)
+      else navigate(firstItem.to ?? firstItem.label)
       activeItem.value = item.name
     }
   } else if (item.expandOnClick && activePanel.value?.parentNavName === item.name) {

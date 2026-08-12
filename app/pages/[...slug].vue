@@ -477,8 +477,11 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview — only the WMS menu (/overview); NOT mirrored into Reports (/wms-report).
-  'Overview':          ['Inbound delivery', 'Outbound delivery'],
+  // WMS analytics — Inbound/Outbound as page tabs (outside the stage). Reached in ERP
+  // via Dashboard › WMS analytics (/wms-analytics → key 'Wms analytics'); in WMS
+  // Standalone it IS the Dashboard page (key 'Dashboard').
+  'Wms analytics':     ['Inbound delivery', 'Outbound delivery'],
+  'Dashboard':         ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -633,12 +636,15 @@ const cycleCountBannerVisible = computed(() =>
 )
 
 // Real component to render in the stage for a given page + tab (else placeholder).
+// WMS analytics — one page, direction per tab. Shared by the ERP "WMS analytics"
+// page and the WMS Standalone "Dashboard" page.
+const wmsOverviewTabComponents: Record<string, Component> = {
+  'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+  'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+}
 const tabComponents: Record<string, Record<string, Component>> = {
-  // WMS → Overview — one analytics page, direction per tab.
-  'Overview': {
-    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
-    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
-  },
+  'Wms analytics': wmsOverviewTabComponents,
+  'Dashboard':     wmsOverviewTabComponents,
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
