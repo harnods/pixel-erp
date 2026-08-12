@@ -129,6 +129,9 @@ export interface Bill {
   lineItems?: BillLineItem[]
   subtotal?: number
   taxAmount?: number
+  /** true when line prices already include tax (tax is extracted from the total,
+   * not added on top) — see NewExpensePage's "price includes tax" toggle. */
+  priceIncludesTax?: boolean
   withholding?: BillWithholding
   /** only set when the bill was created (or later marked) as paid */
   payment?: BillPayment

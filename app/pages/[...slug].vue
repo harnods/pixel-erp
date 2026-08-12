@@ -241,6 +241,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
     return { component: SpendMoneyPage, id: segs[1]! }
   }
+  // /expenses/:id/edit → New expense form in edit mode (reuses the create form)
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'edit') {
+    return { component: NewExpensePage, id: segs[1]! }
+  }
+  // /expenses/:id/payment-details → the payment (Spend money) transaction detail.
+  // Reached by clicking the Number in the bill's Payment details table. Design is
+  // still pending → placeholder for now.
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
+    return { component: PlaceholderPage, id: segs[1]! }
+  }
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }

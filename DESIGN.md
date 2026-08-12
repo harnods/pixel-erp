@@ -21,6 +21,16 @@ Do not use non-Enterprise components or manually override tokens.
 
 ---
 
+## Typography
+
+- **Never use italic.** No `font-style: italic` / `<i>` / `<em>` styling anywhere in
+  the ERP — not for notes, captions, hints, disclaimers, or emphasis. To de-emphasize
+  text use a smaller size (`--mp-font-sizes-sm`) and/or a secondary color
+  (`--mp-text-secondary`); to emphasize, use weight (`--mp-font-weights-semi-bold`).
+- Use only the Pixel type scale (`--mp-font-sizes-*`) and weights (`--mp-font-weights-*`).
+
+---
+
 ## Layout
 
 ### Stage

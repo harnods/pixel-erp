@@ -13,6 +13,7 @@
  * order detail — it carries no status, and its tables show planned figures only.
  */
 import { ref, reactive, computed } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, css, toast,
@@ -62,9 +63,6 @@ const descDisplay = computed(() => {
 })
 
 // ── Formatters ──────────────────────────────────────────────────────────────────
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(n || 0)
-}
 const num = (n: number) => n.toLocaleString('id-ID')
 function productName(id: string) { return catalogProduct(id)?.name ?? '—' }
 function productSku(id: string) { return catalogProduct(id)?.sku ?? '—' }

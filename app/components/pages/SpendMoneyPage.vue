@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpInputTag, MpTextarea, MpUpload, MpUploadList,
   MpIcon, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextlink, toast,
@@ -25,9 +26,6 @@ function toISODate(display: string) {
 }
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 function billLabel(b: Bill) {
   return `${t('Expense')} #${String(b.number).padStart(5, '0')}`
 }

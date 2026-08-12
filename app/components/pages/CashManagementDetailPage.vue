@@ -21,6 +21,7 @@ import ImportBankStatementOcrModal from '~/components/patterns/ImportBankStateme
 import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
 import { cashAccounts } from '~/data'
 import type { CashAccountCurrency } from '~/data'
+import { formatMoney } from '~/utils/currency'
 import {
   getBankStatementLines, getAccountTransactions,
   type BankStatementLine, type AccountTransactionLine,
@@ -47,15 +48,6 @@ function onGlobalFileDrop(fileList: FileList) {
   ocrInitialFiles.value = Array.from(fileList)
   ocrModalOpen.value = true
 }
-
-/** 'Rp15.000.000,00' — no space after the symbol, negatives in accounting parens. */
-function formatMoney(amount: number, currency: CashAccountCurrency) {
-  const text = new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency, minimumFractionDigits: 2,
-  }).format(Math.abs(amount)).replace(/^(\D+?)[\s ]+/, '$1')
-  return amount < 0 ? `(${text})` : text
-}
-
 // ── Header (dummy "last updated" — no real bank feed) ──────────────────────
 const lastUpdatedLabel = ref('Last updated a few minutes ago')
 function refreshConnection() { lastUpdatedLabel.value = 'Last updated just now' }

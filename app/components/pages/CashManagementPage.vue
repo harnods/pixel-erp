@@ -12,6 +12,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { cashAccounts } from '~/data'
 import type { CashAccount, CashAccountCurrency } from '~/data'
+import { formatMoney } from '~/utils/currency'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -55,16 +56,6 @@ function clearFilters() {
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
-/** 'Rp15.000.000,00' / 'SGD6.000,00' — no space after the symbol (ERP convention),
- *  negatives in accounting parentheses: '(Rp32.000.000,00)'. */
-function formatMoney(amount: number, currency: CashAccountCurrency) {
-  const text = new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(Math.abs(amount)).replace(/^(\D+?)[\s\u00A0]+/, '$1')
-  return amount < 0 ? `(${text})` : text
-}
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {

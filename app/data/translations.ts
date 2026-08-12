@@ -234,7 +234,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Delivered': 'Terkirim',
   'Pending': 'Menunggu',
   'To do': 'Perlu dikerjakan',
-  'Done': 'Selesai',
   'Ready': 'Siap',
   'New': 'Baru',
   'Archived': 'Diarsipkan',

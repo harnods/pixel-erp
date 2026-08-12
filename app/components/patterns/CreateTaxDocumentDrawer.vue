@@ -21,6 +21,7 @@ import {
   MpDatePicker, MpSelect, MpRadio, MpInput, MpButton, MpText, MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import { salesInvoices } from '~/data'
 import type { SalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { VAT_CODES, computeTaxDocumentSummary } from '~/data/vatCodes'
@@ -186,12 +187,6 @@ const summary = computed(() => {
     ? computeForeignTaxDocumentSummary(props.invoice.total, dpp.value)
     : null
 })
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 
 function close() { emit('update:isOpen', false) }
 

@@ -3,6 +3,7 @@
  * TablePlayground — live ErpTablePage with toggleable props.
  */
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 
 // ── Controls ──────────────────────────────────────────────────────────────
@@ -88,9 +89,6 @@ const {
 const statusOptions = ['paid', 'open', 'overdue', 'pending', 'draft', 'voided']
 
 // ── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n)
-}
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }

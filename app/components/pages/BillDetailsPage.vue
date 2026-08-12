@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink, MpButton,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  css, toast,
 } from '@mekari/pixel3'
+import type jsPDF from 'jspdf'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue'
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
-import { bills, duplicateBill } from '~/data/bills'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { bills, deleteBills } from '~/data/bills'
+import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -23,10 +29,37 @@ const bill = computed(() => bills.find((b) => b.id === props.orderId) ?? null)
 // (per design) but hidden until the feature ships.
 const showSetAsRecurring = false
 
+// Duplicate — opens the New expense form pre-filled from this bill (minus payment);
+// nothing is saved until the user submits the form.
 function duplicate() {
   if (!bill.value) return
-  duplicateBill(bill.value.id)
-  toast.notify({ variant: 'success', title: t('Expense duplicated') })
+  router.push({ path: '/expenses/new', query: { duplicate: bill.value.id } })
+}
+
+function edit() {
+  if (!bill.value) return
+  router.push(`/expenses/${bill.value.id}/edit`)
+}
+
+// ── Print / Preview PDF — same PdfPreviewModal used across the Expenses module ──
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+function openPdfPreview() {
+  if (!bill.value) return
+  pdfPreviewDoc.value = generateBillsBulkPdf([bill.value])
+  pdfPreviewFilename.value = `Expense #${String(bill.value.number).padStart(5, '0')}.pdf`
+  pdfPreviewOpen.value = true
+}
+
+// ── Delete confirmation (same modal pattern as BillsIndexPage's bulk delete) ──
+const deleteModalOpen = ref(false)
+function confirmDelete() {
+  if (!bill.value) return
+  deleteBills([bill.value.id])
+  deleteModalOpen.value = false
+  toast.notify({ variant: 'success', title: `1 ${t('expense')} ${t('deleted')}` })
+  goExpenses()
 }
 
 // Awaiting-approval — same pattern as the Purchase Order detail page: a primary
@@ -67,6 +100,15 @@ const journalEntryRows = computed<JournalEntryRow[]>(() => {
 // Beneficiary mirrors Group 3 whenever it's shown, so "Total" only ever appears
 // when nothing has been deducted from it yet.
 const groupTotal = computed(() => (bill.value?.subtotal ?? bill.value?.total ?? 0) + (bill.value?.taxAmount ?? 0))
+// Tax breakdown only renders when the bill actually carries PPN — a "No tax" bill
+// shows neither the Subtotal/PPN group nor a "PPN 10%" row. The rate label is derived
+// from the data (taxAmount ÷ subtotal) so it matches whatever rate the bill was taxed at.
+const hasTax = computed(() => (bill.value?.taxAmount ?? 0) > 0)
+const ppnRate = computed(() => {
+  const sub = bill.value?.subtotal ?? 0
+  const tax = bill.value?.taxAmount ?? 0
+  return sub > 0 ? Math.round((tax / sub) * 100) : 0
+})
 const hasLess = computed(() => !!bill.value?.withholding || !!bill.value?.payment)
 const balanceDue = computed(() => groupTotal.value - (bill.value?.withholding?.amount ?? 0) - (bill.value?.payment?.amountPaid ?? 0))
 
@@ -87,9 +129,19 @@ const showPaymentTab = computed(() => bill.value?.status === 'paid' || !!bill.va
 // avoid breaking that match; unreconciled paid bills can still be deleted.
 const isReconciled = computed(() => !!bill.value?.reconciled)
 
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
-}
+// ── Jump-to-transaction switcher (title-bar chevron) — same as the outbound /
+// inbound delivery detail pages. Search by number or beneficiary, top 6 shown. ──
+const jumpSearch = ref('')
+const jumpLabel = (b: (typeof bills)[number]) => `expense #${String(b.number).padStart(5, '0')}`
+const jumpResults = computed(() => {
+  const q = jumpSearch.value.trim().toLowerCase()
+  const matched = q
+    ? bills.filter((b) => jumpLabel(b).includes(q) || b.beneficiary.name.toLowerCase().includes(q))
+    : bills
+  return matched.slice(0, 6)
+})
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/expenses/${id}`) }
+
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''
   if (ext === 'pdf') return 'pdf-document'
@@ -115,6 +167,34 @@ function goExpenses() {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Expense') }} #{{ String(bill.number).padStart(5, '0') }}</h1>
           <ErpStatusBadge :status="displayStatus" size="md" badge-for="additionalInformation" />
+          <MpPopover id="bd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <button class="detail-jump-chevron" :aria-label="t('Switch expense')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '304px' })">
+              <div class="detail-jump">
+                <div class="detail-jump-search-wrap">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="detail-jump-list">
+                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                    <span class="detail-jump-item-number">{{ t('Expense') }} #{{ String(o.number).padStart(5, '0') }}</span>
+                    <span class="detail-jump-item-customer">{{ o.beneficiary.name }}</span>
+                  </button>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
+                </div>
+              </div>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
       </div>
 
@@ -270,16 +350,20 @@ function goExpenses() {
           </ContentList>
         </div>
         <div class="detail-totals">
-          <!-- Group 1: Subtotal + PPN -->
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Subtotal') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(bill.subtotal ?? bill.total) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">PPN 10%</span>
-            <span class="detail-total-row-amt">{{ formatIDR(bill.taxAmount ?? 0) }}</span>
-          </div>
-          <div class="detail-total-rule detail-total-rule--dashed" />
+          <!-- Group 1: Subtotal + PPN — only for taxed bills (a "No tax" bill jumps
+               straight to Total, with no redundant Subtotal or empty PPN row). -->
+          <template v-if="hasTax">
+            <div class="detail-total-row">
+              <span class="detail-total-row-label detail-total-row-label--total">{{ t('Subtotal') }}</span>
+              <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(bill.subtotal ?? bill.total) }}</span>
+            </div>
+            <div class="detail-total-row">
+              <span class="detail-total-row-label">PPN {{ ppnRate }}%</span>
+              <span class="detail-total-row-amt">{{ formatIDR(bill.taxAmount ?? 0) }}</span>
+            </div>
+            <p v-if="bill.priceIncludesTax" class="detail-total-note">{{ t('Prices are inclusive of tax') }}</p>
+            <div class="detail-total-rule detail-total-rule--dashed" />
+          </template>
 
           <!-- Group 2: Total + Less: withholding / Less: payment -->
           <div class="detail-total-row">
@@ -311,7 +395,7 @@ function goExpenses() {
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="payment">
-            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('Payment details') }}</h3>
             <table class="detail-payment">
               <thead>
                 <tr>
@@ -328,7 +412,9 @@ function goExpenses() {
                 </tr>
                 <tr v-else class="detail-item-row">
                   <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
-                  <td class="detail-td">{{ t('Spend money') }} #{{ String(bill.number).padStart(5, '0') }}</td>
+                  <td class="detail-td">
+                    <span class="detail-payment-number" @click="router.push(`/expenses/${bill.id}/payment-details`)">{{ t('Spend money') }} #{{ String(bill.number).padStart(5, '0') }}</span>
+                  </td>
                   <td class="detail-td">{{ bill.payment.paymentAccount }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(bill.payment.amountPaid) }}</td>
                   <td class="detail-td">{{ bill.payment.reference || '—' }}</td>
@@ -343,10 +429,10 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary btn-enterprise">{{ t('Print PDF') }}</button>
+      <button class="detail-btn detail-btn--secondary btn-enterprise" @click="openPdfPreview">{{ t('Print PDF') }}</button>
 
       <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="detail-btn detail-btn--secondary btn-enterprise">
-        <MpIcon name="mekari_pay" size="md" />
+        <MpIcon name="pay-brand" size="md" />
         {{ t('Pay with Mekari Pay') }}
       </button>
 
@@ -361,24 +447,61 @@ function goExpenses() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openPdfPreview">{{ t('Preview') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="bill.status === 'unpaid' && !isAwaitingApproval" @click="router.push(`/expenses/${bill.id}/payment`)">{{ t('Add payment') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="showSetAsRecurring && !isAwaitingApproval">{{ t('Set as recurring') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
             <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval">{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval" @click="edit">{{ t('Edit') }}</MpPopoverListItem>
             <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" :label="t('Unmatch reconciliation to delete')" placement="top" use-portal>
               <span class="detail-actions-delete-tt-wrap">
                 <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
               </span>
             </MpTooltip>
-            <MpPopoverListItem v-else>{{ t('Delete') }}</MpPopoverListItem>
+            <MpPopoverListItem v-else @click="deleteModalOpen = true">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
     </footer>
+
+    <!-- ── Print / Preview PDF modal ── -->
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      :title="`${t('Expense')} #${String(bill.number).padStart(5, '0')} ${t('preview')}`"
+      @close="pdfPreviewOpen = false"
+    />
+
+    <!-- ── Delete confirmation modal (same pattern as BillsIndexPage's bulk delete) ── -->
+    <MpModal
+      id="bd-delete-modal"
+      :is-open="deleteModalOpen"
+      size="md"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="deleteModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          {{ t('Delete') }} {{ t('Expense') }} #{{ String(bill.number).padStart(5, '0') }}?
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          {{ t('Deleted expenses cannot be restored.') }}
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="bd-delete-footer">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 
   <!-- Not found fallback -->
@@ -404,6 +527,43 @@ function goExpenses() {
 }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+
+/* ── Jump-to-transaction switcher (title-bar chevron) — mirrors OutgoingOrderDetailsPage ── */
+.detail-jump-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
+}
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump { display: flex; flex-direction: column; }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
+.detail-jump-search {
+  width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
+}
+.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
+.detail-jump-list { display: flex; flex-direction: column; }
+.detail-jump-item {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
+}
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-jump-empty { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-shrink: 0; }
 .detail-icon-btn {
   display: flex !important; align-items: center; justify-content: center;
@@ -518,6 +678,10 @@ function goExpenses() {
 .detail-total-row-label--total, .detail-total-row-amt--total {
   font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
+.detail-total-note {
+  margin: calc(var(--mp-spacing-1) * -1) 0 0; font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
 .detail-total-rule { border-top: 1px solid var(--mp-border-default); }
 .detail-total-rule--dashed { border-top-style: dashed; }
 
@@ -566,6 +730,14 @@ function goExpenses() {
 
 .detail-actions-delete-tt-wrap { display: block; width: 100%; }
 .detail-actions-delete-tt-wrap :deep(button[disabled]) { pointer-events: none; }
+
+/* ── Delete confirmation modal footer ── */
+.bd-delete-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+
+/* Clickable payment Number → payment (Spend money) detail. Plain span styled as a
+   link (project rule: not MpTextlink, to keep table cells aligned). */
+.detail-payment-number { color: var(--mp-text-link); cursor: pointer; }
+.detail-payment-number:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .bd-not-found { padding: var(--mp-spacing-6); }
 </style>

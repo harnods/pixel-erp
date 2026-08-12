@@ -3,6 +3,7 @@ import {
   MpIcon, MpBadge, MpButton, MpInput, MpInputGroup, MpInputLeftAddon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -299,14 +300,6 @@ const isDrawerFilterActive = computed(() => {
 const hasActiveFilter = computed(() => !!search.value || transactionTypeFilter.value.length > 0 || isDrawerFilterActive.value)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {

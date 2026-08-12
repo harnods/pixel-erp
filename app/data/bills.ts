@@ -43,6 +43,14 @@ export const bills = reactive<Bill[]>([
   { id: 'BILL022', number: 22, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-07-11', dueDate: '2026-07-25', total: 950_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 950_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — July', tax: 'No tax', amount: 950_000 }]},
   { id: 'BILL023', number: 23, beneficiary: { id: 'V010', name: 'PT Catering Nusantara' },        category: 'Meals',         date: '2026-07-12', dueDate: '2026-07-26', total: 1_600_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_600_000, paymentDate: '2026-07-15', reference: 'TRX-000151' } , lineItems: [{ account: '570 - Meals & entertainment', description: 'Client meeting refreshments', tax: 'No tax', amount: 1_600_000 }]},
   { id: 'BILL024', number: 24, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-07-13', dueDate: '2026-07-27', total: 850_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 850_000, paymentDate: '2026-07-16' } , lineItems: [{ account: '520 - Office supplies', description: 'Stationery top-up', tax: 'No tax', amount: 850_000 }]},
+  // Scenario: prices INCLUDE tax — line amounts are gross (tax-inclusive); the PPN
+  // is extracted out of the total (10/110), so Subtotal is net-of-tax. total = line sum.
+  { id: 'BILL025', number: 25, beneficiary: { id: 'V011', name: 'PT Konsultan Prima' },            category: 'Services',      date: '2026-07-13', dueDate: '2026-07-27', total: 11_000_000, balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 11_000_000, paymentDate: '2026-07-16', reference: 'TRX-000158' },
+    memo: 'Monthly tax & accounting advisory retainer — invoice amount is inclusive of PPN.',
+    subtotal: 10_000_000,
+    taxAmount: 1_000_000,
+    priceIncludesTax: true,
+    lineItems: [{ account: '560 - Professional services', description: 'Tax advisory retainer (July) — incl. PPN', tax: 'PPN 10%', amount: 11_000_000 }]},
 ])
 
 let billAddSeq = bills.length
@@ -55,15 +63,26 @@ export function addBill(data: Omit<Bill, 'id' | 'number'>): Bill {
   return bill
 }
 
-/** Duplicate an existing bill — every field carries over exactly as-is (status,
- * payment, reconciled included) except id/number, which addBill assigns fresh.
- * structuredClone() throws on Vue's reactive Proxy, so deep-clone via JSON instead —
- * safe here since Bill is plain JSON-shaped data (no Dates/functions). */
+/** Duplicate an existing bill — carries over every field EXCEPT payment. A duplicate
+ * is a fresh, unpaid expense: payment/reconciled are dropped, status resets to
+ * 'unpaid', and balanceDue is restored to the full total (id/number are reassigned
+ * by addBill). structuredClone() throws on Vue's reactive Proxy, so deep-clone via
+ * JSON instead — safe here since Bill is plain JSON-shaped data (no Dates/functions). */
 export function duplicateBill(id: string): Bill | null {
   const source = bills.find((b) => b.id === id)
   if (!source) return null
-  const { id: _id, number: _number, ...rest } = JSON.parse(JSON.stringify(source)) as Bill
-  return addBill(rest)
+  const { id: _id, number: _number, payment: _payment, reconciled: _reconciled, ...rest } =
+    JSON.parse(JSON.stringify(source)) as Bill
+  return addBill({ ...rest, status: 'unpaid', balanceDue: rest.total })
+}
+
+/** Update an existing bill in place (used by the edit form). Returns the updated
+ * bill, or null if no bill with that id exists. id/number are preserved. */
+export function updateBill(id: string, data: Omit<Bill, 'id' | 'number'>): Bill | null {
+  const bill = bills.find((b) => b.id === id)
+  if (!bill) return null
+  Object.assign(bill, data, { id: bill.id, number: bill.number })
+  return bill
 }
 
 /** Approve a draft (awaiting-approval) bill — moves it into the normal unpaid lifecycle. */

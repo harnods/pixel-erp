@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { type Ref } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpButton, MpTooltip, MpRadio, MpCheckbox,
@@ -17,16 +18,17 @@ import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BillsFiltersDrawer, { emptyBillsFilters, type BillsFiltersValue } from '~/components/patterns/BillsFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { bills, duplicateBill, deleteBills } from '~/data'
+import { bills, deleteBills } from '~/data'
 import type { Bill, BillStatus } from '~/data'
 
 const { t } = useLocale()
 const router = useRouter()
 function goDetail(id: string) { router.push(`/expenses/${id}`) }
 function addPayment(id: string) { router.push(`/expenses/${id}/payment`) }
+// Duplicate — opens the New expense form pre-filled from the source bill (minus
+// payment); nothing is saved until the user submits.
 function duplicate(id: string) {
-  duplicateBill(id)
-  toast.notify({ variant: 'success', title: t('Expense duplicated') })
+  router.push({ path: '/expenses/new', query: { duplicate: id } })
 }
 // "Set as recurring" isn't built yet — kept in the row-kebab markup below (per design)
 // but hidden until the feature ships.
@@ -106,7 +108,7 @@ function closeExportModal() { exportModalOpen.value = false }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',          label: 'Date',          width: '120px',                                 sortType: 'date'   },
+  { key: 'date',          label: 'Date',          width: '160px',                                 sortType: 'date'   },
   { key: 'number',        label: 'Number',        width: '160px', sortable: true,                 sortType: 'number' },
   { key: 'attachment',    label: '',              width: '52px',  noHeader: true, align: 'center' },
   { key: 'beneficiaryName', label: 'Beneficiary', width: '220px', sortable: true,                 sortType: 'text'   },
@@ -265,14 +267,6 @@ const statusLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
@@ -456,7 +450,7 @@ function confirmBulkDelete() {
           </button>
           <div class="upsell-content">
             <div class="upsell-icon">
-              <MpIcon name="billing" size="md" variant="fill" color="icon.success" />
+              <MpIcon name="billing" size="md" variant="fill" />
             </div>
             <div class="upsell-copy">
               <p class="upsell-title">{{ t('Control business spend with Mekari Card') }}</p>
@@ -941,9 +935,11 @@ function confirmBulkDelete() {
   width: var(--mp-sizes-12, 48px);
   height: var(--mp-sizes-12, 48px);
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-success-subtle, #ebfffc);
-  color: var(--mp-icon-success, #12a594);
+  /* Mekari Card brand tones (exact) — undefined tokens so the hex fallback always wins. */
+  background: var(--mekari-card-icon-bg, #EBFFFC);
+  color: var(--mekari-card-icon-color, #075056);
 }
+.upsell-icon :deep(svg) { color: var(--mekari-card-icon-color, #075056); fill: var(--mekari-card-icon-color, #075056); }
 
 .upsell-copy {
   flex: 1;

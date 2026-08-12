@@ -19,6 +19,7 @@
 -->
 <script setup lang="ts">
 import { type Ref } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import { MpIcon, MpButton, MpSelect } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -96,12 +97,6 @@ const statusOptions = computed(() => {
 })
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
-
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
     day: '2-digit', month: '2-digit', year: 'numeric',

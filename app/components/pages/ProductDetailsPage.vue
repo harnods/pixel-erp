@@ -10,6 +10,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
@@ -64,11 +65,6 @@ const activeTabIndex = computed({
 })
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 function formatQty(n: number, unit: string) {
   return `${n.toLocaleString('id-ID')} ${unit}`
 }

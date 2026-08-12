@@ -185,7 +185,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
             />
           </div>
 
-          <div class="bfd-field">
+          <div v-if="statusOptions.length" class="bfd-field">
             <span class="bfd-field-label">Status</span>
             <ul class="bfd-checklist">
               <li

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle,
@@ -119,10 +120,6 @@ function openViewSerial(item: AdjustmentLine) {
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function diffLabel(n: number) { return n > 0 ? `+${fmt(n)}` : fmt(n) }
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount)
-}
-
 // ── WMS stock count: view mode + search ───────────────────────────────────────
 const locViewMode = ref<'location' | 'sku'>('location')
 const locSearch = ref('')

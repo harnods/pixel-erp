@@ -36,7 +36,16 @@ export default defineNuxtConfig({
       // it re-optimizes mid-session — which swaps Pixel3's module identity and makes
       // its popover/tooltip directives read undefined state on unmount ("Cannot read
       // properties of undefined (reading 'show')" → 500). Listing them here avoids that.
-      include: ['@mekari/pixel3', '@vue/devtools-core', '@vue/devtools-kit', '@supabase/supabase-js'],
+      // jspdf / jspdf-autotable / bwip-js are heavy CJS libs pulled in lazily by the
+      // PDF-export and barcode features. If they're NOT listed here, Vite discovers
+      // them at runtime the first time such a feature loads, re-optimizes deps, and
+      // triggers a full page reload — which races Panda's non-atomic pixel.css regen
+      // and empties the stylesheet (the whole app renders unstyled). Pre-bundling them
+      // up front means Vite never re-optimizes mid-session, so that race can't happen.
+      include: [
+        '@mekari/pixel3', '@vue/devtools-core', '@vue/devtools-kit', '@supabase/supabase-js',
+        'jspdf', 'jspdf-autotable', 'bwip-js',
+      ],
     },
     css: {
       devSourcemap: false,

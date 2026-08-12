@@ -4,6 +4,7 @@ import {
   MpPopoverList, MpPopoverListItem, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -102,14 +103,6 @@ const classificationLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {

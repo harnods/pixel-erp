@@ -16,6 +16,7 @@ import {
   MpButton, MpText, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import type { SalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { VAT_CODES, computeTaxDocumentSummary } from '~/data/vatCodes'
@@ -56,12 +57,6 @@ const summary = computed(() => {
     ? computeTaxDocumentSummary(selectedVatCode.value, props.invoice.total, dpp.value, standardPpn.value)
     : null
 })
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 
 function close() { emit('update:isOpen', false) }
 </script>

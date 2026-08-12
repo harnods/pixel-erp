@@ -19,6 +19,7 @@
  * the open state to the next one rather than collapsing everything.
  */
 import { ref, computed, watch } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpCheckbox, MpInput, MpTextarea, MpAutocomplete, MpDatePicker,
   MpInputTag, MpIcon, MpUpload, MpUploadList, toast, MpTooltip, MpSelect,
@@ -402,10 +403,6 @@ function setScenario(s: Scenario) {
 }
 
 // ── Totals ───────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 })
-    .format(amount).replace(/^(Rp)\s/, '$1')
-}
 const shippingFee = ref('0')
 
 /** Gross of every line. While matches are still pending the extracted amounts

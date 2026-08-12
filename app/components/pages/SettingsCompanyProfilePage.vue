@@ -10,6 +10,19 @@ import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
 
 const { t } = useLocale()
+const { amountDisplay: amountDisplaySetting, setAmountDisplay } = useCurrencySettings()
+
+// The select's 3 options ↔ the currency setting's 3 modes (1:1).
+const displayToSetting: Record<string, 'with-decimals' | 'without-decimals' | 'abbreviated'> = {
+  'full-decimals': 'with-decimals',
+  full: 'without-decimals',
+  abbreviated: 'abbreviated',
+}
+const settingToDisplay: Record<string, string> = {
+  'with-decimals': 'full-decimals',
+  'without-decimals': 'full',
+  abbreviated: 'abbreviated',
+}
 
 // Which section is currently being edited (only one at a time). Company info is
 // synced from the Mekari account, so it is never editable.
@@ -42,17 +55,25 @@ const advanced = reactive({
   transactionLog: true,
   multiCurrency: true,
   baseCurrency: 'idr',
-  amountDisplay: 'full-decimals',
+  // Reflect the persisted currency setting into the select's initial value.
+  amountDisplay: settingToDisplay[amountDisplaySetting.value] ?? 'full-decimals',
 })
 
 const AMOUNT_DISPLAY_OPTIONS = [
-  { value: 'full-decimals', label: t('Full number (with decimals)') },
-  { value: 'full', label: t('Full number') },
-  { value: 'abbreviated', label: t('Abbreviated (e.g. Rp2 jt)') },
+  { value: 'full-decimals', label: t('Full number (with decimals)'), example: 'Rp2.000.000,00' },
+  { value: 'full', label: t('Full number'), example: 'Rp2.000.000' },
+  { value: 'abbreviated', label: t('Abbreviated'), example: 'Rp2 jt' },
 ]
 const CURRENCY_OPTIONS = [{ value: 'idr', label: t('Indonesian Rupiah (Rp)') }]
 const amountDisplayLabel = computed(
   () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === advanced.amountDisplay)?.label ?? '—',
+)
+// Each option carries only its OWN example — no doubled/hardcoded second example.
+const amountDisplayExample = computed(
+  () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === advanced.amountDisplay)?.example ?? '',
+)
+const draftAmountDisplayExample = computed(
+  () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === draftAdvanced.amountDisplay)?.example ?? '',
 )
 
 // ─── Edit drafts + errors ──────────────────────────────────────────────────────
@@ -148,6 +169,8 @@ function setAdvancedToggle(key: string, v: boolean) {
 }
 function saveAdvanced() {
   Object.assign(advanced, draftAdvanced)
+  // Amount display drives money formatting app-wide (formatIDR / formatMoney).
+  setAmountDisplay(displayToSetting[draftAdvanced.amountDisplay] ?? 'with-decimals')
   editing.value = null
   toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
@@ -492,7 +515,7 @@ const ADVANCED_TOGGLES = [
       <!-- Read mode: currency info as text -->
       <div v-if="editing !== 'advanced'" class="cp-currency-info">
         <span class="cp-value">{{ t('Base currency:') }} {{ t('Indonesian Rupiah (Rp)') }}</span>
-        <span class="cp-value">{{ t('Amount display:') }} {{ amountDisplayLabel }}, {{ t('e.g. Rp2.000.000,00') }}</span>
+        <span class="cp-value">{{ t('Amount display:') }} {{ amountDisplayLabel }}, {{ t('e.g.') }} {{ amountDisplayExample }}</span>
       </div>
 
       <!-- Edit mode: currency selects + action bar -->
@@ -509,7 +532,7 @@ const ADVANCED_TOGGLES = [
           <MpSelect id="cp-amount-display-select" :model-value="draftAdvanced.amountDisplay" @change="(_e: Event, v: string) => (draftAdvanced.amountDisplay = v)">
             <option v-for="o in AMOUNT_DISPLAY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
           </MpSelect>
-          <span class="cp-help">{{ t('e.g. Rp2.000.000,00') }}</span>
+          <span class="cp-help">{{ t('e.g.') }} {{ draftAmountDisplayExample }}</span>
         </MpFormControl>
         <div class="cp-action-bar">
           <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>

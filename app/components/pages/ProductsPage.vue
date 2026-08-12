@@ -10,6 +10,7 @@ import {
   MpSelect, MpCheckbox, MpTooltip, MpModal, MpModalContent, MpModalHeader, MpModalBody,
   MpModalFooter, MpModalOverlay, MpModalCloseButton, MpRadio, MpButton, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -133,11 +134,6 @@ const productTypeLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 const asOfLabel = formatDateTimeLong(`${TODAY_ISO}T08:00:00`)
 
 // ─── Stats ────────────────────────────────────────────────────────────────────

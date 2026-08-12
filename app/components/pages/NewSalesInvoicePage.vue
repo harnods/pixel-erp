@@ -17,6 +17,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
   customers, products, salesInvoices,
@@ -243,9 +244,7 @@ const depositPaid = computed(() => lessDeposit.value ? (Number(depositAmount.val
 
 const balanceDue = computed(() => total.value - withholdingTotal.value - depositPaid.value)
 
-function fmt(n: number) {
-  return 'Rp' + new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
-}
+const fmt = formatIDR
 /** Table cells show the bare number — the "Rp" lives in the cell's prefix box. */
 function fmtPlain(n: number) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)

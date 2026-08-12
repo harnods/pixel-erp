@@ -3,6 +3,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -189,11 +190,6 @@ const jumpResults = computed(() => {
 function jumpTo(id: string) { router.push(`/sales-invoices/${id}`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 /** Parenthesised deduction, e.g. (Rp100.000,00); plain Rp0,00 for zero. */
 function formatDeduction(amount: number) {
   return amount > 0 ? `(${formatIDR(amount)})` : formatIDR(0)
