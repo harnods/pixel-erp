@@ -48,6 +48,7 @@ useHead({
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
@@ -200,6 +201,7 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
@@ -214,6 +216,11 @@ const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /crm → CRM (Qontak) Deals kanban — a full-bleed page that owns its own title
+  // bar + filter bar + board, so it renders outside the padded stage.
+  if (segs[0] === 'crm') {
+    return { component: CrmDealsPage, id: '' }
+  }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
     return { component: WmsReportDetailPage, id: segs[1]! }
@@ -1080,7 +1087,7 @@ function startResize(e: MouseEvent) {
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
 
       <template v-else>
-      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1486,7 +1493,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1961,12 +1968,19 @@ function startResize(e: MouseEvent) {
   overflow-x: hidden;
   overflow-y: auto;
   /* side/bottom padding scrolls with content; the top 24px is a fixed border
-     (borders don't scroll) so content keeps a 24px gap from the stage's top edge */
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+     (borders don't scroll) so content keeps a 24px gap from the stage's top edge.
+     Bottom is 80px so the last row of content clears the fold with breathing room. */
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-20, 80px);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+/* HR home wants a full-bleed cream header flush to the very top — drop the 24px
+   top border (the gap) and the rounded top corners so its hero reaches the edge. */
+.stage.stage--flush-top {
+  border-top-width: 0;
+  border-radius: 0;
 }
 /* Report index draws an edge-to-edge card grid — no stage padding/top gap. */
 .stage--flush {
