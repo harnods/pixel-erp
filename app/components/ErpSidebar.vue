@@ -1287,10 +1287,8 @@ function cancelClose() {
 }
 .panel-item--accordion.is-open .panel-accordion-chevron { transform: rotate(180deg); }
 
-/* Accordion children (e.g. Assets, Depreciation schedule) — indented under the
-   header, but with tighter left/right padding so longer labels like "Depreciation
-   schedule" stay on one line in the narrow panel. */
-.panel-item--child { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-1); }
+/* Accordion children (e.g. Assets, Depreciation schedule) — 12px left/right padding. */
+.panel-item--child { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
 
 .panel-item-icon {
   width: var(--mp-sizes-4);
@@ -1319,13 +1317,9 @@ function cancelClose() {
   transform: rotate(-90deg);
 }
 
-/* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
-   distinguishes them from top-level panel items. Active state matches
-   .panel-item.active exactly (same blue + bg) — no separate override, so a
-   selected child (e.g. "Sales") reads the same as a selected top-level item
-   (e.g. "Notifications"). */
+/* Children read as secondary text; the active state matches .panel-item.active
+   exactly (same blue + bg) so a selected child reads like a selected top-level item. */
 .panel-item--child {
-  padding-left: var(--mp-spacing-6, 24px);
   color: var(--mp-text-secondary);
 }
 

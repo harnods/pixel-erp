@@ -50,7 +50,7 @@ const warehouseAc = computed(() => tasks.value[0] ? [{ id: tasks.value[0]!.wareh
 const warehouseId = ref('')
 watch(tasks, (ts) => { warehouseId.value = ts[0]?.warehouseId ?? '' }, { immediate: true })
 
-interface Row { id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string; source: string; isMarketplace: boolean; skuQty: number; toShipQty: number }
+interface Row { id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string; source: string; isMarketplace: boolean; channelCourier: string; channelTracking: string; skuQty: number; toShipQty: number }
 const rows = computed<Row[]>(() => tasks.value.map((t) => {
   const order = outgoingOrders.find(o => o.id === t.salesOrderId)
   return {
@@ -61,6 +61,9 @@ const rows = computed<Row[]>(() => tasks.value.map((t) => {
     packingTaskNo: t.packingTaskNo,
     source: order?.source ?? '',
     isMarketplace: isMarketplaceOrder(order),
+    // What the channel pre-assigned (may be a courier WMS doesn't recognise).
+    channelCourier: t.courier ?? '',
+    channelTracking: t.trackingNo ?? '',
     skuQty: t.skuQty,
     toShipQty: t.toShipQty,
   }
@@ -171,26 +174,45 @@ const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assignee
 const transactionDate = ref(todayDisplay)
 const transactionDateError = ref(false)
 
-// ─── Per-delivery courier + tracking no. — marketplace orders arrive with theirs
-// already fixed (set when the delivery was created); non-marketplace ones are
-// free text, filled in here. ─────────────────────────────────────────────────
+// ─── Per-delivery courier + tracking no. ──────────────────────────────────────
+// Marketplace orders arrive with a courier + AWB from the channel. If WMS doesn't
+// recognise the channel's courier name (e.g. Shopee sends "SPX Extra" when our
+// master only has "SPX Standard"), it falls into "Lainnya" (Others) for the shipper
+// to re-route. The channel AWB stays LOCKED only while the recognised original
+// courier is selected — re-routing clears it, reverting restores it.
+const OTHERS_COURIER = 'Lainnya'
+const knownCourierNames = computed(() => new Set(couriers.map(c => c.name)))
+function isKnownCourier(name?: string): boolean { return !!name && knownCourierNames.value.has(name) }
+function channelAwbLocked(row: Row): boolean {
+  return row.isMarketplace && isKnownCourier(row.channelCourier) && (courierByRow.value[row.id] ?? '') === row.channelCourier
+}
 const courierByRow = ref<Record<string, string>>({})
 const trackingByRow = ref<Record<string, string>>({})
 watch(tasks, (ts) => {
   const c: Record<string, string> = {}
   const tr: Record<string, string> = {}
   for (const t of ts) {
-    c[t.id] = courierByRow.value[t.id] ?? t.courier ?? ''
-    tr[t.id] = trackingByRow.value[t.id] ?? t.trackingNo ?? ''
+    const known = isKnownCourier(t.courier)
+    const initCourier = t.courier ? (known ? t.courier : OTHERS_COURIER) : ''
+    c[t.id] = courierByRow.value[t.id] ?? initCourier
+    const showChannelAwb = known && c[t.id] === t.courier
+    tr[t.id] = trackingByRow.value[t.id] ?? (showChannelAwb ? (t.trackingNo ?? '') : '')
   }
   courierByRow.value = c
   trackingByRow.value = tr
 }, { immediate: true })
-function setCourier(id: string, val: string) { courierByRow.value = { ...courierByRow.value, [id]: val } }
+function setCourier(id: string, val: string) {
+  courierByRow.value = { ...courierByRow.value, [id]: val }
+  const t = tasks.value.find(x => x.id === id)
+  if (t && isMarketplaceOrder(outgoingOrders.find(o => o.id === t.salesOrderId))) {
+    const restore = isKnownCourier(t.courier) && val === t.courier
+    trackingByRow.value = { ...trackingByRow.value, [id]: restore ? (t.trackingNo ?? '') : '' }
+  }
+}
 function setTracking(id: string, val: string) { trackingByRow.value = { ...trackingByRow.value, [id]: val } }
 
-// ── Courier picker (searchable MpPopover, from master data couriers) — used for
-// non-marketplace rows that don't yet have a courier assigned. ────────────────
+// ── Courier picker (searchable MpPopover, from master data couriers) — available
+// on every row so a pre-carried (marketplace/order) courier can be re-routed. ──
 const activeCourierRow = ref<string | null>(null)
 const courierSearch = ref('')
 // Courier is required for every delivery before a shipment can be created;
@@ -405,15 +427,10 @@ async function handleSave() {
                     <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
                     <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
                     <td class="ho-td ho-td--input" :class="{ 'ho-td--input--error': courierError && !(courierByRow[row.id]?.trim()) }">
-                      <input
-                        v-if="row.isMarketplace"
-                        type="text" class="ho-text-input"
-                        :value="courierByRow[row.id] ?? ''"
-                        disabled
-                        placeholder="e.g. JNE, SiCepat"
-                      />
+                      <!-- Courier is re-routable for every Ready-to-Ship row — including
+                           ones that already carry a courier from the order/marketplace
+                           (D5 AC#1); it locks only once a shipment doc exists. -->
                       <MpPopover
-                        v-else
                         :id="`ho-courier-${row.id}`"
                         placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select
                         @close="closeCourierPicker(row.id)"
@@ -442,7 +459,7 @@ async function handleSave() {
                       <input
                         type="text" class="ho-text-input"
                         :value="trackingByRow[row.id] ?? ''"
-                        :disabled="row.isMarketplace"
+                        :disabled="channelAwbLocked(row)"
                         placeholder="e.g. SD0009583"
                         @input="setTracking(row.id, ($event.target as HTMLInputElement).value)"
                       />
