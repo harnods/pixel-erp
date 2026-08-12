@@ -12,7 +12,7 @@ import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 const router = useRouter()
 const route = useRoute()
 
-const expanded = ref(false)
+const expanded = ref(true)
 
 interface Item { icon: string; label: string; to?: string; chevron?: boolean }
 const groups: Item[][] = [

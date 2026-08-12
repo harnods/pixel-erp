@@ -412,8 +412,12 @@ const learn: LearnCard[] = [
    white margin between it and the stage edge. */
 .hero {
   position: relative;
-  background: linear-gradient(180deg, var(--mp-background-neutral-subtle, #f8f9f9) 0%, #ffffff 15.4%);
-  border-radius: var(--mp-radii-xl, 12px);
+  /* Full-bleed: escape the stage's side padding so the header reaches the edges;
+     the stage drops its top padding + rounding for Home so it's flush to the top. */
+  margin: 0 calc(var(--mp-spacing-6) * -1) 0;
+  /* Soft header backdrop that fades into the white stage — spans the full hero so
+     it stays visible now that the header is full-bleed (was fading out by 15%). */
+  background: linear-gradient(180deg, var(--mp-background-hero-tint, #eaf0f6) 0%, var(--mp-background-stage, #ffffff) 100%);
   padding: var(--mp-spacing-6);
 }
 /* Soft AI glow behind the search when AI Mode is on. */

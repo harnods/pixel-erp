@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { MpToastManager } from '@mekari/pixel3'
+import { useProductMenu } from '~/composables/useProductMenu'
 
 // The module nav follows the active product: Talenta (HR) on /hr*, Qontak (CRM)
 // on /crm*, ERP otherwise.
 const route = useRoute()
 const isHr = computed(() => route.path.startsWith('/hr'))
 const isCrm = computed(() => route.path.startsWith('/crm'))
+// The product-switcher rail is opt-in (top-right user menu → "Show ERP Menu").
+const { showProductMenu } = useProductMenu()
 </script>
 
 <template>
   <div class="app-shell">
     <ErpHeader />
-    <div class="main-container">
-      <ErpNavbarGroup />
+    <div class="main-container" :class="{ 'main-container--rail': showProductMenu }">
+      <ErpNavbarGroup v-if="showProductMenu" />
       <HrSidebar v-if="isHr" />
       <CrmSidebar v-else-if="isCrm" />
       <ErpSidebar v-else />
@@ -123,19 +126,19 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
-  /* Dark-green backing — only ever visible through the rounded-corner cutouts
-     (children tile the rest). This is what the module-nav's rounded top-left
-     reveals, so it reads continuous with the dark product rail beside it. */
-  background: var(--mp-background-surface-bold);
+  background: var(--mp-background-neutral-subtle);
   border-left: 2px solid var(--mp-background-surface-bold);
   border-right: 2px solid var(--mp-background-surface-bold);
   border-radius: 12px 12px 0 0;
 }
 
-/* The light module-nav rounds its top-left away from the dark product rail —
-   mirrors how the content stage rounds away from the rail on the other side.
-   (.sidebar already has overflow:hidden, so the corner clips cleanly.) */
-.main-container .sidebar {
+/* With the product rail shown, a dark-green backing sits behind the module-nav so
+   its rounded top-left corner reads continuous with the dark rail beside it. Only
+   ever visible through the rounded-corner cutouts (children tile the rest). */
+.main-container--rail {
+  background: var(--mp-background-surface-bold);
+}
+.main-container--rail .sidebar {
   border-top-left-radius: 12px;
 }
 
