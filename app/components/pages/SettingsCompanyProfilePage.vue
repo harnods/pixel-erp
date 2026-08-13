@@ -441,22 +441,26 @@ const ADVANCED_TOGGLES = [
             <span class="cp-value">{{ tax.nitku || '—' }}</span>
           </div>
         </div>
-        <!-- Coretax info only exists once the company is validated & registered in Klikpajak. -->
+        <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
+             and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
         <template v-if="tax.npwpValidated">
-          <div class="cp-subhead cp-subhead--spaced">
-            <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
-          </div>
-          <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
-          <div class="cp-grid">
-            <div class="cp-field">
-              <span class="cp-label">{{ t('NPWP signee') }}</span>
-              <span class="cp-value">{{ tax.signeeNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.signee || '—' }}</span></span>
+          <template v-if="tax.companyType === 'pkp'">
+            <div class="cp-subhead cp-subhead--spaced">
+              <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
             </div>
-            <div class="cp-field">
-              <span class="cp-label">{{ t('NPWP PIC') }}</span>
-              <span class="cp-value">{{ tax.picNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.pic || '—' }}</span></span>
+            <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
+            <div class="cp-grid">
+              <div class="cp-field">
+                <span class="cp-label">{{ t('NPWP signee') }}</span>
+                <span class="cp-value">{{ tax.signeeNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.signee || '—' }}</span></span>
+              </div>
+              <div class="cp-field">
+                <span class="cp-label">{{ t('NPWP PIC') }}</span>
+                <span class="cp-value">{{ tax.picNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.pic || '—' }}</span></span>
+              </div>
             </div>
-          </div>
+          </template>
+          <p v-else class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
         </template>
       </template>
 
@@ -531,8 +535,12 @@ const ADVANCED_TOGGLES = [
           </div>
           <p v-if="taxIdentityError" class="cp-inline-error">{{ taxIdentityError }}</p>
 
-          <!-- Coretax info only exists once the company is validated & registered in Klikpajak. -->
-          <template v-if="draftTax.npwpValidated">
+          <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
+               and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
+          <template v-if="draftTax.npwpValidated && draftTax.companyType !== 'pkp'">
+            <p class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
+          </template>
+          <template v-else-if="draftTax.npwpValidated">
             <div class="cp-subhead cp-subhead--spaced">
               <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
             </div>
