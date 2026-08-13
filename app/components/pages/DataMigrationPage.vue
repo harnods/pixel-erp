@@ -15,12 +15,17 @@ import {
   CUTOVER_TOTAL_PRODUCTS,
   cutoverSetUpCount,
   cutoverState,
+  furthestCutoverStep,
   pendingMovementCount,
   pendingProductCount,
 } from '~/data/wmsCutover'
 
 const { t } = useLocale()
 const router = useRouter()
+
+// The WMS→ERP cutover is the "WMS upgrade to ERP" storyline (Scenario menu).
+const { migrationScenario } = useMigrationScenario()
+const isUpgradeScenario = computed(() => migrationScenario.value === 'WMS upgrade to ERP')
 
 const setUpCount = computed(() => cutoverSetUpCount())
 const percent = computed(() => Math.round((setUpCount.value / CUTOVER_TOTAL_PRODUCTS) * 100))
@@ -39,7 +44,9 @@ const pendingProducts = computed(() => pendingProductCount())
 const heldEntries = computed(() => pendingMovementCount())
 
 function openCutover() {
-  router.push('/data-migration/wms-cutover/products')
+  // Resume at the earliest step still incomplete (Chart of accounts → Map
+  // products → Opening balance).
+  router.push(`/data-migration/wms-cutover/${furthestCutoverStep()}`)
 }
 function openPending() {
   router.push('/data-migration/wms-cutover/pending')
@@ -52,8 +59,13 @@ function openPending() {
       {{ t('Bring balances and master data from a connected system into your ledger. Each source runs its own setup, and nothing posts until you publish the opening balance.') }}
     </p>
 
-    <!-- ── Source: WMS → Jurnal ── -->
-    <section class="dm-card">
+    <!-- No migration source outside the upgrade storyline. -->
+    <p v-if="!isUpgradeScenario" class="dm-empty">
+      {{ t('No data migration in progress. Connected systems that need setup will appear here.') }}
+    </p>
+
+    <!-- ── Source: WMS → ERP (upgrade storyline only) ── -->
+    <section v-if="isUpgradeScenario" class="dm-card">
       <div class="dm-card-head">
         <div class="dm-card-icon" aria-hidden="true">
           <MpIcon name="warehouse" size="md" color="icon.default" />
@@ -98,7 +110,7 @@ function openPending() {
     </section>
 
     <!-- Post-go-live backlog — only when there is one -->
-    <section v-if="pendingProducts" class="dm-card dm-card--pending">
+    <section v-if="isUpgradeScenario && pendingProducts" class="dm-card dm-card--pending">
       <div class="dm-card-head">
         <div class="dm-card-icon" aria-hidden="true">
           <MpIcon name="warning-triangle" size="md" color="icon.warning" />
@@ -133,6 +145,18 @@ function openPending() {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
+}
+
+.dm-empty {
+  margin: 0;
+  max-width: 720px;
+  padding: var(--mp-spacing-6);
+  border: 1px dashed var(--mp-border-default);
+  border-radius: var(--mp-radii-lg);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
+  text-align: center;
 }
 
 /* Card = 1px border, never a drop-shadow (DESIGN.md → Surfaces & cards). */

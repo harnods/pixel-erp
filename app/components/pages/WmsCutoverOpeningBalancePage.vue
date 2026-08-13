@@ -1,64 +1,113 @@
 <script setup lang="ts">
 /**
- * Data migration → WMS cutover → Opening balance.
+ * Data migration → WMS cutover → Step 3: Set opening balance.
  *
- * PRD "WMS Conversion Balance Setup" (PD/51260326215), Story 6 / FR4–FR8.
- * Route: /data-migration/wms-cutover/opening-balance (detailMatch → owns its
- * own 72px title bar + stage).
+ * A double-entry opening balance (trial balance) over the whole chart of
+ * accounts:
+ *  - The conversion date is editable (defaults 01/01/2026).
+ *  - Every account shows a Debit and Credit the accountant fills in by hand,
+ *    EXCEPT the inventory accounts mapped in Step 2 — those are "Synced":
+ *    pre-filled from the product setup and read-only.
+ *  - Total Debit must equal Total Credit (and be > 0) before it can be published.
  *
- * This screen REPLACES the prototype's "Pulling WMS inventory snapshot" step,
- * which implemented a model the PRD explicitly rejects:
- *   - FR5: the per-account total is computed by summing each product's
- *     Inventory Value — "not a value pulled from WMS".
- *   - A4:  WMS has no monetary valuation capability whatsoever.
- * So there is no fetch, no spinner, no "could not reach WMS" state, and no
- * batch/serial rollup (OS7 puts those columns out of scope for this flow).
- *
- * The numbers here are live: reroute a product on the previous step and the
- * account totals move. That is the point — the cutover figure is provably
- * derived from setup rather than typed in.
+ * Reference: prototype "Set opening balance" (ACCOUNT · DEBIT · CREDIT, grouped
+ * by Asset / Liability & Equity, inventory rows badged "Synced", balanced total).
  */
-import { computed } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpBanner, MpBannerIcon, MpBannerDescription, MpIcon, MpTextlink } from '@mekari/pixel3'
+import { MpTextlink, MpIcon, MpDatePicker, toast } from '@mekari/pixel3'
+import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import {
-  computeOpeningBalance, openingBalanceTotal, cutoverState, openingBalanceDate,
-  EKUITAS_SALDO_AWAL, CUTOVER_TOTAL_PRODUCTS, cutoverSetUpCount, seedCostBasis,
+  coaAccounts, computeOpeningBalance, cutoverState,
+  CUTOVER_STEPS, isCutoverStepComplete, type CutoverStep, type CoaAccount,
 } from '~/data/wmsCutover'
 
 const { t } = useLocale()
 const router = useRouter()
 
-// ── Formatting (DESIGN.md → Number format / Date format) ────────────────────
-const idr = new Intl.NumberFormat('id-ID', {
-  style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
+// ── Conversion date (Pixel MpDatePicker uses DD/MM/YYYY; state keeps ISO) ────
+function isoToDMY(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function dmyToISO(dmy: string): string {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+const convDate = ref(isoToDMY(cutoverState.conversionDate))
+watch(convDate, (v) => {
+  if (v && /^\d{2}\/\d{2}\/\d{4}$/.test(v)) cutoverState.conversionDate = dmyToISO(v)
 })
-function fmtIDR(n: number): string {
-  return idr.format(n).replace(/^(Rp)\s/, '$1')
-}
-const dateFmt = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
-const conversionDate = computed(() => dateFmt.format(new Date(cutoverState.conversionDate)))
-/** Dated the day before the conversion date — existing saldo awal convention. */
-const balanceDate = computed(() => dateFmt.format(openingBalanceDate(cutoverState.conversionDate)))
 
-const unitCostFmt = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-function fmtUnitCost(n: number): string {
-  return `Rp${unitCostFmt.format(n)}`
+// ── Formatting ──────────────────────────────────────────────────────────────
+const idr = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 })
+function fmtIDR(n: number): string { return idr.format(n).replace(/^(Rp)\s/, '$1') }
+const grp = new Intl.NumberFormat('id-ID')
+function fmtAmount(n: number | null): string { return n === null ? '' : grp.format(n) }
+function parseAmount(raw: string): number | null {
+  const d = raw.replace(/\D/g, '')
+  return d === '' ? null : Number(d)
 }
 
-const lines = computed(() => computeOpeningBalance())
-const total = computed(() => openingBalanceTotal())
-const seeded = computed(() => seedCostBasis())
+// ── Synced (locked) inventory debits carried from Step 2 ────────────────────
+const syncedDebit = computed(() => {
+  const m = new Map<string, number>()
+  for (const line of computeOpeningBalance()) m.set(line.accountCode, line.debit)
+  return m
+})
+function isSynced(code: string): boolean { return syncedDebit.value.has(code) }
 
-// Story 1's hard gate — this screen is only meaningful at 100% setup.
-const setUpCount = computed(() => cutoverSetUpCount())
-const isGateOpen = computed(() => setUpCount.value >= CUTOVER_TOTAL_PRODUCTS)
+// ── Editable debit/credit per account ───────────────────────────────────────
+const entries = reactive<Record<string, { debit: number | null; credit: number | null }>>({})
+for (const a of coaAccounts) entries[a.code] = { debit: null, credit: null }
 
-function goBack() {
-  router.push('/data-migration/wms-cutover/products')
+function debitOf(code: string): number {
+  return isSynced(code) ? (syncedDebit.value.get(code) ?? 0) : (entries[code]?.debit ?? 0)
 }
-function goToJurnalOpeningBalance() {
-  // Hands off to ERP's existing saldo awal screen, which owns Publish (Terbitkan).
+function creditOf(code: string): number {
+  return isSynced(code) ? 0 : (entries[code]?.credit ?? 0)
+}
+
+// ── Balance-sheet accounts only, grouped by code prefix ─────────────────────
+// An opening balance covers balance-sheet accounts (Asset / Liability / Equity);
+// P&L accounts (4–9) are not part of it — matching the reference design.
+const GROUP_ORDER = ['Asset', 'Liability & Equity']
+function groupOf(code: string): string | null {
+  const d = code[0]
+  if (d === '1') return 'Asset'
+  if (d === '2' || d === '3') return 'Liability & Equity'
+  return null
+}
+const visibleAccounts = computed(() => coaAccounts.filter((a) => groupOf(a.code) !== null))
+const groups = computed(() => {
+  const g: Record<string, CoaAccount[]> = {}
+  for (const a of visibleAccounts.value) (g[groupOf(a.code)!] ??= []).push(a)
+  return GROUP_ORDER.filter((k) => g[k]?.length).map((k) => ({ name: k, accounts: g[k]! }))
+})
+
+// ── Balance ─────────────────────────────────────────────────────────────────
+const totalDebit = computed(() => visibleAccounts.value.reduce((s, a) => s + debitOf(a.code), 0))
+const totalCredit = computed(() => visibleAccounts.value.reduce((s, a) => s + creditOf(a.code), 0))
+const difference = computed(() => totalDebit.value - totalCredit.value)
+const isBalanced = computed(() => difference.value === 0 && totalDebit.value > 0)
+
+// ── Stepper / nav ───────────────────────────────────────────────────────────
+const doneSteps = computed(() => CUTOVER_STEPS.filter((s) => isCutoverStepComplete(s.key)).map((s) => s.key))
+function goStep(step: CutoverStep) { router.push(`/data-migration/wms-cutover/${step}`) }
+function goBack() { router.push('/data-migration/wms-cutover/products') }
+function cancel() { router.push('/data-migration') }
+function saveDraft() {
+  toast.notify({ variant: 'success', title: t('Saved as draft'), maxWidth: 'max-content' })
+  router.push('/data-migration')
+}
+
+function publish() {
+  if (!isBalanced.value) {
+    toast.notify({ variant: 'danger', title: t('Total debit and credit must be equal'), maxWidth: 'max-content' })
+    return
+  }
+  cutoverState.published = true
+  toast.notify({ variant: 'success', title: t('Opening balance published'), maxWidth: 'max-content' })
   router.push('/data-migration')
 }
 </script>
@@ -70,7 +119,7 @@ function goToJurnalOpeningBalance() {
     <div class="ob-titlebar">
       <div class="ob-titlebar-left">
         <MpTextlink id="ob-breadcrumb" as="a" class="ob-breadcrumb" @click.prevent="goBack">{{ t('Set up WMS products') }}</MpTextlink>
-        <h1 class="ob-title">{{ t('Opening balance') }}</h1>
+        <h1 class="ob-title">{{ t('Set opening balance') }}</h1>
       </div>
     </div>
 
@@ -78,138 +127,117 @@ function goToJurnalOpeningBalance() {
     <div class="ob-stage">
       <div class="ob-wrapper">
 
-        <!-- The 100% gate has not been met — say so instead of showing a half-total -->
-        <template v-if="!isGateOpen">
-          <MpBanner id="ob-gate" variant="warning">
-            <MpBannerIcon id="ob-gate-icon" />
-            <MpBannerDescription id="ob-gate-desc">
-              {{ setUpCount }} {{ t('of') }} {{ CUTOVER_TOTAL_PRODUCTS }} {{ t('products set up') }}.
-              {{ t('The opening balance is only computed once every product has an inventory account and an inventory value.') }}
-            </MpBannerDescription>
-          </MpBanner>
-          <div class="ob-actions">
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="goBack">
-              {{ t('Back to product setup') }}
-            </button>
-          </div>
-        </template>
+        <ErpStepper :steps="CUTOVER_STEPS" current="opening-balance" :done="doneSteps" @select="goStep" />
 
-        <template v-else>
-          <dl class="ob-meta">
-            <div class="ob-meta-item">
-              <dt class="ob-meta-label">{{ t('Conversion date') }}</dt>
-              <dd class="ob-meta-value">{{ conversionDate }}</dd>
-              <dd class="ob-meta-hint">{{ t('First day of recording in ERP') }}</dd>
-            </div>
-            <div class="ob-meta-item">
-              <dt class="ob-meta-label">{{ t('Opening balance as per') }}</dt>
-              <dd class="ob-meta-value">{{ balanceDate }}</dd>
-              <dd class="ob-meta-hint">{{ t('Day before the conversion date') }}</dd>
-            </div>
-            <div class="ob-meta-item">
-              <dt class="ob-meta-label">{{ t('Products included') }}</dt>
-              <dd class="ob-meta-value">{{ CUTOVER_TOTAL_PRODUCTS }}</dd>
-            </div>
-          </dl>
+        <!-- Conversion date (editable) -->
+        <div class="ob-field">
+          <label class="ob-field-label" for="ob-conv-date">{{ t('Conversion date') }}</label>
+          <MpDatePicker
+            id="ob-conv-date"
+            v-model="convDate"
+            format="DD/MM/YYYY"
+            value-type="format"
+            is-full-width
+            use-portal
+          />
+          <span class="ob-field-hint">{{ t('First day of recording in ERP') }}</span>
+        </div>
 
-          <p class="ob-note">
-            {{ t('Each line is the sum of Inventory Value across every product routed to that account. WMS supplies quantity and movements; the monetary value comes from your product setup.') }}
-          </p>
+        <p class="ob-note">
+          {{ t('Enter the opening debit and credit for every account. Inventory accounts are synced from your product setup and locked. Total debit must equal total credit to publish.') }}
+        </p>
 
-          <!-- Computed inventory lines — system-populated, not editable (FR7) -->
-          <div class="ob-table-wrap">
-            <table class="ob-table">
-              <thead>
-                <tr>
-                  <th class="ob-th">{{ t('Inventory account') }}</th>
-                  <th class="ob-th ob-th--num">{{ t('Debit') }}</th>
-                  <th class="ob-th ob-th--num">{{ t('Credit') }}</th>
+        <!-- Out-of-balance hint (above the table so it never bleeds below the sticky total) -->
+        <p v-if="!isBalanced && totalDebit > 0" class="ob-imbalance">
+          <MpIcon name="warning-triangle" size="sm" color="icon.warning" />
+          {{ t('Out of balance by') }} {{ fmtIDR(Math.abs(difference)) }}
+        </p>
+
+        <!-- ── Trial balance table ── -->
+        <div class="ob-table-wrap">
+          <table class="ob-table">
+            <colgroup>
+              <col>
+              <col class="ob-col--amount">
+              <col class="ob-col--amount">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="ob-th">{{ t('Account') }}</th>
+                <th class="ob-th ob-th--num">{{ t('Debit') }}</th>
+                <th class="ob-th ob-th--num">{{ t('Credit') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="group in groups" :key="group.name">
+                <tr class="ob-group-row">
+                  <td class="ob-td ob-td--group" colspan="3">{{ t(group.name) }}</td>
                 </tr>
-              </thead>
-              <tbody>
-                <tr v-for="line in lines" :key="line.accountCode">
+                <tr v-for="a in group.accounts" :key="a.code" :class="{ 'ob-tr--synced': isSynced(a.code) }">
                   <td class="ob-td">
-                    <div class="ob-acct">
-                      <span class="ob-acct-main">
-                        <span class="ob-acct-code">{{ line.accountCode }}</span>{{ line.accountName }}
-                      </span>
-                      <span class="ob-computed">
-                        <MpIcon name="info" size="sm" color="icon.subtle" />
-                        {{ t('Computed from product setup') }}
-                      </span>
+                    <span class="ob-acct-code">{{ a.code }}</span>{{ a.name }}
+                    <span v-if="isSynced(a.code)" class="ob-synced">{{ t('Synced') }}</span>
+                  </td>
+
+                  <!-- Debit -->
+                  <td class="ob-td ob-td--num" :class="{ 'ob-td--locked': isSynced(a.code), 'ob-td--input': !isSynced(a.code) }">
+                    <span v-if="isSynced(a.code)">{{ fmtIDR(debitOf(a.code)) }}</span>
+                    <div v-else class="ob-money">
+                      <span class="ob-money-rp">Rp</span>
+                      <input
+                        :value="fmtAmount(entries[a.code].debit)"
+                        class="ob-cell-input"
+                        type="text"
+                        inputmode="numeric"
+                        placeholder="0"
+                        :aria-label="`${t('Debit')} — ${a.name}`"
+                        @input="entries[a.code].debit = parseAmount(($event.target as HTMLInputElement).value)"
+                      >
                     </div>
                   </td>
-                  <td class="ob-td ob-td--num">{{ fmtIDR(line.debit) }}</td>
-                  <td class="ob-td ob-td--num">{{ fmtIDR(0) }}</td>
-                </tr>
 
-                <!-- The balancing plug the existing saldo awal flow already uses (FR6) -->
-                <tr class="ob-tr--plug">
-                  <td class="ob-td">
-                    <span class="ob-acct-code">{{ EKUITAS_SALDO_AWAL.code }}</span>{{ EKUITAS_SALDO_AWAL.name }}
+                  <!-- Credit -->
+                  <td class="ob-td ob-td--num" :class="{ 'ob-td--locked': isSynced(a.code), 'ob-td--input': !isSynced(a.code) }">
+                    <span v-if="isSynced(a.code)">{{ fmtIDR(0) }}</span>
+                    <div v-else class="ob-money">
+                      <span class="ob-money-rp">Rp</span>
+                      <input
+                        :value="fmtAmount(entries[a.code].credit)"
+                        class="ob-cell-input"
+                        type="text"
+                        inputmode="numeric"
+                        placeholder="0"
+                        :aria-label="`${t('Credit')} — ${a.name}`"
+                        @input="entries[a.code].credit = parseAmount(($event.target as HTMLInputElement).value)"
+                      >
+                    </div>
                   </td>
-                  <td class="ob-td ob-td--num">{{ fmtIDR(0) }}</td>
-                  <td class="ob-td ob-td--num">{{ fmtIDR(total) }}</td>
                 </tr>
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td class="ob-td ob-td--total">{{ t('Total') }}</td>
-                  <td class="ob-td ob-td--num ob-td--total">{{ fmtIDR(total) }}</td>
-                  <td class="ob-td ob-td--num ob-td--total">{{ fmtIDR(total) }}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          <MpBanner id="ob-locked" variant="info" is-inline>
-            <MpBannerIcon id="ob-locked-icon" />
-            <MpBannerDescription id="ob-locked-desc">
-              {{ t('These inventory lines carry into the opening balance as system-populated and locked. Every other account is still filled in manually there, exactly as today.') }}
-            </MpBannerDescription>
-          </MpBanner>
-
-          <!-- OQ10 / Risk PR2 resolution — the cutover seeds ERP's existing
-               averageCost so inventory value stops being a remembered number -->
-          <section class="ob-costbasis">
-            <h2 class="ob-costbasis-title">{{ t('Cost basis') }}</h2>
-            <p class="ob-costbasis-desc">
-              {{ t('Publishing also sets each product\'s average cost to its Inventory Value divided by on-hand quantity. From then on inventory value is derived as quantity × average cost, so WMS movements keep it current without anyone re-entering a total.') }}
-            </p>
-            <ul class="ob-costbasis-list">
-              <li v-for="seed in seeded" :key="seed.sku" class="ob-costbasis-row">
-                <span class="ob-costbasis-name">{{ seed.name }}</span>
-                <span class="ob-costbasis-calc">
-                  {{ fmtIDR(seed.inventoryValue) }} ÷ {{ seed.onHandQty }}
-                  <MpIcon name="arrows-right" size="sm" color="icon.subtle" />
-                  <strong>{{ fmtUnitCost(seed.averageCost) }}</strong>
-                </span>
-              </li>
-            </ul>
-            <p v-if="!seeded.length" class="ob-costbasis-desc">
-              {{ t('No individually set-up products in this batch.') }}
-            </p>
-          </section>
-
-          <MpBanner id="ob-blocked-import" variant="info" is-inline>
-            <MpBannerIcon id="ob-blocked-import-icon" />
-            <MpBannerDescription id="ob-blocked-import-desc">
-              {{ t('The manual product-import path for opening inventory quantities is blocked while WMS is connected — inventory value comes from product setup instead.') }}
-            </MpBannerDescription>
-          </MpBanner>
-
-          <div class="ob-actions">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
-              {{ t('Back') }}
-            </button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="goToJurnalOpeningBalance">
-              {{ t('Continue') }}
-            </button>
-          </div>
-        </template>
-
+              </template>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td class="ob-td ob-td--total">{{ t('Total') }}</td>
+                <td class="ob-td ob-td--num ob-td--total" :class="{ 'ob-td--balanced': isBalanced }">{{ fmtIDR(totalDebit) }}</td>
+                <td class="ob-td ob-td--num ob-td--total" :class="{ 'ob-td--balanced': isBalanced }">{{ fmtIDR(totalCredit) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
+
+    <!-- ── Sticky footer ── -->
+    <footer class="ob-footer">
+      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
+        {{ t('Back') }}
+      </button>
+      <div class="ob-footer-actions">
+        <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">{{ t('Cancel') }}</button>
+        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
+        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="publish">{{ t('Publish opening balance') }}</button>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -230,7 +258,6 @@ function goToJurnalOpeningBalance() {
   align-items: center;
   padding: 0 var(--mp-spacing-6);
 }
-
 .ob-titlebar-left {
   display: flex;
   flex-direction: column;
@@ -238,7 +265,6 @@ function goToJurnalOpeningBalance() {
   justify-content: center;
   gap: 0;
 }
-
 .ob-breadcrumb {
   align-self: flex-start;
   background: none;
@@ -253,7 +279,6 @@ function goToJurnalOpeningBalance() {
   white-space: nowrap;
 }
 .ob-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
-
 .ob-title {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl);
@@ -264,51 +289,44 @@ function goToJurnalOpeningBalance() {
 }
 
 /* ── Stage ── */
+/* Stage is a non-scrolling flex column; the TABLE inside gets the leftover
+   height and scrolls internally, so its header pins to the table top and its
+   Total pins to the table bottom. */
 .ob-stage {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--mp-background-stage);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-  overflow-y: auto;
-  padding: var(--mp-spacing-6) var(--mp-spacing-6) 80px;
+  overflow: hidden;
+  padding: var(--mp-spacing-6);
 }
-
 .ob-wrapper {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
   max-width: 920px;
 }
+/* Everything except the table keeps its natural height; the table grows/scrolls. */
+.ob-wrapper > :not(.ob-table-wrap) { flex-shrink: 0; }
 
-/* ── Meta ── */
-.ob-meta {
-  display: flex;
-  gap: var(--mp-spacing-8);
-  margin: 0;
-}
-
-.ob-meta-item {
+/* ── Conversion date field ── */
+.ob-field {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-1);
+  max-width: 240px;
 }
-
-.ob-meta-label {
+.ob-field-label {
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
-  color: var(--mp-text-secondary);
-}
-
-.ob-meta-value {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
   color: var(--mp-text-default);
-  font-variant-numeric: tabular-nums;
 }
-
-.ob-meta-hint {
-  margin: 0;
+.ob-field-hint {
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
   color: var(--mp-text-secondary);
@@ -316,24 +334,33 @@ function goToJurnalOpeningBalance() {
 
 .ob-note {
   margin: 0;
+  max-width: 760px;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
 }
 
-/* ── Computed lines table (read-only) ── */
+/* ── Trial-balance table ── */
+/* Fills the remaining height and scrolls internally; overflow clips to the
+   rounded corners, and the sticky header/group/total pin against THIS box. */
 .ob-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--mp-border-default);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
 }
-
 .ob-table {
   width: 100%;
   border-collapse: collapse;
 }
+.ob-col--amount { width: 220px; }
 
 .ob-th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   height: var(--mp-sizes-10, 40px);
   padding: 0 var(--mp-spacing-4);
   text-align: left;
@@ -344,13 +371,15 @@ function goToJurnalOpeningBalance() {
   font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-sm);
   color: var(--mp-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--mp-letter-spacings-wide, 0.4px);
   white-space: nowrap;
 }
-.ob-th--num { text-align: right; width: 200px; }
+.ob-th--num { text-align: right; }
 
 .ob-td {
-  height: var(--mp-sizes-14, 56px);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  height: var(--mp-sizes-12, 48px);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral);
   font-size: var(--mp-font-sizes-md);
@@ -358,20 +387,23 @@ function goToJurnalOpeningBalance() {
   color: var(--mp-text-default);
   vertical-align: middle;
 }
-.ob-td--num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
+.ob-td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.ob-td--input { padding: 0; }
+.ob-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ob-td--locked { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 
-/* System-populated rows read as locked, not editable (FR7) */
-.ob-table tbody .ob-td { background: var(--mp-background-neutral-subtle); }
-
-.ob-acct {
-  /* 2px is off the 4px token scale — named here rather than left as a magic number. */
-  --ob-stack-gap: 2px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ob-stack-gap);
+/* Group divider row — sticks just below the header so the current category
+   stays visible while scrolling its accounts. */
+.ob-td--group {
+  position: sticky;
+  top: var(--mp-sizes-10, 40px);
+  z-index: 2;
+  height: var(--mp-sizes-9, 36px);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  box-shadow: inset 0 -1px 0 var(--mp-border-default);
 }
 
 .ob-acct-code {
@@ -379,92 +411,78 @@ function goToJurnalOpeningBalance() {
   margin-right: var(--mp-spacing-2);
   font-variant-numeric: tabular-nums;
 }
-
-.ob-computed {
+.ob-synced {
   display: inline-flex;
   align-items: center;
-  gap: var(--mp-spacing-1);
+  margin-left: var(--mp-spacing-2);
+  padding: 2px var(--mp-spacing-2);
+  border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-positive, #2fa36b);
+  background: var(--mp-background-positive-subtle, #e8f5eb);
 }
 
-.ob-tr--plug .ob-td { border-top: 1px solid var(--mp-border-default); }
+/* Editable money cell — Rp prefix left, amount right */
+.ob-money {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  height: var(--mp-sizes-12, 48px);
+  padding: 0 var(--mp-spacing-4);
+}
+.ob-money-rp { flex-shrink: 0; color: var(--mp-text-secondary); }
+.ob-cell-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ob-cell-input::placeholder { color: var(--mp-text-placeholder); }
 
+/* Totals — sticky to the bottom of the scroll area. */
 .ob-table tfoot .ob-td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   border-bottom: none;
   border-top: 1px solid var(--mp-border-bold);
   background: var(--mp-background-neutral);
-}
-.ob-td--total { font-weight: var(--mp-font-weights-semi-bold); }
-
-/* ── Cost basis ──
-   A form/content section, so it uses a divider + sub-heading rather than a
-   boxed card (mekari-taste principle 4: "Form sections use dividers and
-   sub-headings — not boxed containers"). */
-.ob-costbasis {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-3);
-  padding-top: var(--mp-spacing-5);
-  border-top: 1px solid var(--mp-border-default);
-}
-
-.ob-costbasis-title {
-  margin: 0;
-  font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg);
-  color: var(--mp-text-default);
 }
+.ob-td--balanced { color: var(--mp-text-positive, #2fa36b); }
 
-.ob-costbasis-desc {
+.ob-imbalance {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
   margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-warning, #a14a0b);
 }
 
-.ob-costbasis-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-}
-
-.ob-costbasis-row {
+/* ── Sticky footer ── */
+.ob-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-2) 0;
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
-  font-size: var(--mp-font-sizes-md);
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage);
+  border-top: 1px solid var(--mp-border-default);
 }
-.ob-costbasis-row:last-child { border-bottom: none; }
-
-.ob-costbasis-name { color: var(--mp-text-default); }
-
-.ob-costbasis-calc {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  color: var(--mp-text-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.ob-costbasis-calc strong {
-  color: var(--mp-text-default);
-  font-weight: var(--mp-font-weights-semi-bold);
-}
-
-/* ── Actions ── */
-.ob-actions {
+.ob-footer-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: var(--mp-spacing-3);
-  padding-top: var(--mp-spacing-2);
 }
 </style>

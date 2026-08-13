@@ -22,7 +22,7 @@
  * Sell/Buy fields are disabled (not wiped) on toggle-off and cleared at save
  * — FR2.6 as amended, so a stray click can't destroy three filled fields.
  */
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpIcon, MpProgress, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription,
@@ -31,11 +31,13 @@ import {
   MpButton, MpButtonGroup, MpSpinner, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import {
   CUTOVER_TOTAL_PRODUCTS, cutoverProducts, cutoverState,
   inventoryAccounts, revenueAccounts, cogsAccounts, taxOptions,
-  accountLabel, isCutoverProductComplete, missingCutoverFields, costBasisFor,
-  type CutoverProduct, type CoaAccount,
+  accountLabel, isCutoverProductComplete, missingCutoverFields,
+  CUTOVER_STEPS, isCutoverStepComplete, coaSourceState, cutoverSetUpCount, applyBulkImport,
+  type CutoverProduct, type CoaAccount, type CutoverStep,
 } from '~/data/wmsCutover'
 
 const { t } = useLocale()
@@ -50,22 +52,13 @@ function parseAmount(raw: string): number | null {
   const digits = raw.replace(/\D/g, '')
   return digits === '' ? null : Number(digits)
 }
-/** Derived unit cost keeps 2dp — it is a division, unlike the entered totals. */
-const unitCostFmt = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-function fmtUnitCost(n: number): string {
-  return `Rp${unitCostFmt.format(n)}`
-}
-
 function labelFor(list: CoaAccount[], code: string): string {
   const found = list.find((a) => a.code === code)
   return found ? accountLabel(found) : ''
 }
 
 // ── Progress ────────────────────────────────────────────────────────────────
-const individuallyDone = computed(() => cutoverProducts.filter(isCutoverProductComplete).length)
-const setUpCount = computed(() =>
-  Math.min(CUTOVER_TOTAL_PRODUCTS, cutoverState.importedCount + individuallyDone.value),
-)
+const setUpCount = computed(() => cutoverSetUpCount())
 const remaining = computed(() => CUTOVER_TOTAL_PRODUCTS - setUpCount.value)
 const percent = computed(() => Math.round((setUpCount.value / CUTOVER_TOTAL_PRODUCTS) * 100))
 const isAllSetUp = computed(() => setUpCount.value >= CUTOVER_TOTAL_PRODUCTS)
@@ -89,6 +82,30 @@ const visibleProducts = computed(() => {
     return true
   })
 })
+
+// ── Progressive paging — the catalogue can run to thousands of rows, so render
+// in chunks and grow as a sentinel row scrolls into view (mirrors the serial
+// drawers' infinite scroll). Reset whenever the filter/search set changes.
+const PAGE = 40
+const shown = ref(PAGE)
+const pagedProducts = computed(() => visibleProducts.value.slice(0, shown.value))
+const hasMore = computed(() => shown.value < visibleProducts.value.length)
+function loadMore() {
+  if (hasMore.value) shown.value = Math.min(shown.value + PAGE, visibleProducts.value.length)
+}
+watch([search, statusFilter], () => { shown.value = PAGE })
+
+const sentinelEl = ref<HTMLElement | null>(null)
+let scrollObserver: IntersectionObserver | null = null
+function setupObserver() {
+  scrollObserver?.disconnect()
+  if (!sentinelEl.value) return
+  scrollObserver = new IntersectionObserver(
+    (entries) => { if (entries[0]!.isIntersecting) loadMore() },
+    { rootMargin: '0px 0px 240px 0px' },
+  )
+  scrollObserver.observe(sentinelEl.value)
+}
 
 // ── Row selection + bulk assign ─────────────────────────────────────────────
 const selectedIds = ref<string[]>([])
@@ -163,7 +180,29 @@ function hasError(p: CutoverProduct, field: string): boolean {
   return showErrors.value && missingCutoverFields(p).includes(field)
 }
 
-function goBack() {
+// ── Stepper ─────────────────────────────────────────────────────────────────
+const doneSteps = computed(() => CUTOVER_STEPS.filter((s) => isCutoverStepComplete(s.key)).map((s) => s.key))
+function goStep(step: CutoverStep) {
+  router.push(`/data-migration/wms-cutover/${step}`)
+}
+
+// Step 2 needs a chart of accounts in place — bounce back to Step 1 if skipped.
+onMounted(() => {
+  if (!coaSourceState.source) {
+    router.replace('/data-migration/wms-cutover/chart-of-accounts')
+    return
+  }
+  nextTick(setupObserver)
+})
+
+function cancel() {
+  router.push('/data-migration')
+}
+function goBackStep() {
+  router.push('/data-migration/wms-cutover/chart-of-accounts')
+}
+function saveDraft() {
+  toast.notify({ variant: 'success', title: t('Saved as draft'), maxWidth: 'max-content' })
   router.push('/data-migration')
 }
 
@@ -249,10 +288,10 @@ function runImport() {
   }
   importPhase.value = 'importing'
   importTimer = setTimeout(() => {
-    // The rows already listed in the table are the ones the import can't resolve.
-    skippedNow.value = cutoverProducts.length
-    importedNow.value = CUTOVER_TOTAL_PRODUCTS - skippedNow.value
-    cutoverState.importedCount = importedNow.value
+    // Fills the resolvable bulk; the flagged rows stay for the user to fix.
+    const { imported, skipped } = applyBulkImport()
+    importedNow.value = imported
+    skippedNow.value = skipped
     importPhase.value = 'done'
   }, 1200)
 }
@@ -273,8 +312,16 @@ watch(isImportOpen, (open, wasOpen) => {
   }
 })
 
-onUnmounted(() => clearTimeout(importTimer))
-onMounted(() => { showErrors.value = false })
+// Esc clears the current selection (matches the "Press Esc to deselect" hint).
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedIds.value.length) selectedIds.value = []
+}
+onMounted(() => { showErrors.value = false; window.addEventListener('keydown', onKeydown) })
+onUnmounted(() => {
+  clearTimeout(importTimer)
+  scrollObserver?.disconnect()
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
@@ -283,7 +330,7 @@ onMounted(() => { showErrors.value = false })
     <!-- ── Title bar — 72px, neutral-subtle, breadcrumb above H1 ── -->
     <div class="cut-titlebar">
       <div class="cut-titlebar-left">
-        <MpTextlink id="cut-breadcrumb" as="a" class="cut-breadcrumb" @click.prevent="goBack">{{ t('Data migration') }}</MpTextlink>
+        <MpTextlink id="cut-breadcrumb" as="a" class="cut-breadcrumb" @click.prevent="cancel">{{ t('Data migration') }}</MpTextlink>
         <h1 class="cut-title">{{ t('Set up WMS products') }}</h1>
       </div>
     </div>
@@ -292,19 +339,21 @@ onMounted(() => { showErrors.value = false })
     <div class="cut-stage">
       <div class="cut-wrapper">
 
+        <ErpStepper :steps="CUTOVER_STEPS" current="products" :done="doneSteps" @select="goStep" />
+
         <!-- Intro, chunked instead of one long paragraph -->
         <div class="cut-intro">
           <p class="cut-intro-lead">
             {{ t('Every WMS product needs a chart-of-accounts route before its inventory can post to the ledger.') }}
           </p>
           <ul class="cut-intro-list">
-            <li>{{ t('Import the bulk of your products with the provided template.') }}</li>
-            <li>{{ t('Set up the products the import could not resolve in the table below.') }}</li>
-            <li>{{ t('Inventory value is entered here because WMS tracks quantity on hand, not monetary value.') }}</li>
+            <li>{{ t('Download the products CSV — it lists every WMS SKU, ready to map.') }}</li>
+            <li>{{ t('Map each SKU to its accounts in a spreadsheet, then upload the file back.') }}</li>
+            <li>{{ t('Fix anything the upload could not resolve in the table below.') }}</li>
           </ul>
         </div>
 
-        <!-- Progress + import -->
+        <!-- Progress -->
         <section class="cut-progress-card">
           <div class="cut-progress-main">
             <!-- Coverage indicator string is specified verbatim in Story 1 AC -->
@@ -318,98 +367,73 @@ onMounted(() => { showErrors.value = false })
               {{ isAllSetUp ? t('All products set up.') : `${remaining} ${t('products remaining')}` }}
             </p>
           </div>
-          <div class="cut-progress-action">
-            <button
-              type="button"
-              class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
-              @click="openImport"
-            >
-              <MpIcon name="upload" size="sm" />
-              {{ t('Import') }}
-            </button>
-          </div>
         </section>
 
-        <!-- Filters -->
+        <MpBanner id="cut-rule-banner" variant="info" is-inline>
+          <MpBannerIcon id="cut-rule-banner-icon" />
+          <MpBannerDescription id="cut-rule-banner-desc">
+            {{ t('Every product must be set up — here or through an import — before the opening balance can be published. There is no default account and no partial publish.') }}
+          </MpBannerDescription>
+        </MpBanner>
+
+        <!-- Filters — status on the left, search pill on the right (index-page layout) -->
         <div class="cut-filters">
-          <div class="cut-search">
-            <MpIcon name="search" size="sm" color="icon.subtle" />
-            <input
-              v-model="search"
-              class="cut-search-input"
-              type="text"
-              :placeholder="t('Search product or SKU')"
-              :aria-label="t('Search product or SKU')"
+          <div class="cut-filter-left">
+            <MpPopover id="cut-status-filter" is-close-on-select>
+              <MpPopoverTrigger>
+                <button type="button" class="cut-filter-trigger" :class="{ 'cut-filter-trigger--set': !!statusFilter }">
+                  <span class="cut-filter-label">{{ statusFilter ? statusLabel : t('Status') }}</span>
+                  <MpIcon name="chevrons-down" size="sm" />
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                <MpPopoverList>
+                  <MpPopoverListItem
+                    v-for="opt in statusOptions"
+                    :key="opt.value"
+                    :is-active="opt.value === statusFilter"
+                    @click="statusFilter = opt.value"
+                  >
+                    {{ opt.label }}
+                  </MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+
+            <button
+              v-if="statusFilter || search"
+              type="button"
+              class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+              @click="statusFilter = ''; search = ''"
             >
+              {{ t('Reset filter') }}
+            </button>
           </div>
 
-          <MpPopover id="cut-status-filter" is-close-on-select>
-            <MpPopoverTrigger>
-              <button type="button" class="cut-filter-trigger" :class="{ 'cut-filter-trigger--set': !!statusFilter }">
-                <span class="cut-filter-label">{{ statusFilter ? statusLabel : t('Status') }}</span>
-                <MpIcon name="chevrons-down" size="sm" />
+          <div class="cut-filter-right">
+            <div class="cut-filter-search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input
+                v-model="search"
+                class="cut-filter-search-input"
+                type="text"
+                :placeholder="`${t('Search')}...`"
+                :aria-label="t('Search product or SKU')"
+              >
+              <button v-if="search" class="cut-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
               </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-              <MpPopoverList>
-                <MpPopoverListItem
-                  v-for="opt in statusOptions"
-                  :key="opt.value"
-                  :is-active="opt.value === statusFilter"
-                  @click="statusFilter = opt.value"
-                >
-                  {{ opt.label }}
-                </MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
+            </div>
 
-          <button
-            v-if="statusFilter || search"
-            type="button"
-            class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
-            @click="statusFilter = ''; search = ''"
-          >
-            {{ t('Reset filter') }}
-          </button>
+            <MpButton variant="tertiary" is-rounded @click="openImport">{{ t('Import') }}</MpButton>
+          </div>
         </div>
 
         <!-- Bulk action bar -->
-        <div v-if="selectedIds.length" class="cut-bulkbar">
-          <span class="cut-bulk-count">{{ selectedIds.length }} {{ t('selected') }}</span>
-
-          <MpPopover id="cut-bulk-account" is-close-on-select>
-            <MpPopoverTrigger>
-              <button type="button" class="cut-filter-trigger cut-filter-trigger--wide" :class="{ 'cut-filter-trigger--set': !!bulkAccount }">
-                <span class="cut-filter-label">
-                  {{ bulkAccount ? labelFor(inventoryAccounts, bulkAccount) : t('Select inventory account') }}
-                </span>
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content', maxWidth: '360px' })">
-              <MpPopoverList>
-                <MpPopoverListItem
-                  v-for="a in inventoryAccounts"
-                  :key="a.code"
-                  :is-active="a.code === bulkAccount"
-                  @click="bulkAccount = a.code; bulkError = ''"
-                >
-                  {{ accountLabel(a) }}
-                </MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-
-          <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="applyBulkAccount">
-            {{ t('Apply') }}
-          </button>
-          <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="selectedIds = []; bulkError = ''">
-            {{ t('Clear') }}
-          </button>
-          <span v-if="bulkError" class="cut-bulk-error">{{ bulkError }}</span>
-        </div>
-
         <!-- Aggregate form error -->
         <p v-if="showErrors && formError" class="cut-form-error">{{ formError }}</p>
 
@@ -420,8 +444,6 @@ onMounted(() => { showErrors.value = false })
               <col class="cut-col--product">
               <col class="cut-col--account">
               <col class="cut-col--value">
-              <col class="cut-col--qty">
-              <col class="cut-col--cost">
               <col class="cut-col--flag">
               <col class="cut-col--price">
               <col class="cut-col--account-wide">
@@ -433,47 +455,100 @@ onMounted(() => { showErrors.value = false })
               <col class="cut-col--status">
             </colgroup>
             <thead>
-              <!-- Grouped header — a flat column run is more than a user can hold -->
-              <tr>
-                <th class="cut-th cut-th--group" />
-                <th class="cut-th cut-th--group" colspan="4">{{ t('Inventory') }}</th>
-                <th class="cut-th cut-th--group" colspan="4">{{ t('Sales') }}</th>
-                <th class="cut-th cut-th--group" colspan="4">{{ t('Purchase') }}</th>
-                <th class="cut-th cut-th--group" />
-              </tr>
-              <tr>
-                <!-- Selection merges into the first data column — no standalone
-                     checkbox column (mekari-taste → index-view.md). -->
-                <th class="cut-th">
-                  <span class="cut-th-select">
-                    <MpCheckbox
-                      id="cut-select-all"
-                      :is-checked="allVisibleSelected"
-                      :is-indeterminate="someVisibleSelected"
-                      :aria-label="t('Select all products')"
-                      @change="toggleSelectAll"
-                    />
-                    {{ t('Product') }}
-                  </span>
+              <!-- Bulk-action bar — replaces the column headers while rows are
+                   selected (mirrors ErpTablePage's in-header bulk bar). -->
+              <tr v-if="selectedIds.length" class="cut-tr-bulk">
+                <th :colspan="12" class="cut-th cut-th--bulk">
+                  <div class="cut-bulk-bar">
+                    <div class="cut-bulk-bar__left">
+                      <MpCheckbox
+                        id="cut-select-all"
+                        :is-checked="allVisibleSelected"
+                        :is-indeterminate="someVisibleSelected"
+                        :aria-label="t('Select all products')"
+                        @change="toggleSelectAll"
+                        @click.stop
+                      />
+                      <span class="cut-bulk-count">{{ selectedIds.length }} {{ t('selected') }}</span>
+
+                      <MpPopover id="cut-bulk-account" is-close-on-select>
+                        <MpPopoverTrigger>
+                          <button type="button" class="cut-filter-trigger cut-filter-trigger--wide" :class="{ 'cut-filter-trigger--set': !!bulkAccount }">
+                            <span class="cut-filter-label">
+                              {{ bulkAccount ? labelFor(inventoryAccounts, bulkAccount) : t('Select inventory account') }}
+                            </span>
+                            <MpIcon name="chevrons-down" size="sm" />
+                          </button>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content', maxWidth: '360px' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="a in inventoryAccounts"
+                              :key="a.code"
+                              :is-active="a.code === bulkAccount"
+                              @click="bulkAccount = a.code; bulkError = ''"
+                            >
+                              {{ accountLabel(a) }}
+                            </MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+
+                      <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="applyBulkAccount">
+                        {{ t('Apply') }}
+                      </button>
+                      <span v-if="bulkError" class="cut-bulk-error">{{ bulkError }}</span>
+                    </div>
+                    <div class="cut-bulk-bar__right">
+                      <span>{{ t('Press') }}</span>
+                      <kbd class="cut-bulk-kbd">Esc</kbd>
+                      <span>{{ t('to deselect') }}</span>
+                    </div>
+                  </div>
                 </th>
-                <th class="cut-th">{{ t('Inventory account') }} <span class="cut-req">*</span></th>
-                <th class="cut-th cut-th--num">{{ t('Inventory value') }} <span class="cut-req">*</span></th>
-                <th class="cut-th cut-th--num">{{ t('On-hand qty') }}</th>
-                <th class="cut-th cut-th--num">{{ t('Unit cost') }}</th>
-                <th class="cut-th cut-th--center">{{ t('Sell') }}</th>
-                <th class="cut-th cut-th--num">{{ t('Sell price') }}</th>
-                <th class="cut-th">{{ t('Revenue account') }}</th>
-                <th class="cut-th">{{ t('Sell tax') }}</th>
-                <th class="cut-th cut-th--center">{{ t('Buy') }}</th>
-                <th class="cut-th cut-th--num">{{ t('Buy price') }}</th>
-                <th class="cut-th">{{ t('COGS account') }}</th>
-                <th class="cut-th">{{ t('Buy tax') }}</th>
-                <th class="cut-th">{{ t('Status') }}</th>
               </tr>
+
+              <!-- Grouped header — a flat column run is more than a user can hold -->
+              <template v-else>
+                <tr>
+                  <th class="cut-th cut-th--group" />
+                  <th class="cut-th cut-th--group" colspan="2">{{ t('Inventory') }}</th>
+                  <th class="cut-th cut-th--group" colspan="4">{{ t('Sales') }}</th>
+                  <th class="cut-th cut-th--group" colspan="4">{{ t('Purchase') }}</th>
+                  <th class="cut-th cut-th--group" />
+                </tr>
+                <tr>
+                  <!-- Selection merges into the first data column — no standalone
+                       checkbox column (mekari-taste → index-view.md). -->
+                  <th class="cut-th cut-th--product">
+                    <span class="cut-th-select">
+                      <MpCheckbox
+                        id="cut-select-all-cols"
+                        :is-checked="allVisibleSelected"
+                        :is-indeterminate="someVisibleSelected"
+                        :aria-label="t('Select all products')"
+                        @change="toggleSelectAll"
+                      />
+                      {{ t('Product') }}
+                    </span>
+                  </th>
+                  <th class="cut-th">{{ t('Default inventory account') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th">{{ t('Inventory value') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th cut-th--center">{{ t('I sell this product') }}</th>
+                  <th class="cut-th">{{ t('Default sales price') }}</th>
+                  <th class="cut-th">{{ t('Default sales account') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th">{{ t('Default sales tax') }}</th>
+                  <th class="cut-th cut-th--center">{{ t('I buy this product') }}</th>
+                  <th class="cut-th">{{ t('Default purchase cost') }}</th>
+                  <th class="cut-th">{{ t('Default purchase account') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th">{{ t('Default purchase tax') }}</th>
+                  <th class="cut-th">{{ t('Status') }}</th>
+                </tr>
+              </template>
             </thead>
 
             <tbody>
-              <tr v-for="p in visibleProducts" :id="`cutover-row-${p.id}`" :key="p.id">
+              <tr v-for="p in pagedProducts" :id="`cutover-row-${p.id}`" :key="p.id">
                 <!-- Product — selection lives here, plus why it needs attention -->
                 <td class="cut-td cut-td--text">
                   <div class="cut-product-row">
@@ -483,10 +558,19 @@ onMounted(() => { showErrors.value = false })
                       :aria-label="`${t('Select')} ${p.name}`"
                       @change="(checked: boolean) => toggleRow(p.id, checked)"
                     />
+                    <img
+                      v-if="p.img"
+                      class="cut-product-thumb"
+                      :src="p.img"
+                      :alt="p.name"
+                      loading="lazy"
+                      width="40"
+                      height="40"
+                    >
                     <div class="cut-product">
                       <span class="cut-product-name">{{ p.name }}</span>
                       <span class="cut-product-sku">{{ p.sku }}</span>
-                      <span v-if="!isCutoverProductComplete(p)" class="cut-product-reason">{{ t(p.reason) }}</span>
+                      <span v-if="!isCutoverProductComplete(p) && p.reason" class="cut-product-reason">{{ t(p.reason) }}</span>
                     </div>
                   </div>
                 </td>
@@ -519,23 +603,17 @@ onMounted(() => { showErrors.value = false })
 
                 <!-- Inventory value -->
                 <td class="cut-td cut-td--input" :class="{ 'cut-td--error': hasError(p, 'inventoryValue') }">
-                  <input
-                    :value="fmtAmount(p.inventoryValue)"
-                    class="cut-cell-input cut-cell-input--num"
-                    type="text"
-                    inputmode="numeric"
-                    :aria-label="`${t('Inventory value')} — ${p.name}`"
-                    @input="p.inventoryValue = parseAmount(($event.target as HTMLInputElement).value)"
-                  >
-                </td>
-
-                <!-- On-hand qty comes from WMS; unit cost is derived from it.
-                     Both read-only — this is the cost basis the cutover seeds
-                     into the product's averageCost (OQ10 resolution). -->
-                <td class="cut-td cut-td--num cut-td--readonly">{{ groupFmt.format(p.onHandQty) }}</td>
-                <td class="cut-td cut-td--num cut-td--readonly">
-                  <span v-if="costBasisFor(p) !== null">{{ fmtUnitCost(costBasisFor(p)!) }}</span>
-                  <span v-else class="cut-cell-placeholder">—</span>
+                  <div class="cut-money">
+                    <span class="cut-money-rp">Rp</span>
+                    <input
+                      :value="fmtAmount(p.inventoryValue)"
+                      class="cut-cell-input cut-cell-input--num"
+                      type="text"
+                      inputmode="numeric"
+                      :aria-label="`${t('Inventory value')} — ${p.name}`"
+                      @input="p.inventoryValue = parseAmount(($event.target as HTMLInputElement).value)"
+                    >
+                  </div>
                 </td>
 
                 <!-- Sell group -->
@@ -551,15 +629,18 @@ onMounted(() => { showErrors.value = false })
                   class="cut-td cut-td--input"
                   :class="{ 'cut-td--error': hasError(p, 'sellPrice'), 'cut-td--off': !p.isSold }"
                 >
-                  <input
-                    :value="fmtAmount(p.sellPrice)"
-                    class="cut-cell-input cut-cell-input--num"
-                    type="text"
-                    inputmode="numeric"
-                    :disabled="!p.isSold"
-                    :aria-label="`${t('Sell price')} — ${p.name}`"
-                    @input="p.sellPrice = parseAmount(($event.target as HTMLInputElement).value)"
-                  >
+                  <div class="cut-money">
+                    <span class="cut-money-rp">Rp</span>
+                    <input
+                      :value="fmtAmount(p.sellPrice)"
+                      class="cut-cell-input cut-cell-input--num"
+                      type="text"
+                      inputmode="numeric"
+                      :disabled="!p.isSold"
+                      :aria-label="`${t('Sell price')} — ${p.name}`"
+                      @input="p.sellPrice = parseAmount(($event.target as HTMLInputElement).value)"
+                    >
+                  </div>
                 </td>
                 <td
                   class="cut-td cut-td--select"
@@ -629,15 +710,18 @@ onMounted(() => { showErrors.value = false })
                   class="cut-td cut-td--input"
                   :class="{ 'cut-td--error': hasError(p, 'buyPrice'), 'cut-td--off': !p.isBought }"
                 >
-                  <input
-                    :value="fmtAmount(p.buyPrice)"
-                    class="cut-cell-input cut-cell-input--num"
-                    type="text"
-                    inputmode="numeric"
-                    :disabled="!p.isBought"
-                    :aria-label="`${t('Buy price')} — ${p.name}`"
-                    @input="p.buyPrice = parseAmount(($event.target as HTMLInputElement).value)"
-                  >
+                  <div class="cut-money">
+                    <span class="cut-money-rp">Rp</span>
+                    <input
+                      :value="fmtAmount(p.buyPrice)"
+                      class="cut-cell-input cut-cell-input--num"
+                      type="text"
+                      inputmode="numeric"
+                      :disabled="!p.isBought"
+                      :aria-label="`${t('Buy price')} — ${p.name}`"
+                      @input="p.buyPrice = parseAmount(($event.target as HTMLInputElement).value)"
+                    >
+                  </div>
                 </td>
                 <td
                   class="cut-td cut-td--select"
@@ -705,41 +789,47 @@ onMounted(() => { showErrors.value = false })
 
               <!-- Empty state (filter/search returned nothing) -->
               <tr v-if="!visibleProducts.length">
-                <td class="cut-td cut-td--empty" colspan="14">
+                <td class="cut-td cut-td--empty" colspan="12">
                   <p class="cut-empty-title">{{ t('Product not found') }}</p>
                   <p class="cut-empty-desc">
                     {{ t('Your filter criteria didn’t match any available product. Try adjusting your filter.') }}
                   </p>
                 </td>
               </tr>
+
+              <!-- Sentinel — scrolling it into view loads the next chunk -->
+              <tr v-if="hasMore" aria-hidden="true" class="cut-sentinel-row">
+                <td colspan="12"><div ref="sentinelEl" /></td>
+              </tr>
             </tbody>
           </table>
         </div>
-
-        <MpBanner id="cut-rule-banner" variant="info" is-inline>
-          <MpBannerIcon id="cut-rule-banner-icon" />
-          <MpBannerDescription id="cut-rule-banner-desc">
-            {{ t('Every product must be set up — here or through an import — before the opening balance can be published. There is no default account and no partial publish.') }}
-          </MpBannerDescription>
-        </MpBanner>
 
         <p class="cut-help">
           {{ t('Not sure how a product should be routed?') }}
           <a class="cut-help-link" href="#" @click.prevent>{{ t('Contact your activation specialist') }}</a>
         </p>
 
-        <!-- Action group — Continue is never disabled -->
-        <div class="cut-actions">
-          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
-            {{ t('Cancel') }}
-          </button>
-          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="submit">
-            {{ t('Continue') }}
-          </button>
-        </div>
-
       </div>
     </div>
+
+    <!-- ── Sticky footer — Continue is never disabled ── -->
+    <footer class="cut-footer">
+      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBackStep">
+        {{ t('Back') }}
+      </button>
+      <div class="cut-footer-actions">
+        <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">
+          {{ t('Cancel') }}
+        </button>
+        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">
+          {{ t('Save as draft') }}
+        </button>
+        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="submit">
+          {{ t('Continue') }}
+        </button>
+      </div>
+    </footer>
 
     <!-- ── Import modal ── -->
     <MpModal v-model="isImportOpen">
@@ -920,13 +1010,12 @@ onMounted(() => { showErrors.value = false })
 .cut-intro-list {
   margin: 0;
   padding-left: var(--mp-spacing-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-1);
+  list-style: disc;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
 }
+.cut-intro-list li + li { margin-top: var(--mp-spacing-1); }
 
 /* ── Summary strip — aggregate context above a table, which is the one
    card-like element mekari-taste principle 4 allows. Rendered as a strip with
@@ -985,24 +1074,34 @@ onMounted(() => { showErrors.value = false })
 .cut-filters {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--mp-spacing-3);
   flex-wrap: wrap;
 }
+.cut-filter-left {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+}
+.cut-filter-right {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+}
 
-.cut-search {
+/* Pill search — canonical index-page search box (ProductsPage .filter-search). */
+.cut-filter-search {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: var(--mp-sizes-65, 280px);
-  height: var(--mp-sizes-10, 40px);
-  padding: 0 var(--mp-spacing-3);
+  width: 248px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
+  border-radius: var(--mp-radii-full, 999px);
+  color: var(--mp-text-subtle);
 }
-.cut-search:focus-within { border-color: var(--mp-border-bold); }
-
-.cut-search-input {
+.cut-filter-search-input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -1010,8 +1109,25 @@ onMounted(() => { showErrors.value = false })
   background: transparent;
   font-family: inherit;
   font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
   color: var(--mp-text-default);
 }
+.cut-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.cut-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.cut-search-clear:hover { background: var(--mp-background-neutral-hovered); }
 
 .cut-filter-trigger {
   /* Trigger widths sit between the size tokens (180/280px) — named here. */
@@ -1041,21 +1157,53 @@ onMounted(() => { showErrors.value = false })
 }
 
 /* ── Bulk bar ── */
-.cut-bulkbar {
+/* ── Bulk-action bar in the table header (mirrors ErpTablePage) ── */
+.cut-tr-bulk .cut-th--bulk {
+  padding: 0 var(--mp-spacing-3);
+  height: var(--mp-sizes-12, 48px);
+  background: var(--mp-background-neutral-subtle);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--mp-font-weights-regular);
+}
+.cut-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-3);
+}
+.cut-bulk-bar__left {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
   flex-wrap: wrap;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
+}
+.cut-bulk-bar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  flex-shrink: 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
+}
+.cut-bulk-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--mp-spacing-1);
+  background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
+  border-radius: var(--mp-radii-sm, 4px);
+  font-family: inherit;
+  font-size: var(--mp-font-sizes-xs, 11px);
+  color: var(--mp-text-secondary);
 }
 
 .cut-bulk-count {
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
+  font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
+  white-space: nowrap;
 }
 
 .cut-bulk-error,
@@ -1071,9 +1219,18 @@ onMounted(() => { showErrors.value = false })
    (mekari-taste → index-view.md). border.bold reads as a heavy frame. */
 .cut-table-scroll {
   overflow-x: auto;
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
 }
+
+/* Progressive-paging sentinel — zero-height, invisible trigger row. */
+.cut-sentinel-row td {
+  padding: 0;
+  height: 0;
+  border: none;
+  background: transparent;
+}
+.cut-sentinel-row td > div { height: 1px; }
 
 .cut-table {
   width: 100%;
@@ -1090,7 +1247,7 @@ onMounted(() => { showErrors.value = false })
   --cut-col-value: 140px;
   --cut-col-qty: 110px;
   --cut-col-cost: 130px;
-  --cut-col-flag: 64px;
+  --cut-col-flag: 104px;
   --cut-col-price: 120px;
   --cut-col-account-wide: 200px;
   --cut-col-tax: 130px;
@@ -1115,7 +1272,7 @@ onMounted(() => { showErrors.value = false })
 
 .cut-th {
   height: var(--mp-sizes-10, 40px);
-  padding: 0 var(--mp-spacing-2);
+  padding: var(--mp-spacing-2);
   text-align: left;
   vertical-align: middle;
   background: var(--mp-background-neutral-subtle);
@@ -1125,14 +1282,22 @@ onMounted(() => { showErrors.value = false })
   font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-sm);
   color: var(--mp-text-secondary);
-  white-space: nowrap;
+  /* Long uppercase labels wrap within their column instead of overlapping. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-transform: uppercase;
+  letter-spacing: var(--mp-letter-spacings-wide, 0.4px);
 }
 .cut-th:last-child { border-right: none; }
 .cut-th--group {
   height: var(--mp-sizes-8, 32px);
   color: var(--mp-text-default);
-  text-transform: none;
+  text-align: center;
+  white-space: nowrap;
 }
+/* Match the product cell's left inset so the header checkbox lines up exactly
+   with the row checkboxes below it (both start at spacing-3). */
+.cut-th--product { padding-left: var(--mp-spacing-3); }
 .cut-th--num { text-align: right; }
 .cut-th--center { text-align: center; }
 .cut-th--check { padding-left: var(--mp-spacing-3); }
@@ -1154,9 +1319,11 @@ onMounted(() => { showErrors.value = false })
   vertical-align: middle;
 }
 
-.cut-td--text { padding: 10px var(--mp-spacing-3); }
+.cut-td--text { padding: 10px var(--mp-spacing-3); vertical-align: middle; }
 
-/* Selection merged into the first column (mekari-taste → index-view.md) */
+/* Selection merged into the first column (mekari-taste → index-view.md).
+   The checkbox is centred against the product block so it lines up with the
+   middle-aligned cells across the row. */
 .cut-th-select,
 .cut-product-row {
   display: flex;
@@ -1164,8 +1331,16 @@ onMounted(() => { showErrors.value = false })
   gap: var(--mp-spacing-3);
   min-width: 0;
 }
-.cut-product-row { align-items: flex-start; }
-.cut-product-row :deep(label) { margin-top: 2px; }
+/* Product thumbnail — mirrors the inventory table's ProductCell .pc-thumb. */
+.cut-product-thumb {
+  width: var(--mp-sizes-10, 40px);
+  height: var(--mp-sizes-10, 40px);
+  border-radius: var(--mp-radii-md);
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+}
 
 .cut-product {
   display: flex;
@@ -1197,6 +1372,7 @@ onMounted(() => { showErrors.value = false })
 .cut-td--select {
   padding: 0;
   position: relative;
+  vertical-align: middle;
 }
 .cut-td--input:focus-within::after,
 .cut-td--select:focus-within::after {
@@ -1224,6 +1400,27 @@ onMounted(() => { showErrors.value = false })
   font-variant-numeric: tabular-nums;
 }
 .cut-cell-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
+
+/* Money cell: fixed "Rp" prefix on the left, right-aligned amount fills the rest. */
+.cut-money {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-2);
+}
+.cut-money-rp {
+  flex-shrink: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+}
+.cut-money .cut-cell-input {
+  height: auto;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+}
+.cut-td--off .cut-money-rp { color: var(--mp-text-disabled); }
 
 .cut-cell-trigger {
   display: flex;
@@ -1291,8 +1488,9 @@ onMounted(() => { showErrors.value = false })
 /* ── Help + actions ── */
 .cut-help {
   margin: 0;
-  font-size: var(--mp-font-sizes-sm);
-  line-height: var(--mp-line-heights-sm);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-secondary);
 }
 .cut-help-link {
@@ -1301,12 +1499,21 @@ onMounted(() => { showErrors.value = false })
 }
 .cut-help-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.cut-actions {
+/* Sticky footer — flex sibling below the scrolling stage. */
+.cut-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--mp-spacing-3);
-  padding-top: var(--mp-spacing-2);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage);
+  border-top: 1px solid var(--mp-border-default);
+}
+.cut-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
 }
 
 /* ── Import modal ── */

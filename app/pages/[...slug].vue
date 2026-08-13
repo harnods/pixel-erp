@@ -152,6 +152,7 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
+const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
 const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendingSetupPage.vue'))
@@ -168,6 +169,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // Full-bleed form pages (own title bar + stage); the bare index falls through
   // to the registry's 'Data migration' landing.
   if (segs.length >= 3 && segs[0] === 'data-migration' && segs[1] === 'wms-cutover') {
+    if (segs[2] === 'chart-of-accounts') return { component: WmsCutoverChartOfAccountsPage, id: 'chart-of-accounts' }
     if (segs[2] === 'opening-balance') return { component: WmsCutoverOpeningBalancePage, id: 'opening-balance' }
     if (segs[2] === 'pending') return { component: WmsPendingSetupPage, id: 'pending' }
     return { component: WmsCutoverProductsPage, id: 'products' }
