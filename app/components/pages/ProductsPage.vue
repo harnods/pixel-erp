@@ -16,6 +16,10 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import DjpCodeCell from '~/components/patterns/DjpCodeCell.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDateTimeLong } from '~/utils/date'
 import { TODAY_ISO } from '~/data/master'
@@ -175,6 +179,38 @@ const activeFilterCount = computed(() =>
 const exportModalOpen = ref(false)
 const selectedCount = ref(0)
 
+// ─── Bulk action: Print barcode — prints a label for every selected SKU.
+// Reuses the shared Print-barcode flow (options modal → PDF preview) from
+// StorageLocationTree; generateBarcodeSheetPdf lays one label per SKU. ─────────
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+// Products captured when the bulk button is clicked (slot scope isn't available
+// later in the confirm handler) + the deselect callback to clear the bar after.
+let bulkPrintProducts: ProductIndexRow[] = []
+let bulkPrintDeselect: (() => void) | null = null
+
+function openBulkPrintBarcode(selectedRows: Set<number>, deselectAll: () => void) {
+  bulkPrintProducts = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as ProductIndexRow[]
+  bulkPrintDeselect = deselectAll
+  if (!bulkPrintProducts.length) return
+  printBarcodeOptionsOpen.value = true
+}
+
+async function confirmBulkPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  printBarcodeOptionsOpen.value = false
+  if (!bulkPrintProducts.length) return
+  barcodePreviewDoc.value = await generateBarcodeSheetPdf(
+    bulkPrintProducts.map(p => ({ barcode: p.barcode, batchNo: '', productName: p.name, sku: p.sku })),
+    columns,
+    qty,
+  )
+  barcodePreviewFilename.value = `Barcode - ${bulkPrintProducts.length} product${bulkPrintProducts.length !== 1 ? 's' : ''}.pdf`
+  barcodePreviewOpen.value = true
+  bulkPrintDeselect?.()
+}
+
 type ExportProductsOption = 'products' | 'bundleAssembled'
 const exportProductsOption = ref<ExportProductsOption>('products')
 
@@ -260,6 +296,7 @@ function closeExportModal() { exportModalOpen.value = false }
     :has-active-filter="!!search || activeFilterCount > 0"
     :search="search"
     has-checkbox
+    bulk-label="product"
     :context-label="(row) => `${row.name}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -269,6 +306,16 @@ function closeExportModal() { exportModalOpen.value = false }
     @clear-filters="clearFilters"
     @selection-change="count => selectedCount = count"
   >
+
+    <!-- ── Bulk action bar — Print barcode for every selected SKU ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="openBulkPrintBarcode(selectedRows as Set<number>, deselectAll as () => void)"
+      >
+        Print barcode
+      </button>
+    </template>
 
     <!-- ── Stats section ── -->
     <template v-if="!isAwaiting" #stats>
@@ -482,6 +529,20 @@ function closeExportModal() { exportModalOpen.value = false }
     </template>
 
   </ErpTablePage>
+
+  <!-- ── Bulk "Print barcode" flow: options → PDF preview (shared pattern) ── -->
+  <PrintBarcodeOptionsModal
+    :open="printBarcodeOptionsOpen"
+    @close="printBarcodeOptionsOpen = false"
+    @confirm="confirmBulkPrintBarcode"
+  />
+  <PdfPreviewModal
+    :open="barcodePreviewOpen"
+    :doc="barcodePreviewDoc"
+    :filename="barcodePreviewFilename"
+    title="Barcode preview"
+    @close="barcodePreviewOpen = false"
+  />
 
   <!-- ── Export modal (Figma node 8557-162044) ── -->
   <MpModal
