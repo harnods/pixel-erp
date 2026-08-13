@@ -100,6 +100,10 @@ Reuse as-is; do not redesign per module.
    #[number]` H1 (no gap); inline status badge (`for="additionalInformation"`,
    `size="md"`) + a **jump-to-transaction chevron** (304px popover, 280px search: + 5 recent
    records); two icon buttons (`Task`, `Comment`) on the right when the module has approval.
+   ⚠️ **The jump switcher is triggered by the chevron button ONLY — never wrap the H1
+   in the popover trigger.** The H1 is plain, non-interactive text; the small chevron
+   sits beside it as a separate `MpPopoverTrigger` button (see `BillDetailsPage.vue` /
+   `CashManagementDetailPage.vue`). Recurring mistake: making the whole title clickable.
 3. **Info banner** (conditional): an `information`-colored strip
    (`var(--mp-background-information)`) with an info icon, a contextual message, and an
    optional inline link. Shown only when the record has a contextual state to surface

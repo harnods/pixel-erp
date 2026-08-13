@@ -286,6 +286,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'new') {
     return { component: CreateCashAccountPage, id: 'new' }
   }
+  // /cash-management/:id/edit → edit an existing account (must precede the :id detail branch)
+  if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'edit') {
+    return { component: CreateCashAccountPage, id: segs[1]! }
+  }
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
@@ -1171,14 +1175,13 @@ function startResize(e: MouseEvent) {
             {{ t('New account') }}
           </button>
 
-          <!-- Primary split pill: "New transaction" + caret opens the transaction-type menu. -->
+          <!-- Primary dropdown button: "New transaction" — the whole button opens the menu. -->
           <div ref="importBtnWrapEl" class="import-wrap">
             <button
-              class="btn-enterprise btn-enterprise--primary btn-enterprise--split"
+              class="btn-enterprise btn-enterprise--primary"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
               {{ t('New transaction') }}
-              <span class="btn-enterprise__split-divider" />
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"

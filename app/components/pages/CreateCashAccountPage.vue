@@ -6,7 +6,7 @@
  * (sub-account + who-can-access). The user/role pickers open the shared
  * SelectAccessDrawer.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete,
@@ -18,8 +18,13 @@ import { cashAccounts, addCashAccount, type CashAccountCurrency } from '~/data'
 import { banks } from '~/data/banks'
 import { accessUsers, accessRoles } from '~/data/accessControl'
 
+// orderId from the catch-all route: undefined/'new' → create, an account id → edit.
+const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
 const { t } = useLocale()
+
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editing = computed(() => cashAccounts.find(a => a.id === props.orderId))
 
 const NAME_MAX = 60
 
@@ -95,7 +100,22 @@ const nameError = ref('')
 const accessError = ref('')
 const isSaving = ref(false)
 
-function goBack() { router.push('/cash-management') }
+function goBack() { router.push(isEdit.value ? `/cash-management/${props.orderId}` : '/cash-management') }
+
+// Edit mode — prefill from the existing account. Account type & currency are
+// locked once the account exists (you can't change what a ledger is denominated
+// in), so they're read-only here; everything else stays editable.
+onMounted(() => {
+  const a = editing.value
+  if (!a) return
+  accountType.value = a.code.startsWith('2-') ? 'credit-card' : 'cash-bank'
+  code.value = a.code
+  name.value = a.name
+  currency.value = a.currency
+  bankName.value = ''
+  bankAccountNumber.value = a.accountNumber ?? ''
+  if (a.parentId) { isSubAccount.value = true; parentAccount.value = a.parentId }
+})
 
 async function save() {
   nameError.value = ''
@@ -110,6 +130,18 @@ async function save() {
   await new Promise(r => setTimeout(r, 600))
 
   const parent = isSubAccount.value ? cashAccounts.find(a => a.id === parentAccount.value) : undefined
+
+  if (isEdit.value && editing.value) {
+    const a = editing.value
+    a.name = name.value.trim()
+    a.accountNumber = bankAccountNumber.value.trim() || undefined
+    a.parentId = parent?.id
+    // account type & currency intentionally not changed (locked)
+    toast.notify({ variant: 'success', title: `${a.name} ${t('updated')}`, maxWidth: 'max-content' })
+    router.push(`/cash-management/${a.id}`)
+    return
+  }
+
   addCashAccount({
     code: code.value.trim() || nextCode(),
     name: name.value.trim(),
@@ -145,7 +177,7 @@ function nextCode() {
     <div class="cca-titlebar">
       <div class="cca-titlebar-left">
         <button class="cca-breadcrumb" @click="goBack">{{ t('Cash management') }}</button>
-        <h1 class="cca-title">{{ t('New account') }}</h1>
+        <h1 class="cca-title">{{ isEdit ? t('Edit account') : t('New account') }}</h1>
       </div>
     </div>
 
@@ -164,7 +196,7 @@ function nextCode() {
               <MpFormLabel>{{ t('Account type') }}</MpFormLabel>
               <MpAutocomplete
                 id="cca-type-ac" v-model="accountType" :data="accountTypeOptions"
-                label-prop="label" value-prop="value" use-portal is-full-width
+                label-prop="label" value-prop="value" use-portal is-full-width :is-disabled="isEdit"
               />
             </MpFormControl>
 
@@ -196,7 +228,7 @@ function nextCode() {
                 <MpFormLabel>{{ t('Currency') }}</MpFormLabel>
                 <MpAutocomplete
                   id="cca-currency-ac" v-model="currency" :data="currencyOptions"
-                  label-prop="label" value-prop="value" use-portal is-full-width
+                  label-prop="label" value-prop="value" use-portal is-full-width :is-disabled="isEdit"
                 />
               </MpFormControl>
 
@@ -317,7 +349,7 @@ function nextCode() {
         <div class="cca-action-group">
           <div class="cca-action-right">
             <button class="cca-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="cca-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</button>
+            <button class="cca-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</button>
           </div>
         </div>
 

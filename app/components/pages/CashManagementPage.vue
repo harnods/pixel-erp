@@ -391,7 +391,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             <div class="row-menu-divider" />
             <MpPopoverListItem @click.stop>{{ t('Import statement') }}</MpPopoverListItem>
             <MpPopoverListItem @click="togglePin((row as CashAccount).id)">{{ isPinned((row as CashAccount).id) ? t('Unpin') : t('Pin to top') }}</MpPopoverListItem>
-            <MpPopoverListItem @click.stop>{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push(`/cash-management/${(row as CashAccount).id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
             <div class="row-menu-divider" />
             <!-- Archive ↔ Unarchive -->
             <MpPopoverListItem v-if="(row as CashAccount).isArchived" @click="unarchiveAccount(row as CashAccount)">{{ t('Unarchive') }}</MpPopoverListItem>

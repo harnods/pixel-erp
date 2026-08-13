@@ -1,11 +1,21 @@
 /**
- * Cash management account detail — dummy bank statement lines (Bank statement tab)
- * and book-side transaction lines (Account transactions tab).
+ * Cash management account detail — the Account transactions tab (book side) and
+ * the Bank statement tab (bank feed) are BOTH derived from ONE shared ledger per
+ * account, so the two tabs always reconcile:
  *
- * Bank BCA (CA003) ships with the exact first page of lines used in the Figma
- * reference design so the detail page matches it pixel-for-pixel; everything
- * beyond that (older BCA history + every other account) is generated with a
- * seeded PRNG so it's stable across renders but doesn't need to be hand-authored.
+ *   • Account transactions = every document (newest `unreconciledCount` flagged
+ *     unreconciled), running balance ending at the account's book balance.
+ *   • Bank statement = the RECONCILED slice of that same ledger (the pending
+ *     newest-N are book-only, not yet on the bank feed), rendered in bank-feed
+ *     wording. Because they are the same events, each reconciled line's date,
+ *     amount and running balance are IDENTICAL across both tabs — that's what
+ *     "reconciled" means. Bank balance = book balance − (net of the pending
+ *     transactions), which is exactly the Difference shown on the header.
+ *
+ * The company (PT Central Perk Indonesia) is a retail & wholesale coffee-bean
+ * and coffee-machine business, so the contacts and documents are cafés/hotels
+ * (customers), green-bean growers and espresso-machine distributors (suppliers),
+ * plus the usual operating expenses.
  */
 
 export type StatementStatus = 'reconciled' | 'unreconciled' | 'deleted'
@@ -64,195 +74,193 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// ─── BCA — exact first page (matches the Figma reference design) ─────────────
+// ─── Coffee-business contacts ────────────────────────────────────────────────
 
-const BCA_RECENT: Omit<BankStatementLine, 'id'>[] = [
-  { date: '2026-01-20', description: 'TRF CR LLG PT KOPI KENANGAN BERKAH', moneyIn: 15_500_000, moneyOut: 0,          balance: 155_000_000, status: 'unreconciled' },
-  { date: '2026-01-19', description: 'AUTO DEBIT TELKOM INDONESIA WIFI',   moneyIn: 0,          moneyOut: 2_500_000,  balance: 139_500_000, status: 'unreconciled' },
-  { date: '2026-01-18', description: 'TRF CR RTGS CV MESIN BARISTA UTAMA', moneyIn: 50_000_000, moneyOut: 0,          balance: 142_000_000, status: 'unreconciled' },
-  { date: '2026-01-18', description: 'PAY PLN PREPAID 3210009283',        moneyIn: 0,          moneyOut: 12_500_000, balance: 92_000_000,  status: 'unreconciled' },
-  { date: '2026-01-17', description: 'TRF E-BANKING IBU SUSI (TOKO KUE)', moneyIn: 8_250_000,  moneyOut: 0,          balance: 104_500_000, status: 'unreconciled' },
-  { date: '2026-01-16', description: 'TRF DB BUDI SANTOSO REFUND',        moneyIn: 0,          moneyOut: 1_250_000,  balance: 96_250_000,  status: 'unreconciled' },
-  { date: '2026-01-15', description: 'CASH DEP CDM DEPOK BRANCH',         moneyIn: 4_500_000,  moneyOut: 0,          balance: 97_500_000,  status: 'reconciled' },
-  { date: '2026-01-15', description: 'ADM FEE MTHLY JAN 2026',            moneyIn: 0,          moneyOut: 25_000,     balance: 93_000_000,  status: 'reconciled' },
-  { date: '2026-01-14', description: 'TRF DB PETTY CASH REPLENISH',       moneyIn: 0,          moneyOut: 5_000_000,  balance: 93_025_000,  status: 'reconciled' },
-  { date: '2026-01-13', description: 'TRF CR PT SINAR MAS DISTRIBUSI',    moneyIn: 25_000_000, moneyOut: 0,          balance: 98_025_000,  status: 'reconciled' },
-  { date: '2026-01-12', description: 'VS *GOOGLE CLOUD SVCS',             moneyIn: 0,          moneyOut: 1_800_000,  balance: 73_025_000,  status: 'reconciled' },
-  { date: '2026-01-11', description: 'TRF CR CAFE SENJA ABADI',           moneyIn: 12_000_000, moneyOut: 0,          balance: 74_825_000,  status: 'reconciled' },
-  { date: '2026-01-10', description: 'TRF CR HOTEL INDONESIA GROUP',      moneyIn: 35_000_000, moneyOut: 0,          balance: 62_825_000,  status: 'reconciled' },
-  { date: '2026-01-09', description: 'DB ATK OFFICE SUPPLIES',            moneyIn: 0,          moneyOut: 750_000,    balance: 27_825_000,  status: 'reconciled' },
-  { date: '2026-01-08', description: 'TRF CR LLG PT KOPI KENANGAN BERKAH', moneyIn: 10_000_000, moneyOut: 0,         balance: 28_575_000,  status: 'reconciled' },
-  { date: '2026-01-07', description: 'REVERSAL TRF E-BANKING',            moneyIn: 2_000_000,  moneyOut: 0,          balance: 18_575_000,  status: 'reconciled' },
-  { date: '2026-01-06', description: 'TRF DB RIZAL CANDRA PRIVE',         moneyIn: 0,          moneyOut: 10_000_000, balance: 16_575_000,  status: 'reconciled' },
-  { date: '2026-01-05', description: 'TRF CR WARUNG UPNORMAL',            moneyIn: 5_500_000,  moneyOut: 0,          balance: 26_575_000,  status: 'reconciled' },
-  { date: '2026-01-05', description: 'VS *ADOBE CREATIVE DUB',            moneyIn: 0,          moneyOut: 850_000,    balance: 21_075_000,  status: 'reconciled' },
-  { date: '2026-01-04', description: 'CASH DEP SETORAN TUNAI',            moneyIn: 8_000_000,  moneyOut: 0,          balance: 21_925_000,  status: 'reconciled' },
-  { date: '2026-01-03', description: 'QRIS SETTLEMENT PARKIR',            moneyIn: 0,          moneyOut: 200_000,    balance: 13_925_000,  status: 'reconciled' },
-  { date: '2026-01-03', description: 'TRF CR JONI KARYAWAN',              moneyIn: 1_500_000,  moneyOut: 0,          balance: 14_125_000,  status: 'reconciled' },
-  { date: '2026-01-02', description: 'TRF CR CV MAJU MUNDUR',             moneyIn: 7_000_000,  moneyOut: 0,          balance: 12_625_000,  status: 'reconciled' },
-  { date: '2026-01-01', description: 'TRF DB PEMILIK GEDUNG SEWA JAN',    moneyIn: 0,          moneyOut: 15_000_000, balance: 5_625_000,   status: 'reconciled' },
-  { date: '2026-01-01', description: 'SALDO AWAL TAHUN 2026',             moneyIn: 20_625_000, moneyOut: 0,          balance: 20_625_000,  status: 'reconciled' },
+/** Cafés, hotels & restaurants that buy roasted beans (wholesale) and machines. */
+const CUSTOMERS = [
+  'Anomali Coffee', 'Tanamera Coffee', 'Fore Coffee', 'Kopi Kenangan', 'Djournal Coffee',
+  'Common Grounds', 'Titik Temu Coffee', 'Maxx Coffee', 'Janji Jiwa', 'Tuku Coffee',
+  'Excelso Café', 'Filosofi Kopi', 'Kopi Nako', 'Warung Kopi Modern', 'Hotel Mulia Senayan',
+  'The Ritz-Carlton Jakarta', 'Grand Hyatt Jakarta', 'Hotel Indonesia Kempinski',
+  'Ismaya Group', 'Union Group',
+]
+/** Green-bean growers, cooperatives and importers. */
+const BEAN_SUPPLIERS = [
+  'Koperasi Kopi Gayo Aceh', 'Toraja Coffee Growers', 'Kintamani Coffee Estate',
+  'PT Java Arabica Export', 'Frinsa Estate Bandung', 'Sumatra Mandheling Beans',
+  'Flores Bajawa Coop', 'PT Sulawesi Specialty Coffee',
+]
+/** Espresso-machine & grinder distributors and roastery equipment. */
+const MACHINE_SUPPLIERS = [
+  'La Marzocco Indonesia', 'PT Mahakarya Espresso', 'Victoria Arduino Distributor',
+  'Nuova Simonelli Asia', 'Mahlkönig Indonesia', 'PT Selni Coffee Equipment',
+]
+/** Packaging & roastery consumables. */
+const SUPPLY_VENDORS = [
+  'PT Kemasan Kopi Nusantara', 'CV Roastery Supplies', 'PT Filter Kertas Indonesia',
+  'Barista Tools Supply',
+]
+/** Operating-expense payees. */
+const OPEX_VENDORS = [
+  'PLN (Listrik)', 'Telkom Indonesia (IndiHome)', 'PDAM (Air)', 'Gedung Sewa Kantor',
+  'JNE Trucking', 'SiCepat Kargo', 'Mekari Jurnal', 'Google Workspace',
 ]
 
-// Two of the older, already-reconciled rows are shown as deleted (demonstrates
-// the "Hide deleted lines" toggle) — picked from mid-page so both pages 2-3 have one.
-const DELETED_INDICES = new Set([34, 61])
+const COST_SUPPLIERS = [...BEAN_SUPPLIERS, ...MACHINE_SUPPLIERS, ...SUPPLY_VENDORS]
 
-// ─── Generic templates for generated (non-hand-authored) rows ─────────────────
-
-const CREDIT_TEMPLATES = [
-  'TRF CR LLG {co}', 'TRF CR RTGS {co}', 'TRF CR {co}', 'CASH DEP CDM {branch} BRANCH',
-  'CASH DEP SETORAN TUNAI', 'QRIS SETTLEMENT {co}', 'TRF E-BANKING {co}', 'REVERSAL TRF E-BANKING',
-]
-const DEBIT_TEMPLATES = [
-  'AUTO DEBIT {utility}', 'PAY {utility} PREPAID {code}', 'ADM FEE MTHLY {monthYear}',
-  'VS *{vendor}', 'DB ATK OFFICE SUPPLIES', 'QRIS SETTLEMENT PARKIR', 'TRF DB {payee}',
-]
-const COMPANIES = [
-  'PT KOPI KENANGAN BERKAH', 'CV MESIN BARISTA UTAMA', 'PT SINAR MAS DISTRIBUSI', 'CAFE SENJA ABADI',
-  'HOTEL INDONESIA GROUP', 'WARUNG UPNORMAL', 'CV MAJU MUNDUR', 'PT BINTANG TIMUR LOGISTIK',
-  'TOKO KUE IBU SUSI', 'PT NUSANTARA JAYA ABADI', 'CV SUMBER REZEKI',
-]
-const BRANCHES = ['DEPOK', 'BEKASI', 'TANGERANG', 'BANDUNG', 'SURABAYA']
-const UTILITIES = ['TELKOM INDONESIA WIFI', 'PLN PREPAID', 'PDAM TIRTA', 'INDIHOME']
-const VENDORS = ['GOOGLE CLOUD SVCS', 'ADOBE CREATIVE DUB', 'AWS SVCS', 'MICROSOFT 365', 'ZOOM VIDEO']
-const PAYEES = ['RIZAL CANDRA PRIVE', 'PEMILIK GEDUNG SEWA', 'BUDI SANTOSO REFUND', 'JONI KARYAWAN']
-
-function fillTemplate(rand: () => number, tpl: string, monthYear: string): string {
-  return tpl
-    .replace('{co}', pick(rand, COMPANIES))
-    .replace('{branch}', pick(rand, BRANCHES))
-    .replace('{utility}', pick(rand, UTILITIES))
-    .replace('{code}', String(1_000_000 + Math.floor(rand() * 8_999_999)))
-    .replace('{monthYear}', monthYear)
-    .replace('{vendor}', pick(rand, VENDORS))
-    .replace('{payee}', pick(rand, PAYEES))
+/** UPPER-cased, parenthetical stripped — bank feeds print names like this. */
+function bankName(c: string): string {
+  return c.replace(/\s*\(.*\)\s*/, ' ').trim().toUpperCase()
 }
 
-function monthYearLabel(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(iso)).toUpperCase()
+// ─── Ledger event types ──────────────────────────────────────────────────────
+
+interface TypeDef {
+  type: string
+  dir: 'in' | 'out'
+  family: 'sales' | 'cost'
+  pool: string[]
+  weight: number
+  /** Bank-feed description for this event. */
+  bank: (c: string) => string
+  /** Amount band as a multiple of the account's "unit" (see buildLedger). */
+  band: [number, number]
 }
 
-/** Generates `count` older rows walking BACKWARD in time from (but not including)
- *  `beforeDate`, starting at `startBalance`. Returned oldest → newest. */
-function genOlderLines(accountId: string, count: number, beforeDate: string, startBalance: number): Omit<BankStatementLine, 'id'>[] {
-  const rand = mulberry32(seedFromString(`${accountId}-statement`))
-  const rows: Omit<BankStatementLine, 'id'>[] = []
-  let date = beforeDate
-  let balance = startBalance
-  for (let i = 0; i < count; i++) {
-    date = addDays(date, -(1 + Math.floor(rand() * 3)))
-    const isCredit = rand() > 0.45
-    const amount = Math.round((isCredit ? 500_000 + rand() * 30_000_000 : 50_000 + rand() * 8_000_000) / 5_000) * 5_000
-    const moneyIn = isCredit ? amount : 0
-    const moneyOut = isCredit ? 0 : amount
-    const prevBalance = balance - moneyIn + moneyOut
-    const description = fillTemplate(rand, pick(rand, isCredit ? CREDIT_TEMPLATES : DEBIT_TEMPLATES), monthYearLabel(date))
-    rows.push({ date, description, moneyIn, moneyOut, balance, status: 'reconciled' })
-    balance = prevBalance
+const TYPES: TypeDef[] = [
+  { type: 'Sales Invoice',   dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 5, band: [0.4, 1.6], bank: c => `TRF CR ${bankName(c)}` },
+  { type: 'Receive Payment', dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 5, band: [0.3, 1.2], bank: c => `QRIS SETTLEMENT ${bankName(c)}` },
+  { type: 'Bill Payment',    dir: 'out', family: 'cost',  pool: COST_SUPPLIERS,  weight: 4, band: [0.4, 1.3], bank: c => `TRF DB ${bankName(c)}` },
+  { type: 'Expense',         dir: 'out', family: 'cost',  pool: OPEX_VENDORS,    weight: 3, band: [0.05, 0.4], bank: c => `AUTO DEBIT ${bankName(c)}` },
+  { type: 'Sales Return',    dir: 'out', family: 'sales', pool: CUSTOMERS,       weight: 1, band: [0.05, 0.3], bank: c => `TRF DB ${bankName(c)} REFUND` },
+  { type: 'Credit Memo',     dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 1, band: [0.05, 0.3], bank: c => `TRF CR ${bankName(c)} ADJ` },
+]
+// Petty cash = small everyday spend (parking, electricity token, drinking water,
+// office supplies) and employee reimbursements, topped up from the bank.
+const PETTY_EXPENSES = [
+  'Parkir Kantor', 'Token Listrik', 'Air Galon', 'ATK Kantor', 'Konsumsi Rapat',
+  'Bensin Operasional', 'Pulsa & Kuota', 'Fotokopi & Materai', 'Ojek Online Kurir', 'Snack Karyawan',
+]
+const PETTY_REIMBURSE = [
+  'Reimburse — Budi Santoso', 'Reimburse — Susi Wijaya', 'Reimburse — Andi Pratama',
+  'Reimburse — Dewi Lestari', 'Reimburse — Joni',
+]
+const PETTY_TOPUP = ['Top-up dari Bank BCA', 'Setoran Kas Kecil']
+
+const PETTY_TYPES: TypeDef[] = [
+  { type: 'Expense',           dir: 'out', family: 'cost',  pool: PETTY_EXPENSES,  weight: 6, band: [0.05, 0.6], bank: c => `CASH OUT ${bankName(c)}` },
+  { type: 'Reimbursement',     dir: 'out', family: 'cost',  pool: PETTY_REIMBURSE, weight: 3, band: [0.2, 1.0],  bank: c => `CASH OUT ${bankName(c)}` },
+  { type: 'Petty Cash Top-up', dir: 'in',  family: 'sales', pool: PETTY_TOPUP,     weight: 2, band: [1.5, 3.0],  bank: c => `CASH IN ${bankName(c)}` },
+]
+
+function pickType(rand: () => number, forceOut: boolean, types: TypeDef[]): TypeDef {
+  const pool = forceOut ? types.filter(t => t.dir === 'out') : types
+  const total = pool.reduce((s, t) => s + t.weight, 0)
+  let r = rand() * total
+  for (const t of pool) { r -= t.weight; if (r <= 0) return t }
+  return pool[pool.length - 1]!
+}
+
+interface LedgerEvent {
+  date: string
+  type: string
+  number: number
+  contact: string
+  dir: 'in' | 'out'
+  amount: number
+  bank: (c: string) => string
+}
+
+const ROWS = 60
+const SALES_START = 26025
+const COST_START = 90056
+
+/** One shared ledger per account, newest → oldest. Directions are chosen so the
+ *  running balance (anchored at `anchor` = the book balance) never goes negative
+ *  for asset accounts; credit-card accounts (negative anchor) are allowed to. */
+function buildLedger(accountId: string, anchor: number, kind: 'bank' | 'petty' = 'bank'): LedgerEvent[] {
+  const rand = mulberry32(seedFromString(`${accountId}-ledger-v2`))
+  const petty = kind === 'petty'
+  const types = petty ? PETTY_TYPES : TYPES
+  const allowNeg = anchor < 0
+  const mag = Math.abs(anchor) || 5_000_000
+  // Petty cash uses a small fixed unit (float stays ~constant); bank accounts scale to size.
+  const unit = petty ? 300_000 : Math.min(30_000_000, Math.max(50_000, mag / 15), mag / 3)
+  // Rounding granularity scales with the account size, so small-balance / FX
+  // accounts get proportionate amounts instead of a coarse 50k floor.
+  const gran = petty ? 5_000 : Math.max(1_000, Math.min(50_000, Math.round(unit / 20 / 1_000) * 1_000))
+
+  const events: LedgerEvent[] = []
+  let date = '2026-01-20'
+  let balance = anchor
+  let salesSeq = SALES_START
+  let costSeq = COST_START
+
+  for (let i = 0; i < ROWS; i++) {
+    date = addDays(date, -(1 + Math.floor(rand() * 2)))
+    const forceOut = !allowNeg && balance < unit * 2
+    const def = pickType(rand, forceOut, types)
+    const [lo, hi] = def.band
+    let amount = (lo + rand() * (hi - lo)) * unit
+    // Keep the older balance ≥ ~unit for asset accounts.
+    if (def.dir === 'in' && !allowNeg) amount = Math.min(amount, balance - unit)
+    amount = Math.max(gran, Math.round(amount / gran) * gran)
+    const number = def.family === 'sales' ? --salesSeq : --costSeq
+    events.push({ date, type: def.type, number, contact: pick(rand, def.pool), dir: def.dir, amount, bank: def.bank })
+    balance = balance - (def.dir === 'in' ? amount : 0) + (def.dir === 'out' ? amount : 0)
   }
-  return rows.reverse() // oldest → newest
+  return events
 }
 
-/** Full generic statement for accounts other than BCA — most recent `unreconciledCount`
- *  rows are left unreconciled, everything older is reconciled. Newest → oldest. */
-function genGenericStatement(accountId: string, endBalance: number, unreconciledCount: number, rowCount: number, latestDate: string): Omit<BankStatementLine, 'id'>[] {
-  const rand = mulberry32(seedFromString(`${accountId}-generic`))
-  const rows: Omit<BankStatementLine, 'id'>[] = []
-  let date = addDays(latestDate, 1)
-  let balance = endBalance
-  for (let i = 0; i < rowCount; i++) {
-    date = addDays(date, -(1 + Math.floor(rand() * 4)))
-    const isCredit = rand() > 0.5
-    const amount = Math.round((isCredit ? 500_000 + rand() * 20_000_000 : 50_000 + rand() * 5_000_000) / 5_000) * 5_000
-    const moneyIn = isCredit ? amount : 0
-    const moneyOut = isCredit ? 0 : amount
-    const description = fillTemplate(rand, pick(rand, isCredit ? CREDIT_TEMPLATES : DEBIT_TEMPLATES), monthYearLabel(date))
-    rows.push({ date, description, moneyIn, moneyOut, balance, status: i < unreconciledCount ? 'unreconciled' : 'reconciled' })
+// ─── Account transactions tab (book side) ────────────────────────────────────
+
+export function getAccountTransactions(accountId: string, bookBalance: number, unreconciledCount = 6, kind: 'bank' | 'petty' = 'bank'): AccountTransactionLine[] {
+  const events = buildLedger(accountId, bookBalance, kind)
+  let balance = bookBalance
+  return events.map((e, i) => {
+    const moneyIn = e.dir === 'in' ? e.amount : 0
+    const moneyOut = e.dir === 'out' ? e.amount : 0
+    const row: AccountTransactionLine = {
+      id: `${accountId}-tx-${i}`,
+      date: e.date, type: e.type, number: e.number, contact: e.contact,
+      moneyIn, moneyOut, balance,
+      status: i < unreconciledCount ? 'unreconciled' : 'reconciled',
+    }
     balance = balance - moneyIn + moneyOut
-  }
-  return rows
+    return row
+  })
 }
 
-// ─── Lines imported through the "Import with OCR" review flow ────────────────
-// Kept apart from the generated/hardcoded rows above so a save from
-// BankStatementReviewPage can just prepend onto this per-account list without
-// touching the deterministic generator.
+// ─── Bank statement tab (bank feed) ──────────────────────────────────────────
+// Same ledger, same running balance — but only the RECONCILED slice (the newest
+// `unreconciledCount` are book-only, still pending on the bank feed). Two older
+// lines are shown deleted to exercise the "Hide deleted lines" toggle.
+
 const importedLines: Record<string, BankStatementLine[]> = {}
 
-/** Adds freshly-reviewed OCR rows to the front of an account's statement (most
- *  recent first, matching how the tab already sorts). Called from the bank
- *  statement review page's Save action. */
+/** Adds freshly-reviewed OCR rows to the front of an account's statement. */
 export function addImportedStatementLines(accountId: string, lines: BankStatementLine[]) {
   importedLines[accountId] = [...lines, ...(importedLines[accountId] ?? [])]
 }
 
-export function getBankStatementLines(accountId: string, endBalance: number, unreconciledCount: number): BankStatementLine[] {
-  const raw: Omit<BankStatementLine, 'id'>[] =
-    accountId === 'CA003'
-      ? [...BCA_RECENT, ...genOlderLines(accountId, 75, '2026-01-01', 0)]
-      : genGenericStatement(accountId, endBalance, unreconciledCount, Math.max(unreconciledCount + 12, 20), '2026-01-20')
-
-  const generated = raw.map((r, i) => ({
-    ...r,
-    id: `${accountId}-stmt-${i}`,
-    status: DELETED_INDICES.has(i) && accountId === 'CA003' ? 'deleted' : r.status,
+export function getBankStatementLines(accountId: string, bookBalance: number, unreconciledCount = 6): BankStatementLine[] {
+  const events = buildLedger(accountId, bookBalance)
+  // Walk the full series to capture each event's book balance…
+  let balance = bookBalance
+  const withBalance = events.map((e) => {
+    const b = balance
+    balance = balance - (e.dir === 'in' ? e.amount : 0) + (e.dir === 'out' ? e.amount : 0)
+    return { e, balance: b }
+  })
+  // …then keep only the reconciled (cleared) slice, in bank-feed wording.
+  const generated: BankStatementLine[] = withBalance.slice(unreconciledCount).map(({ e, balance: b }, k) => ({
+    id: `${accountId}-stmt-${k}`,
+    date: e.date,
+    description: e.bank(e.contact),
+    moneyIn: e.dir === 'in' ? e.amount : 0,
+    moneyOut: e.dir === 'out' ? e.amount : 0,
+    balance: b,
+    status: (k === 4 || k === 13) ? 'deleted' : 'reconciled',
   }))
-
   return [...(importedLines[accountId] ?? []), ...generated]
-}
-
-// ─── Account transactions tab (book side — actual software documents, not the
-//     raw bank feed: sales invoices, payments, expenses, credit memos, etc.) ──
-
-const TX_CUSTOMERS = [
-  'Anomali Coffee', 'Tanamera Coffee Roastery', 'Hotel Mulia Senayan', 'Fore Coffee Thamrin',
-  'Djournal Coffee', 'Kopi Kenangan Pusat', 'Common Grounds PIK', 'Titik Temu Coffee',
-  'Maxx Coffee Lippo Mall', 'Janji Jiwa Kemang', 'Tuku Coffee Cipete', 'Coffee Cult Bali',
-  'Excelso Grand Indonesia', 'Warung Kopi Modern', 'Kopi Nako Bintaro', 'Filosofi Kopi Melawai',
-]
-const TX_EXPENSE_CONTACTS = [
-  'Telkom Indonesia (Indihome)', 'PLN (Listrik)', 'PDAM (Air)', 'CV Abadi Jaya Teknik',
-  'PT Sumber Makmur Sejahtera', 'PT Karya Cipta Mandiri', 'Adobe Creative Cloud', 'Google Cloud Services',
-]
-const TX_PERSON_NAMES = ['Budi Santoso', 'Rizal Candra', 'Joni Karyawan', 'Susi Wijaya']
-
-const TX_TYPE_DEFS: { type: string; direction: 'in' | 'out'; contacts: string[] }[] = [
-  { type: 'Sales Invoice',       direction: 'in',  contacts: TX_CUSTOMERS },
-  { type: 'Receive Payment',     direction: 'in',  contacts: TX_CUSTOMERS },
-  { type: 'Expense',             direction: 'out', contacts: TX_EXPENSE_CONTACTS },
-  { type: 'Sales Return',        direction: 'out', contacts: [...TX_CUSTOMERS, ...TX_PERSON_NAMES] },
-  { type: 'Credit Memo',         direction: 'in',  contacts: TX_CUSTOMERS },
-  { type: 'Credit Memo Payment', direction: 'out', contacts: TX_CUSTOMERS },
-  { type: 'Credit Memo Refund',  direction: 'in',  contacts: TX_CUSTOMERS },
-]
-
-export function getAccountTransactions(accountId: string, endBalance: number, unreconciledCount = 6, rowCount = 24): AccountTransactionLine[] {
-  const rand = mulberry32(seedFromString(`${accountId}-transactions`))
-  const rows: AccountTransactionLine[] = []
-  let date = '2026-01-20'
-  let balance = endBalance
-  let sharedSeq = 26025   // Sales Invoice / Receive Payment / Sales Return / Credit Memo*
-  let expenseSeq = 90056  // Expense
-
-  for (let i = 0; i < rowCount; i++) {
-    date = addDays(date, -(1 + Math.floor(rand() * 2)))
-    const def = pick(rand, TX_TYPE_DEFS)
-    const isIn = def.direction === 'in'
-    let amount = Math.round((isIn ? 1_000_000 + rand() * 30_000_000 : 500_000 + rand() * 15_000_000) / 5_000) * 5_000
-    // Undoing an "in" row lowers the OLDER balance (balance - moneyIn) — cap it so
-    // walking further back in time never drives the running balance negative.
-    if (isIn) amount = Math.min(amount, Math.max(200_000, balance - 300_000))
-    const moneyIn = isIn ? amount : 0
-    const moneyOut = isIn ? 0 : amount
-    const contact = pick(rand, def.contacts)
-    const number = def.type === 'Expense' ? --expenseSeq : --sharedSeq
-    rows.push({
-      id: `${accountId}-tx-${i}`,
-      date, type: def.type, number, contact, moneyIn, moneyOut, balance,
-      status: i < unreconciledCount ? 'unreconciled' : 'reconciled',
-    })
-    balance = balance - moneyIn + moneyOut
-  }
-  return rows
 }

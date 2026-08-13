@@ -24,7 +24,7 @@ import { useCurrencySettings } from "~/composables/useCurrencySettings";
 /** Currency symbols for the multi-currency cash module (id-ID rendering). */
 const CURRENCY_SYMBOLS: Record<string, string> = {
   IDR: "Rp",
-  SGD: "SGD",
+  SGD: "S$",
   USD: "US$",
   AUD: "AUS$",
 };

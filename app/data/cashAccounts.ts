@@ -19,6 +19,11 @@ export interface CashAccount {
   accountNumber?: string
   /** True for accounts linked through a bank feed — shows the "Connected" badge. */
   isConnected?: boolean
+  /** Remaining bank-feed syncs this cycle (connected accounts only). 0 = quota
+   *  exhausted → each further sync is charged. */
+  syncRemaining?: number
+  /** Total syncs per cycle (connected accounts only). */
+  syncTotal?: number
   currency: CashAccountCurrency
   /** null when no bank statement has been imported yet. */
   statementBalance: number | null
@@ -47,9 +52,14 @@ export interface CashAccount {
 }
 
 export const cashAccounts: CashAccount[] = [
-  { id: 'CA001', code: '1-10001', name: 'Cash',                                                          currency: 'IDR', statementBalance: 15_000_000,   statementDate: '2026-01-05', bookBalance: 15_000_000,   unreconciledCount: 50, lastUpdated: '2026-08-12T09:15:00' },
+  // Physical cash — never has a bank statement, so nothing to reconcile.
+  { id: 'CA001', code: '1-10001', name: 'Cash',                                                          currency: 'IDR', statementBalance: null,                                     bookBalance: 15_000_000,   unreconciledCount: 0,  lastUpdated: '2026-08-12T09:15:00' },
   { id: 'CA002', code: '1-10002', name: 'Petty Cash',                                                    currency: 'IDR', statementBalance: null,                                     bookBalance: 15_000_000,   unreconciledCount: 0,  lastUpdated: '2026-07-28T14:40:00' },
-  { id: 'CA003', code: '1-10003', name: 'Bank BCA',        accountNumber: '5485079642', isConnected: true, currency: 'IDR', statementBalance: 163_835_000,  statementDate: '2026-02-05', bookBalance: 139_025_000,  unreconciledCount: 10, lastUpdated: '2026-08-13T08:05:00' },
+  { id: 'CA003', code: '1-10003', name: 'Bank BCA',        accountNumber: '5485079642', isConnected: true, syncRemaining: 400, syncTotal: 500, currency: 'IDR', statementBalance: 163_835_000,  statementDate: '2026-02-05', bookBalance: 139_025_000,  unreconciledCount: 10, lastUpdated: '2026-08-13T08:05:00' },
+
+  // Connected account whose sync quota is exhausted — hovering "Last updated…"
+  // warns that further syncs are charged.
+  { id: 'CA010', code: '1-10009', name: 'Bank CIMB Niaga', accountNumber: '8730054219', isConnected: true, syncRemaining: 0,   syncTotal: 500, currency: 'IDR', statementBalance: 92_400_000,   statementDate: '2026-02-05', bookBalance: 88_150_000,   unreconciledCount: 4,  lastUpdated: '2026-08-13T07:40:00' },
   { id: 'CA004', code: '1-10004', name: 'DBS Singapore',   accountNumber: '0661089145',                  currency: 'SGD', statementBalance: 155_000_000,  statementCurrency: 'IDR', statementDate: '2025-12-20', bookBalance: 6_000,  unreconciledCount: 1, lastUpdated: '2025-12-20T11:20:00' },
 
   // Mandiri Office — a parent account with nested sub-accounts (see Figma 5527-171257).
