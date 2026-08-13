@@ -27,11 +27,11 @@ import { useRouter } from 'vue-router'
 import {
   MpIcon, MpProgress, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalHeader, MpModalContent, MpModalBody, MpModalFooter, MpModalCloseButton,
-  MpButton, MpButtonGroup, MpSpinner, MpTextlink, toast, css,
+  MpButton, MpText, MpUpload, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
+import FormatRequirementsAccordion from '~/components/patterns/FormatRequirementsAccordion.vue'
 import {
   CUTOVER_TOTAL_PRODUCTS, cutoverProducts, cutoverState,
   inventoryAccounts, revenueAccounts, cogsAccounts, taxOptions,
@@ -232,17 +232,25 @@ function submit() {
   }
 }
 
-// ── Import modal ────────────────────────────────────────────────────────────
-type ImportPhase = 'idle' | 'importing' | 'done'
+// ── Import product mapping (drawer) ──────────────────────────────────────────
+type ImportPhase = 'idle' | 'importing'
 const isImportOpen = ref(false)
 const importPhase = ref<ImportPhase>('idle')
 const importFile = ref<{ name: string; size: number } | null>(null)
 const importError = ref<'' | 'no-file' | 'format' | 'size'>('')
-const importedNow = ref(0)
-const skippedNow = ref(0)
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024
 const ALLOWED_EXT = ['csv', 'xls', 'xlsx']
+
+// Formatting rules for the product-mapping template (Format requirements accordion).
+const formatRequirements = computed(() => [
+  t('Maximum 1.000 rows per file.'),
+  t('Keep the Product and SKU columns exactly as pre-filled — do not edit them.'),
+  t('Enter account codes exactly as in your chart of accounts (e.g. 1-10200).'),
+  t('Do not use thousand separators (e.g. 1000, not 1.000).'),
+  t('Do not include currency symbols (Rp, $, etc.) in value or price columns.'),
+  t('Tip: add a backtick (`) before a code to prevent auto-formatting. Example: `1-10200'),
+])
 
 function openImport() {
   isImportOpen.value = true
@@ -269,17 +277,6 @@ function onFileChosen(e: Event) {
   importFile.value = { name: file.name, size: file.size }
 }
 
-function removeImportFile() {
-  importFile.value = null
-  importError.value = ''
-}
-
-function fmtBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 let importTimer: ReturnType<typeof setTimeout> | undefined
 function runImport() {
   if (!importFile.value) {
@@ -288,33 +285,26 @@ function runImport() {
   }
   importPhase.value = 'importing'
   importTimer = setTimeout(() => {
-    // Fills the resolvable bulk; the flagged rows stay for the user to fix.
+    // Fills the resolvable bulk; the flagged rows stay in the table to fix.
     const { imported, skipped } = applyBulkImport()
-    importedNow.value = imported
-    skippedNow.value = skipped
-    importPhase.value = 'done'
-  }, 1200)
+    importPhase.value = 'idle'
+    isImportOpen.value = false
+    const title = skipped > 0
+      ? `${imported} ${t('products imported')}, ${skipped} ${t('need attention')}`
+      : `${imported} ${t('products imported')}`
+    toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
+  }, 900)
 }
 
 function closeImport() {
   isImportOpen.value = false
 }
 
-// Confirm the import once, however the modal was dismissed (footer button,
-// close icon, or overlay) — MpModal owns the open state via v-model.
-watch(isImportOpen, (open, wasOpen) => {
-  if (wasOpen && !open && importPhase.value === 'done') {
-    toast.notify({
-      variant: 'success',
-      title: `${importedNow.value} ${t('products imported')}`,
-      maxWidth: 'max-content',
-    })
-  }
-})
-
-// Esc clears the current selection (matches the "Press Esc to deselect" hint).
+// Esc closes the import drawer, else clears the selection.
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && selectedIds.value.length) selectedIds.value = []
+  if (e.key !== 'Escape') return
+  if (isImportOpen.value) { isImportOpen.value = false; return }
+  if (selectedIds.value.length) selectedIds.value = []
 }
 onMounted(() => { showErrors.value = false; window.addEventListener('keydown', onKeydown) })
 onUnmounted(() => {
@@ -331,7 +321,7 @@ onUnmounted(() => {
     <div class="cut-titlebar">
       <div class="cut-titlebar-left">
         <MpTextlink id="cut-breadcrumb" as="a" class="cut-breadcrumb" @click.prevent="cancel">{{ t('Data migration') }}</MpTextlink>
-        <h1 class="cut-title">{{ t('Set up WMS products') }}</h1>
+        <h1 class="cut-title">{{ t('Set up opening balance') }}</h1>
       </div>
     </div>
 
@@ -831,96 +821,61 @@ onUnmounted(() => {
       </div>
     </footer>
 
-    <!-- ── Import modal ── -->
-    <MpModal v-model="isImportOpen">
-      <MpModalHeader>
-        {{ t('Import WMS products') }}
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalContent>
-        <MpModalBody>
-          <div class="cut-import">
-            <ol class="cut-import-steps">
-              <li>{{ t('Download the template — it is pre-filled with all your WMS products.') }}</li>
-              <li>{{ t('Fill in the inventory account, inventory value, and sell/buy setup per product.') }}</li>
-              <li>{{ t('Upload the completed file below.') }}</li>
-            </ol>
+    <!-- ── Import product mapping drawer ── -->
+    <Teleport to="body">
+      <Transition name="imd">
+        <div v-if="isImportOpen" class="imd-overlay" @click.self="closeImport">
+          <aside class="imd-panel" role="dialog" :aria-label="t('Import product mapping')">
+            <header class="imd-header">
+              <MpText weight="semiBold">{{ t('Import product mapping') }}</MpText>
+              <MpButton left-icon="close" variant="ghost" size="sm" :aria-label="t('Close')" @click="closeImport" />
+            </header>
 
-            <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before">
-              <MpIcon name="download" size="sm" />
-              {{ t('Download template file') }}
-            </button>
+            <div class="imd-body">
+              <p class="imd-intro">{{ t('Follow these steps to import your product mapping into Mekari ERP.') }}</p>
 
-            <!-- Idle / choosing a file -->
-            <template v-if="importPhase === 'idle'">
-              <div v-if="!importFile" class="cut-dropzone" :class="{ 'cut-dropzone--error': !!importError }">
-                <MpIcon name="upload" size="lg" color="icon.subtle" />
-                <p class="cut-dropzone-cta">
-                  {{ t('Drag a file here, or') }}
-                  <label class="cut-dropzone-link">
-                    {{ t('choose file') }}
-                    <input type="file" accept=".csv,.xls,.xlsx" class="cut-dropzone-input" @change="onFileChosen">
-                  </label>
-                </p>
-                <p class="cut-dropzone-hint">{{ t('File must be in CSV, XLS, or XLSX with a maximum of 10 MB') }}</p>
-              </div>
+              <!-- Step 1 — Download the template -->
+              <div class="imd-step">
+                <span class="imd-step-badge">1</span>
+                <div class="imd-step-body">
+                  <p class="imd-step-title">{{ t('Download the template') }}</p>
+                  <p class="imd-step-desc">{{ t('The template lists every WMS product, ready for you to map to accounts.') }}</p>
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary">{{ t('Download template file') }}</button>
 
-              <div v-else class="cut-file-card">
-                <MpIcon name="excel-document" size="md" color="icon.default" />
-                <div class="cut-file-info">
-                  <span class="cut-file-name">{{ importFile.name }}</span>
-                  <span class="cut-file-size">{{ fmtBytes(importFile.size) }}</span>
+                  <FormatRequirementsAccordion :requirements="formatRequirements" />
                 </div>
-                <button type="button" class="btn-enterprise btn-enterprise--plain cut-file-remove" :aria-label="t('Remove file')" @click="removeImportFile">
-                  <MpIcon name="close" size="sm" />
-                </button>
               </div>
 
-              <p v-if="importError === 'no-file'" class="cut-dropzone-error">
-                {{ t('You must upload the completed template file') }}
-              </p>
-              <p v-if="importError === 'format'" class="cut-dropzone-error">
-                {{ t('File format not supported. Upload a CSV, XLS, or XLSX file') }}
-              </p>
-              <p v-if="importError === 'size'" class="cut-dropzone-error">
-                {{ t('File size exceeds the 10 MB limit') }}
-              </p>
-            </template>
-
-            <!-- Processing -->
-            <div v-else-if="importPhase === 'importing'" class="cut-import-busy">
-              <MpSpinner size="md" />
-              <p class="cut-import-busy-text">{{ t('Importing products…') }}</p>
+              <!-- Step 2 — Upload your file -->
+              <div class="imd-step">
+                <span class="imd-step-badge">2</span>
+                <div class="imd-step-body">
+                  <p class="imd-step-title">{{ t('Upload your file') }}</p>
+                  <p class="imd-step-desc">{{ t('Upload the completed template to map your products.') }}</p>
+                  <MpUpload
+                    id="cut-import-upload"
+                    accept=".csv,.xls,.xlsx"
+                    is-full-width
+                    :placeholder="importFile ? importFile.name : t('No file selected')"
+                    :button-text="t('Browse file')"
+                    @change="onFileChosen"
+                  />
+                  <p class="imd-upload-hint">{{ t('Supported formats: CSV, XLS, XLSX. Maximum file size 10 MB.') }}</p>
+                  <p v-if="importError === 'no-file'" class="imd-error">{{ t('You must upload the completed template file') }}</p>
+                  <p v-if="importError === 'format'" class="imd-error">{{ t('File format not supported. Upload a CSV, XLS, or XLSX file') }}</p>
+                  <p v-if="importError === 'size'" class="imd-error">{{ t('File size exceeds the 10 MB limit') }}</p>
+                </div>
+              </div>
             </div>
 
-            <!-- Outcome — partial by design: some rows always need a human -->
-            <MpBanner v-else id="cut-import-result" variant="warning">
-              <MpBannerIcon id="cut-import-result-icon" />
-              <MpBannerDescription id="cut-import-result-desc">
-                {{ importedNow }} {{ t('of') }} {{ CUTOVER_TOTAL_PRODUCTS }} {{ t('products imported') }}.
-                {{ skippedNow }} {{ t('products could not be resolved and are listed in the table, with the reason for each.') }}
-              </MpBannerDescription>
-            </MpBanner>
-          </div>
-        </MpModalBody>
-
-        <MpModalFooter>
-          <MpButtonGroup>
-            <MpButton variant="ghost" @click="closeImport">
-              {{ importPhase === 'done' ? t('Close') : t('Cancel') }}
-            </MpButton>
-            <MpButton
-              v-if="importPhase !== 'done'"
-              variant="primary"
-              :is-loading="importPhase === 'importing'"
-              @click="runImport"
-            >
-              {{ t('Import') }}
-            </MpButton>
-          </MpButtonGroup>
-        </MpModalFooter>
-      </MpModalContent>
-    </MpModal>
+            <footer class="imd-footer">
+              <MpButton variant="ghost" is-rounded @click="closeImport">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="importPhase === 'importing'" @click="runImport">{{ t('Import') }}</MpButton>
+            </footer>
+          </aside>
+        </div>
+      </Transition>
+    </Teleport>
 
   </div>
 </template>
@@ -1516,123 +1471,92 @@ onUnmounted(() => {
   gap: var(--mp-spacing-3);
 }
 
-/* ── Import modal ── */
-.cut-import {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-4);
-  align-items: flex-start;
+/* ── Import product mapping drawer (self-contained overlay) ── */
+.imd-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  background: rgba(8, 13, 14, 0.45);
+  display: flex; justify-content: flex-end;
 }
-
-.cut-import-steps {
+.imd-panel {
+  margin: var(--mp-spacing-3);
+  width: min(480px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: var(--mp-radii-lg, 12px);
+  overflow: hidden;
+}
+.imd-header {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.imd-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: var(--mp-spacing-5) var(--mp-spacing-6);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-6);
+}
+.imd-intro {
   margin: 0;
-  padding-left: var(--mp-spacing-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
 }
 
-.cut-dropzone {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-6);
-  border: 1px dashed var(--mp-border-bold);
-  border-radius: var(--mp-radii-lg);
+/* Numbered step (mirrors ImportWarehousesPage `.iw-step`). */
+.imd-step { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; }
+.imd-step-badge {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  border-radius: var(--mp-radii-full, 999px);
+  display: flex; align-items: center; justify-content: center;
   background: var(--mp-background-neutral-subtle);
-  text-align: center;
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums;
 }
-.cut-dropzone--error { border-color: var(--mp-border-danger, #E2483D); }
-
-.cut-dropzone-cta {
+.imd-step-body {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
+}
+.imd-step-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-md);
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg);
   color: var(--mp-text-default);
 }
-
-.cut-dropzone-link {
-  color: var(--mp-text-link);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.imd-step-desc {
+  margin: calc(var(--mp-spacing-2) * -1) 0 0;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
 }
-.cut-dropzone-input {
-  /* Visually hidden but kept in the a11y tree: the label/dropzone drives it, so
-     it must stay focusable rather than display:none. 1px is the hidden-input
-     idiom, not a spacing value. */
-  --cut-hidden-size: 1px;
-  position: absolute;
-  width: var(--cut-hidden-size);
-  height: var(--cut-hidden-size);
-  opacity: 0;
-  pointer-events: none;
-}
+.imd-step-body > .btn-enterprise { align-self: flex-start; }
 
-.cut-dropzone-hint {
-  margin: 0;
+
+.imd-upload-hint {
+  margin: calc(var(--mp-spacing-1) * -1) 0 0;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
 }
-
-.cut-dropzone-error {
+.imd-error {
   margin: 0;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-danger);
 }
 
-.cut-file-card {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
+.imd-footer {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  border-top: 1px solid var(--mp-border-default);
 }
 
-.cut-file-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-.cut-file-name {
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cut-file-size {
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
-}
-.cut-file-remove {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: var(--mp-spacing-1);
-  color: var(--mp-text-secondary);
-  display: flex;
-}
-
-.cut-import-busy {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-6);
-  justify-content: center;
-}
-.cut-import-busy-text {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-secondary);
-}
+.imd-enter-active, .imd-leave-active { transition: background-color 250ms ease; }
+.imd-enter-from, .imd-leave-to { background-color: transparent; }
+.imd-enter-active .imd-panel { transition: transform 350ms ease-out; }
+.imd-leave-active .imd-panel { transition: transform 250ms ease-in; }
+.imd-enter-from .imd-panel,
+.imd-leave-to .imd-panel { transform: translateX(calc(100% + 12px)); }
 </style>

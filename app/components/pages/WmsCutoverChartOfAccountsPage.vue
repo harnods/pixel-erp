@@ -18,6 +18,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { MpIcon, MpUpload, MpUploadList, MpProgress, MpButton, MpText, MpTextlink, toast } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
+import FormatRequirementsAccordion from '~/components/patterns/FormatRequirementsAccordion.vue'
 import {
   CUTOVER_STEPS, isCutoverStepComplete, type CutoverStep,
   coaSourceState, coaAccounts, useDefaultCoa, importOwnCoa, type CoaAccount,
@@ -37,6 +38,15 @@ function goStep(step: CutoverStep) {
 // source when revisiting).
 const choice = ref<'default' | 'own'>(coaSourceState.source ?? 'default')
 const committedSource = computed(() => coaSourceState.source)
+
+// Formatting rules for the chart-of-accounts template (Format requirements accordion).
+const coaFormatRequirements = computed(() => [
+  t('Maximum 1.000 rows per file.'),
+  t('One row per account, with a code, name, and type.'),
+  t('Account type must be Asset, Liability, Equity, Income, or Expense.'),
+  t('Do not include currency symbols (Rp, $, etc.).'),
+  t('Tip: add a backtick (`) before account codes to prevent auto-formatting. Example: `1-10200'),
+])
 
 function typeLabel(type?: CoaAccount['type']): string {
   if (type === 'inventory') return t('Inventory')
@@ -205,6 +215,12 @@ function onContinue() {
               <button type="button" class="btn-enterprise btn-enterprise--secondary">
                 {{ t('Download template file') }}
               </button>
+
+              <div class="coa-form-grid">
+                <div class="coa-field">
+                  <FormatRequirementsAccordion :requirements="coaFormatRequirements" />
+                </div>
+              </div>
 
               <div class="coa-form-grid">
                 <div class="coa-field">

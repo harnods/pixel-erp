@@ -56,7 +56,7 @@ function openPending() {
 <template>
   <div class="dm-root">
     <p class="dm-intro">
-      {{ t('Bring balances and master data from a connected system into your ledger. Each source runs its own setup, and nothing posts until you publish the opening balance.') }}
+      {{ t('Import opening balances and master data from your connected systems. Set up each source below — nothing is posted to your ledger until you publish its opening balance.') }}
     </p>
 
     <!-- No migration source outside the upgrade storyline. -->
@@ -76,7 +76,7 @@ function openPending() {
             <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
           </div>
           <p class="dm-card-desc">
-            {{ t('Route every WMS product to a chart-of-accounts entry, then pull one inventory value per account as the opening balance.') }}
+            {{ t('Map each WMS product to an account in your chart of accounts, then import one opening inventory value per account.') }}
           </p>
         </div>
       </div>
@@ -95,7 +95,7 @@ function openPending() {
       <div class="dm-progress">
         <div class="dm-progress-row">
           <span class="dm-progress-text">
-            {{ setUpCount }} {{ t('of') }} {{ CUTOVER_TOTAL_PRODUCTS }} {{ t('products set up') }}
+            {{ setUpCount }} {{ t('of') }} {{ CUTOVER_TOTAL_PRODUCTS }} {{ t('products mapped') }}
           </span>
           <span class="dm-progress-pct">{{ percent }}%</span>
         </div>
@@ -117,15 +117,16 @@ function openPending() {
         </div>
         <div class="dm-card-heading">
           <h2 class="dm-card-title">{{ t('Products pending setup') }}</h2>
+          <p class="dm-pending-count">{{ pendingProducts }} {{ t('products need an account') }}</p>
           <p class="dm-card-desc">
-            {{ pendingProducts }} {{ t('new WMS products have no inventory account, holding') }}
-            {{ heldEntries }} {{ t('journal entries. Warehouse operations are unaffected.') }}
+            {{ pendingProducts }} {{ t("new WMS products aren't mapped to an inventory account yet, so") }}
+            {{ heldEntries }} {{ t("journal entries can't be posted. Warehouse operations aren't affected.") }}
           </p>
         </div>
       </div>
       <div class="dm-card-actions">
         <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="openPending">
-          {{ t('Review') }}
+          {{ t('Review products') }}
         </button>
       </div>
     </section>
@@ -215,6 +216,15 @@ function openPending() {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
+}
+
+/* Pending-count summary line — semibold, default text, above the explanatory desc. */
+.dm-pending-count {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
 }
 
 .dm-meta {
