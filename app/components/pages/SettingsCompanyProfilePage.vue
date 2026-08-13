@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import {
-  MpToggle, MpIcon, MpInput, MpSelect, MpRadio, MpBadge, toast,
+  MpToggle, MpIcon, MpInput, MpSelect, MpRadio, MpBadge, MpSpinner, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody,
   MpModalFooter, MpModalOverlay,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
@@ -29,16 +30,49 @@ const settingToDisplay: Record<string, string> = {
 type EditSection = null | 'tax' | 'payment' | 'advanced'
 const editing = ref<EditSection>(null)
 
+// ─── Klikpajak link status — demo toggle ───────────────────────────────────────
+// Simulates whether this company's SSO ID is already registered in Klikpajak.
+// In production this would be detected from the backend; the FAB at the bottom
+// of the page lets us preview both onboarding scenarios in this prototype.
+type KlikpajakStatus = 'registered' | 'not_registered'
+const klikpajakStatus = ref<KlikpajakStatus>('registered')
+
+function taxDataFor(status: KlikpajakStatus) {
+  return status === 'registered'
+    ? {
+        companyType: 'pkp' as 'non-pkp' | 'pkp',
+        npwp: '00098765432102222',
+        nitku: '000022',
+        npwpValidated: true,
+        signeeNpwp: '0009876543210000',
+        signee: 'R****l C****ra',
+        signeeValidated: true,
+        picNpwp: '0009876543210000',
+        pic: 'B**u F*****n',
+        picValidated: true,
+      }
+    : {
+        companyType: 'non-pkp' as 'non-pkp' | 'pkp',
+        npwp: '',
+        nitku: '',
+        npwpValidated: false,
+        signeeNpwp: '',
+        signee: '',
+        signeeValidated: false,
+        picNpwp: '',
+        pic: '',
+        picValidated: false,
+      }
+}
+
 // ─── Display (saved) state ────────────────────────────────────────────────────
-const tax = reactive({
-  companyType: 'non-pkp' as 'non-pkp' | 'pkp',
-  npwp: '00098765432102222',
-  nitku: '000022',
-  signeeNpwp: '00098765432100000',
-  signee: 'R****l C****ra',
-  picNpwp: '00098765432100000',
-  pic: 'B**u F*****n',
-})
+const tax = reactive(taxDataFor(klikpajakStatus.value))
+
+function setKlikpajakStatus(status: KlikpajakStatus) {
+  klikpajakStatus.value = status
+  Object.assign(tax, taxDataFor(status))
+  cancelEdit()
+}
 const payment = reactive({
   bankName: 'Bank BCA',
   branch: 'BCA KCU Sudirman',
@@ -102,10 +136,115 @@ function openCompanyInfoSource() {
 function clearErrors() {
   for (const k of Object.keys(errTax)) delete errTax[k]
   for (const k of Object.keys(errPayment)) delete errPayment[k]
+  taxIdentityError.value = ''
 }
 /** Clear a single field's error as the user types (called from @input). */
-function clearTaxErr(field: string) { if (errTax[field]) delete errTax[field] }
+function clearTaxErr(field: string) {
+  if (errTax[field]) delete errTax[field]
+  if (field === 'npwp' || field === 'nitku') taxIdentityError.value = ''
+}
 function clearPayErr(field: string) { if (errPayment[field]) delete errPayment[field] }
+
+// ─── NPWP/NITKU validation — confirm modal + simulated Klikpajak account creation ──
+// The "not registered" scenario has 3 possible outcomes once Klikpajak checks the
+// NPWP/NITKU. Real behavior would come from the backend; the demo FAB lets us
+// preview all 3 in this prototype.
+type NpwpCheckOutcome = 'valid' | 'invalid' | 'already_registered'
+const npwpCheckOutcome = ref<NpwpCheckOutcome>('valid')
+const taxIdentityError = ref('')
+const klikpajakConfirmOpen = ref(false)
+const validatingNpwp = ref(false)
+function openValidateNpwpConfirm() {
+  clearTaxErr('npwp')
+  clearTaxErr('nitku')
+  if (!draftTax.npwp.trim()) errTax.npwp = req('NPWP')
+  if (!draftTax.nitku.trim()) errTax.nitku = req('NITKU')
+  if (errTax.npwp || errTax.nitku) return
+  klikpajakConfirmOpen.value = true
+}
+function cancelValidateNpwpConfirm() {
+  klikpajakConfirmOpen.value = false
+}
+async function confirmValidateNpwp() {
+  klikpajakConfirmOpen.value = false
+  validatingNpwp.value = true
+  taxIdentityError.value = ''
+  await new Promise((resolve) => setTimeout(resolve, 1200))
+  validatingNpwp.value = false
+
+  if (npwpCheckOutcome.value === 'invalid') {
+    taxIdentityError.value = t('NPWP dan NITKU tidak ditemukan')
+    return
+  }
+  if (npwpCheckOutcome.value === 'already_registered') {
+    taxIdentityError.value = t('NPWP and NITKU are already registered in Klikpajak. Contact Support.')
+    return
+  }
+  draftTax.npwpValidated = true
+  toast.notify({ variant: 'success', title: t('NPWP and NITKU validated'), maxWidth: 'max-content' })
+}
+
+// ─── Coretax info — per-field (signee / PIC) validation with a passphrase check ──
+// Editing a signee/PIC field invalidates it again, so Validate re-enables; unchanged
+// (already-validated) fields keep Validate disabled and show a checkmark instead.
+type CoretaxField = 'signee' | 'pic'
+const coretaxErr = reactive<Record<CoretaxField, string>>({ signee: '', pic: '' })
+const coretaxField = ref<CoretaxField>('signee')
+const coretaxConfirmOpen = ref(false)
+const coretaxPassphrase = ref('')
+const coretaxPassphraseError = ref('')
+const coretaxPassphraseVisible = ref(false)
+function clearCoretaxField(field: CoretaxField) {
+  if (field === 'signee') draftTax.signeeValidated = false
+  else draftTax.picValidated = false
+  coretaxErr[field] = ''
+}
+// Signee/PIC names aren't typed — they're looked up from a complete (16-digit)
+// NPWP, same as a real Coretax/DJP name lookup, and shown masked + disabled.
+const CORETAX_NAME_POOL = ['R****l C****ra', 'S****i P****wi', 'A****d N****an', 'D****i K****ta']
+function lookupCoretaxName(npwp: string) {
+  const sum = npwp.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+  return CORETAX_NAME_POOL[sum % CORETAX_NAME_POOL.length]
+}
+function onCoretaxNpwpInput(field: CoretaxField, value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 16)
+  const name = digits.length === 16 ? lookupCoretaxName(digits) : ''
+  if (field === 'signee') {
+    draftTax.signeeNpwp = digits
+    draftTax.signee = name
+  } else {
+    draftTax.picNpwp = digits
+    draftTax.pic = name
+  }
+  clearCoretaxField(field)
+}
+function openValidateCoretax(field: CoretaxField) {
+  const npwpVal = field === 'signee' ? draftTax.signeeNpwp : draftTax.picNpwp
+  const nameVal = field === 'signee' ? draftTax.signee : draftTax.pic
+  coretaxErr[field] = ''
+  if (!npwpVal.trim() || !nameVal.trim()) {
+    coretaxErr[field] = req(field === 'signee' ? t('NPWP signee') : t('NPWP PIC'))
+    return
+  }
+  coretaxField.value = field
+  coretaxPassphrase.value = ''
+  coretaxPassphraseError.value = ''
+  coretaxPassphraseVisible.value = false
+  coretaxConfirmOpen.value = true
+}
+function cancelValidateCoretax() {
+  coretaxConfirmOpen.value = false
+}
+function confirmValidateCoretax() {
+  if (!coretaxPassphrase.value.trim()) {
+    coretaxPassphraseError.value = req(t('Coretax passphrase'))
+    return
+  }
+  if (coretaxField.value === 'signee') draftTax.signeeValidated = true
+  else draftTax.picValidated = true
+  coretaxConfirmOpen.value = false
+  toast.notify({ variant: 'success', title: t('Coretax info validated'), maxWidth: 'max-content' })
+}
 
 // UXW copy library — inline error messages.
 const req = (label: string) => `${t('You must fill in')} ${label}`
@@ -122,10 +261,6 @@ function saveTax() {
   editing.value = null
   toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
-function validateField(name: string) {
-  toast.notify({ variant: 'success', title: `${name} ${t('validated')}`, maxWidth: 'max-content' })
-}
-
 // ─── Payment form ─────────────────────────────────────────────────────────────
 function validatePayment(): boolean {
   clearErrors()
@@ -285,35 +420,48 @@ const ADVANCED_TOGGLES = [
 
       <!-- Read mode -->
       <template v-if="editing !== 'tax'">
-        <div class="cp-subhead">
+        <div class="cp-field">
+          <span class="cp-label">{{ t('Company type') }}</span>
+          <span class="cp-value">{{ tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)') }}</span>
+        </div>
+        <div class="cp-subhead cp-subhead--spaced">
           <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-          <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
+          <MpBadge for="tableStatus" :type="tax.npwpValidated ? 'completed' : 'announcement'" size="sm">
+            {{ tax.npwpValidated ? t('Validated') : t('Not validated') }}
+          </MpBadge>
         </div>
         <p class="cp-subhead-desc">{{ t('NPWP details') }}</p>
         <div class="cp-grid">
           <div class="cp-field">
-            <span class="cp-label">NPWP <MpBadge for="tableStatus" type="announcement" size="sm">{{ t('Not validated') }}</MpBadge></span>
-            <span class="cp-value">{{ tax.npwp }}</span>
+            <span class="cp-label">NPWP</span>
+            <span class="cp-value">{{ tax.npwp || '—' }}</span>
           </div>
           <div class="cp-field">
             <span class="cp-label">NITKU</span>
             <span class="cp-value">{{ tax.nitku || '—' }}</span>
           </div>
         </div>
-        <div class="cp-subhead cp-subhead--spaced">
-          <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
-        </div>
-        <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
-        <div class="cp-grid">
-          <div class="cp-field">
-            <span class="cp-label">{{ t('NPWP signee') }} <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge></span>
-            <span class="cp-value">{{ tax.signeeNpwp }}<br><span class="cp-value-subtle">{{ tax.signee }}</span></span>
-          </div>
-          <div class="cp-field">
-            <span class="cp-label">{{ t('NPWP PIC') }} <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge></span>
-            <span class="cp-value">{{ tax.picNpwp }}<br><span class="cp-value-subtle">{{ tax.pic }}</span></span>
-          </div>
-        </div>
+        <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
+             and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
+        <template v-if="tax.npwpValidated">
+          <template v-if="tax.companyType === 'pkp'">
+            <div class="cp-subhead cp-subhead--spaced">
+              <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
+            </div>
+            <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
+            <div class="cp-grid">
+              <div class="cp-field">
+                <span class="cp-label">{{ t('NPWP signee') }}</span>
+                <span class="cp-value">{{ tax.signeeNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.signee || '—' }}</span></span>
+              </div>
+              <div class="cp-field">
+                <span class="cp-label">{{ t('NPWP PIC') }}</span>
+                <span class="cp-value">{{ tax.picNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.pic || '—' }}</span></span>
+              </div>
+            </div>
+          </template>
+          <p v-else class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
+        </template>
       </template>
 
       <!-- Edit mode -->
@@ -339,7 +487,9 @@ const ADVANCED_TOGGLES = [
 
           <div class="cp-subhead cp-subhead--spaced">
             <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-            <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
+            <MpBadge for="tableStatus" :type="draftTax.npwpValidated ? 'completed' : 'announcement'" size="sm">
+              {{ draftTax.npwpValidated ? t('Validated') : t('Not validated') }}
+            </MpBadge>
           </div>
           <p class="cp-subhead-desc">{{ t('Enter your NPWP and business location number (NITKU) to validate e-invoicing.') }}</p>
           <div class="cp-validate-row">
@@ -348,46 +498,110 @@ const ADVANCED_TOGGLES = [
                 <MpFormLabel>NPWP</MpFormLabel>
                 <span class="cp-counter">{{ draftTax.npwp.length }}/16</span>
               </div>
-              <MpInput id="cp-npwp-input" v-model="draftTax.npwp" is-full-width @update:model-value="clearTaxErr('npwp')" />
+              <div class="cp-input-check-wrap">
+                <MpInput
+                  id="cp-npwp-input" v-model="draftTax.npwp" is-full-width
+                  :is-disabled="draftTax.npwpValidated || validatingNpwp"
+                  @update:model-value="clearTaxErr('npwp')"
+                />
+                <span v-if="draftTax.npwpValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+              </div>
               <MpFormErrorMessage>{{ errTax.npwp }}</MpFormErrorMessage>
             </MpFormControl>
-            <MpFormControl id="cp-nitku" class="cp-vf">
+            <MpFormControl id="cp-nitku" :is-invalid="!!errTax.nitku" class="cp-vf">
               <div class="cp-label-row">
                 <MpFormLabel>NITKU</MpFormLabel>
                 <span class="cp-counter">{{ draftTax.nitku.length }}/6</span>
               </div>
-              <MpInput id="cp-nitku-input" v-model="draftTax.nitku" is-full-width />
+              <div class="cp-input-check-wrap">
+                <MpInput
+                  id="cp-nitku-input" v-model="draftTax.nitku" is-full-width
+                  :is-disabled="draftTax.npwpValidated || validatingNpwp"
+                  @update:model-value="clearTaxErr('nitku')"
+                />
+                <span v-if="draftTax.npwpValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+              </div>
+              <MpFormErrorMessage>{{ errTax.nitku }}</MpFormErrorMessage>
             </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('NPWP')">{{ t('Validate') }}</button>
+            <button
+              v-if="!draftTax.npwpValidated"
+              type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
+              :disabled="validatingNpwp"
+              @click="openValidateNpwpConfirm"
+            >
+              <template v-if="validatingNpwp"><MpSpinner size="sm" /> {{ t('Validating') }}</template>
+              <template v-else>{{ t('Validate') }}</template>
+            </button>
           </div>
+          <p v-if="taxIdentityError" class="cp-inline-error">{{ taxIdentityError }}</p>
 
-          <div class="cp-subhead cp-subhead--spaced">
-            <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
-            <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
-          </div>
-          <p class="cp-subhead-desc">{{ t('Authorized person details for tax filing, pulled from your tax identity.') }}</p>
-          <div class="cp-validate-row">
-            <MpFormControl id="cp-signee-npwp" class="cp-vf">
-              <MpFormLabel>{{ t('NPWP signee') }}</MpFormLabel>
-              <MpInput id="cp-signee-npwp-input" v-model="draftTax.signeeNpwp" is-full-width />
-            </MpFormControl>
-            <MpFormControl id="cp-signee" class="cp-vf">
-              <MpFormLabel>{{ t('Signee') }}</MpFormLabel>
-              <MpInput id="cp-signee-input" v-model="draftTax.signee" is-full-width />
-            </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('Signee')">{{ t('Validate') }}</button>
-          </div>
-          <div class="cp-validate-row">
-            <MpFormControl id="cp-pic-npwp" class="cp-vf">
-              <MpFormLabel>{{ t('NPWP PIC') }}</MpFormLabel>
-              <MpInput id="cp-pic-npwp-input" v-model="draftTax.picNpwp" is-full-width />
-            </MpFormControl>
-            <MpFormControl id="cp-pic" class="cp-vf">
-              <MpFormLabel>{{ t('PIC') }}</MpFormLabel>
-              <MpInput id="cp-pic-input" v-model="draftTax.pic" is-full-width />
-            </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('PIC')">{{ t('Validate') }}</button>
-          </div>
+          <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
+               and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
+          <template v-if="draftTax.npwpValidated && draftTax.companyType !== 'pkp'">
+            <p class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
+          </template>
+          <template v-else-if="draftTax.npwpValidated">
+            <div class="cp-subhead cp-subhead--spaced">
+              <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
+            </div>
+            <p class="cp-subhead-desc">{{ t('Authorized person details for tax filing, pulled from your tax identity.') }}</p>
+            <div class="cp-validate-row">
+              <MpFormControl id="cp-signee-npwp" class="cp-vf">
+                <div class="cp-label-row">
+                  <MpFormLabel>{{ t('NPWP signee') }}</MpFormLabel>
+                  <span class="cp-counter">{{ draftTax.signeeNpwp.length }}/16</span>
+                </div>
+                <div class="cp-input-check-wrap">
+                  <MpInput
+                    id="cp-signee-npwp-input" :model-value="draftTax.signeeNpwp" is-full-width
+                    @update:model-value="(v: string) => onCoretaxNpwpInput('signee', v)"
+                  />
+                  <span v-if="draftTax.signeeValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+                </div>
+              </MpFormControl>
+              <MpFormControl id="cp-signee" class="cp-vf">
+                <MpFormLabel>{{ t('Signee') }}</MpFormLabel>
+                <div class="cp-input-check-wrap">
+                  <MpInput id="cp-signee-input" :model-value="draftTax.signee" is-full-width is-disabled />
+                  <span v-if="draftTax.signeeValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+                </div>
+              </MpFormControl>
+              <button
+                type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
+                :disabled="draftTax.signeeValidated"
+                @click="openValidateCoretax('signee')"
+              >{{ t('Validate') }}</button>
+            </div>
+            <p v-if="coretaxErr.signee" class="cp-inline-error">{{ coretaxErr.signee }}</p>
+            <div class="cp-validate-row">
+              <MpFormControl id="cp-pic-npwp" class="cp-vf">
+                <div class="cp-label-row">
+                  <MpFormLabel>{{ t('NPWP PIC') }}</MpFormLabel>
+                  <span class="cp-counter">{{ draftTax.picNpwp.length }}/16</span>
+                </div>
+                <div class="cp-input-check-wrap">
+                  <MpInput
+                    id="cp-pic-npwp-input" :model-value="draftTax.picNpwp" is-full-width
+                    @update:model-value="(v: string) => onCoretaxNpwpInput('pic', v)"
+                  />
+                  <span v-if="draftTax.picValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+                </div>
+              </MpFormControl>
+              <MpFormControl id="cp-pic" class="cp-vf">
+                <MpFormLabel>{{ t('PIC') }}</MpFormLabel>
+                <div class="cp-input-check-wrap">
+                  <MpInput id="cp-pic-input" :model-value="draftTax.pic" is-full-width is-disabled />
+                  <span v-if="draftTax.picValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
+                </div>
+              </MpFormControl>
+              <button
+                type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
+                :disabled="draftTax.picValidated"
+                @click="openValidateCoretax('pic')"
+              >{{ t('Validate') }}</button>
+            </div>
+            <p v-if="coretaxErr.pic" class="cp-inline-error">{{ coretaxErr.pic }}</p>
+          </template>
 
           <div class="cp-action-bar">
             <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
@@ -580,6 +794,102 @@ const ADVANCED_TOGGLES = [
       <MpModalOverlay />
     </MpModal>
 
+    <!-- ── Validate & create Klikpajak account modal ───────────────────────────── -->
+    <MpModal id="cp-validate-klikpajak-modal" :is-open="klikpajakConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateNpwpConfirm">
+      <MpModalContent>
+        <MpModalHeader>
+          {{ t('Validate & create Klikpajak account?') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p>{{ t('Validating NPWP and NITKU will also create a Klikpajak account linked to this company ID.') }}</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="cp-action-bar cp-action-bar--modal">
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateNpwpConfirm">{{ t('Cancel') }}</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateNpwp">{{ t('Validate & create') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Validate coretax info (signee/PIC) modal — requires a Coretax passphrase ── -->
+    <MpModal id="cp-validate-coretax-modal" :is-open="coretaxConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateCoretax">
+      <MpModalContent>
+        <MpModalHeader>
+          {{ t('Validate coretax info') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <div class="cp-field cp-mc-currency">
+            <span class="cp-label">{{ coretaxField === 'signee' ? t('NPWP Signee') : t('NPWP PIC') }}</span>
+            <span class="cp-value">{{ coretaxField === 'signee' ? draftTax.signeeNpwp : draftTax.picNpwp }}</span>
+          </div>
+          <MpFormControl id="cp-coretax-passphrase" is-required :is-invalid="!!coretaxPassphraseError">
+            <MpFormLabel>{{ t('Coretax passphrase') }}</MpFormLabel>
+            <div class="cp-input-check-wrap">
+              <MpInput
+                id="cp-coretax-passphrase-input" v-model="coretaxPassphrase" is-full-width
+                :type="coretaxPassphraseVisible ? 'text' : 'password'"
+                @update:model-value="coretaxPassphraseError = ''"
+              />
+              <button
+                type="button" class="cp-passphrase-toggle"
+                :aria-label="coretaxPassphraseVisible ? t('Hide passphrase') : t('Show passphrase')"
+                @click="coretaxPassphraseVisible = !coretaxPassphraseVisible"
+              >
+                <MpIcon :name="coretaxPassphraseVisible ? 'show' : 'hide'" size="sm" />
+              </button>
+            </div>
+            <MpFormErrorMessage>{{ coretaxPassphraseError }}</MpFormErrorMessage>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="cp-action-bar cp-action-bar--modal">
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateCoretax">{{ t('Cancel') }}</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateCoretax">{{ t('Validate') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Demo scenario FAB — switch whether this company's SSO ID is already
+         registered in Klikpajak, to preview both Tax info onboarding states ──── -->
+    <MpPopover id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="demo-fab" :aria-label="t('Change scenario state')">
+          <MpIcon name="sliders" size="md" color="icon.inverse" />
+        </button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+        <p class="demo-fab-heading">{{ t('Klikpajak account state') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem :is-active="klikpajakStatus === 'registered'" @click="setKlikpajakStatus('registered')">
+            {{ t('SSO ID registered in Klikpajak') }}
+          </MpPopoverListItem>
+          <MpPopoverListItem :is-active="klikpajakStatus === 'not_registered'" @click="setKlikpajakStatus('not_registered')">
+            {{ t('SSO ID not registered in Klikpajak') }}
+          </MpPopoverListItem>
+        </MpPopoverList>
+        <template v-if="klikpajakStatus === 'not_registered'">
+          <p class="demo-fab-heading">{{ t('When validating NPWP/NITKU') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem :is-active="npwpCheckOutcome === 'valid'" @click="npwpCheckOutcome = 'valid'">
+              {{ t('Valid — create Klikpajak account') }}
+            </MpPopoverListItem>
+            <MpPopoverListItem :is-active="npwpCheckOutcome === 'invalid'" @click="npwpCheckOutcome = 'invalid'">
+              {{ t('Invalid — not found') }}
+            </MpPopoverListItem>
+            <MpPopoverListItem :is-active="npwpCheckOutcome === 'already_registered'" @click="npwpCheckOutcome = 'already_registered'">
+              {{ t('Already registered on another company') }}
+            </MpPopoverListItem>
+          </MpPopoverList>
+        </template>
+      </MpPopoverContent>
+    </MpPopover>
+
   </div>
 </template>
 
@@ -697,6 +1007,24 @@ const ADVANCED_TOGGLES = [
 .cp-label-row { display: flex; align-items: baseline; justify-content: space-between; }
 .cp-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .cp-help { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.cp-inline-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* Per-field validated checkmark, overlaid on the input's right edge */
+.cp-input-check-wrap { position: relative; }
+.cp-input-check {
+  position: absolute; top: 50%; right: var(--mp-spacing-3); transform: translateY(-50%);
+  width: 16px; height: 16px; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-brand-bold, #029861);
+  display: inline-flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+
+/* Show/hide toggle inside the Coretax passphrase field */
+.cp-passphrase-toggle {
+  position: absolute; top: 50%; right: var(--mp-spacing-3); transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-subtle);
+}
 
 .cp-field-group { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cp-radio { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); cursor: pointer; }
@@ -760,4 +1088,20 @@ const ADVANCED_TOGGLES = [
 }
 .cp-mc-sublist > li { margin-bottom: var(--mp-spacing-1); }
 .cp-mc-sublist > li:last-child { margin-bottom: 0; }
+
+/* Validate button — show a disabled look while validating */
+.cp-validate-btn:disabled { cursor: not-allowed; opacity: 0.6; display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Demo scenario FAB */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff;
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>
