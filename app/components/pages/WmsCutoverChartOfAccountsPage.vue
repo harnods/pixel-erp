@@ -164,9 +164,6 @@ function onContinue() {
                 <div class="coa-card-title-row">
                   <h2 class="coa-card-title">{{ t('Use ERP default chart of accounts') }}</h2>
                   <span class="coa-rec">{{ t('Recommended') }}</span>
-                  <span v-if="committedSource === 'default'" class="coa-inuse">
-                    <MpIcon name="check" size="sm" color="icon.positive" /> {{ t('In use') }}
-                  </span>
                 </div>
                 <p class="coa-card-desc">
                   {{ t('Adopt Mekari ERP\'s standard chart. Fastest way to start — no file to prepare.') }}
