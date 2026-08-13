@@ -119,7 +119,7 @@ function publish() {
     <div class="ob-titlebar">
       <div class="ob-titlebar-left">
         <MpTextlink id="ob-breadcrumb" as="a" class="ob-breadcrumb" @click.prevent="goBack">{{ t('Set up opening balance') }}</MpTextlink>
-        <h1 class="ob-title">{{ t('Set opening balance') }}</h1>
+        <h1 class="ob-title">{{ t('Set up opening balance') }}</h1>
       </div>
     </div>
 

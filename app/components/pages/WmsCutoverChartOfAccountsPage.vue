@@ -140,7 +140,7 @@ function onContinue() {
     <div class="coa-titlebar">
       <div class="coa-titlebar-left">
         <MpTextlink id="coa-breadcrumb" as="a" class="coa-breadcrumb" @click.prevent="cancel">{{ t('Data migration') }}</MpTextlink>
-        <h1 class="coa-title">{{ t('Chart of accounts') }}</h1>
+        <h1 class="coa-title">{{ t('Set up opening balance') }}</h1>
       </div>
     </div>
 
