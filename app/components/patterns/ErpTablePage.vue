@@ -51,6 +51,7 @@ export interface TableColumn {
   sortType?: 'text' | 'number' | 'date'
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
+  noSkeleton?: boolean // skip the loading skeleton bar — use for layout-only columns (spacer, action columns)
 }
 
 const props = withDefaults(defineProps<{
@@ -618,6 +619,7 @@ const bulkCountLabel = computed(() => {
                 }"
               >
                 <MpSkeleton
+                  v-if="!col.noSkeleton"
                   class="erp-skeleton"
                   height="14px"
                   rounded="sm"

@@ -26,6 +26,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   IDR: "Rp",
   SGD: "SGD",
   USD: "US$",
+  AUD: "AUS$",
 };
 
 /** id-ID magnitude abbreviations, largest first. */

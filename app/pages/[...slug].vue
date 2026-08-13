@@ -96,6 +96,7 @@ const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/Warehous
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
+const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
@@ -280,6 +281,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/review/:id → OCR review for an imported bank statement
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
     return { component: BankStatementReviewPage, id: segs[2]! }
+  }
+  // /cash-management/new → create a new cash/bank/card account (full page)
+  if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'new') {
+    return { component: CreateCashAccountPage, id: 'new' }
   }
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
@@ -1158,13 +1163,21 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
-          <!-- One pill: "New account" + caret. The caret half opens the account-type menu. -->
+          <!-- Secondary: "+ New account" -->
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New account') }}
+          </button>
+
+          <!-- Primary split pill: "New transaction" + caret opens the transaction-type menu. -->
           <div ref="importBtnWrapEl" class="import-wrap">
             <button
               class="btn-enterprise btn-enterprise--primary btn-enterprise--split"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              {{ t('New account') }}
+              {{ t('New transaction') }}
               <span class="btn-enterprise__split-divider" />
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
@@ -1176,9 +1189,9 @@ function startResize(e: MouseEvent) {
 
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Bank account') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Cash account') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Credit card') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Internal transfer') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Receive money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Spend money') }}</MpButton>
               </div>
             </div>
           </div>
