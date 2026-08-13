@@ -40,6 +40,14 @@ const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 
+// "WMS upgrade to ERP" migration scenario (separate axis from useScenario above):
+// pricing/costing/account values don't exist yet — the user migrates them first
+// via Settings → Migration date — so those cells render "—" until then. Columns
+// still show (we're in the ERP view post-upgrade); only the VALUES are blanked.
+// Default scenario is untouched.
+const { migrationScenario } = useMigrationScenario()
+const isMigrationPending = computed(() => migrationScenario.value === 'WMS upgrade to ERP')
+
 // ─── Column definitions — match Figma Products table exactly ──────────────────
 //
 //  Figma structure (left → right):
@@ -324,7 +332,7 @@ function closeExportModal() { exportModalOpen.value = false }
         <div v-if="!isWms" class="stat-card stat-card--bordered">
           <div class="stat-title">Total inventory value</div>
           <div class="stat-period">Based on current product value</div>
-          <div class="stat-amount">{{ formatIDR(totalInventoryValue) }}</div>
+          <div class="stat-amount">{{ isMigrationPending ? '—' : formatIDR(totalInventoryValue) }}</div>
           <span class="stat-asof">As of {{ asOfLabel }}</span>
         </div>
         <div class="stat-card stat-card--bordered">
@@ -474,11 +482,11 @@ function closeExportModal() { exportModalOpen.value = false }
     <template #cell-onTheWay="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
     <template #cell-minStock="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
 
-    <!-- ── Cell: price columns ── -->
-    <template #cell-defaultSalesPrice="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-averageCost="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-lastPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-defaultPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
+    <!-- ── Cell: price columns — "—" until the WMS→ERP migration is run ── -->
+    <template #cell-defaultSalesPrice="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-averageCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-lastPurchaseCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-defaultPurchaseCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
 
     <!-- ── Cell: DJP (tax) columns — blank for most rows, see productsIndex.ts ── -->
     <template #cell-djpCode="{ row, value }">
