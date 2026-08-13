@@ -23,6 +23,7 @@ import {
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
@@ -44,7 +45,10 @@ const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 // still show (we're in the ERP view post-upgrade); only the VALUES are blanked.
 // Default scenario is untouched.
 const { migrationScenario } = useMigrationScenario()
-const isMigrationPending = computed(() => migrationScenario.value === 'WMS upgrade to ERP')
+// Pending only until the WMS→ERP opening balance is published in Data migration.
+const isMigrationPending = computed(() =>
+  migrationScenario.value === 'WMS upgrade to ERP' && !cutoverState.published,
+)
 
 function goBack() { router.push('/product-list') }
 

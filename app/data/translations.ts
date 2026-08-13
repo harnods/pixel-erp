@@ -1776,6 +1776,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Inventory value missing in the uploaded file": "Nilai persediaan tidak ada di berkas yang diunggah",
   "Saved as draft": "Tersimpan sebagai draf",
   "Back": "Kembali",
+  "Skip": "Lewati",
   "Import": "Impor",
   "Importing accounts…": "Mengimpor akun…",
   "Import your chart of accounts to continue": "Impor bagan akun Anda untuk melanjutkan",

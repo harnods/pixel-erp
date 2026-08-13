@@ -27,6 +27,7 @@ import {
   productIndexRows, PRODUCT_TYPE_LABEL, type ProductIndexRow, type ProductType,
 } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
+import { cutoverState } from '~/data/wmsCutover'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const route = useRoute()
@@ -46,7 +47,11 @@ const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 // still show (we're in the ERP view post-upgrade); only the VALUES are blanked.
 // Default scenario is untouched.
 const { migrationScenario } = useMigrationScenario()
-const isMigrationPending = computed(() => migrationScenario.value === 'WMS upgrade to ERP')
+// Pending only until the WMS→ERP opening balance is published in Data migration;
+// after that the mapped accounts/values (from product mapping) show through.
+const isMigrationPending = computed(() =>
+  migrationScenario.value === 'WMS upgrade to ERP' && !cutoverState.published,
+)
 
 // ─── Column definitions — match Figma Products table exactly ──────────────────
 //

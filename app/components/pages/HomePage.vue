@@ -9,12 +9,19 @@ import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
 import { infoToast } from '~/utils/toasts'
+import { isOpeningBalanceComplete } from '~/data/wmsCutover'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
 import whatsnewAnomaly from '~/assets/images/home/whatsnew-anomaly.png?url'
 import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url'
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
+import openingBalanceIllus from '~/assets/images/home/opening-balance.png?url'
+import productsIllus from '~/assets/images/home/products.png?url'
+import contactsIllus from '~/assets/images/home/contacts.png?url'
+import transactionsIllus from '~/assets/images/home/transactions.png?url'
+import bankIllus from '~/assets/images/home/bank.png?url'
+import teamIllus from '~/assets/images/home/team.png?url'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -116,18 +123,84 @@ const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
 const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
-interface SetupStep { label: string; time: string; done: boolean }
-const setupSteps: SetupStep[] = [
-  { label: t('Complete company settings'),       time: t('APPROX. 2 MINUTES'), done: true },
-  { label: t('Set up opening balances'),         time: t('APPROX. 5 MINUTES'), done: false },
-  { label: t('Add or import products'),          time: t('APPROX. 4 MINUTES'), done: false },
-  { label: t('Add or import contacts'),          time: t('APPROX. 4 MINUTES'), done: false },
-  { label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false },
-  { label: t('Connect your bank account'),       time: t('APPROX. 3 MINUTES'), done: false },
-  { label: t('Invite your team'),                time: t('APPROX. 2 MINUTES'), done: false },
-]
-const setupDone = computed(() => setupSteps.filter(s => s.done).length)
-const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.length) * 100))
+// Clicking a step swaps the right-hand detail panel; a step with `to` deep-links
+// into its setup flow when "Set up now" is clicked.
+interface SetupStep { label: string; time: string; done: boolean; heading: string; sub: string; cta: string; to?: string; illus?: string }
+// Computed so a step auto-completes when its flow is done elsewhere — e.g. once
+// the WMS→ERP opening balance is published in Settings → Data migration.
+const setupSteps = computed<SetupStep[]>(() => [
+  {
+    label: t('Complete company settings'), time: t('APPROX. 2 MINUTES'), done: true,
+    heading: t('Fill in important information about your company'),
+    sub: t('Organize company info to activate features like multi-currency, formats, and tax inclusive.'),
+    cta: t('Review'),
+    to: '/company-profile',
+  },
+  {
+    label: t('Set up opening balances'), time: t('APPROX. 5 MINUTES'), done: isOpeningBalanceComplete(),
+    heading: t('Set up your opening balances'),
+    sub: t('Bring your chart of accounts, product mapping, and opening balances into ERP before you start recording.'),
+    cta: t('Set up opening balances'),
+    to: '/data-migration',
+    illus: openingBalanceIllus,
+  },
+  {
+    label: t('Add or import products'), time: t('APPROX. 4 MINUTES'), done: false,
+    heading: t('Add or import your products'),
+    sub: t('Build your product catalogue so you can start selling and tracking stock.'),
+    cta: t('Import products'),
+    illus: productsIllus,
+  },
+  {
+    label: t('Add or import contacts'), time: t('APPROX. 4 MINUTES'), done: false,
+    heading: t('Add or import your contacts'),
+    sub: t('Bring in customers and vendors to speed up your transactions.'),
+    cta: t('Import contacts'),
+    illus: contactsIllus,
+  },
+  {
+    label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false,
+    heading: t('Add or import your sales transactions'),
+    sub: t('Record outstanding invoices and orders so your books stay accurate.'),
+    cta: t('Import transactions'),
+    illus: transactionsIllus,
+  },
+  {
+    label: t('Connect your bank account'), time: t('APPROX. 3 MINUTES'), done: false,
+    heading: t('Connect your bank account'),
+    sub: t('Reconcile transactions automatically by linking your bank.'),
+    cta: t('Connect bank'),
+    illus: bankIllus,
+  },
+  {
+    label: t('Invite your team'), time: t('APPROX. 2 MINUTES'), done: false,
+    heading: t('Invite your team'),
+    sub: t('Give your colleagues access with the right roles.'),
+    cta: t('Invite user'),
+    illus: teamIllus,
+  },
+])
+// A step counts as done if its flow completed OR the user skipped it.
+const skipped = ref<Set<string>>(new Set())
+function stepDone(s: SetupStep): boolean { return s.done || skipped.value.has(s.label) }
+const setupDone = computed(() => setupSteps.value.filter(stepDone).length)
+const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.value.length) * 100))
+// FAB demo state; the whole "Set up Mekari ERP" section disappears once every
+// step is done (all completed / skipped).
+const setupComplete = ref(false)
+const allSetupDone = computed(() => setupComplete.value || setupDone.value >= setupSteps.value.length)
+const activeSetupStep = ref(0)
+const currentSetup = computed(() => setupSteps.value[activeSetupStep.value]!)
+function setupNow() {
+  const to = currentSetup.value.to
+  if (to) router.push(to)
+  else soon(t('Set up now'))
+}
+function skipStep() {
+  const next = new Set(skipped.value)
+  next.add(currentSetup.value.label)
+  skipped.value = next
+}
 
 // ── Learn Mekari ERP ────────────────────────────────────────────────────────
 interface LearnCard { tag: string; tone: 'blue' | 'neutral' | 'yellow'; title: string; desc: string; cta: string }
@@ -277,8 +350,8 @@ const learn: LearnCard[] = [
         </div>
       </section>
 
-      <!-- ── Set up Mekari ERP ──────────────────────────────────────────── -->
-      <section class="sec">
+      <!-- ── Set up Mekari ERP (hidden once every step is completed) ─────── -->
+      <section v-if="!allSetupDone" class="sec">
         <div class="setup-head">
           <h3 class="sec__title">{{ t('Set up Mekari ERP') }}</h3>
           <div class="setup-progress">
@@ -296,12 +369,12 @@ const learn: LearnCard[] = [
               v-for="(s, i) in setupSteps"
               :key="s.label"
               class="setup-step"
-              :class="{ 'setup-step--active': i === 0 }"
+              :class="{ 'setup-step--active': i === activeSetupStep }"
               type="button"
-              @click="soon(s.label)"
+              @click="activeSetupStep = i"
             >
-              <span class="setup-step__check" :class="{ 'setup-step__check--done': s.done }">
-                <MpIcon v-if="s.done" name="check" size="sm" />
+              <span class="setup-step__check" :class="{ 'setup-step__check--done': stepDone(s) }">
+                <MpIcon name="check" size="sm" />
               </span>
               <span class="setup-step__text">
                 <span class="setup-step__label">{{ s.label }}</span>
@@ -311,18 +384,19 @@ const learn: LearnCard[] = [
           </div>
 
           <div class="setup__detail">
+            <a v-if="!stepDone(currentSetup)" class="setup__skip" @click.prevent="skipStep">{{ t('Skip') }}</a>
             <div class="setup__copy">
-              <h4 class="setup__heading">{{ t('Fill in important information') }}<br>{{ t('about your company') }}</h4>
-              <p class="setup__sub">{{ t('Organize company info to activate features like multi-currency, formats, and tax inclusive.') }}</p>
+              <h4 class="setup__heading">{{ currentSetup.heading }}</h4>
+              <p class="setup__sub">{{ currentSetup.sub }}</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="soon(t('Set up now'))">{{ t('Set up now') }}</button>
+                <button class="btn btn--brand" type="button" @click="setupNow">{{ currentSetup.cta }}</button>
                 <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
                   <MpIcon name="play-video" size="md" />
                   {{ t('Watch video') }}
                 </button>
               </div>
             </div>
-            <img :src="setupBuilding" alt="" class="setup__illus">
+            <img :src="currentSetup.illus ?? setupBuilding" alt="" class="setup__illus">
           </div>
         </div>
       </section>
@@ -372,7 +446,7 @@ const learn: LearnCard[] = [
         <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-        <p class="demo-fab-heading">{{ t('Scenarios') }}</p>
+        <p class="demo-fab-heading">{{ t("What's new") }}</p>
         <MpPopoverList>
           <MpPopoverListItem
             v-for="s in whatsNewDemoStates"
@@ -382,6 +456,11 @@ const learn: LearnCard[] = [
           >
             {{ s.label }}
           </MpPopoverListItem>
+        </MpPopoverList>
+        <p class="demo-fab-heading">{{ t('Set up Mekari ERP') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem :is-active="!setupComplete" @click="setupComplete = false">{{ t('In progress') }}</MpPopoverListItem>
+          <MpPopoverListItem :is-active="setupComplete" @click="setupComplete = true">{{ t('All completed') }}</MpPopoverListItem>
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
@@ -874,17 +953,21 @@ const learn: LearnCard[] = [
   border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px dashed var(--mp-border-bold, #8c9596);
-  color: #fff;
 }
+/* Not-done: a subtle grey check inside the dashed ring. */
+.setup-step__check :deep(svg) { color: var(--mp-text-secondary, #8c9596); }
 .setup-step__check--done {
   border: none;
   background: var(--mp-background-brand-bold, #029861);
 }
+/* Done: white check on the green fill (MpIcon otherwise keeps its own colour). */
+.setup-step__check--done :deep(svg) { color: var(--mp-text-inverse-static, #fff); }
 .setup-step__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .setup-step__label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.setup-step__time { font-size: var(--mp-font-sizes-sm); letter-spacing: 0.4px; color: var(--mp-text-secondary); }
+.setup-step__time { font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); font-weight: var(--mp-font-weights-regular); letter-spacing: 0.4px; color: var(--mp-text-secondary); }
 
 .setup__detail {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -892,6 +975,17 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-8);
 }
+.setup__skip {
+  position: absolute;
+  top: var(--mp-spacing-4);
+  right: var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm, 12px);
+  line-height: var(--mp-line-heights-sm, 16px);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-link);
+  cursor: pointer;
+}
+.setup__skip:hover { text-decoration: underline; text-underline-offset: 2px; }
 .setup__copy { flex: 1; min-width: 0; }
 .setup__heading {
   margin: 0 0 var(--mp-spacing-2);
