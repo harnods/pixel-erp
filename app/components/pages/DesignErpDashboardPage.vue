@@ -17,6 +17,7 @@ import {
   SITEMAP,
   sitemapSummary,
   moduleSummaries,
+  actionSummary,
   type SitemapModule,
   type SitemapNode,
 } from '~/data/erpSitemap'
@@ -25,6 +26,7 @@ const { t } = useLocale()
 const router = useRouter()
 
 const summary = sitemapSummary()
+const actions = actionSummary()
 const moduleCounts = moduleSummaries()
 const countFor = (module: string) => moduleCounts.find((m) => m.module === module)
 
@@ -69,8 +71,16 @@ function open(node: SitemapNode) {
 <template>
   <div class="dsn">
     <p class="dsn-intro">
-      {{ t('Every page in the ERP sitemap and whether it is built or still a placeholder. Coverage is derived from the app source — see app/data/erpSitemap.ts.') }}
+      {{ t('Every page in the ERP sitemap and whether it is built or still a placeholder. Built entities also break down into their actions (New · Details · Edit · Archive · Delete + lifecycle) so you can see, per link, what exists vs. what is missing. Coverage is derived from the app source — see app/data/erpSitemap.ts.') }}
     </p>
+
+    <!-- Action-coverage legend + tally -->
+    <div class="dsn-legend">
+      <span class="dsn-legend-item dsn-task--built"><span class="dsn-task-mark" aria-hidden="true"></span>{{ t('Built') }} · {{ actions.built }}</span>
+      <span class="dsn-legend-item dsn-task--partial"><span class="dsn-task-mark" aria-hidden="true"></span>{{ t('Partial (no-op)') }} · {{ actions.partial }}</span>
+      <span class="dsn-legend-item dsn-task--missing"><span class="dsn-task-mark" aria-hidden="true"></span>{{ t('Missing') }} · {{ actions.missing }}</span>
+      <span class="dsn-legend-note">{{ t('across') }} {{ actions.total }} {{ t('entity actions') }}</span>
+    </div>
 
     <!-- Summary row: counts + % built progress -->
     <div class="dsn-summary">
@@ -132,35 +142,63 @@ function open(node: SitemapNode) {
       </header>
       <ul class="dsn-rows">
         <template v-for="node in mod.items" :key="node.key + node.route">
-          <li class="dsn-row" :class="{ 'dsn-row--built': node.built }" @click="open(node)">
-            <div class="dsn-row-main">
-              <span class="dsn-row-label">{{ t(node.label) }}</span>
-              <span class="dsn-row-route" :class="{ 'dsn-row-route--link': node.built }">{{ node.route }}</span>
-              <span v-if="node.note" class="dsn-row-note">{{ node.note }}</span>
+          <li class="dsn-row dsn-row--stacked" :class="{ 'dsn-row--built': node.built }" @click="open(node)">
+            <div class="dsn-row-top">
+              <div class="dsn-row-main">
+                <span class="dsn-row-label">{{ t(node.label) }}</span>
+                <span class="dsn-row-route" :class="{ 'dsn-row-route--link': node.built }">{{ node.route }}</span>
+                <span v-if="node.note" class="dsn-row-note">{{ node.note }}</span>
+              </div>
+              <ErpStatusBadge
+                :status="node.built ? 'completed' : 'not-built'"
+                :type="node.built ? 'completed' : 'announcement'"
+                :label="node.built ? t('Built') : t('Not built')"
+              />
             </div>
-            <ErpStatusBadge
-              :status="node.built ? 'completed' : 'not-built'"
-              :type="node.built ? 'completed' : 'announcement'"
-              :label="node.built ? t('Built') : t('Not built')"
-            />
+            <ul v-if="node.actions" class="dsn-tasks" @click.stop>
+              <li
+                v-for="act in node.actions"
+                :key="act.label"
+                class="dsn-task"
+                :class="`dsn-task--${act.status}`"
+              >
+                <span class="dsn-task-mark" aria-hidden="true"></span>
+                <span class="dsn-task-label">{{ act.label }}</span>
+                <span v-if="act.note" class="dsn-task-note">{{ act.note }}</span>
+              </li>
+            </ul>
           </li>
           <li
             v-for="child in node.children"
             :key="child.key + child.route"
-            class="dsn-row dsn-row--child"
+            class="dsn-row dsn-row--child dsn-row--stacked"
             :class="{ 'dsn-row--built': child.built }"
             @click="open(child)"
           >
-            <div class="dsn-row-main">
-              <span class="dsn-row-label">{{ t(child.label) }}</span>
-              <span class="dsn-row-route" :class="{ 'dsn-row-route--link': child.built }">{{ child.route }}</span>
-              <span v-if="child.note" class="dsn-row-note">{{ child.note }}</span>
+            <div class="dsn-row-top">
+              <div class="dsn-row-main">
+                <span class="dsn-row-label">{{ t(child.label) }}</span>
+                <span class="dsn-row-route" :class="{ 'dsn-row-route--link': child.built }">{{ child.route }}</span>
+                <span v-if="child.note" class="dsn-row-note">{{ child.note }}</span>
+              </div>
+              <ErpStatusBadge
+                :status="child.built ? 'completed' : 'not-built'"
+                :type="child.built ? 'completed' : 'announcement'"
+                :label="child.built ? t('Built') : t('Not built')"
+              />
             </div>
-            <ErpStatusBadge
-              :status="child.built ? 'completed' : 'not-built'"
-              :type="child.built ? 'completed' : 'announcement'"
-              :label="child.built ? t('Built') : t('Not built')"
-            />
+            <ul v-if="child.actions" class="dsn-tasks" @click.stop>
+              <li
+                v-for="act in child.actions"
+                :key="act.label"
+                class="dsn-task"
+                :class="`dsn-task--${act.status}`"
+              >
+                <span class="dsn-task-mark" aria-hidden="true"></span>
+                <span class="dsn-task-label">{{ act.label }}</span>
+                <span v-if="act.note" class="dsn-task-note">{{ act.note }}</span>
+              </li>
+            </ul>
           </li>
         </template>
       </ul>
@@ -327,10 +365,114 @@ function open(node: SitemapNode) {
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
+/* Rows carrying an action breakdown stack the header over the chip row. */
+.dsn-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--mp-spacing-2);
+}
+.dsn-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+}
 .dsn-row:last-child { border-bottom: none; }
 .dsn-row--built { cursor: pointer; }
 .dsn-row--built:hover { background: var(--mp-background-neutral-subtle-hovered); }
 .dsn-row--child .dsn-row-main { padding-left: var(--mp-spacing-4); }
+.dsn-row--child.dsn-row--stacked .dsn-tasks { padding-left: var(--mp-spacing-4); }
+
+/* ── Action task-list ── */
+.dsn-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-5);
+  flex-wrap: wrap;
+}
+.dsn-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.dsn-legend-note {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-subtle);
+}
+
+/* Per-entity actions rendered as a checklist so each link reads as a to-do. */
+.dsn-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+}
+.dsn-task {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mp-spacing-2);
+  min-width: 0;
+}
+.dsn-task-mark {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--mp-sizes-4, 16px);
+  height: var(--mp-sizes-4, 16px);
+  border-radius: var(--mp-radii-sm, 4px);
+  border: 1.5px solid currentColor;
+  align-self: center;
+}
+/* Built: filled check */
+.dsn-task--built .dsn-task-mark {
+  color: var(--mp-text-success, #067a57);
+  background: var(--mp-text-success, #067a57);
+  border-color: var(--mp-text-success, #067a57);
+}
+.dsn-task--built .dsn-task-mark::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--mp-background-page, #fff);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+/* Partial: amber dash (present but no-op) */
+.dsn-task--partial .dsn-task-mark {
+  color: var(--mp-text-warning, #9a6700);
+  border-color: var(--mp-text-warning, #9a6700);
+}
+.dsn-task--partial .dsn-task-mark::after {
+  content: '';
+  position: absolute;
+  left: 2.5px;
+  top: 5.5px;
+  width: 7px;
+  height: 0;
+  border-top: 1.5px solid var(--mp-text-warning, #9a6700);
+}
+/* Missing: empty grey box */
+.dsn-task--missing .dsn-task-mark {
+  color: var(--mp-border-bold, #94a3b8);
+  border-color: var(--mp-border-bold, #94a3b8);
+}
+.dsn-task-label {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-sm, 16px);
+}
+.dsn-task--missing .dsn-task-label { color: var(--mp-text-subtle); }
+.dsn-task-note {
+  font-size: var(--mp-font-sizes-xs, 11px);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm, 16px);
+}
 
 .dsn-row-main {
   display: flex;

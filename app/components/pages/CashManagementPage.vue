@@ -386,7 +386,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             >
               {{ t('Reconcile account') }} ({{ (row as CashAccount).unreconciledCount }})
             </MpPopoverListItem>
-            <MpPopoverListItem v-if="!(row as CashAccount).isConnected" @click.stop>{{ t('Connect to bank') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as CashAccount).isConnected" @click="router.push(`/cash-management/${(row as CashAccount).id}/connect`)">{{ t('Bank connection') }}</MpPopoverListItem>
+            <MpPopoverListItem v-else @click="router.push(`/cash-management/${(row as CashAccount).id}/connect`)">{{ t('Connect to bank') }}</MpPopoverListItem>
             <MpPopoverListItem @click.stop>{{ t('Add sub-account') }}</MpPopoverListItem>
             <div class="row-menu-divider" />
             <MpPopoverListItem @click.stop>{{ t('Import statement') }}</MpPopoverListItem>

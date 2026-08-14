@@ -97,6 +97,7 @@ const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/Config
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
+const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
@@ -289,6 +290,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/:id/edit → edit an existing account (must precede the :id detail branch)
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'edit') {
     return { component: CreateCashAccountPage, id: segs[1]! }
+  }
+  // /cash-management/:id/connect → Connect to bank (Bank connection) flow
+  if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'connect') {
+    return { component: CashConnectBankPage, id: segs[1]! }
   }
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {

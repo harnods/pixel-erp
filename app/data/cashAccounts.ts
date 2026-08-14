@@ -10,6 +10,22 @@
 
 export type CashAccountCurrency = 'IDR' | 'SGD' | 'USD' | 'AUD'
 
+/**
+ * Bank connection (bank-feed) connection details shown on the connected "Bank
+ * connection" view (Figma 5259-268214). Captured through the 3-step Connect to
+ * bank flow and read back verbatim when the account is connected.
+ */
+export interface BankConnection {
+  bankName: string
+  bankAccountType: string
+  accountName: string
+  accountNumber: string
+  /** BCA-only KBB corporate identifier. */
+  corporateIdKbb?: string
+  connectToAccount: string
+  companyId: string
+}
+
 export interface CashAccount {
   id: string
   /** Chart-of-accounts code, e.g. '1-10001' (1-xxxxx = asset, 2-xxxxx = liability). */
@@ -49,17 +65,28 @@ export interface CashAccount {
    */
   hasTransactions?: boolean
   isArchived?: boolean
+  /**
+   * Where the account sits in the Connect to bank flow when it isn't yet
+   * connected. Absent → not started (flow opens at step 1). 'activation' → the
+   * request was submitted and it resumes at step 3 (Account activation).
+   * Connected accounts use `isConnected` instead.
+   */
+  bankLinkStage?: 'activation'
+  /** Bank connection details for connected accounts — drives the Bank connection view. */
+  connection?: BankConnection
 }
 
 export const cashAccounts: CashAccount[] = [
   // Physical cash — never has a bank statement, so nothing to reconcile.
   { id: 'CA001', code: '1-10001', name: 'Cash',                                                          currency: 'IDR', statementBalance: null,                                     bookBalance: 15_000_000,   unreconciledCount: 0,  lastUpdated: '2026-08-12T09:15:00' },
   { id: 'CA002', code: '1-10002', name: 'Petty Cash',                                                    currency: 'IDR', statementBalance: null,                                     bookBalance: 15_000_000,   unreconciledCount: 0,  lastUpdated: '2026-07-28T14:40:00' },
-  { id: 'CA003', code: '1-10003', name: 'Bank BCA',        accountNumber: '5485079642', isConnected: true, syncRemaining: 400, syncTotal: 500, currency: 'IDR', statementBalance: 163_835_000,  statementDate: '2026-02-05', bookBalance: 139_025_000,  unreconciledCount: 10, lastUpdated: '2026-08-13T08:05:00' },
+  { id: 'CA003', code: '1-10003', name: 'Bank BCA',        accountNumber: '5485079642', isConnected: true, syncRemaining: 400, syncTotal: 500, currency: 'IDR', statementBalance: 163_835_000,  statementDate: '2026-02-05', bookBalance: 139_025_000,  unreconciledCount: 10, lastUpdated: '2026-08-13T08:05:00',
+    connection: { bankName: 'PT. Bank Central Asia (BCA)', bankAccountType: 'Corporate', accountName: 'PT Central Perk Indonesia', accountNumber: '5485079642', corporateIdKbb: 'PTCPI0001', connectToAccount: '1-10003 Bank BCA', companyId: '680128' } },
 
   // Connected account whose sync quota is exhausted — hovering "Last updated…"
   // warns that further syncs are charged.
-  { id: 'CA010', code: '1-10009', name: 'Bank CIMB Niaga', accountNumber: '8730054219', isConnected: true, syncRemaining: 0,   syncTotal: 500, currency: 'IDR', statementBalance: 92_400_000,   statementDate: '2026-02-05', bookBalance: 88_150_000,   unreconciledCount: 4,  lastUpdated: '2026-08-13T07:40:00' },
+  { id: 'CA010', code: '1-10009', name: 'Bank CIMB Niaga', accountNumber: '8730054219', isConnected: true, syncRemaining: 0,   syncTotal: 500, currency: 'IDR', statementBalance: 92_400_000,   statementDate: '2026-02-05', bookBalance: 88_150_000,   unreconciledCount: 4,  lastUpdated: '2026-08-13T07:40:00',
+    connection: { bankName: 'PT. Bank CIMB Niaga (CIMB)', bankAccountType: 'Corporate', accountName: 'PT Central Perk Indonesia', accountNumber: '8730054219', connectToAccount: '1-10009 Bank CIMB Niaga', companyId: '680128' } },
   { id: 'CA004', code: '1-10004', name: 'DBS Singapore',   accountNumber: '0661089145',                  currency: 'SGD', statementBalance: 155_000_000,  statementCurrency: 'IDR', statementDate: '2025-12-20', bookBalance: 6_000,  unreconciledCount: 1, lastUpdated: '2025-12-20T11:20:00' },
 
   // Mandiri Office — a parent account with nested sub-accounts (see Figma 5527-171257).

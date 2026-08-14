@@ -396,9 +396,11 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <!-- Connected → pull latest from the bank feed; otherwise set up a connection. -->
+              <!-- Connected → manage the Bank connection + pull latest from the feed;
+                   otherwise start the Connect to bank (Bank connection) setup flow. -->
+              <MpPopoverListItem v-if="account.isConnected" @click="router.push(`/cash-management/${account.id}/connect`)">{{ t('Bank connection') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="account.isConnected" @click="refreshConnection">{{ t('Sync transactions') }}</MpPopoverListItem>
-              <MpPopoverListItem v-else>{{ t('Connect to bank') }}</MpPopoverListItem>
+              <MpPopoverListItem v-else @click="router.push(`/cash-management/${account.id}/connect`)">{{ t('Connect to bank') }}</MpPopoverListItem>
               <div class="cmd-menu-divider" />
               <MpPopoverListItem @click="router.push(`/cash-management/${account.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
               <!-- Archive ↔ Unarchive (disabled + tooltip when it has transactions) -->
