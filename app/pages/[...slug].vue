@@ -735,10 +735,12 @@ const showNewPurchaseOrder = computed(() =>
   activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
 )
 
-// Warehouse transfers is an ERP-only module — its "New warehouse transfer" action
-// shows only in the ERP scenario, on the Warehouse transfers page.
+// "New warehouse transfer" shows on the Warehouse transfers page in both
+// scenarios that carry that page in their nav — ERP and WMS Standalone (WMS
+// Standalone mirrors the ERP module onto the same /warehouse-transfers page).
 const showNewWarehouseTransfer = computed(() =>
-  activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
+  (activeScenario.value === 'ERP' || activeScenario.value === 'WMS Standalone') &&
+  currentPageKey.value === 'Warehouse transfers',
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
