@@ -118,7 +118,8 @@ function bankName(c: string): string {
 interface TypeDef {
   type: string
   dir: 'in' | 'out'
-  family: 'sales' | 'cost'
+  /** Which numbering sequence this document draws from. */
+  family: 'sales' | 'cost' | 'transfer'
   pool: string[]
   weight: number
   /** Bank-feed description for this event. */
@@ -127,16 +128,38 @@ interface TypeDef {
   band: [number, number]
 }
 
-const TYPES: TypeDef[] = [
-  { type: 'Sales Invoice',   dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 5, band: [0.4, 1.6], bank: c => `TRF CR ${bankName(c)}` },
-  { type: 'Receive Payment', dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 5, band: [0.3, 1.2], bank: c => `QRIS SETTLEMENT ${bankName(c)}` },
-  { type: 'Bill Payment',    dir: 'out', family: 'cost',  pool: COST_SUPPLIERS,  weight: 4, band: [0.4, 1.3], bank: c => `TRF DB ${bankName(c)}` },
-  { type: 'Expense',         dir: 'out', family: 'cost',  pool: OPEX_VENDORS,    weight: 3, band: [0.05, 0.4], bank: c => `AUTO DEBIT ${bankName(c)}` },
-  { type: 'Sales Return',    dir: 'out', family: 'sales', pool: CUSTOMERS,       weight: 1, band: [0.05, 0.3], bank: c => `TRF DB ${bankName(c)} REFUND` },
-  { type: 'Credit Memo',     dir: 'in',  family: 'sales', pool: CUSTOMERS,       weight: 1, band: [0.05, 0.3], bank: c => `TRF CR ${bankName(c)} ADJ` },
+/** Each cash account plays a different role, so its ledger draws from a different
+ *  mix of documents/contacts — a credit card only spends, an FX account settles
+ *  overseas import/export, a utilities sub-account only pays bills, etc. */
+export type LedgerProfile =
+  | 'operating' | 'card' | 'fx' | 'payroll' | 'utilities'
+  | 'logistics' | 'finance' | 'retailcash' | 'petty'
+
+// ── Profile-specific contact pools ──────────────────────────────────────────
+/** Credit-card merchants (software, ads, travel, fuel, marketplaces). */
+const CARD_VENDORS = [
+  'Google Workspace', 'Adobe Creative Cloud', 'Amazon Web Services', 'Figma', 'Microsoft 365',
+  'Meta Ads', 'Google Ads', 'TikTok Ads', 'Garuda Indonesia', 'Traveloka', 'Grab',
+  'Pertamina', 'Shell Indonesia', 'Tokopedia', 'Blibli', 'Canva Pro',
 ]
-// Petty cash = small everyday spend (parking, electricity token, drinking water,
-// office supplies) and employee reimbursements, topped up from the bank.
+/** Overseas green-bean & machine suppliers (FX / import account). */
+const FX_SUPPLIERS = [
+  'La Marzocco S.p.A.', 'Nuova Simonelli S.p.A.', 'Mahlkönig GmbH', 'Probat GmbH',
+  'Yirgacheffe Coffee Union', 'FNC Colombia', 'Santos Coffee Exporters', 'Vietnam Robusta Trading',
+]
+/** Overseas wholesale buyers (FX / export account). */
+const FX_CUSTOMERS = ['Singapore Roasters Pte Ltd', 'Australia Coffee Co', 'Kopi Malaysia Sdn Bhd', 'HK Cafe Group']
+const PAYROLL_PAYEES = [
+  'Payroll — Agung Setiawarman', 'Payroll — Cinta Ayu', 'Payroll — Bayu Ferdian',
+  'Payroll — Dewi Lestari', 'Payroll — Eka Setiawan', 'Payroll — Fajar Nugraha',
+]
+const UTILITY_PAYEES = ['PLN (Listrik)', 'PDAM (Air)', 'Telkom (IndiHome)', 'PGN (Gas)', 'IndiHome Bisnis']
+const LOGISTICS_PAYEES = ['JNE Trucking', 'SiCepat Kargo', 'J&T Cargo', 'Pertamina (BBM)', 'Bengkel Kendaraan Operasional']
+const FINANCE_PAYEES = ['Pajak PPN', 'Pajak PPh Badan', 'Angsuran Kredit Investasi', 'Provisi Kredit']
+const RETAIL = ['Penjualan Retail Toko', 'QRIS Retail Toko', 'Walk-in Customer']
+const FUND_SOURCE = ['Transfer dari Bank BCA']
+
+// Petty cash = small everyday spend + employee reimbursements, topped up from the bank.
 const PETTY_EXPENSES = [
   'Parkir Kantor', 'Token Listrik', 'Air Galon', 'ATK Kantor', 'Konsumsi Rapat',
   'Bensin Operasional', 'Pulsa & Kuota', 'Fotokopi & Materai', 'Ojek Online Kurir', 'Snack Karyawan',
@@ -147,11 +170,58 @@ const PETTY_REIMBURSE = [
 ]
 const PETTY_TOPUP = ['Top-up dari Bank BCA', 'Setoran Kas Kecil']
 
-const PETTY_TYPES: TypeDef[] = [
-  { type: 'Expense',           dir: 'out', family: 'cost',  pool: PETTY_EXPENSES,  weight: 6, band: [0.05, 0.6], bank: c => `CASH OUT ${bankName(c)}` },
-  { type: 'Reimbursement',     dir: 'out', family: 'cost',  pool: PETTY_REIMBURSE, weight: 3, band: [0.2, 1.0],  bank: c => `CASH OUT ${bankName(c)}` },
-  { type: 'Petty Cash Top-up', dir: 'in',  family: 'sales', pool: PETTY_TOPUP,     weight: 2, band: [1.5, 3.0],  bank: c => `CASH IN ${bankName(c)}` },
-]
+// ── One document mix per account role ────────────────────────────────────────
+const PROFILES: Record<LedgerProfile, TypeDef[]> = {
+  // Main operating account — domestic sales receipts + supplier/opex payments.
+  operating: [
+    { type: 'Sales Invoice',   dir: 'in',  family: 'sales', pool: CUSTOMERS,      weight: 5, band: [0.4, 1.6],  bank: c => `TRF CR ${bankName(c)}` },
+    { type: 'Receive Payment', dir: 'in',  family: 'sales', pool: CUSTOMERS,      weight: 5, band: [0.3, 1.2],  bank: c => `QRIS SETTLEMENT ${bankName(c)}` },
+    { type: 'Bill Payment',    dir: 'out', family: 'cost',  pool: COST_SUPPLIERS, weight: 4, band: [0.4, 1.3],  bank: c => `TRF DB ${bankName(c)}` },
+    { type: 'Expense',         dir: 'out', family: 'cost',  pool: OPEX_VENDORS,   weight: 3, band: [0.05, 0.4], bank: c => `AUTO DEBIT ${bankName(c)}` },
+    { type: 'Sales Return',    dir: 'out', family: 'sales', pool: CUSTOMERS,      weight: 1, band: [0.05, 0.3], bank: c => `TRF DB ${bankName(c)} REFUND` },
+    { type: 'Credit Memo',     dir: 'in',  family: 'sales', pool: CUSTOMERS,      weight: 1, band: [0.05, 0.3], bank: c => `TRF CR ${bankName(c)} ADJ` },
+  ],
+  // Corporate card — only spending, plus the monthly card payment from the bank.
+  card: [
+    { type: 'Expense',      dir: 'out', family: 'cost',     pool: CARD_VENDORS,        weight: 8, band: [0.05, 0.5], bank: c => `CARD PURCHASE ${bankName(c)}` },
+    { type: 'Card Payment', dir: 'in',  family: 'transfer', pool: ['Pembayaran Kartu'], weight: 2, band: [1.0, 2.5],  bank: () => 'PAYMENT - THANK YOU' },
+  ],
+  // FX / import-export — outward TT to overseas suppliers, inward TT from buyers.
+  fx: [
+    { type: 'Bill Payment',    dir: 'out', family: 'cost',  pool: FX_SUPPLIERS,             weight: 6, band: [0.4, 1.4],  bank: c => `OUTWARD TT ${bankName(c)}` },
+    { type: 'Receive Payment', dir: 'in',  family: 'sales', pool: FX_CUSTOMERS,             weight: 3, band: [0.4, 1.3],  bank: c => `INWARD TT ${bankName(c)}` },
+    { type: 'Expense',         dir: 'out', family: 'cost',  pool: ['Bank Charges', 'Selisih Kurs'], weight: 1, band: [0.02, 0.1], bank: c => `DB ${bankName(c)}` },
+  ],
+  // Payroll account — salaries + tax/BPJS, funded from the operating account.
+  payroll: [
+    { type: 'Payroll',           dir: 'out', family: 'cost',     pool: PAYROLL_PAYEES, weight: 6, band: [0.4, 1.2], bank: c => `TRF DB ${bankName(c)}` },
+    { type: 'Tax & BPJS',        dir: 'out', family: 'cost',     pool: ['PPh 21 Karyawan', 'BPJS Ketenagakerjaan', 'BPJS Kesehatan'], weight: 2, band: [0.1, 0.5], bank: c => `TRF DB ${bankName(c)}` },
+    { type: 'Internal Transfer', dir: 'in',  family: 'transfer', pool: FUND_SOURCE,    weight: 2, band: [1.5, 3.0], bank: c => `TRF CR ${bankName(c)}` },
+  ],
+  utilities: [
+    { type: 'Expense',           dir: 'out', family: 'cost',     pool: UTILITY_PAYEES, weight: 7, band: [0.1, 0.8], bank: c => `AUTO DEBIT ${bankName(c)}` },
+    { type: 'Internal Transfer', dir: 'in',  family: 'transfer', pool: FUND_SOURCE,    weight: 2, band: [1.5, 3.0], bank: c => `TRF CR ${bankName(c)}` },
+  ],
+  logistics: [
+    { type: 'Expense',           dir: 'out', family: 'cost',     pool: LOGISTICS_PAYEES, weight: 7, band: [0.1, 0.9], bank: c => `TRF DB ${bankName(c)}` },
+    { type: 'Internal Transfer', dir: 'in',  family: 'transfer', pool: FUND_SOURCE,      weight: 2, band: [1.5, 3.0], bank: c => `TRF CR ${bankName(c)}` },
+  ],
+  finance: [
+    { type: 'Tax Payment',   dir: 'out', family: 'cost',  pool: FINANCE_PAYEES,                weight: 5, band: [0.3, 1.2],  bank: c => `TRF DB ${bankName(c)}` },
+    { type: 'Bank Charge',   dir: 'out', family: 'cost',  pool: ['Biaya Admin Bank', 'Materai'], weight: 2, band: [0.02, 0.1], bank: c => `DB ${bankName(c)}` },
+    { type: 'Bank Interest', dir: 'in',  family: 'sales', pool: ['Bunga Bank'],                weight: 1, band: [0.02, 0.08], bank: () => 'CR BUNGA BANK' },
+  ],
+  // Physical cash at the store — small retail sales + small operational spend / bank deposits.
+  retailcash: [
+    { type: 'Cash Sale', dir: 'in',  family: 'sales', pool: RETAIL,                                 weight: 7, band: [0.1, 0.7], bank: c => `CASH SALE ${bankName(c)}` },
+    { type: 'Expense',   dir: 'out', family: 'cost',  pool: ['Belanja Operasional', 'Setoran ke Bank BCA'], weight: 3, band: [0.1, 0.6], bank: c => `CASH OUT ${bankName(c)}` },
+  ],
+  petty: [
+    { type: 'Expense',           dir: 'out', family: 'cost',     pool: PETTY_EXPENSES,  weight: 6, band: [0.05, 0.6], bank: c => `CASH OUT ${bankName(c)}` },
+    { type: 'Reimbursement',     dir: 'out', family: 'cost',     pool: PETTY_REIMBURSE, weight: 3, band: [0.2, 1.0],  bank: c => `CASH OUT ${bankName(c)}` },
+    { type: 'Petty Cash Top-up', dir: 'in',  family: 'transfer', pool: PETTY_TOPUP,     weight: 2, band: [1.5, 3.0],  bank: c => `CASH IN ${bankName(c)}` },
+  ],
+}
 
 function pickType(rand: () => number, forceOut: boolean, types: TypeDef[]): TypeDef {
   const pool = forceOut ? types.filter(t => t.dir === 'out') : types
@@ -174,14 +244,16 @@ interface LedgerEvent {
 const ROWS = 60
 const SALES_START = 26025
 const COST_START = 90056
+const TRANSFER_START = 3025
 
-/** One shared ledger per account, newest → oldest. Directions are chosen so the
- *  running balance (anchored at `anchor` = the book balance) never goes negative
- *  for asset accounts; credit-card accounts (negative anchor) are allowed to. */
-function buildLedger(accountId: string, anchor: number, kind: 'bank' | 'petty' = 'bank'): LedgerEvent[] {
-  const rand = mulberry32(seedFromString(`${accountId}-ledger-v2`))
-  const petty = kind === 'petty'
-  const types = petty ? PETTY_TYPES : TYPES
+/** One shared ledger per account, newest → oldest, drawn from the account's
+ *  `profile` document mix. Directions are chosen so the running balance (anchored
+ *  at `anchor` = the book balance) never goes negative for asset accounts;
+ *  credit-card accounts (negative anchor) are allowed to. */
+function buildLedger(accountId: string, anchor: number, profile: LedgerProfile = 'operating'): LedgerEvent[] {
+  const rand = mulberry32(seedFromString(`${accountId}-ledger-v3`))
+  const petty = profile === 'petty'
+  const types = PROFILES[profile]
   const allowNeg = anchor < 0
   const mag = Math.abs(anchor) || 5_000_000
   // Petty cash uses a small fixed unit (float stays ~constant); bank accounts scale to size.
@@ -195,6 +267,7 @@ function buildLedger(accountId: string, anchor: number, kind: 'bank' | 'petty' =
   let balance = anchor
   let salesSeq = SALES_START
   let costSeq = COST_START
+  let transferSeq = TRANSFER_START
 
   for (let i = 0; i < ROWS; i++) {
     date = addDays(date, -(1 + Math.floor(rand() * 2)))
@@ -205,7 +278,7 @@ function buildLedger(accountId: string, anchor: number, kind: 'bank' | 'petty' =
     // Keep the older balance ≥ ~unit for asset accounts.
     if (def.dir === 'in' && !allowNeg) amount = Math.min(amount, balance - unit)
     amount = Math.max(gran, Math.round(amount / gran) * gran)
-    const number = def.family === 'sales' ? --salesSeq : --costSeq
+    const number = def.family === 'sales' ? --salesSeq : def.family === 'transfer' ? --transferSeq : --costSeq
     events.push({ date, type: def.type, number, contact: pick(rand, def.pool), dir: def.dir, amount, bank: def.bank })
     balance = balance - (def.dir === 'in' ? amount : 0) + (def.dir === 'out' ? amount : 0)
   }
@@ -214,8 +287,8 @@ function buildLedger(accountId: string, anchor: number, kind: 'bank' | 'petty' =
 
 // ─── Account transactions tab (book side) ────────────────────────────────────
 
-export function getAccountTransactions(accountId: string, bookBalance: number, unreconciledCount = 6, kind: 'bank' | 'petty' = 'bank'): AccountTransactionLine[] {
-  const events = buildLedger(accountId, bookBalance, kind)
+export function getAccountTransactions(accountId: string, bookBalance: number, unreconciledCount = 6, profile: LedgerProfile = 'operating'): AccountTransactionLine[] {
+  const events = buildLedger(accountId, bookBalance, profile)
   let balance = bookBalance
   return events.map((e, i) => {
     const moneyIn = e.dir === 'in' ? e.amount : 0
@@ -243,8 +316,8 @@ export function addImportedStatementLines(accountId: string, lines: BankStatemen
   importedLines[accountId] = [...lines, ...(importedLines[accountId] ?? [])]
 }
 
-export function getBankStatementLines(accountId: string, bookBalance: number, unreconciledCount = 6): BankStatementLine[] {
-  const events = buildLedger(accountId, bookBalance)
+export function getBankStatementLines(accountId: string, bookBalance: number, unreconciledCount = 6, profile: LedgerProfile = 'operating'): BankStatementLine[] {
+  const events = buildLedger(accountId, bookBalance, profile)
   // Walk the full series to capture each event's book balance…
   let balance = bookBalance
   const withBalance = events.map((e) => {

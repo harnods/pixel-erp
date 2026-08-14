@@ -30,7 +30,7 @@ import type { CashAccountCurrency } from '~/data'
 import { formatMoney } from '~/utils/currency'
 import {
   getBankStatementLines, getAccountTransactions,
-  type BankStatementLine, type AccountTransactionLine,
+  type BankStatementLine, type AccountTransactionLine, type LedgerProfile,
 } from '~/data/bankStatementLines'
 import { formatDate, formatDateLong } from '~/utils/date'
 
@@ -180,7 +180,7 @@ const statementImportLabel = computed(() => {
 const allStatementLines = computed<BankStatementLine[]>(() => {
   const a = account.value
   if (!a || !hasStatement.value) return []            // no statement → empty state
-  return getBankStatementLines(a.id, a.bookBalance, a.unreconciledCount)
+  return getBankStatementLines(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
 })
 
 // null when there is no statement — the header shows "—" / "No statement imported".
@@ -231,15 +231,26 @@ const statementColumns: TableColumn[] = [
 // ── Account transactions (Account transactions tab) — the software's own
 //    documents (sales invoices, payments, expenses, credit memos…), not the
 //    raw bank feed shown in the Bank statement tab. ───────────────────────────
-// Physical-cash accounts (Cash, Petty Cash, cash drawers) get small everyday
-// petty-cash transactions instead of the wholesale bean / machine flows.
-const ledgerKind = computed<'bank' | 'petty'>(() =>
-  /cash|petty|drawer|wallet/i.test(account.value?.name ?? '') ? 'petty' : 'bank',
-)
+// Each account's transaction mix depends on its role (main operating, credit
+// card, FX/import, payroll, utilities, logistics, finance, retail cash, petty).
+const ledgerProfile = computed<LedgerProfile>(() => {
+  const a = account.value
+  if (!a) return 'operating'
+  const n = a.name.toLowerCase()
+  if (/petty/.test(n)) return 'petty'
+  if (/^2-/.test(a.code)) return 'card'                    // credit-card codes are 2-xxxxx
+  if (/dbs|singapore|valas|\bfx\b|us\$|usd/.test(n)) return 'fx'
+  if (/utilit/.test(n)) return 'utilities'
+  if (/transport|logistic/.test(n)) return 'logistics'
+  if (/hrbp|payroll/.test(n)) return 'payroll'
+  if (/finance/.test(n)) return 'finance'
+  if (/\bcash\b|drawer|wallet/.test(n)) return 'retailcash'
+  return 'operating'
+})
 const allTransactionLines = computed<AccountTransactionLine[]>(() => {
   const a = account.value
   if (!a || a.hasTransactions === false) return []   // brand-new account → empty state
-  return getAccountTransactions(a.id, a.bookBalance, a.unreconciledCount, ledgerKind.value)
+  return getAccountTransactions(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
 })
 const {
   search: txSearch, currentPage: txCurrentPage, paginated: txPaginated, total: txTotal,
