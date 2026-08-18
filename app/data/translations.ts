@@ -245,7 +245,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // ── WMS nouns / pages ───────────────────────────────────────────────────────
   'Receipt': 'Penerimaan',
   'Receipts': 'Penerimaan',
-  'Receiving': 'Penerimaan',
+  'Receiving': 'Tugas penerimaan',
   'Receiving task': 'Tugas penerimaan',
   'Receiving tasks': 'Tugas penerimaan',
   'Put-away': 'Penyimpanan',
