@@ -6,7 +6,14 @@ import { orderSkuLines } from '~/data/inventory'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
 
-export interface ShippingLabelEntry { order: OutgoingOrder; info: ShipLabelInfo }
+export interface ShippingLabelEntry {
+  order: OutgoingOrder
+  info: ShipLabelInfo
+  /** carrier printed on the WMS label (non-marketplace); omitted for marketplace */
+  courier?: string
+  /** this shipment's tracking / AWB — one label is one parcel is one tracking no. */
+  trackingNo?: string
+}
 
 const PHOTO_COL_WIDTH = 48
 const PHOTO_SIZE = 38
@@ -40,7 +47,7 @@ export async function generateShippingLabelPdf(
   const marginX = 40
 
   for (let i = 0; i < entries.length; i++) {
-    const { order, info } = entries[i]!
+    const { order, info, courier, trackingNo } = entries[i]!
     if (i > 0) doc.addPage()
 
     let y = 44
@@ -62,7 +69,13 @@ export async function generateShippingLabelPdf(
       ['Customer', order.customer || '-'],
       ['Warehouse', order.warehouseName || '-'],
     ]
-    if (info.code) leftInfo.push([info.kind === 'source' ? 'Resi' : 'Tracking no.', info.code])
+    if (info.code) leftInfo.push([info.kind === 'source' ? 'Resi' : 'Label', info.code])
+    // WMS label → print the carrier + this shipment's AWB (marketplace labels carry
+    // their own courier/resi from the channel, so only add these for WMS).
+    if (info.kind === 'wms') {
+      if (courier) leftInfo.push(['Courier', courier])
+      if (trackingNo && trackingNo.trim()) leftInfo.push(['Tracking no.', trackingNo.trim()])
+    }
     const rightInfo: [string, string][] = [
       ['Printed on', formatDateTimeLong(new Date().toISOString())],
     ]

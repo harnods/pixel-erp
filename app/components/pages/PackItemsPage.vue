@@ -25,6 +25,7 @@ import { playScanSuccessSound } from '~/utils/sound'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import ShippingDetailsModal from '~/components/patterns/ShippingDetailsModal.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -323,7 +324,10 @@ function endPackingClick() {
 // D4 AC#5 — completing packing prints the shipping label (source label for
 // pack_using_source_label orders, WMS-generated label otherwise) as part of
 // finishing the task, right before the packer sticks it on the package.
-const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+const {
+  pdfOpen, pdfDoc, pdfFilename, printShippingLabels,
+  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+} = usePrintShippingLabel()
 
 async function commit() {
   showConfirm.value = false
@@ -344,13 +348,15 @@ async function commit() {
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
-  if (order.value) await printShippingLabels([order.value])
+  if (order.value) await printShippingLabels([order.value], { requireCourier: true })
   // Nothing printable (label unavailable/duplicate) — printShippingLabels already
   // toasted why, so just leave; otherwise wait for the preview to be dismissed
-  // (Print or Cancel) before navigating off this page.
-  if (!pdfOpen.value) { router.push(`/packing/${props.orderId}`); return }
-  const stop = watch(pdfOpen, (open) => {
-    if (open) return
+  // (Print or Cancel) — or, when the order had no courier yet, for the shipping-
+  // details modal to be resolved and its follow-up preview closed — before
+  // navigating off this page.
+  if (!pdfOpen.value && !courierModalOpen.value) { router.push(`/packing/${props.orderId}`); return }
+  const stop = watch([pdfOpen, courierModalOpen], ([preview, modal]) => {
+    if (preview || modal) return
     stop()
     router.push(`/packing/${props.orderId}`)
   })
@@ -607,6 +613,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :filename="pdfFilename"
     :title="t('Shipping label preview')"
     @close="pdfOpen = false"
+  />
+
+  <ShippingDetailsModal
+    :is-open="courierModalOpen"
+    :orders="courierModalOrders"
+    @close="cancelShippingDetails"
+    @submit="saveShippingDetailsAndPrint"
   />
 
   <ViewBatchDrawer

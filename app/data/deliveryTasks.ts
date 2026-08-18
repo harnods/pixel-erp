@@ -60,7 +60,10 @@ export interface DeliveryTask {
   shippedDate?: string;
   /** carrier handling the shipment (set at create shipping) */
   courier?: string;
-  /** tracking / waybill number (set at create shipping) */
+  /** tracking / waybill number for THIS shipment — one delivery is one shipment is
+   *  one parcel is one AWB. An order shipped partially over several cycles has one
+   *  delivery (and one tracking no.) per cycle; the order's "all tracking numbers"
+   *  is the union across its deliveries, not a list stored here. */
   trackingNo?: string;
   /** signed proof-of-delivery file name (uploaded when the shipment is completed) */
   proofFile?: string;
@@ -229,6 +232,68 @@ function freshSeq(): number {
   return nextSeq;
 }
 
+// ── WMS shipping details (courier + tracking) captured before handover ──────────
+// For a non-marketplace order, the courier + tracking number can be entered ahead of
+// the handover step — e.g. from the shipping-details modal when printing the label at
+// packing, or on the manual New delivery order form. One delivery = one shipment =
+// one tracking number; a partially-shipped order accrues several deliveries (one per
+// cycle), each with its own tracking no. This registry is keyed by order id and holds
+// the DEFAULT courier plus a pending tracking no. for the NEXT-created delivery — it
+// bridges the window where a label is printed before the delivery task exists.
+// Marketplace orders never use this — their courier is channel-fixed (marketplaceShipping).
+type WmsShipping = { courier: string; trackingNo: string };
+const wmsShipping = reactive<Record<string, WmsShipping>>(
+  loadSnapshot<Record<string, WmsShipping>>("wms-shipping-v1") ?? {},
+);
+function persistWmsShipping(): void {
+  saveSnapshot("wms-shipping-v1", wmsShipping);
+}
+/** The order's current (not-yet-handed-over) delivery — the one a label being printed
+ *  now belongs to. Prior partials have already shipped and keep their own tracking. */
+function readyDeliveryForOrder(orderId: string): DeliveryTask | undefined {
+  return deliveryTasks.find((t) => t.salesOrderId === orderId && t.status === "ready to ship");
+}
+
+/** Record courier + tracking no. for an order's CURRENT shipment (non-marketplace).
+ *  Writes to the ready-to-ship delivery when it exists; otherwise stashes it as
+ *  pending so the next-created delivery inherits it. Courier is also kept as the
+ *  order's default for later shipments; tracking is per-shipment, never reused. */
+export function setWmsShipping(
+  orderId: string,
+  details: { courier: string; trackingNo?: string },
+): void {
+  const courier = details.courier.trim();
+  const trackingNo = (details.trackingNo ?? "").trim();
+  const ready = readyDeliveryForOrder(orderId);
+  if (ready) {
+    ready.courier = courier;
+    ready.trackingNo = trackingNo || undefined;
+    persistDelivery();
+    // Tracking now lives on the delivery; keep only the default courier pending.
+    wmsShipping[orderId] = { courier, trackingNo: "" };
+  } else {
+    wmsShipping[orderId] = { courier, trackingNo };
+  }
+  persistWmsShipping();
+}
+
+/** Courier + tracking for an order's current shipment — from the ready-to-ship
+ *  delivery if set there, else the pending registry. Undefined when nothing on file. */
+export function wmsShippingForOrder(orderId: string): WmsShipping | undefined {
+  const t = readyDeliveryForOrder(orderId);
+  if (t?.courier) return { courier: t.courier, trackingNo: t.trackingNo ?? "" };
+  return wmsShipping[orderId];
+}
+
+/** The courier assigned to an order for shipping-label purposes — marketplace orders
+ *  carry a channel-fixed courier; everyone else uses whatever WMS shipping is on file
+ *  (empty string until entered). Drives the "missing courier" print gate. */
+export function courierForOrder(order: OutgoingOrder): string {
+  const mkt = marketplaceShipping(order);
+  if (mkt) return mkt.courier;
+  return wmsShippingForOrder(order.id)?.courier ?? "";
+}
+
 /**
  * Create a delivery for a single sales order (from a completed packing task).
  * Newly created → "open".
@@ -251,6 +316,18 @@ export function addDeliveryTask(opts: {
 }): DeliveryTask {
   const seq = freshSeq();
   const order = outgoingOrders.find((o) => o.id === opts.salesOrderId);
+  // Seed courier + tracking from anything captured before the delivery existed
+  // (e.g. the shipping-details modal at packing, or the manual New delivery form),
+  // unless the caller already provides a courier (marketplace channel-fixed values).
+  const pending = opts.courier ? undefined : wmsShipping[opts.salesOrderId];
+  const courier = opts.courier ?? pending?.courier;
+  const trackingNo = opts.trackingNo ?? pending?.trackingNo;
+  // A pending tracking no. belongs to THIS shipment only — consume it so the next
+  // partial delivery doesn't inherit a stale AWB (courier stays as the default).
+  if (pending?.trackingNo) {
+    wmsShipping[opts.salesOrderId] = { courier: pending.courier, trackingNo: "" };
+    persistWmsShipping();
+  }
   const task: DeliveryTask = {
     id: `del-new-${seq}`,
     taskNo: `Delivery #${seq}`,
@@ -268,8 +345,8 @@ export function addDeliveryTask(opts: {
     shippedQty: 0, // created → waiting to leave
     status: "ready to ship",
     deliveryMethod: opts.deliveryMethod ?? "online",
-    courier: opts.courier,
-    trackingNo: opts.trackingNo,
+    courier,
+    trackingNo,
   };
   deliveryTasks.unshift(task);
   persistDelivery();

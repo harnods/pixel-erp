@@ -10,6 +10,7 @@ import {
 import { warehouses } from '~/data/warehouses'
 import { couriers } from '~/data/couriers'
 import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder } from '~/data/outgoing'
+import { setWmsShipping } from '~/data/deliveryTasks'
 import { editOutboundOrder, proposeSkuReduction } from '~/data/outboundSync'
 import { orderSkuLines } from '~/data/inventory'
 import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask } from '~/data/pickingTasks'
@@ -285,7 +286,7 @@ async function persist() {
   const skuQty = filledRows.length || 1
   const orderQty = filledRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) || 1
   const txDate = toISODate(transactionDate.value)
-  addOutgoing({
+  const created = addOutgoing({
     salesNo: transactionNo.value || nextDeliveryOrderNo(),
     source: 'Outbound delivery',
     warehouseId: warehouseId.value,
@@ -308,6 +309,14 @@ async function persist() {
       qty: Number(r.qty),
     })),
   })
+  // Persist the courier + tracking entered here so they carry through to the
+  // delivery task (and don't re-prompt at the shipping-label step). Both optional.
+  if (shipVia.value.trim()) {
+    setWmsShipping(created.id, {
+      courier: shipVia.value.trim(),
+      trackingNo: trackingNo.value.trim(),
+    })
+  }
 }
 
 // ── D7 allocation step (AC#3/#4) ────────────────────────────────────────────

@@ -66,12 +66,14 @@ export function resetPrintedLabels(): void {
 }
 
 // ── Print resolution (does NOT render the PDF or mark printed) ─────────────────
-export type ShipLabelPrintStatus = "ok" | "unavailable" | "duplicate";
+export type ShipLabelPrintStatus = "ok" | "unavailable" | "duplicate" | "missing-courier";
 export interface ShipLabelPrintResult {
   order: OutgoingOrder;
   info: ShipLabelInfo;
   /** ok = printable now · unavailable = marketplace label not arrived ·
-   *  duplicate = already printed and the warehouse forbids reprints (D9). */
+   *  duplicate = already printed and the warehouse forbids reprints (D9) ·
+   *  missing-courier = non-marketplace order with no courier yet (only when the
+   *  caller requires one — the packing print gate). */
   status: ShipLabelPrintStatus;
 }
 
