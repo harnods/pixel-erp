@@ -34,7 +34,9 @@ export function usePrintShippingLabel() {
 
   function entryFor(order: OutgoingOrder, info: ShipLabelInfo): ShippingLabelEntry {
     const ship = wmsShippingForOrder(order.id)
-    return { order, info, courier: ship?.courier, trackingNo: ship?.trackingNo }
+    // courierForOrder covers both — a marketplace order's channel-fixed courier and
+    // a WMS order's entered courier.
+    return { order, info, courier: courierForOrder(order), trackingNo: ship?.trackingNo }
   }
 
   async function printShippingLabels(
