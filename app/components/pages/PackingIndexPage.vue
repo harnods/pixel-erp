@@ -70,7 +70,7 @@ const columns: TableColumn[] = [
   { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
   { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
-  { key: 'icons',         label: '',            width: '48px',  align: 'center', noHeader: true },
+  { key: 'icons',         label: '',            width: '48px',  noHeader: true },
   { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
 ]
@@ -539,7 +539,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Icon indicators cell — shipment created */
-.pack-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pack-icons-cell { display: flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-2); }
 .pack-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
 .pack-source {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;

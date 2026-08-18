@@ -31,6 +31,20 @@ Open **http://localhost:4321**.
 Other scripts: `npm run build` (production build), `npm test` (run the test
 suite), `npm run generate` (static export).
 
+### Two ports: dev (4321) vs preview (4322)
+
+We run **two** servers side by side, and you should too:
+
+| Port | Command | What it's for |
+|---|---|---|
+| **4321** | `npm run dev` | **Development.** Hot-reload while editing. Fast, but CSS can transiently break during edits (a known Panda CSS / Vite HMR race) — that's expected here. This is your *working* port. |
+| **4322** | `npm run build && npm run preview -- --port 4322` | **Preview / demo.** Serves a real production build — stable, CSS never breaks. Treat it like a mini "production". This is the port you (or a PM) *review and demo* from. |
+
+Workflow: **edit on 4321, review on 4322.** After finishing a change,
+`npm run build` again and restart the 4322 preview so it reflects the latest —
+the preview is a snapshot of the last build, not live. Keeping the review port
+on a clean build is why the demo never shows a broken-CSS flash.
+
 > All data is fake and lives only in your browser's `localStorage` — nothing
 > is shared between people or devices. If a demo gets into a confusing state,
 > open the account menu (top right) → **Reset demo data** to wipe it back to

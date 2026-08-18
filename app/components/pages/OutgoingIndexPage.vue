@@ -50,7 +50,7 @@ const columns: TableColumn[] = [
   { key: 'source',        label: 'Source',    width: '180px', sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse', width: '180px', sortType: 'text' },
   { key: 'status',        label: 'Status',    width: '150px', sortType: 'text' },
-  { key: 'icons',         label: '',          width: '100px', align: 'center', noHeader: true },
+  { key: 'icons',         label: '',          width: '100px', noHeader: true },
   { key: 'skuQty',        label: 'SKU qty',   width: '100px', align: 'right', sortType: 'number' },
   { key: 'orderQty',      label: 'Order qty', width: '120px', align: 'right', sortType: 'number' },
   { key: 'dueDate',       label: 'Due date',  width: '180px', sortType: 'date' },
@@ -872,7 +872,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .out-icons-cell {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--mp-spacing-2);
 }
 .out-icon-indicator {
