@@ -452,7 +452,7 @@ function confirmDelete() {
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Footer + Actions ────────────────────────────────────────────────────────── */
-.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); }
+.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);
