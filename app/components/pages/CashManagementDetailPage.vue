@@ -26,6 +26,7 @@ import CashTxFiltersDrawer, {
 import ImportBankStatementOcrModal from '~/components/patterns/ImportBankStatementOcrModal.vue'
 import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
 import { cashAccounts } from '~/data'
+import { internalTransfers } from '~/data/internalTransfers'
 import type { CashAccountCurrency } from '~/data'
 import { formatMoney } from '~/utils/currency'
 import {
@@ -83,7 +84,10 @@ function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/cash-manageme
 
 // Number / Contact are links to the underlying transaction & contact. Those
 // detail pages aren't built yet, so this is a placeholder hook (no navigation).
-function openTransaction(_row: AccountTransactionLine) { /* → transaction detail (TODO) */ }
+function openTransaction(row: AccountTransactionLine) {
+  // Internal transfers link to their detail page; other types aren't built yet.
+  if (row.id.startsWith('ittx:')) router.push(`/cash-management/internal-transfer/${row.id.slice(5)}`)
+}
 function openContact(_name: string) { /* → contact detail (TODO) */ }
 
 // Row reconcile actions — only meaningful for accounts that have a statement.
@@ -247,10 +251,40 @@ const ledgerProfile = computed<LedgerProfile>(() => {
   if (/\bcash\b|drawer|wallet/.test(n)) return 'retailcash'
   return 'operating'
 })
+// User-created internal transfers (mini-DB) that touch this account — money OUT
+// of the source, money IN to each destination. Prepended (newest) to the generated
+// ledger so a saved transfer shows up on both accounts' transaction lists.
+const transferLines = computed<AccountTransactionLine[]>(() => {
+  const a = account.value
+  if (!a) return []
+  const label = (id: string) => { const c = cashAccounts.find((x) => x.id === id); return c ? `${c.code} ${c.name}` : id }
+  const lines: AccountTransactionLine[] = []
+  for (const tr of internalTransfers) {
+    if (tr.fromAccountId === a.id) {
+      lines.push({ id: `ittx:${tr.id}`, date: tr.transactionDate, type: t('Internal transfer'), number: tr.number, contact: tr.lines.map((l) => label(l.accountId)).join(', '), moneyIn: 0, moneyOut: tr.total, balance: 0, status: 'unreconciled' })
+    }
+    for (const l of tr.lines) {
+      if (l.accountId === a.id) {
+        lines.push({ id: `ittx:${tr.id}`, date: tr.transactionDate, type: t('Internal transfer'), number: tr.number, contact: label(tr.fromAccountId), moneyIn: l.amount, moneyOut: 0, balance: 0, status: 'unreconciled' })
+      }
+    }
+  }
+  return lines // internalTransfers is newest-first (unshift on add)
+})
 const allTransactionLines = computed<AccountTransactionLine[]>(() => {
   const a = account.value
-  if (!a || a.hasTransactions === false) return []   // brand-new account → empty state
-  return getAccountTransactions(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
+  if (!a) return []
+  const generated = a.hasTransactions === false
+    ? []
+    : getAccountTransactions(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
+  const injected = transferLines.value
+  if (!injected.length) return generated
+  // Running balance: injected transfers sit on top (newest), building up from the
+  // current top-of-ledger balance.
+  let bal = generated[0]?.balance ?? a.bookBalance
+  const withBal = [...injected].reverse().map((r) => { bal = bal + r.moneyIn - r.moneyOut; return { ...r, balance: bal } })
+  withBal.reverse()
+  return [...withBal, ...generated]
 })
 const {
   search: txSearch, currentPage: txCurrentPage, paginated: txPaginated, total: txTotal,
@@ -376,7 +410,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Internal transfer') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Receive money') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Spend money') }}</MpPopoverListItem>
             </MpPopoverList>

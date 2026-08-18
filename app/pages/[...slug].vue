@@ -98,6 +98,8 @@ const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/St
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
+const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
+const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
@@ -286,6 +288,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/new → create a new cash/bank/card account (full page)
   if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'new') {
     return { component: CreateCashAccountPage, id: 'new' }
+  }
+  // /cash-management/internal-transfer[...] → Internal transfer create/edit/duplicate/detail
+  if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'internal-transfer') {
+    if (segs.length === 2) return { component: InternalTransferFormPage, id: 'new' }                                // create
+    if (segs.length >= 4 && (segs[3] === 'edit' || segs[3] === 'duplicate')) return { component: InternalTransferFormPage, id: segs[2]! } // edit / duplicate
+    return { component: InternalTransferDetailsPage, id: segs[2]! }                                                 // :id detail
   }
   // /cash-management/:id/edit → edit an existing account (must precede the :id detail branch)
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'edit') {
@@ -1199,7 +1207,7 @@ function startResize(e: MouseEvent) {
 
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Internal transfer') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Receive money') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Spend money') }}</MpButton>
               </div>

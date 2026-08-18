@@ -32,7 +32,7 @@ const DEFAULTS: QuickShortcut[] = [
   { key: 'upload-bill',       label: 'Upload bill',       path: '#', visible: false },
   { key: 'product',           label: 'Product',           path: '/product-list/new', visible: true },
   { key: 'journal-entry',     label: 'Journal entry',     path: '#', visible: false },
-  { key: 'internal-transfer', label: 'Internal transfer', path: '#', visible: false },
+  { key: 'internal-transfer', label: 'Internal transfer', path: '/cash-management/internal-transfer', visible: false },
   { key: 'receive-money',     label: 'Receive money',     path: '#', visible: false },
   { key: 'spend-money',       label: 'Spend money',       path: '#', visible: false },
 ]

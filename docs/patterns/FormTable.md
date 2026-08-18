@@ -8,11 +8,27 @@ controls.
 Use this doc for the **form-table cell pattern**. Use
 [ErpTablePage.md](ErpTablePage.md) for index/read-only table specs.
 
-Live references:
+**Canonical reference — copy this one:**
+[NewExpensePage.vue](../../app/components/pages/NewExpensePage.vue) is the
+reference implementation for money/line-item form tables (Account · Description ·
+Amount with an `Rp` prefix). When building a new transaction form table (e.g.
+Internal transfer, Receive money), replicate its `ex-*` table markup + CSS
+exactly rather than re-deriving it. [InternalTransferFormPage.vue](../../app/components/pages/InternalTransferFormPage.vue)
+is such a replica.
+
+Other live references:
 [CreateReceiptPage.vue](../../app/components/pages/CreateReceiptPage.vue),
 [WarehouseTransferFormPage.vue](../../app/components/pages/WarehouseTransferFormPage.vue),
 [StockInOutFormPage.vue](../../app/components/pages/StockInOutFormPage.vue),
 [ManageBatchDrawer.vue](../../app/components/patterns/ManageBatchDrawer.vue).
+
+> **⚠️ The 40px row height is load-bearing — this is the #1 mistake.**
+> The editable `<td>` has `padding: 0` and the input must **fill the full cell
+> height** (`var(--mp-sizes-10, 40px)`). If the row is taller than the input
+> (e.g. a 52px cell around a 40px input), the input floats with vertical gaps and
+> its **own** rounded border/focus ring becomes visible inside the cell — the
+> exact "small rounded box that doesn't fill the cell" bug. Always pin the row to
+> the 40px baseline so the cell's focus-within ring is the only border shown.
 
 ---
 
