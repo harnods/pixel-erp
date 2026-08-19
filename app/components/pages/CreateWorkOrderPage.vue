@@ -102,7 +102,7 @@ const bomError = ref(false)
 const workOrderType = ref('')
 const workOrderTypeError = ref(false)
 const trackRouting = ref<'yes' | 'no'>('yes')
-const planDates = ref<string | string[]>('') // "DD/MM/YYYY - DD/MM/YYYY", or [start, end] depending on the picker's emitted shape
+const planDates = ref<Date[]>([])
 const planDatesError = ref(false)
 const producedQty = ref('')
 const createAsSubAssembly = ref(false)
@@ -322,16 +322,16 @@ function validate() {
   if (!planDates.value.length) { planDatesError.value = true; ok = false }
   return ok
 }
-// "DD/MM/YYYY - DD/MM/YYYY" → ISO start/end (planDates is validated non-empty before this runs).
-function parseDateRange(v: string | string[]): { start: string; end: string } {
-  const [s, e] = Array.isArray(v) ? v : v.split(' - ').map(x => x?.trim())
-  const toIso = (d?: string) => {
-    const [dd, mm, yyyy] = (d ?? '').split('/')
-    return dd && mm && yyyy ? `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}` : undefined
-  }
-  const today = new Date().toISOString().slice(0, 10)
-  const start = toIso(s) ?? today
-  return { start, end: toIso(e) ?? start }
+// [startDate, endDate] → ISO start/end (planDates is validated non-empty before this runs).
+// Builds the ISO string from local date parts (not toISOString(), which converts to
+// UTC and can shift the date back a day in timezones ahead of UTC, e.g. WIB).
+function toLocalIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function parseDateRange(v: Date[]): { start: string; end: string } {
+  const today = toLocalIso(new Date())
+  const start = v[0] ? toLocalIso(v[0]) : today
+  return { start, end: v[1] ? toLocalIso(v[1]) : start }
 }
 
 // Save persists a real WorkOrder (linked to the chosen BOM) and opens its actual
@@ -483,7 +483,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <div class="wo-datepicker">
                 <MpDatePicker
                   id="wo-plan-dp" v-model="planDates" is-range format="DD/MM/YYYY"
-                  value-type="format" range-separator=" - " :placeholder="t('Select date range')"
+                  :placeholder="t('Select date range')"
                   use-portal @update:model-value="planDatesError = false"
                 />
               </div>
