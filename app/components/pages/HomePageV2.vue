@@ -279,11 +279,12 @@ onMounted(() => {
    the middle of the get-started strip before fading to the white stage. */
 .hrhome::before { content: ''; position: absolute; z-index: 0; top: 0; left: 50%; transform: translateX(-50%); width: 100vw; height: 350px; background: linear-gradient(180deg, #E1F6F0 0%, var(--mp-background-stage, #ffffff) 100%); pointer-events: none; }
 /* Lift the content sections above the backdrop — scoped to these so it never
-   overrides the positioning of the teleported drawer's root element. */
-.hero, .strip, .below, .manage { position: relative; z-index: 1; }
+   overrides the positioning of the teleported drawer's root element. The hero
+   sits a level higher so its expanded search dropdown overlays the strip/below. */
+.strip, .below, .manage { position: relative; z-index: 1; }
 
 /* Hero — content sits on the shared mint backdrop above. */
-.hero { position: relative; margin: 0 calc(var(--mp-spacing-6) * -1) 0; padding: var(--mp-spacing-8) var(--mp-spacing-6); display: flex; flex-direction: column; align-items: center; }
+.hero { position: relative; z-index: 2; margin: 0 calc(var(--mp-spacing-6) * -1) 0; padding: var(--mp-spacing-8) var(--mp-spacing-6); display: flex; flex-direction: column; align-items: center; }
 /* Content sits above the AI glow. */
 .hero > :not(.hero__glow) { position: relative; z-index: 1; }
 /* Soft purple AI glow behind the search when AI Mode is on (same as Home v1). */
