@@ -103,22 +103,20 @@ function handleSave() {
           <div class="pbd-info-product">
             <img v-if="productImg" class="pbd-info-thumb" :src="productImg" :alt="productName" loading="lazy" />
             <span v-else class="pbd-info-thumb pbd-info-thumb--empty" />
-            <div class="pbd-info-col">
-              <span class="pbd-info-label">Product</span>
-              <span class="pbd-info-value">{{ productName }}</span>
+            <div class="pbd-info-names">
+              <span class="pbd-info-name">{{ productName }}</span>
+              <span class="pbd-info-sku">{{ sku }}</span>
             </div>
           </div>
-          <div class="pbd-info-col">
-            <span class="pbd-info-label">SKU</span>
-            <span class="pbd-info-value">{{ sku }}</span>
-          </div>
-          <div class="pbd-info-col">
-            <span class="pbd-info-label">Warehouse</span>
-            <span class="pbd-info-value">{{ warehouseName || '—' }}</span>
-          </div>
-          <div class="pbd-info-col">
-            <span class="pbd-info-label">Selected</span>
-            <span class="pbd-info-value">{{ totalSelected }}/{{ targetCount }} {{ unit }}</span>
+          <div class="pbd-info-stats">
+            <div class="pbd-stat">
+              <span class="pbd-stat-label">Warehouse</span>
+              <span class="pbd-stat-value">{{ warehouseName || '—' }}</span>
+            </div>
+            <div class="pbd-stat">
+              <span class="pbd-stat-label">Selected</span>
+              <span class="pbd-stat-value">{{ totalSelected }}/{{ targetCount }} {{ unit }}</span>
+            </div>
           </div>
         </div>
 
@@ -218,18 +216,27 @@ function handleSave() {
 .pbd-content { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 
 .pbd-info-bar {
-  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-6);
+  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-background-neutral-subtle);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md);
 }
-.pbd-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.pbd-info-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; background: var(--mp-background-neutral-subtle); }
-.pbd-info-thumb--empty { background: var(--mp-border-default); }
-.pbd-info-col { display: flex; flex-direction: column; gap: 2px; }
-.pbd-info-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pbd-info-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pbd-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 1; min-width: 0; }
+.pbd-info-thumb {
+  width: 40px; height: 40px; border-radius: var(--mp-radii-md);
+  object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--mp-border-subtle);
+  background: var(--mp-background-neutral);
+}
+.pbd-info-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.pbd-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pbd-info-stats { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); }
+.pbd-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 160px; }
+.pbd-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.pbd-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 
 .pbd-search {
   flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); align-self: flex-end;

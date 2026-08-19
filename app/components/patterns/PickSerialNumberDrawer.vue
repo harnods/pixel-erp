@@ -94,22 +94,20 @@ function handleSave() {
           <div class="psn-info-product">
             <img v-if="productImg" class="psn-info-thumb" :src="productImg" :alt="productName" loading="lazy" />
             <span v-else class="psn-info-thumb psn-info-thumb--empty" />
-            <div class="psn-info-col">
-              <span class="psn-info-label">Product</span>
-              <span class="psn-info-value">{{ productName }}</span>
+            <div class="psn-info-names">
+              <span class="psn-info-name">{{ productName }}</span>
+              <span class="psn-info-sku">{{ sku }}</span>
             </div>
           </div>
-          <div class="psn-info-col">
-            <span class="psn-info-label">SKU</span>
-            <span class="psn-info-value">{{ sku }}</span>
-          </div>
-          <div class="psn-info-col">
-            <span class="psn-info-label">Warehouse</span>
-            <span class="psn-info-value">{{ warehouseName || '—' }}</span>
-          </div>
-          <div class="psn-info-col">
-            <span class="psn-info-label">Selected</span>
-            <span class="psn-info-value">{{ selected.length }}/{{ targetCount }} Serial number{{ targetCount === 1 ? '' : 's' }}</span>
+          <div class="psn-info-stats">
+            <div class="psn-stat">
+              <span class="psn-stat-label">Warehouse</span>
+              <span class="psn-stat-value">{{ warehouseName || '—' }}</span>
+            </div>
+            <div class="psn-stat">
+              <span class="psn-stat-label">Selected</span>
+              <span class="psn-stat-value">{{ selected.length }}/{{ targetCount }} Serial number{{ targetCount === 1 ? '' : 's' }}</span>
+            </div>
           </div>
         </div>
 
@@ -215,18 +213,27 @@ function handleSave() {
 .psn-content { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px; }
 
 .psn-info-bar {
-  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-6);
+  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-background-neutral-subtle);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md);
 }
-.psn-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.psn-info-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; background: var(--mp-background-neutral-subtle); }
-.psn-info-thumb--empty { background: var(--mp-border-default); }
-.psn-info-col { display: flex; flex-direction: column; gap: 2px; }
-.psn-info-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.psn-info-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.psn-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 1; min-width: 0; }
+.psn-info-thumb {
+  width: 40px; height: 40px; border-radius: var(--mp-radii-md);
+  object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--mp-border-subtle);
+  background: var(--mp-background-neutral);
+}
+.psn-info-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.psn-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.psn-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.psn-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.psn-info-stats { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); }
+.psn-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 160px; }
+.psn-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.psn-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 
 .psn-columns { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-6); }
 .psn-col { min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3); }

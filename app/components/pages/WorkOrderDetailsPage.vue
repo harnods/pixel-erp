@@ -8,7 +8,7 @@
  * Status-aware: the header primary action, the raw-material/routing status columns,
  * and the reserved/consumed/start/end values all reflect the work order's status.
  */
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, css,
@@ -256,6 +256,26 @@ const mainOutput = computed(() => {
 })
 const mainOutputSubtotal = computed(() => mainOutput.value.estCost)
 const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value + wasteSubtotal.value)
+
+// ── Sticky footer float (Material consume & return, filled state) ──────────
+const crrStageEl = ref<HTMLElement | null>(null)
+const crrStageOverflowing = ref(false)
+function checkCrrStageOverflow() {
+  const el = crrStageEl.value
+  if (el) crrStageOverflowing.value = el.scrollHeight > el.clientHeight + 1
+}
+let crrStageObserver: ResizeObserver | null = null
+onMounted(() => {
+  nextTick(() => {
+    checkCrrStageOverflow()
+    crrStageObserver = new ResizeObserver(checkCrrStageOverflow)
+    if (crrStageEl.value) {
+      crrStageObserver.observe(crrStageEl.value)
+      crrStageEl.value.addEventListener('scroll', checkCrrStageOverflow, { passive: true })
+    }
+  })
+})
+onUnmounted(() => { crrStageObserver?.disconnect() })
 </script>
 
 <template>
@@ -623,7 +643,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
     </div>
 
     <!-- ── Material consume & return — with records ── -->
-    <div v-else class="detail-stage detail-stage--crr">
+    <div v-else ref="crrStageEl" class="detail-stage detail-stage--crr">
       <ErpTablePage
         :columns="crrVisibleColumns"
         :rows="(crrPaginated as unknown as Record<string, unknown>[])"
@@ -646,7 +666,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
                   placeholder="Record type"
                   :model-value="crrTypeFilter"
                   is-clearable
-                  :class="css({ width: '160px' })"
+                  :class="css({ minWidth: '160px' })"
                   @mousedown.prevent
                   @clear="crrTypeFilter = ''"
                 >
@@ -668,7 +688,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
             <MpDatePicker
               id="crr-date-filter" v-model="crrDateFilter"
               placeholder="Date" format="DD/MM/YYYY" value-type="format"
-              is-clearable use-portal :class="css({ width: '160px' })"
+              is-clearable use-portal :class="css({ minWidth: '180px' })"
             />
           </div>
 
@@ -733,11 +753,14 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
         </template>
 
       </ErpTablePage>
-
-      <div class="crr-footer">
-        <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
-      </div>
     </div>
+
+    <footer
+      v-if="activeTopTab === 'Material consume & return' && consumeReturnRecords.length > 0"
+      class="detail-footer crr-footer" :class="{ 'detail-footer--floating': crrStageOverflowing }"
+    >
+      <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+    </footer>
 
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
@@ -822,7 +845,12 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 .crr-full-empty .detail-btn { margin-top: var(--mp-spacing-4); }
 .crr-empty-illustration { width: 288px; height: 240px; object-fit: contain; }
 
-.crr-footer { display: flex; justify-content: flex-end; padding-top: var(--mp-spacing-6); flex-shrink: 0; }
+.detail-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s;
+}
+.detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .row-kebab {
   display: flex; align-items: center; justify-content: center;
