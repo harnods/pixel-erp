@@ -116,6 +116,8 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
 .wn-content { min-height: 328px; }
 .wn-hero-icon { display: block; width: 72px; height: 72px; margin: var(--mp-spacing-2) auto 0; }
 .wn-hero-icon--circle { border-radius: var(--mp-radii-full, 999px); display: flex; align-items: center; justify-content: center; }
+/* Match the glyph size of slide 1's illustrated icon (which sits inset in its 72px circle). */
+.wn-hero-icon--circle :deep(svg) { width: 32px; height: 32px; }
 .wn-title { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-bold, 700); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
 .wn-lead { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); text-align: left; }
 .wn-link { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #165082); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; white-space: nowrap; }
