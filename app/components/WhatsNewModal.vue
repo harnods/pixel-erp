@@ -40,7 +40,7 @@ const features = [
           <p class="wn-lead">
             Your warehouse now runs end to end inside Mekari ERP. Receive against
             purchase orders and ship against sales orders — stock and accounting
-            stay in sync automatically as goods move.
+            stay in sync automatically as goods move. <a class="wn-link" href="#" @click.prevent="close">Learn more</a>
           </p>
 
           <div class="wn-features">
@@ -52,8 +52,6 @@ const features = [
               </div>
             </div>
           </div>
-
-          <a class="wn-link" href="#" @click.prevent="close">Learn more</a>
         </div>
       </div>
     </Transition>
@@ -77,7 +75,7 @@ const features = [
 .wn-feature__title { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 .wn-feature__desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
 
-.wn-link { display: inline-block; margin-top: var(--mp-spacing-6); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #165082); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.wn-link { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #165082); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; white-space: nowrap; }
 
 /* Enter / leave */
 .wn-enter-active, .wn-leave-active { transition: opacity 180ms ease; }
