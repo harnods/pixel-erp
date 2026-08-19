@@ -209,6 +209,24 @@ provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplic
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
+const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
+const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
+const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
+const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
+const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
+// CRM (Qontak) level-1 pages — all full-bleed, own their title bar/stage.
+// There's no CRM home: the bare /crm lands directly on Deals.
+const CRM_PAGES: Record<string, Component> = {
+  '':          CrmDealsPage,
+  'deals':     CrmDealsPage,
+  'orders':    CrmOrdersPage,
+  'tasks':     CrmTasksPage,
+  'customers': CrmCustomersPage,
+  'products':  CrmProductsPage,
+  'settings':  CrmSettingsPage,
+}
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
@@ -228,10 +246,15 @@ const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendin
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
-  // /crm → CRM (Qontak) Deals kanban — a full-bleed page that owns its own title
-  // bar + filter bar + board, so it renders outside the padded stage.
+  // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
+  // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
-    return { component: CrmDealsPage, id: '' }
+    const sub = segs[1] ?? ''
+    const id = segs[2]
+    // /crm/orders/:id and /crm/products/:id → CRM detail pages.
+    if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
+    if (id && sub === 'products') return { component: CrmProductDetailPage, id }
+    return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {

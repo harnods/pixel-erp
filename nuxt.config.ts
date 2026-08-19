@@ -23,6 +23,8 @@ export default defineNuxtConfig({
     // override (unlayered and @layer pixel_reset) lands after the Panda rules.
     "@/assets/css/pixel.css",
     "@/assets/css/erp.css",
+    // Shared chrome for the full-bleed CRM list pages (title bar/filter/table/tags).
+    "@/assets/css/crm-page.css",
   ],
   postcss: {
     plugins: {

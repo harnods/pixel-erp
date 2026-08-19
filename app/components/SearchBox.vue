@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { MpIcon, MpTooltip, toast } from '@mekari/pixel3'
+import { isHrPath } from '~/utils/hrRoutes'
 
 const props = withDefaults(defineProps<{
   placeholder?: string
@@ -34,44 +35,128 @@ function soon(what: string) {
 const searchQuery = ref('')
 const searchOpen = ref(false)
 const searchWrapEl = ref<HTMLElement | null>(null)
-const searchTabs = ['Sales', 'Purchases', 'Expenses', 'Products', 'Contacts', 'Files']
-const activeSearchTab = ref('Sales')
-
 interface SearchItem { label: string; go: () => void }
+interface TxType { type: string; keywords: string[]; numbers: string[]; go: () => void }
 function nav(path: string): () => void { return () => { closeSearch(); router.push(path) } }
 function todo(what: string): () => void { return () => { closeSearch(); soon(what) } }
 
-const recent = ref<SearchItem[]>([
-  { label: 'Purchase Order #10500', go: nav('/inbound-delivery') },
-  { label: 'Sales order',           go: nav('/sales-orders') },
-  { label: 'Hungry Birds',          go: nav('/sales-invoices') },
-])
-const files = ref<SearchItem[]>([
-  { label: 'procreate-invoice-10090.pdf', go: todo('Open file') },
-])
+// The header search adapts to the active product module: HR pages surface HR
+// records/actions, CRM pages CRM ones, everything else is ERP.
+const route = useRoute()
+const currentModule = computed<'ERP' | 'HR' | 'CRM'>(() =>
+  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') ? 'CRM' : 'ERP')
 
-const QUICK_ACTIONS: Record<string, SearchItem[]> = {
-  Sales: [
-    { label: 'New sales invoice', go: nav('/sales-invoices') },
-    { label: 'New sales order',   go: nav('/sales-orders') },
-    { label: 'New sales quote',   go: nav('/sales-quotes') },
-  ],
-  Purchases: [
-    { label: 'New purchase invoice', go: nav('/purchase-invoices') },
-    { label: 'New purchase order',   go: todo('New purchase order') },
-    { label: 'New purchase request', go: todo('New purchase request') },
-  ],
-  Expenses: [{ label: 'New expense', go: todo('New expense') }],
-  Products: [{ label: 'New product', go: nav('/product-list/new') }],
-  Contacts: [
-    { label: 'New customer', go: todo('New customer') },
-    { label: 'New vendor',   go: todo('New vendor') },
-  ],
-  Files: [],
+interface ModuleSearch {
+  tabs: string[]
+  quick: Record<string, SearchItem[]>
+  tx: Record<string, TxType[]>
+  recent: SearchItem[]
+  files: SearchItem[]
 }
-const quickActions = computed<SearchItem[]>(() => QUICK_ACTIONS[activeSearchTab.value] ?? [])
-// Quick actions / files narrow down to whatever's typed, same as results do —
-// e.g. typing "Sales order" leaves only "New sales order" in Quick actions.
+const MODULE_SEARCH: Record<'ERP' | 'HR' | 'CRM', ModuleSearch> = {
+  ERP: {
+    tabs: ['Sales', 'Purchases', 'Expenses', 'Products', 'Contacts', 'Files'],
+    quick: {
+      Sales: [
+        { label: 'New sales invoice', go: nav('/sales-invoices') },
+        { label: 'New sales order',   go: nav('/sales-orders') },
+        { label: 'New sales quote',   go: nav('/sales-quotes') },
+      ],
+      Purchases: [
+        { label: 'New purchase invoice', go: nav('/purchase-invoices') },
+        { label: 'New purchase order',   go: todo('New purchase order') },
+        { label: 'New purchase request', go: todo('New purchase request') },
+      ],
+      Expenses: [{ label: 'New expense', go: todo('New expense') }],
+      Products: [{ label: 'New product', go: nav('/product-list/new') }],
+      Contacts: [
+        { label: 'New customer', go: todo('New customer') },
+        { label: 'New vendor',   go: todo('New vendor') },
+      ],
+      Files: [],
+    },
+    tx: {
+      Sales: [
+        { type: 'Sales Invoice', keywords: ['sales invoice', 'invoice'], numbers: ['10021', '10022', '10023', '10024'], go: nav('/sales-invoices') },
+        { type: 'Sales Order', keywords: ['sales order', 'order'], numbers: ['10021', '10005', '10012'], go: nav('/sales-orders') },
+        { type: 'Sales Quote', keywords: ['sales quote', 'quote'], numbers: ['10021', '10010'], go: nav('/sales-quotes') },
+      ],
+      Purchases: [
+        { type: 'Purchase Invoice', keywords: ['purchase invoice', 'invoice'], numbers: ['10012', '10013', '10014'], go: nav('/purchase-invoices') },
+        { type: 'Purchase Order', keywords: ['purchase order', 'order'], numbers: ['10012', '10500', '10501'], go: todo('Purchase order') },
+        { type: 'Purchase Request', keywords: ['purchase request', 'request'], numbers: ['10012', '10600'], go: todo('Purchase request') },
+      ],
+      Expenses: [{ type: 'Expense', keywords: ['expense'], numbers: ['20011', '20012', '20013'], go: todo('Expense') }],
+      Products: [{ type: 'Product', keywords: ['product'], numbers: ['P-1001', 'P-1002', 'P-1003'], go: nav('/product-list') }],
+      Contacts: [
+        { type: 'Customer', keywords: ['customer'], numbers: ['C-001', 'C-002'], go: todo('Customer') },
+        { type: 'Vendor', keywords: ['vendor'], numbers: ['V-001', 'V-002'], go: todo('Vendor') },
+      ],
+      Files: [{ type: 'File', keywords: ['file'], numbers: [], go: todo('Open file') }],
+    },
+    recent: [
+      { label: 'Purchase Order #10500', go: nav('/inbound-delivery') },
+      { label: 'Sales order',           go: nav('/sales-orders') },
+      { label: 'Hungry Birds',          go: nav('/sales-invoices') },
+    ],
+    files: [{ label: 'procreate-invoice-10090.pdf', go: todo('Open file') }],
+  },
+  HR: {
+    tabs: ['Employees', 'Time off', 'Reimbursement', 'Payroll', 'Files'],
+    quick: {
+      Employees: [
+        { label: 'New employee',      go: nav('/employee-directory/new') },
+        { label: 'Employee transfer', go: nav('/employee-transfer') },
+      ],
+      'Time off': [{ label: 'Request time off', go: todo('Request time off') }],
+      Reimbursement: [{ label: 'New reimbursement', go: todo('New reimbursement') }],
+      Payroll: [{ label: 'Run payroll', go: todo('Run payroll') }],
+      Files: [],
+    },
+    tx: {
+      Employees: [{ type: 'Employee', keywords: ['employee', 'staff'], numbers: ['EMP-0001', 'EMP-0002', 'EMP-0003', 'EMP-0004'], go: nav('/employee-directory') }],
+      'Time off': [{ type: 'Time off request', keywords: ['time off', 'leave'], numbers: ['TO-1001', 'TO-1002'], go: todo('Time off request') }],
+      Reimbursement: [{ type: 'Reimbursement', keywords: ['reimbursement', 'claim'], numbers: ['RB-2001', 'RB-2002'], go: todo('Reimbursement') }],
+      Payroll: [{ type: 'Payslip', keywords: ['payslip', 'payroll'], numbers: ['PS-3001', 'PS-3002'], go: todo('Payslip') }],
+      Files: [{ type: 'File', keywords: ['file'], numbers: [], go: todo('Open file') }],
+    },
+    recent: [
+      { label: 'Rizal Candra',       go: nav('/employee-directory/EMP-0001') },
+      { label: 'Employee directory', go: nav('/employee-directory') },
+    ],
+    files: [{ label: 'employment-contract-emp-0001.pdf', go: todo('Open file') }],
+  },
+  CRM: {
+    tabs: ['Deals', 'Contacts', 'Companies', 'Activities'],
+    quick: {
+      Deals: [{ label: 'New deal', go: nav('/crm') }],
+      Contacts: [{ label: 'New contact', go: todo('New contact') }],
+      Companies: [{ label: 'New company', go: todo('New company') }],
+      Activities: [{ label: 'Log activity', go: todo('Log activity') }],
+    },
+    tx: {
+      Deals: [{ type: 'Deal', keywords: ['deal', 'opportunity'], numbers: ['D-5001', 'D-5002', 'D-5003'], go: nav('/crm') }],
+      Contacts: [{ type: 'Contact', keywords: ['contact', 'lead'], numbers: ['CT-001', 'CT-002'], go: todo('Contact') }],
+      Companies: [{ type: 'Company', keywords: ['company', 'account'], numbers: ['CO-001', 'CO-002'], go: todo('Company') }],
+      Activities: [{ type: 'Activity', keywords: ['activity', 'task'], numbers: ['AC-001', 'AC-002'], go: todo('Activity') }],
+    },
+    recent: [{ label: 'Deals board', go: nav('/crm') }],
+    files: [{ label: 'proposal-anomali-coffee.pdf', go: todo('Open file') }],
+  },
+}
+
+const activeConfig = computed(() => MODULE_SEARCH[currentModule.value])
+const searchTabs = computed(() => activeConfig.value.tabs)
+const activeSearchTab = ref(MODULE_SEARCH[currentModule.value].tabs[0]!)
+const historyCleared = ref(false)
+// Recent + files reset to the module's own history; "Clear" empties them.
+const recent = computed<SearchItem[]>(() => (historyCleared.value ? [] : activeConfig.value.recent))
+const files = computed<SearchItem[]>(() => (historyCleared.value ? [] : activeConfig.value.files))
+// Switching module resets the active scope tab + restores history.
+watch(currentModule, () => { activeSearchTab.value = searchTabs.value[0]!; historyCleared.value = false })
+
+const quickActions = computed<SearchItem[]>(() => activeConfig.value.quick[activeSearchTab.value] ?? [])
+// Quick actions / files narrow down to whatever's typed, same as results do.
 const filteredQuickActions = computed<SearchItem[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return quickActions.value
@@ -82,39 +167,10 @@ const filteredFiles = computed<SearchItem[]>(() => {
   if (!q) return files.value
   return files.value.filter(f => f.label.toLowerCase().includes(q))
 })
-function clearSearchHistory() { recent.value = []; files.value = [] }
+function clearSearchHistory() { historyCleared.value = true }
 
 // ── Query-driven results ─────────────────────────────────────────────────────
-// Mock per-scope transaction catalog, keyed by the active "Search in" tab.
-// Numbers deliberately overlap across types within a scope (e.g. #10021 exists
-// as a Sales Invoice, Sales Order, and Sales Quote) so a number-only search can
-// demonstrate a mixed-type result list.
-interface TxType { type: string; keywords: string[]; numbers: string[]; go: () => void }
-const TX_TYPES: Record<string, TxType[]> = {
-  Sales: [
-    { type: 'Sales Invoice', keywords: ['sales invoice', 'invoice'], numbers: ['10021', '10022', '10023', '10024'], go: nav('/sales-invoices') },
-    { type: 'Sales Order', keywords: ['sales order', 'order'], numbers: ['10021', '10005', '10012'], go: nav('/sales-orders') },
-    { type: 'Sales Quote', keywords: ['sales quote', 'quote'], numbers: ['10021', '10010'], go: nav('/sales-quotes') },
-  ],
-  Purchases: [
-    { type: 'Purchase Invoice', keywords: ['purchase invoice', 'invoice'], numbers: ['10012', '10013', '10014'], go: nav('/purchase-invoices') },
-    { type: 'Purchase Order', keywords: ['purchase order', 'order'], numbers: ['10012', '10500', '10501'], go: todo('Purchase order') },
-    { type: 'Purchase Request', keywords: ['purchase request', 'request'], numbers: ['10012', '10600'], go: todo('Purchase request') },
-  ],
-  Expenses: [
-    { type: 'Expense', keywords: ['expense'], numbers: ['20011', '20012', '20013'], go: todo('Expense') },
-  ],
-  Products: [
-    { type: 'Product', keywords: ['product'], numbers: ['P-1001', 'P-1002', 'P-1003'], go: nav('/product-list') },
-  ],
-  Contacts: [
-    { type: 'Customer', keywords: ['customer'], numbers: ['C-001', 'C-002'], go: todo('Customer') },
-    { type: 'Vendor', keywords: ['vendor'], numbers: ['V-001', 'V-002'], go: todo('Vendor') },
-  ],
-  Files: [
-    { type: 'File', keywords: ['file'], numbers: [], go: todo('Open file') },
-  ],
-}
+const activeTxTypes = computed<TxType[]>(() => activeConfig.value.tx[activeSearchTab.value] ?? [])
 // Split the free-typed query into a trailing number/code (e.g. "10021" or
 // "P-1001") and the leading type text (e.g. "sales invoice").
 const queryNumber = computed(() => searchQuery.value.match(/#?([a-z0-9-]*\d[a-z0-9-]*)/i)?.[1] ?? '')
@@ -122,7 +178,7 @@ const queryTypeText = computed(() => searchQuery.value.replace(/#?[a-z0-9-]*\d[a
 const matchedType = computed<TxType | null>(() => {
   const text = queryTypeText.value
   if (!text) return null
-  const types = TX_TYPES[activeSearchTab.value] ?? []
+  const types = activeTxTypes.value
   let best: TxType | null = null
   let bestLen = 0
   for (const t of types) {
@@ -148,7 +204,7 @@ const searchResults = computed<ResultItem[]>(() => {
       .map(n => ({ type: matchedType.value!.type, number: n, go: matchedType.value!.go }))
   }
   // Number-only: mix every type in the current scope that has a matching number.
-  const types = TX_TYPES[activeSearchTab.value] ?? []
+  const types = activeTxTypes.value
   const out: ResultItem[] = []
   for (const t of types) {
     for (const n of t.numbers) {

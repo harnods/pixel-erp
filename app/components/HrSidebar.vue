@@ -57,6 +57,9 @@ const activePanel = computed<Item | null>(() => {
 })
 const activeItem = computed<string>(() => {
   if (route.path === '/hr') return 'Home'
+  // On an employee detail the level-2 panel becomes the employee-profile menu,
+  // so the active level-1 icon is "Employee profile" — not "Employees".
+  if (isEmployeeDetail.value) return 'Employee profile'
   return activePanel.value?.name ?? ''
 })
 // Main rail collapses to icons while a level-2 panel is open (ErpSidebar).

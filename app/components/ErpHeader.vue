@@ -15,10 +15,10 @@
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search — hidden on both home pages (ERP 'Home' and HR 'Hr'),
-         which each carry their own hero search, so it isn't duplicated. -->
+    <!-- Center: Search — hidden on every home page (ERP, HR, CRM), which each
+         carry their own hero search, so it isn't duplicated. -->
     <MpFlex class="erp-header__center">
-      <QuickSearch v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" />
+      <QuickSearch v-if="showHeaderSearch" />
     </MpFlex>
 
     <!-- Right: Actions + User -->
@@ -57,6 +57,12 @@ const { hasWarehouseContext } = useWarehouseContext();
 // title bar label explicitly instead of relying on the sidebar to publish it)
 const { setActiveMenuLabel, currentPageKey } = useNavigation();
 const router = useRouter();
+// Home pages carry their own hero search, so the header search is hidden there to
+// avoid duplication: ERP Home ('Home') and HR Home ('Hr'). CRM has no home (it
+// lands on Deals), so CRM keeps the header search like other module pages.
+const showHeaderSearch = computed(
+  () => currentPageKey.value !== 'Home' && currentPageKey.value !== 'Hr',
+);
 function goToInbox() {
   setActiveMenuLabel("Notifications");
   router.push("/inbox?tab=notifications");
