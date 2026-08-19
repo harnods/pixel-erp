@@ -12,6 +12,7 @@ import { h, ref, computed, onMounted } from 'vue'
 import { MpIcon, toast } from '@mekari/pixel3'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import HomeWidgetV2 from '~/components/pages/HomeWidgetV2.vue'
+import WhatsNewModal from '~/components/WhatsNewModal.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
 
 const router = useRouter()
@@ -51,6 +52,13 @@ const anomalies: Anomaly[] = [
   { id: 'a3', title: 'Unexpected stock write-off in Gudang Jakarta Pusat', body: 'A 120 kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.' },
 ]
 const anomalyExpanded = ref(false)
+
+// "What's new" opens a feature-announcement modal; the others are placeholders.
+const whatsNewOpen = ref(false)
+function onStripClick(s: { title: string }) {
+  if (s.title === "What's new") whatsNewOpen.value = true
+  else soon(s.title)
+}
 
 // Each card carries its own pastel tint matching its icon blob (flag=slate,
 // video=teal, help=mint, new=lavender), lightened so the icon still reads.
@@ -164,7 +172,7 @@ onMounted(() => {
 
     <!-- Get started strip -->
     <div class="strip">
-      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="soon(s.title)">
+      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="onStripClick(s)">
         <span class="strip__text">
           <span class="strip__title">{{ s.title }}</span>
           <span class="strip__desc">{{ s.desc }}</span>
@@ -270,6 +278,7 @@ onMounted(() => {
     </button>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+    <WhatsNewModal v-model:isOpen="whatsNewOpen" />
   </div>
 </template>
 
