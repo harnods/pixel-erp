@@ -35,7 +35,7 @@ const features = [
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
 
-          <div class="wn-hero-icon"><MpIcon name="truck" size="lg" /></div>
+          <img class="wn-hero-icon" src="/erp-home/fulfillment.svg" alt="" width="72" height="72">
           <h2 id="wn-title" class="wn-title">Inbound &amp; outbound fulfillment</h2>
           <p class="wn-lead">
             Your warehouse now runs end to end inside Mekari ERP. Receive against
@@ -66,7 +66,7 @@ const features = [
 .wn-close { position: absolute; top: var(--mp-spacing-4); right: var(--mp-spacing-4); display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; color: var(--mp-text-secondary, #3a4749); }
 .wn-close:hover { background: var(--mp-background-neutral-subtle, #f1f3f3); color: var(--mp-text-default); }
 
-.wn-hero-icon { width: 72px; height: 72px; margin: var(--mp-spacing-2) auto 0; border-radius: var(--mp-radii-full, 999px); display: flex; align-items: center; justify-content: center; background: #DDF1ED; color: #349180; }
+.wn-hero-icon { display: block; width: 72px; height: 72px; margin: var(--mp-spacing-2) auto 0; }
 .wn-title { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-bold, 700); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
 .wn-lead { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); text-align: left; }
 
