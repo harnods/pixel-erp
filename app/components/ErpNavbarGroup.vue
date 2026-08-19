@@ -8,6 +8,7 @@
  */
 import { computed } from 'vue'
 import { toast } from '@mekari/pixel3'
+import { isHrPath } from '~/utils/hrRoutes'
 
 interface RailItem { key: string; label: string; icon: string; to?: string }
 const railItems: RailItem[] = [
@@ -24,7 +25,7 @@ const router = useRouter()
 const route = useRoute()
 // Active product follows the route: /hr* → HR, /crm* → CRM, everything else → ERP.
 const activeProduct = computed(() =>
-  route.path.startsWith('/hr') ? 'HR' : route.path.startsWith('/crm') ? 'CRM' : 'ERP')
+  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') ? 'CRM' : 'ERP')
 
 function openProduct(item: RailItem) {
   if (item.to) router.push(item.to)
@@ -44,7 +45,8 @@ function openProduct(item: RailItem) {
       @click="openProduct(item)"
     >
       <span class="ng-icon-box">
-        <img :src="`/nav-rail/${item.icon}.svg`" class="ng-icon" alt="" />
+        <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="ng-icon ng-icon-line" alt="" />
+        <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="ng-icon ng-icon-fill" alt="" />
       </span>
       <span class="ng-label">{{ item.label }}</span>
     </button>
@@ -98,6 +100,10 @@ function openProduct(item: RailItem) {
   pointer-events: none;
   filter: brightness(0) invert(1);      /* white fill */
 }
+/* Active product shows the FILL icon; inactive products show OUTLINE only. */
+.ng-icon-fill { display: none; }
+.ng-item.active .ng-icon-line { display: none; }
+.ng-item.active .ng-icon-fill { display: block; }
 
 .ng-label {
   font-size: var(--mp-font-sizes-sm);   /* 12px */

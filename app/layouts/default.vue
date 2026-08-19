@@ -2,11 +2,12 @@
 import { computed } from 'vue'
 import { MpToastManager } from '@mekari/pixel3'
 import { useProductMenu } from '~/composables/useProductMenu'
+import { isHrPath } from '~/utils/hrRoutes'
 
-// The module nav follows the active product: Talenta (HR) on /hr*, Qontak (CRM)
-// on /crm*, ERP otherwise.
+// The module nav follows the active product: Talenta (HR) on /hr* + the HR module
+// pages (Employee directory, etc.), Qontak (CRM) on /crm*, ERP otherwise.
 const route = useRoute()
-const isHr = computed(() => route.path.startsWith('/hr'))
+const isHr = computed(() => isHrPath(route.path))
 const isCrm = computed(() => route.path.startsWith('/crm'))
 // The product-switcher rail is opt-in (top-right user menu → "Show ERP Menu").
 const { showProductMenu } = useProductMenu()

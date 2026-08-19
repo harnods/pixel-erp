@@ -15,9 +15,10 @@
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search — hidden on Home, which has its own hero search -->
+    <!-- Center: Search — hidden on both home pages (ERP 'Home' and HR 'Hr'),
+         which each carry their own hero search, so it isn't duplicated. -->
     <MpFlex class="erp-header__center">
-      <QuickSearch v-if="currentPageKey !== 'Home'" />
+      <QuickSearch v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" />
     </MpFlex>
 
     <!-- Right: Actions + User -->

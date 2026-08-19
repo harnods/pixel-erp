@@ -84,6 +84,9 @@ export * from './bankStatementReviewFiles'
 export * from './bills'
 export * from './reviewFiles'
 
+// ── HR (Employees) ──────────────────────────────────────────────────────────
+export * from './employees'
+
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
 

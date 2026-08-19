@@ -28,8 +28,9 @@ const router = useRouter()
 const { t } = useLocale()
 
 // ── Home version (v1 / v2) — switched from the FAB, persisted ──────────────────
-const homeVersion = ref<1 | 2>(1)
-onMounted(() => { try { if (localStorage.getItem('erp-home-version') === '2') homeVersion.value = 2 } catch { /* ignore */ } })
+// Home v2 is the default; a stored '1' opts back into the legacy layout.
+const homeVersion = ref<1 | 2>(2)
+onMounted(() => { try { if (localStorage.getItem('erp-home-version') === '1') homeVersion.value = 1 } catch { /* ignore */ } })
 function setHomeVersion(v: 1 | 2) { homeVersion.value = v; try { localStorage.setItem('erp-home-version', String(v)) } catch { /* ignore */ } }
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
