@@ -2,12 +2,15 @@
 import {
   MpIcon, MpButton, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { bills, duplicateBill } from '~/data'
+import BillsFiltersDrawer, { emptyBillsFilters, type BillsFiltersValue } from '~/components/patterns/BillsFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+import { bills } from '~/data'
 import type { Bill } from '~/data'
 
 const { t } = useLocale()
@@ -18,13 +21,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 // bill's real status — so the detail page is told via query, not bill.status.
 function goDetail(id: string) { router.push({ path: `/expenses/${id}`, query: { approval: '1' } }) }
 function duplicate(id: string) {
-  duplicateBill(id)
-  toast.notify({ variant: 'success', title: t('Expense duplicated') })
+  router.push({ path: '/expenses/new', query: { duplicate: id } })
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',            label: 'Date',        width: '120px',                                 sortType: 'date'   },
+  { key: 'date',            label: 'Date',        width: '160px',                                 sortType: 'date'   },
   { key: 'number',          label: 'Number',      width: '160px', sortable: true,                 sortType: 'number' },
   { key: 'beneficiaryName', label: 'Beneficiary', width: '220px', sortable: true,                 sortType: 'text'   },
   { key: 'category',        label: 'Category',    width: '160px', sortable: true,                 sortType: 'text'   },
@@ -53,25 +55,79 @@ const rows = computed<Row[]>(() =>
   }))
 )
 
+// ─── All-filters drawer (same BillsFiltersDrawer as the Bills index) ────────────
+// Every row here is a "draft" awaiting approval, so the Status (Open/Paid/Overdue)
+// section doesn't apply — passing no status options hides it in the drawer.
+const filtersOpen = ref(false)
+const appliedFilters = reactive<BillsFiltersValue>(emptyBillsFilters())
+const keywordColumns = [
+  { key: 'number',          label: t('Number')      },
+  { key: 'beneficiaryName', label: t('Beneficiary') },
+  { key: 'category',        label: t('Category')    },
+  { key: 'tags',            label: t('Tags')        },
+]
+const tagOptions = computed(() => [...new Set(bills.flatMap(b => b.tags ?? []))].sort())
+function applyDrawerFilters(v: BillsFiltersValue) { Object.assign(appliedFilters, v) }
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const ts = dayStart(new Date(iso)).getTime()
+  return ts >= dayStart(range[0]!).getTime() && ts <= dayStart(range[1]!).getTime()
+}
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
-  filterFn: (row: Row, s) =>
-    String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s),
+  filterFn: (row: Row, s) => {
+    const matchesSearch = String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s)
+
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? String(row.number).includes(kw) || row.beneficiaryName.toLowerCase().includes(kw) || row.category.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
+        : f.keywordColumn === 'beneficiaryName' ? row.beneficiaryName.toLowerCase().includes(kw)
+        : f.keywordColumn === 'category' ? row.category.toLowerCase().includes(kw)
+        : rowTags.some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
+    const matchesDueDate = matchesDateRange(row.dueDate, f.dueDate)
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
+
+    return matchesSearch && matchesKeyword && matchesTransactionDate && matchesDueDate && matchesTotal && matchesTags
+  },
 })
 
-// ─── Formatters ───────────────────────────────────────────────────────────────
+watch(appliedFilters, () => setPage(1))
 
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
+// "(n)" suffix + active state on the All-filters trigger (Status excluded — hidden here).
+const activeFilterCount = computed(() =>
+  (appliedFilters.keyword ? 1 : 0)
+  + (appliedFilters.transactionDate ? 1 : 0)
+  + (appliedFilters.dueDate ? 1 : 0)
+  + ((appliedFilters.totalValue !== '' || appliedFilters.totalMin !== '' || appliedFilters.totalMax !== '') ? 1 : 0)
+  + (appliedFilters.tags.length > 0 ? 1 : 0),
+)
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
@@ -113,9 +169,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #filters>
       <!-- Left: All filters -->
       <div class="filter-left">
-        <MpButton class="filter-all-btn">
+        <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
+          {{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}
         </MpButton>
       </div>
 
@@ -229,6 +285,17 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
   </ErpTablePage>
+
+  <BillsFiltersDrawer
+    id="bills-awaiting-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="[]"
+    :tag-options="tagOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
 </template>
 
 <style scoped>
@@ -335,6 +402,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information)) !important;
+  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  color: var(--mp-text-selected, var(--mp-text-information)) !important;
+}
 
 .filter-btn-group {
   display: flex;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpInputTag, MpDatePicker,
@@ -224,7 +225,6 @@ function setAvgMode(row: ProductRow, mode: 'auto' | 'custom') {
     row.avgCostInput = cost > 0 ? cost.toLocaleString('id-ID') : ''
   }
 }
-function fmtIDR(n: number) { return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }) }
 
 // ── Search ────────────────────────────────────────────────────────────────────────
 const search = ref('')
@@ -445,7 +445,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <span class="sio-avg-prefix">Rp</span>
                       <input class="sio-avg-num" type="text" inputmode="numeric" :value="row.avgCostInput" placeholder="0" @input="onAvgInput(row, $event)" />
                     </template>
-                    <span v-else class="sio-avg-value">{{ fmtIDR(avgCostFor(row.sku)) }}</span>
+                    <span v-else class="sio-avg-value">{{ formatIDR(avgCostFor(row.sku)) }}</span>
                     <MpPopover :id="`sio-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <button class="sio-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>

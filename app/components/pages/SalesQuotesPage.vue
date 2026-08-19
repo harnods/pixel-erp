@@ -3,12 +3,15 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import SalesQuoteFiltersDrawer, { emptySalesQuoteFilters, type SalesQuoteFiltersValue } from '~/components/patterns/SalesQuoteFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesQuotes } from '~/data'
 import type { SalesQuote } from '~/data'
 
@@ -38,15 +41,78 @@ const rows = computed<Row[]>(() =>
     : salesQuotes.map(sq => ({ ...sq, customerName: sq.customer.name })),
 )
 
+// ─── "All filters" drawer — a second, independent filter layer, ANDed with the
+// toolbar's own Status select + search (same pattern as BillsIndexPage). ──────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<SalesQuoteFiltersValue>(emptySalesQuoteFilters())
+
+const keywordColumns = [
+  { key: 'number',       label: t('Number')   },
+  { key: 'customerName', label: t('Customer') },
+  { key: 'tags',         label: t('Tags')     },
+]
+const tagOptions = computed(() => [...new Set(salesQuotes.flatMap(sq => sq.tags ?? []))].sort())
+
+function applyDrawerFilters(v: SalesQuoteFiltersValue) { Object.assign(appliedFilters, v) }
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
+}
+// "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Row>(rows, {
   perPage: 25,
-  filterFn: (row, s, status) =>
-    (String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)) &&
-    (!status || row.status === status),
+  filterFn: (row, s, status) => {
+    const matchesSearch = String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)
+    const matchesStatus = !status || row.status === status
+
+    // ── Drawer filters (independent of the toolbar's Status select / search) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
+        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
+        : rowTags.some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
+    const matchesValidUntil = matchesDateRange(row.expirationDate, f.validUntil)
+    const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
+
+    return matchesSearch && matchesStatus
+      && matchesKeyword && matchesTransactionDate && matchesValidUntil && matchesDrawerStatus
+      && matchesTotal && matchesTags
+  },
+})
+
+watch(appliedFilters, () => setPage(1))
+
+const isDrawerFilterActive = computed(() => {
+  const f = appliedFilters
+  return !!f.keyword || !!f.transactionDate || !!f.validUntil || f.status.length > 0
+    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '' || f.tags.length > 0
 })
 
 // ─── Filter options ───────────────────────────────────────────────────────────
@@ -62,12 +128,6 @@ const statusLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
-
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -87,6 +147,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 function clearFilters() {
   search.value = ''
   statusFilter.value = ''
+  Object.assign(appliedFilters, emptySalesQuoteFilters())
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
@@ -107,7 +168,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
-    :has-active-filter="!!search || !!statusFilter"
+    :has-active-filter="!!search || !!statusFilter || isDrawerFilterActive"
     :search="search"
     has-checkbox
     :context-label="(row) => `${t('Sales Quote')} #${row.number}`"
@@ -155,7 +216,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
         </button>
@@ -290,6 +351,17 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
   </ErpTablePage>
+
+  <SalesQuoteFiltersDrawer
+    id="sq-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="statusOptions"
+    :tag-options="tagOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
 
   <!-- ── Prototype preview FAB (bottom-right): toggle data vs empty-state view ── -->
   <div class="preview-fab-wrap">
@@ -443,6 +515,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information));
+  border-color: var(--mp-border-selected, var(--mp-border-information));
+  color: var(--mp-text-selected, var(--mp-text-information));
+}
 
 .filter-btn-group {
   display: flex;

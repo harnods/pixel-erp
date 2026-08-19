@@ -1,12 +1,25 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { MpToastManager } from '@mekari/pixel3'
+import { useProductMenu } from '~/composables/useProductMenu'
+
+// The module nav follows the active product: Talenta (HR) on /hr*, Qontak (CRM)
+// on /crm*, ERP otherwise.
+const route = useRoute()
+const isHr = computed(() => route.path.startsWith('/hr'))
+const isCrm = computed(() => route.path.startsWith('/crm'))
+// The product-switcher rail is opt-in (top-right user menu → "Show ERP Menu").
+const { showProductMenu } = useProductMenu()
 </script>
 
 <template>
   <div class="app-shell">
     <ErpHeader />
-    <div class="main-container">
-      <ErpSidebar />
+    <div class="main-container" :class="{ 'main-container--rail': showProductMenu }">
+      <ErpNavbarGroup v-if="showProductMenu" />
+      <HrSidebar v-if="isHr" />
+      <CrmSidebar v-else-if="isCrm" />
+      <ErpSidebar v-else />
       <div class="content-area">
         <slot />
       </div>
@@ -119,10 +132,22 @@ body {
   border-radius: 12px 12px 0 0;
 }
 
+/* With the product rail shown, a dark-green backing sits behind the module-nav so
+   its rounded top-left corner reads continuous with the dark rail beside it. Only
+   ever visible through the rounded-corner cutouts (children tile the rest). */
+.main-container--rail {
+  background: var(--mp-background-surface-bold);
+}
+.main-container--rail .sidebar {
+  border-top-left-radius: 12px;
+}
+
 .content-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--mp-background-neutral-subtle);
 }
 </style>

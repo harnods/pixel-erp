@@ -8,6 +8,7 @@ import {
   MpIcon,
   css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products } from '~/data'
 import type { POLineItem, POAttachment } from '~/data/purchaseOrderDetails'
@@ -124,9 +125,7 @@ const taxAmount   = computed(() => Math.round((subtotal.value - discountTotal.va
 const shippingFee = ref(source.value?.totals.shippingFee ?? 0)
 const grandTotal  = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value + taxAmount.value + shippingFee.value)
 
-function fmt(n: number) {
-  return 'Rp' + new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
-}
+const fmt = formatIDR
 
 const attachments = ref<POAttachment[]>((source.value?.attachments ?? []).map(a => ({ ...a })))
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {

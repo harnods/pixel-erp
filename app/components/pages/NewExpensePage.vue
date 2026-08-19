@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, type Ref } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpCheckbox, MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker,
   MpInputTag, MpIcon, MpUpload, MpUploadList, MpDropzone, MpSpinner, toast, MpTooltip,
@@ -10,11 +11,25 @@ import {
   type DataInterface,
 } from '@mekari/pixel3'
 import { VENDORS } from '~/data/master'
-import { addBill } from '~/data/bills'
+import { bills, addBill, updateBill } from '~/data/bills'
+import type { Bill } from '~/data/types'
 import { scrollToFirstError } from '~/utils/form'
 
+const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
+
+// Edit mode — /expenses/:id/edit reuses this form. 'new' (or no id) = create.
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editBill = computed(() => (isEdit.value ? bills.find((b) => b.id === props.orderId) ?? null : null))
+
+// Duplicate — /expenses/new?duplicate=<id> opens the create form pre-filled from a
+// source bill, minus its payment (a duplicate is always a fresh, unpaid expense).
+const duplicateSource = computed(() => {
+  const id = route.query.duplicate
+  return typeof id === 'string' ? bills.find((b) => b.id === id) ?? null : null
+})
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -32,22 +47,29 @@ function goExpenses() {
 
 // ── Chart of accounts / tax — no master data module for these yet, so a small
 // local list stands in (mirrors how CreateReceiptPage derives UNIT_OPTIONS locally).
-const ACCOUNT_OPTIONS = [
+// Reactive so edit-mode prefill can inject accounts a saved bill references that
+// aren't in this small stand-in list (same trick as beneficiaryOptions).
+const ACCOUNT_OPTIONS = ref([
   { id: '485', name: '485 - Subscriptions' },
   { id: '520', name: '520 - Office supplies' },
   { id: '540', name: '540 - Travel' },
   { id: '610', name: '610 - Utilities' },
   { id: '710', name: '710 - Equipment' },
   { id: '810', name: '810 - Marketing' },
-]
+])
 const TAX_OPTIONS = [
   { id: 'ppn10', name: 'PPN 10%' },
   { id: 'none', name: t('No tax') },
 ]
-const BANK_ACCOUNT_OPTIONS = [
+const BANK_ACCOUNT_OPTIONS = ref([
   { id: '1-10003', name: '1-10003 Bank BCA' },
   { id: '1-10004', name: '1-10004 VISA 8265' },
-]
+])
+// Ensures `id`/`name` exists in an options ref so an Autocomplete can display a
+// prefilled value the stand-in list doesn't already contain.
+function ensureOption(list: Ref<{ id: string; name: string }[]>, id: string, name = id) {
+  if (id && !list.value.some((o) => o.id === id)) list.value.push({ id, name })
+}
 
 // ── Header fields ────────────────────────────────────────────────────────────
 const beneficiary = ref('')
@@ -147,14 +169,20 @@ function onDrop(ev: DragEvent, toIdx: number) {
 function onDragEnd() { dragSrcIndex.value = null; dragOverIndex.value = null }
 
 // ── Totals ───────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount)
-}
-
-const subtotal = computed(() => rows.value.reduce((s, r) => s + (Number(r.amount) || 0), 0))
+// Sum of every line's entered amount (as typed by the user).
+const lineSum = computed(() => rows.value.reduce((s, r) => s + (Number(r.amount) || 0), 0))
 const taxableSubtotal = computed(() => rows.value.filter((r) => r.taxId === 'ppn10').reduce((s, r) => s + (Number(r.amount) || 0), 0))
 const hasPpnTax = computed(() => taxableSubtotal.value > 0)
-const ppnAmount = computed(() => (priceIncludesTax.value ? 0 : Math.round(taxableSubtotal.value * 0.1)))
+// "Price includes tax" → the taxable line amounts are GROSS (tax-inclusive): the
+// 10% PPN is extracted from within them (amount × 10/110), NOT zeroed. Otherwise
+// PPN is added on top (amount × 10%).
+const ppnAmount = computed(() => priceIncludesTax.value
+  ? Math.round(taxableSubtotal.value * 10 / 110)
+  : Math.round(taxableSubtotal.value * 0.1))
+// Subtotal (net / DPP): inclusive → strip the embedded tax out of the entered
+// amounts; exclusive → the entered amounts already are the net.
+const subtotal = computed(() => priceIncludesTax.value ? lineSum.value - ppnAmount.value : lineSum.value)
+// Inclusive → equals the entered gross (lineSum); exclusive → net + tax on top.
 const total = computed(() => subtotal.value + ppnAmount.value)
 
 // ── Withholding ──────────────────────────────────────────────────────────────
@@ -276,10 +304,12 @@ function startPanelResize(e: MouseEvent) {
 }
 
 // ── Receipt dropzone (left panel) ───────────────────────────────────────────
-const leftPanelOpen = ref(true)
+// A duplicate opens with the autofill panel collapsed (docked) — the fields are
+// already filled from the source, so there's nothing to scan.
+const leftPanelOpen = ref(!duplicateSource.value)
 // Narrow icon rail shown after a close the user didn't permanently suppress —
 // keeps a one-click way back into the receipt panel instead of hiding it outright.
-const leftPanelDocked = ref(false)
+const leftPanelDocked = ref(!!duplicateSource.value)
 const uploadedFile = ref<File | null>(null)
 const uploadedFileUrl = ref('')
 const processingFile = ref(false)
@@ -405,36 +435,58 @@ function handleSave(mode: 'close' | 'new') {
 
   const filledRows = rows.value.filter((r) => r.accountId)
   const lineItems = filledRows.map((r) => ({
-    account: ACCOUNT_OPTIONS.find((a) => a.id === r.accountId)?.name ?? r.accountId,
+    account: ACCOUNT_OPTIONS.value.find((a) => a.id === r.accountId)?.name ?? r.accountId,
     description: r.description,
     tax: TAX_OPTIONS.find((tax) => tax.id === r.taxId)?.name ?? '—',
     amount: Number(r.amount) || 0,
   }))
 
-  addBill({
+  // Withholding is persisted (the Bill model carries a single deduction) so it
+  // survives an edit round-trip. Multiple rows collapse to the first row's
+  // name/account with the summed amount.
+  const firstWh = withholdingRows.value[0]
+  const withholding: Bill['withholding'] = lessWithholding.value && firstWh
+    ? {
+        name: firstWh.name || t('Withholding tax'),
+        amount: withholdingTotal.value,
+        account: BANK_ACCOUNT_OPTIONS.value.find((a) => a.id === firstWh.accountId)?.name ?? firstWh.accountId,
+      }
+    : undefined
+
+  const payload: Omit<Bill, 'id' | 'number'> = {
     beneficiary: { id: beneficiary.value, name: beneficiary.value },
-    category: ACCOUNT_OPTIONS.find((a) => a.id === rows.value[0]?.accountId)?.name ?? 'Uncategorized',
+    category: ACCOUNT_OPTIONS.value.find((a) => a.id === rows.value[0]?.accountId)?.name ?? 'Uncategorized',
     date: toISODate(transactionDate.value),
     dueDate: toISODate(iHavePaid.value ? transactionDate.value : dueDate.value),
     total: finalTotal.value,
     subtotal: subtotal.value,
     taxAmount: ppnAmount.value,
+    priceIncludesTax: priceIncludesTax.value || undefined,
     balanceDue: iHavePaid.value ? 0 : finalTotal.value,
     status: iHavePaid.value ? 'paid' : 'unpaid',
     tags: tags.value.length ? tags.value.map((tag) => String(tag.name ?? tag.id)) : undefined,
     memo: memo.value.trim() || undefined,
     attachments: attachments.length ? attachments : undefined,
     lineItems: lineItems.length ? lineItems : undefined,
+    withholding,
     // Only a bill created already-paid carries a payment record — an unpaid bill
     // gets one later, through a not-yet-built "add payment" action.
     payment: iHavePaid.value ? {
-      paymentAccount: BANK_ACCOUNT_OPTIONS.find((a) => a.id === paymentAccountId.value)?.name ?? paymentAccountId.value,
+      paymentAccount: BANK_ACCOUNT_OPTIONS.value.find((a) => a.id === paymentAccountId.value)?.name ?? paymentAccountId.value,
       amountPaid: amountPaid.value,
       paymentDate: toISODate(paymentDate.value),
       reference: paymentReference.value || undefined,
     } : undefined,
-  })
+  }
 
+  if (isEdit.value && props.orderId) {
+    updateBill(props.orderId, payload)
+    toast.notify({ variant: 'success', title: t('Changes saved') })
+    router.push(`/expenses/${props.orderId}`)
+    return
+  }
+
+  addBill(payload)
   toast.notify({ variant: 'success', title: t('Expense saved') })
   if (mode === 'close') {
     goExpenses()
@@ -445,6 +497,63 @@ function handleSave(mode: 'close' | 'new') {
     router.push('/expenses').then(() => router.push('/expenses/new'))
   }
 }
+
+// ── Edit-mode prefill ──────────────────────────────────────────────────────────
+// Populate every field from an existing bill. Account/bank/beneficiary values the
+// stand-in option lists don't already carry are injected so the Autocompletes can
+// display them (and round-trip back on save).
+function prefillFromBill(b: Bill, opts: { includePayment?: boolean } = {}) {
+  // Duplicate drops payment entirely (fresh unpaid expense); edit keeps it.
+  const includePayment = opts.includePayment !== false
+  if (!beneficiaryOptions.value.some((v) => v.id === b.beneficiary.name)) {
+    beneficiaryOptions.value.push({ id: b.beneficiary.name, name: b.beneficiary.name })
+  }
+  beneficiary.value = b.beneficiary.name
+  transactionDate.value = toDisplayDate(b.date)
+  dueDate.value = toDisplayDate(b.dueDate)
+  iHavePaid.value = includePayment ? (b.status === 'paid' || !!b.payment) : false
+  tags.value = (b.tags ?? []).map((name) => ({ id: name, name }))
+  priceIncludesTax.value = !!b.priceIncludesTax
+  memo.value = b.memo ?? ''
+
+  if (b.lineItems?.length) {
+    rows.value = b.lineItems.map((li) => {
+      const match = ACCOUNT_OPTIONS.value.find((a) => a.name === li.account)
+      const accountId = match?.id ?? li.account
+      if (!match) ensureOption(ACCOUNT_OPTIONS, li.account)
+      return {
+        id: rowSeq++, accountId, description: li.description,
+        taxId: /ppn/i.test(li.tax) ? 'ppn10' : 'none', amount: String(li.amount),
+        accountError: false, amountError: false, revealed: true,
+      }
+    })
+    rows.value.push(makeRow()) // trailing "add new" row
+  }
+
+  if (b.withholding) {
+    lessWithholding.value = true
+    ensureOption(BANK_ACCOUNT_OPTIONS, b.withholding.account)
+    withholdingRows.value = [{
+      id: whSeq++, name: b.withholding.name, amount: String(b.withholding.amount),
+      unit: 'Rp', accountId: b.withholding.account,
+      nameError: false, amountError: false, accountError: false,
+    }]
+  }
+
+  if (includePayment && b.payment) {
+    const pa = BANK_ACCOUNT_OPTIONS.value.find((a) => a.name === b.payment!.paymentAccount)
+    const paymentAccount = pa?.id ?? b.payment.paymentAccount
+    if (!pa) ensureOption(BANK_ACCOUNT_OPTIONS, b.payment.paymentAccount)
+    paymentAccountId.value = paymentAccount
+    paymentDate.value = toDisplayDate(b.payment.paymentDate)
+    paymentReference.value = b.payment.reference ?? ''
+    amountPaid.value = b.payment.amountPaid
+    amountPaidTouched.value = true // keep the loaded amount from being reset to finalTotal
+  }
+}
+
+if (editBill.value) prefillFromBill(editBill.value)
+else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { includePayment: false })
 </script>
 
 <template>
@@ -456,7 +565,7 @@ function handleSave(mode: 'close' | 'new') {
           <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">{{ t('Expenses') }}</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ t('New expense') }}</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit expense') : t('New expense') }}</h1>
         </div>
       </div>
     </header>
@@ -483,7 +592,7 @@ function handleSave(mode: 'close' | 'new') {
           <template v-if="!uploadedFile">
             <div class="ex-left-header-title">
               <MpIcon name="airene-brand" size="md" />
-              <h2 class="ex-left-header-heading">{{ t('Autofill fields') }}</h2>
+              <h2 class="ex-left-header-heading">{{ t('Scan a bill to autofill') }}</h2>
             </div>
             <MpButton class="ex-icon-btn" :aria-label="t('Close receipt panel')" @click="closePanel">
               <MpIcon name="close" size="sm" />
@@ -522,6 +631,9 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Idle / loading / uploaded-preview states are all handled by MpDropzone itself
              (isShowPreview defaults to true) — the built-in preview gives us the hover
              "Replace your file here" overlay and the minus-circle clear button for free. -->
+        <!-- Preview mode (isShowPreview default true) renders MpDropzone's own idle
+             UI, so the idle copy comes from the `placeholder`/`description` PROPS —
+             the #idle slot is ignored in this mode. -->
         <MpDropzone
           id="ex-receipt-dropzone"
           class="ex-dropzone"
@@ -530,20 +642,12 @@ function handleSave(mode: 'close' | 'new') {
           is-enable-input-file
           :is-loading="processingFile"
           :is-invalid="!!dropzoneError"
+          :placeholder="t('Drag and drop or')"
+          :description="t('Upload a bill or receipt and Mekari Airene will fill in the fields below.')"
           :button-text="t('Replace your file here')"
           @change="onDropzoneFileChange"
           @clear="clearUploadedFile"
         >
-          <template #idle="{ handleClickInput }">
-            <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
-            <p class="ex-dropzone-title">
-              {{ t('Drop your file here or') }}
-              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">{{ t('choose') }}</MpTextlink>
-            </p>
-            <p class="ex-dropzone-desc">
-              {{ t('Airene will read your file and fill in the details automatically. Supported formats: PDF, PNG, JPG. Maximum file size: 10 MB.') }}
-            </p>
-          </template>
           <template #loading>
             <div class="ex-dropzone-loading">
               <div class="ex-dropzone-loader"><MpSpinner /></div>
@@ -607,7 +711,7 @@ function handleSave(mode: 'close' | 'new') {
           </MpFormControl>
           <div class="ex-paid-check">
             <MpCheckbox id="ex-paid" :is-checked="iHavePaid" @change="iHavePaid = !iHavePaid" />
-            <span>{{ t('I have paid this bill') }}</span>
+            <span>{{ t('This expense has been paid') }}</span>
           </div>
         </div>
 
@@ -903,6 +1007,7 @@ function handleSave(mode: 'close' | 'new') {
             </MpTabList>
             <MpTabPanels>
               <MpTabPanel value="payment">
+                <h3 class="ex-payment-details-title">{{ t('Payment details') }}</h3>
                 <div class="ex-table-section">
                   <div class="ex-table-scroll">
                     <table class="ex-table">
@@ -994,8 +1099,13 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Footer actions -->
         <footer class="ex-footer">
           <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">{{ t('Save & close') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">{{ t('Save & create another') }}</button>
+          <template v-if="isEdit">
+            <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('close')">{{ t('Save changes') }}</button>
+          </template>
+          <template v-else>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">{{ t('Save & close') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">{{ t('Save & create another') }}</button>
+          </template>
         </footer>
       </div>
     </div>
@@ -1167,6 +1277,8 @@ function handleSave(mode: 'close' | 'new') {
   border-color: var(--mp-colors-red-400, #e2483d);
   background: var(--mp-background-neutral, #fff);
 }
+/* Center the idle description (MpDropzone left-aligns it by default). */
+.ex-dropzone :deep(.mp-dropzone__wrapper p.mp-text--weight_regular) { text-align: center; }
 .ex-dropzone-thumb-img { width: 125px; height: auto; }
 
 /* Uploading state — loader wrapped in a neutral-subtle circle, 24px above the title. */
@@ -1270,7 +1382,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-datepicker { width: 100%; }
 .ex-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
-.ex-price-includes { display: flex; align-items: center; gap: var(--mp-spacing-2); justify-content: flex-end; padding-top: 20px; margin-bottom: 12px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ex-price-includes { display: flex; align-items: center; gap: 0; justify-content: flex-end; padding-top: var(--mp-spacing-5, 20px); margin-bottom: var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 /* ── Line items table ─────────────────────────────────────────────────────── */
 .ex-lineitems-error-banner { margin-bottom: var(--mp-spacing-5, 20px); }
@@ -1278,10 +1390,10 @@ function handleSave(mode: 'close' | 'new') {
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-drag { width: 44px; }
-.ex-col-account { width: 200px; }
+.ex-col-account { width: 240px; }
 .ex-col-desc { width: auto; }
 .ex-col-tax { width: 140px; }
-.ex-col-amount { width: 160px; }
+.ex-col-amount { width: 280px; }
 .ex-col-del { width: 44px; }
 
 /* Matches the ERP index table's .erp-th pattern: uppercase, semi-bold, no vertical dividers. */
@@ -1420,6 +1532,8 @@ function handleSave(mode: 'close' | 'new') {
 
 /* ── Payment ──────────────────────────────────────────────────────────────── */
 .ex-payment-section { max-width: none; padding-top: var(--mp-spacing-6); }
+/* "Payment details" heading above the payment table — 14px/semibold, 8px to table. */
+.ex-payment-details-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 /* MpTabList ships a fixed 24px margin-bottom below the tab row — trim to the 20px spec. */
 .ex-payment-section :deep(.mp-tab-list__list) { margin-bottom: 20px; }
 /* Our build's static Panda scan never emitted MpTabSelectedBorder's base position/size

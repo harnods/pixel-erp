@@ -13,6 +13,7 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import ShippingDetailsModal from '~/components/patterns/ShippingDetailsModal.vue'
 import type jsPDF from 'jspdf'
 import {
   getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask, type PackLineItem,
@@ -177,8 +178,11 @@ async function printPackingList() {
 // Print shipping label (source/marketplace or WMS label; D9 duplicate guard).
 // Clickable even when the marketplace label hasn't arrived (project no-disabled
 // rule) — the handler then toasts "Waiting for marketplace shipping label".
-const { pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels } = usePrintShippingLabel()
-function printShipLabel() { printShippingLabels(linkedOrder.value ? [linkedOrder.value] : []) }
+const {
+  pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels,
+  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+} = usePrintShippingLabel()
+function printShipLabel() { printShippingLabels(linkedOrder.value ? [linkedOrder.value] : [], { requireCourier: true }) }
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
 function viewDelivery() {
@@ -731,6 +735,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     :filename="shipLabelName"
     :title="t('Shipping label preview')"
     @close="shipLabelOpen = false"
+  />
+
+  <ShippingDetailsModal
+    :is-open="courierModalOpen"
+    :orders="courierModalOrders"
+    @close="cancelShippingDetails"
+    @submit="saveShippingDetailsAndPrint"
   />
 </template>
 

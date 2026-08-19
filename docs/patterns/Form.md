@@ -14,7 +14,8 @@
 | Rule | Value |
 |---|---|
 | Max form width | `558px` (6-column Pixel grid) — fields must not exceed this |
-| Column gap | `6` (`MpFlex gap="6"`) between fields |
+| Column gap | `6` (`MpFlex gap="6"`) between fields (horizontal, same row) |
+| Row gap | **`20px`** (`--mp-spacing-5`) between stacked fields — the standard vertical spacing for every form / filter drawer. |
 | Stage padding | `24px` (see `DESIGN.md` → Layout) |
 | Action group | Always **last**, primary + tertiary buttons |
 | Page title | Set via `useNavigation()` on mount |
@@ -96,11 +97,59 @@ Use the right surface:
 
 ---
 
+## Checkbox / radio label gap & alignment ⚠️ (recurring mistake)
+
+`MpCheckbox` / `MpRadio` **already render their own 12px control-to-label gap**
+internally (an empty `mp-checkbox__label` / `mp-radio__label` slot sits after the
+control). When you place the label text in a sibling `<span>`, the wrapper's own
+`gap` **stacks on top** → a double 24px gap.
+
+- **Wrapper `gap: 0`.** Never add `gap` (or `spacing-2`) between the control and an
+  external label — the built-in 12px is the whole gap. (Same rule already noted in
+  `ColumnSettingsMenu.vue` and `EditClassificationModal.vue`.)
+- **Anything revealed *below* a checkbox/radio** (a dependent field, a sub-list,
+  an "Add …" button) must line up **with the label text, not the control** —
+  indent it by `calc(var(--mp-sizes-5) + var(--mp-spacing-3))` (control width 20px
+  + the 12px gap = 32px). Applies to a sub-account's Parent-account field, the
+  Selected-users / Selected-roles list, etc.
+
+## "Selected items" list (users / roles / …)
+
+A committed selection under a radio is a **plain list, not a bordered table/box**:
+each row = name (with a secondary subtitle line beneath it, e.g. the user's roles)
++ a remove control (`minus-circular`) at the right, rows separated by a
+`border-bottom` only (no outer border, no radius). The remove icon shows a
+`Remove` tooltip on hover.
+
+## Two-pane "Select …" drawer (`SelectAccessDrawer`)
+
+- Both panes carry a search box; **20px gap** from the search box to the list
+  header below it.
+- List headers are **`<h2>`** (20px semibold): left = the noun (`Users` / `Roles`)
+  with an `Add all` link; right = `Selected users (n)` / `Selected roles (n)` with
+  a `Remove all` link. Right pane shows the illustration empty state until
+  something is selected.
+- List rows are a **fixed 36px** min-height so revealing the add/remove control on
+  hover never shifts the row. Add control = `add` icon (not `add-circular`).
+
+---
+
 ## Select
 
 The control is an **`MpSelect`**; its dropdown is an **`MpPopover`** (options via
 `MpPopoverList` / `MpPopoverListItem`) — not the browser-native option list. Used
 for all selects, including the index-page filter bar's **quick filters**.
+
+### Active / selected option = BG FILL (not green text)
+
+The currently-selected option in ANY `MpPopover` dropdown must render with the
+**native `MpPopoverListItem :is-active` style: a `--mp-background-neutral-subtle`
+background fill** (`rgb(248,249,249)`), default text colour, normal weight. Do
+**not** hand-roll custom option buttons that only turn the text green — that is
+wrong. Always use `<MpPopoverList><MpPopoverListItem :is-active="…">` so the fill
+comes for free. If a control can't use `MpPopoverListItem` (e.g. the
+[AdvancedDateRangePicker](AdvancedDateRangePicker.md) preset sidebar), replicate
+exactly: `background: var(--mp-background-neutral-subtle)` + default text.
 
 ### ⚠️ Quick-filter rules (filter bar) — get these right
 

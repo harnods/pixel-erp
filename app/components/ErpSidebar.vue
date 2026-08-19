@@ -362,7 +362,18 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
-    { name: 'Dashboard', icon: 'dashboard' },
+    {
+      // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
+      // overview" has content today (Inbound/Outbound page tabs → analytics); the
+      // rest are placeholders for now.
+      name: 'Dashboard', icon: 'dashboard',
+      panelSubmenu: [[
+        { label: 'Business performance' },
+        { label: 'Custom dashboard' },
+        { label: 'Mekari Insight' },
+        { label: 'WMS analytics' },
+      ]],
+    },
     {
       name: 'Reports', icon: 'reports',
       flyoutOnHover: true,
@@ -464,7 +475,6 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
-          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
@@ -599,7 +609,6 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
       // WMS Standalone has no report index — the four reports (mirroring the ERP
       // report pages) sit directly in the level-2 panel, led by Overview.
       panelSubmenu: [[
-        { label: 'Overview', path: '/overview' },
         { label: 'Inbound timeliness', path: '/wms-report/inbound-timeliness' },
         { label: 'Inbound accuracy', path: '/wms-report/inbound-accuracy' },
         { label: 'Outbound timeliness', path: '/wms-report/outbound-timeliness' },
@@ -929,7 +938,11 @@ function handleNavClick(item: NavItem) {
       const firstItem = item.panelSubmenu[0][0]
       openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
       activePanelSubItem.value = firstItem.label
-      navigate(firstItem.to ?? firstItem.label)
+      // Honor a direct `path` (e.g. WMS Standalone Reports → /wms-report/:slug) —
+      // same as handlePanelSubItemClick; navigate(label) alone would derive a wrong
+      // route and land on a blank placeholder.
+      if (firstItem.path) router.push(firstItem.path)
+      else navigate(firstItem.to ?? firstItem.label)
       activeItem.value = item.name
     }
   } else if (item.expandOnClick && activePanel.value?.parentNavName === item.name) {
@@ -1274,10 +1287,8 @@ function cancelClose() {
 }
 .panel-item--accordion.is-open .panel-accordion-chevron { transform: rotate(180deg); }
 
-/* Accordion children (e.g. Assets, Depreciation schedule) — indented under the
-   header, but with tighter left/right padding so longer labels like "Depreciation
-   schedule" stay on one line in the narrow panel. */
-.panel-item--child { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-1); }
+/* Accordion children (e.g. Assets, Depreciation schedule) — 12px left/right padding. */
+.panel-item--child { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
 
 .panel-item-icon {
   width: var(--mp-sizes-4);
@@ -1306,13 +1317,9 @@ function cancelClose() {
   transform: rotate(-90deg);
 }
 
-/* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
-   distinguishes them from top-level panel items. Active state matches
-   .panel-item.active exactly (same blue + bg) — no separate override, so a
-   selected child (e.g. "Sales") reads the same as a selected top-level item
-   (e.g. "Notifications"). */
+/* Children read as secondary text; the active state matches .panel-item.active
+   exactly (same blue + bg) so a selected child reads like a selected top-level item. */
 .panel-item--child {
-  padding-left: var(--mp-spacing-6, 24px);
   color: var(--mp-text-secondary);
 }
 

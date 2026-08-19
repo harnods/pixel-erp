@@ -112,12 +112,13 @@ function minStockFor(catalogIndex: number): number {
 // go live (every 6th product, capped at 5 — matches the tab's badge count).
 const PENDING_SKUS = new Set(PRODUCTS.filter((_, i) => i % 6 === 0).slice(0, 5).map((p) => p.sku))
 
-// Tax info (DJP code / DJP unit) — only a handful of products have this filled in,
-// since it's a newly-added field; a different offset from PENDING_SKUS so the two
-// "notable minority" sets don't just line up with each other. The DJP code is looked
-// up by category so it always matches what the product actually is (coffee beans get
-// the coffee HS code, grinders/machines get an appliance/machinery code) rather than
-// an arbitrary pick from the full classification list.
+// Tax info (DJP code / DJP unit) — filled in for roughly half the catalog (every
+// odd index), since it's a newly-added field still being backfilled; a different
+// offset/parity from PENDING_SKUS so the two "minority" sets don't just line up
+// with each other. The DJP code is looked up by category so it always matches
+// what the product actually is (coffee beans get the coffee HS code,
+// grinders/machines get an appliance/machinery code) rather than an arbitrary
+// pick from the full classification list.
 function djpCodeFor(label: string) {
   return GOODS_CLASSIFICATION_CODES.find((c) => c.value === label)!.label
 }
@@ -129,8 +130,11 @@ const CATEGORY_DJP: Record<string, { code: string; unit: string }> = {
   Equipment:            { code: djpCodeFor('841900'), unit: 'Unit' },     // machinery for treatment by heating/roasting
   Accessory:            { code: djpCodeFor('850900'), unit: 'Piece' },
 }
-const DJP_SKUS = new Map(
-  PRODUCTS.filter((_, i) => i % 9 === 3).slice(0, 6).map((p) => {
+/** SKU -> DJP code/unit, for the roughly-half of products that have tax info
+ *  filled in. Exported so other modules (e.g. sales invoice line items) can check
+ *  DJP eligibility off this same set rather than recomputing/guessing their own. */
+export const DJP_SKUS = new Map(
+  PRODUCTS.filter((_, i) => i % 2 === 1).map((p) => {
     const entry = CATEGORY_DJP[p.category]
     return [p.sku, { djpCode: entry.code, djpUnit: entry.unit }]
   }),

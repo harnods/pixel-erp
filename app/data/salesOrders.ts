@@ -75,12 +75,16 @@ export interface SalesOrderTotals {
   total: number
 }
 
-/** Derive the totals breakdown from line items — shared by the index and the detail. */
-export function computeTotals(items: SalesOrderItem[], globalDiscount: number, shippingFee: number): SalesOrderTotals {
+/** Derive the totals breakdown from line items — shared by the index and the detail.
+ *  `taxRate` defaults to the standard 11% (existing callers are unaffected); pass 0
+ *  for a document that carries no PPN at all (e.g. a no-PPN sales invoice). */
+export function computeTotals(
+  items: SalesOrderItem[], globalDiscount: number, shippingFee: number, taxRate: number = TAX_RATE,
+): SalesOrderTotals {
   const subtotal = items.reduce((s, it) => s + it.qty * it.unitPrice, 0)
   const discountPerLine = items.reduce((s, it) => s + (it.qty * it.unitPrice - it.amount), 0)
   const taxBase = subtotal - discountPerLine - globalDiscount
-  const taxAmount = Math.round(taxBase * TAX_RATE)
+  const taxAmount = Math.round(taxBase * taxRate)
   const total = taxBase + taxAmount + shippingFee
   return { subtotal, discountPerLine, globalDiscount, taxLabel: 'PPN 11%', taxAmount, shippingFee, total }
 }

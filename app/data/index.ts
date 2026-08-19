@@ -84,6 +84,9 @@ export * from './bankStatementReviewFiles'
 export * from './bills'
 export * from './reviewFiles'
 
+// ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
+export * from './wmsCutover'
+
 // ── Cross-module integrity guards ───────────────────────────────────────────
 export * from './integrityGuards'
 

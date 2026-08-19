@@ -51,6 +51,8 @@ Start here. This is the home for ERP UI/UX documentation.
 | Status Badge | [ErpStatusBadge.md](patterns/ErpStatusBadge.md) | Status → badge type mapping |
 | Content List | [ContentList.md](patterns/ContentList.md) | Labelled key/value field (label over value); detail header + key/value displays |
 | Date format | [date-format.md](patterns/date-format.md) | Numeric `DD/MM/YYYY` table date standard; `formatDate` / `formatDateTime` helpers |
+| Currency format | [currency-format.md](patterns/currency-format.md) | `Rp4.000.000,00` (no space), 3 "Amount display" modes (with/without decimals, abbreviated `Rp2 jt`), settings-driven via `useCurrencySettings` + `formatIDR` / `formatMoney` |
+| Advanced date picker | [AdvancedDateRangePicker.md](patterns/AdvancedDateRangePicker.md) | Preset date-range field (Today / Last 7·14·30 days, range shown per preset; `direction="future"` for Next N days); calendar for granular/Custom |
 | Form | [Form.md](patterns/Form.md) | Field anatomy, layout rules (558px / 6-col), field type → Pixel component |
 | Form Table | [FormTable.md](patterns/FormTable.md) | Editable table cells in forms/drawers: input cells, select/search cells, focus/error states |
 | Toast | [Toast.md](patterns/Toast.md) | Success/error feedback, Pixel icon rule, UXW copy rule, implementation checklist |

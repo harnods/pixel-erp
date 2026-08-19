@@ -16,6 +16,7 @@
  * slate, totals and Additional info follow the expense review's patterns.
  */
 import { ref, computed, watch } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpCheckbox, MpInput, MpTextarea, MpAutocomplete, MpDatePicker,
   MpInputTag, MpIcon, MpUpload, MpUploadList, toast, MpTooltip,
@@ -272,10 +273,6 @@ function setScenario(s: Scenario) {
 }
 
 // ── Totals ───────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 })
-    .format(amount).replace(/^(Rp)\s/, '$1')
-}
 const lessWithholding = ref(false)
 const withholdingAmount = ref('0')
 

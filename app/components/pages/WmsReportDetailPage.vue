@@ -23,6 +23,11 @@ const { t } = useLocale()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
 
+// WMS Standalone has no Reports index page (reports open straight from the nav
+// panel), so the "Reports" breadcrumb has nowhere to go — hide it there.
+const { activeScenario } = useScenario()
+const showBreadcrumb = computed(() => activeScenario.value !== 'WMS Standalone')
+
 // ── Report definition for this slug ─────────────────────────────────────────────
 const def = computed(() => WMS_REPORTS[props.orderId])
 const title = computed(() => def.value?.title ?? 'Report')
@@ -391,7 +396,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Title bar (full-bleed detail) ── -->
     <div class="rpt-titlebar">
       <div class="rpt-titlebar-left">
-        <button class="rpt-breadcrumb" @click="router.push('/wms-report')">{{ t('Reports') }}</button>
+        <button v-if="showBreadcrumb" class="rpt-breadcrumb" @click="router.push('/wms-report')">{{ t('Reports') }}</button>
         <h1 class="rpt-title">{{ t(title) }}</h1>
       </div>
     </div>

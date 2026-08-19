@@ -9,6 +9,7 @@
  * (cost summary) · Finished goods (Main output / Other outputs / Production waste).
  */
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
@@ -157,11 +158,6 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(n || 0)
-}
 const num = (v: string) => Number(v) || 0
 const productName = (id: string) => productOptions.find(p => p.id === id)?.name ?? ''
 

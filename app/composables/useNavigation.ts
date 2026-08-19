@@ -37,6 +37,13 @@ export function pathToLabel(path: string): string {
     .join(" ");
 }
 
+/** Fix acronym labels for DISPLAY only (browser title) — not for the page-key
+ *  lookup, which must keep its original title-cased value. */
+export function displayLabel(label: string): string {
+  const ACRONYMS: Record<string, string> = { Hr: "HR", Crm: "CRM", Wms: "WMS" };
+  return ACRONYMS[label] ?? label;
+}
+
 /**
  * The label of the currently-active menu item, published by the sidebar (which
  * owns the nav tree). Lets the page title bar show the exact menu name instead

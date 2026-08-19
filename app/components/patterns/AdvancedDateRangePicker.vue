@@ -17,7 +17,7 @@
  */
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, css } from '@mekari/pixel3'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   id: string
   /** null = unapplied — shows `placeholder` and hides the "Date range: ..."
    *  label instead of resolving to a default range. */
@@ -28,13 +28,19 @@ const props = defineProps<{
    *  Inbox "All filters" drawer) that already render their own outer field
    *  label and would otherwise show it twice. */
   hideLabel?: boolean
-}>()
+  /** 'past' (default) → Today / Last 7 days / Last 30 days presets, resolving
+   *  backwards from today. 'future' → Next 7 / 14 / 30 days, resolving forwards
+   *  (today → today+N) — used for forward-looking fields like Due date. */
+  direction?: 'past' | 'future'
+}>(), {
+  direction: 'past',
+})
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
-type Mode = 'today' | 'last7' | 'last30' | 'day' | 'week' | 'month' | 'year' | 'custom'
+type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom'
 
 const open = ref(false)
-const mode = ref<Mode>('last30')
+const mode = ref<Mode>(props.direction === 'future' ? 'next30' : 'last30')
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x }
@@ -55,27 +61,56 @@ function fmtDayLabel(d: Date) { return `${d.getDate()} ${MONTHS_SHORT[d.getMonth
 
 const today = dayStart(new Date())
 
+// Resolved [start, end] for each quick preset — inclusive N-day windows anchored
+// to today (last N = today-(N-1)…today; next N = today…today+(N-1)). `today` is a
+// single day.
+function presetBounds(key: Mode): [Date, Date] {
+  switch (key) {
+    case 'today':  return [today, today]
+    case 'last7':  return [addDays(today, -6), today]
+    case 'last14': return [addDays(today, -13), today]
+    case 'last30': return [addDays(today, -29), today]
+    case 'next7':  return [today, addDays(today, 6)]
+    case 'next14': return [today, addDays(today, 13)]
+    case 'next30': return [today, addDays(today, 29)]
+    default:       return [today, today]
+  }
+}
+// Range text shown to the RIGHT of each preset. `today` shows one date (no range).
+function presetRangeText(key: Mode): string {
+  const [s, e] = presetBounds(key)
+  return key === 'today' ? fmtDayLabel(s) : `${fmtDayLabel(s)} - ${fmtDayLabel(e)}`
+}
+
 // ─── Committed range (what the field/table filter uses) ───────────────────────
 // modelValue === null → unapplied. The fallback below only feeds the calendar's
 // own internal positioning math; it's never shown as the field's resolved text.
 const hasValue = computed(() => props.modelValue !== null)
 const range = computed<[Date, Date]>(() => {
-  const [s, e] = props.modelValue ?? [addDays(today, -29), today]
+  const fallback: [Date, Date] = props.direction === 'future' ? [today, addDays(today, 29)] : [addDays(today, -29), today]
+  const [s, e] = props.modelValue ?? fallback
   return [dayStart(s!), dayStart(e!)]
 })
 function commit(start: Date, end: Date) {
   emit('update:modelValue', [dayStart(start), dayStart(end)])
 }
 
-const fieldText = computed(() => hasValue.value
-  ? `${fmtDMY(range.value[0])} - ${fmtDMY(range.value[1])}`
-  : (props.placeholder ?? 'Select date range'))
+const fieldText = computed(() => {
+  if (!hasValue.value) return props.placeholder ?? 'Select date range'
+  const [s, e] = range.value
+  // A single-day selection (Today / Per day) shows one date, not `x - x`.
+  return isSameDay(s, e) ? fmtDMY(s) : `${fmtDMY(s)} - ${fmtDMY(e)}`
+})
 
 const labelText = computed(() => {
   switch (mode.value) {
     case 'today': return 'Today'
     case 'last7': return 'Last 7 days'
+    case 'last14': return 'Last 14 days'
     case 'last30': return 'Last 30 days'
+    case 'next7': return 'Next 7 days'
+    case 'next14': return 'Next 14 days'
+    case 'next30': return 'Next 30 days'
     case 'day': return fmtDayLabel(range.value[0])
     case 'week': return `${range.value[0].getDate()} - ${fmtDayLabel(range.value[1])}`
     case 'month': return `${MONTHS_LONG[range.value[0].getMonth()]} ${range.value[0].getFullYear()}`
@@ -87,11 +122,18 @@ const labelText = computed(() => {
 
 // ─── Sidebar selection ──────────────────────────────────────────────────────────
 
-const topPresets: { key: Mode; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'last7', label: 'Last 7 days' },
-  { key: 'last30', label: 'Last 30 days' },
-]
+const topPresets = computed<{ key: Mode; label: string }[]>(() => props.direction === 'future'
+  ? [
+      { key: 'next7', label: 'Next 7 days' },
+      { key: 'next14', label: 'Next 14 days' },
+      { key: 'next30', label: 'Next 30 days' },
+    ]
+  : [
+      { key: 'today', label: 'Today' },
+      { key: 'last7', label: 'Last 7 days' },
+      { key: 'last14', label: 'Last 14 days' },
+      { key: 'last30', label: 'Last 30 days' },
+    ])
 const granularityPresets: { key: Mode; label: string }[] = [
   { key: 'day', label: 'Per day' },
   { key: 'week', label: 'Per week' },
@@ -102,9 +144,8 @@ const granularityPresets: { key: Mode; label: string }[] = [
 
 function selectInstant(key: Mode) {
   mode.value = key
-  if (key === 'today') commit(today, today)
-  else if (key === 'last7') commit(addDays(today, -6), today)
-  else if (key === 'last30') commit(addDays(today, -29), today)
+  const [s, e] = presetBounds(key)
+  commit(s, e)
   open.value = false
 }
 
@@ -200,9 +241,12 @@ function onYearClick(y: number) {
             <div class="adr-sidebar-title">Time range</div>
             <button
               v-for="opt in topPresets" :key="opt.key"
-              class="adr-sidebar-item" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
+              class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
               @click.stop="selectInstant(opt.key)"
-            >{{ opt.label }}</button>
+            >
+              <span class="adr-preset-label">{{ opt.label }}</span>
+              <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
+            </button>
             <div class="adr-sidebar-divider" />
             <button
               v-for="opt in granularityPresets" :key="opt.key"
@@ -314,7 +358,7 @@ function onYearClick(y: number) {
 /* ── Popover: sidebar + calendar ── */
 .adr-popover { display: flex; }
 
-.adr-sidebar { width: 180px; padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
+.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
 .adr-sidebar-title {
   padding: var(--mp-spacing-1) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -333,11 +377,20 @@ function onYearClick(y: number) {
   cursor: pointer;
 }
 .adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
-/* Same active-item pattern as ErpSidebar's .panel-item.active */
+/* Quick presets show their resolved range on the right (Today = a single date). */
+.adr-sidebar-item--preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+}
+.adr-preset-label { white-space: nowrap; }
+.adr-preset-range { color: var(--mp-text-subtle); white-space: nowrap; }
+/* Active/selected = neutral-subtle BG FILL + default text (matches Pixel's native
+   MpPopoverListItem :is-active — rgb(248,249,249), NOT a green text/fill). */
 .adr-sidebar-item--active {
-  background: var(--mp-background-nav-stack-hovered, #d6f4e9);
-  color: var(--mp-text-selected);
-  font-weight: var(--mp-font-weights-semi-bold);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  color: var(--mp-text-default);
 }
 .adr-sidebar-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-2) 0; }
 
@@ -383,7 +436,7 @@ function onYearClick(y: number) {
 .adr-cal-day--outside { color: var(--mp-text-placeholder); }
 .adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
 .adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
-.adr-cal-day--today { outline: 1.5px solid var(--mp-border-warning, #f2b90c); outline-offset: -1.5px; }
+.adr-cal-day--today { background: var(--mp-background-warning, #fcefc2); outline: 1.5px solid var(--mp-border-warning, #f2b90c); outline-offset: -1.5px; font-weight: var(--mp-font-weights-semi-bold); }
 
 .adr-cal-anchor {
   text-align: center;

@@ -16,6 +16,7 @@ import {
   type PackingTask,
 } from '~/data/packingTasks'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import ShippingDetailsModal from '~/components/patterns/ShippingDetailsModal.vue'
 import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
 import { orderById, anyLabelAvailable, packingBlockedOnSourceLabel } from '~/data/shippingLabels'
 import { packingTaskHasShipment } from '~/data/deliveryTasks'
@@ -70,7 +71,7 @@ const columns: TableColumn[] = [
   { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
   { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
-  { key: 'icons',         label: '',            width: '48px',  align: 'center', noHeader: true },
+  { key: 'icons',         label: '',            width: '48px',  noHeader: true },
   { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
 ]
@@ -202,7 +203,10 @@ function confirmCancelTask() {
 }
 
 // ─── Print shipping label (source/marketplace or WMS label; D9 duplicate guard) ──
-const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+const {
+  pdfOpen, pdfDoc, pdfFilename, printShippingLabels,
+  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+} = usePrintShippingLabel()
 function ordersForPacking(t: PackingTask) { const o = orderById(t.salesOrderId); return o ? [o] : [] }
 function canPrintLabel(t: PackingTask): boolean { return anyLabelAvailable(ordersForPacking(t)) }
 function selectedPackingsOf(sel: Set<number>): PackingTask[] {
@@ -210,7 +214,7 @@ function selectedPackingsOf(sel: Set<number>): PackingTask[] {
 }
 function bulkPrintLabels(sel: Set<number>, deselectAll: () => void) {
   const orders = selectedPackingsOf(sel).flatMap(ordersForPacking)
-  printShippingLabels(orders)
+  printShippingLabels(orders, { requireCourier: true })
   deselectAll()
 }
 
@@ -418,7 +422,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             >{{ t('View delivery') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canPrintLabel(row as unknown as PackingTask)"
-              @click="printShippingLabels(ordersForPacking(row as unknown as PackingTask))"
+              @click="printShippingLabels(ordersForPacking(row as unknown as PackingTask), { requireCourier: true })"
             >{{ t('Print shipping label') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-else
@@ -451,6 +455,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :filename="pdfFilename"
     :title="t('Shipping label preview')"
     @close="pdfOpen = false"
+  />
+
+  <ShippingDetailsModal
+    :is-open="courierModalOpen"
+    :orders="courierModalOrders"
+    @close="cancelShippingDetails"
+    @submit="saveShippingDetailsAndPrint"
   />
 
   <!-- ── Cancel confirmation modal ── -->
@@ -539,7 +550,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Icon indicators cell — shipment created */
-.pack-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pack-icons-cell { display: flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-2); }
 .pack-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
 .pack-source {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;

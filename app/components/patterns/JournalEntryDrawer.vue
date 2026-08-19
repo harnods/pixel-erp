@@ -5,6 +5,7 @@
  * a heading + a list of rows so any transaction type can reuse it, not just bills.
  */
 import { MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalOverlay, MpModalCloseButton } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 
 export interface JournalEntryRow {
   account: string
@@ -15,9 +16,6 @@ export interface JournalEntryRow {
 const props = defineProps<{ isOpen: boolean; heading: string; rows: JournalEntryRow[] }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void }>()
 
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 const totalDebit = computed(() => props.rows.reduce((s, r) => s + (r.debit ?? 0), 0))
 const totalCredit = computed(() => props.rows.reduce((s, r) => s + (r.credit ?? 0), 0))
 

@@ -41,13 +41,14 @@ const router = useRouter()
 // this is the one component that survives every virtual page swap.
 const unsavedChangesModal = useUnsavedChangesModalState()
 
-// Browser tab title: "Mekari ERP | <module>"
+// Browser tab title: "Mekari ERP | <module>" (acronyms uppercased for display only)
 useHead({
-  title: () => `Mekari ERP | ${pageTitle.value}`,
+  title: () => `Mekari ERP | ${displayLabel(pageTitle.value)}`,
 })
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
@@ -75,6 +76,8 @@ const pageRegistry: Record<string, Component> = {
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  // Settings → Data migration. Key must match the sidebar label character-for-character.
+  'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
@@ -82,15 +85,21 @@ const pageRegistry: Record<string, Component> = {
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
+  'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
+const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
+const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
+const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
+const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
+const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
@@ -199,6 +208,8 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -207,14 +218,32 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
+const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
+const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
+const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
+const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendingSetupPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /crm → CRM (Qontak) Deals kanban — a full-bleed page that owns its own title
+  // bar + filter bar + board, so it renders outside the padded stage.
+  if (segs[0] === 'crm') {
+    return { component: CrmDealsPage, id: '' }
+  }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
     return { component: WmsReportDetailPage, id: segs[1]! }
+  }
+  // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
+  // Full-bleed form pages (own title bar + stage); the bare index falls through
+  // to the registry's 'Data migration' landing.
+  if (segs.length >= 3 && segs[0] === 'data-migration' && segs[1] === 'wms-cutover') {
+    if (segs[2] === 'chart-of-accounts') return { component: WmsCutoverChartOfAccountsPage, id: 'chart-of-accounts' }
+    if (segs[2] === 'opening-balance') return { component: WmsCutoverOpeningBalancePage, id: 'opening-balance' }
+    if (segs[2] === 'pending') return { component: WmsPendingSetupPage, id: 'pending' }
+    return { component: WmsCutoverProductsPage, id: 'products' }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
@@ -239,6 +268,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
     return { component: SpendMoneyPage, id: segs[1]! }
   }
+  // /expenses/:id/edit → New expense form in edit mode (reuses the create form)
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'edit') {
+    return { component: NewExpensePage, id: segs[1]! }
+  }
+  // /expenses/:id/payment-details → the payment (Spend money) transaction detail.
+  // Reached by clicking the Number in the bill's Payment details table. Design is
+  // still pending → placeholder for now.
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
+    return { component: PlaceholderPage, id: segs[1]! }
+  }
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }
@@ -246,6 +285,24 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/review/:id → OCR review for an imported bank statement
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
     return { component: BankStatementReviewPage, id: segs[2]! }
+  }
+  // /cash-management/new → create a new cash/bank/card account (full page)
+  if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'new') {
+    return { component: CreateCashAccountPage, id: 'new' }
+  }
+  // /cash-management/internal-transfer[...] → Internal transfer create/edit/duplicate/detail
+  if (segs.length >= 2 && segs[0] === 'cash-management' && segs[1] === 'internal-transfer') {
+    if (segs.length === 2) return { component: InternalTransferFormPage, id: 'new' }                                // create
+    if (segs.length >= 4 && (segs[3] === 'edit' || segs[3] === 'duplicate')) return { component: InternalTransferFormPage, id: segs[2]! } // edit / duplicate
+    return { component: InternalTransferDetailsPage, id: segs[2]! }                                                 // :id detail
+  }
+  // /cash-management/:id/edit → edit an existing account (must precede the :id detail branch)
+  if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'edit') {
+    return { component: CreateCashAccountPage, id: segs[1]! }
+  }
+  // /cash-management/:id/connect → Connect to bank (Bank connection) flow
+  if (segs.length >= 3 && segs[0] === 'cash-management' && segs[2] === 'connect') {
+    return { component: CashConnectBankPage, id: segs[1]! }
   }
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
@@ -354,6 +411,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
+  // /sales-invoices/new → New sales invoice form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
+    return { component: NewSalesInvoicePage, id: 'new' }
+  }
+  // /sales-invoices/:id → sales invoice detail
+  if (segs.length >= 2 && segs[0] === 'sales-invoices') {
+    return { component: SalesInvoiceDetailsPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
   }
@@ -454,8 +519,11 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview — only the WMS menu (/overview); NOT mirrored into Reports (/wms-report).
-  'Overview':          ['Inbound delivery', 'Outbound delivery'],
+  // WMS analytics — Inbound/Outbound as page tabs (outside the stage). Reached in ERP
+  // via Dashboard › WMS analytics (/wms-analytics → key 'Wms analytics'); in WMS
+  // Standalone it IS the Dashboard page (key 'Dashboard').
+  'Wms analytics':     ['Inbound delivery', 'Outbound delivery'],
+  'Dashboard':         ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -610,12 +678,15 @@ const cycleCountBannerVisible = computed(() =>
 )
 
 // Real component to render in the stage for a given page + tab (else placeholder).
+// WMS analytics — one page, direction per tab. Shared by the ERP "WMS analytics"
+// page and the WMS Standalone "Dashboard" page.
+const wmsOverviewTabComponents: Record<string, Component> = {
+  'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+  'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+}
 const tabComponents: Record<string, Record<string, Component>> = {
-  // WMS → Overview — one analytics page, direction per tab.
-  'Overview': {
-    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
-    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
-  },
+  'Wms analytics': wmsOverviewTabComponents,
+  'Dashboard':     wmsOverviewTabComponents,
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -677,13 +748,16 @@ const showNewPurchaseOrder = computed(() =>
   activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
 )
 
-// Warehouse transfers is an ERP-only module — its "New warehouse transfer" action
-// shows only in the ERP scenario, on the Warehouse transfers page.
+// "New warehouse transfer" shows on the Warehouse transfers page in both
+// scenarios that carry that page in their nav — ERP and WMS Standalone (WMS
+// Standalone mirrors the ERP module onto the same /warehouse-transfers page).
 const showNewWarehouseTransfer = computed(() =>
-  activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
+  (activeScenario.value === 'ERP' || activeScenario.value === 'WMS Standalone') &&
+  currentPageKey.value === 'Warehouse transfers',
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
+function newSalesInvoice() { router.push('/sales-invoices/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -1063,7 +1137,7 @@ function startResize(e: MouseEvent) {
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
 
       <template v-else>
-      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1072,7 +1146,7 @@ function startResize(e: MouseEvent) {
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1113,14 +1187,21 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
-          <!-- One pill: "New account" + caret. The caret half opens the account-type menu. -->
+          <!-- Secondary: "+ New account" -->
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New account') }}
+          </button>
+
+          <!-- Primary dropdown button: "New transaction" — the whole button opens the menu. -->
           <div ref="importBtnWrapEl" class="import-wrap">
             <button
-              class="btn-enterprise btn-enterprise--primary btn-enterprise--split"
+              class="btn-enterprise btn-enterprise--primary"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              {{ t('New account') }}
-              <span class="btn-enterprise__split-divider" />
+              {{ t('New transaction') }}
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
@@ -1131,9 +1212,9 @@ function startResize(e: MouseEvent) {
 
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Bank account') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Cash account') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Credit card') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Receive money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Spend money') }}</MpButton>
               </div>
             </div>
           </div>
@@ -1469,7 +1550,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1944,12 +2025,19 @@ function startResize(e: MouseEvent) {
   overflow-x: hidden;
   overflow-y: auto;
   /* side/bottom padding scrolls with content; the top 24px is a fixed border
-     (borders don't scroll) so content keeps a 24px gap from the stage's top edge */
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+     (borders don't scroll) so content keeps a 24px gap from the stage's top edge.
+     Bottom is 80px so the last row of content clears the fold with breathing room. */
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-20, 80px);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+/* HR home wants a full-bleed cream header flush to the very top — drop the 24px
+   top border (the gap) and the rounded top corners so its hero reaches the edge. */
+.stage.stage--flush-top {
+  border-top-width: 0;
+  border-radius: 0;
 }
 /* Report index draws an edge-to-edge card grid — no stage padding/top gap. */
 .stage--flush {

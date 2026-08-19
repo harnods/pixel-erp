@@ -25,11 +25,11 @@ import { generateBarcodeSheetPdf, type BarcodeLabelInfo } from '~/utils/barcodeL
 import { getBatchBarcode, setBatchBarcode } from '~/data/productDetails'
 import { generateNextBarcode } from '~/data/barcodeConfig'
 import type jsPDF from 'jspdf'
-import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, ensureLocationBarcode, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
 import { warehouses, getWarehouseActivity, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
-import { getStorageTree, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, getStorageLeaves, type LocNode } from '~/data/storageLocations'
 import { archiveWarehousesSafe, deleteLocationSafe } from '~/data/integrityGuards'
 import {
   getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
@@ -612,6 +612,29 @@ function printAllSerialBarcodes() {
   }
   openPrintAll(labels, 'serial numbers')
 }
+// Storage locations — one label per Storage-type leaf location in this warehouse
+// (each location's own barcode, generated on first use). Triggered from the
+// top Actions dropdown, so it's warehouse-wide (not tied to the current tab).
+function printAllStorageLocationBarcodes() {
+  const wh = warehouse.value
+  if (!wh) return
+  const labels: BarcodeLabelInfo[] = getStorageLeaves(wh.id)
+    .filter((l) => l.type === 'Storage')
+    .map((l) => {
+      const parts = l.path.split(' / ')
+      return {
+        barcode: ensureLocationBarcode(wh.id, l.id),
+        batchNo: parts[parts.length - 1] ?? l.path,
+        productName: wh.name,
+        sku: parts.slice(0, -1).join(' / '),
+      }
+    })
+  if (!labels.length) {
+    toast.notify({ variant: 'error', title: t('No storage locations to print in this warehouse'), maxWidth: 'max-content' })
+    return
+  }
+  openPrintAll(labels, 'storage locations')
+}
 async function confirmPrintAllBarcodes({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
   printBarcodeOptionsOpen.value = false
   barcodePreviewDoc.value = await generateBarcodeSheetPdf(printLabels.value, columns, qty)
@@ -835,6 +858,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="goEdit">{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="printAllStorageLocationBarcodes">{{ t('Print storage location barcode') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canArchive" @click="isArchived ? unarchive() : (archiveModalOpen = true)">
               {{ isArchived ? t('Unarchive') : t('Archive') }}
             </MpPopoverListItem>

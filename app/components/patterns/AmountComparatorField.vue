@@ -11,7 +11,7 @@
  * Bare input elements (not MpInput) inside the merged box — MpInput brings
  * its own border/radius which would double up against the outer box's.
  */
-import { MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 export type AmountComparator = 'gt' | 'between' | 'lt'
 
@@ -41,6 +41,20 @@ function selectComparator(c: AmountComparator) {
   emit('update:comparator', c)
   open.value = false
 }
+
+// Amount inputs show a thousands separator (id-ID → `500.000`); the model stores
+// the raw digit string so callers can `Number(...)` it directly.
+const digits = (s: string) => s.replace(/\D/g, '')
+function formatThousands(s: string): string {
+  const n = digits(String(s ?? ''))
+  return n ? Number(n).toLocaleString('id-ID') : ''
+}
+function onAmountInput(field: 'value' | 'min' | 'max', e: Event) {
+  const v = digits((e.target as HTMLInputElement).value)
+  if (field === 'value') emit('update:value', v)
+  else if (field === 'min') emit('update:min', v)
+  else emit('update:max', v)
+}
 </script>
 
 <template>
@@ -61,32 +75,33 @@ function selectComparator(c: AmountComparator) {
           <MpIcon name="chevrons-down" size="sm" />
         </MpButton>
       </MpPopoverTrigger>
-      <MpPopoverContent :class="css({ padding: '8px', minWidth: '200px', borderRadius: '12px', overflow: 'hidden' })" @blur="open = false" @escape="open = false">
-        <button
-          v-for="c in COMPARATORS" :key="c"
-          class="acf-option" :class="{ 'acf-option--selected': c === comparator }"
-          type="button" @click.stop="selectComparator(c)"
-        >
-          {{ COMPARATOR_LABELS[c] }}
-        </button>
+      <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="open = false" @escape="open = false">
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="c in COMPARATORS" :key="c"
+            :is-active="c === comparator" @click="selectComparator(c)"
+          >
+            {{ COMPARATOR_LABELS[c] }}
+          </MpPopoverListItem>
+        </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
 
     <template v-if="comparator === 'between'">
       <input
-        :id="`${id}-min`" class="acf-input" type="number" placeholder="Min"
-        :value="min" @input="emit('update:min', ($event.target as HTMLInputElement).value)"
+        :id="`${id}-min`" class="acf-input" type="text" inputmode="numeric" placeholder="Min"
+        :value="formatThousands(min)" @input="onAmountInput('min', $event)"
       >
       <span class="acf-sep">–</span>
       <input
-        :id="`${id}-max`" class="acf-input" type="number" placeholder="Max"
-        :value="max" @input="emit('update:max', ($event.target as HTMLInputElement).value)"
+        :id="`${id}-max`" class="acf-input" type="text" inputmode="numeric" placeholder="Max"
+        :value="formatThousands(max)" @input="onAmountInput('max', $event)"
       >
     </template>
     <input
       v-else
-      :id="`${id}-value`" class="acf-input" type="number" placeholder="Value"
-      :value="value" @input="emit('update:value', ($event.target as HTMLInputElement).value)"
+      :id="`${id}-value`" class="acf-input" type="text" inputmode="numeric" placeholder="Value"
+      :value="formatThousands(value)" @input="onAmountInput('value', $event)"
     >
   </div>
 </template>
@@ -132,25 +147,4 @@ function selectComparator(c: AmountComparator) {
 .acf-input::placeholder { color: var(--mp-text-placeholder); }
 
 .acf-sep { color: var(--mp-text-subtle); flex-shrink: 0; }
-
-/* ── Popover option list — overflow:hidden keeps hovered rows from squaring
-     off the panel's rounded corners. ── */
-.acf-option {
-  display: block;
-  width: 100%;
-  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
-  border: none;
-  border-radius: var(--mp-radii-sm, 4px);
-  background: transparent;
-  text-align: left;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.acf-option:hover { background: var(--mp-background-neutral-hovered); }
-.acf-option--selected {
-  color: var(--mp-text-selected);
-  font-weight: var(--mp-font-weights-semi-bold);
-}
 </style>

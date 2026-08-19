@@ -378,7 +378,7 @@ function startResize(e: MouseEvent) {
 
     <!-- ── Left column: title bar + stage ── -->
     <div class="page-col">
-      <div v-if="!showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home' && !showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Purchase orders' && !showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
@@ -439,7 +439,7 @@ function startResize(e: MouseEvent) {
 
       <component :is="PurchaseOrderFormPage" v-if="showPurchaseOrderForm" :duplicate-order-id="formDuplicateId ?? undefined" :rejection-banner="formRejectionBanner" />
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="detailOrderId!" />
-      <div v-else class="stage">
+      <div v-else class="stage" :class="{ 'stage--home': currentPageKey === 'Home' }">
         <component :is="currentComponent" />
       </div>
     </div>
@@ -797,6 +797,12 @@ function startResize(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+/* Home: full-bleed hero flush to the top (no top gap, square corners), side padding
+   kept for the content below, and 80px bottom breathing room — mirrors Talenta home. */
+.stage--home {
+  padding: 0 var(--mp-spacing-6, 24px) var(--mp-spacing-20, 80px);
+  border-radius: 0;
 }
 
 /* ── Airene slot (outer wrapper) ─────────────────────────────────────────── */

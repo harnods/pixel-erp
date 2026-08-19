@@ -1,14 +1,7 @@
 import jsPDF from 'jspdf'
 import type { Bill } from '~/data'
 import { formatDate } from './date'
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
+import { formatIDR } from './currency'
 
 /** One page per selected bill — same shape as the other generate*Pdf helpers, so
  *  bulk "Print PDF" can reuse PdfPreviewModal like every other print flow. */

@@ -66,6 +66,15 @@
             <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
+          <button type="button" class="user-menu__row" @click="toggleProductMenu(); onClosePopover()">
+            <span class="user-menu__label">{{ t('Show ERP Menu') }}</span>
+            <span v-if="showProductMenu" class="user-menu__value">{{ t('On') }}</span>
+          </button>
+          <button type="button" class="user-menu__row" @click="view = 'scenario'">
+            <span class="user-menu__label">{{ t('Scenario') }}</span>
+            <span class="user-menu__value">{{ t(migrationScenario) }}</span>
+            <MpIcon name="chevrons-right" size="md" color="icon.default" />
+          </button>
           <button type="button" class="user-menu__row" @click="view = 'language'">
             <span class="user-menu__label">{{ t('Language') }}</span>
             <span class="user-menu__value">{{ currentLanguage }}</span>
@@ -169,6 +178,39 @@
           </button>
         </nav>
       </template>
+
+      <!-- ── Scenario: pick the demo storyline ─────────────── -->
+      <template v-else-if="view === 'scenario'">
+        <div class="user-menu__subhead">
+          <button
+            type="button"
+            class="user-menu__back"
+            aria-label="Back"
+            @click="view = 'main'"
+          >
+            <MpIcon name="chevrons-left" size="md" color="icon.default" />
+          </button>
+          <span class="user-menu__subtitle">{{ t('Select scenario') }}</span>
+        </div>
+
+        <nav class="user-menu__group">
+          <button
+            v-for="s in migrationScenarios"
+            :key="s"
+            type="button"
+            class="user-menu__row"
+            @click="selectMigrationScenario(s, onClosePopover)"
+          >
+            <span class="user-menu__label">{{ t(s) }}</span>
+            <MpIcon
+              v-if="s === migrationScenario"
+              name="check"
+              size="md"
+              color="icon.brand"
+            />
+          </button>
+        </nav>
+      </template>
     </MpPopoverContent>
   </MpPopover>
 </template>
@@ -199,8 +241,9 @@ const primaryItems = [
   { label: "Contact support", icon: "contact" },
 ] as const;
 
-// Which panel of the popover is showing: the account menu, or the WMS scenario picker.
-const view = ref<"main" | "wms" | "language">("main");
+// Which panel of the popover is showing: the account menu, the WMS scenario
+// picker, the language picker, or the demo-storyline (migration) scenario picker.
+const view = ref<"main" | "wms" | "language" | "scenario">("main");
 
 // Language switcher — wired to the global app locale (see useLocale).
 const { locale, setLocale, t } = useLocale();
@@ -228,6 +271,8 @@ function onPopoverClose() {
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
 const { navigate } = useNavigation();
+// Product-switcher rail visibility (top-right "Show ERP Menu" toggle).
+const { showProductMenu, toggleProductMenu } = useProductMenu();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned
 // warehouse's PIC) — Budi Santoso for Ops 1, Agus Firmansyah for Ops 2. ERP and
@@ -243,6 +288,21 @@ function selectScenario(scenario: Scenario, closePopover: () => void) {
   setScenario(scenario);
   // Land on Home so the sidebar (now showing the scenario's nav) and the active
   // highlight stay consistent — the previous page may not exist in the new nav.
+  navigate("Home");
+  closePopover();
+}
+
+// Demo-storyline scenarios — a separate axis from the WMS product switch above.
+// "Default" is the app as it is today; "WMS upgrade to ERP" is the migration
+// story built on this branch. Features read useMigrationScenario() to decide
+// whether to surface migration-specific UI.
+const migrationScenarios: MigrationScenario[] = ["Default", "WMS upgrade to ERP"];
+const { migrationScenario, setMigrationScenario } = useMigrationScenario();
+
+function selectMigrationScenario(scenario: MigrationScenario, closePopover: () => void) {
+  setMigrationScenario(scenario);
+  // Land on Home so whatever nav/content the storyline drives starts from a
+  // known page (the previous page may not exist under the new scenario).
   navigate("Home");
   closePopover();
 }

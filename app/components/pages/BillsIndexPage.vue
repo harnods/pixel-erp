@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { type Ref } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpButton, MpTooltip, MpRadio, MpCheckbox,
@@ -15,16 +16,19 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { generateBillAttachmentPreviewPdf } from '~/utils/billAttachmentPdf'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { bills, duplicateBill, deleteBills } from '~/data'
+import BillsFiltersDrawer, { emptyBillsFilters, type BillsFiltersValue } from '~/components/patterns/BillsFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+import { bills, deleteBills } from '~/data'
 import type { Bill, BillStatus } from '~/data'
 
 const { t } = useLocale()
 const router = useRouter()
 function goDetail(id: string) { router.push(`/expenses/${id}`) }
 function addPayment(id: string) { router.push(`/expenses/${id}/payment`) }
+// Duplicate — opens the New expense form pre-filled from the source bill (minus
+// payment); nothing is saved until the user submits.
 function duplicate(id: string) {
-  duplicateBill(id)
-  toast.notify({ variant: 'success', title: t('Expense duplicated') })
+  router.push({ path: '/expenses/new', query: { duplicate: id } })
 }
 // "Set as recurring" isn't built yet — kept in the row-kebab markup below (per design)
 // but hidden until the feature ships.
@@ -104,7 +108,7 @@ function closeExportModal() { exportModalOpen.value = false }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',          label: 'Date',          width: '120px',                                 sortType: 'date'   },
+  { key: 'date',          label: 'Date',          width: '160px',                                 sortType: 'date'   },
   { key: 'number',        label: 'Number',        width: '160px', sortable: true,                 sortType: 'number' },
   { key: 'attachment',    label: '',              width: '52px',  noHeader: true, align: 'center' },
   { key: 'beneficiaryName', label: 'Beneficiary', width: '220px', sortable: true,                 sortType: 'text'   },
@@ -128,7 +132,9 @@ type Row = Bill & {
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
 
 const rows = computed<Row[]>(() =>
-  bills.map(bill => {
+  // Newest created on top by default (transactional log) — highest number first;
+  // newly-added bills (higher number) surface at the top automatically.
+  [...bills].sort((a, b) => b.number - a.number).map(bill => {
     const isOverdue = bill.status === 'unpaid' && new Date(bill.dueDate).getTime() < Date.now()
     const overdueLabel = isOverdue
       ? (() => {
@@ -150,21 +156,102 @@ const rows = computed<Row[]>(() =>
   })
 )
 
+// ─── "All filters" drawer — a second, independent filter layer, ANDed with the
+// toolbar's own Status select + search below (same pattern as SalesInvoicesPage's
+// SalesInvoiceFiltersDrawer wiring). ─────────────────────────────────────────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<BillsFiltersValue>(emptyBillsFilters())
+
+// Curated keyword-scope columns (real bills table columns worth text-matching).
+const keywordColumns = [
+  { key: 'number',          label: t('Number')      },
+  { key: 'beneficiaryName', label: t('Beneficiary') },
+  { key: 'category',        label: t('Category')    },
+  { key: 'tags',            label: t('Tags')        },
+]
+const drawerStatusOptions = [
+  { label: t('Open'),    value: 'open'    },
+  { label: t('Paid'),    value: 'paid'    },
+  { label: t('Overdue'), value: 'overdue' },
+]
+const tagOptions = computed(() => [...new Set(bills.flatMap(b => b.tags ?? []))].sort())
+
+function applyDrawerFilters(v: BillsFiltersValue) { Object.assign(appliedFilters, v) }
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
+}
+// "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
-  filterFn: (row: Row, s, status) =>
-    (String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s)) &&
-    (!status || row.displayStatus === status),
+  filterFn: (row: Row, s, status) => {
+    const matchesSearch = String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s)
+    const matchesStatus = !status || row.displayStatus === status
+
+    // ── Drawer filters (independent of the toolbar's Status select / search) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? String(row.number).includes(kw) || row.beneficiaryName.toLowerCase().includes(kw) || row.category.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
+        : f.keywordColumn === 'beneficiaryName' ? row.beneficiaryName.toLowerCase().includes(kw)
+        : f.keywordColumn === 'category' ? row.category.toLowerCase().includes(kw)
+        : rowTags.some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
+    const matchesDueDate = matchesDateRange(row.dueDate, f.dueDate)
+    const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.displayStatus)
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
+
+    return matchesSearch && matchesStatus
+      && matchesKeyword && matchesTransactionDate && matchesDueDate && matchesDrawerStatus
+      && matchesTotal && matchesTags
+  },
 })
 
-const hasActiveFilter = computed(() => !!search.value || !!statusFilter.value)
+watch(appliedFilters, () => setPage(1))
+
+// Number of active filter FIELDS in the drawer (mirrors ProductsPage's
+// activeFilterCount → "(n)" suffix on the All-filters trigger). The toolbar's
+// own search/status pill have their own controls and are not counted here.
+const activeFilterCount = computed(() => {
+  const f = appliedFilters
+  return (f.keyword ? 1 : 0)
+    + (f.transactionDate ? 1 : 0)
+    + (f.dueDate ? 1 : 0)
+    + (f.status.length > 0 ? 1 : 0)
+    + ((f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') ? 1 : 0)
+    + (f.tags.length > 0 ? 1 : 0)
+})
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
+
+const hasActiveFilter = computed(() => !!search.value || !!statusFilter.value || isDrawerFilterActive.value)
 function clearFilters() {
   search.value = ''
   statusFilter.value = ''
+  Object.assign(appliedFilters, emptyBillsFilters())
 }
 
 // ─── Filter options ───────────────────────────────────────────────────────────
@@ -180,14 +267,6 @@ const statusLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 2,
-  }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
@@ -371,7 +450,7 @@ function confirmBulkDelete() {
           </button>
           <div class="upsell-content">
             <div class="upsell-icon">
-              <MpIcon name="billing" size="md" variant="fill" color="icon.success" />
+              <MpIcon name="billing" size="md" variant="fill" />
             </div>
             <div class="upsell-copy">
               <p class="upsell-title">{{ t('Control business spend with Mekari Card') }}</p>
@@ -379,7 +458,7 @@ function confirmBulkDelete() {
             </div>
           </div>
           <div class="upsell-actions">
-            <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm">
+            <button type="button" class="btn-enterprise btn-enterprise--secondary">
               {{ t('Start set up') }}
             </button>
           </div>
@@ -390,7 +469,7 @@ function confirmBulkDelete() {
 
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: status select (MpSelect + MpPopover) + All filters -->
+      <!-- Left: status single-select (mirrors ReceivingIndexPage's assignee filter) + All filters -->
       <div class="filter-left">
         <MpPopover id="bills-status-filter" is-close-on-select>
           <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
@@ -401,7 +480,7 @@ function confirmBulkDelete() {
               :placeholder="t('Status')"
               :model-value="statusFilter"
               is-clearable
-              :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
+              :class="css({ width: '160px' })"
               @mousedown.prevent
               @clear="statusFilter = ''"
             >
@@ -424,9 +503,9 @@ function confirmBulkDelete() {
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton class="filter-all-btn">
+        <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
+          {{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}
         </MpButton>
       </div>
 
@@ -435,20 +514,20 @@ function confirmBulkDelete() {
         <div class="filter-btn-group">
           <!-- Airene -->
           <MpTooltip id="tt-bills-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <MpButton class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
-            </MpButton>
+            </button>
           </MpTooltip>
           <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <!-- Export -->
           <MpTooltip id="bills-tt-export" :label="t('Export')" placement="bottom" use-portal>
-            <MpButton class="filter-icon-btn" :aria-label="t('Export')" @click="openExportModal">
+            <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="openExportModal">
               <MpIcon name="download" size="md" />
-            </MpButton>
+            </button>
           </MpTooltip>
         </div>
 
@@ -463,6 +542,11 @@ function confirmBulkDelete() {
             type="text"
             :placeholder="t('Search...')"
           />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -485,7 +569,7 @@ function confirmBulkDelete() {
         <MpTooltip
           :id="`bill-attachment-tt-${(row as Row).id}`"
           :label="t('Attachment')"
-          placement="top"
+          placement="bottom"
           use-portal
         >
           <button
@@ -573,6 +657,17 @@ function confirmBulkDelete() {
       </div>
     </template>
   </ErpTablePage>
+
+  <BillsFiltersDrawer
+    id="bills-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="drawerStatusOptions"
+    :tag-options="tagOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
 
   <PdfPreviewModal
     :open="attachmentPreviewOpen"
@@ -840,9 +935,11 @@ function confirmBulkDelete() {
   width: var(--mp-sizes-12, 48px);
   height: var(--mp-sizes-12, 48px);
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-success-subtle, #ebfffc);
-  color: var(--mp-icon-success, #12a594);
+  /* Mekari Card brand tones (exact) — undefined tokens so the hex fallback always wins. */
+  background: var(--mekari-card-icon-bg, #EBFFFC);
+  color: var(--mekari-card-icon-color, #075056);
 }
+.upsell-icon :deep(svg) { color: var(--mekari-card-icon-color, #075056); fill: var(--mekari-card-icon-color, #075056); }
 
 .upsell-copy {
   flex: 1;
@@ -981,6 +1078,12 @@ function confirmBulkDelete() {
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+/* Active = drawer filters applied (mirrors SalesInvoicesPage's --active). */
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information)) !important;
+  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  color: var(--mp-text-selected, var(--mp-text-information)) !important;
+}
 
 .filter-btn-group {
   display: flex;

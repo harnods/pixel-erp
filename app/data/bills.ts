@@ -1,47 +1,56 @@
 import { reactive } from 'vue'
 import type { Bill } from './types'
 
-// "Today" for demo purposes is 2026-07-15 — due dates before that are overdue,
-// due dates after that are upcoming (still shown as unpaid, not overdue).
+// Company operating expenses (electricity, internet, water, rent, subscriptions,
+// employee reimbursements, services). A healthy AP list: most bills are already
+// PAID; only a few slipped past their due date and show as overdue.
+// Overdue = still unpaid AND past due; everything else here is paid.
 export const bills = reactive<Bill[]>([
-  { id: 'BILL001', number: 1, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Office supplies', date: '2026-06-20', dueDate: '2026-07-04', total: 12_500_000, balanceDue: 0,           status: 'paid',   tags: ['Supplies'], reconciled: true,
-    memo: 'Q3 office supplies restock for the HQ pantry and printing station — approved by Finance Manager.',
+  { id: 'BILL001', number: 1, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-06-20', dueDate: '2026-07-04', total: 5_450_000,  balanceDue: 0,          status: 'paid',   tags: ['Recurring'], reconciled: true,
+    memo: 'Monthly office cleaning & security service for HQ — approved by Finance Manager.',
     attachments: [
       { name: 'invoice-BILL001.pdf', sizeKB: 245.3 },
-      { name: 'receipt-office-supplies.jpg', sizeKB: 512.8 },
+      { name: 'service-report-june.jpg', sizeKB: 512.8 },
     ],
-    payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 12_500_000, paymentDate: '2026-07-03', reference: 'TRX-000112' },
-    subtotal: 12_000_000,
-    taxAmount: 900_000,
-    withholding: { name: 'PPh 23 - Jasa', amount: 400_000, account: '2-20502 Withholding Tax Payable' },
+    payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 5_450_000, paymentDate: '2026-07-03', reference: 'TRX-000112' },
+    subtotal: 5_000_000,
+    taxAmount: 550_000,
+    withholding: { name: 'PPh 23 - Jasa', amount: 100_000, account: '2-20502 Withholding Tax Payable' },
     lineItems: [
-      { account: '520 - Office supplies', description: 'A4 paper, ballpoint pens, and folders', tax: 'PPN 10%', amount: 5_000_000 },
-      { account: '520 - Office supplies', description: 'Printer toner cartridges', tax: 'PPN 10%', amount: 4_000_000 },
-      { account: '710 - Equipment', description: 'Wireless keyboard and mouse set', tax: 'No tax', amount: 3_000_000 },
+      { account: '560 - Professional services', description: 'Daily office cleaning (June)', tax: 'PPN 11%', amount: 3_000_000 },
+      { account: '560 - Professional services', description: 'Security guard service (June)', tax: 'PPN 11%', amount: 2_000_000 },
     ]},
-  { id: 'BILL002', number: 2, beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        category: 'Equipment',       date: '2026-06-21', dueDate: '2026-07-25', total: 34_000_000, balanceDue: 34_000_000, status: 'unpaid'                          , lineItems: [{ account: '710 - Equipment', description: '', tax: 'No tax', amount: 34000000 }]},
-  { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      category: 'Utilities',       date: '2026-06-22', dueDate: '2026-07-01', total: 8_200_000,  balanceDue: 8_200_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Utilities', description: '', tax: 'No tax', amount: 8200000 }]},
-  { id: 'BILL004', number: 4, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Software',        date: '2026-06-23', dueDate: '2026-07-30', total: 15_800_000, balanceDue: 0,           status: 'paid', reconciled: true, payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 15_800_000, paymentDate: '2026-06-27' } , lineItems: [{ account: '485 - Subscriptions', description: '', tax: 'No tax', amount: 15800000 }]},
-  { id: 'BILL005', number: 5, beneficiary: { id: 'V005', name: 'CV Berkah Utama Indonesia' },   category: 'Travel',          date: '2026-06-24', dueDate: '2026-06-30', total: 6_750_000,  balanceDue: 6_750_000,  status: 'unpaid', tags: ['Travel']       , lineItems: [{ account: '540 - Travel', description: '', tax: 'No tax', amount: 6750000 }]},
-  { id: 'BILL006', number: 6, beneficiary: { id: 'V006', name: 'PT Teknindo Nusantara' },       category: 'Utilities',       date: '2026-06-25', dueDate: '2026-07-02', total: 21_000_000, balanceDue: 21_000_000, status: 'unpaid'                          , lineItems: [{ account: '610 - Utilities', description: '', tax: 'No tax', amount: 21000000 }]},
-  { id: 'BILL007', number: 7, beneficiary: { id: 'V007', name: 'PT Solusi Pratama Abadi' },     category: 'Marketing',       date: '2026-06-26', dueDate: '2026-07-28', total: 9_300_000,  balanceDue: 0,           status: 'paid',   tags: ['B2B'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 9_300_000, paymentDate: '2026-06-30', reference: 'TRX-000119' } , lineItems: [{ account: '810 - Marketing', description: '', tax: 'No tax', amount: 9300000 }]},
-  { id: 'BILL008', number: 8, beneficiary: { id: 'V008', name: 'CV Harapan Bangsa Jaya' },      category: 'Office supplies', date: '2026-06-27', dueDate: '2026-06-28', total: 4_500_000,  balanceDue: 4_500_000,  status: 'unpaid'                          , lineItems: [{ account: '520 - Office supplies', description: '', tax: 'No tax', amount: 4500000 }]},
-  { id: 'BILL009', number: 9, beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      category: 'Maintenance',     date: '2026-06-28', dueDate: '2026-07-18', total: 18_200_000, balanceDue: 0,           status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 18_200_000, paymentDate: '2026-07-02' } , lineItems: [{ account: 'Maintenance', description: '', tax: 'No tax', amount: 18200000 }]},
-  { id: 'BILL010', number: 10, beneficiary: { id: 'V009', name: 'PT Dinamika Usaha Bersama' },   category: 'Utilities',       date: '2026-06-29', dueDate: '2026-07-05', total: 3_400_000,  balanceDue: 3_400_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Utilities', description: '', tax: 'No tax', amount: 3400000 }]},
-  { id: 'BILL011', number: 11, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Equipment',       date: '2026-06-30', dueDate: '2026-08-02', total: 42_000_000, balanceDue: 42_000_000, status: 'unpaid', tags: ['Supplies', 'VIP'] , lineItems: [{ account: '710 - Equipment', description: '', tax: 'No tax', amount: 42000000 }]},
-  { id: 'BILL012', number: 12, beneficiary: { id: 'V010', name: 'CV Prima Sentosa Raya' },       category: 'Travel',          date: '2026-07-01', dueDate: '2026-07-10', total: 7_800_000,  balanceDue: 7_800_000,  status: 'unpaid'                          , lineItems: [{ account: '540 - Travel', description: '', tax: 'No tax', amount: 7800000 }]},
-  { id: 'BILL013', number: 13, beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        category: 'Software',        date: '2026-07-02', dueDate: '2026-07-27', total: 5_200_000,  balanceDue: 0,           status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 5_200_000, paymentDate: '2026-07-06', reference: 'TRX-000131' } , lineItems: [{ account: '485 - Subscriptions', description: '', tax: 'No tax', amount: 5200000 }]},
-  { id: 'BILL014', number: 14, beneficiary: { id: 'V005', name: 'CV Berkah Utama Indonesia' },   category: 'Marketing',       date: '2026-07-03', dueDate: '2026-08-01', total: 26_500_000, balanceDue: 26_500_000, status: 'unpaid'                          , lineItems: [{ account: '810 - Marketing', description: '', tax: 'No tax', amount: 26500000 }]},
-  { id: 'BILL015', number: 15, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Equipment',       date: '2026-07-04', dueDate: '2026-07-22', total: 68_000_000, balanceDue: 0,           status: 'paid',   tags: ['VIP'], payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 68_000_000, paymentDate: '2026-07-08' } , lineItems: [{ account: '710 - Equipment', description: '', tax: 'No tax', amount: 68000000 }]},
-  { id: 'BILL016', number: 16, beneficiary: { id: 'V006', name: 'PT Teknindo Nusantara' },       category: 'Maintenance',     date: '2026-07-05', dueDate: '2026-07-11', total: 11_100_000, balanceDue: 11_100_000, status: 'unpaid'                          , lineItems: [{ account: 'Maintenance', description: '', tax: 'No tax', amount: 11100000 }]},
-  { id: 'BILL017', number: 17, beneficiary: { id: 'V007', name: 'PT Solusi Pratama Abadi' },     category: 'Office supplies', date: '2026-07-06', dueDate: '2026-08-05', total: 3_900_000,  balanceDue: 3_900_000,  status: 'unpaid', tags: ['B2B']          , lineItems: [{ account: '520 - Office supplies', description: '', tax: 'No tax', amount: 3900000 }]},
-  { id: 'BILL018', number: 18, beneficiary: { id: 'V008', name: 'CV Harapan Bangsa Jaya' },      category: 'Utilities',       date: '2026-07-07', dueDate: '2026-06-27', total: 6_700_000,  balanceDue: 6_700_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Utilities', description: '', tax: 'No tax', amount: 6700000 }]},
-  { id: 'BILL019', number: 19, beneficiary: { id: 'V009', name: 'PT Dinamika Usaha Bersama' },   category: 'Travel',          date: '2026-07-08', dueDate: '2026-07-29', total: 14_300_000, balanceDue: 0,           status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 14_300_000, paymentDate: '2026-07-12', reference: 'TRX-000144' } , lineItems: [{ account: '540 - Travel', description: '', tax: 'No tax', amount: 14300000 }]},
-  { id: 'BILL020', number: 20, beneficiary: { id: 'V010', name: 'CV Prima Sentosa Raya' },       category: 'Software',        date: '2026-07-09', dueDate: '2026-08-08', total: 9_600_000,  balanceDue: 9_600_000,  status: 'unpaid', tags: ['VIP', 'B2B']   , lineItems: [{ account: '485 - Subscriptions', description: '', tax: 'No tax', amount: 9600000 }]},
-  { id: 'BILL021', number: 21, beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      category: 'Marketing',       date: '2026-07-10', dueDate: '2026-07-13', total: 31_500_000, balanceDue: 31_500_000, status: 'unpaid'                          , lineItems: [{ account: '810 - Marketing', description: '', tax: 'No tax', amount: 31500000 }]},
-  { id: 'BILL022', number: 22, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Equipment',       date: '2026-07-11', dueDate: '2026-08-03', total: 5_100_000,  balanceDue: 0,           status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 5_100_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '710 - Equipment', description: '', tax: 'No tax', amount: 5100000 }]},
-  { id: 'BILL023', number: 23, beneficiary: { id: 'V006', name: 'PT Teknindo Nusantara' },       category: 'Maintenance',     date: '2026-07-12', dueDate: '2026-07-03', total: 17_800_000, balanceDue: 17_800_000, status: 'unpaid', tags: ['Retail']       , lineItems: [{ account: 'Maintenance', description: '', tax: 'No tax', amount: 17800000 }]},
-  { id: 'BILL024', number: 24, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Office supplies', date: '2026-07-13', dueDate: '2026-08-04', total: 2_900_000,  balanceDue: 2_900_000,  status: 'unpaid'                          , lineItems: [{ account: '520 - Office supplies', description: '', tax: 'No tax', amount: 2900000 }]},
+  { id: 'BILL002', number: 2, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-06-25', dueDate: '2026-07-08', total: 6_200_000,  balanceDue: 6_200_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Electricity', description: 'Electricity — June', tax: 'No tax', amount: 6_200_000 }]},
+  { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-06-26', dueDate: '2026-07-11', total: 2_200_000,  balanceDue: 0,          status: 'paid', reconciled: true, payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-09', reference: 'TRX-000116' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — June', tax: 'No tax', amount: 2_200_000 }]},
+  { id: 'BILL004', number: 4, beneficiary: { id: 'V002', name: 'PT Telkom Indonesia' },          category: 'Internet',      date: '2026-06-22', dueDate: '2026-06-30', total: 1_450_000,  balanceDue: 0,          status: 'paid', reconciled: true, payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_450_000, paymentDate: '2026-06-28', reference: 'TRX-000114' } , lineItems: [{ account: '631 - Telephone', description: 'Office landline & fax — June', tax: 'No tax', amount: 1_450_000 }]},
+  { id: 'BILL005', number: 5, beneficiary: { id: 'V004', name: 'PDAM Tirta Pakuan' },            category: 'Utilities',     date: '2026-06-24', dueDate: '2026-07-05', total: 620_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 620_000, paymentDate: '2026-07-02', reference: 'TRX-000115' } , lineItems: [{ account: '611 - Water', description: 'Water usage — June', tax: 'No tax', amount: 620_000 }]},
+  { id: 'BILL006', number: 6, beneficiary: { id: 'V005', name: 'PT Graha Perkantoran Sudirman' },category: 'Rent',          date: '2026-06-20', dueDate: '2026-07-01', total: 28_000_000, balanceDue: 0,          status: 'paid', tags: ['Rent'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 28_000_000, paymentDate: '2026-06-30', reference: 'TRX-000110' } , lineItems: [{ account: '620 - Office rent', description: 'HQ office rent — July', tax: 'No tax', amount: 28_000_000 }]},
+  { id: 'BILL007', number: 7, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-06-26', dueDate: '2026-07-10', total: 1_850_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 1_850_000, paymentDate: '2026-07-01' } , lineItems: [{ account: '520 - Office supplies', description: 'A4 paper, pens, and printer toner', tax: 'No tax', amount: 1_850_000 }]},
+  { id: 'BILL008', number: 8, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-06-27', dueDate: '2026-07-05', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-06-28' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats', tax: 'No tax', amount: 2_500_000 }]},
+  { id: 'BILL009', number: 9, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-06-28', dueDate: '2026-07-12', total: 1_100_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 1_100_000, paymentDate: '2026-07-05' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — June', tax: 'No tax', amount: 1_100_000 }]},
+  { id: 'BILL010', number: 10, beneficiary: { id: 'EMP01', name: 'Andi Wijaya' },                category: 'Reimbursement', date: '2026-06-29', dueDate: '2026-07-05', total: 1_800_000,  balanceDue: 1_800_000,  status: 'unpaid', tags: ['Reimbursement'], lineItems: [{ account: '550 - Employee reimbursement', description: 'Client visit — transport & meals', tax: 'No tax', amount: 1_800_000 }]},
+  { id: 'BILL011', number: 11, beneficiary: { id: 'V010', name: 'PT Catering Nusantara' },        category: 'Meals',         date: '2026-06-30', dueDate: '2026-07-14', total: 2_100_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_100_000, paymentDate: '2026-07-07', reference: 'TRX-000121' } , lineItems: [{ account: '570 - Meals & entertainment', description: 'Team lunch catering — month-end', tax: 'No tax', amount: 2_100_000 }]},
+  { id: 'BILL012', number: 12, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-01', dueDate: '2026-07-15', total: 3_500_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 3_500_000, paymentDate: '2026-07-10', reference: 'TRX-000124' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — branch office', tax: 'No tax', amount: 3_500_000 }]},
+  { id: 'BILL013', number: 13, beneficiary: { id: 'V002', name: 'PT Telkom Indonesia' },          category: 'Internet',      date: '2026-07-02', dueDate: '2026-07-16', total: 1_200_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_200_000, paymentDate: '2026-07-06', reference: 'TRX-000131' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Branch internet — June', tax: 'No tax', amount: 1_200_000 }]},
+  { id: 'BILL014', number: 14, beneficiary: { id: 'EMP02', name: 'Siti Rahmawati' },             category: 'Reimbursement', date: '2026-07-03', dueDate: '2026-07-17', total: 650_000,    balanceDue: 0,          status: 'paid', tags: ['Reimbursement'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 650_000, paymentDate: '2026-07-09' } , lineItems: [{ account: '550 - Employee reimbursement', description: 'Parking & toll — site inspection', tax: 'No tax', amount: 650_000 }]},
+  { id: 'BILL015', number: 15, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-07-04', dueDate: '2026-07-18', total: 2_900_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_900_000, paymentDate: '2026-07-08' } , lineItems: [{ account: '520 - Office supplies', description: 'Pantry & printing supplies restock', tax: 'No tax', amount: 2_900_000 }]},
+  { id: 'BILL016', number: 16, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-05', dueDate: '2026-07-19', total: 2_800_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_800_000, paymentDate: '2026-07-11', reference: 'TRX-000138' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — warehouse', tax: 'No tax', amount: 2_800_000 }]},
+  { id: 'BILL017', number: 17, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-07-06', dueDate: '2026-07-20', total: 2_200_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-13' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — July', tax: 'No tax', amount: 2_200_000 }]},
+  { id: 'BILL018', number: 18, beneficiary: { id: 'V004', name: 'PDAM Tirta Pakuan' },            category: 'Utilities',     date: '2026-07-07', dueDate: '2026-07-21', total: 480_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 480_000, paymentDate: '2026-07-12' } , lineItems: [{ account: '611 - Water', description: 'Water usage — branch', tax: 'No tax', amount: 480_000 }]},
+  { id: 'BILL019', number: 19, beneficiary: { id: 'EMP01', name: 'Andi Wijaya' },                category: 'Reimbursement', date: '2026-07-08', dueDate: '2026-07-22', total: 320_000,    balanceDue: 0,          status: 'paid', tags: ['Reimbursement'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 320_000, paymentDate: '2026-07-12', reference: 'TRX-000144' } , lineItems: [{ account: '550 - Employee reimbursement', description: 'Taxi — vendor meeting', tax: 'No tax', amount: 320_000 }]},
+  { id: 'BILL020', number: 20, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-07-09', dueDate: '2026-07-23', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats (July)', tax: 'No tax', amount: 2_500_000 }]},
+  { id: 'BILL021', number: 21, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-07-10', dueDate: '2026-07-13', total: 5_200_000,  balanceDue: 5_200_000,  status: 'unpaid'                          , lineItems: [{ account: '560 - Professional services', description: 'Office cleaning & security — July', tax: 'No tax', amount: 5_200_000 }]},
+  { id: 'BILL022', number: 22, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-07-11', dueDate: '2026-07-25', total: 950_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 950_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — July', tax: 'No tax', amount: 950_000 }]},
+  { id: 'BILL023', number: 23, beneficiary: { id: 'V010', name: 'PT Catering Nusantara' },        category: 'Meals',         date: '2026-07-12', dueDate: '2026-07-26', total: 1_600_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_600_000, paymentDate: '2026-07-15', reference: 'TRX-000151' } , lineItems: [{ account: '570 - Meals & entertainment', description: 'Client meeting refreshments', tax: 'No tax', amount: 1_600_000 }]},
+  { id: 'BILL024', number: 24, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-07-13', dueDate: '2026-07-27', total: 850_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 850_000, paymentDate: '2026-07-16' } , lineItems: [{ account: '520 - Office supplies', description: 'Stationery top-up', tax: 'No tax', amount: 850_000 }]},
+  // Scenario: prices INCLUDE tax — line amounts are gross (tax-inclusive); the PPN
+  // is extracted out of the total (10/110), so Subtotal is net-of-tax. total = line sum.
+  { id: 'BILL025', number: 25, beneficiary: { id: 'V011', name: 'PT Konsultan Prima' },            category: 'Services',      date: '2026-07-13', dueDate: '2026-07-27', total: 11_000_000, balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 11_000_000, paymentDate: '2026-07-16', reference: 'TRX-000158' },
+    memo: 'Monthly tax & accounting advisory retainer — invoice amount is inclusive of PPN.',
+    subtotal: 10_000_000,
+    taxAmount: 1_000_000,
+    priceIncludesTax: true,
+    lineItems: [{ account: '560 - Professional services', description: 'Tax advisory retainer (July) — incl. PPN', tax: 'PPN 10%', amount: 11_000_000 }]},
 ])
 
 let billAddSeq = bills.length
@@ -54,15 +63,26 @@ export function addBill(data: Omit<Bill, 'id' | 'number'>): Bill {
   return bill
 }
 
-/** Duplicate an existing bill — every field carries over exactly as-is (status,
- * payment, reconciled included) except id/number, which addBill assigns fresh.
- * structuredClone() throws on Vue's reactive Proxy, so deep-clone via JSON instead —
- * safe here since Bill is plain JSON-shaped data (no Dates/functions). */
+/** Duplicate an existing bill — carries over every field EXCEPT payment. A duplicate
+ * is a fresh, unpaid expense: payment/reconciled are dropped, status resets to
+ * 'unpaid', and balanceDue is restored to the full total (id/number are reassigned
+ * by addBill). structuredClone() throws on Vue's reactive Proxy, so deep-clone via
+ * JSON instead — safe here since Bill is plain JSON-shaped data (no Dates/functions). */
 export function duplicateBill(id: string): Bill | null {
   const source = bills.find((b) => b.id === id)
   if (!source) return null
-  const { id: _id, number: _number, ...rest } = JSON.parse(JSON.stringify(source)) as Bill
-  return addBill(rest)
+  const { id: _id, number: _number, payment: _payment, reconciled: _reconciled, ...rest } =
+    JSON.parse(JSON.stringify(source)) as Bill
+  return addBill({ ...rest, status: 'unpaid', balanceDue: rest.total })
+}
+
+/** Update an existing bill in place (used by the edit form). Returns the updated
+ * bill, or null if no bill with that id exists. id/number are preserved. */
+export function updateBill(id: string, data: Omit<Bill, 'id' | 'number'>): Bill | null {
+  const bill = bills.find((b) => b.id === id)
+  if (!bill) return null
+  Object.assign(bill, data, { id: bill.id, number: bill.number })
+  return bill
 }
 
 /** Approve a draft (awaiting-approval) bill — moves it into the normal unpaid lifecycle. */

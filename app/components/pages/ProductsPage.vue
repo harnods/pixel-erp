@@ -10,11 +10,16 @@ import {
   MpSelect, MpCheckbox, MpTooltip, MpModal, MpModalContent, MpModalHeader, MpModalBody,
   MpModalFooter, MpModalOverlay, MpModalCloseButton, MpRadio, MpButton, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import DjpCodeCell from '~/components/patterns/DjpCodeCell.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDateTimeLong } from '~/utils/date'
 import { TODAY_ISO } from '~/data/master'
@@ -22,6 +27,7 @@ import {
   productIndexRows, PRODUCT_TYPE_LABEL, type ProductIndexRow, type ProductType,
 } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
+import { cutoverState } from '~/data/wmsCutover'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const route = useRoute()
@@ -34,6 +40,18 @@ const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
 // WMS scenarios don't deal in pricing/costing — those columns/stats are ERP-only.
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
+// "WMS upgrade to ERP" migration scenario (separate axis from useScenario above):
+// pricing/costing/account values don't exist yet — the user migrates them first
+// via Settings → Migration date — so those cells render "—" until then. Columns
+// still show (we're in the ERP view post-upgrade); only the VALUES are blanked.
+// Default scenario is untouched.
+const { migrationScenario } = useMigrationScenario()
+// Pending only until the WMS→ERP opening balance is published in Data migration;
+// after that the mapped accounts/values (from product mapping) show through.
+const isMigrationPending = computed(() =>
+  migrationScenario.value === 'WMS upgrade to ERP' && !cutoverState.published,
+)
 
 // ─── Column definitions — match Figma Products table exactly ──────────────────
 //
@@ -133,11 +151,6 @@ const productTypeLabel = computed(
 )
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 const asOfLabel = formatDateTimeLong(`${TODAY_ISO}T08:00:00`)
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
@@ -178,6 +191,38 @@ const activeFilterCount = computed(() =>
 // ─── Export modal (Figma node 8557-162044) ─────────────────────────────────────
 const exportModalOpen = ref(false)
 const selectedCount = ref(0)
+
+// ─── Bulk action: Print barcode — prints a label for every selected SKU.
+// Reuses the shared Print-barcode flow (options modal → PDF preview) from
+// StorageLocationTree; generateBarcodeSheetPdf lays one label per SKU. ─────────
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+// Products captured when the bulk button is clicked (slot scope isn't available
+// later in the confirm handler) + the deselect callback to clear the bar after.
+let bulkPrintProducts: ProductIndexRow[] = []
+let bulkPrintDeselect: (() => void) | null = null
+
+function openBulkPrintBarcode(selectedRows: Set<number>, deselectAll: () => void) {
+  bulkPrintProducts = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as ProductIndexRow[]
+  bulkPrintDeselect = deselectAll
+  if (!bulkPrintProducts.length) return
+  printBarcodeOptionsOpen.value = true
+}
+
+async function confirmBulkPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  printBarcodeOptionsOpen.value = false
+  if (!bulkPrintProducts.length) return
+  barcodePreviewDoc.value = await generateBarcodeSheetPdf(
+    bulkPrintProducts.map(p => ({ barcode: p.barcode, batchNo: '', productName: p.name, sku: p.sku })),
+    columns,
+    qty,
+  )
+  barcodePreviewFilename.value = `Barcode - ${bulkPrintProducts.length} product${bulkPrintProducts.length !== 1 ? 's' : ''}.pdf`
+  barcodePreviewOpen.value = true
+  bulkPrintDeselect?.()
+}
 
 type ExportProductsOption = 'products' | 'bundleAssembled'
 const exportProductsOption = ref<ExportProductsOption>('products')
@@ -264,6 +309,7 @@ function closeExportModal() { exportModalOpen.value = false }
     :has-active-filter="!!search || activeFilterCount > 0"
     :search="search"
     has-checkbox
+    bulk-label="product"
     :context-label="(row) => `${row.name}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -274,6 +320,16 @@ function closeExportModal() { exportModalOpen.value = false }
     @selection-change="count => selectedCount = count"
   >
 
+    <!-- ── Bulk action bar — Print barcode for every selected SKU ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="openBulkPrintBarcode(selectedRows as Set<number>, deselectAll as () => void)"
+      >
+        Print barcode
+      </button>
+    </template>
+
     <!-- ── Stats section ── -->
     <template v-if="!isAwaiting" #stats>
       <div class="stats-section">
@@ -281,7 +337,7 @@ function closeExportModal() { exportModalOpen.value = false }
         <div v-if="!isWms" class="stat-card stat-card--bordered">
           <div class="stat-title">Total inventory value</div>
           <div class="stat-period">Based on current product value</div>
-          <div class="stat-amount">{{ formatIDR(totalInventoryValue) }}</div>
+          <div class="stat-amount">{{ isMigrationPending ? '—' : formatIDR(totalInventoryValue) }}</div>
           <span class="stat-asof">As of {{ asOfLabel }}</span>
         </div>
         <div class="stat-card stat-card--bordered">
@@ -431,11 +487,11 @@ function closeExportModal() { exportModalOpen.value = false }
     <template #cell-onTheWay="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
     <template #cell-minStock="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
 
-    <!-- ── Cell: price columns ── -->
-    <template #cell-defaultSalesPrice="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-averageCost="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-lastPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
-    <template #cell-defaultPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
+    <!-- ── Cell: price columns — "—" until the WMS→ERP migration is run ── -->
+    <template #cell-defaultSalesPrice="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-averageCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-lastPurchaseCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
+    <template #cell-defaultPurchaseCost="{ value }">{{ isMigrationPending ? '—' : formatIDR(value as number) }}</template>
 
     <!-- ── Cell: DJP (tax) columns — blank for most rows, see productsIndex.ts ── -->
     <template #cell-djpCode="{ row, value }">
@@ -486,6 +542,20 @@ function closeExportModal() { exportModalOpen.value = false }
     </template>
 
   </ErpTablePage>
+
+  <!-- ── Bulk "Print barcode" flow: options → PDF preview (shared pattern) ── -->
+  <PrintBarcodeOptionsModal
+    :open="printBarcodeOptionsOpen"
+    @close="printBarcodeOptionsOpen = false"
+    @confirm="confirmBulkPrintBarcode"
+  />
+  <PdfPreviewModal
+    :open="barcodePreviewOpen"
+    :doc="barcodePreviewDoc"
+    :filename="barcodePreviewFilename"
+    title="Barcode preview"
+    @close="barcodePreviewOpen = false"
+  />
 
   <!-- ── Export modal (Figma node 8557-162044) ── -->
   <MpModal

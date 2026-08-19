@@ -18,6 +18,7 @@
  * so the states are one flow rather than three unrelated mocks.
  */
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpCheckbox, MpInput, MpTextarea, MpAutocomplete, MpDatePicker,
   MpInputTag, MpIcon, MpUpload, MpUploadList, toast, MpTooltip,
@@ -311,11 +312,6 @@ function setScenario(s: Scenario) {
 }
 
 // ── Totals ───────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 })
-    .format(amount).replace(/^(Rp)\s/, '$1')
-}
-
 /** Gross of every line (what's printed on the document). While a match is still
  *  pending, the card's own amount stands in so the totals aren't empty. */
 const grossTotal = computed(() =>

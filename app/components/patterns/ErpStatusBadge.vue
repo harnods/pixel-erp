@@ -92,6 +92,7 @@ const statusConfig: Record<string, StatusConfig> = {
   voided:     { type: 'announcement', label: 'Voided'     },
   inactive:   { type: 'announcement', label: 'Inactive'   },
   archived:   { type: 'announcement', label: 'Archived'   },
+  archived:   { type: 'announcement', label: 'Archived'   },
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },

@@ -53,13 +53,15 @@ function confirm() { emit('confirm'); close() }
 .cm-enter-active .cm-panel, .cm-leave-active .cm-panel { transition: transform 200ms ease, opacity 200ms ease; }
 .cm-enter-from .cm-panel, .cm-leave-to .cm-panel { transform: scale(0.96); opacity: 0; }
 
+/* Alert dialogs always align to the top of the viewport, 80px down. */
 .cm-overlay {
   position: fixed; inset: 0; z-index: 1400;
   background: rgba(8, 13, 14, 0.45);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
 }
 .cm-panel {
   width: min(400px, calc(100% - 32px));
+  margin-top: 80px;
   background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px);
   padding: var(--mp-spacing-5) var(--mp-spacing-5) var(--mp-spacing-4);

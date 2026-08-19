@@ -9,6 +9,7 @@
  * and the reserved/consumed/start/end values all reflect the work order's status.
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, css,
@@ -56,9 +57,6 @@ type TopTab = typeof topTabs[number]
 const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(n || 0)
-}
 const num = (n: number) => n.toLocaleString('id-ID')
 
 // BOM no. — the real BOM this work order was raised from.

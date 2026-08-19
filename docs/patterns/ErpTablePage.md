@@ -158,7 +158,7 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 | Column | Width | Align | Notes |
 | ------ | ----- | ----- | ----- |
 | Checkbox | — | — | Rendered **inside the first column's cell** (select-all in the header, per-row in the body) via `has-checkbox`. Not a separate column. |
-| Date | 120px | left | `DD/MM/YYYY` |
+| Date | 120px (**140px** for running-balance ledger tables) | left | `DD/MM/YYYY`. Use **140px** on transaction ledgers where a prominent linked **Number** column follows immediately (e.g. Cash management → Account transactions / Bank statement) so the date isn't cramped against the link. Plain index pages stay 120px. |
 | Document number | 200px | left | link style |
 | Attachment | 40px | center | `noHeader: true`, `MpIcon name="attachment"` |
 | Customer / Vendor | 240px | left |  |

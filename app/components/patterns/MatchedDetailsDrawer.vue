@@ -6,6 +6,7 @@
  * each with its own running total. Figma: node 7277:146534, "Drawer / Matched Details".
  */
 import { MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay, MpIcon, MpButton } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import type { Bill } from '~/data/types'
 import { formatDate } from '~/utils/date'
 
@@ -15,9 +16,6 @@ const emit = defineEmits<{
   (e: 'unmatch'): void
 }>()
 
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
-}
 function debit(amount: number) {
   return `(${formatIDR(amount)})`
 }

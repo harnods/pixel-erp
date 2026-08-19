@@ -10,6 +10,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, css,
 } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
@@ -22,6 +23,7 @@ import {
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
@@ -36,6 +38,17 @@ const product = computed(() => getProductDetail(props.orderId))
 // WMS doesn't deal in pricing/costing/accounting — those fields/sections are ERP-only.
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
+// "WMS upgrade to ERP" migration scenario (separate axis): every price/cost/
+// account value is empty until the user runs the migration (Settings →
+// Migration date), so those fields render "—" until then. The fields/sections
+// still show (we're in the ERP view post-upgrade); only the VALUES are blanked.
+// Default scenario is untouched.
+const { migrationScenario } = useMigrationScenario()
+// Pending only until the WMS→ERP opening balance is published in Data migration.
+const isMigrationPending = computed(() =>
+  migrationScenario.value === 'WMS upgrade to ERP' && !cutoverState.published,
+)
 
 function goBack() { router.push('/product-list') }
 
@@ -64,11 +77,6 @@ const activeTabIndex = computed({
 })
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', minimumFractionDigits: 2,
-  }).format(amount)
-}
 function formatQty(n: number, unit: string) {
   return `${n.toLocaleString('id-ID')} ${unit}`
 }
@@ -320,7 +328,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <ContentList label="Product type" :value="product.productType" />
             <ContentList label="Track stock by" :value="product.trackStockBy" />
             <ContentList v-if="!isWms" label="Default inventory account">
-              <a class="pd-link">{{ product.defaultInventoryAccount }}</a>
+              <span v-if="isMigrationPending">—</span>
+              <a v-else class="pd-link">{{ product.defaultInventoryAccount }}</a>
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
@@ -340,26 +349,28 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <h2 class="pd-section-title">Purchase info</h2>
           <div class="pd-purchase-row">
             <div class="pd-field-col pd-field-col--flex">
-              <ContentList label="Default purchase cost" :value="formatIDR(product.defaultPurchaseCost)" />
-              <ContentList label="Average cost" :value="formatIDR(product.averageCost)" />
-              <ContentList label="Last purchase cost" :value="formatIDR(product.lastPurchaseCost)" />
+              <ContentList label="Default purchase cost" :value="isMigrationPending ? '—' : formatIDR(product.defaultPurchaseCost)" />
+              <ContentList label="Average cost" :value="isMigrationPending ? '—' : formatIDR(product.averageCost)" />
+              <ContentList label="Last purchase cost" :value="isMigrationPending ? '—' : formatIDR(product.lastPurchaseCost)" />
             </div>
             <div class="pd-field-col pd-field-col--flex">
               <ContentList label="Default purchase account">
-                <a class="pd-link">{{ product.defaultPurchaseAccount }}</a>
+                <span v-if="isMigrationPending">—</span>
+                <a v-else class="pd-link">{{ product.defaultPurchaseAccount }}</a>
               </ContentList>
-              <ContentList label="Default purchase tax" :value="product.defaultPurchaseTax" />
+              <ContentList label="Default purchase tax" :value="isMigrationPending ? '—' : product.defaultPurchaseTax" />
             </div>
           </div>
         </section>
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Sales info</h2>
           <div class="pd-field-col pd-field-col--fixed">
-            <ContentList label="Default sales price" :value="formatIDR(product.defaultSalesPrice)" />
+            <ContentList label="Default sales price" :value="isMigrationPending ? '—' : formatIDR(product.defaultSalesPrice)" />
             <ContentList label="Default sales account">
-              <a class="pd-link">{{ product.defaultSalesAccount }}</a>
+              <span v-if="isMigrationPending">—</span>
+              <a v-else class="pd-link">{{ product.defaultSalesAccount }}</a>
             </ContentList>
-            <ContentList label="Default sales tax" :value="product.defaultSalesTax" />
+            <ContentList label="Default sales tax" :value="isMigrationPending ? '—' : product.defaultSalesTax" />
           </div>
         </section>
 
