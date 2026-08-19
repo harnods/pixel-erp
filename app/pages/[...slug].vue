@@ -41,9 +41,9 @@ const router = useRouter()
 // this is the one component that survives every virtual page swap.
 const unsavedChangesModal = useUnsavedChangesModalState()
 
-// Browser tab title: "Mekari ERP | <module>"
+// Browser tab title: "Mekari ERP | <module>" (acronyms uppercased for display only)
 useHead({
-  title: () => `Mekari ERP | ${pageTitle.value}`,
+  title: () => `Mekari ERP | ${displayLabel(pageTitle.value)}`,
 })
 
 const pageRegistry: Record<string, Component> = {

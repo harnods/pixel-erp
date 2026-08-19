@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, onMounted } from 'vue'
 import {
   MpIcon, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import HomePageV2 from '~/components/pages/HomePageV2.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
@@ -25,6 +26,11 @@ import teamIllus from '~/assets/images/home/team.png?url'
 
 const router = useRouter()
 const { t } = useLocale()
+
+// ── Home version (v1 / v2) — switched from the FAB, persisted ──────────────────
+const homeVersion = ref<1 | 2>(1)
+onMounted(() => { try { if (localStorage.getItem('erp-home-version') === '2') homeVersion.value = 2 } catch { /* ignore */ } })
+function setHomeVersion(v: 1 | 2) { homeVersion.value = v; try { localStorage.setItem('erp-home-version', String(v)) } catch { /* ignore */ } }
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -213,6 +219,10 @@ const learn: LearnCard[] = [
 
 <template>
   <div class="home">
+    <!-- ── ERP Home v2 (unified format) — swapped in from the FAB ── -->
+    <HomePageV2 v-if="homeVersion === 2" />
+
+    <template v-else>
     <!-- ── Hero ─────────────────────────────────────────────────────────── -->
     <section class="hero" :class="{ 'hero--ai': heroAi }">
       <div class="hero__glow" aria-hidden="true" />
@@ -439,6 +449,7 @@ const learn: LearnCard[] = [
     </div>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+    </template>
 
     <!-- ── Demo scenario FAB ── -->
     <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -446,22 +457,29 @@ const learn: LearnCard[] = [
         <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-        <p class="demo-fab-heading">{{ t("What's new") }}</p>
+        <p class="demo-fab-heading">{{ t('Home version') }}</p>
         <MpPopoverList>
-          <MpPopoverListItem
-            v-for="s in whatsNewDemoStates"
-            :key="s.value"
-            :is-active="s.value === whatsNewDemoState"
-            @click="whatsNewDemoState = s.value"
-          >
-            {{ s.label }}
-          </MpPopoverListItem>
+          <MpPopoverListItem :is-active="homeVersion === 1" @click="setHomeVersion(1)">{{ t('Version 1') }}</MpPopoverListItem>
+          <MpPopoverListItem :is-active="homeVersion === 2" @click="setHomeVersion(2)">{{ t('Version 2') }}</MpPopoverListItem>
         </MpPopoverList>
-        <p class="demo-fab-heading">{{ t('Set up Mekari ERP') }}</p>
-        <MpPopoverList>
-          <MpPopoverListItem :is-active="!setupComplete" @click="setupComplete = false">{{ t('In progress') }}</MpPopoverListItem>
-          <MpPopoverListItem :is-active="setupComplete" @click="setupComplete = true">{{ t('All completed') }}</MpPopoverListItem>
-        </MpPopoverList>
+        <template v-if="homeVersion === 1">
+          <p class="demo-fab-heading">{{ t("What's new") }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-for="s in whatsNewDemoStates"
+              :key="s.value"
+              :is-active="s.value === whatsNewDemoState"
+              @click="whatsNewDemoState = s.value"
+            >
+              {{ s.label }}
+            </MpPopoverListItem>
+          </MpPopoverList>
+          <p class="demo-fab-heading">{{ t('Set up Mekari ERP') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem :is-active="!setupComplete" @click="setupComplete = false">{{ t('In progress') }}</MpPopoverListItem>
+            <MpPopoverListItem :is-active="setupComplete" @click="setupComplete = true">{{ t('All completed') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </template>
       </MpPopoverContent>
     </MpPopover>
   </div>
