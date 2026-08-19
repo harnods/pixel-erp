@@ -255,14 +255,19 @@ function handleSave() {
 }
 .psn-row:hover { background: var(--mp-background-neutral-hovered); }
 .psn-row-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* Always laid out (never display:none) so the row's height never changes on
+   hover — only opacity/pointer-events toggle, same as the Pixel library's own
+   PickSerialNumberDrawer (its row action button sits at opacity:0, pointer-
+   events:none at rest and fades in on hover, never removed from flow). */
 .psn-row-btn {
-  display: none; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer;
+  transition: opacity 150ms ease-out;
 }
-.psn-row:hover .psn-row-btn { display: inline-flex; }
-.psn-row-btn--add { color: var(--mp-text-link); }
-.psn-row-btn--remove { color: var(--mp-text-critical); display: inline-flex; }
+.psn-row-btn--add { color: var(--mp-text-link); opacity: 0; pointer-events: none; }
+.psn-row:hover .psn-row-btn--add { opacity: 1; pointer-events: auto; }
+.psn-row-btn--remove { color: var(--mp-text-critical); }
 .psn-empty-text { margin: 0; padding: var(--mp-spacing-6) 0; text-align: center; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .psn-footer {

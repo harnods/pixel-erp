@@ -12,6 +12,15 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 export interface PickedBatch { batchNo: string; qty: number }
 
+// Batches carry no description in the data model — same representative pool
+// ManageBatchDrawer.vue (the app's warehouse-ops picker) cycles through.
+const DEMO_DESCS = [
+  'Ethiopia Yirgacheffe, Grade 1, washed – harvest 2025',
+  'Colombia Huila, natural process, lot #COL-25A',
+  'Medium roast, 3-day degassing – roasted Jun 2025',
+  'Single origin, certified organic, lot #B12',
+]
+
 const props = defineProps<{
   open: boolean
   productName: string
@@ -30,7 +39,7 @@ const emit = defineEmits<{
   save: [batches: PickedBatch[]]
 }>()
 
-interface Row { batchNo: string; expiryDate: string; available: number; qty: string }
+interface Row { batchNo: string; expiryDate: string; desc: string; available: number; qty: string }
 
 const rows = reactive<Row[]>([])
 const search = ref('')
@@ -41,9 +50,10 @@ watch(() => props.open, (isOpen) => {
   const wh = getWarehouseDetail(props.warehouseId)
   const item = wh?.stock.find(s => s.sku === props.sku)
   const qtyByBatch = new Map(props.modelValue.map(b => [b.batchNo, b.qty]))
-  rows.splice(0, rows.length, ...(item?.batches ?? []).map(b => ({
+  rows.splice(0, rows.length, ...(item?.batches ?? []).map((b, i) => ({
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
+    desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
     available: b.available,
     qty: qtyByBatch.has(b.batchNo) ? String(qtyByBatch.get(b.batchNo)) : '',
   })))
@@ -122,13 +132,14 @@ function handleSave() {
         <div class="pbd-table-wrap">
           <table class="pbd-table">
             <colgroup>
-              <col style="width: 200px" /><col style="width: 160px" />
-              <col style="width: 120px" /><col style="width: 140px" /><col style="width: 100px" />
+              <col style="width: 200px" /><col style="width: 140px" /><col />
+              <col style="width: 110px" /><col style="width: 120px" /><col style="width: 78px" />
             </colgroup>
             <thead>
               <tr>
                 <th class="pbd-th">Batch</th>
-                <th class="pbd-th">Expiration date</th>
+                <th class="pbd-th">Expiry date</th>
+                <th class="pbd-th">Description</th>
                 <th class="pbd-th pbd-th--right">Available</th>
                 <th class="pbd-th">Qty</th>
                 <th class="pbd-th">Unit</th>
@@ -136,16 +147,17 @@ function handleSave() {
             </thead>
             <tbody>
               <tr v-for="row in filteredRows" :key="row.batchNo" class="pbd-tr">
-                <td class="pbd-td">{{ row.batchNo }}</td>
-                <td class="pbd-td">{{ formatDate(row.expiryDate) }}</td>
-                <td class="pbd-td pbd-td--right">{{ row.available }}</td>
+                <td class="pbd-td pbd-td--muted">{{ row.batchNo }}</td>
+                <td class="pbd-td pbd-td--muted">{{ formatDate(row.expiryDate) }}</td>
+                <td class="pbd-td pbd-td--muted">{{ row.desc }}</td>
+                <td class="pbd-td pbd-td--muted pbd-td--right">{{ row.available }}</td>
                 <td class="pbd-td pbd-td--input">
                   <input v-model="row.qty" class="pbd-qty-input" type="number" min="0" :max="row.available" placeholder="0" @input="onQtyInput(row)" />
                 </td>
-                <td class="pbd-td">{{ unit }}</td>
+                <td class="pbd-td pbd-td--muted">{{ unit }}</td>
               </tr>
               <tr v-if="!filteredRows.length">
-                <td class="pbd-td pbd-td--empty" colspan="5">No batches found.</td>
+                <td class="pbd-td pbd-td--empty" colspan="6">No batches found.</td>
               </tr>
             </tbody>
           </table>
@@ -228,32 +240,44 @@ function handleSave() {
 .pbd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pbd-search-input::placeholder { color: var(--mp-text-placeholder); }
 
-.pbd-table-wrap { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--mp-border-default); }
-.pbd-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+/* Table shell — matches ManageBatchDrawer.vue's .mbd-table pattern: a bordered,
+   rounded box; uppercase secondary-colour headers; read-only cells default to a
+   subtle gray background, editable cells go white with a focus ring. */
+.pbd-table-wrap {
+  flex: 1; min-height: 0; overflow: auto;
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+}
+.pbd-table { width: 100%; table-layout: fixed; border-collapse: collapse; min-width: 700px; }
 .pbd-th {
   position: sticky; top: 0; z-index: 1;
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
+  white-space: nowrap;
 }
 .pbd-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pbd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
   border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle);
 }
+.pbd-td--muted { color: var(--mp-text-secondary); }
 .pbd-td--right { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.pbd-td--input { padding: 0; }
-.pbd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6) 0; }
+.pbd-td--input { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
+.pbd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6) 0; background: var(--mp-background-neutral, #fff); }
 .pbd-qty-input {
   width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
-.pbd-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pbd-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0;
+  border: 1px solid var(--mp-border-bold); z-index: 2; pointer-events: none;
+}
 
 .pbd-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); }
 
