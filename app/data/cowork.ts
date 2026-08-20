@@ -61,11 +61,16 @@ export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Fin
 
 /** A cross-module catalog of things a real ERP co-worker should be able to do.
  *  Each becomes a "suggested task" card and a schedule template. */
-export interface CoworkCatalogItem { title: string; desc: string; module: CoworkModule; prompt: string }
+export interface CoworkCatalogItem {
+  title: string; desc: string; module: CoworkModule; prompt: string
+  /** Employee IDs (Talenta HR DB) who have run this predefined task before.
+   *  length = how many times it's been used; drives the "Used N times" + avatars. */
+  usedBy?: string[]
+}
 export const COWORK_CATALOG: CoworkCatalogItem[] = [
   // ── HR / People (Talenta) ──
   { title: 'Attendance exceptions review', module: 'HR', desc: 'Late clock-ins, missing check-outs and unapproved absences this period.',
-    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.' },
+    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.', usedBy: ['EMP-0001','EMP-0011'] },
   { title: 'Payroll run pre-check', module: 'HR', desc: 'Verify attendance, changes and approvals are complete before running payroll.',
     prompt: 'Prepare a payroll run pre-check. Confirm attendance is complete, list pending data changes or approvals, and flag anything that would block this month\'s payroll.' },
   { title: 'Contracts expiring soon', module: 'HR', desc: 'Fixed-term contracts and probation periods ending in the next 60 days.',
@@ -75,7 +80,7 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
 
   // ── Sales / CRM (Qontak) ──
   { title: 'Sales pipeline review', module: 'CRM', desc: 'Surface stalled deals and the highest-value opportunities to prioritise.',
-    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.' },
+    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.', usedBy: ['EMP-0006','EMP-0013'] },
   { title: 'Draft follow-ups for top prospects', module: 'CRM', desc: 'Prepare outreach for the highest-value prospects with no recent activity.',
     prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.' },
   { title: 'Sales orders needing fulfilment', module: 'Sales', desc: 'Open sales orders ready to pick, pack and ship.',
@@ -83,7 +88,7 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
 
   // ── WMS / Warehouse ──
   { title: 'Reorder low-stock SKUs', module: 'WMS', desc: 'Compare stock against reorder points and propose a purchase plan.',
-    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.' },
+    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.', usedBy: ['EMP-0003','EMP-0010','EMP-0016','EMP-0009'] },
   { title: 'Plan today\'s outbound fulfilment', module: 'WMS', desc: 'Prioritise picking, packing and shipping for open outbound orders.',
     prompt: 'Plan today\'s outbound fulfilment. Prioritise picking, packing and shipping tasks for open outbound orders and flag any at risk of missing their delivery date.' },
   { title: 'Schedule cycle counts', module: 'WMS', desc: 'Recommend which storage locations to count this week.',
@@ -97,11 +102,11 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
 
   // ── Finance (Jurnal) ──
   { title: 'Chase overdue receivables', module: 'Finance', desc: 'Find overdue invoices and draft reminders for the biggest ones.',
-    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.' },
+    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.', usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
   { title: 'Bank reconciliation review', module: 'Finance', desc: 'Match statement lines and surface unreconciled items.',
-    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.' },
+    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.', usedBy: ['EMP-0005','EMP-0006'] },
   { title: 'Month-end close checklist', module: 'Finance', desc: 'Everything outstanding before books can be closed this month.',
-    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.' },
+    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.', usedBy: ['EMP-0005'] },
 ]
 
 // ── Seeds ────────────────────────────────────────────────────────────────────

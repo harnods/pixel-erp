@@ -22,6 +22,7 @@ import {
   MpFormControl, MpFormLabel, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { getEmployee } from '~/data'
 import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
 import { formatDateTime } from '~/utils/date'
@@ -202,6 +203,10 @@ const suggestedGroups = computed(() =>
     .map((m) => ({ module: m, items: COWORK_CATALOG.filter((c) => c.module === m) }))
     .filter((g) => g.items.length),
 )
+// Employees (Talenta HR DB) who have run a predefined task before → avatar stack.
+function usedAvatars(ids?: string[]) {
+  return (ids ?? []).map((id) => getEmployee(id)).filter(Boolean).slice(0, 4)
+}
 
 // ── Model picker ─────────────────────────────────────────────────────────────
 const MODELS = [
@@ -512,7 +517,13 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     <span class="cw-suggest-text">
                       <span class="cw-suggest-title">{{ c.title }}</span>
                       <span class="cw-muted">{{ c.desc }}</span>
-                      <span class="cw-suggest-run">Run task <MpIcon name="arrows-right" size="sm" /></span>
+                      <span v-if="c.usedBy?.length" class="cw-suggest-used">
+                        <span class="cw-avatars">
+                          <img v-for="e in usedAvatars(c.usedBy)" :key="e!.id" :src="e!.photo" :alt="e!.fullName" class="cw-avatar" :title="e!.fullName">
+                        </span>
+                        Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
+                      </span>
+                      <span v-else class="cw-suggest-run">Run task <MpIcon name="arrows-right" size="sm" /></span>
                     </span>
                   </button>
                 </div>
@@ -728,6 +739,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-suggest-run { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: 6px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.cw-avatars { display: inline-flex; }
+.cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.cw-avatar + .cw-avatar { margin-left: -12px; }
 .cw-suggest-item:hover .cw-suggest-run { text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 900px) { .cw-suggest-grid { grid-template-columns: 1fr; } }
 .cw-composer__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); }
