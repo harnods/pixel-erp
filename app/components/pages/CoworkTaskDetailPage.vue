@@ -11,6 +11,7 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useCoworkContext } from '~/composables/useCoworkContext'
+import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
   getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, nextRunId,
@@ -138,6 +139,25 @@ async function downloadPdf() {
   }
   doc.save(`${(p.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.pdf`)
 }
+
+// ── Open chat about this result ───────────────────────────────────────────────
+const airene = useAireneBridge()
+function buildChatContext(): string {
+  const p = plan.value
+  if (!p || !task.value) return ''
+  const lines: string[] = [`Task: ${task.value.title}`, `Result: ${p.metric}`, `Summary: ${p.intro}`]
+  const a = p.artifacts
+  if (a?.briefing) {
+    lines.push('Executive summary:')
+    for (const s of a.briefing.summary) lines.push(`- [${s.priority}] ${s.title}: ${s.detail}`)
+    if (a.briefing.findings?.length) { lines.push('Key findings:'); for (const f of a.briefing.findings) lines.push(`- ${f.title}: ${f.detail}`) }
+  }
+  if (a?.actionItems?.length) { lines.push('Action items:'); for (const it of a.actionItems) lines.push(`- ${it.title} (owner ${it.owner}, due ${it.due}): ${it.detail}`) }
+  if (a?.email) lines.push(`Email draft — to ${a.email.to}, subject "${a.email.subject}": ${a.email.body}`)
+  if (a?.spreadsheet) lines.push(`Spreadsheet "${a.spreadsheet.title}" columns: ${a.spreadsheet.columns.join(', ')}; ${a.spreadsheet.rows.length} rows.`)
+  return lines.join('\n')
+}
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result') }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.
@@ -312,6 +332,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <button v-if="plan.artifacts?.pdf" class="ctd-download" type="button" @click="downloadPdf"><MpIcon name="pdf" size="sm" /> Download PDF</button>
               <button v-if="plan.artifacts?.spreadsheet" class="ctd-download" type="button" @click="downloadCsv"><MpIcon name="download" size="sm" /> Download spreadsheet</button>
             </div>
+            <!-- Open chat about this result -->
+            <div class="ctd-chatrow">
+              <button class="btn-enterprise btn-enterprise--secondary ctd-openchat" type="button" @click="openChat"><MpIcon name="airene-brand" size="sm" /> Open chat</button>
+            </div>
           </template>
 
           <div v-else class="ctd-empty">
@@ -383,6 +407,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-downloads { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-5); padding-top: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .ctd-download { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 .ctd-download:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ctd-chatrow { margin-top: var(--mp-spacing-4); }
+.ctd-openchat { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); }
+.ctd-openchat :deep(svg) { flex-shrink: 0; }
 .ctd-running { padding: var(--mp-spacing-2) 0; }
 .ctd-run-head { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-steps { list-style: none; margin: var(--mp-spacing-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }

@@ -1102,6 +1102,8 @@ function getAiResponse(userMsg: string): string {
 
 // Context chip — set when entry point is from the AI popover
 const chatContext = ref('')
+// Grounding context fed to the model (e.g. a Cowork task result). Not shown.
+const aireneGround = ref('')
 
 async function sendMessage(text: string, context?: string) {
   const trimmed = text.trim()
@@ -1117,16 +1119,26 @@ async function sendMessage(text: string, context?: string) {
   messages.value.push({ role: 'user', text: trimmed })
   inputText.value = ''
 
-  // Scroll to bottom
   await nextTick()
   scrollChatToBottom()
 
-  // Simulate AI typing delay
+  // Real Gemini reply, grounded on the current context (task result if any).
   isTyping.value = true
-  await new Promise(r => setTimeout(r, 1200))
+  let reply = ''
+  try {
+    const res = await $fetch<{ reply: string }>('/api/cowork/chat', {
+      method: 'POST',
+      body: {
+        messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
+        context: aireneGround.value || undefined,
+      },
+    })
+    reply = res.reply
+  } catch {
+    reply = 'Sorry — I hit an error reaching the model. Please try again.'
+  }
   isTyping.value = false
-
-  messages.value.push({ role: 'assistant', text: getAiResponse(trimmed) })
+  messages.value.push({ role: 'assistant', text: reply })
 
   await nextTick()
   scrollChatToBottom()
@@ -1145,6 +1157,13 @@ provide('sendAireneMessage', sendMessage)
 const aireneBridge = useAireneBridge()
 watch(aireneBridge.toggleSignal, () => toggleAirene())
 watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+// Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
+watch(aireneBridge.openContextSignal, () => {
+  startNewChat()
+  aireneGround.value = aireneBridge.pendingGround.value
+  chatContext.value = aireneBridge.pendingLabel.value
+  aireneOpen.value = true
+})
 
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320

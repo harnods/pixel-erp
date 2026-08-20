@@ -12,6 +12,11 @@ import { ref } from 'vue'
 const toggleSignal = ref(0)
 const sendSignal = ref(0)
 const pendingText = ref('')
+// Open the panel grounded on a context (e.g. a Cowork task result): `ground` is
+// fed to the model, `label` is the visible context chip.
+const openContextSignal = ref(0)
+const pendingGround = ref('')
+const pendingLabel = ref('')
 
 export function useAireneBridge() {
   return {
@@ -19,6 +24,9 @@ export function useAireneBridge() {
     toggleSignal,
     sendSignal,
     pendingText,
+    openContextSignal,
+    pendingGround,
+    pendingLabel,
     // Actions any component can call
     requestToggle() { toggleSignal.value++ },
     requestSend(text: string) {
@@ -26,6 +34,12 @@ export function useAireneBridge() {
       if (!t) return
       pendingText.value = t
       sendSignal.value++
+    },
+    /** Open the chat with a grounding context but no message sent yet. */
+    openWithContext(ground: string, label: string) {
+      pendingGround.value = ground
+      pendingLabel.value = label
+      openContextSignal.value++
     },
   }
 }
