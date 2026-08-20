@@ -32,6 +32,22 @@ export interface CoworkTask {
    *  column, and the Schedule page lists every task that has one); absent = a
    *  one-off run ("No schedule"). */
   schedule?: { cadence: CoworkCadence; time: string; nextRun?: string; enabled?: boolean }
+  /** Chosen deliverables / sources / model — kept so "Run task" re-runs identically. */
+  outputs?: string[]
+  sources?: string[]
+  model?: string
+  /** Execution history — each manual/scheduled run. The task's status/metric mirror
+   *  the latest run. Older tasks may have none (synthesised from the task itself). */
+  runs?: CoworkRun[]
+}
+
+export interface CoworkRun {
+  id: string
+  ranAt: string
+  status: CoworkTaskStatus
+  metric?: string
+  /** Stringified plan (artifacts) for this run. */
+  planJson?: string
 }
 
 export type CoworkCadence = 'Daily' | 'Weekly' | 'Monthly'
@@ -193,6 +209,32 @@ export function deleteTask(id: string): void {
   if (i >= 0) { coworkTasks.splice(i, 1); persistTasks() }
 }
 export function getTask(id: string): CoworkTask | undefined { return coworkTasks.find((x) => x.id === id) }
+
+let runSeq = 1
+export function nextRunId(): string { return `RUN-${Date.now().toString(36)}-${runSeq++}` }
+/** Append a run to a task and mirror its status/metric onto the task. */
+export function addRun(taskId: string, run: CoworkRun): void {
+  const t = coworkTasks.find((x) => x.id === taskId)
+  if (!t) return
+  if (!t.runs) t.runs = []
+  t.runs.unshift(run)
+  t.status = run.status
+  t.metric = run.metric
+  t.planJson = run.planJson
+  if (run.status === 'completed') t.completedAt = run.ranAt
+  persistTasks()
+}
+export function deleteRun(taskId: string, runId: string): void {
+  const t = coworkTasks.find((x) => x.id === taskId)
+  if (!t?.runs) return
+  const i = t.runs.findIndex((r) => r.id === runId)
+  if (i >= 0) { t.runs.splice(i, 1); persistTasks() }
+}
+/** The run list to show — real runs, or one synthesised from a legacy task. */
+export function taskRuns(t: CoworkTask): CoworkRun[] {
+  if (t.runs?.length) return t.runs
+  return [{ id: `${t.id}-r0`, ranAt: t.completedAt ?? t.createdAt, status: t.status, metric: t.metric, planJson: t.planJson }]
+}
 
 /** Toggle a scheduled task's recurrence on/off. */
 export function setTaskScheduleEnabled(id: string, enabled: boolean): void {

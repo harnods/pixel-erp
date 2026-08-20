@@ -167,9 +167,13 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule) {
     modules,
     status: 'running',
     createdAt: new Date().toISOString(),
+    outputs: OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name),
+    sources: active,
+    model: model.value,
   })
   prompt.value = ''
-  startRun(task)
+  // Running happens on the task detail page (which owns the run history + result).
+  router.push({ path: `/cowork-tasks/${task.id}`, query: { run: '1' } })
 }
 
 function inferModule(text: string): CoworkModule {
@@ -274,16 +278,9 @@ function copyEmail() {
   toast.notify({ variant: 'success', title: 'Email copied' })
 }
 
-// Reopen a finished task's cached briefing without re-running.
+// Open a task on its detail page (run history + result live there).
 function openTaskDetail(task: CoworkTask) {
-  openTaskId.value = task.id
-  if (task.status === 'completed' && task.planJson) {
-    plan.value = JSON.parse(task.planJson) as Plan
-    planSource.value = 'gemini'
-    runState.value = 'completed'
-  } else {
-    startRun(task)
-  }
+  router.push(`/cowork-tasks/${task.id}`)
 }
 
 function backToIndex() {
@@ -466,9 +463,9 @@ watch(() => route.fullPath, handleQueryTriggers)
 onMounted(() => {
   const q = route.query
   if (typeof q.task === 'string' && q.task.trim() && q.run === '1') {
+    // assign() creates the task and navigates to its detail page (which runs it).
     assign(q.task)
-    // Strip task/run from the URL; the workspace stays open via openTask.
-    router.replace({ path: '/cowork', query: {} })
+    return
   }
   handleQueryTriggers()
 })
