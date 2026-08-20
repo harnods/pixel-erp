@@ -149,14 +149,15 @@ const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const statusFilter = ref<string[]>([])
 const assigneeFilter = ref<string[]>([])
-// 'counted' (Awaiting approval) deliberately excluded — the Count task tab's
-// own base list always filters status !== 'counted' out (see baseRows below),
-// and the Awaiting approval tab hides this filter entirely (every row there
-// is already Counted) — so a "Counted" checkbox here could never match
-// anything, on either tab.
+// 'counted' is a real, filterable state on the Count task tab — a counted task
+// stays listed there (the operator who counted it can't see the Awaiting
+// approval tab, so hiding it would make the task vanish for them) while also
+// appearing under Awaiting approval for the manager to review. The Awaiting
+// approval tab hides this filter entirely — every row there is already Counted.
 const STATUS_OPTIONS = [
   { value: 'not_started', label: t('Open') },
   { value: 'in_progress', label: t('In progress') },
+  { value: 'counted',     label: t('Counted')     },
   { value: 'completed',   label: t('Completed')   },
   { value: 'closed',      label: t('Closed')      },
 ]
@@ -223,7 +224,11 @@ const baseRows = computed<StockAdjustment[]>(() => {
   let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else if (isCycleAwaiting.value) list = list.filter(a => a.status === 'counted')
-  else if (currentPageKey.value === 'Cycle counts') list = list.filter(a => a.status !== 'counted')
+  // Cycle counts' "Count task" tab lists every task at every stage, Counted
+  // included: a counted task also shows under Awaiting approval for the manager,
+  // but the operator who counted it only has the Count task tab — dropping it
+  // there would make the task disappear the moment they finished counting.
+  else if (currentPageKey.value === 'Cycle counts') { /* no status filter */ }
   // Stock counts has no Awaiting approval tab — show every status in the one flat list.
   else if (isErpStockCounts.value) { /* no status filter */ }
   else list = list.filter(a => a.status !== 'draft')
