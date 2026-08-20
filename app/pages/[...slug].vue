@@ -1888,13 +1888,17 @@ function startResize(e: MouseEvent) {
                 </button>
                 <!-- Right side: model label + send button -->
                 <div class="airene-input-right">
-                  <!-- Sonnet 4.6 textlink -->
+                  <!-- Gemini model label (chat is Gemini-backed) -->
                   <div class="airene-model-label">
-                    <!-- Claude logo -->
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 1.5a1.5 1.5 0 0 1 1.5 1.5v3.879l2.742-2.742a1.5 1.5 0 1 1 2.121 2.121L15.621 9H19.5a1.5 1.5 0 0 1 0 3h-3.879l2.742 2.742a1.5 1.5 0 1 1-2.121 2.121L13.5 14.121V18a1.5 1.5 0 0 1-3 0v-3.879l-2.742 2.742a1.5 1.5 0 1 1-2.121-2.121L8.379 12H4.5a1.5 1.5 0 0 1 0-3h3.879L5.637 6.258a1.5 1.5 0 0 1 2.121-2.121L10.5 6.879V3A1.5 1.5 0 0 1 12 1.5z" fill="#D97757"/>
+                      <defs>
+                        <linearGradient id="airene-gemini" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#1BA1E3"/><stop offset="0.3" stop-color="#5489D6"/><stop offset="0.55" stop-color="#9B72CB"/><stop offset="0.8" stop-color="#D96570"/><stop offset="1" stop-color="#F49C46"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M12 2c.3 4.9 4.8 9.4 9.7 9.7v.6C16.8 12.6 12.3 17.1 12 22h-.6c-.3-4.9-4.8-9.4-9.7-9.7v-.6C6.6 11.4 11.1 6.9 11.4 2H12z" fill="url(#airene-gemini)"/>
                     </svg>
-                    Sonnet 4.6
+                    Gemini Flash
                   </div>
                   <!-- Send button -->
                   <button class="airene-send-btn" aria-label="Send" @click="sendMessage(inputText)">
