@@ -188,6 +188,10 @@ export function toggleSchedule(id: string, enabled: boolean): void {
   const s = coworkSchedules.find((x) => x.id === id)
   if (s) { s.enabled = enabled; persistSchedules() }
 }
+export function updateSchedule(id: string, patch: Partial<CoworkSchedule>): void {
+  const s = coworkSchedules.find((x) => x.id === id)
+  if (s) { Object.assign(s, patch); persistSchedules() }
+}
 export function deleteSchedule(id: string): void {
   const i = coworkSchedules.findIndex((x) => x.id === id)
   if (i >= 0) { coworkSchedules.splice(i, 1); persistSchedules() }

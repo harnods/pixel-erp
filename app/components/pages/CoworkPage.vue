@@ -16,11 +16,12 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { getEmployee } from '~/data'
 import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
@@ -29,13 +30,43 @@ import {
   coworkTasks, coworkSchedules, coworkConnections,
   COWORK_CATALOG, COWORK_BUILTIN,
   addTask, updateTask, deleteTask, getTask,
-  addSchedule, toggleSchedule, deleteSchedule, setConnection,
+  addSchedule, updateSchedule, toggleSchedule, deleteSchedule, setConnection,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection,
 } from '~/data/cowork'
 
 const route = useRoute()
 const router = useRouter()
 const { build } = useCoworkContext()
+
+// First-load skeleton (ERP guideline: solid rows, ~1.2s) for Tasks + Schedule.
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+
+// ── Tasks table state — status filter (left) + search (right) + pagination ────
+const taskStatusOptions = [
+  { value: 'running',   label: 'Running' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed',    label: 'Failed' },
+  { value: 'scheduled', label: 'Scheduled' },
+]
+const taskSource = computed(() => coworkTasks)
+const {
+  search: taskSearch, statusFilter: taskStatus, currentPage: taskPage, perPage: taskPerPage,
+  paginated: taskRows, total: taskTotal, setPage: taskSetPage, setPerPage: taskSetPerPage,
+} = useTableState<CoworkTask>(taskSource, {
+  perPage: 10,
+  filterFn: (t, s, status) =>
+    (!s || t.title.toLowerCase().includes(s) || t.id.toLowerCase().includes(s) || t.module.toLowerCase().includes(s))
+    && (!status || t.status === status),
+})
+const taskStatusLabel = computed(() => taskStatusOptions.find((o) => o.value === taskStatus.value)?.label ?? '')
+
+// ── Schedule table state — pagination only ────────────────────────────────────
+const schedSource = computed(() => coworkSchedules)
+const {
+  currentPage: schedPage, perPage: schedPerPage, paginated: schedRows, total: schedTotal,
+  setPage: schedSetPage, setPerPage: schedSetPerPage,
+} = useTableState<typeof coworkSchedules[number]>(schedSource, { perPage: 10, filterFn: () => true })
 
 // Gemini mark — a 4-point star with Google's multi-hue gradient (not the Airene
 // purple sparkle) for the model picker.
@@ -113,6 +144,7 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule) {
     createdAt: new Date().toISOString(),
   })
   prompt.value = ''
+  composerScheduleId.value = null
   startRun(task)
 }
 
@@ -263,14 +295,33 @@ function statusProps(s: CoworkTask['status']) {
 // and time. Empty prompt → just focus the composer so the user writes one.
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
+// Once scheduled from the composer, the button reflects it and re-opening edits.
+const composerScheduleId = ref<string | null>(null)
+function fmtTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const ap = h! < 12 ? 'am' : 'pm'
+  const h12 = h! % 12 || 12
+  return m ? `${h12}:${String(m).padStart(2, '0')}${ap}` : `${h12}${ap}`
+}
+const cadenceWord: Record<CoworkCadence, string> = { Daily: 'day', Weekly: 'week', Monthly: 'month' }
+const scheduleLabel = computed(() =>
+  composerScheduleId.value ? `Every ${cadenceWord[schedCadence.value]} at ${fmtTime(schedTime.value)}` : 'Schedule',
+)
 function scheduleFromPrompt() {
   const t = prompt.value.trim()
   if (!t) { focusPrompt(); return }
   const nextRun = schedCadence.value === 'Daily' ? `Tomorrow · ${schedTime.value}`
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
-  addSchedule({ title: t.length > 52 ? t.slice(0, 50) + '…' : t, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
-  toast.notify({ variant: 'success', title: 'Task scheduled' })
+  const title = t.length > 52 ? t.slice(0, 50) + '…' : t
+  if (composerScheduleId.value) {
+    updateSchedule(composerScheduleId.value, { title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun })
+    toast.notify({ variant: 'success', title: 'Schedule updated' })
+  } else {
+    const s = addSchedule({ title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
+    composerScheduleId.value = s.id
+    toast.notify({ variant: 'success', title: 'Task scheduled' })
+  }
 }
 
 // ── Connections ──────────────────────────────────────────────────────────────
@@ -485,7 +536,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Schedule popover: cadence + time (the task is the prompt above) -->
                   <MpPopover id="cw-schedule" is-close-on-select placement="bottom-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="time" size="sm" /> Schedule</button>
+                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': composerScheduleId }"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -501,7 +552,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         </div>
                       </div>
                       <MpPopoverList>
-                        <MpPopoverListItem @click="scheduleFromPrompt">Schedule {{ schedCadence.toLowerCase() }} at {{ schedTime }}</MpPopoverListItem>
+                        <MpPopoverListItem @click="scheduleFromPrompt">{{ composerScheduleId ? 'Update schedule' : `Schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -556,13 +607,51 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Tasks ── -->
         <section v-else-if="section === 'Tasks'">
+          <!-- Filter bar: status (left) + search (right) -->
+          <div class="cw-filter">
+            <div class="cw-filter__left">
+              <MpPopover id="cw-task-status" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-task-status-sel" placeholder="Status" :model-value="taskStatus" is-clearable :class="css({ width: '160px' })" @mousedown.prevent @clear="taskStatus = ''">
+                    <option v-if="taskStatus" :value="taskStatus">{{ taskStatusLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in taskStatusOptions" :key="o.value" :is-active="o.value === taskStatus" @click="taskStatus = o.value">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="taskSearch" class="cw-search__input" type="text" placeholder="Search...">
+                <button v-if="taskSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="taskSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="cw-table-wrap">
             <table class="cw-table">
               <thead>
                 <tr><th>Task</th><th>Module</th><th>Status</th><th>Created</th><th>Result</th><th class="cw-th-actions" /></tr>
               </thead>
-              <tbody>
-                <tr v-for="t in coworkTasks" :key="t.id">
+              <!-- First-load skeleton -->
+              <tbody v-if="loading">
+                <tr v-for="n in 5" :key="`sk-${n}`">
+                  <td><MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="80px" height="18px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="120px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="64px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td class="cw-td-actions"><MpSkeleton class="cw-skeleton" width="20px" height="20px" rounded="sm" duration="0s" /></td>
+                </tr>
+              </tbody>
+              <tbody v-else>
+                <tr v-for="t in taskRows" :key="t.id">
                   <td>
                     <span class="cw-cell-link" @click="openTaskDetail(t)">{{ t.title }}</span>
                     <span class="cw-cell-sub">{{ t.id }}</span>
@@ -585,10 +674,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     </MpPopover>
                   </td>
                 </tr>
-                <tr v-if="!coworkTasks.length"><td colspan="6" class="cw-empty">No tasks yet.</td></tr>
+                <tr v-if="!taskRows.length"><td colspan="6" class="cw-empty">No tasks match your filters.</td></tr>
               </tbody>
             </table>
           </div>
+          <ErpPagination :current-page="taskPage" :per-page="taskPerPage" :total="taskTotal" @page-change="taskSetPage" @per-page-change="taskSetPerPage" />
         </section>
 
         <!-- ── Schedule ── -->
@@ -598,8 +688,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <thead>
                 <tr><th>Task</th><th>Module</th><th>Cadence</th><th>Next run</th><th>Active</th><th class="cw-th-actions" /></tr>
               </thead>
-              <tbody>
-                <tr v-for="s in coworkSchedules" :key="s.id">
+              <!-- First-load skeleton -->
+              <tbody v-if="loading">
+                <tr v-for="n in 5" :key="`sk-${n}`">
+                  <td><MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="110px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="120px" height="14px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="36px" height="20px" rounded="sm" duration="0s" /></td>
+                  <td class="cw-td-actions"><MpSkeleton class="cw-skeleton" width="20px" height="20px" rounded="sm" duration="0s" /></td>
+                </tr>
+              </tbody>
+              <tbody v-else>
+                <tr v-for="s in schedRows" :key="s.id">
                   <td><span class="cw-list-row__title">{{ s.title }}</span></td>
                   <td><MpBadge for="additionalInformation" type="announcement" size="sm">{{ s.module }}</MpBadge></td>
                   <td>{{ s.cadence }} · {{ s.time }}</td>
@@ -609,10 +710,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     <button class="cw-kebab" type="button" aria-label="Delete schedule" @click="deleteSchedule(s.id)"><MpIcon name="delete" size="md" /></button>
                   </td>
                 </tr>
-                <tr v-if="!coworkSchedules.length"><td colspan="6" class="cw-empty">No scheduled tasks.</td></tr>
+                <tr v-if="!schedRows.length"><td colspan="6" class="cw-empty">No scheduled tasks.</td></tr>
               </tbody>
             </table>
           </div>
+          <ErpPagination :current-page="schedPage" :per-page="schedPerPage" :total="schedTotal" @page-change="schedSetPage" @per-page-change="schedSetPerPage" />
         </section>
 
         <!-- ── Connections ── -->
@@ -672,6 +774,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
+.cw-foot-btn.is-set { color: var(--mp-text-selected, #0f6d4d); }
+.cw-foot-btn.is-set :deep(svg), .cw-foot-btn.is-set :deep(path) { color: var(--mp-text-selected, #0f6d4d); }
 .cw-foot-btn :deep(svg) { color: var(--mp-icon-default, #536062); }
 .cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-model-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); }
@@ -731,6 +835,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-empty { padding: var(--mp-spacing-6); text-align: center; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); margin: 0; }
 
 /* Table (ERP convention: no outer border, header fill, row bottom-border) */
+/* Filter bar (Tasks): status left, search right — mirrors the ERP index filter bar. */
+.cw-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
+.cw-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.cw-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.cw-search__input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
+.cw-search__input::placeholder { color: var(--mp-text-placeholder); }
+.cw-search__clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: 999px; }
+.cw-search__clear:hover { background: var(--mp-background-neutral-hovered); }
+
+/* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
+.cw-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+
 .cw-table-wrap { overflow-x: auto; }
 .cw-table { width: 100%; border-collapse: collapse; }
 .cw-table thead th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); white-space: nowrap; }
