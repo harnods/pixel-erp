@@ -816,4 +816,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
 }
+
+/* ── Responsive stats (audit): keep the row horizontal on small screens and let
+   it scroll/swipe instead of stacking (home stacks; index pages scroll). ── */
+@media (max-width: 640px) {
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .stat-card { flex: 0 0 auto; }
+}
 </style>

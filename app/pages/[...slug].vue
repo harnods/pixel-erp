@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
+import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -31,11 +32,24 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
+import { employees } from '~/data/employees'
+import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
+
+// Mobile: multiple title-bar actions collapse into a single "Actions" dropdown.
+// The desktop buttons are reused verbatim (CSS relocates them into the panel), so
+// there's no duplicate markup; the toggle only appears when there are ≥2 actions.
+const titleActionsOpen = ref(false)
+watch(() => route.path, () => { titleActionsOpen.value = false })
+function onTitleActionsDocClick(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.page-actions')) titleActionsOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onTitleActionsDocClick))
+onUnmounted(() => document.removeEventListener('click', onTitleActionsDocClick))
 
 // Unsaved-changes confirmation modal — lives here (not in each form page) since
 // this is the one component that survives every virtual page swap.
@@ -48,7 +62,12 @@ useHead({
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Cowork':            defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork tasks':      defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork schedule':   defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
+  'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
@@ -96,6 +115,7 @@ const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/Config
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
+const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -207,6 +227,24 @@ provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplic
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
+const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
+const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
+const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
+const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
+const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
+// CRM (Qontak) level-1 pages — all full-bleed, own their title bar/stage.
+// There's no CRM home: the bare /crm lands directly on Deals.
+const CRM_PAGES: Record<string, Component> = {
+  '':          CrmDealsPage,
+  'deals':     CrmDealsPage,
+  'orders':    CrmOrdersPage,
+  'tasks':     CrmTasksPage,
+  'customers': CrmCustomersPage,
+  'products':  CrmProductsPage,
+  'settings':  CrmSettingsPage,
+}
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
@@ -215,6 +253,7 @@ const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/Unclas
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
+const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
@@ -225,10 +264,19 @@ const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendin
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
-  // /crm → CRM (Qontak) Deals kanban — a full-bleed page that owns its own title
-  // bar + filter bar + board, so it renders outside the padded stage.
+  // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
+  // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
-    return { component: CrmDealsPage, id: '' }
+    const sub = segs[1] ?? ''
+    const id = segs[2]
+    // /crm/orders/:id and /crm/products/:id → CRM detail pages.
+    if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
+    if (id && sub === 'products') return { component: CrmProductDetailPage, id }
+    return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
+  }
+  // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
+  if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
+    return { component: CoworkTaskDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -503,6 +551,13 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'warehouses' && !['new', 'import'].includes(segs[1])) {
     return { component: WarehouseDetailsPage, id: segs[1] }
   }
+  // /employee-directory/:id → employee profile; /new & /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'employee-directory') {
+    if (segs[1] === 'new') return { component: PlaceholderPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: EmployeeDetailsPage, id: segs[1]! }
+  }
   return null
 })
 
@@ -752,6 +807,11 @@ const showNewWarehouseTransfer = computed(() =>
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
 function newSalesInvoice() { router.push('/sales-invoices/new') }
+function newEmployee() { router.push('/employee-directory/new') }
+// Import dropdown: add new employees from a file, or bulk-update existing records.
+function importEmployees(mode: 'add' | 'update') {
+  infoToast(`${mode === 'update' ? 'Update employee data' : 'Import employees'} — coming soon`)
+}
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -818,9 +878,9 @@ interface ChatSession {
   createdAt: number   // timestamp ms
 }
 
-// Dummy historical sessions (relative to real Date.now())
+// Seed historical sessions (relative to real Date.now())
 const DAY = 86_400_000
-const chatSessions = ref<ChatSession[]>([
+const CHAT_SEED: ChatSession[] = [
   {
     id: 'h1',
     title: 'Draft a WhatsApp reminder for Daily Grind',
@@ -864,7 +924,10 @@ const chatSessions = ref<ChatSession[]>([
     ],
     createdAt: Date.now() - DAY * 21,
   },
-])
+]
+// Persisted chat history (mini-DB) — survives reload/new-chat.
+const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
+function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
 
 // ── Active session ────────────────────────────────────────────────────────
 const messages = ref<ChatMessage[]>([])
@@ -1020,9 +1083,11 @@ function startNewChat() {
       messages: [...messages.value],
       createdAt: Date.now(),
     })
+    persistChats()   // keep the old chat in the mini-DB
   }
   messages.value = []
   chatContext.value = ''
+  aireneGround.value = ''
   historyOpen.value = false
 }
 
@@ -1043,6 +1108,80 @@ function getAiResponse(userMsg: string): string {
 
 // Context chip — set when entry point is from the AI popover
 const chatContext = ref('')
+// Grounding context fed to the model (e.g. a Cowork task result). Not shown.
+const aireneGround = ref('')
+// When the chat is opened about a specific task result, the empty-state greeting
+// and suggestions become contextual to that result instead of the generic ones.
+const DEFAULT_CONTEXT_SUGGESTIONS = [
+  'What should I do first?',
+  'Draft a follow-up message I can send',
+  'Summarise this in 3 bullet points',
+  'What are the risks or blockers here?',
+]
+// Populated per opened task via the bridge (falls back to the generic set).
+const contextSuggestions = ref<string[]>([...DEFAULT_CONTEXT_SUGGESTIONS])
+
+// ── Rich chat rendering: light markdown + employee mention chips ──────────────
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+function escapeReg(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+function initialsOf(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+}
+// Minimal inline markdown → HTML (bold, italic, line breaks, bullets).
+function mdToHtml(text: string): string {
+  const lines = escapeHtml(text).split('\n')
+  const out: string[] = []
+  let inList = false
+  for (let raw of lines) {
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(raw)
+    if (heading) {
+      if (inList) { out.push('</ul>'); inList = false }
+      out.push(`<p class="chat-md-h">${heading[1]}</p>`)
+      continue
+    }
+    const bullet = /^\s*[-*•]\s+(.*)$/.exec(raw)
+    if (bullet) {
+      if (!inList) { out.push('<ul class="chat-md-ul">'); inList = true }
+      out.push(`<li>${bullet[1]}</li>`)
+      continue
+    }
+    if (inList) { out.push('</ul>'); inList = false }
+    out.push(raw.length ? `<p class="chat-md-p">${raw}</p>` : '')
+  }
+  if (inList) out.push('</ul>')
+  return out.join('')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*(?!\*)(.+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+// Wrap any known employee full name in an avatar chip with a hover coachmark.
+function withEmployeeChips(html: string): string {
+  const names = employees.map((e) => e.fullName).filter(Boolean).sort((a, b) => b.length - a.length)
+  if (!names.length) return html
+  const re = new RegExp('(' + names.map(escapeReg).join('|') + ')', 'g')
+  return html.replace(re, (m) => {
+    const e = employees.find((x) => x.fullName === m)
+    if (!e) return m
+    const ini = initialsOf(e.fullName)
+    const av = e.photo
+      ? `<span class="emp-chip-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-chip-av emp-chip-av--ini">${ini}</span>`
+    const cav = e.photo
+      ? `<span class="emp-coach-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-coach-av emp-chip-av--ini">${ini}</span>`
+    return `<span class="emp-chip" tabindex="0">${av}<span class="emp-chip-name">${m}</span>` +
+      `<span class="emp-coach">${cav}<span class="emp-coach-body">` +
+      `<span class="emp-coach-name">${e.fullName}</span>` +
+      `<span class="emp-coach-meta">${e.employeeId ?? ''}</span>` +
+      `<span class="emp-coach-meta">${[e.jobPosition, e.department].filter(Boolean).join(' · ')}</span>` +
+      `</span></span></span>`
+  })
+}
+function renderMessage(text: string): string {
+  return withEmployeeChips(mdToHtml(text))
+}
 
 async function sendMessage(text: string, context?: string) {
   const trimmed = text.trim()
@@ -1058,16 +1197,26 @@ async function sendMessage(text: string, context?: string) {
   messages.value.push({ role: 'user', text: trimmed })
   inputText.value = ''
 
-  // Scroll to bottom
   await nextTick()
   scrollChatToBottom()
 
-  // Simulate AI typing delay
+  // Real Gemini reply, grounded on the current context (task result if any).
   isTyping.value = true
-  await new Promise(r => setTimeout(r, 1200))
+  let reply = ''
+  try {
+    const res = await $fetch<{ reply: string }>('/api/cowork/chat', {
+      method: 'POST',
+      body: {
+        messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
+        context: aireneGround.value || undefined,
+      },
+    })
+    reply = res.reply
+  } catch {
+    reply = 'Sorry — I hit an error reaching the model. Please try again.'
+  }
   isTyping.value = false
-
-  messages.value.push({ role: 'assistant', text: getAiResponse(trimmed) })
+  messages.value.push({ role: 'assistant', text: reply })
 
   await nextTick()
   scrollChatToBottom()
@@ -1086,6 +1235,16 @@ provide('sendAireneMessage', sendMessage)
 const aireneBridge = useAireneBridge()
 watch(aireneBridge.toggleSignal, () => toggleAirene())
 watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+// Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
+watch(aireneBridge.openContextSignal, () => {
+  startNewChat()
+  aireneGround.value = aireneBridge.pendingGround.value
+  chatContext.value = aireneBridge.pendingLabel.value
+  contextSuggestions.value = aireneBridge.pendingSuggestions.value?.length
+    ? [...aireneBridge.pendingSuggestions.value]
+    : [...DEFAULT_CONTEXT_SUGGESTIONS]
+  aireneOpen.value = true
+})
 
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320
@@ -1133,6 +1292,12 @@ function startResize(e: MouseEvent) {
       <template v-else>
       <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
+        <div class="page-actions">
+          <button class="page-actions-toggle btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button" @click.stop="titleActionsOpen = !titleActionsOpen">
+            {{ t('Actions') }}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
             {{ t('Import') }}
@@ -1145,6 +1310,50 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales invoice
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork tasks'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New task
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Schedule a task
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork connections'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-connections', query: { add: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Add connection
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
+          <div class="page-import-btn">
+          <MpPopover id="emp-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="importEmployees('add')">{{ t('Import employees') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="importEmployees('update')">{{ t('Update employee data') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          </div>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newEmployee">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New employee') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Sales orders'" class="page-title-actions">
@@ -1475,6 +1684,8 @@ function startResize(e: MouseEvent) {
             New purchase order
           </button>
         </div>
+          </div>
+        </div>
       </div>
 
       <!-- Purchase Orders tab bar (custom .page-tab buttons, not the generic tabs system) -->
@@ -1649,9 +1860,18 @@ function startResize(e: MouseEvent) {
                 </div>
               </div>
               <p class="airene-greeting-title">Hi, I'm here.</p>
-              <p class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
+              <p v-if="chatContext" class="airene-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
+              <p v-else class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
 
-              <div class="airene-suggestion-list">
+              <!-- Contextual suggestions (chat opened about a task result) -->
+              <div v-if="chatContext" class="airene-suggestion-list">
+                <button v-for="s in contextSuggestions" :key="s" class="airene-suggestion-item" @click="sendMessage(s)">
+                  <MpIcon name="airene-brand" size="sm" class="airene-sug-icon" />
+                  {{ s }}
+                </button>
+              </div>
+
+              <div v-else class="airene-suggestion-list">
                 <button class="airene-suggestion-item" @click="sendMessage('Import sales invoices')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M8.45 15H2.05C1.60818 15 1.25 14.6418 1.25 14.2V7.8C1.25 7.35818 1.60818 7 2.05 7H8.45C8.89182 7 9.25 7.35818 9.25 7.8V14.2C9.25 14.6418 8.89182 15 8.45 15ZM4.6168 10.9933L3.03984 13.4H4.18184L5.11992 11.7129C5.17422 11.6216 5.20938 11.549 5.2252 11.4954H5.23868C5.27266 11.5825 5.30898 11.6573 5.34746 11.7197L6.2582 13.4H7.39336L5.87422 10.98L7.35586 8.6H6.28886L5.4461 10.1164C5.38946 10.2257 5.33516 10.3384 5.28282 10.4544H5.27266C5.2455 10.3831 5.1957 10.2748 5.12324 10.1297L4.33476 8.6H3.17246L4.6168 10.9933Z" fill="#1FB088"/>
@@ -1686,7 +1906,9 @@ function startResize(e: MouseEvent) {
                 <!-- Assistant avatar -->
                 <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <span class="chat-bubble__text">{{ msg.text }}</span>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                  <span v-else class="chat-bubble__text">{{ msg.text }}</span>
                 </div>
               </div>
               <!-- Typing indicator -->
@@ -1736,13 +1958,17 @@ function startResize(e: MouseEvent) {
                 </button>
                 <!-- Right side: model label + send button -->
                 <div class="airene-input-right">
-                  <!-- Sonnet 4.6 textlink -->
+                  <!-- Gemini model label (chat is Gemini-backed) -->
                   <div class="airene-model-label">
-                    <!-- Claude logo -->
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 1.5a1.5 1.5 0 0 1 1.5 1.5v3.879l2.742-2.742a1.5 1.5 0 1 1 2.121 2.121L15.621 9H19.5a1.5 1.5 0 0 1 0 3h-3.879l2.742 2.742a1.5 1.5 0 1 1-2.121 2.121L13.5 14.121V18a1.5 1.5 0 0 1-3 0v-3.879l-2.742 2.742a1.5 1.5 0 1 1-2.121-2.121L8.379 12H4.5a1.5 1.5 0 0 1 0-3h3.879L5.637 6.258a1.5 1.5 0 0 1 2.121-2.121L10.5 6.879V3A1.5 1.5 0 0 1 12 1.5z" fill="#D97757"/>
+                      <defs>
+                        <linearGradient id="airene-gemini" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#1BA1E3"/><stop offset="0.3" stop-color="#5489D6"/><stop offset="0.55" stop-color="#9B72CB"/><stop offset="0.8" stop-color="#D96570"/><stop offset="1" stop-color="#F49C46"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M12 2c.3 4.9 4.8 9.4 9.7 9.7v.6C16.8 12.6 12.3 17.1 12 22h-.6c-.3-4.9-4.8-9.4-9.7-9.7v-.6C6.6 11.4 11.1 6.9 11.4 2H12z" fill="url(#airene-gemini)"/>
                     </svg>
-                    Sonnet 4.6
+                    Gemini Flash
                   </div>
                   <!-- Send button -->
                   <button class="airene-send-btn" aria-label="Send" @click="sendMessage(inputText)">
@@ -1811,9 +2037,43 @@ function startResize(e: MouseEvent) {
   gap: var(--mp-spacing-3);
 }
 
+/* Title-bar actions wrapper — desktop is transparent (actions lay out inline);
+   mobile collapses ≥2 actions into a single "Actions" dropdown. */
+.page-actions { display: flex; align-items: center; position: relative; }
+.page-actions-toggle { display: none; }
+.page-actions-inner { display: contents; }
+
+@media (max-width: 600px) {
+  /* Only collapse when there are ≥2 action controls (single button stays inline). */
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-toggle { display: inline-flex; }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner {
+    display: none;
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+    min-width: 220px; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2);
+    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default);
+    border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-2);
+    box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0,0,0,0.12));
+  }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner.page-actions-inner--open { display: flex; }
+  /* Inside the dropdown, actions stack full width. */
+  .page-actions-inner--open .page-title-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2); }
+  .page-actions-inner--open .page-title-actions > * { width: 100%; }
+  .page-actions-inner--open .btn-enterprise { width: 100%; justify-content: center; }
+  .page-actions-inner--open .import-wrap { width: 100%; }
+}
+
 /* Import is a secondary action — hide it on mobile to keep the title bar clean. */
 @media (max-width: 600px) {
   .page-import-btn { display: none; }
+  .page-title-bar { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); gap: var(--mp-spacing-2); }
+  .page-title-text {
+    font-size: var(--mp-font-sizes-xl, 20px);
+    line-height: 26px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .page-title-text {
@@ -2346,6 +2606,75 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
 }
+
+/* Rich (markdown-rendered) assistant text — v-html content needs :deep() to be
+   reached by scoped styles. */
+.chat-bubble__rich { white-space: normal; }
+.chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
+.chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }
+.chat-bubble__rich :deep(.chat-md-h) { margin: var(--mp-spacing-3, 12px) 0 var(--mp-spacing-1, 4px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.chat-md-h:first-child) { margin-top: 0; }
+.chat-bubble__rich :deep(.chat-md-ul) { margin: var(--mp-spacing-1, 4px) 0; padding-inline-start: var(--mp-spacing-4, 16px); }
+.chat-bubble__rich :deep(.chat-md-ul li) { margin: 2px 0; }
+.chat-bubble__rich :deep(strong) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(code) { font-family: var(--mp-fonts-mono, monospace); font-size: 0.9em; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 4px; }
+
+/* Employee mention chip */
+.chat-bubble__rich :deep(.emp-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1, 4px);
+  position: relative;
+  padding: 1px var(--mp-spacing-1\.5, 6px) 1px 2px;
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-bold, #eceef0);
+  cursor: default;
+  outline: none;
+  vertical-align: baseline;
+  line-height: 1.4;
+}
+.chat-bubble__rich :deep(.emp-chip-name) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.emp-chip-av) {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.chat-bubble__rich :deep(.emp-chip-av--ini) { font-size: 9px; font-weight: 700; color: var(--mp-text-brand, #1d55d4); }
+
+/* Hover / focus coachmark */
+.chat-bubble__rich :deep(.emp-coach) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  gap: var(--mp-spacing-2, 8px);
+  min-width: 200px;
+  padding: var(--mp-spacing-3, 12px);
+  border-radius: var(--mp-radii-lg, 12px);
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default, #e0e2e6);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  white-space: normal;
+  cursor: default;
+}
+.chat-bubble__rich :deep(.emp-chip:hover .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus-within .emp-coach) { display: flex; }
+.chat-bubble__rich :deep(.emp-coach-av) {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.chat-bubble__rich :deep(.emp-coach-body) { display: flex; flex-direction: column; gap: 1px; }
+.chat-bubble__rich :deep(.emp-coach-name) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); font-size: var(--mp-font-sizes-sm, 14px); }
+.chat-bubble__rich :deep(.emp-coach-meta) { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); }
 
 /* Typing indicator dots */
 .chat-typing {

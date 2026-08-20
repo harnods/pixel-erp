@@ -5,6 +5,7 @@
  * is static mock. Layout/edit chrome lives in HomePageV2.
  */
 import { h } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import {
   MpIcon, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -19,7 +20,7 @@ const Sparkle = (props: { size?: number }) =>
     h('path', { d: SPARKLE_D_A, fill: 'currentColor' }),
     h('path', { d: SPARKLE_D_B, fill: 'currentColor' }),
   ])
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 const approvals = [
   { icon: 'document',  tone: 'blue',   type: 'Purchase order',    time: '12 min ago', text: 'PO-2026-0184 — CV Sumber Rejeki',      meta: 'Rp45.200.000' },
@@ -395,4 +396,12 @@ const unlinkedBanks = [
 .custom-widget__icon { width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); display: flex; align-items: center; justify-content: center; background: var(--mp-background-neutral-subtle, #f1f3f3); color: var(--mp-text-secondary); }
 .custom-widget__title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .custom-widget__desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 220px; }
+
+/* ── Mobile (≤640px) ── */
+@media (max-width: 640px) {
+  /* Pending approvals + recent transactions: drop the leading icon */
+  .req__icon { display: none; }
+  /* Cash flow + warehouse overview: stack the stats vertically (one per row) */
+  .att-stats { grid-template-columns: 1fr; }
+}
 </style>

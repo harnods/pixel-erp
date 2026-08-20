@@ -739,6 +739,14 @@ const bulkCountLabel = computed(() => {
   gap: var(--mp-spacing-3);
 }
 
+/* Mobile — the left (filters) and right (search + actions) groups stack instead
+   of colliding; the search group then takes the full row. */
+@media (max-width: 640px) {
+  .erp-filter-bar { flex-wrap: wrap; }
+  .erp-filter-bar > * { min-width: 0; }
+  .erp-filter-bar > :last-child { flex: 1 1 100%; }
+}
+
 /* Table scroll container — persistent horizontal scrollbar when the table
    overflows, so users without a trackpad can always drag to scroll left/right
    (macOS overlay scrollbars auto-hide; styling forces a classic, always-visible bar) */

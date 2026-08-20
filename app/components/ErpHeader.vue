@@ -11,13 +11,15 @@
   <MpFlex as="header" class="erp-header" backgroundColor="background.header">
     <!-- Left: Logo (+ warehouse switcher when assigned >1 warehouse) -->
     <MpFlex class="erp-header__left">
+      <ErpProductSwitcher v-if="!showProductMenu" />
       <img :src="logoSrc" :alt="logoAlt" class="erp-header__logo" />
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search — hidden on Home, which has its own hero search -->
+    <!-- Center: Search — hidden on every home page (ERP, HR, CRM), which each
+         carry their own hero search, so it isn't duplicated. -->
     <MpFlex class="erp-header__center">
-      <QuickSearch v-if="currentPageKey !== 'Home'" />
+      <QuickSearch v-if="showHeaderSearch" />
     </MpFlex>
 
     <!-- Right: Actions + User -->
@@ -52,10 +54,20 @@ const logoAlt = "Mekari ERP";
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
 const { hasWarehouseContext } = useWarehouseContext();
 
+// Categories/product switcher (far-left) — shown only when the product rail
+// (ErpNavbarGroup) is hidden, i.e. the default scenario. Opens the product popover.
+const { showProductMenu } = useProductMenu();
+
 // Notification icon → Inbox page (not part of the sidebar tree, so set the
 // title bar label explicitly instead of relying on the sidebar to publish it)
 const { setActiveMenuLabel, currentPageKey } = useNavigation();
 const router = useRouter();
+// Home pages carry their own hero search, so the header search is hidden there to
+// avoid duplication: ERP Home ('Home') and HR Home ('Hr'). CRM has no home (it
+// lands on Deals), so CRM keeps the header search like other module pages.
+const showHeaderSearch = computed(
+  () => currentPageKey.value !== 'Home' && currentPageKey.value !== 'Hr',
+);
 function goToInbox() {
   setActiveMenuLabel("Notifications");
   router.push("/inbox?tab=notifications");

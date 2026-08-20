@@ -1250,4 +1250,11 @@ function confirmBulkDelete() {
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+
+/* ── Responsive stats (audit): keep the row horizontal on small screens and let
+   it scroll/swipe instead of stacking (home stacks; index pages scroll). ── */
+@media (max-width: 640px) {
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .stat-card { flex: 0 0 auto; }
+}
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { h, ref } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpIcon, toast } from '@mekari/pixel3'
 
 // ── Reusable AI sparkle (4-point star) — matches the SearchBox / Airene mark ──
@@ -13,7 +14,7 @@ const Sparkle = (props: { size?: number }) =>
 
 const router = useRouter()
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
@@ -33,19 +34,21 @@ const chips: Chip[] = [
 ]
 
 // ── Set-up / learn strip ─────────────────────────────────────────────────────
-interface StripItem { icon: string; title: string; desc: string }
+// Icons, pastel tints and layout mirror the ERP Home v2 strip exactly; only the
+// copy is HR-specific (Talenta).
+interface StripItem { icon: string; bg: string; title: string; desc: string }
 const strip: StripItem[] = [
-  { icon: '/hr-home/flag.svg', title: 'Get started',     desc: 'Learn every basics of how to run & operate Talenta' },
-  { icon: '/hr-home/play.svg', title: 'Tutorial videos', desc: 'Learn how to get the most value out of Talenta' },
-  { icon: '/hr-home/help.svg', title: 'Help center',     desc: 'Explore guides and tips for mastering Talenta' },
-  { icon: '/hr-home/new.svg',  title: "What's new",      desc: 'Latest updates and features' },
+  { icon: '/erp-home/flag.svg',  bg: '#F3FBFA', title: 'Get started',     desc: 'Learn every basics of how to run & operate Talenta' },
+  { icon: '/erp-home/video.svg', bg: '#ECF7F7', title: 'Tutorial videos', desc: 'Learn how to get the most value out of Talenta' },
+  { icon: '/erp-home/help.svg',  bg: '#EBF7F2', title: 'Help center',     desc: 'Explore guides and tips for mastering Talenta' },
+  { icon: '/erp-home/new.svg',   bg: '#E6F4EF', title: "What's new",      desc: 'Latest updates and features' },
 ]
 
 // ── KPI stats ────────────────────────────────────────────────────────────────
 interface Stat { label: string; value: string; delta: string; deltaTone: 'up' | 'down' | 'warn' | 'muted'; ai: string }
 const stats: Stat[] = [
   { label: 'Total employees',  value: '1,248', delta: '+12 this month',          deltaTone: 'up',    ai: 'Ask AI about headcount' },
-  { label: 'Awaiting approval', value: '7',     delta: '2 required immediate action', deltaTone: 'warn',  ai: 'AI prioritized for you' },
+  { label: 'Awaiting approval', value: '7',     delta: '2 need action now', deltaTone: 'warn',  ai: 'AI prioritized for you' },
   { label: 'On leave today',   value: '18',    delta: '3 unconfirmed',           deltaTone: 'muted', ai: 'See team coverage' },
   { label: 'Turnover rate',    value: '2.1%',  delta: '0.4% vs Jan — improving', deltaTone: 'down',  ai: 'Benchmark with industry' },
 ]
@@ -121,11 +124,11 @@ const celebrations: Celebration[] = [
       <SearchBox class="hero__search" placeholder="How can I help you today?" />
       <div class="chips">
         <button v-for="c in chips" :key="c.label" class="chip" type="button" @click="soon(c.label)">
-          <MpIcon :name="c.icon" size="md" class="chip__icon" />
+          <MpIcon :name="c.icon" size="sm" class="chip__icon" />
           {{ c.label }}
         </button>
         <button class="chip" type="button" @click="soon('Add actions')">
-          <MpIcon name="add" size="md" class="chip__icon" />
+          <MpIcon name="add" size="sm" class="chip__icon" />
           Add actions
         </button>
       </div>
@@ -133,12 +136,12 @@ const celebrations: Celebration[] = [
 
     <!-- ── Get started strip ────────────────────────────────────────────── -->
     <div class="strip">
-      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" @click="soon(s.title)">
-        <img :src="s.icon" alt="" class="strip__icon">
+      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="soon(s.title)">
         <span class="strip__text">
           <span class="strip__title">{{ s.title }}</span>
           <span class="strip__desc">{{ s.desc }}</span>
         </span>
+        <img :src="s.icon" alt="" class="strip__icon">
       </button>
     </div>
 
@@ -382,20 +385,19 @@ const celebrations: Celebration[] = [
   display: inline-flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  height: 36px;
-  padding: 0 var(--mp-spacing-4);
+  padding: 6px 16px 6px 12px;
   border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
+  font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default, #080d0e);
   cursor: pointer;
   white-space: nowrap;
   transition: background 100ms;
 }
 .chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.chip__icon { color: var(--mp-text-default, #080d0e); flex-shrink: 0; }
+.chip__icon { width: 16px; height: 16px; color: var(--mp-text-secondary, #3a4749); flex-shrink: 0; }
 
 /* Below the strip the dashboard narrows to 8/12 columns (880px), centered — the
    hero + strip stay full-width above it. */
@@ -408,31 +410,36 @@ const celebrations: Celebration[] = [
   gap: var(--mp-spacing-6);
 }
 
-/* ── Get started strip ────────────────────────────────────────────────────── */
+/* ── Get started strip (mirrors ERP Home v2: 8/12-col width, teal border,
+   per-item pastel tint, 40px icon on the right) ────────────────────────────── */
 .strip {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border: 1px solid #C8E4DA;
   border-radius: var(--mp-radii-xl, 12px);
-  background: linear-gradient(90deg, var(--mp-background-neutral, #fff) 55%, var(--mp-background-strip-tint, #f6f3ff) 100%);
+  background: var(--mp-background-neutral, #fff);
   overflow: hidden;
 }
 .strip__item {
+  position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-5) var(--mp-spacing-6);
-  background: none;
   border: none;
-  border-left: 1px solid var(--mp-border-default, #e3e7e9);
+  border-left: 1px solid #C8E4DA;
   cursor: pointer;
   text-align: left;
-  transition: background 100ms;
 }
 .strip__item:first-child { border-left: none; }
-.strip__item:hover { background: rgba(0, 0, 0, 0.02); }
-.strip__icon { width: 24px; height: 24px; flex-shrink: 0; }
-.strip__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.strip__item::after { content: ''; position: absolute; inset: 0; background: rgba(0, 0, 0, 0); transition: background 100ms; pointer-events: none; }
+.strip__item:hover::after { background: rgba(0, 0, 0, 0.03); }
+.strip__icon { position: relative; z-index: 1; width: 40px; height: 40px; flex-shrink: 0; }
+.strip__text { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .strip__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .strip__desc { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
 
@@ -550,6 +557,9 @@ const celebrations: Celebration[] = [
   color: var(--mp-text-airene, #5221a5);
 }
 .ai-note > svg { flex-shrink: 0; margin-top: 1px; color: var(--mp-airene-default, #7c3aed); }
+/* In a non-padded card (e.g. Pending requests) the card has no padding of its own,
+   so inset the AI note to match the header/rows instead of touching the border. */
+.card:not(.card--pad) > .ai-note { margin-left: var(--mp-spacing-5); margin-right: var(--mp-spacing-5); }
 .ai-note__link { color: var(--mp-text-airene, #5221a5); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
 .ai-note__link:hover { text-decoration: underline; }
 
@@ -661,4 +671,27 @@ const celebrations: Celebration[] = [
   color: var(--mp-text-secondary);
 }
 .manage:hover { color: var(--mp-text-default); }
+
+/* ── Mobile (≤640px) — stack the multi-column grids, tame the full-bleed hero ── */
+@media (max-width: 640px) {
+  .hero { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .hero__search { max-width: 100%; }
+  /* Shortcut chips: one horizontal swipe row instead of wrapping */
+  .chips { align-self: stretch; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex-shrink: 0; }
+  /* KPI cards: one per row, stacked with a top divider */
+  .stats { grid-template-columns: 1fr; }
+  .stat { border-left: none; }
+  .stat + .stat { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+  /* Get-started cards: drop the decorative icon on mobile */
+  .strip { grid-template-columns: 1fr 1fr; }
+  .strip__icon { display: none; }
+  .grid { grid-template-columns: 1fr; }
+  .att-stats { grid-template-columns: 1fr; }
+  .hc-stats { grid-template-columns: 1fr; }
+  /* Payroll banner: move the action below the text instead of beside it */
+  .banner { flex-wrap: wrap; }
+  .banner__btn { flex: 1 1 100%; width: 100%; display: flex; align-items: center; justify-content: center; margin-top: var(--mp-spacing-3); }
+}
 </style>

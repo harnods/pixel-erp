@@ -21,8 +21,8 @@
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
           <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
@@ -174,6 +174,10 @@ interface SubItem {
 interface NavItem {
   name: string
   icon: string
+  /** Explicit CDN icon filenames (without .svg) — use when the line/fill pair
+   *  doesn't follow the `${icon}-outline` / `${icon}-fill` convention. */
+  iconLine?: string
+  iconFill?: string
   /** Level-2 flyout (hover) */
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
@@ -362,6 +366,17 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
+    {
+      // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
+      // Connections), each its own /cowork* route rendered in the stage.
+      name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
+      panelSubmenu: [[
+        { label: 'Overview', to: 'Cowork' },
+        { label: 'Tasks', to: 'Cowork tasks' },
+        { label: 'Schedule', to: 'Cowork schedule' },
+        { label: 'Connections', to: 'Cowork connections' },
+      ]],
+    },
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the
@@ -724,7 +739,18 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
         const panel = item.panelSubmenu
           ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
           : null
-        return { nav: item.name, sub: null, panel }
+        // When a panel sub-item owns this exact route (e.g. Cowork › Overview lives
+        // at /cowork, the same route as the Cowork nav item), highlight that child
+        // instead of leaving the panel with no active item (which would fall back to
+        // the last-used sub from localStorage).
+        let sub: string | null = null
+        for (const g of item.panelSubmenu ?? []) {
+          for (const p of g) {
+            if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) { sub = p.label; break }
+          }
+          if (sub) break
+        }
+        return { nav: item.name, sub, panel }
       }
       // expandOnClick items: check their promoted-panel content BEFORE the plain
       // submenu loop below, so a page that's part of the promoted panel restores
