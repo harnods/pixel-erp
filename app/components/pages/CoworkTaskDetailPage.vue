@@ -284,7 +284,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <p class="ctd-item__title">{{ a.title }}</p>
                 <p class="ctd-muted">{{ a.detail }}</p>
                 <p class="ctd-muted ctd-item__meta">{{ a.owner }} · {{ a.due }}</p>
-                <MpButton is-rounded variant="secondary" size="sm" :class="css({ marginTop: '8px' })" @click="doAction(a)">{{ actionButton(a) }}</MpButton>
+                <button class="btn-enterprise btn-enterprise--secondary ctd-actbtn" type="button" @click="doAction(a)">{{ actionButton(a) }}</button>
               </div>
             </template>
 
@@ -309,7 +309,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
             <!-- Downloads -->
             <div v-if="plan.artifacts?.pdf || plan.artifacts?.spreadsheet" class="ctd-downloads">
-              <button v-if="plan.artifacts?.pdf" class="ctd-download" type="button" @click="downloadPdf"><MpIcon name="download" size="sm" /> Download PDF</button>
+              <button v-if="plan.artifacts?.pdf" class="ctd-download" type="button" @click="downloadPdf"><MpIcon name="pdf" size="sm" /> Download PDF</button>
               <button v-if="plan.artifacts?.spreadsheet" class="ctd-download" type="button" @click="downloadCsv"><MpIcon name="download" size="sm" /> Download spreadsheet</button>
             </div>
           </template>
@@ -369,10 +369,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-run-ts { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ctd-metric { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: 28px; color: var(--mp-text-default); }
 .ctd-hr { border: none; border-top: 1px solid var(--mp-border-default); margin: var(--mp-spacing-4) 0; }
-.ctd-sec { margin: var(--mp-spacing-5) 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
+.ctd-sec { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .ctd-sec:first-child { margin-top: 0; }
-.ctd-item { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
-.ctd-item:last-of-type { border-bottom: none; }
+.ctd-item { padding: var(--mp-spacing-3) 0; }
+.ctd-actbtn { padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); margin-top: var(--mp-spacing-2); }
 .ctd-item__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctd-item__meta { margin-top: 2px; }
 .ctd-email { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-4); }
