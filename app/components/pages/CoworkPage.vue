@@ -138,9 +138,10 @@ function startRun(task: CoworkTask) {
 async function fetchPlan(task: CoworkTask) {
   try {
     const activeSources = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name)
+    const activeOutputs = OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name)
     const res = await $fetch<{ plan: Plan; source: 'gemini' | 'fallback' }>('/api/cowork/plan', {
       method: 'POST',
-      body: { task: task.prompt, context: build(), model: model.value, sources: activeSources },
+      body: { task: task.prompt, context: build(), model: model.value, sources: activeSources, outputs: activeOutputs },
     })
     plan.value = res.plan
     planSource.value = res.source
@@ -220,6 +221,20 @@ const sourceOff = reactive<Record<string, boolean>>({})   // id → excluded
 function isSourceOn(id: string) { return !sourceOff[id] }
 function toggleSource(id: string, on: boolean) { sourceOff[id] = !on }
 const activeSourceCount = computed(() => sources.value.filter((s) => isSourceOn(s.id)).length)
+
+// ── Output (what Cowork should produce for the task) ─────────────────────────
+const OUTPUTS = [
+  { id: 'briefing', name: 'Briefing summary' },
+  { id: 'action-items', name: 'Action items' },
+  { id: 'email', name: 'Email draft' },
+  { id: 'slack', name: 'Slack message' },
+  { id: 'spreadsheet', name: 'Spreadsheet' },
+  { id: 'pdf', name: 'PDF report' },
+]
+const outputOn = reactive<Record<string, boolean>>({ briefing: true })
+function isOutputOn(id: string) { return !!outputOn[id] }
+function toggleOutput(id: string, on: boolean) { outputOn[id] = on }
+const activeOutputCount = computed(() => OUTPUTS.filter((o) => isOutputOn(o.id)).length)
 
 function statusProps(s: CoworkTask['status']) {
   if (s === 'running') return { status: 'in progress', label: 'Running' }
@@ -428,7 +443,22 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               />
               <div class="cw-composer2__foot">
                 <div class="cw-composer2__left">
-                  <button class="cw-foot-btn" type="button" @click="soon('Create')"><MpIcon name="add" size="sm" /> Create</button>
+                  <!-- Output popover: what Cowork should produce for this task -->
+                  <MpPopover id="cw-output" placement="top-start">
+                    <MpPopoverTrigger>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '260px' })">
+                      <div class="cw-src">
+                        <p class="cw-src__head">Output</p>
+                        <p class="cw-src__hint">Choose what Cowork should produce.</p>
+                        <div v-for="o in OUTPUTS" :key="o.id" class="cw-src__row">
+                          <span class="cw-src__name">{{ o.name }}</span>
+                          <MpToggle :is-checked="isOutputOn(o.id)" :aria-label="`Toggle ${o.name}`" @update:is-checked="(v: boolean) => toggleOutput(o.id, v)" />
+                        </div>
+                      </div>
+                    </MpPopoverContent>
+                  </MpPopover>
 
                   <!-- Source popover: connected sources with on/off toggles -->
                   <MpPopover id="cw-source" placement="top-start">
@@ -665,7 +695,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-composer2 { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; background: var(--mp-background-neutral, #fff); overflow: hidden; }
 .cw-composer2__input { display: block; width: 100%; border: none; border-radius: 0; outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-4); background: none; min-height: 76px; }
 .cw-composer2__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
-.cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: transparent; }
+.cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }

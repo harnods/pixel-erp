@@ -83,7 +83,7 @@ const RESPONSE_SCHEMA = {
   required: ['taskTitle', 'intro', 'sources', 'steps', 'findings', 'metric', 'summary', 'alsoPrepared'],
 }
 
-function buildPrompt(task: string, ctx: CoworkContext, sources?: string[]): string {
+function buildPrompt(task: string, ctx: CoworkContext, sources?: string[], outputs?: string[]): string {
   return [
     'You are Mekari Cowork — an autonomous AI co-worker embedded in a Mekari ERP suite.',
     'The suite has these connected products the user works across:',
@@ -99,6 +99,7 @@ function buildPrompt(task: string, ctx: CoworkContext, sources?: string[]): stri
     '',
     `Today: ${ctx.today ?? 'today'}. User: ${ctx.user ?? 'the user'}.`,
     sources && sources.length ? `Only use these connected sources: ${sources.join(', ')}.` : '',
+    outputs && outputs.length ? `The user wants these deliverables prepared: ${outputs.join(', ')}. Reflect them in the alsoPrepared list.` : '',
     '',
     'ERP DATA SNAPSHOT (JSON):',
     JSON.stringify({ hr: ctx.hr, crm: ctx.crm, wms: ctx.wms, finance: ctx.finance }, null, 0),
@@ -164,7 +165,7 @@ const ALLOWED_MODELS = new Set([
 ])
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[] }>(event)
+  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[] }>(event)
   const task = (body?.task ?? '').trim()
   const ctx = body?.context ?? {}
   if (!task) {
@@ -187,7 +188,7 @@ export default defineEventHandler(async (event) => {
     const res = await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ parts: [{ text: buildPrompt(task, ctx, body?.sources) }] }],
+        contents: [{ parts: [{ text: buildPrompt(task, ctx, body?.sources, body?.outputs) }] }],
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
