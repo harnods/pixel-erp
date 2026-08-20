@@ -7,9 +7,11 @@ import {
   employees,
   warehouses, productIndexRows,
   salesInvoices, bills, cashAccounts,
+  workOrders,
 } from '~/data'
 // CRM lives in its own module (not re-exported through the data barrel).
 import { crmCustomers, pipelineStages, crmOrders } from '~/data/crm'
+import { attendanceExceptions } from '~/data/cowork'
 
 export interface CoworkContext {
   today: string
@@ -18,6 +20,7 @@ export interface CoworkContext {
   crm: Record<string, unknown>
   wms: Record<string, unknown>
   finance: Record<string, unknown>
+  production: Record<string, unknown>
 }
 
 function money(n: number): string {
@@ -58,16 +61,22 @@ export function useCoworkContext() {
     const billsDue = unpaidBills.reduce((a, b) => a + b.balanceDue, 0)
     const cashTotal = cashAccounts.reduce((a, c) => a + (c.statementBalance ?? 0), 0)
 
+    // ── Production ──
+    const openWO = workOrders.filter((w) => w.status !== 'completed' && w.status !== 'canceled')
+    const empName = (id: string) => employees.find((e) => e.id === id)?.fullName ?? id
+
     const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
     return {
       today,
-      user: 'Rizal',
+      user: 'Rizal Candra',
       hr: {
         totalEmployees: employees.length,
         active,
         resigning,
         departments: byDept,
+        resigningEmployees: employees.filter((e) => e.status === 'resigning').map((e) => ({ name: e.fullName, position: e.jobPosition, department: e.department })),
+        attendanceExceptions: attendanceExceptions.map((a) => ({ employee: empName(a.employeeId), date: a.date, type: a.type })),
       },
       crm: {
         customers: crmCustomers.length,
@@ -92,7 +101,13 @@ export function useCoworkContext() {
         unpaidBills: unpaidBills.length,
         billsDue: money(billsDue),
         cashOnHand: money(cashTotal),
-        overdueExamples: overdue.slice(0, 4).map((i) => ({ number: `INV-${i.number}`, customer: i.customer.name, balance: money(i.balance) })),
+        overdueExamples: overdue.slice(0, 6).map((i) => ({ number: `INV-${i.number}`, customer: i.customer.name, balance: money(i.balance), dueDate: i.dueDate })),
+        unpaidBillExamples: unpaidBills.slice(0, 5).map((b) => ({ number: `BILL-${b.number}`, vendor: b.beneficiary.name, balance: money(b.balanceDue) })),
+      },
+      production: {
+        totalWorkOrders: workOrders.length,
+        openWorkOrders: openWO.length,
+        openExamples: openWO.slice(0, 6).map((w) => ({ number: w.number, product: w.bomName, status: w.status, produced: w.producedQty, planned: w.plannedQty, dueDate: w.planEndDate })),
       },
     }
   }

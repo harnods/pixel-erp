@@ -16,6 +16,9 @@ export interface CoworkTask {
   /** The instruction actually sent to the model. */
   prompt: string
   module: CoworkModule
+  /** A task drawing on multiple sources touches multiple modules; when set, this
+   *  is shown instead of the single `module`. */
+  modules?: CoworkModule[]
   status: CoworkTaskStatus
   createdAt: string
   completedAt?: string
@@ -25,19 +28,13 @@ export interface CoworkTask {
   planJson?: string
   /** True when this run was created from a schedule. */
   scheduled?: boolean
+  /** Recurrence set when the task was created (shown in the Tasks "Schedule"
+   *  column, and the Schedule page lists every task that has one); absent = a
+   *  one-off run ("No schedule"). */
+  schedule?: { cadence: CoworkCadence; time: string; nextRun?: string; enabled?: boolean }
 }
 
 export type CoworkCadence = 'Daily' | 'Weekly' | 'Monthly'
-export interface CoworkSchedule {
-  id: string
-  title: string
-  prompt: string
-  module: CoworkModule
-  cadence: CoworkCadence
-  time: string          // "08:00"
-  nextRun: string       // human label e.g. "Tomorrow, 08:00"
-  enabled: boolean
-}
 
 export interface CoworkConnection {
   id: string
@@ -55,6 +52,20 @@ export interface CoworkConnection {
 /** Mekari products are connected by default (Cowork always works over them), so
  *  they are NOT listed on the Connections page — they show as built-in sources. */
 export const COWORK_BUILTIN = ['Talenta', 'Qontak', 'Jurnal', 'Mekari WMS']
+
+// ── HR attendance exceptions (Talenta) — grounding data for the attendance /
+//    payroll pre-check tasks. Employee IDs reference the Talenta employees table. ──
+export type AttendanceExceptionType = 'Late clock-in' | 'Missing check-out' | 'Unapproved absence'
+export interface AttendanceException { employeeId: string; date: string; type: AttendanceExceptionType }
+export const attendanceExceptions: AttendanceException[] = [
+  { employeeId: 'EMP-0006', date: '2026-02-24', type: 'Late clock-in' },
+  { employeeId: 'EMP-0006', date: '2026-02-26', type: 'Late clock-in' },
+  { employeeId: 'EMP-0010', date: '2026-02-25', type: 'Missing check-out' },
+  { employeeId: 'EMP-0011', date: '2026-02-25', type: 'Unapproved absence' },
+  { employeeId: 'EMP-0016', date: '2026-02-26', type: 'Late clock-in' },
+  { employeeId: 'EMP-0009', date: '2026-02-27', type: 'Missing check-out' },
+  { employeeId: 'EMP-0003', date: '2026-02-27', type: 'Unapproved absence' },
+]
 
 /** Modules Cowork can act on — used for the catalog and the module filter. */
 export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production']
@@ -111,24 +122,29 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
 
 // ── Seeds ────────────────────────────────────────────────────────────────────
 const TASKS_SEED: CoworkTask[] = [
-  { id: 'CW-1042', title: 'Month-end close checklist', module: 'Finance', status: 'completed',
+  { id: 'CW-1042', title: 'Month-end close checklist', module: 'Finance', modules: ['Finance', 'Sales', 'WMS'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Month-end close checklist')!.prompt,
-    createdAt: '2026-08-18T09:12:00', completedAt: '2026-08-18T09:13:20', metric: '6 items to clear before close' },
-  { id: 'CW-1041', title: 'Contracts expiring soon', module: 'HR', status: 'completed',
+    createdAt: '2026-08-18T09:12:00', completedAt: '2026-08-18T09:13:20', metric: '6 items to clear before close',
+    schedule: { cadence: 'Monthly', time: '09:00', nextRun: '1 Sep · 09:00', enabled: true } },
+  { id: 'CW-1041', title: 'Contracts expiring soon', module: 'HR', modules: ['HR'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Contracts expiring soon')!.prompt,
     createdAt: '2026-08-17T14:40:00', completedAt: '2026-08-17T14:41:05', metric: '2 contracts expiring in 60 days' },
-  { id: 'CW-1040', title: 'Sales pipeline review', module: 'CRM', status: 'completed',
+  { id: 'CW-1040', title: 'Sales pipeline review', module: 'CRM', modules: ['CRM', 'Sales'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Sales pipeline review')!.prompt,
-    createdAt: '2026-08-15T08:05:00', completedAt: '2026-08-15T08:06:12', metric: '4 deals to prioritise this week' },
-]
-
-const SCHEDULE_SEED: CoworkSchedule[] = [
-  { id: 'CS-01', title: 'Chase overdue receivables', module: 'Finance', cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true,
-    prompt: COWORK_CATALOG.find((c) => c.title === 'Chase overdue receivables')!.prompt },
-  { id: 'CS-02', title: 'Reorder low-stock SKUs', module: 'WMS', cadence: 'Daily', time: '07:30', nextRun: 'Tomorrow · 07:30', enabled: true,
-    prompt: COWORK_CATALOG.find((c) => c.title === 'Reorder low-stock SKUs')!.prompt },
-  { id: 'CS-03', title: 'Attendance exceptions review', module: 'HR', cadence: 'Daily', time: '18:00', nextRun: 'Today · 18:00', enabled: false,
-    prompt: COWORK_CATALOG.find((c) => c.title === 'Attendance exceptions review')!.prompt },
+    createdAt: '2026-08-15T08:05:00', completedAt: '2026-08-15T08:06:12', metric: '4 deals to prioritise this week',
+    schedule: { cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true } },
+  { id: 'CW-1039', title: 'Chase overdue receivables', module: 'Finance', modules: ['Finance', 'CRM'], status: 'completed',
+    prompt: COWORK_CATALOG.find((c) => c.title === 'Chase overdue receivables')!.prompt,
+    createdAt: '2026-08-11T08:00:00', completedAt: '2026-08-18T08:00:00', metric: '3 invoices overdue',
+    schedule: { cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true } },
+  { id: 'CW-1038', title: 'Reorder low-stock SKUs', module: 'WMS', modules: ['WMS'], status: 'completed',
+    prompt: COWORK_CATALOG.find((c) => c.title === 'Reorder low-stock SKUs')!.prompt,
+    createdAt: '2026-08-12T07:30:00', completedAt: '2026-08-19T07:30:00', metric: '14 SKUs below reorder point',
+    schedule: { cadence: 'Daily', time: '07:30', nextRun: 'Tomorrow · 07:30', enabled: true } },
+  { id: 'CW-1037', title: 'Attendance exceptions review', module: 'HR', modules: ['HR'], status: 'completed',
+    prompt: COWORK_CATALOG.find((c) => c.title === 'Attendance exceptions review')!.prompt,
+    createdAt: '2026-08-13T18:00:00', completedAt: '2026-08-19T18:00:00', metric: '5 exceptions to review',
+    schedule: { cadence: 'Daily', time: '18:00', nextRun: 'Today · 18:00', enabled: false } },
 ]
 
 // Only external connections are listed (Mekari products are built-in). The three
@@ -152,11 +168,9 @@ function load<T>(key: string, seed: T[]): T[] {
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v1', TASKS_SEED))
-export const coworkSchedules = reactive<CoworkSchedule[]>(load('cowork-schedules-v1', SCHEDULE_SEED))
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v1', CONNECTION_SEED))
 
 function persistTasks() { saveSnapshot('cowork-tasks-v1', coworkTasks) }
-function persistSchedules() { saveSnapshot('cowork-schedules-v1', coworkSchedules) }
 function persistConnections() { saveSnapshot('cowork-connections-v1', coworkConnections) }
 
 let taskSeq = 1043
@@ -173,28 +187,22 @@ export function updateTask(id: string, patch: Partial<CoworkTask>): void {
   if (t) { Object.assign(t, patch); persistTasks() }
 }
 export function deleteTask(id: string): void {
+  // A task's schedule lives on the task, so deleting the task removes its schedule
+  // from the Schedule page automatically (that view is derived from coworkTasks).
   const i = coworkTasks.findIndex((x) => x.id === id)
   if (i >= 0) { coworkTasks.splice(i, 1); persistTasks() }
 }
 export function getTask(id: string): CoworkTask | undefined { return coworkTasks.find((x) => x.id === id) }
 
-export function addSchedule(s: Omit<CoworkSchedule, 'id'>): CoworkSchedule {
-  const sch: CoworkSchedule = { id: `CS-${String(coworkSchedules.length + 1).padStart(2, '0')}-${Math.floor(taskSeq)}`, ...s }
-  coworkSchedules.unshift(sch)
-  persistSchedules()
-  return sch
+/** Toggle a scheduled task's recurrence on/off. */
+export function setTaskScheduleEnabled(id: string, enabled: boolean): void {
+  const t = coworkTasks.find((x) => x.id === id)
+  if (t && t.schedule) { t.schedule = { ...t.schedule, enabled }; persistTasks() }
 }
-export function toggleSchedule(id: string, enabled: boolean): void {
-  const s = coworkSchedules.find((x) => x.id === id)
-  if (s) { s.enabled = enabled; persistSchedules() }
-}
-export function updateSchedule(id: string, patch: Partial<CoworkSchedule>): void {
-  const s = coworkSchedules.find((x) => x.id === id)
-  if (s) { Object.assign(s, patch); persistSchedules() }
-}
-export function deleteSchedule(id: string): void {
-  const i = coworkSchedules.findIndex((x) => x.id === id)
-  if (i >= 0) { coworkSchedules.splice(i, 1); persistSchedules() }
+/** Remove a task's schedule (unschedule) without deleting the task. */
+export function unscheduleTask(id: string): void {
+  const t = coworkTasks.find((x) => x.id === id)
+  if (t) { t.schedule = undefined; persistTasks() }
 }
 
 export function setConnection(id: string, connected: boolean): void {

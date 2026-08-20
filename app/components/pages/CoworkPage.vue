@@ -27,10 +27,10 @@ import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
 import { formatDateTime } from '~/utils/date'
 import {
-  coworkTasks, coworkSchedules, coworkConnections,
+  coworkTasks, coworkConnections,
   COWORK_CATALOG, COWORK_BUILTIN,
   addTask, updateTask, deleteTask, getTask,
-  addSchedule, updateSchedule, toggleSchedule, deleteSchedule, setConnection,
+  setTaskScheduleEnabled, unscheduleTask, setConnection,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection,
 } from '~/data/cowork'
 
@@ -66,15 +66,17 @@ const schedStatusOptions = [
   { value: 'active', label: 'Active' },
   { value: 'paused', label: 'Paused' },
 ]
-const schedSource = computed(() => coworkSchedules)
+// The Schedule page lists tasks that HAVE a schedule (derived from the tasks list,
+// so deleting a task removes its schedule here automatically).
+const schedSource = computed(() => coworkTasks.filter((t) => t.schedule))
 const {
   search: schedSearch, statusFilter: schedStatus, currentPage: schedPage, perPage: schedPerPage,
   paginated: schedRows, total: schedTotal, setPage: schedSetPage, setPerPage: schedSetPerPage,
-} = useTableState<typeof coworkSchedules[number]>(schedSource, {
+} = useTableState<CoworkTask>(schedSource, {
   perPage: 10,
   filterFn: (s, q, status) =>
     (!q || s.title.toLowerCase().includes(q) || s.module.toLowerCase().includes(q))
-    && (!status || (status === 'active' ? s.enabled : !s.enabled)),
+    && (!status || (status === 'active' ? !!s.schedule?.enabled : !s.schedule?.enabled)),
 })
 const schedStatusLabel = computed(() => schedStatusOptions.find((o) => o.value === schedStatus.value)?.label ?? '')
 
@@ -114,10 +116,18 @@ function soon(what: string) { toast.notify({ variant: 'info', title: `${what} �
 interface Step { title: string; detail: string }
 interface Source { name: string; detail: string }
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
+interface ActionItem { title: string; detail: string; owner: string; due: string; priority: 'High' | 'Medium' | 'Low' }
+interface Artifacts {
+  briefing?: { summary: SummaryItem[]; findings: { title: string; detail: string }[] }
+  actionItems?: ActionItem[]
+  email?: { to: string; subject: string; body: string }
+  spreadsheet?: { title: string; columns: string[]; rows: string[][] }
+  pdf?: { title: string; sections: { heading: string; body: string }[] }
+}
 interface Plan {
-  taskTitle: string; intro: string; sources: Source[]; steps: Step[]
-  findings: { title: string; detail: string }[]; metric: string
-  summary: SummaryItem[]; alsoPrepared: { title: string; detail: string }[]
+  taskTitle: string; intro: string; metric: string
+  sources: Source[]; steps: Step[]
+  artifacts: Artifacts
 }
 
 const openTaskId = ref<string | null>(null)
@@ -224,6 +234,46 @@ function finishRun() {
   })
 }
 
+// ── Artifact downloads ───────────────────────────────────────────────────────
+function downloadBlob(name: string, mime: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }))
+  const a = document.createElement('a')
+  a.href = url; a.download = name; a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+function downloadCsv() {
+  const s = plan.value?.artifacts?.spreadsheet
+  if (!s) return
+  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const csv = [s.columns, ...s.rows].map((r) => r.map(esc).join(',')).join('\n')
+  downloadBlob(`${(s.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.csv`, 'text/csv', csv)
+}
+async function downloadPdf() {
+  const p = plan.value?.artifacts?.pdf
+  if (!p) return
+  const { default: JsPDF } = await import('jspdf')
+  const doc = new JsPDF({ unit: 'pt', format: 'a4' })
+  const M = 48; let y = M
+  doc.setFontSize(18); doc.text(p.title || 'Report', M, y); y += 28
+  doc.setFontSize(11)
+  for (const sec of p.sections) {
+    doc.setFont('helvetica', 'bold'); doc.text(sec.heading, M, y); y += 18
+    doc.setFont('helvetica', 'normal')
+    for (const line of doc.splitTextToSize(sec.body, 500)) {
+      if (y > 780) { doc.addPage(); y = M }
+      doc.text(line, M, y); y += 15
+    }
+    y += 12
+  }
+  doc.save(`${(p.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.pdf`)
+}
+function copyEmail() {
+  const e = plan.value?.artifacts?.email
+  if (!e) return
+  navigator.clipboard?.writeText(`To: ${e.to}\nSubject: ${e.subject}\n\n${e.body}`)
+  toast.notify({ variant: 'success', title: 'Email copied' })
+}
+
 // Reopen a finished task's cached briefing without re-running.
 function openTaskDetail(task: CoworkTask) {
   openTaskId.value = task.id
@@ -286,9 +336,9 @@ const OUTPUTS = [
   { id: 'briefing', name: 'Briefing summary' },
   { id: 'action-items', name: 'Action items' },
   { id: 'email', name: 'Email draft' },
-  { id: 'slack', name: 'Slack message' },
   { id: 'spreadsheet', name: 'Spreadsheet' },
   { id: 'pdf', name: 'PDF report' },
+  { id: 'slack', name: 'Slack message', disabled: true },
 ]
 const outputOn = reactive<Record<string, boolean>>({ briefing: true })
 function isOutputOn(id: string) { return !!outputOn[id] }
@@ -298,6 +348,10 @@ const activeOutputCount = computed(() => OUTPUTS.filter((o) => isOutputOn(o.id))
 // A task's modules (multi-source → multiple); falls back to the single module.
 function taskModules(t: CoworkTask): CoworkModule[] {
   return t.modules && t.modules.length ? t.modules : [t.module]
+}
+// Schedule cell — "Weekly at 09:00" / "Monthly at 15:00", or "No schedule".
+function taskScheduleLabel(t: CoworkTask): string {
+  return t.schedule ? `${t.schedule.cadence} at ${t.schedule.time}` : 'No schedule'
 }
 
 function statusProps(s: CoworkTask['status']) {
@@ -320,19 +374,19 @@ function fmtTime(hhmm: string): string {
   return m ? `${h12}:${String(m).padStart(2, '0')}${ap}` : `${h12}${ap}`
 }
 const cadenceWord: Record<CoworkCadence, string> = { Daily: 'day', Weekly: 'week', Monthly: 'month' }
-// The schedule shown reflects whether the CURRENT prompt already has one (matched
-// on prompt text) — so it survives reloads and re-typing the same task.
-const matchedSchedule = computed(() => {
+// The schedule shown reflects whether the CURRENT prompt already maps to a task
+// that has a schedule (matched on prompt text) — a schedule always belongs to a task.
+const matchedTask = computed(() => {
   const t = prompt.value.trim()
-  return t ? (coworkSchedules.find((s) => s.prompt === t) ?? null) : null
+  return t ? (coworkTasks.find((x) => x.prompt === t && x.schedule) ?? null) : null
 })
 const scheduleLabel = computed(() => {
-  const s = matchedSchedule.value
+  const s = matchedTask.value?.schedule
   return s ? `Every ${cadenceWord[s.cadence]} at ${fmtTime(s.time)}` : 'Schedule'
 })
 // Opening the popover prefills cadence/time from the existing schedule (if any).
 function openSchedulePopover() {
-  const s = matchedSchedule.value
+  const s = matchedTask.value?.schedule
   if (s) { schedCadence.value = s.cadence; schedTime.value = s.time }
   schedOpen.value = !schedOpen.value
 }
@@ -342,13 +396,18 @@ function scheduleFromPrompt() {
   const nextRun = schedCadence.value === 'Daily' ? `Tomorrow · ${schedTime.value}`
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
+  const schedule = { cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true }
   const title = t.length > 52 ? t.slice(0, 50) + '…' : t
-  const existing = matchedSchedule.value
+  // Scheduling attaches the recurrence to the task (existing prompt → update it;
+  // otherwise create the task with the schedule so it shows in both Tasks & Schedule).
+  const existing = coworkTasks.find((x) => x.prompt === t)
   if (existing) {
-    updateSchedule(existing.id, { title, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun })
+    updateTask(existing.id, { schedule })
     toast.notify({ variant: 'success', title: 'Schedule updated' })
   } else {
-    addSchedule({ title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
+    const active = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name) as CoworkModule[]
+    const primary = inferModule(t)
+    addTask({ title, prompt: t, module: primary, modules: active.length ? active : [primary], status: 'scheduled', createdAt: new Date().toISOString(), schedule })
     toast.notify({ variant: 'success', title: 'Task scheduled' })
   }
 }
@@ -466,42 +525,95 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <ErpStatusBadge status="completed" badge-for="additionalInformation" />
           </header>
           <p class="cw-metric">{{ plan?.metric }}</p>
+          <p v-if="planSource === 'fallback'" class="cw-note">Grounded summary (AI model offline) — figures still from your data.</p>
           <div class="cw-actions">
-            <MpButton is-rounded variant="primary" @click="toast.notify({ variant: 'success', title: 'Action items created' })">Create action items</MpButton>
-            <MpButton is-rounded variant="secondary" @click="toast.notify({ variant: 'info', title: 'Shared' })">Share briefing</MpButton>
             <MpButton is-rounded variant="ghost" @click="rerun">Run again</MpButton>
           </div>
 
-          <p class="cw-eyebrow cw-mt-24">Executive summary</p>
-          <ul class="cw-summary">
-            <li v-for="(s, i) in (plan?.summary ?? [])" :key="s.title" class="cw-summary__row">
-              <div>
-                <p class="cw-summary__title">{{ i + 1 }}. {{ s.title }}</p>
-                <p class="cw-muted">{{ s.detail }}</p>
-              </div>
-              <ErpStatusBadge :status="s.priority.toLowerCase()" :label="s.priority" />
-            </li>
-          </ul>
-
-          <template v-if="plan?.findings?.length">
-            <p class="cw-eyebrow cw-mt-24">Key findings</p>
-            <ul class="cw-findings">
-              <li v-for="f in plan.findings" :key="f.title" class="cw-finding">
-                <p class="cw-summary__title">{{ f.title }}</p><p class="cw-muted">{{ f.detail }}</p>
+          <!-- Briefing summary -->
+          <template v-if="plan?.artifacts?.briefing">
+            <p class="cw-eyebrow cw-mt-24">Executive summary</p>
+            <ul class="cw-summary">
+              <li v-for="(s, i) in plan.artifacts.briefing.summary" :key="s.title" class="cw-summary__row">
+                <div>
+                  <p class="cw-summary__title">{{ i + 1 }}. {{ s.title }}</p>
+                  <p class="cw-muted">{{ s.detail }}</p>
+                </div>
+                <ErpStatusBadge :status="s.priority.toLowerCase()" :label="s.priority" />
               </li>
             </ul>
+            <template v-if="plan.artifacts.briefing.findings?.length">
+              <p class="cw-eyebrow cw-mt-24">Key findings</p>
+              <ul class="cw-findings">
+                <li v-for="f in plan.artifacts.briefing.findings" :key="f.title" class="cw-finding">
+                  <p class="cw-summary__title">{{ f.title }}</p><p class="cw-muted">{{ f.detail }}</p>
+                </li>
+              </ul>
+            </template>
+          </template>
+
+          <!-- Action items -->
+          <template v-if="plan?.artifacts?.actionItems?.length">
+            <p class="cw-eyebrow cw-mt-24">Action items</p>
+            <ul class="cw-summary">
+              <li v-for="(a, i) in plan.artifacts.actionItems" :key="a.title + i" class="cw-summary__row">
+                <div>
+                  <p class="cw-summary__title">{{ a.title }}</p>
+                  <p class="cw-muted">{{ a.detail }}</p>
+                  <p class="cw-muted cw-ai-meta">{{ a.owner }} · {{ a.due }}</p>
+                </div>
+                <ErpStatusBadge :status="a.priority.toLowerCase()" :label="a.priority" />
+              </li>
+            </ul>
+          </template>
+
+          <!-- Email draft -->
+          <template v-if="plan?.artifacts?.email">
+            <div class="cw-art-head cw-mt-24">
+              <p class="cw-eyebrow" style="margin:0">Email draft</p>
+              <MpButton is-rounded variant="tertiary" size="sm" @click="copyEmail"><MpIcon name="copy" size="sm" /> Copy</MpButton>
+            </div>
+            <div class="cw-email">
+              <p class="cw-email__row"><span class="cw-email__k">To</span> {{ plan.artifacts.email.to }}</p>
+              <p class="cw-email__row"><span class="cw-email__k">Subject</span> {{ plan.artifacts.email.subject }}</p>
+              <pre class="cw-email__body">{{ plan.artifacts.email.body }}</pre>
+            </div>
+          </template>
+
+          <!-- Spreadsheet -->
+          <template v-if="plan?.artifacts?.spreadsheet">
+            <div class="cw-art-head cw-mt-24">
+              <p class="cw-eyebrow" style="margin:0">{{ plan.artifacts.spreadsheet.title || 'Spreadsheet' }}</p>
+              <MpButton is-rounded variant="tertiary" size="sm" @click="downloadCsv"><MpIcon name="download" size="sm" /> Download CSV</MpButton>
+            </div>
+            <div class="cw-table-wrap">
+              <table class="cw-table">
+                <thead><tr><th v-for="c in plan.artifacts.spreadsheet.columns" :key="c">{{ c }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, ri) in plan.artifacts.spreadsheet.rows" :key="ri">
+                    <td v-for="(cell, ci) in r" :key="ci">{{ cell }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- PDF report -->
+          <template v-if="plan?.artifacts?.pdf">
+            <div class="cw-art-head cw-mt-24">
+              <p class="cw-eyebrow" style="margin:0">{{ plan.artifacts.pdf.title || 'PDF report' }}</p>
+              <MpButton is-rounded variant="tertiary" size="sm" @click="downloadPdf"><MpIcon name="download" size="sm" /> Download PDF</MpButton>
+            </div>
+            <div class="cw-findings">
+              <div v-for="sec in plan.artifacts.pdf.sections" :key="sec.heading" class="cw-finding">
+                <p class="cw-summary__title">{{ sec.heading }}</p><p class="cw-muted">{{ sec.body }}</p>
+              </div>
+            </div>
           </template>
         </section>
 
         <aside class="cw-card cw-card--side">
-          <p class="cw-side__title">Cowork also prepared</p>
-          <ul class="cw-prepared">
-            <li v-for="a in (plan?.alsoPrepared ?? [])" :key="a.title" class="cw-prepared__item">
-              <MpIcon name="document" size="md" />
-              <div><p class="cw-summary__title">{{ a.title }}</p><p class="cw-muted">{{ a.detail }}</p></div>
-            </li>
-          </ul>
-          <p class="cw-side__title cw-mt-24">Sources used</p>
+          <p class="cw-side__title">Sources used</p>
           <ul class="cw-sources">
             <li v-for="s in (plan?.sources ?? [])" :key="s.name" class="cw-source"><span>{{ s.name }}</span><span class="cw-muted">{{ s.detail }}</span></li>
           </ul>
@@ -537,9 +649,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       <div class="cw-src">
                         <p class="cw-src__head">Output</p>
                         <p class="cw-src__hint">Choose what Cowork should produce.</p>
-                        <div v-for="o in OUTPUTS" :key="o.id" class="cw-src__row">
-                          <span class="cw-src__name">{{ o.name }}</span>
-                          <MpToggle :is-checked="isOutputOn(o.id)" :aria-label="`Toggle ${o.name}`" @update:is-checked="(v: boolean) => toggleOutput(o.id, v)" />
+                        <div v-for="o in OUTPUTS" :key="o.id" class="cw-src__row" :class="{ 'is-disabled': o.disabled }">
+                          <span class="cw-src__name">{{ o.name }}<span v-if="o.disabled" class="cw-soon">Coming soon</span></span>
+                          <MpToggle v-if="!o.disabled" :is-checked="isOutputOn(o.id)" :aria-label="`Toggle ${o.name}`" @update:is-checked="(v: boolean) => toggleOutput(o.id, v)" />
+                          <MpToggle v-else :is-checked="false" is-disabled aria-label="Slack coming soon" />
                         </div>
                       </div>
                     </MpPopoverContent>
@@ -565,7 +678,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Schedule popover: cadence + time (the task is the prompt above) -->
                   <MpPopover id="cw-schedule" is-manual :is-open="schedOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="schedOpen = false">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': matchedSchedule }" @click="openSchedulePopover"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
+                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': matchedTask }" @click="openSchedulePopover"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -580,7 +693,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                           <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': schedTime === t }" @click="schedTime = t">{{ t }}</button>
                         </div>
                         <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="scheduleFromPrompt(); schedOpen = false">
-                          {{ matchedSchedule ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
+                          {{ matchedTask ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
                         </MpButton>
                       </div>
                     </MpPopoverContent>
@@ -666,7 +779,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <div class="cw-table-wrap">
             <table class="cw-table">
               <thead>
-                <tr><th>Task</th><th>Module</th><th>Status</th><th>Created</th><th>Result</th><th class="cw-th-actions" /></tr>
+                <tr><th>Task</th><th>Module</th><th>Status</th><th>Schedule</th><th>Last updated</th><th class="cw-th-actions" /></tr>
               </thead>
               <!-- First-load skeleton -->
               <tbody v-if="loading">
@@ -674,8 +787,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <td><MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="80px" height="18px" rounded="sm" duration="0s" /></td>
+                  <td><MpSkeleton class="cw-skeleton" width="110px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="120px" height="14px" rounded="sm" duration="0s" /></td>
-                  <td><MpSkeleton class="cw-skeleton" width="64px" height="14px" rounded="sm" duration="0s" /></td>
                   <td class="cw-td-actions" />
                 </tr>
               </tbody>
@@ -690,8 +803,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     </span>
                   </td>
                   <td><ErpStatusBadge v-bind="statusProps(t.status)" /></td>
-                  <td>{{ formatDateTime(t.createdAt) }}</td>
-                  <td class="cw-muted">{{ t.metric ?? '—' }}</td>
+                  <td :class="{ 'cw-muted': !t.schedule }">{{ taskScheduleLabel(t) }}</td>
+                  <td>{{ formatDateTime(t.completedAt ?? t.createdAt) }}</td>
                   <td class="cw-td-actions" @click.stop>
                     <MpPopover :id="`cw-task-${t.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
@@ -760,13 +873,17 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               </tbody>
               <tbody v-else>
                 <tr v-for="s in schedRows" :key="s.id">
-                  <td><span class="cw-list-row__title">{{ s.title }}</span></td>
-                  <td><MpBadge for="additionalInformation" type="announcement" size="sm">{{ s.module }}</MpBadge></td>
-                  <td>{{ s.cadence }} · {{ s.time }}</td>
-                  <td>{{ s.nextRun }}</td>
-                  <td><MpToggle :is-checked="s.enabled" :aria-label="`Toggle ${s.title}`" @update:is-checked="(v: boolean) => toggleSchedule(s.id, v)" /></td>
+                  <td><span class="cw-cell-link" @click="openTaskDetail(s)">{{ s.title }}</span></td>
+                  <td>
+                    <span class="cw-modules">
+                      <MpBadge v-for="m in taskModules(s)" :key="m" for="additionalInformation" type="announcement" size="sm">{{ m }}</MpBadge>
+                    </span>
+                  </td>
+                  <td>{{ s.schedule!.cadence }} · {{ s.schedule!.time }}</td>
+                  <td>{{ s.schedule!.nextRun ?? '—' }}</td>
+                  <td><MpToggle :is-checked="!!s.schedule!.enabled" :aria-label="`Toggle ${s.title}`" @update:is-checked="(v: boolean) => setTaskScheduleEnabled(s.id, v)" /></td>
                   <td class="cw-td-actions">
-                    <button class="cw-kebab" type="button" aria-label="Delete schedule" @click="deleteSchedule(s.id)"><MpIcon name="delete" size="md" /></button>
+                    <button class="cw-kebab" type="button" aria-label="Remove schedule" @click="unscheduleTask(s.id)"><MpIcon name="delete" size="md" /></button>
                   </td>
                 </tr>
                 <tr v-if="!schedRows.length"><td colspan="6" class="cw-empty">No scheduled tasks.</td></tr>
@@ -936,6 +1053,15 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* Run workspace — the left (task summary) column is not boxed; only the side rail is. */
 .cw-run .cw-card--main, .cw-run--single .cw-card--main { border: none; background: none; padding: 0; }
+.cw-note { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cw-ai-meta { margin-top: 2px; }
+.cw-soon { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }
+.cw-src__row.is-disabled .cw-src__name { color: var(--mp-text-secondary); }
+.cw-art-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6); margin-bottom: var(--mp-spacing-3); }
+.cw-email { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); }
+.cw-email__row { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-email__k { display: inline-block; min-width: 56px; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-semi-bold); }
+.cw-email__body { margin: var(--mp-spacing-3) 0 0; padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); white-space: pre-wrap; }
 .cw-conn-lead { margin-bottom: var(--mp-spacing-4); }
 .cw-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); font-family: inherit; padding: 0; margin-bottom: var(--mp-spacing-4); }
 .cw-back:hover { color: var(--mp-text-default); }
