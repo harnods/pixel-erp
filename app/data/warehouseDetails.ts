@@ -584,6 +584,42 @@ function makeBatches(onHand: number, reserved: number, seed: number, i: number):
 }
 
 // Serial units for a hardware product — a small, design-matching subset.
+/**
+ * Demo scenario — a serial-tracked unit sitting in a bin no cycle count plan
+ * covers, so the "one serial can only be in one bin" rule has something to fire
+ * on: counting Bin 01 of Cycle Count #20094 (cc-006) and scanning this unit's
+ * barcode has to be rejected, since the same unit is stocked in Bin 03.
+ * The bin itself is seeded empty in WH_STORAGE_PROFILES (wh-010 › extraBins).
+ */
+const DEMO_MISPLACED_SERIALS: Record<string, { sku: string; location: string; count: number }[]> = {
+  'wh-010': [{ sku: '2101', location: 'Bin 03', count: 1 }],
+}
+
+/** Move the first N available serials of a demo SKU into their stray bin, taking
+ *  the matching on-hand qty with them so bin totals still add up to item.onHand. */
+function applyMisplacedSerials(warehouseId: string, item: WarehouseStockItem): void {
+  const pins = DEMO_MISPLACED_SERIALS[warehouseId]?.filter((p) => p.sku === item.sku)
+  if (!pins?.length || !item.serials || !item.bins?.length) return
+  for (const pin of pins) {
+    const moving = item.serials.available.filter((u) => u.location !== pin.location).slice(0, pin.count)
+    if (moving.length < pin.count) continue
+    let bin = item.bins.find((b) => b.location === pin.location)
+    if (!bin) { bin = { location: pin.location, onHand: 0, reserved: 0, available: 0 }; item.bins.push(bin) }
+    for (const unit of moving) {
+      const from = item.bins.find((b) => b.location === unit.location)
+      // Only move stock that the source bin can actually give up — never leave a
+      // bin with a negative on-hand just to stage a demo.
+      if (!from || from.available <= 0) continue
+      from.onHand -= 1
+      from.available -= 1
+      bin.onHand += 1
+      bin.available += 1
+      unit.location = pin.location
+    }
+    item.locations = item.bins.map((b) => b.location)
+  }
+}
+
 function makeSerials(sku: string, onHand: number, reserved: number, seed: number, i: number): ProductSerials {
   // Full SKU (not just the first 3 chars) so serials are namespaced per SKU —
   // SKUs sharing a 3-char prefix (2101, 2102, …) must never generate the same
@@ -819,6 +855,7 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
     if (item.serials) {
       item.serials.available.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
       item.serials.reserved.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
+      applyMisplacedSerials(id, item)
     }
   })
   // Apply any persisted on-hand overrides from stock counts / in-out / transfers
