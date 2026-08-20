@@ -737,7 +737,18 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
         const panel = item.panelSubmenu
           ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
           : null
-        return { nav: item.name, sub: null, panel }
+        // When a panel sub-item owns this exact route (e.g. Cowork › Overview lives
+        // at /cowork, the same route as the Cowork nav item), highlight that child
+        // instead of leaving the panel with no active item (which would fall back to
+        // the last-used sub from localStorage).
+        let sub: string | null = null
+        for (const g of item.panelSubmenu ?? []) {
+          for (const p of g) {
+            if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) { sub = p.label; break }
+          }
+          if (sub) break
+        }
+        return { nav: item.name, sub, panel }
       }
       // expandOnClick items: check their promoted-panel content BEFORE the plain
       // submenu loop below, so a page that's part of the promoted panel restores
