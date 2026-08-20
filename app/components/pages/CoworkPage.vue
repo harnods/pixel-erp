@@ -61,12 +61,22 @@ const {
 })
 const taskStatusLabel = computed(() => taskStatusOptions.find((o) => o.value === taskStatus.value)?.label ?? '')
 
-// ── Schedule table state — pagination only ────────────────────────────────────
+// ── Schedule table state — status filter (left) + search (right) + pagination ─
+const schedStatusOptions = [
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+]
 const schedSource = computed(() => coworkSchedules)
 const {
-  currentPage: schedPage, perPage: schedPerPage, paginated: schedRows, total: schedTotal,
-  setPage: schedSetPage, setPerPage: schedSetPerPage,
-} = useTableState<typeof coworkSchedules[number]>(schedSource, { perPage: 10, filterFn: () => true })
+  search: schedSearch, statusFilter: schedStatus, currentPage: schedPage, perPage: schedPerPage,
+  paginated: schedRows, total: schedTotal, setPage: schedSetPage, setPerPage: schedSetPerPage,
+} = useTableState<typeof coworkSchedules[number]>(schedSource, {
+  perPage: 10,
+  filterFn: (s, q, status) =>
+    (!q || s.title.toLowerCase().includes(q) || s.module.toLowerCase().includes(q))
+    && (!status || (status === 'active' ? s.enabled : !s.enabled)),
+})
+const schedStatusLabel = computed(() => schedStatusOptions.find((o) => o.value === schedStatus.value)?.label ?? '')
 
 // Gemini mark — a 4-point star with Google's multi-hue gradient (not the Airene
 // purple sparkle) for the model picker.
@@ -259,11 +269,9 @@ const MODELS = [
 const model = ref(MODELS[0].id)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? 'Gemini Flash')
 
-// ── Sources (which connected products Cowork may read) ───────────────────────
-const sources = computed(() => [
-  ...COWORK_BUILTIN.map((name) => ({ id: name, name })),
-  ...coworkConnections.filter((c) => c.connected).map((c) => ({ id: c.id, name: c.name })),
-])
+// ── Sources (which ERP domains Cowork may read) ──────────────────────────────
+const SOURCE_MODULES = ['Finance', 'HR', 'Sales', 'CRM', 'WMS', 'Production']
+const sources = computed(() => SOURCE_MODULES.map((name) => ({ id: name, name })))
 const sourceOff = reactive<Record<string, boolean>>({})   // id → excluded
 function isSourceOn(id: string) { return !sourceOff[id] }
 function toggleSource(id: string, on: boolean) { sourceOff[id] = !on }
@@ -295,6 +303,7 @@ function statusProps(s: CoworkTask['status']) {
 // and time. Empty prompt → just focus the composer so the user writes one.
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
+const schedOpen = ref(false)   // controlled schedule popover (so the real button can close it)
 // Once scheduled from the composer, the button reflects it and re-opening edits.
 const composerScheduleId = ref<string | null>(null)
 function fmtTime(hhmm: string): string {
@@ -534,9 +543,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   </MpPopover>
 
                   <!-- Schedule popover: cadence + time (the task is the prompt above) -->
-                  <MpPopover id="cw-schedule" is-close-on-select placement="bottom-start">
+                  <MpPopover id="cw-schedule" is-manual :is-open="schedOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="schedOpen = false">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': composerScheduleId }"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
+                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': composerScheduleId }" @click="schedOpen = !schedOpen"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -550,10 +559,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         <div class="cw-seg">
                           <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': schedTime === t }" @click="schedTime = t">{{ t }}</button>
                         </div>
+                        <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="scheduleFromPrompt(); schedOpen = false">
+                          {{ composerScheduleId ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
+                        </MpButton>
                       </div>
-                      <MpPopoverList>
-                        <MpPopoverListItem @click="scheduleFromPrompt">{{ composerScheduleId ? 'Update schedule' : `Schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}</MpPopoverListItem>
-                      </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
                 </div>
@@ -647,7 +656,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <td><MpSkeleton class="cw-skeleton" width="80px" height="18px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="120px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="64px" height="14px" rounded="sm" duration="0s" /></td>
-                  <td class="cw-td-actions"><MpSkeleton class="cw-skeleton" width="20px" height="20px" rounded="sm" duration="0s" /></td>
+                  <td class="cw-td-actions" />
                 </tr>
               </tbody>
               <tbody v-else>
@@ -683,6 +692,33 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Schedule ── -->
         <section v-else-if="section === 'Schedule'">
+          <!-- Filter bar: status (left) + search (right) -->
+          <div class="cw-filter">
+            <div class="cw-filter__left">
+              <MpPopover id="cw-sched-status" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-sched-status-sel" placeholder="Status" :model-value="schedStatus" is-clearable :class="css({ width: '160px' })" @mousedown.prevent @clear="schedStatus = ''">
+                    <option v-if="schedStatus" :value="schedStatus">{{ schedStatusLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in schedStatusOptions" :key="o.value" :is-active="o.value === schedStatus" @click="schedStatus = o.value">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="schedSearch" class="cw-search__input" type="text" placeholder="Search...">
+                <button v-if="schedSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="schedSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="cw-table-wrap">
             <table class="cw-table">
               <thead>
@@ -696,7 +732,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <td><MpSkeleton class="cw-skeleton" width="110px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="120px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="36px" height="20px" rounded="sm" duration="0s" /></td>
-                  <td class="cw-td-actions"><MpSkeleton class="cw-skeleton" width="20px" height="20px" rounded="sm" duration="0s" /></td>
+                  <td class="cw-td-actions" />
                 </tr>
               </tbody>
               <tbody v-else>
