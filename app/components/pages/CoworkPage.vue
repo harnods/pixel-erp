@@ -58,6 +58,8 @@ const section = computed(() => {
 
 // ── Composer ─────────────────────────────────────────────────────────────────
 const prompt = ref('')
+const promptEl = ref<HTMLTextAreaElement | null>(null)
+function focusPrompt() { requestAnimationFrame(() => promptEl.value?.focus()) }
 function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon` }) }
 
 // ── Run workspace ────────────────────────────────────────────────────────────
@@ -291,6 +293,17 @@ function addConnection() { toast.notify({ variant: 'info', title: 'Browse the co
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })
 
+// Title-bar actions (rendered by [...slug].vue) drive the page via the URL:
+//   /cowork?focus=1        → focus the composer (from "+ New task" on Tasks)
+//   /cowork-schedule?new=1 → open the schedule modal (from the Schedule action)
+function handleQueryTriggers() {
+  const q = route.query
+  if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
+  if (q.new === '1' && section.value === 'Schedule') { openSchedule(); router.replace({ path: '/cowork-schedule', query: {} }) }
+  if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
+}
+watch(() => route.fullPath, handleQueryTriggers)
+
 onMounted(() => {
   const q = route.query
   if (typeof q.task === 'string' && q.task.trim() && q.run === '1') {
@@ -298,6 +311,7 @@ onMounted(() => {
     // Strip task/run from the URL; the workspace stays open via openTask.
     router.replace({ path: '/cowork', query: {} })
   }
+  handleQueryTriggers()
 })
 onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 </script>
@@ -405,6 +419,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <!-- Composer -->
             <div class="cw-composer2">
               <textarea
+                ref="promptEl"
                 v-model="prompt"
                 class="cw-composer2__input"
                 rows="3"
@@ -513,10 +528,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Schedule ── -->
         <section v-else-if="section === 'Schedule'">
-          <div class="cw-section-head">
-            <p class="cw-muted">Cowork runs these automatically and drops the briefing in your inbox.</p>
-            <MpButton is-rounded variant="primary" @click="openSchedule"><MpIcon name="add" size="sm" /> Schedule a task</MpButton>
-          </div>
           <div class="cw-table-wrap">
             <table class="cw-table">
               <thead>
@@ -541,10 +552,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Connections ── -->
         <section v-else-if="section === 'Connections'">
-          <div class="cw-section-head">
-            <p class="cw-muted">Cowork works over the products and data sources you connect.</p>
-            <MpButton is-rounded variant="secondary" @click="addConnection"><MpIcon name="add" size="sm" /> Add connection</MpButton>
-          </div>
+          <p class="cw-muted cw-conn-lead">Cowork works over the products and data sources you connect.</p>
           <div class="cw-grid">
             <div v-for="c in coworkConnections" :key="c.id" class="cw-card cw-conn-card">
               <div class="cw-conn-card__top">
@@ -736,7 +744,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
 .cw-form-error { margin: var(--mp-spacing-2) 0 0; color: var(--mp-text-danger, #a8352d); font-size: var(--mp-font-sizes-sm); }
 
-/* Run workspace */
+/* Run workspace — the left (task summary) column is not boxed; only the side rail is. */
+.cw-run .cw-card--main, .cw-run--single .cw-card--main { border: none; background: none; padding: 0; }
+.cw-conn-lead { margin-bottom: var(--mp-spacing-4); }
 .cw-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); font-family: inherit; padding: 0; margin-bottom: var(--mp-spacing-4); }
 .cw-back:hover { color: var(--mp-text-default); }
 .cw-run { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--mp-spacing-4); align-items: start; }
