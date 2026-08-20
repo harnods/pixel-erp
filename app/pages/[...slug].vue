@@ -32,6 +32,7 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
+import { employees } from '~/data/employees'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -1119,6 +1120,68 @@ const contextSuggestions = [
   'What are the risks or blockers here?',
 ]
 
+// ── Rich chat rendering: light markdown + employee mention chips ──────────────
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+function escapeReg(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+function initialsOf(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+}
+// Minimal inline markdown → HTML (bold, italic, line breaks, bullets).
+function mdToHtml(text: string): string {
+  const lines = escapeHtml(text).split('\n')
+  const out: string[] = []
+  let inList = false
+  for (let raw of lines) {
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(raw)
+    if (heading) {
+      if (inList) { out.push('</ul>'); inList = false }
+      out.push(`<p class="chat-md-h">${heading[1]}</p>`)
+      continue
+    }
+    const bullet = /^\s*[-*•]\s+(.*)$/.exec(raw)
+    if (bullet) {
+      if (!inList) { out.push('<ul class="chat-md-ul">'); inList = true }
+      out.push(`<li>${bullet[1]}</li>`)
+      continue
+    }
+    if (inList) { out.push('</ul>'); inList = false }
+    out.push(raw.length ? `<p class="chat-md-p">${raw}</p>` : '')
+  }
+  if (inList) out.push('</ul>')
+  return out.join('')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*(?!\*)(.+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+// Wrap any known employee full name in an avatar chip with a hover coachmark.
+function withEmployeeChips(html: string): string {
+  const names = employees.map((e) => e.fullName).filter(Boolean).sort((a, b) => b.length - a.length)
+  if (!names.length) return html
+  const re = new RegExp('(' + names.map(escapeReg).join('|') + ')', 'g')
+  return html.replace(re, (m) => {
+    const e = employees.find((x) => x.fullName === m)
+    if (!e) return m
+    const ini = initialsOf(e.fullName)
+    const av = e.photo
+      ? `<span class="emp-chip-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-chip-av emp-chip-av--ini">${ini}</span>`
+    const cav = e.photo
+      ? `<span class="emp-coach-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-coach-av emp-chip-av--ini">${ini}</span>`
+    return `<span class="emp-chip" tabindex="0">${av}<span class="emp-chip-name">${m}</span>` +
+      `<span class="emp-coach">${cav}<span class="emp-coach-body">` +
+      `<span class="emp-coach-name">${e.fullName}</span>` +
+      `<span class="emp-coach-meta">${e.employeeId ?? ''}</span>` +
+      `<span class="emp-coach-meta">${[e.jobPosition, e.department].filter(Boolean).join(' · ')}</span>` +
+      `</span></span></span>`
+  })
+}
+function renderMessage(text: string): string {
+  return withEmployeeChips(mdToHtml(text))
+}
+
 async function sendMessage(text: string, context?: string) {
   const trimmed = text.trim()
   if (!trimmed) return
@@ -1861,7 +1924,9 @@ function startResize(e: MouseEvent) {
                 <!-- Assistant avatar -->
                 <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <span class="chat-bubble__text">{{ msg.text }}</span>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                  <span v-else class="chat-bubble__text">{{ msg.text }}</span>
                 </div>
               </div>
               <!-- Typing indicator -->
@@ -2559,6 +2624,75 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
 }
+
+/* Rich (markdown-rendered) assistant text — v-html content needs :deep() to be
+   reached by scoped styles. */
+.chat-bubble__rich { white-space: normal; }
+.chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
+.chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }
+.chat-bubble__rich :deep(.chat-md-h) { margin: var(--mp-spacing-3, 12px) 0 var(--mp-spacing-1, 4px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.chat-md-h:first-child) { margin-top: 0; }
+.chat-bubble__rich :deep(.chat-md-ul) { margin: var(--mp-spacing-1, 4px) 0; padding-inline-start: var(--mp-spacing-4, 16px); }
+.chat-bubble__rich :deep(.chat-md-ul li) { margin: 2px 0; }
+.chat-bubble__rich :deep(strong) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(code) { font-family: var(--mp-fonts-mono, monospace); font-size: 0.9em; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 4px; }
+
+/* Employee mention chip */
+.chat-bubble__rich :deep(.emp-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1, 4px);
+  position: relative;
+  padding: 1px var(--mp-spacing-1\.5, 6px) 1px 2px;
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-bold, #eceef0);
+  cursor: default;
+  outline: none;
+  vertical-align: baseline;
+  line-height: 1.4;
+}
+.chat-bubble__rich :deep(.emp-chip-name) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.emp-chip-av) {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.chat-bubble__rich :deep(.emp-chip-av--ini) { font-size: 9px; font-weight: 700; color: var(--mp-text-brand, #1d55d4); }
+
+/* Hover / focus coachmark */
+.chat-bubble__rich :deep(.emp-coach) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  gap: var(--mp-spacing-2, 8px);
+  min-width: 200px;
+  padding: var(--mp-spacing-3, 12px);
+  border-radius: var(--mp-radii-lg, 12px);
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default, #e0e2e6);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  white-space: normal;
+  cursor: default;
+}
+.chat-bubble__rich :deep(.emp-chip:hover .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus-within .emp-coach) { display: flex; }
+.chat-bubble__rich :deep(.emp-coach-av) {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.chat-bubble__rich :deep(.emp-coach-body) { display: flex; flex-direction: column; gap: 1px; }
+.chat-bubble__rich :deep(.emp-coach-name) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); font-size: var(--mp-font-sizes-sm, 14px); }
+.chat-bubble__rich :deep(.emp-coach-meta) { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); }
 
 /* Typing indicator dots */
 .chat-typing {
