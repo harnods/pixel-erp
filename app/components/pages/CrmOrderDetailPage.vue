@@ -6,6 +6,7 @@
  * single product line; amount is treated as tax-inclusive so it matches the list.
  */
 import { computed } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateLong } from '~/utils/date'
@@ -14,7 +15,7 @@ import { crmOrders, crmCustomers, crmProducts, type OrderStatus } from '~/data/c
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 function goBack() { router.push('/crm/orders') }
 
 const order = computed(() => crmOrders.find((o) => o.id === props.orderId))

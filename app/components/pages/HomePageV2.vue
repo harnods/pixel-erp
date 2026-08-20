@@ -9,6 +9,7 @@
  * and the edit-mode "Add widgets" gallery show identical cards.
  */
 import { h, ref, computed, onMounted } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpIcon, toast } from '@mekari/pixel3'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import HomeWidgetV2 from '~/components/pages/HomeWidgetV2.vue'
@@ -27,7 +28,7 @@ const Sparkle = (props: { size?: number }) =>
   ])
 
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 
 const firstName = 'Rizal'

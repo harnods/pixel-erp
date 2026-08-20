@@ -6,6 +6,7 @@
  * or stock quantities. Same product data as the ERP inventory.
  */
 import { computed } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
@@ -14,7 +15,7 @@ import { getProductDetail } from '~/data/productDetails'
 
 const props = defineProps<{ orderId: string }>()   // route :sku arrives as order-id
 const router = useRouter()
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 function goBack() { router.push('/crm/products') }
 
 const product = computed(() => getProductDetail(props.orderId))

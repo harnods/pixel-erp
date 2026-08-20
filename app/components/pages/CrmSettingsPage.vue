@@ -4,8 +4,9 @@
  * cards. Prototype — each card is a placeholder ("coming soon").
  */
 import { MpIcon, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 interface Card { icon: string; title: string; desc: string }
 interface Group { title: string; cards: Card[] }

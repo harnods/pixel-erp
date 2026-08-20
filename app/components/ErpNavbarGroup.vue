@@ -7,6 +7,7 @@
  * Layout mirrors Figma "Menu Group" (node 4141:450).
  */
 import { computed } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
 
@@ -29,7 +30,7 @@ const activeProduct = computed(() =>
 
 function openProduct(item: RailItem) {
   if (item.to) router.push(item.to)
-  else toast.notify({ variant: 'info', title: `${item.label} — coming soon`, maxWidth: 'max-content' })
+  else infoToast(`${item.label} — coming soon`)
 }
 </script>
 

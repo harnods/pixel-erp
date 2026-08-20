@@ -5,6 +5,7 @@
  * is static mock. Layout/edit chrome lives in HomePageV2.
  */
 import { h } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import {
   MpIcon, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -19,7 +20,7 @@ const Sparkle = (props: { size?: number }) =>
     h('path', { d: SPARKLE_D_A, fill: 'currentColor' }),
     h('path', { d: SPARKLE_D_B, fill: 'currentColor' }),
   ])
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 const approvals = [
   { icon: 'document',  tone: 'blue',   type: 'Purchase order',    time: '12 min ago', text: 'PO-2026-0184 — CV Sumber Rejeki',      meta: 'Rp45.200.000' },

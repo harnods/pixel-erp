@@ -6,13 +6,14 @@
  * code/company/priority/status/owner/aging vary per column.
  */
 import { h, ref, reactive, watch } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpButton, MpIcon, MpSelect, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import { employees } from '~/data'
 import { formatIDR } from '~/utils/currency'
 import CrmDealPreviewDrawer, { type DealPreviewCtx } from '~/components/CrmDealPreviewDrawer.vue'
 
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 
 // Deal owners are real Central Perk sales/marketing staff — resolve their photo

@@ -6,6 +6,7 @@
  * ProductDetailsPage's shell and the venom EmployeeDetailsPage field grouping.
  */
 import { ref, computed } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
@@ -52,8 +53,8 @@ const filteredEducation = computed(() => {
   const q = educationSearch.value.toLowerCase().trim()
   return education.value.filter((e) => !q || e.institution.toLowerCase().includes(q) || (e.degree ?? '').toLowerCase().includes(q) || (e.fieldOfStudy ?? '').toLowerCase().includes(q))
 })
-function addEducation() { toast.notify({ variant: 'info', title: 'New education — coming soon', maxWidth: 'max-content' }) }
-function editEducation() { toast.notify({ variant: 'info', title: 'Edit education — coming soon', maxWidth: 'max-content' }) }
+function addEducation() { infoToast('New education — coming soon') }
+function editEducation() { infoToast('Edit education — coming soon') }
 function removeEducation(id: string, name: string) {
   if (employee.value) { deleteEducation(employee.value.id, id); toast.notify({ variant: 'success', title: `${name} removed` }) }
 }
@@ -65,8 +66,8 @@ const filteredInformal = computed(() => {
   const q = informalSearch.value.toLowerCase().trim()
   return informalEducation.value.filter((e) => !q || e.name.toLowerCase().includes(q) || (e.organizer ?? '').toLowerCase().includes(q))
 })
-function addInformal() { toast.notify({ variant: 'info', title: 'New informal education — coming soon', maxWidth: 'max-content' }) }
-function editInformal() { toast.notify({ variant: 'info', title: 'Edit informal education — coming soon', maxWidth: 'max-content' }) }
+function addInformal() { infoToast('New informal education — coming soon') }
+function editInformal() { infoToast('Edit informal education — coming soon') }
 function removeInformal(id: string, name: string) {
   if (employee.value) { deleteInformalEducation(employee.value.id, id); toast.notify({ variant: 'success', title: `${name} removed` }) }
 }
@@ -83,8 +84,8 @@ function lengthOfService(startYear: string, endYear: string): string {
   const y = Math.max(0, end - Number(startYear))
   return `${y} ${y === 1 ? t('yr') : t('yrs')}`
 }
-function addWorkExperience() { toast.notify({ variant: 'info', title: 'New work experience — coming soon', maxWidth: 'max-content' }) }
-function editWorkExperience() { toast.notify({ variant: 'info', title: 'Edit work experience — coming soon', maxWidth: 'max-content' }) }
+function addWorkExperience() { infoToast('New work experience — coming soon') }
+function editWorkExperience() { infoToast('Edit work experience — coming soon') }
 function removeWorkExperience(id: string, name: string) {
   if (employee.value) { deleteWorkExperience(employee.value.id, id); toast.notify({ variant: 'success', title: `${name} removed` }) }
 }
@@ -160,8 +161,8 @@ const filteredFamily = computed(() => {
   const q = familySearch.value.toLowerCase().trim()
   return family.value.filter((f) => !q || f.name.toLowerCase().includes(q) || (f.relationship ?? '').toLowerCase().includes(q))
 })
-function addFamilyMember() { toast.notify({ variant: 'info', title: 'New family member — coming soon', maxWidth: 'max-content' }) }
-function editFamily() { toast.notify({ variant: 'info', title: 'Edit family member — coming soon', maxWidth: 'max-content' }) }
+function addFamilyMember() { infoToast('New family member — coming soon') }
+function editFamily() { infoToast('Edit family member — coming soon') }
 function deleteFamily(id: string, name: string) {
   if (employee.value) { deleteFamilyMember(employee.value.id, id); toast.notify({ variant: 'success', title: `${name} removed` }) }
 }
@@ -173,8 +174,8 @@ const filteredEmergency = computed(() => {
   const q = emergencySearch.value.toLowerCase().trim()
   return emergencyContacts.value.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.relationship ?? '').toLowerCase().includes(q))
 })
-function addEmergencyContact() { toast.notify({ variant: 'info', title: 'New emergency contact — coming soon', maxWidth: 'max-content' }) }
-function editEmergency() { toast.notify({ variant: 'info', title: 'Edit emergency contact — coming soon', maxWidth: 'max-content' }) }
+function addEmergencyContact() { infoToast('New emergency contact — coming soon') }
+function editEmergency() { infoToast('Edit emergency contact — coming soon') }
 function deleteEmergency(id: string, name: string) {
   if (employee.value) { deleteEmergencyContact(employee.value.id, id); toast.notify({ variant: 'success', title: `${name} removed` }) }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { h, ref } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpIcon, toast } from '@mekari/pixel3'
 
 // ── Reusable AI sparkle (4-point star) — matches the SearchBox / Airene mark ──
@@ -13,7 +14,7 @@ const Sparkle = (props: { size?: number }) =>
 
 const router = useRouter()
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ const strip: StripItem[] = [
 interface Stat { label: string; value: string; delta: string; deltaTone: 'up' | 'down' | 'warn' | 'muted'; ai: string }
 const stats: Stat[] = [
   { label: 'Total employees',  value: '1,248', delta: '+12 this month',          deltaTone: 'up',    ai: 'Ask AI about headcount' },
-  { label: 'Awaiting approval', value: '7',     delta: '2 required immediate action', deltaTone: 'warn',  ai: 'AI prioritized for you' },
+  { label: 'Awaiting approval', value: '7',     delta: '2 need action now', deltaTone: 'warn',  ai: 'AI prioritized for you' },
   { label: 'On leave today',   value: '18',    delta: '3 unconfirmed',           deltaTone: 'muted', ai: 'See team coverage' },
   { label: 'Turnover rate',    value: '2.1%',  delta: '0.4% vs Jan — improving', deltaTone: 'down',  ai: 'Benchmark with industry' },
 ]

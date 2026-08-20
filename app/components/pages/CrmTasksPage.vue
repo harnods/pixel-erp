@@ -6,6 +6,7 @@
  * grouped by task stage (drag a card between columns to change its stage).
  */
 import { ref, computed } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpButton, MpIcon, MpSelect, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -14,7 +15,7 @@ import { formatDate } from '~/utils/date'
 import { employees } from '~/data'
 import { crmTasks, taskStages, setTaskStage, type CrmTask, type TaskStage } from '~/data/crm'
 
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 // ── View switch (table / kanban) ──────────────────────────────────────────────
 const view = ref('table')

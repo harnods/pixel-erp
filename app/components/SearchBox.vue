@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpIcon, MpTooltip, toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
 
@@ -28,7 +29,7 @@ const router = useRouter()
 const airene = useAireneBridge()
 
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 
 // ── Dropdown state ──────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
  * beside it) and previews a Teleported flyout on hover.
  */
 import { ref, reactive, computed, watch } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
@@ -30,7 +31,7 @@ const groups: Item[][] = [
       { label: 'Employee transfer',  to: '/employee-transfer' },
       { label: 'Resignation',        to: '/resignation' },
     ]] },
-    { icon: 'people',       name: 'Recruitment' },
+    { icon: 'briefcase',    name: 'Recruitment' },
     { icon: 'time',         name: 'Time' },
     { icon: 'finance',      name: 'Finance' },
     { icon: 'calculator',   name: 'Payroll' },
@@ -89,7 +90,7 @@ function cancelClose() {
 function handleNavClick(item: Item) {
   if (item.submenu) { router.push(item.submenu[0]![0]!.to); flyoutItem.value = null; return }
   if (item.to) { router.push(item.to); return }
-  toast.notify({ variant: 'info', title: `${item.name} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${item.name} — coming soon`)
 }
 function handleFlyoutSubItemClick(sub: SubItem) {
   router.push(sub.to)

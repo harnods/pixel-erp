@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
@@ -788,7 +789,7 @@ function newSalesInvoice() { router.push('/sales-invoices/new') }
 function newEmployee() { router.push('/employee-directory/new') }
 // Import dropdown: add new employees from a file, or bulk-update existing records.
 function importEmployees(mode: 'add' | 'update') {
-  toast.notify({ variant: 'info', title: `${mode === 'update' ? 'Update employee data' : 'Import employees'} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${mode === 'update' ? 'Update employee data' : 'Import employees'} — coming soon`)
 }
 
 // ── Airene panel open/close ───────────────────────────────────────────────

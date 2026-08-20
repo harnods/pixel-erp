@@ -9,6 +9,7 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -19,7 +20,7 @@ import { employees } from '~/data'
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
 const router = useRouter()
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 function viewDetails(id: string) { router.push(`/crm/orders/${id}`) }
 
 function ownerPhoto(name: string): string | undefined { return employees.find((e) => e.fullName === name)?.photo }

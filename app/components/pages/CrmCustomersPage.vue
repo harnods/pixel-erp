@@ -4,6 +4,7 @@
  * + filter bar + table), reads from the CRM mini-DB (crm.ts).
  */
 import { ref, computed, onMounted } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import {
   MpIcon, MpSkeleton, MpTooltip, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
@@ -12,7 +13,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatIDR } from '~/utils/currency'
 import { crmCustomers, deleteCrmCustomer, type CustomerStatus } from '~/data/crm'
 
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 // Row actions
 function deleteCustomer(id: string, name: string) {

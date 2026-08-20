@@ -7,6 +7,7 @@
  * slide transition — same as WorkOrderPreviewDrawer).
  */
 import { ref, reactive, computed, onMounted, onUnmounted, h } from 'vue'
+import { infoToast } from '~/utils/toasts'
 import { MpText, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import { employees } from '~/data'
 import { crmCustomers } from '~/data/crm'
@@ -25,7 +26,7 @@ export interface DealPreviewCtx {
 const props = defineProps<{ open: boolean; ctx: DealPreviewCtx | null }>()
 const emit = defineEmits<{ close: [] }>()
 
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 function ownerPhoto(name: string): string | undefined { return employees.find((e) => e.fullName === name)?.photo }
 function initials(name: string): string { return name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() }

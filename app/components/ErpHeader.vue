@@ -11,6 +11,7 @@
   <MpFlex as="header" class="erp-header" backgroundColor="background.header">
     <!-- Left: Logo (+ warehouse switcher when assigned >1 warehouse) -->
     <MpFlex class="erp-header__left">
+      <ErpProductSwitcher v-if="!showProductMenu" />
       <img :src="logoSrc" :alt="logoAlt" class="erp-header__logo" />
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
@@ -52,6 +53,10 @@ const logoAlt = "Mekari ERP";
 // Warehouse label next to the logo whenever the user is scoped to a warehouse
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
 const { hasWarehouseContext } = useWarehouseContext();
+
+// Categories/product switcher (far-left) — shown only when the product rail
+// (ErpNavbarGroup) is hidden, i.e. the default scenario. Opens the product popover.
+const { showProductMenu } = useProductMenu();
 
 // Notification icon → Inbox page (not part of the sidebar tree, so set the
 // title bar label explicitly instead of relying on the sidebar to publish it)
