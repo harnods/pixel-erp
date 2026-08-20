@@ -464,7 +464,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Output popover: what Cowork should produce for this task -->
                   <MpPopover id="cw-output" placement="top-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount"> ({{ activeOutputCount }})</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -481,7 +481,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Source popover: connected sources with on/off toggles -->
                   <MpPopover id="cw-source" placement="top-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Source<span v-if="activeSourceCount" class="cw-foot-count">{{ activeSourceCount }}</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Source<span v-if="activeSourceCount"> ({{ activeSourceCount }})</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -715,7 +715,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
 .cw-foot-btn :deep(svg) { color: var(--mp-icon-default, #536062); }
-.cw-foot-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--mp-background-brand-selected, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-size: 11px; line-height: 1; font-weight: var(--mp-font-weights-semi-bold); margin-left: 4px; }
 .cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-model-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); }
 .cw-model-btn > svg:first-child { flex-shrink: 0; }
