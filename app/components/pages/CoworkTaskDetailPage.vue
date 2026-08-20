@@ -139,8 +139,23 @@ async function downloadPdf() {
   doc.save(`${(p.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.pdf`)
 }
 
-const outputLabels = computed(() => task.value?.outputs?.length ? task.value.outputs : ['Briefing summary'])
-const sourceLabels = computed(() => task.value?.sources?.length ? task.value.sources : ['All sources'])
+// Output chips reflect what was actually produced (the run's artifacts), so they
+// always match the result; before any run, fall back to the task's chosen outputs.
+const ARTIFACT_LABEL: Record<string, string> = { briefing: 'Briefing summary', actionItems: 'Action items', email: 'Email draft', spreadsheet: 'Spreadsheet', pdf: 'PDF report' }
+const outputLabels = computed(() => {
+  const a = plan.value?.artifacts as Record<string, unknown> | undefined
+  if (a) {
+    const keys = Object.keys(a).filter((k) => a[k])
+    if (keys.length) return keys.map((k) => ARTIFACT_LABEL[k] ?? k)
+  }
+  return task.value?.outputs?.length ? task.value.outputs : ['Briefing summary']
+})
+// Sources: explicit sources, else the modules the task spans, else all.
+const sourceLabels = computed(() =>
+  task.value?.sources?.length ? task.value.sources
+  : task.value?.modules?.length ? task.value.modules
+  : ['All sources'],
+)
 
 onMounted(() => {
   selectedRunId.value = runs.value[0]?.id ?? null
@@ -340,7 +355,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-table { width: 100%; border-collapse: collapse; }
 .ctd-table thead th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); white-space: nowrap; }
 .ctd-table tbody td { padding: var(--mp-spacing-2) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; }
-.ctd-runs .ctd-table tbody tr.is-selected { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.ctd-runs .ctd-table tbody td { background: var(--mp-background-neutral, #fff); }
+.ctd-runs .ctd-table tbody tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--mp-text-selected, #0f6d4d); }
 .ctd-th-act, .ctd-td-act { width: 44px; text-align: right; }
 .ctd-cell-link { color: var(--mp-text-link, #165082); cursor: pointer; }
 .ctd-cell-link:hover { text-decoration: underline; }
