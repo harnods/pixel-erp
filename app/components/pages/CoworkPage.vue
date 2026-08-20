@@ -446,7 +446,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Output popover: what Cowork should produce for this task -->
                   <MpPopover id="cw-output" placement="top-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="document" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -476,6 +476,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       </div>
                     </MpPopoverContent>
                   </MpPopover>
+
+                  <button class="cw-foot-btn" type="button" @click="openSchedule"><MpIcon name="time" size="sm" /> Schedule</button>
                 </div>
 
                 <!-- Model picker -->
@@ -695,6 +697,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-composer2 { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-1, 4px); }
 .cw-composer2__input { display: block; width: 100%; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); min-height: 76px; }
 .cw-composer2__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
+.cw-composer2__input:focus { border-color: var(--mp-border-bold, #8c9596); }
 .cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
