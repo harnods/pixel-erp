@@ -334,7 +334,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
             <!-- Open chat about this result -->
             <div class="ctd-chatrow">
-              <button class="btn-enterprise btn-enterprise--secondary ctd-openchat" type="button" @click="openChat"><MpIcon name="airene-brand" size="sm" /> Open chat</button>
+              <button class="ctd-download" type="button" @click="openChat"><MpIcon name="airene-brand" size="sm" /> Open chat</button>
             </div>
           </template>
 
@@ -395,7 +395,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-hr { border: none; border-top: 1px solid var(--mp-border-default); margin: var(--mp-spacing-4) 0; }
 .ctd-sec { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .ctd-sec:first-child { margin-top: 0; }
-.ctd-item { padding: var(--mp-spacing-3) 0; }
+.ctd-item { padding: var(--mp-spacing-2) 0; }
 .ctd-actbtn { padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); margin-top: var(--mp-spacing-2); }
 .ctd-item__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctd-item__meta { margin-top: 2px; }
@@ -408,8 +408,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-download { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 .ctd-download:hover { text-decoration: underline; text-underline-offset: 2px; }
 .ctd-chatrow { margin-top: var(--mp-spacing-4); }
-.ctd-openchat { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); }
-.ctd-openchat :deep(svg) { flex-shrink: 0; }
 .ctd-running { padding: var(--mp-spacing-2) 0; }
 .ctd-run-head { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-steps { list-style: none; margin: var(--mp-spacing-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
