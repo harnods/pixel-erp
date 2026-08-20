@@ -28,6 +28,7 @@ import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
+import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
@@ -583,6 +584,8 @@ const pageTabs: Record<string, string[]> = {
 // every sibling badge in the same section follows it too, since only one tab's
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
+// Cycle counts' Recommendations tab has its own single-warehouse selector.
+const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
@@ -643,7 +646,8 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (openTasks) out['Count task'] = openTasks
     const awaiting = awaitingWmsCountApprovalCount()
     if (awaiting) out['Awaiting approval'] = awaiting
-    const recommendations = recommendationCount()
+    // Scoped to the one warehouse the Recommendations tab is showing.
+    const recommendations = recommendationCount(recommendationWarehouseId.value)
     if (recommendations) out['Recommendations'] = recommendations
     return out
   }
