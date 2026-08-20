@@ -146,15 +146,19 @@ const progressValue = computed(() => {
 function assign(taskPrompt: string, title?: string, module?: CoworkModule) {
   const p = taskPrompt.trim()
   if (!p) return
+  // The selected sources ARE modules — a multi-source task spans multiple modules.
+  const active = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name) as CoworkModule[]
+  const primary = module ?? inferModule(p)
+  const modules = active.length ? active : [primary]
   const task = addTask({
     title: title ?? (p.length > 52 ? p.slice(0, 50) + '…' : p),
     prompt: p,
-    module: module ?? inferModule(p),
+    module: primary,
+    modules,
     status: 'running',
     createdAt: new Date().toISOString(),
   })
   prompt.value = ''
-  composerScheduleId.value = null
   startRun(task)
 }
 
@@ -291,6 +295,11 @@ function isOutputOn(id: string) { return !!outputOn[id] }
 function toggleOutput(id: string, on: boolean) { outputOn[id] = on }
 const activeOutputCount = computed(() => OUTPUTS.filter((o) => isOutputOn(o.id)).length)
 
+// A task's modules (multi-source → multiple); falls back to the single module.
+function taskModules(t: CoworkTask): CoworkModule[] {
+  return t.modules && t.modules.length ? t.modules : [t.module]
+}
+
 function statusProps(s: CoworkTask['status']) {
   if (s === 'running') return { status: 'in progress', label: 'Running' }
   if (s === 'completed') return { status: 'completed', label: 'Completed' }
@@ -304,8 +313,6 @@ function statusProps(s: CoworkTask['status']) {
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
 const schedOpen = ref(false)   // controlled schedule popover (so the real button can close it)
-// Once scheduled from the composer, the button reflects it and re-opening edits.
-const composerScheduleId = ref<string | null>(null)
 function fmtTime(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
   const ap = h! < 12 ? 'am' : 'pm'
@@ -313,9 +320,22 @@ function fmtTime(hhmm: string): string {
   return m ? `${h12}:${String(m).padStart(2, '0')}${ap}` : `${h12}${ap}`
 }
 const cadenceWord: Record<CoworkCadence, string> = { Daily: 'day', Weekly: 'week', Monthly: 'month' }
-const scheduleLabel = computed(() =>
-  composerScheduleId.value ? `Every ${cadenceWord[schedCadence.value]} at ${fmtTime(schedTime.value)}` : 'Schedule',
-)
+// The schedule shown reflects whether the CURRENT prompt already has one (matched
+// on prompt text) — so it survives reloads and re-typing the same task.
+const matchedSchedule = computed(() => {
+  const t = prompt.value.trim()
+  return t ? (coworkSchedules.find((s) => s.prompt === t) ?? null) : null
+})
+const scheduleLabel = computed(() => {
+  const s = matchedSchedule.value
+  return s ? `Every ${cadenceWord[s.cadence]} at ${fmtTime(s.time)}` : 'Schedule'
+})
+// Opening the popover prefills cadence/time from the existing schedule (if any).
+function openSchedulePopover() {
+  const s = matchedSchedule.value
+  if (s) { schedCadence.value = s.cadence; schedTime.value = s.time }
+  schedOpen.value = !schedOpen.value
+}
 function scheduleFromPrompt() {
   const t = prompt.value.trim()
   if (!t) { focusPrompt(); return }
@@ -323,12 +343,12 @@ function scheduleFromPrompt() {
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
   const title = t.length > 52 ? t.slice(0, 50) + '…' : t
-  if (composerScheduleId.value) {
-    updateSchedule(composerScheduleId.value, { title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun })
+  const existing = matchedSchedule.value
+  if (existing) {
+    updateSchedule(existing.id, { title, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun })
     toast.notify({ variant: 'success', title: 'Schedule updated' })
   } else {
-    const s = addSchedule({ title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
-    composerScheduleId.value = s.id
+    addSchedule({ title, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
     toast.notify({ variant: 'success', title: 'Task scheduled' })
   }
 }
@@ -545,7 +565,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Schedule popover: cadence + time (the task is the prompt above) -->
                   <MpPopover id="cw-schedule" is-manual :is-open="schedOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="schedOpen = false">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': composerScheduleId }" @click="schedOpen = !schedOpen"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
+                      <button class="cw-foot-btn" type="button" :class="{ 'is-set': matchedSchedule }" @click="openSchedulePopover"><MpIcon name="time" size="sm" /> {{ scheduleLabel }}</button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -560,7 +580,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                           <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': schedTime === t }" @click="schedTime = t">{{ t }}</button>
                         </div>
                         <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="scheduleFromPrompt(); schedOpen = false">
-                          {{ composerScheduleId ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
+                          {{ matchedSchedule ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
                         </MpButton>
                       </div>
                     </MpPopoverContent>
@@ -663,9 +683,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <tr v-for="t in taskRows" :key="t.id">
                   <td>
                     <span class="cw-cell-link" @click="openTaskDetail(t)">{{ t.title }}</span>
-                    <span class="cw-cell-sub">{{ t.id }}</span>
                   </td>
-                  <td><MpBadge for="additionalInformation" type="announcement" size="sm">{{ t.module }}</MpBadge></td>
+                  <td>
+                    <span class="cw-modules">
+                      <MpBadge v-for="m in taskModules(t)" :key="m" for="additionalInformation" type="announcement" size="sm">{{ m }}</MpBadge>
+                    </span>
+                  </td>
                   <td><ErpStatusBadge v-bind="statusProps(t.status)" /></td>
                   <td>{{ formatDateTime(t.createdAt) }}</td>
                   <td class="cw-muted">{{ t.metric ?? '—' }}</td>
@@ -883,6 +906,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
 .cw-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+
+/* Multiple module badges (multi-source task) wrap within the cell. */
+.cw-modules { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 
 .cw-table-wrap { overflow-x: auto; }
 .cw-table { width: 100%; border-collapse: collapse; }
