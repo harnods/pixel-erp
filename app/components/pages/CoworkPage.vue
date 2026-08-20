@@ -16,10 +16,9 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpTextarea, MpProgress, MpSpinner, MpToggle,
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalOverlay, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
-  MpFormControl, MpFormLabel, css, toast,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getEmployee } from '~/data'
@@ -260,28 +259,17 @@ function statusProps(s: CoworkTask['status']) {
 }
 
 // ── Schedule ─────────────────────────────────────────────────────────────────
-// The task being scheduled IS the composer prompt — no picker. Captured on open
-// (editable, so the Schedule page can also type one when there's no prompt yet).
-const scheduleOpen = ref(false)
-const schedTask = ref('')
+// The task being scheduled IS the composer prompt — the popover only sets cadence
+// and time. Empty prompt → just focus the composer so the user writes one.
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
-const schedError = ref('')
-function openSchedule() {
-  schedTask.value = prompt.value.trim()
-  schedCadence.value = 'Weekly'
-  schedTime.value = '08:00'
-  schedError.value = ''
-  scheduleOpen.value = true
-}
-function saveSchedule() {
-  const t = schedTask.value.trim()
-  if (!t) { schedError.value = 'Write a task to schedule'; return }
+function scheduleFromPrompt() {
+  const t = prompt.value.trim()
+  if (!t) { focusPrompt(); return }
   const nextRun = schedCadence.value === 'Daily' ? `Tomorrow · ${schedTime.value}`
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
   addSchedule({ title: t.length > 52 ? t.slice(0, 50) + '…' : t, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
-  scheduleOpen.value = false
   toast.notify({ variant: 'success', title: 'Task scheduled' })
 }
 
@@ -332,7 +320,6 @@ watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex
 function handleQueryTriggers() {
   const q = route.query
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
-  if (q.new === '1' && section.value === 'Schedule') { openSchedule(); router.replace({ path: '/cowork-schedule', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
 }
 watch(() => route.fullPath, handleQueryTriggers)
@@ -462,7 +449,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <div class="cw-composer2__foot">
                 <div class="cw-composer2__left">
                   <!-- Output popover: what Cowork should produce for this task -->
-                  <MpPopover id="cw-output" placement="top-start">
+                  <MpPopover id="cw-output" placement="bottom-start">
                     <MpPopoverTrigger>
                       <button class="cw-foot-btn" type="button"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount"> ({{ activeOutputCount }})</span></button>
                     </MpPopoverTrigger>
@@ -478,10 +465,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     </MpPopoverContent>
                   </MpPopover>
 
-                  <!-- Source popover: connected sources with on/off toggles -->
-                  <MpPopover id="cw-source" placement="top-start">
+                  <!-- Sources popover: connected sources with on/off toggles -->
+                  <MpPopover id="cw-source" placement="bottom-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Source<span v-if="activeSourceCount"> ({{ activeSourceCount }})</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Sources<span v-if="activeSourceCount"> ({{ activeSourceCount }})</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -495,11 +482,33 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     </MpPopoverContent>
                   </MpPopover>
 
-                  <button class="cw-foot-btn" type="button" @click="openSchedule"><MpIcon name="time" size="sm" /> Schedule</button>
+                  <!-- Schedule popover: cadence + time (the task is the prompt above) -->
+                  <MpPopover id="cw-schedule" is-close-on-select placement="bottom-start">
+                    <MpPopoverTrigger>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="time" size="sm" /> Schedule</button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '260px' })">
+                      <div class="cw-src">
+                        <p class="cw-src__head">Schedule this task</p>
+                        <p class="cw-src__hint">Cowork runs your prompt automatically.</p>
+                        <p class="cw-sched-label">Cadence</p>
+                        <div class="cw-seg">
+                          <button v-for="c in ['Daily','Weekly','Monthly']" :key="c" type="button" class="cw-seg__btn" :class="{ 'is-active': schedCadence === c }" @click="schedCadence = c as CoworkCadence">{{ c }}</button>
+                        </div>
+                        <p class="cw-sched-label">Time</p>
+                        <div class="cw-seg">
+                          <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': schedTime === t }" @click="schedTime = t">{{ t }}</button>
+                        </div>
+                      </div>
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="scheduleFromPrompt">Schedule {{ schedCadence.toLowerCase() }} at {{ schedTime }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
                 </div>
 
                 <!-- Model picker -->
-                <MpPopover id="cw-model" is-close-on-select placement="top-end">
+                <MpPopover id="cw-model" is-close-on-select placement="bottom-end">
                   <MpPopoverTrigger>
                     <button class="cw-model-btn" type="button">
                       <GeminiMark :size="16" />
@@ -631,57 +640,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
         </section>
     </template>
-
-    <!-- Schedule modal -->
-    <MpModal id="cw-schedule-modal" :is-open="scheduleOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="scheduleOpen = false">
-      <MpModalOverlay />
-      <MpModalContent>
-        <MpModalHeader>Schedule a task<MpModalCloseButton @click="scheduleOpen = false" /></MpModalHeader>
-        <MpModalBody>
-          <MpFormControl :is-error="!!schedError" :class="css({ marginBottom: '16px' })">
-            <MpFormLabel>Task</MpFormLabel>
-            <MpTextarea id="cw-sched-task-input" v-model="schedTask" is-full-width :rows="2" placeholder="Describe the task to schedule" @input="schedError = ''" />
-          </MpFormControl>
-          <div class="cw-form-row">
-            <MpFormControl>
-              <MpFormLabel>Cadence</MpFormLabel>
-              <MpPopover id="cw-sched-cadence" is-close-on-select>
-                <MpPopoverTrigger>
-                  <MpSelect id="cw-sched-cadence-sel" :model-value="schedCadence" is-full-width @mousedown.prevent>
-                    <option :value="schedCadence">{{ schedCadence }}</option>
-                  </MpSelect>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '160px' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="c in ['Daily','Weekly','Monthly']" :key="c" :is-active="c === schedCadence" @click="schedCadence = c as CoworkCadence">{{ c }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </MpFormControl>
-            <MpFormControl>
-              <MpFormLabel>Time</MpFormLabel>
-              <MpPopover id="cw-sched-time" is-close-on-select>
-                <MpPopoverTrigger>
-                  <MpSelect id="cw-sched-time-sel" :model-value="schedTime" is-full-width @mousedown.prevent>
-                    <option :value="schedTime">{{ schedTime }}</option>
-                  </MpSelect>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '120px', maxHeight: '240px', overflowY: 'auto' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="h in ['06:00','07:00','07:30','08:00','09:00','12:00','17:00','18:00']" :key="h" :is-active="h === schedTime" @click="schedTime = h">{{ h }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </MpFormControl>
-          </div>
-          <p v-if="schedError" class="cw-form-error">{{ schedError }}</p>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButton is-rounded variant="ghost" @click="scheduleOpen = false">Cancel</MpButton>
-          <MpButton is-rounded variant="primary" @click="saveSchedule">Schedule</MpButton>
-        </MpModalFooter>
-      </MpModalContent>
-    </MpModal>
   </div>
 </template>
 
@@ -712,7 +670,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
    the footer's 4px bottom so buttons→edge equals buttons→input (8px). */
 .cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-1); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
-.cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
+.cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
 .cw-foot-btn :deep(svg) { color: var(--mp-icon-default, #536062); }
 .cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
@@ -724,6 +682,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-src__hint { margin: 2px 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cw-src__row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-1); }
 .cw-src__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-sched-label { margin: var(--mp-spacing-3) 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.cw-seg { display: flex; gap: var(--mp-spacing-1); flex-wrap: wrap; }
+.cw-seg__btn { flex: 1 1 auto; min-width: 52px; padding: 6px 10px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); cursor: pointer; font-family: inherit; }
+.cw-seg__btn.is-active { border-color: var(--mp-text-selected, #0f6d4d); background: var(--mp-background-brand-selected, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-weight: var(--mp-font-weights-semi-bold); }
 
 .cw-suggest { margin-top: var(--mp-spacing-8, 32px); }
 .cw-suggest .cw-h3 { font-size: var(--mp-font-sizes-xl, 20px); line-height: var(--mp-line-heights-xl, 28px); }
