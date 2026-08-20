@@ -559,6 +559,7 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
+  'Cowork':            ['Overview', 'Tasks', 'Schedule', 'Connections'],
   // WMS analytics — Inbound/Outbound as page tabs (outside the stage). Reached in ERP
   // via Dashboard › WMS analytics (/wms-analytics → key 'Wms analytics'); in WMS
   // Standalone it IS the Dashboard page (key 'Dashboard').
@@ -724,7 +725,15 @@ const wmsOverviewTabComponents: Record<string, Component> = {
   'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
   'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
 }
+// Cowork — one page, section per tab (the page reads ?tab= to pick the section).
+const CoworkPageComponent = asyncPage(() => import('~/components/pages/CoworkPage.vue'))
 const tabComponents: Record<string, Record<string, Component>> = {
+  'Cowork': {
+    'Overview': CoworkPageComponent,
+    'Tasks': CoworkPageComponent,
+    'Schedule': CoworkPageComponent,
+    'Connections': CoworkPageComponent,
+  },
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
   'Inbound delivery': {
