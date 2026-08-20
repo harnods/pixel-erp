@@ -425,10 +425,17 @@ onMounted(() => {
 @media (max-width: 640px) {
   .hero { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
   .hero__search { max-width: 100%; }
+  /* Shortcut chips: one horizontal swipe row instead of wrapping */
+  .chips { align-self: stretch; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex-shrink: 0; }
+  /* Get-started cards: drop the decorative icon on mobile */
   .strip { grid-template-columns: 1fr 1fr; }
-  .stats { grid-template-columns: 1fr 1fr; }
-  .stat:nth-child(odd) { border-left: none; }
-  .stat:nth-child(n+3) { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+  .strip__icon { display: none; }
+  /* KPI cards: one per row, stacked with a top divider */
+  .stats { grid-template-columns: 1fr; }
+  .stat { border-left: none; }
+  .stat + .stat { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
   .grid, .gallery__grid { grid-template-columns: 1fr; }
 }
 </style>

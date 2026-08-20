@@ -396,4 +396,12 @@ const unlinkedBanks = [
 .custom-widget__icon { width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); display: flex; align-items: center; justify-content: center; background: var(--mp-background-neutral-subtle, #f1f3f3); color: var(--mp-text-secondary); }
 .custom-widget__title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .custom-widget__desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 220px; }
+
+/* ── Mobile (≤640px) ── */
+@media (max-width: 640px) {
+  /* Pending approvals + recent transactions: drop the leading icon */
+  .req__icon { display: none; }
+  /* Cash flow + warehouse overview: stack the stats vertically (one per row) */
+  .att-stats { grid-template-columns: 1fr; }
+}
 </style>
