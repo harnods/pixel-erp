@@ -1187,6 +1187,7 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
+          <div class="page-import-btn">
           <MpPopover id="emp-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
               <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1203,6 +1204,7 @@ function startResize(e: MouseEvent) {
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
+          </div>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newEmployee">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1899,6 +1901,15 @@ function startResize(e: MouseEvent) {
 /* Import is a secondary action — hide it on mobile to keep the title bar clean. */
 @media (max-width: 600px) {
   .page-import-btn { display: none; }
+  .page-title-bar { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); gap: var(--mp-spacing-2); }
+  .page-title-text {
+    font-size: var(--mp-font-sizes-xl, 20px);
+    line-height: 26px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .page-title-text {

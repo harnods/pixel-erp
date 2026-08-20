@@ -64,7 +64,16 @@ const activeItem = computed<string>(() => {
   return activePanel.value?.name ?? ''
 })
 // Main rail collapses to icons while a level-2 panel is open (ErpSidebar).
-const railExpanded = computed(() => expanded.value && !activePanel.value)
+// Below tablet width the expanded nav (216px) starves the content area, so we
+// force the collapsed icon rail there regardless of the saved preference
+// (mirrors ErpSidebar).
+const isNarrowViewport = ref(false)
+if (import.meta.client) {
+  const mq = window.matchMedia('(max-width: 1024px)')
+  isNarrowViewport.value = mq.matches
+  mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
+}
+const railExpanded = computed(() => expanded.value && !activePanel.value && !isNarrowViewport.value)
 
 // ── Hover flyout (identical mechanic to ErpSidebar) ──────────────────────────
 const flyoutItem = ref<Item | null>(null)
@@ -376,6 +385,11 @@ function goView(view?: string) {
   width: 188px; background: var(--mp-background-neutral-subtle); height: 100%;
   display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
   padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
+}
+/* On phones the 52px rail + 188px panel leaves the content too little room, so
+   the level-2 panel is dropped there (the icon rail + hover flyout remain). */
+@media (max-width: 640px) {
+  .sidebar-panel { display: none; }
 }
 .panel-header { height: 72px; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
 .panel-title { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 2.88px; color: var(--mp-text-default); }

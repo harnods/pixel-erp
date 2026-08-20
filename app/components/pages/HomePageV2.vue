@@ -420,4 +420,15 @@ onMounted(() => {
 .manage { align-self: center; display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .manage:hover { color: var(--mp-text-default); }
 .manage--active { color: var(--mp-text-link, #165082); font-weight: var(--mp-font-weights-semi-bold); }
+
+/* ── Mobile (≤640px) — stack the multi-column grids, tame the full-bleed hero ── */
+@media (max-width: 640px) {
+  .hero { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .hero__search { max-width: 100%; }
+  .strip { grid-template-columns: 1fr 1fr; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat:nth-child(odd) { border-left: none; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+  .grid, .gallery__grid { grid-template-columns: 1fr; }
+}
 </style>

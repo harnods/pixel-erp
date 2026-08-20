@@ -81,3 +81,11 @@
 .tag--danger { background: var(--mp-background-danger-subtle, #fdecea); color: var(--mp-text-danger, #a8352d); }
 .tag--blue { background: var(--mp-background-information-subtle, #dbe7f4); color: var(--mp-text-link, #165082); }
 .tag--muted { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-secondary, #656f80); }
+
+/* ── Mobile (≤640px) — stack title/filter bars; search takes the full row ── */
+@media (max-width: 640px) {
+  .crm-titlebar { flex-wrap: wrap; padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .crm-filter { flex-wrap: wrap; }
+  .crm-filter__right { flex: 1 1 100%; }
+  .crm-filter__right .crm-search { flex: 1; width: auto; }
+}

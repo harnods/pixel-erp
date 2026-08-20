@@ -15,8 +15,18 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
 
-const navExpanded = ref(true)
-function handleToggle() { navExpanded.value = !navExpanded.value }
+const expanded = ref(true)
+function handleToggle() { expanded.value = !expanded.value }
+// Below tablet width the expanded nav (216px) starves the content area, so we
+// force the collapsed icon rail there regardless of the saved preference
+// (mirrors ErpSidebar).
+const isNarrowViewport = ref(false)
+if (import.meta.client) {
+  const mq = window.matchMedia('(max-width: 1024px)')
+  isNarrowViewport.value = mq.matches
+  mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
+}
+const navExpanded = computed(() => expanded.value && !isNarrowViewport.value)
 
 interface Item { icon: string; name: string; to: string }
 // Two groups → the border-bottom between them is the divider before Settings.

@@ -671,4 +671,17 @@ const celebrations: Celebration[] = [
   color: var(--mp-text-secondary);
 }
 .manage:hover { color: var(--mp-text-default); }
+
+/* ── Mobile (≤640px) — stack the multi-column grids, tame the full-bleed hero ── */
+@media (max-width: 640px) {
+  .hero { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .hero__search { max-width: 100%; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat:nth-child(odd) { border-left: none; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+  .strip { grid-template-columns: 1fr 1fr; }
+  .grid { grid-template-columns: 1fr; }
+  .att-stats { grid-template-columns: 1fr; }
+  .hc-stats { grid-template-columns: 1fr; }
+}
 </style>

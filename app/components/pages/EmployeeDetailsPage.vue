@@ -896,6 +896,19 @@ function confirmDelete() {
 /* Responsive: 4 → 2 columns on medium widths, 1 column on narrow. */
 @media (max-width: 1080px) { .pd-gcol { grid-column: span 6; } }
 @media (max-width: 640px) { .pd-gcol { grid-column: span 12; } }
+/* Mobile — tighter side padding, single-line title, and the page-tab bar scrolls
+   horizontally instead of overflowing. */
+@media (max-width: 640px) {
+  .detail-bar { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); gap: var(--mp-spacing-2); }
+  .detail-title { font-size: var(--mp-font-sizes-xl, 20px); line-height: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail-stage { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .detail-page-tabs {
+    padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4);
+    gap: var(--mp-spacing-4); overflow-x: auto; scrollbar-width: none;
+  }
+  .detail-page-tabs::-webkit-scrollbar { display: none; }
+  .page-tab { flex-shrink: 0; }
+}
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
 .pd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
