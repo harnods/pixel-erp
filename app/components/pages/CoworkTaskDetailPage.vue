@@ -155,6 +155,22 @@ function buildChatContext(): string {
   if (a?.actionItems?.length) { lines.push('Action items:'); for (const it of a.actionItems) lines.push(`- ${it.title} (owner ${it.owner}, due ${it.due}): ${it.detail}`) }
   if (a?.email) lines.push(`Email draft — to ${a.email.to}, subject "${a.email.subject}": ${a.email.body}`)
   if (a?.spreadsheet) lines.push(`Spreadsheet "${a.spreadsheet.title}" columns: ${a.spreadsheet.columns.join(', ')}; ${a.spreadsheet.rows.length} rows.`)
+  // Attach the underlying ERP data for the modules this task touches, so the user
+  // can drill into details the result only summarised — e.g. an employee's profile
+  // or why a specific customer hasn't paid.
+  const snap = build() as Record<string, any>
+  const mods = (task.value.modules ?? [task.value.module]).map((m) => m.toLowerCase())
+  const want = new Set<string>()
+  for (const m of mods) {
+    if (m === 'hr') want.add('hr')
+    else if (m === 'finance') want.add('finance')
+    else if (m === 'crm' || m === 'sales') { want.add('crm'); want.add('finance') }
+    else if (m === 'wms') want.add('wms')
+    else if (m === 'production') want.add('production')
+  }
+  const slice: Record<string, any> = {}
+  for (const k of want) if (snap[k]) slice[k] = snap[k]
+  if (Object.keys(slice).length) lines.push(`\nUnderlying ERP data (for follow-up questions):\n${JSON.stringify(slice)}`)
   return lines.join('\n')
 }
 function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result') }

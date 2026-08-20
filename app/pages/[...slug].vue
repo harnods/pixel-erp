@@ -32,6 +32,7 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
+import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
@@ -877,9 +878,9 @@ interface ChatSession {
   createdAt: number   // timestamp ms
 }
 
-// Dummy historical sessions (relative to real Date.now())
+// Seed historical sessions (relative to real Date.now())
 const DAY = 86_400_000
-const chatSessions = ref<ChatSession[]>([
+const CHAT_SEED: ChatSession[] = [
   {
     id: 'h1',
     title: 'Draft a WhatsApp reminder for Daily Grind',
@@ -923,7 +924,10 @@ const chatSessions = ref<ChatSession[]>([
     ],
     createdAt: Date.now() - DAY * 21,
   },
-])
+]
+// Persisted chat history (mini-DB) — survives reload/new-chat.
+const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
+function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
 
 // ── Active session ────────────────────────────────────────────────────────
 const messages = ref<ChatMessage[]>([])
@@ -1079,9 +1083,11 @@ function startNewChat() {
       messages: [...messages.value],
       createdAt: Date.now(),
     })
+    persistChats()   // keep the old chat in the mini-DB
   }
   messages.value = []
   chatContext.value = ''
+  aireneGround.value = ''
   historyOpen.value = false
 }
 
@@ -1104,6 +1110,14 @@ function getAiResponse(userMsg: string): string {
 const chatContext = ref('')
 // Grounding context fed to the model (e.g. a Cowork task result). Not shown.
 const aireneGround = ref('')
+// When the chat is opened about a specific task result, the empty-state greeting
+// and suggestions become contextual to that result instead of the generic ones.
+const contextSuggestions = [
+  'What should I do first?',
+  'Draft a follow-up message I can send',
+  'Summarise this in 3 bullet points',
+  'What are the risks or blockers here?',
+]
 
 async function sendMessage(text: string, context?: string) {
   const trimmed = text.trim()
@@ -1801,9 +1815,18 @@ function startResize(e: MouseEvent) {
                 </div>
               </div>
               <p class="airene-greeting-title">Hi, I'm here.</p>
-              <p class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
+              <p v-if="chatContext" class="airene-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
+              <p v-else class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
 
-              <div class="airene-suggestion-list">
+              <!-- Contextual suggestions (chat opened about a task result) -->
+              <div v-if="chatContext" class="airene-suggestion-list">
+                <button v-for="s in contextSuggestions" :key="s" class="airene-suggestion-item" @click="sendMessage(s)">
+                  <MpIcon name="airene-brand" size="sm" class="airene-sug-icon" />
+                  {{ s }}
+                </button>
+              </div>
+
+              <div v-else class="airene-suggestion-list">
                 <button class="airene-suggestion-item" @click="sendMessage('Import sales invoices')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M8.45 15H2.05C1.60818 15 1.25 14.6418 1.25 14.2V7.8C1.25 7.35818 1.60818 7 2.05 7H8.45C8.89182 7 9.25 7.35818 9.25 7.8V14.2C9.25 14.6418 8.89182 15 8.45 15ZM4.6168 10.9933L3.03984 13.4H4.18184L5.11992 11.7129C5.17422 11.6216 5.20938 11.549 5.2252 11.4954H5.23868C5.27266 11.5825 5.30898 11.6573 5.34746 11.7197L6.2582 13.4H7.39336L5.87422 10.98L7.35586 8.6H6.28886L5.4461 10.1164C5.38946 10.2257 5.33516 10.3384 5.28282 10.4544H5.27266C5.2455 10.3831 5.1957 10.2748 5.12324 10.1297L4.33476 8.6H3.17246L4.6168 10.9933Z" fill="#1FB088"/>

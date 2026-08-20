@@ -11,7 +11,7 @@ import {
 } from '~/data'
 // CRM lives in its own module (not re-exported through the data barrel).
 import { crmCustomers, pipelineStages, crmOrders } from '~/data/crm'
-import { attendanceExceptions } from '~/data/cowork'
+import { attendanceExceptions, receivablesCollections } from '~/data/cowork'
 
 export interface CoworkContext {
   today: string
@@ -63,7 +63,19 @@ export function useCoworkContext() {
 
     // ── Production ──
     const openWO = workOrders.filter((w) => w.status !== 'completed' && w.status !== 'canceled')
-    const empName = (id: string) => employees.find((e) => e.id === id)?.fullName ?? id
+    const empByCode = (code: string) => employees.find((e) => e.employeeId === code || e.id === code)
+    const empName = (code: string) => empByCode(code)?.fullName ?? code
+    // A compact-but-real HR profile so the co-worker can answer profile questions.
+    const profileOf = (code: string) => {
+      const e = empByCode(code)
+      if (!e) return { code }
+      const tenure = e.joinDate ? `${Math.max(0, Math.floor((Date.now() - new Date(e.joinDate).getTime()) / (365.25 * 864e5)))} yr` : undefined
+      return {
+        name: e.fullName, position: e.jobPosition, department: e.department,
+        employmentStatus: e.employmentStatus, jobLevel: e.jobLevel,
+        joinDate: e.joinDate, tenure, manager: e.directManager, email: e.email, phone: e.phone,
+      }
+    }
 
     const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -76,7 +88,16 @@ export function useCoworkContext() {
         resigning,
         departments: byDept,
         resigningEmployees: employees.filter((e) => e.status === 'resigning').map((e) => ({ name: e.fullName, position: e.jobPosition, department: e.department })),
-        attendanceExceptions: attendanceExceptions.map((a) => ({ employee: empName(a.employeeId), date: a.date, type: a.type })),
+        // Rich, grounded attendance data — who was late today, by how much, WHY, and
+        // the co-worker's read on the pattern; each carries the employee's profile so
+        // the user can follow up with "tell me about this person".
+        attendanceExceptions: attendanceExceptions.map((a) => ({
+          employee: empName(a.employeeId),
+          profile: profileOf(a.employeeId),
+          date: a.date, type: a.type,
+          clockIn: a.clockIn, minutesLate: a.minutesLate,
+          reason: a.reason, analysis: a.analysis,
+        })),
       },
       crm: {
         customers: crmCustomers.length,
@@ -101,7 +122,23 @@ export function useCoworkContext() {
         unpaidBills: unpaidBills.length,
         billsDue: money(billsDue),
         cashOnHand: money(cashTotal),
-        overdueExamples: overdue.slice(0, 6).map((i) => ({ number: `INV-${i.number}`, customer: i.customer.name, balance: money(i.balance), dueDate: i.dueDate })),
+        // Full collections detail — who hasn't paid, the amount, how overdue, WHY,
+        // last contact + outcome, promise-to-pay, and payment history. This is what
+        // lets the co-worker explain each overdue customer, not just list them.
+        overdueExamples: receivablesCollections.map((r) => ({
+          number: r.invoiceNumber, customer: r.customer, balance: money(r.amount),
+          dueDate: r.dueDate, daysOverdue: r.daysOverdue, risk: r.riskLevel,
+          reason: r.reason,
+          lastContact: `${r.lastContact.date} (${r.lastContact.channel}): ${r.lastContact.outcome}`,
+          promiseToPay: r.promiseToPay ?? 'None on file',
+          history: r.history, owner: r.owner,
+        })),
+        topOverdueCustomer: (() => {
+          const byCust: Record<string, number> = {}
+          for (const r of receivablesCollections) byCust[r.customer] = (byCust[r.customer] ?? 0) + r.amount
+          const top = Object.entries(byCust).sort((a, b) => b[1] - a[1])[0]
+          return top ? `${top[0]} (${money(top[1])})` : undefined
+        })(),
         unpaidBillExamples: unpaidBills.slice(0, 5).map((b) => ({ number: `BILL-${b.number}`, vendor: b.beneficiary.name, balance: money(b.balanceDue) })),
       },
       production: {

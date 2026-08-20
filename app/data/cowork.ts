@@ -72,15 +72,83 @@ export const COWORK_BUILTIN = ['Talenta', 'Qontak', 'Jurnal', 'Mekari WMS']
 // ── HR attendance exceptions (Talenta) — grounding data for the attendance /
 //    payroll pre-check tasks. Employee IDs reference the Talenta employees table. ──
 export type AttendanceExceptionType = 'Late clock-in' | 'Missing check-out' | 'Unapproved absence'
-export interface AttendanceException { employeeId: string; date: string; type: AttendanceExceptionType }
+export interface AttendanceException {
+  employeeId: string
+  date: string
+  type: AttendanceExceptionType
+  /** Clock-in time (for late arrivals) vs the 09:00 shift start. */
+  clockIn?: string
+  /** Minutes late (late clock-ins only). */
+  minutesLate?: number
+  /** The stated / inferred reason for this exception. */
+  reason: string
+  /** Co-worker's read on the pattern — the "why" analysis the user asks for. */
+  analysis: string
+}
+// Latest working day = 2026-08-19 (the daily attendance task runs each morning).
 export const attendanceExceptions: AttendanceException[] = [
-  { employeeId: 'EMP-0006', date: '2026-02-24', type: 'Late clock-in' },
-  { employeeId: 'EMP-0006', date: '2026-02-26', type: 'Late clock-in' },
-  { employeeId: 'EMP-0010', date: '2026-02-25', type: 'Missing check-out' },
-  { employeeId: 'EMP-0011', date: '2026-02-25', type: 'Unapproved absence' },
-  { employeeId: 'EMP-0016', date: '2026-02-26', type: 'Late clock-in' },
-  { employeeId: 'EMP-0009', date: '2026-02-27', type: 'Missing check-out' },
-  { employeeId: 'EMP-0003', date: '2026-02-27', type: 'Unapproved absence' },
+  { employeeId: 'EMP-0006', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:47', minutesLate: 47,
+    reason: 'Commute delay — reported heavy traffic on the toll road.',
+    analysis: '3rd late clock-in this month, all on Mondays and all traffic-related. Pattern suggests a recurring Monday commute issue, not occasional — worth a flexible-start conversation.' },
+  { employeeId: 'EMP-0016', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:22', minutesLate: 22,
+    reason: 'Dropped child at school; no prior notice filed.',
+    analysis: 'First lateness in 60 days. Isolated, low concern — a one-off family obligation.' },
+  { employeeId: 'EMP-0010', date: '2026-08-19', type: 'Missing check-out',
+    reason: 'Forgot to clock out — last badge activity 18:30, likely left without tapping.',
+    analysis: 'Recurring: 4th missing check-out this month. Not an attendance risk but will distort overtime calc — needs a reminder or auto-checkout rule.' },
+  { employeeId: 'EMP-0011', date: '2026-08-19', type: 'Unapproved absence',
+    reason: 'No clock-in and no leave request filed; unreachable at 10:00 check.',
+    analysis: '2nd unapproved absence in two weeks — and still on probation (joined Jun 2026). Escalating pattern; raise with their manager today before it affects the probation review.' },
+  { employeeId: 'EMP-0009', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:15', minutesLate: 15,
+    reason: 'Stayed late on the month-end close the night before and started later by agreement.',
+    analysis: 'Finance is mid-close; the lateness offsets overtime worked the previous evening. Not a concern — expected during close week.' },
+  { employeeId: 'EMP-0003', date: '2026-08-19', type: 'Missing check-out',
+    reason: 'System glitch at the Jakarta gate turnstile reported by facilities.',
+    analysis: 'Facilities confirmed a reader outage 18:00–19:00; affects several staff, not an individual issue. Exclude from lateness stats.' },
+]
+
+// ── Receivables collections (Jurnal) — the "who hasn't paid, why, and history"
+//    grounding for the finance tasks + chat. Each row references a real overdue
+//    sales invoice (see data/salesInvoices.ts) so figures stay coherent. This is
+//    what lets the co-worker answer "which customers are overdue and why". ──
+export interface ReceivableCollection {
+  invoiceId: string
+  invoiceNumber: string
+  customerId: string
+  customer: string
+  amount: number
+  dueDate: string
+  daysOverdue: number
+  /** Why it's unpaid — the collections note. */
+  reason: string
+  riskLevel: 'High' | 'Medium' | 'Low'
+  lastContact: { date: string; channel: 'Email' | 'Phone' | 'WhatsApp' | 'Meeting'; outcome: string }
+  promiseToPay?: string
+  /** How this customer has paid in the past — the payment-behaviour history. */
+  history: string
+  owner: string
+}
+export const receivablesCollections: ReceivableCollection[] = [
+  { invoiceId: 'SI023', invoiceNumber: 'INV-40023', customerId: 'C003', customer: 'PT Teknologi Nusantara',
+    amount: 44_000_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Disputed delivery — customer claims 2 line items on the DO were short-shipped and is withholding payment until a credit note is issued.',
+    riskLevel: 'High', lastContact: { date: '2026-08-14', channel: 'Phone', outcome: 'AP manager Ibu Sari agreed to release payment once the credit note for the short-shipment is received.' },
+    promiseToPay: '2026-08-29', history: 'Repeat late payer — pays on average 24 days late; also holds INV-40006 (Rp8.9M). Lifetime spend Rp96M across 6 invoices, 2 currently overdue.', owner: 'Andi Pratama (Finance)' },
+  { invoiceId: 'SI003', invoiceNumber: 'INV-40003', customerId: 'C005', customer: 'PT Cahaya Abadi Sentosa',
+    amount: 23_750_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Cash-flow constraint — customer is waiting on a payment from their own client and requested a 30-day extension.',
+    riskLevel: 'Medium', lastContact: { date: '2026-08-11', channel: 'WhatsApp', outcome: 'Requested to split into 2 instalments; awaiting our approval.' },
+    promiseToPay: '2026-09-05', history: 'Generally reliable — settled INV-40019 (Rp78.5M) on time in May. First time overdue in 12 months.', owner: 'Andi Pratama (Finance)' },
+  { invoiceId: 'SI012', invoiceNumber: 'INV-40012', customerId: 'C018', customer: 'PT Kreasindo Media Cipta',
+    amount: 11_200_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Invoice never reached AP — sent to the wrong email; PIC changed and the new finance contact only received it last week.',
+    riskLevel: 'Low', lastContact: { date: '2026-08-18', channel: 'Email', outcome: 'New PIC Bp. Rangga confirmed receipt and scheduled payment in their next run.' },
+    promiseToPay: '2026-08-25', history: 'New customer — this is their first invoice with us. No prior payment history yet.', owner: 'Dewi Lestari (Finance)' },
+  { invoiceId: 'SI018', invoiceNumber: 'INV-40018', customerId: 'C019', customer: 'CV Mitra Usaha Bersama',
+    amount: 9_000_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Unresponsive — three reminders sent with no reply; phone number on file goes to voicemail.',
+    riskLevel: 'High', lastContact: { date: '2026-08-05', channel: 'Email', outcome: 'No response to the 3rd reminder.' },
+    history: 'Slow payer — averages 40+ days late; previous invoice also required 4 reminders before payment.', owner: 'Dewi Lestari (Finance)' },
+  { invoiceId: 'SI006', invoiceNumber: 'INV-40006', customerId: 'C003', customer: 'PT Teknologi Nusantara',
+    amount: 8_900_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Rolled into the same dispute as INV-40023 — customer is holding all payments pending the credit note.',
+    riskLevel: 'Medium', lastContact: { date: '2026-08-14', channel: 'Phone', outcome: 'Bundled with INV-40023; release expected together.' },
+    promiseToPay: '2026-08-29', history: 'Same account as INV-40023 (Rp44M). Combined exposure Rp52.9M — the largest single-customer overdue balance.', owner: 'Andi Pratama (Finance)' },
 ]
 
 /** Modules Cowork can act on — used for the catalog and the module filter. */
@@ -136,6 +204,124 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
     prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.', usedBy: ['EMP-0005'] },
 ]
 
+// ── Grounded run-result builders ──────────────────────────────────────────────
+// These synthesise a task's stored run result (planJson) directly from the mock
+// tables above, so the run history shown on a scheduled task is REAL and accurate
+// to the data — matching what a live Gemini run would produce.
+function money(n: number): string {
+  if (n >= 1_000_000_000) return `Rp${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `Rp${Math.round(n / 1_000_000)}M`
+  return `Rp${n.toLocaleString('id-ID')}`
+}
+const EMP_NAMES: Record<string, string> = {
+  'EMP-0006': 'Agus Pratama', 'EMP-0016': 'Doni Kurniawan', 'EMP-0010': 'Fajar Nugroho',
+  'EMP-0011': 'Indah Permatasari', 'EMP-0009': 'Maya Kusuma', 'EMP-0003': 'Budi Santoso',
+}
+
+function receivablesPlan() {
+  const rows = receivablesCollections
+  const total = rows.reduce((a, r) => a + r.amount, 0)
+  const high = rows.filter((r) => r.riskLevel === 'High')
+  const top = rows[0]!
+  return {
+    taskTitle: 'Chase overdue receivables',
+    intro: 'Reviewed every overdue invoice in Jurnal, cross-checked the collections notes, and prepared a chase list plus a reminder draft.',
+    metric: `${rows.length} invoices overdue · ${money(total)}`,
+    sources: [
+      { name: 'Jurnal — receivables', detail: `${rows.length} overdue invoices totalling ${money(total)}` },
+      { name: 'Collections notes', detail: `${high.length} high-risk accounts` },
+      { name: 'Qontak CRM', detail: 'Customer contacts & payment history' },
+    ],
+    steps: [
+      { title: 'Pull overdue invoices', detail: `Found ${rows.length} invoices past due in Jurnal.` },
+      { title: 'Match collection notes', detail: 'Attached the reason and last-contact outcome to each.' },
+      { title: 'Rank by risk & value', detail: 'Sorted by risk level and balance to decide who to chase first.' },
+      { title: 'Draft outputs', detail: 'Produced the chase list, action items and a reminder email.' },
+    ],
+    artifacts: {
+      briefing: {
+        summary: rows.map((r) => ({
+          title: `${r.customer} — ${money(r.amount)}`,
+          detail: `${r.invoiceNumber}, ${r.daysOverdue} days overdue. ${r.reason}`,
+          priority: r.riskLevel,
+        })),
+        findings: [
+          { title: 'Largest exposure', detail: 'PT Teknologi Nusantara holds Rp52.9M across INV-40023 and INV-40006 — both blocked on one short-shipment dispute. Issue the credit note to unblock both.' },
+          { title: 'Quick win', detail: 'PT Kreasindo Media Cipta (Rp11.2M) was only a wrong-email issue; the new PIC confirmed payment for 25 Aug.' },
+          { title: 'Escalate', detail: 'CV Mitra Usaha Bersama (Rp9M) is unresponsive after 3 reminders — escalate to a call or hold further orders.' },
+        ],
+      },
+      actionItems: high.map((r) => ({
+        title: `Chase ${r.customer}`, detail: `${r.invoiceNumber} (${money(r.amount)}) — ${r.reason}`,
+        owner: r.owner, due: r.promiseToPay ?? 'This week', priority: 'High',
+      })),
+      email: {
+        to: top.customer, subject: `Payment reminder — ${top.invoiceNumber} (${money(top.amount)})`,
+        body: `Dear ${top.customer} team,\n\nOur records show invoice ${top.invoiceNumber} for ${money(top.amount)}, due ${top.dueDate}, is now ${top.daysOverdue} days overdue.\n\nWe understand a credit note for the short-shipped items is pending — we are processing that now and will send it shortly. Once received, we would appreciate settlement by ${top.promiseToPay}.\n\nPlease let us know if anything else is blocking payment.\n\nBest regards,\nRizal Candra\nFinance, PT Central Perk Indonesia`,
+      },
+      spreadsheet: {
+        title: 'Overdue receivables',
+        columns: ['Invoice', 'Customer', 'Amount', 'Days overdue', 'Risk', 'Reason', 'Owner'],
+        rows: rows.map((r) => [r.invoiceNumber, r.customer, money(r.amount), String(r.daysOverdue), r.riskLevel, r.reason, r.owner]),
+      },
+    },
+  }
+}
+
+function attendancePlan() {
+  const ex = attendanceExceptions
+  const name = (id: string) => EMP_NAMES[id] ?? id
+  const prio = (e: AttendanceException): 'High' | 'Medium' | 'Low' =>
+    e.type === 'Unapproved absence' ? 'High' : (e.minutesLate && e.minutesLate > 30 ? 'Medium' : 'Low')
+  return {
+    taskTitle: 'Attendance exceptions review',
+    intro: `Checked this morning's attendance in Talenta, flagged every exception, and added the reason and a read on each pattern.`,
+    metric: `${ex.length} exceptions on ${ex[0]!.date}`,
+    sources: [
+      { name: 'Talenta — attendance', detail: `${ex.length} exceptions on ${ex[0]!.date}` },
+      { name: 'Employee directory', detail: 'Profiles, tenure & manager for each person' },
+    ],
+    steps: [
+      { title: 'Pull today\'s log', detail: `Read the ${ex[0]!.date} attendance log from Talenta.` },
+      { title: 'Isolate exceptions', detail: `Found ${ex.length} late clock-ins, missing check-outs and unapproved absences.` },
+      { title: 'Add context', detail: 'Matched each to the employee profile and the stated reason.' },
+      { title: 'Analyse patterns', detail: 'Separated recurring issues from one-offs and system glitches.' },
+    ],
+    artifacts: {
+      briefing: {
+        summary: ex.map((e) => ({
+          title: `${name(e.employeeId)} — ${e.type}`,
+          detail: `${e.clockIn ? `Clocked in ${e.clockIn} (${e.minutesLate}m late). ` : ''}${e.reason} ${e.analysis}`,
+          priority: prio(e),
+        })),
+        findings: [
+          { title: 'Needs escalation', detail: 'Indah Permatasari — 2nd unapproved absence in two weeks and still on probation (joined Jun 2026). Raise with her manager today.' },
+          { title: 'Not a real issue', detail: 'Budi Santoso\'s missing check-out was a gate turnstile outage confirmed by facilities — exclude from lateness stats.' },
+          { title: 'Recurring', detail: 'Agus Pratama has 3 Monday late clock-ins this month, all traffic-related — consider a flexible start.' },
+        ],
+      },
+      actionItems: [
+        { title: 'Escalate probation absence', detail: 'Discuss Indah Permatasari\'s repeated unapproved absences before her probation review.', owner: 'HR Business Partner', due: 'Today', priority: 'High' },
+        { title: 'Enable check-out reminders', detail: 'Turn on auto-checkout/reminder to fix repeat missing check-outs (Fajar Nugroho).', owner: 'HR Ops', due: 'This week', priority: 'Medium' },
+        { title: 'Log gate outage', detail: 'File the turnstile outage so affected staff are not penalised.', owner: 'Facilities', due: 'Today', priority: 'Low' },
+      ],
+    },
+  }
+}
+
+/** Build N dated historical runs (most recent first) for a scheduled task. */
+function scheduledRuns(taskId: string, plan: any, ranAtList: string[], metrics?: string[]): CoworkRun[] {
+  return ranAtList.map((ranAt, i) => ({
+    id: `${taskId}-r${ranAtList.length - i}`,
+    ranAt, status: 'completed',
+    metric: metrics?.[i] ?? plan.metric,
+    planJson: JSON.stringify({ ...plan, metric: metrics?.[i] ?? plan.metric }),
+  }))
+}
+
+const RECEIVABLES_PLAN = receivablesPlan()
+const ATTENDANCE_PLAN = attendancePlan()
+
 // ── Seeds ────────────────────────────────────────────────────────────────────
 const TASKS_SEED: CoworkTask[] = [
   { id: 'CW-1042', title: 'Month-end close checklist', module: 'Finance', modules: ['Finance', 'Sales', 'WMS'], status: 'completed',
@@ -151,7 +337,13 @@ const TASKS_SEED: CoworkTask[] = [
     schedule: { cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true } },
   { id: 'CW-1039', title: 'Chase overdue receivables', module: 'Finance', modules: ['Finance', 'CRM'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Chase overdue receivables')!.prompt,
-    createdAt: '2026-08-11T08:00:00', completedAt: '2026-08-18T08:00:00', metric: '3 invoices overdue',
+    createdAt: '2026-07-28T08:00:00', completedAt: '2026-08-18T08:00:00', metric: RECEIVABLES_PLAN.metric,
+    outputs: ['Briefing summary', 'Action items', 'Email draft', 'Spreadsheet'],
+    sources: ['Finance', 'CRM'],
+    planJson: JSON.stringify(RECEIVABLES_PLAN),
+    runs: scheduledRuns('CW-1039', RECEIVABLES_PLAN,
+      ['2026-08-18T08:00:00', '2026-08-11T08:00:00', '2026-08-04T08:00:00', '2026-07-28T08:00:00'],
+      ['5 invoices overdue · Rp97M', '6 invoices overdue · Rp112M', '4 invoices overdue · Rp71M', '7 invoices overdue · Rp134M']),
     schedule: { cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true } },
   { id: 'CW-1038', title: 'Reorder low-stock SKUs', module: 'WMS', modules: ['WMS'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Reorder low-stock SKUs')!.prompt,
@@ -159,8 +351,14 @@ const TASKS_SEED: CoworkTask[] = [
     schedule: { cadence: 'Daily', time: '07:30', nextRun: 'Tomorrow · 07:30', enabled: true } },
   { id: 'CW-1037', title: 'Attendance exceptions review', module: 'HR', modules: ['HR'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Attendance exceptions review')!.prompt,
-    createdAt: '2026-08-13T18:00:00', completedAt: '2026-08-19T18:00:00', metric: '5 exceptions to review',
-    schedule: { cadence: 'Daily', time: '18:00', nextRun: 'Today · 18:00', enabled: false } },
+    createdAt: '2026-08-13T07:00:00', completedAt: '2026-08-19T07:00:00', metric: ATTENDANCE_PLAN.metric,
+    outputs: ['Briefing summary', 'Action items'],
+    sources: ['HR'],
+    planJson: JSON.stringify(ATTENDANCE_PLAN),
+    runs: scheduledRuns('CW-1037', ATTENDANCE_PLAN,
+      ['2026-08-19T07:00:00', '2026-08-18T07:00:00', '2026-08-15T07:00:00', '2026-08-14T07:00:00', '2026-08-13T07:00:00'],
+      ['6 exceptions today', '4 exceptions today', '3 exceptions today', '5 exceptions today', '2 exceptions today']),
+    schedule: { cadence: 'Daily', time: '07:00', nextRun: 'Tomorrow · 07:00', enabled: true } },
 ]
 
 // Only external connections are listed (Mekari products are built-in). The three
