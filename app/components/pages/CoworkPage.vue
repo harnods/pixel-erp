@@ -38,13 +38,20 @@ const route = useRoute()
 const router = useRouter()
 const { build } = useCoworkContext()
 
-// AI sparkle mark for the model picker (same as the SearchBox / Airene mark).
-const SPARKLE_A = 'M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z'
-const SPARKLE_B = 'M14.4956 3.07205L14.2977 3.04651C13.5955 2.95643 13.0422 2.40312 12.9535 1.70085L12.9301 1.51358C12.8911 1.20643 12.5889 1 12.2711 1C11.9561 1 11.6553 1.19791 11.6142 1.50436L11.5887 1.70227C11.4986 2.40454 10.9453 2.95784 10.243 3.04651L10.0557 3.06992C9.7422 3.11107 9.54216 3.41113 9.54216 3.72892C9.54216 4.04672 9.73156 4.34749 10.0465 4.38579L10.2444 4.41133C10.9467 4.50142 11.5 5.05472 11.5887 5.75699L11.6121 5.94427C11.6504 6.26348 11.9533 6.45785 12.2711 6.45785C12.586 6.45785 12.8911 6.24362 12.9279 5.95349L12.9535 5.75558C13.0436 5.05331 13.5969 4.5 14.2991 4.41133L14.4864 4.38792C14.8021 4.3482 15 4.04672 15 3.72892C15 3.41113 14.8021 3.11107 14.4956 3.07205Z'
-const Sparkle = (props: { size?: number }) =>
-  h('svg', { width: props.size ?? 16, height: props.size ?? 16, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' }, [
-    h('path', { d: SPARKLE_A, fill: 'currentColor' }),
-    h('path', { d: SPARKLE_B, fill: 'currentColor' }),
+// Gemini mark — a 4-point star with Google's multi-hue gradient (not the Airene
+// purple sparkle) for the model picker.
+const GeminiMark = (props: { size?: number }) =>
+  h('svg', { width: props.size ?? 16, height: props.size ?? 16, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true' }, [
+    h('defs', [
+      h('linearGradient', { id: 'cw-gemini', x1: '2', y1: '3', x2: '22', y2: '21', gradientUnits: 'userSpaceOnUse' }, [
+        h('stop', { offset: '0', 'stop-color': '#1BA1E3' }),
+        h('stop', { offset: '0.3', 'stop-color': '#5489D6' }),
+        h('stop', { offset: '0.55', 'stop-color': '#9B72CB' }),
+        h('stop', { offset: '0.8', 'stop-color': '#D96570' }),
+        h('stop', { offset: '1', 'stop-color': '#F49C46' }),
+      ]),
+    ]),
+    h('path', { d: 'M12 2c.3 4.9 4.8 9.4 9.7 9.7v.6C16.8 12.6 12.3 17.1 12 22h-.6c-.3-4.9-4.8-9.4-9.7-9.7v-.6C6.6 11.4 11.1 6.9 11.4 2H12z', fill: 'url(#cw-gemini)' }),
   ])
 
 // The active section is driven by the Cowork level-2 submenu (ErpSidebar panel):
@@ -207,6 +214,10 @@ const suggestedGroups = computed(() =>
 function usedAvatars(ids?: string[]) {
   return (ids ?? []).map((id) => getEmployee(id)).filter(Boolean).slice(0, 4)
 }
+// Signed-in user (no auth in the prototype → Rizal Candra, EMP-0001). If they've
+// already run a predefined task, the "Run task" affordance is dropped.
+const CURRENT_USER_ID = 'EMP-0001'
+function hasRun(item: { usedBy?: string[] }) { return !!item.usedBy?.includes(CURRENT_USER_ID) }
 
 // ── Model picker ─────────────────────────────────────────────────────────────
 const MODELS = [
@@ -249,25 +260,27 @@ function statusProps(s: CoworkTask['status']) {
 }
 
 // ── Schedule ─────────────────────────────────────────────────────────────────
+// The task being scheduled IS the composer prompt — no picker. Captured on open
+// (editable, so the Schedule page can also type one when there's no prompt yet).
 const scheduleOpen = ref(false)
-const schedTaskTitle = ref('')
+const schedTask = ref('')
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
 const schedError = ref('')
 function openSchedule() {
-  schedTaskTitle.value = ''
+  schedTask.value = prompt.value.trim()
   schedCadence.value = 'Weekly'
   schedTime.value = '08:00'
   schedError.value = ''
   scheduleOpen.value = true
 }
 function saveSchedule() {
-  const cat = COWORK_CATALOG.find((c) => c.title === schedTaskTitle.value)
-  if (!cat) { schedError.value = 'Select a task to schedule'; return }
+  const t = schedTask.value.trim()
+  if (!t) { schedError.value = 'Write a task to schedule'; return }
   const nextRun = schedCadence.value === 'Daily' ? `Tomorrow · ${schedTime.value}`
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
-  addSchedule({ title: cat.title, prompt: cat.prompt, module: cat.module, cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
+  addSchedule({ title: t.length > 52 ? t.slice(0, 50) + '…' : t, prompt: t, module: inferModule(t), cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true })
   scheduleOpen.value = false
   toast.notify({ variant: 'success', title: 'Task scheduled' })
 }
@@ -489,7 +502,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <MpPopover id="cw-model" is-close-on-select placement="top-end">
                   <MpPopoverTrigger>
                     <button class="cw-model-btn" type="button">
-                      <Sparkle :size="16" />
+                      <GeminiMark :size="16" />
                       {{ modelLabel }}
                       <MpIcon name="caret-down" size="sm" />
                     </button>
@@ -523,7 +536,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         </span>
                         Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
                       </span>
-                      <span v-else class="cw-suggest-run">Run task <MpIcon name="arrows-right" size="sm" /></span>
+                      <span v-if="!hasRun(c)" class="cw-suggest-run">Run task <MpIcon name="arrows-right" size="sm" /></span>
                     </span>
                   </button>
                 </div>
@@ -623,25 +636,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     <MpModal id="cw-schedule-modal" :is-open="scheduleOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="scheduleOpen = false">
       <MpModalOverlay />
       <MpModalContent>
-        <MpModalHeader>Schedule a task</MpModalHeader>
-        <MpModalCloseButton @click="scheduleOpen = false" />
+        <MpModalHeader>Schedule a task<MpModalCloseButton @click="scheduleOpen = false" /></MpModalHeader>
         <MpModalBody>
-          <MpFormControl :is-required="true" :is-error="!!schedError" :class="css({ marginBottom: '16px' })">
+          <MpFormControl :is-error="!!schedError" :class="css({ marginBottom: '16px' })">
             <MpFormLabel>Task</MpFormLabel>
-            <MpPopover id="cw-sched-task" is-close-on-select>
-              <MpPopoverTrigger>
-                <MpSelect id="cw-sched-task-sel" placeholder="Select a task" :model-value="schedTaskTitle" is-full-width @mousedown.prevent>
-                  <option v-if="schedTaskTitle" :value="schedTaskTitle">{{ schedTaskTitle }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '360px', maxHeight: '280px', overflowY: 'auto' })">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="c in COWORK_CATALOG" :key="c.title" :is-active="c.title === schedTaskTitle" @click="schedTaskTitle = c.title; schedError = ''">
-                    {{ c.title }} · {{ c.module }}
-                  </MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <MpTextarea id="cw-sched-task-input" v-model="schedTask" is-full-width :rows="2" placeholder="Describe the task to schedule" @input="schedError = ''" />
           </MpFormControl>
           <div class="cw-form-row">
             <MpFormControl>
@@ -716,10 +715,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
 .cw-foot-btn :deep(svg) { color: var(--mp-icon-default, #536062); }
-.cw-foot-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--mp-background-brand-selected, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); margin-left: 2px; }
-.cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
+.cw-foot-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--mp-background-brand-selected, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-size: 11px; line-height: 1; font-weight: var(--mp-font-weights-semi-bold); margin-left: 4px; }
+.cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-model-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); }
-.cw-model-btn > svg:first-child { color: var(--mp-airene-default, #7c3aed); flex-shrink: 0; }
+.cw-model-btn > svg:first-child { flex-shrink: 0; }
 
 .cw-src { padding: var(--mp-spacing-2); }
 .cw-src__head { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -738,8 +737,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); background: #F8F8F8; border: 1px solid var(--mp-border-bold, #8c9596); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); display: flex; align-items: center; justify-content: center; color: var(--mp-text-default); }
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cw-suggest-run { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
-.cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: 6px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.cw-suggest-run { display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cw-avatars { display: inline-flex; }
 .cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cw-avatar + .cw-avatar { margin-left: -12px; }
