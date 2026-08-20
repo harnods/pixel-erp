@@ -660,11 +660,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-ov__inner { max-width: 880px; margin: 0 auto; width: 100%; }
 .cw-hero { text-align: center; margin: var(--mp-spacing-2) 0 var(--mp-spacing-6); font-size: var(--mp-font-sizes-2xl, 24px); line-height: var(--mp-line-heights-xl, 32px); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
-/* A gray tray holds a fully-rounded white input box on top and the footer below. */
-.cw-composer2 { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-1, 4px); }
-.cw-composer2__input { display: block; width: 100%; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); min-height: 76px; }
+/* One rounded box (20px): textarea on top, a footer row below split by a thin
+   divider. No inner padding tray. */
+.cw-composer2 { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; background: var(--mp-background-neutral, #fff); overflow: hidden; }
+.cw-composer2__input { display: block; width: 100%; border: none; border-radius: 0; outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-4); background: none; min-height: 76px; }
 .cw-composer2__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
-.cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-1); background: transparent; }
+.cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: transparent; }
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
