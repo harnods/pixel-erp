@@ -22,6 +22,7 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import { infoToast } from '~/utils/toasts'
 import { getEmployee } from '~/data'
 import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
@@ -110,7 +111,7 @@ const section = computed(() => {
 const prompt = ref('')
 const promptEl = ref<HTMLTextAreaElement | null>(null)
 function focusPrompt() { requestAnimationFrame(() => promptEl.value?.focus()) }
-function soon(what: string) { toast.notify({ variant: 'info', title: `${what} — coming soon` }) }
+function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 // ── Run workspace ────────────────────────────────────────────────────────────
 interface Step { title: string; detail: string }
@@ -445,7 +446,7 @@ function connectFake(c: CoworkConnection) {
   setConnection(c.id, true)
   toast.notify({ variant: 'success', title: `${c.name} connected` })
 }
-function addConnection() { toast.notify({ variant: 'info', title: 'Browse the connections marketplace — coming soon' }) }
+function addConnection() { infoToast('Browse the connections marketplace — coming soon') }
 
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })

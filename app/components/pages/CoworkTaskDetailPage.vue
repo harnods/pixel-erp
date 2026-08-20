@@ -10,6 +10,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { infoToast } from '~/utils/toasts'
 import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
@@ -78,7 +79,7 @@ async function runTask() {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-function editTask() { toast.notify({ variant: 'info', title: 'Edit task — coming soon' }) }
+function editTask() { infoToast('Edit task — coming soon') }
 function setSchedule() { router.push({ path: '/cowork', query: { focus: '1' } }) }
 function removeTask() {
   if (!task.value) return
