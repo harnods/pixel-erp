@@ -967,4 +967,17 @@ function confirmBulkDelete() {
 
 /* Bulk delete modal footer */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+
+/* ── Responsive stats (audit): a 4-across row overlaps on small screens. Tablet →
+   2-col grid; phone → 1-col so the full amount is always visible. ── */
+@media (max-width: 640px) {
+  .stats-section { display: grid !important; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); align-items: stretch; }
+  .stat-card { padding-right: 0; min-width: 0; }
+  .stat-card--bordered { border-right: none; }
+  .stat-amount { font-size: var(--mp-font-sizes-lg, 16px); line-height: 24px; }
+}
+@media (max-width: 480px) {
+  .stats-section { grid-template-columns: 1fr; }
+  .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); }
+}
 </style>
