@@ -45,7 +45,16 @@ export interface CoworkConnection {
   category: string
   connected: boolean
   detail?: string
+  /** 'google' = a real OAuth connection (Google Identity Services); 'fake' = a
+   *  demo-only integration that just flips its connected state. */
+  provider: 'google' | 'fake'
+  /** OAuth scope(s) requested for a real Google connection. */
+  scope?: string
 }
+
+/** Mekari products are connected by default (Cowork always works over them), so
+ *  they are NOT listed on the Connections page — they show as built-in sources. */
+export const COWORK_BUILTIN = ['Talenta', 'Qontak', 'Jurnal', 'Mekari WMS']
 
 /** Modules Cowork can act on — used for the catalog and the module filter. */
 export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production']
@@ -117,15 +126,20 @@ const SCHEDULE_SEED: CoworkSchedule[] = [
     prompt: COWORK_CATALOG.find((c) => c.title === 'Attendance exceptions review')!.prompt },
 ]
 
+// Only external connections are listed (Mekari products are built-in). The three
+// Google entries are REAL OAuth connections; the rest are demo-only.
 const CONNECTION_SEED: CoworkConnection[] = [
-  { id: 'talenta', name: 'Talenta', category: 'HR & Payroll', connected: true, detail: 'Employees, attendance, payroll' },
-  { id: 'qontak',  name: 'Qontak',  category: 'CRM & Omnichannel', connected: true, detail: 'Customers, deals, orders' },
-  { id: 'jurnal',  name: 'Jurnal',  category: 'Accounting', connected: true, detail: 'Invoices, bills, cash' },
-  { id: 'wms',     name: 'Mekari WMS', category: 'Warehouse', connected: true, detail: 'Stock, inbound, outbound' },
-  { id: 'gworkspace', name: 'Google Workspace', category: 'Productivity', connected: false, detail: 'Calendar, Gmail, Drive' },
-  { id: 'slack',   name: 'Slack',   category: 'Messaging', connected: false, detail: 'Channels & DMs' },
-  { id: 'whatsapp', name: 'WhatsApp Business', category: 'Messaging', connected: false, detail: 'Customer conversations' },
-  { id: 'sheets',  name: 'Google Sheets', category: 'Data', connected: false, detail: 'Spreadsheets & exports' },
+  { id: 'gcal',     name: 'Google Calendar', category: 'Productivity', connected: false, provider: 'google',
+    detail: 'Meetings, deadlines & reminders', scope: 'https://www.googleapis.com/auth/calendar.readonly' },
+  { id: 'gmail',    name: 'Gmail', category: 'Email', connected: false, provider: 'google',
+    detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly' },
+  { id: 'gcontacts', name: 'Google Contacts', category: 'People', connected: false, provider: 'google',
+    detail: 'Match customers & stakeholders', scope: 'https://www.googleapis.com/auth/contacts.readonly' },
+  { id: 'sap',      name: 'SAP',    category: 'ERP', connected: false, provider: 'fake', detail: 'Finance & supply chain' },
+  { id: 'xero',     name: 'Xero',   category: 'Accounting', connected: false, provider: 'fake', detail: 'Ledgers & invoices' },
+  { id: 'notion',   name: 'Notion', category: 'Docs & wiki', connected: false, provider: 'fake', detail: 'Docs, notes & databases' },
+  { id: 'hubspot',  name: 'HubSpot', category: 'CRM', connected: false, provider: 'fake', detail: 'Marketing & sales pipeline' },
+  { id: 'slack',    name: 'Slack',  category: 'Messaging', connected: false, provider: 'fake', detail: 'Channels & DMs' },
 ]
 
 function load<T>(key: string, seed: T[]): T[] {

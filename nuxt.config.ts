@@ -12,6 +12,12 @@ export default defineNuxtConfig({
   runtimeConfig: {
     geminiApiKey: "",
     geminiModel: "gemini-flash-latest",
+    public: {
+      // Google OAuth (client-side, Google Identity Services) for the real Cowork
+      // connections (Calendar / Gmail / Contacts). Public client ID — safe to
+      // expose; set NUXT_PUBLIC_GOOGLE_CLIENT_ID in .env. Empty = not configured.
+      googleClientId: "",
+    },
   },
 
   app: {

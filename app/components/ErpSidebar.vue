@@ -362,7 +362,17 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
-    { name: 'Cowork', icon: 'magic' },
+    {
+      // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
+      // Connections), each its own /cowork* route rendered in the stage.
+      name: 'Cowork', icon: 'magic',
+      panelSubmenu: [[
+        { label: 'Overview', to: 'Cowork' },
+        { label: 'Tasks', to: 'Cowork tasks' },
+        { label: 'Schedule', to: 'Cowork schedule' },
+        { label: 'Connections', to: 'Cowork connections' },
+      ]],
+    },
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the
