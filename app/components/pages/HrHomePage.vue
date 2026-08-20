@@ -690,5 +690,8 @@ const celebrations: Celebration[] = [
   .grid { grid-template-columns: 1fr; }
   .att-stats { grid-template-columns: 1fr; }
   .hc-stats { grid-template-columns: 1fr; }
+  /* Payroll banner: move the action below the text instead of beside it */
+  .banner { flex-wrap: wrap; }
+  .banner__btn { flex: 1 1 100%; width: 100%; display: flex; align-items: center; justify-content: center; margin-top: var(--mp-spacing-3); }
 }
 </style>
