@@ -21,8 +21,8 @@
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
           <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
@@ -174,6 +174,10 @@ interface SubItem {
 interface NavItem {
   name: string
   icon: string
+  /** Explicit CDN icon filenames (without .svg) — use when the line/fill pair
+   *  doesn't follow the `${icon}-outline` / `${icon}-fill` convention. */
+  iconLine?: string
+  iconFill?: string
   /** Level-2 flyout (hover) */
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
@@ -365,7 +369,7 @@ const erpNavGroups: NavItem[][] = [
     {
       // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
       // Connections), each its own /cowork* route rendered in the stage.
-      name: 'Cowork', icon: 'magic',
+      name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
       panelSubmenu: [[
         { label: 'Overview', to: 'Cowork' },
         { label: 'Tasks', to: 'Cowork tasks' },
