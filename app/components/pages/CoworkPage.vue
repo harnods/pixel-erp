@@ -446,7 +446,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Output popover: what Cowork should produce for this task -->
                   <MpPopover id="cw-output" placement="top-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="document" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="document-sent" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -722,7 +722,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest > .cw-muted + .cw-module-label { margin-top: var(--mp-spacing-6, 24px); }
 .cw-suggest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3) var(--mp-spacing-10, 40px); }
 .cw-suggest-item { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; background: none; border: none; padding: var(--mp-spacing-2) 0; cursor: pointer; text-align: left; font-family: inherit; }
-.cw-suggest-icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-default, #e3e7e9); display: flex; align-items: center; justify-content: center; color: var(--mp-text-default); }
+.cw-suggest-icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-bold, #8c9596); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); display: flex; align-items: center; justify-content: center; color: var(--mp-text-default); }
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-suggest-run { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
