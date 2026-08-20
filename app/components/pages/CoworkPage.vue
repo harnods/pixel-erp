@@ -446,7 +446,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <!-- Output popover: what Cowork should produce for this task -->
                   <MpPopover id="cw-output" placement="top-start">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="document-sent" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
+                      <button class="cw-foot-btn" type="button"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount" class="cw-foot-count">{{ activeOutputCount }}</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
