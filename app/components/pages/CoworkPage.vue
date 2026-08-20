@@ -698,21 +698,30 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   </MpPopover>
                 </div>
 
-                <!-- Model picker -->
-                <MpPopover id="cw-model" is-close-on-select placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <button class="cw-model-btn" type="button">
-                      <GeminiMark :size="16" />
-                      {{ modelLabel }}
-                      <MpIcon name="caret-down" size="sm" />
-                    </button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '200px' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="m.id === model" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
+                <div class="cw-composer2__right">
+                  <!-- Model picker -->
+                  <MpPopover id="cw-model" is-close-on-select placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <button class="cw-model-btn" type="button">
+                        <GeminiMark :size="16" />
+                        {{ modelLabel }}
+                        <MpIcon name="caret-down" size="sm" />
+                      </button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '200px' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="m.id === model" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+
+                  <!-- Send / create task -->
+                  <button class="cw-send-btn" type="button" aria-label="Assign task" @click="assign(prompt)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 19V5M12 5L6 11M12 5L18 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -951,6 +960,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-foot-btn.is-set { color: var(--mp-text-selected, #0f6d4d); }
 .cw-foot-btn.is-set :deep(svg), .cw-foot-btn.is-set :deep(path) { color: var(--mp-text-selected, #0f6d4d); }
 .cw-foot-btn :deep(svg) { color: var(--mp-icon-default, #536062); }
+.cw-composer2__right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.cw-send-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #029861); color: var(--mp-text-inverse, #fff); cursor: pointer; transition: filter .12s ease; }
+.cw-send-btn:hover { filter: brightness(0.94); }
 .cw-model-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-md, 8px); }
 .cw-model-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); }
 .cw-model-btn > svg:first-child { flex-shrink: 0; }
