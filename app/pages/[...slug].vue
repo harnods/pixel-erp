@@ -935,6 +935,9 @@ const CHAT_SEED: ChatSession[] = [
 // Persisted chat history (mini-DB) — survives reload/new-chat.
 const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
 function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
+// Materialise the seed history to the mini-DB on first load, so other surfaces
+// (e.g. the header search "Recent chats") can read it too.
+if (!loadSnapshot<ChatSession>('airene-chats-v1')) persistChats()
 
 // ── Active session ────────────────────────────────────────────────────────
 const messages = ref<ChatMessage[]>([])
@@ -1336,7 +1339,18 @@ provide('sendAireneMessage', sendMessage)
 // Bridge: let components above the page (e.g. the header search) drive the panel.
 const aireneBridge = useAireneBridge()
 watch(aireneBridge.toggleSignal, () => toggleAirene())
-watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+watch(aireneBridge.sendSignal, () => {
+  if (!aireneBridge.pendingText.value) return
+  if (aireneBridge.pendingFresh.value) startNewChat()
+  sendMessage(aireneBridge.pendingText.value)
+})
+// Open a saved chat session (e.g. a "recent chat" chosen from the header search).
+watch(aireneBridge.openSessionSignal, () => {
+  const s = chatSessions.value.find(x => x.id === aireneBridge.pendingSessionId.value)
+  if (s) loadSession(s)
+  else startNewChat()
+  aireneOpen.value = true
+})
 // Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
 watch(aireneBridge.openContextSignal, () => {
   startNewChat()
