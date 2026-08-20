@@ -480,6 +480,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
+          { label: 'Cycle counts' },
         ],
         [
           { label: 'Storage locations' },
@@ -638,13 +639,10 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     // Mirrors the ERP "Warehouse transfers" module — same page (/warehouse-transfers).
     { name: 'Warehouse transfers', icon: 'transfer' },
-    {
-      name: 'Stock adjustments', icon: 'table-view-list',
-      panelSubmenu: [[
-        { label: 'Cycle counts' },
-        { label: 'Stock counts' },
-      ]],
-    },
+    // Siblings, mirroring the ERP "WMS" group — "Stock adjustments" is the full
+    // ledger (same page/content as ERP's), "Cycle counts" is the WMS count-task flow.
+    { name: 'Stock adjustments', icon: 'table-view-list' },
+    { name: 'Cycle counts', icon: 'chart-of-account' },
   ],
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
