@@ -38,6 +38,17 @@ const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
+// Mobile: multiple title-bar actions collapse into a single "Actions" dropdown.
+// The desktop buttons are reused verbatim (CSS relocates them into the panel), so
+// there's no duplicate markup; the toggle only appears when there are ≥2 actions.
+const titleActionsOpen = ref(false)
+watch(() => route.path, () => { titleActionsOpen.value = false })
+function onTitleActionsDocClick(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.page-actions')) titleActionsOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onTitleActionsDocClick))
+onUnmounted(() => document.removeEventListener('click', onTitleActionsDocClick))
+
 // Unsaved-changes confirmation modal — lives here (not in each form page) since
 // this is the one component that survives every virtual page swap.
 const unsavedChangesModal = useUnsavedChangesModalState()
@@ -1172,6 +1183,12 @@ function startResize(e: MouseEvent) {
       <template v-else>
       <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
+        <div class="page-actions">
+          <button class="page-actions-toggle btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button" @click.stop="titleActionsOpen = !titleActionsOpen">
+            {{ t('Actions') }}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
             {{ t('Import') }}
@@ -1562,6 +1579,8 @@ function startResize(e: MouseEvent) {
             New purchase order
           </button>
         </div>
+          </div>
+        </div>
       </div>
 
       <!-- Purchase Orders tab bar (custom .page-tab buttons, not the generic tabs system) -->
@@ -1896,6 +1915,31 @@ function startResize(e: MouseEvent) {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
+}
+
+/* Title-bar actions wrapper — desktop is transparent (actions lay out inline);
+   mobile collapses ≥2 actions into a single "Actions" dropdown. */
+.page-actions { display: flex; align-items: center; position: relative; }
+.page-actions-toggle { display: none; }
+.page-actions-inner { display: contents; }
+
+@media (max-width: 600px) {
+  /* Only collapse when there are ≥2 action controls (single button stays inline). */
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-toggle { display: inline-flex; }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner {
+    display: none;
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+    min-width: 220px; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2);
+    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default);
+    border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-2);
+    box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0,0,0,0.12));
+  }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner.page-actions-inner--open { display: flex; }
+  /* Inside the dropdown, actions stack full width. */
+  .page-actions-inner--open .page-title-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2); }
+  .page-actions-inner--open .page-title-actions > * { width: 100%; }
+  .page-actions-inner--open .btn-enterprise { width: 100%; justify-content: center; }
+  .page-actions-inner--open .import-wrap { width: 100%; }
 }
 
 /* Import is a secondary action — hide it on mobile to keep the title bar clean. */

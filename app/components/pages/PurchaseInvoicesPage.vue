@@ -578,16 +578,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* ── Responsive stats (audit): a 4-across row overlaps on small screens. Tablet →
-   2-col grid; phone → 1-col so the full amount is always visible. ── */
+/* ── Responsive stats (audit): keep the row horizontal on small screens and let
+   it scroll/swipe instead of stacking (home stacks; index pages scroll). ── */
 @media (max-width: 640px) {
-  .stats-section { display: grid !important; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); align-items: stretch; }
-  .stat-card { padding-right: 0; min-width: 0; }
-  .stat-card--bordered { border-right: none; }
-  .stat-amount { font-size: var(--mp-font-sizes-lg, 16px); line-height: 24px; }
-}
-@media (max-width: 480px) {
-  .stats-section { grid-template-columns: 1fr; }
-  .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); }
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .stat-card { flex: 0 0 auto; }
 }
 </style>
