@@ -174,7 +174,79 @@ function buildChatContext(): string {
   if (Object.keys(slice).length) lines.push(`\nUnderlying ERP data (for follow-up questions):\n${JSON.stringify(slice)}`)
   return lines.join('\n')
 }
-function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result') }
+// Follow-up prompts tailored to THIS result — reference the real entities the
+// run surfaced (the top overdue customer, the escalated employee, the urgent SKU…).
+function buildChatSuggestions(): string[] {
+  const p = plan.value
+  const t = task.value
+  if (!p || !t) return []
+  const brief = p.artifacts?.briefing
+  // First token of a summary title, e.g. "PT Teknologi Nusantara — Rp44M" → the name.
+  const entity = (i = 0) => brief?.summary?.[i]?.title?.split(/\s+[—–-]\s+/)[0]?.trim()
+  const mod = (t.modules?.[0] ?? t.module)
+  const title = t.title.toLowerCase()
+
+  if (/receivable|overdue|chase|collection/.test(title) || (mod === 'Finance' && p.artifacts?.email)) {
+    const top = entity(0)
+    return [
+      'Who should I chase first?',
+      top ? `Why hasn't ${top} paid?` : 'Why are these invoices unpaid?',
+      top ? `Draft a firmer reminder for ${top}` : 'Draft a firmer reminder',
+      'Which accounts are highest risk?',
+    ]
+  }
+  if (/attendance|absence|late|payroll pre/.test(title) || mod === 'HR') {
+    const someone = entity(0)
+    return [
+      'Who needs escalation today?',
+      someone ? `Tell me about ${someone}` : 'Tell me about the people flagged',
+      someone ? `Why is ${someone} flagged?` : 'Why were they flagged?',
+      'Draft a note to their manager',
+    ]
+  }
+  if (/reorder|stock|sku|inventory/.test(title) || mod === 'WMS') {
+    const sku = entity(0)
+    return [
+      'Which item is most urgent?',
+      "What's out of stock?",
+      sku ? `How much ${sku} should I order?` : 'How much should I reorder?',
+      'Draft a purchase request',
+    ]
+  }
+  if (/pipeline|deal|prospect|sales/.test(title) || mod === 'CRM' || mod === 'Sales') {
+    return [
+      'Which deals should I close first?',
+      'Which deals are stalled?',
+      'Draft a follow-up for a stalled deal',
+      'Where is the biggest value?',
+    ]
+  }
+  if (/month-end|close|reconcil/.test(title)) {
+    return [
+      "What's blocking the close?",
+      "What's the biggest item to clear?",
+      'What should I do first?',
+      'Summarise the checklist',
+    ]
+  }
+  if (/contract|expir|renew/.test(title)) {
+    const someone = entity(0)
+    return [
+      'Who should I renew first?',
+      someone ? `What are ${someone}'s options?` : 'What are the options for each?',
+      'Draft a renewal message',
+      'Who is at risk of leaving?',
+    ]
+  }
+  // Sensible default that still references the result.
+  return [
+    'What should I do first?',
+    'Summarise this in 3 bullet points',
+    'What are the risks or blockers here?',
+    'Draft a follow-up I can send',
+  ]
+}
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions()) }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.
@@ -296,7 +368,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
 
           <template v-else-if="plan">
-            <p class="ctd-run-ts">{{ formatDateTime(selectedRun?.ranAt) }}</p>
+            <div class="ctd-run-topbar">
+              <p class="ctd-run-ts">{{ formatDateTime(selectedRun?.ranAt) }}</p>
+              <button class="btn-enterprise btn-enterprise--secondary ctd-openchat" type="button" @click="openChat">
+                <MpIcon name="airene-brand" size="sm" /> Open chat
+              </button>
+            </div>
             <h3 class="ctd-metric">{{ plan.metric }}</h3>
             <hr class="ctd-hr">
 
@@ -348,10 +425,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <div v-if="plan.artifacts?.pdf || plan.artifacts?.spreadsheet" class="ctd-downloads">
               <button v-if="plan.artifacts?.pdf" class="ctd-download" type="button" @click="downloadPdf"><MpIcon name="pdf" size="sm" /> Download PDF</button>
               <button v-if="plan.artifacts?.spreadsheet" class="ctd-download" type="button" @click="downloadCsv"><MpIcon name="download" size="sm" /> Download spreadsheet</button>
-            </div>
-            <!-- Open chat about this result -->
-            <div class="ctd-chatrow">
-              <button class="ctd-download" type="button" @click="openChat"><MpIcon name="airene-brand" size="sm" /> Open chat</button>
             </div>
           </template>
 
@@ -407,7 +480,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* Right card */
 .ctd-card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #fff); padding: var(--mp-spacing-5); }
+.ctd-run-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); }
 .ctd-run-ts { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ctd-openchat { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
 .ctd-metric { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: 28px; color: var(--mp-text-default); }
 .ctd-hr { border: none; border-top: 1px solid var(--mp-border-default); margin: var(--mp-spacing-4) 0; }
 .ctd-sec { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
@@ -424,7 +499,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-downloads { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-5); padding-top: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .ctd-download { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 .ctd-download:hover { text-decoration: underline; text-underline-offset: 2px; }
-.ctd-chatrow { margin-top: var(--mp-spacing-4); }
 .ctd-running { padding: var(--mp-spacing-2) 0; }
 .ctd-run-head { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-steps { list-style: none; margin: var(--mp-spacing-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }

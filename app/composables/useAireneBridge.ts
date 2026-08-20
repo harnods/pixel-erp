@@ -17,6 +17,9 @@ const pendingText = ref('')
 const openContextSignal = ref(0)
 const pendingGround = ref('')
 const pendingLabel = ref('')
+// Suggested follow-up prompts tailored to the opened context (e.g. referencing
+// the actual overdue customer or late employee in a task result).
+const pendingSuggestions = ref<string[]>([])
 
 export function useAireneBridge() {
   return {
@@ -27,6 +30,7 @@ export function useAireneBridge() {
     openContextSignal,
     pendingGround,
     pendingLabel,
+    pendingSuggestions,
     // Actions any component can call
     requestToggle() { toggleSignal.value++ },
     requestSend(text: string) {
@@ -36,9 +40,10 @@ export function useAireneBridge() {
       sendSignal.value++
     },
     /** Open the chat with a grounding context but no message sent yet. */
-    openWithContext(ground: string, label: string) {
+    openWithContext(ground: string, label: string, suggestions: string[] = []) {
       pendingGround.value = ground
       pendingLabel.value = label
+      pendingSuggestions.value = suggestions
       openContextSignal.value++
     },
   }

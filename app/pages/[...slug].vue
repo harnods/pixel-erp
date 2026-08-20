@@ -1113,12 +1113,14 @@ const chatContext = ref('')
 const aireneGround = ref('')
 // When the chat is opened about a specific task result, the empty-state greeting
 // and suggestions become contextual to that result instead of the generic ones.
-const contextSuggestions = [
+const DEFAULT_CONTEXT_SUGGESTIONS = [
   'What should I do first?',
   'Draft a follow-up message I can send',
   'Summarise this in 3 bullet points',
   'What are the risks or blockers here?',
 ]
+// Populated per opened task via the bridge (falls back to the generic set).
+const contextSuggestions = ref<string[]>([...DEFAULT_CONTEXT_SUGGESTIONS])
 
 // ── Rich chat rendering: light markdown + employee mention chips ──────────────
 function escapeHtml(s: string): string {
@@ -1239,6 +1241,9 @@ watch(aireneBridge.openContextSignal, () => {
   startNewChat()
   aireneGround.value = aireneBridge.pendingGround.value
   chatContext.value = aireneBridge.pendingLabel.value
+  contextSuggestions.value = aireneBridge.pendingSuggestions.value?.length
+    ? [...aireneBridge.pendingSuggestions.value]
+    : [...DEFAULT_CONTEXT_SUGGESTIONS]
   aireneOpen.value = true
 })
 
