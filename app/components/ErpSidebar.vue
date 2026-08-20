@@ -362,6 +362,7 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
+    { name: 'Cowork', icon: 'magic' },
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the

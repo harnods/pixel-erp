@@ -60,6 +60,7 @@ useHead({
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Cowork':            defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
