@@ -10,10 +10,10 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useCoworkContext } from '~/composables/useCoworkContext'
 
-definePageMeta({ layout: false })
+// Renders inside the standard ERP shell (ErpHeader + ErpSidebar) — the default
+// layout. Cowork is a workspace within the ERP, not a separate product surface.
 
 const route = useRoute()
-const router = useRouter()
 const { build } = useCoworkContext()
 
 type State = 'home' | 'working' | 'completed'
@@ -66,8 +66,6 @@ const greeting = computed(() => {
 const todayLabel = computed(() =>
   new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }),
 )
-
-const connections = ['Talenta', 'Qontak', 'WMS', 'Jurnal', 'Google Workspace', 'Slack']
 
 // Suggested work — grounded prompts tuned to what the mock ERP surfaces.
 const suggested = [
@@ -153,8 +151,6 @@ function reset() {
   prompt.value = ''
 }
 
-function exitCowork() { router.push('/') }
-
 onMounted(() => {
   // Entry from the header search "Cowork" mode: /cowork?task=...&run=1
   const q = route.query
@@ -171,23 +167,6 @@ function priorityTone(p: string) { return p === 'High' ? 'needs' : p === 'Medium
 
 <template>
   <div class="cw-app">
-    <!-- Dark product rail -->
-    <aside class="cw-aside">
-      <button class="cw-brand" type="button" @click="reset">Mekari <span>Cowork</span></button>
-      <nav class="cw-nav">
-        <button type="button" :class="{ 'cw-nav__item--active': state === 'home' }" class="cw-nav__item" @click="reset">Home</button>
-        <button type="button" :class="{ 'cw-nav__item--active': state === 'working' }" class="cw-nav__item" @click="state !== 'home' && (state = 'working')">Task working</button>
-        <button type="button" :class="{ 'cw-nav__item--active': state === 'completed' }" class="cw-nav__item" @click="plan && (state = 'completed')">Completed</button>
-        <button type="button" class="cw-nav__item">Skills</button>
-        <button type="button" class="cw-nav__item">Connections</button>
-      </nav>
-      <div class="cw-conn">
-        <p class="cw-conn__head">Connected</p>
-        <p v-for="c in connections" :key="c" class="cw-conn__row">✓ {{ c }}</p>
-      </div>
-      <button class="cw-exit" type="button" @click="exitCowork">← Back to ERP</button>
-    </aside>
-
     <main class="cw-main">
       <!-- ── Home ── -->
       <section v-if="state === 'home'" class="cw-view">
@@ -354,27 +333,14 @@ function priorityTone(p: string) { return p === 'High' ? 'needs' : p === 'Medium
   --cw-bg: #f6f7f9; --cw-surface: #fff; --cw-text: #17191c; --cw-muted: #6b7280; --cw-line: #e5e7eb;
   --cw-accent: #0d9488; --cw-accent-soft: #e6f4f0; --cw-green: #137a4a; --cw-green-soft: #eaf7f0;
   --cw-amber: #9a6700; --cw-amber-soft: #fff6dc; --cw-shadow: 0 12px 32px rgba(16,24,40,.07);
-  min-height: 100dvh; display: grid; grid-template-columns: 248px 1fr;
-  background: var(--cw-bg); color: var(--cw-text);
+  /* Sits inside the ERP content-area (ErpHeader + ErpSidebar around it) and owns
+     its own vertical scroll. */
+  height: 100%; overflow-y: auto; background: var(--cw-bg); color: var(--cw-text);
   font-family: var(--mp-fonts-body, Inter, sans-serif);
 }
 
-/* Aside */
-.cw-aside { background: #111318; color: #fff; padding: 20px 14px; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 0; height: 100dvh; }
-.cw-brand { background: none; border: none; color: #fff; font-weight: 700; font-size: 18px; padding: 8px 10px; text-align: left; cursor: pointer; }
-.cw-brand span { opacity: .55; font-weight: 500; }
-.cw-nav { display: flex; flex-direction: column; gap: 6px; }
-.cw-nav__item { text-align: left; background: none; border: none; color: #c7cad1; padding: 11px 12px; border-radius: 10px; font-size: 14px; cursor: pointer; font-family: inherit; }
-.cw-nav__item:hover { background: #23262d; color: #fff; }
-.cw-nav__item--active { background: #23262d; color: #fff; }
-.cw-conn { margin-top: auto; font-size: 12px; color: #9297a3; padding: 0 10px; line-height: 1.9; }
-.cw-conn__head { margin: 0 0 4px; }
-.cw-conn__row { margin: 0; }
-.cw-exit { background: none; border: 1px solid #2a2e36; color: #c7cad1; padding: 9px 12px; border-radius: 10px; font-size: 13px; cursor: pointer; font-family: inherit; }
-.cw-exit:hover { background: #23262d; color: #fff; }
-
 /* Main */
-.cw-main { padding: 40px 48px 64px; max-width: 1180px; width: 100%; margin: 0 auto; }
+.cw-main { padding: 32px 40px 64px; max-width: 1080px; width: 100%; margin: 0 auto; }
 .cw-eyebrow { color: var(--cw-muted); font-size: 13px; margin: 0 0 8px; }
 .cw-h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -.03em; }
 .cw-lede { color: var(--cw-muted); font-size: 15px; margin: 0 0 28px; }
@@ -450,8 +416,6 @@ function priorityTone(p: string) { return p === 'High' ? 'needs' : p === 'Medium
 .cw-summary__title { font-size: 14px; }
 
 @media (max-width: 900px) {
-  .cw-app { grid-template-columns: 1fr; }
-  .cw-aside { display: none; }
   .cw-main { padding: 24px 18px 48px; }
   .cw-grid, .cw-workspace { grid-template-columns: 1fr; }
 }
