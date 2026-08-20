@@ -1208,19 +1208,19 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork tasks'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             New task
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-schedule', query: { new: '1' } })">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-schedule', query: { new: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Schedule a task
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork connections'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-connections', query: { add: '1' } })">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-connections', query: { add: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Add connection
           </button>
