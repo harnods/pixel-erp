@@ -395,7 +395,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-hr { border: none; border-top: 1px solid var(--mp-border-default); margin: var(--mp-spacing-4) 0; }
 .ctd-sec { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .ctd-sec:first-child { margin-top: 0; }
-.ctd-item { padding: var(--mp-spacing-2) 0; }
+.ctd-item { padding: var(--mp-spacing-1, 4px) 0; }
 .ctd-actbtn { padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); margin-top: var(--mp-spacing-2); }
 .ctd-item__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctd-item__meta { margin-top: 2px; }
