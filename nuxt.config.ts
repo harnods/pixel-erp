@@ -6,6 +6,14 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4321 },
 
+  // Server-only secret for the Cowork (AI) feature. Value comes from
+  // NUXT_GEMINI_API_KEY in .env.local (gitignored) — never hardcoded/committed.
+  // It's exposed ONLY to server routes (server/api/*), not the client bundle.
+  runtimeConfig: {
+    geminiApiKey: "",
+    geminiModel: "gemini-flash-latest",
+  },
+
   app: {
     head: {
       title: "Mekari ERP",

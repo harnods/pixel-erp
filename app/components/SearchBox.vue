@@ -24,9 +24,6 @@ const collapsed = computed(() => props.variant === 'header' && !searchOpen.value
 const emit = defineEmits<{ aimode: [boolean] }>()
 
 const router = useRouter()
-// Airene chat panel is driven through a global bridge — works whether this box
-// sits inside the routed page (Home hero) or above it (header).
-const airene = useAireneBridge()
 
 function soon(what: string) {
   infoToast(`${what} — coming soon`)
@@ -225,21 +222,24 @@ const isSearchEmpty = computed(() =>
   && filteredFiles.value.length === 0,
 )
 
-// ── AI Mode ─────────────────────────────────────────────────────────────────
+// ── Cowork (AI co-worker) mode ───────────────────────────────────────────────
+// The AI toggle switches the search into "Cowork" mode: instead of answering a
+// question inline, submitting a prompt delegates it as a task to Mekari Cowork
+// (the /cowork workspace), which works across HR, CRM, WMS and finance.
 const aiMode = ref(false)
-const AI_PLACEHOLDER = "What's the top selling product this month?"
+const AI_PLACEHOLDER = 'Ask Cowork to prepare, review, or chase something…'
 const recentChats = ref<string[]>([
-  'Are there duplicate transactions in this period?',
-  'Explain why expenses increased this month.',
-  "What's driving the drop in profit margin?",
+  'Prepare my Monday briefing across the ERP',
+  'Chase overdue receivables and draft reminders',
+  'Reorder low-stock SKUs before they block orders',
 ])
 const suggestedPrompts = [
-  'How to connect bank feeds to Mekari ERP?',
-  'Summarize budget variance for the last quarter.',
-  "What's the top selling product this month?",
-  "Why doesn't my bank balance match my books?",
-  'Which products are low on stock or need restocking?',
-  "Which customers haven't paid yet?",
+  'Prepare my Monday briefing across HR, CRM, WMS and finance',
+  'Find overdue invoices and draft reminders for the biggest ones',
+  'Check WMS stock against reorder points and propose a purchase plan',
+  'Review the sales pipeline and surface deals to prioritise',
+  'Flag employee contracts expiring in the next 60 days',
+  'Reconcile cash accounts and list unmatched statement lines',
 ]
 function clearAiChats() { recentChats.value = [] }
 function setAi(v: boolean) { aiMode.value = v; emit('aimode', v) }
@@ -249,7 +249,7 @@ function toggleAiMode() { setAi(!aiMode.value); searchOpen.value = true }
 // to scope by, so pin this tooltip's width by matching its own label text.
 const aiTooltipLabel = computed(() => aiMode.value
   ? 'Switch to regular search.'
-  : 'Ask AI to analyze, summarize, and explain your data.')
+  : 'Delegate a task to Cowork — it works across your ERP.')
 function onAiTooltipOpen() {
   requestAnimationFrame(() => {
     const el = Array.from(document.querySelectorAll('.mp-tooltip'))
@@ -260,13 +260,14 @@ function onAiTooltipOpen() {
     (el as HTMLElement).style.width = aiMode.value ? '' : '214px'
   })
 }
-// Sending a prompt opens the Airene chat drawer with that prompt.
+// Sending a prompt delegates it as a task to Mekari Cowork (the /cowork
+// workspace), which runs it across the ERP and returns a grounded briefing.
 function askAi(text: string) {
   const t = (text ?? '').trim()
   if (!t) return
   closeSearch()
-  airene.requestSend(t)
   searchQuery.value = ''
+  router.push({ path: '/cowork', query: { task: t, run: '1' } })
 }
 
 function openSearch() { searchOpen.value = true }
@@ -315,7 +316,7 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
               <path d="M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z" fill="currentColor"/>
               <path d="M14.4956 3.07205L14.2977 3.04651C13.5955 2.95643 13.0422 2.40312 12.9535 1.70085L12.9301 1.51358C12.8911 1.20643 12.5889 1 12.2711 1C11.9561 1 11.6553 1.19791 11.6142 1.50436L11.5887 1.70227C11.4986 2.40454 10.9453 2.95784 10.243 3.04651L10.0557 3.06992C9.7422 3.11107 9.54216 3.41113 9.54216 3.72892C9.54216 4.04672 9.73156 4.34749 10.0465 4.38579L10.2444 4.41133C10.9467 4.50142 11.5 5.05472 11.5887 5.75699L11.6121 5.94427C11.6504 6.26348 11.9533 6.45785 12.2711 6.45785C12.586 6.45785 12.8911 6.24362 12.9279 5.95349L12.9535 5.75558C13.0436 5.05331 13.5969 4.5 14.2991 4.41133L14.4864 4.38792C14.8021 4.3482 15 4.04672 15 3.72892C15 3.41113 14.8021 3.11107 14.4956 3.07205Z" fill="currentColor"/>
             </svg>
-            AI Mode
+            Cowork
           </button>
         </MpTooltip>
       </div>
@@ -325,7 +326,7 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
         <template v-if="aiMode">
           <div v-if="recentChats.length" class="search__group">
             <div class="search__group-head">
-              <span class="search__group-title">Recent chats</span>
+              <span class="search__group-title">Recent tasks</span>
               <button class="search__clear" type="button" @click.stop="clearAiChats">Clear</button>
             </div>
             <button v-for="c in recentChats" :key="c" class="search__item" type="button" @click="askAi(c)">
@@ -335,7 +336,7 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
           </div>
 
           <div class="search__group">
-            <span class="search__group-title">Suggested prompts</span>
+            <span class="search__group-title">Suggested tasks</span>
             <button v-for="p in suggestedPrompts" :key="p" class="search__item" type="button" @click="askAi(p)">
               <svg class="search__item-icon search__item-icon--ai" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path fill-rule="evenodd" clip-rule="evenodd" d="M12.9489 11.7105C10.5135 11.3995 8.59878 9.48057 8.29024 7.04641C8.29023 7.04632 8.29025 7.0465 8.29024 7.04641L8.23974 6.64842C8.2257 6.64025 8.20678 6.63122 8.18304 6.62343C8.14733 6.61171 8.10875 6.60546 8.0714 6.60546C8.03118 6.60546 7.99052 6.61199 7.95383 6.62371C7.93489 6.62976 7.91929 6.63645 7.90695 6.64273L7.85508 7.05116C7.54405 9.48653 5.62511 11.4013 3.19095 11.7098C3.19086 11.7098 3.19104 11.7098 3.19095 11.7098L2.78862 11.7609C2.78211 11.7729 2.77485 11.7891 2.76829 11.8095C2.75687 11.845 2.75 11.886 2.75 11.9286C2.75 11.9799 2.75781 12.0267 2.76958 12.0649C2.77275 12.0751 2.77602 12.0842 2.7792 12.0921L3.1957 12.145C5.63107 12.456 7.5458 14.3749 7.85434 16.8091C7.85433 16.809 7.85435 16.8092 7.85434 16.8091L7.90599 17.2161C7.91627 17.2209 7.92906 17.2261 7.94451 17.231C7.98157 17.2426 8.02586 17.25 8.07318 17.25C8.10071 17.25 8.13516 17.2451 8.17197 17.2328C8.19876 17.2238 8.22141 17.2127 8.239 17.2019L8.2895 16.8043C8.60053 14.369 10.5195 12.4542 12.9536 12.1457C12.9535 12.1457 12.9537 12.1457 12.9536 12.1457L13.3575 12.0944C13.3635 12.0829 13.37 12.0678 13.376 12.049C13.3875 12.013 13.3946 11.971 13.3946 11.9269C13.3946 11.8824 13.3875 11.8396 13.3757 11.8024C13.3707 11.7868 13.3654 11.7736 13.3603 11.7628L12.9489 11.7105ZM13.1425 13.6338C11.3859 13.8563 10.0018 15.2378 9.77742 16.9944L9.71446 17.49C9.62313 18.2145 8.85968 18.75 8.07318 18.75C7.2778 18.75 6.52233 18.2641 6.42568 17.4661L6.36627 16.9979C6.14371 15.2414 4.76223 13.8572 3.00567 13.6329L2.51 13.5699C1.7235 13.4742 1.25 12.724 1.25 11.9286C1.25 11.1333 1.7501 10.3831 2.53395 10.2811L3.00212 10.2217C4.75868 9.99917 6.14283 8.61769 6.36716 6.86113L6.43012 6.36546C6.5312 5.60113 7.2849 5.10546 8.0714 5.10546C8.86678 5.10546 9.62225 5.62241 9.7189 6.38941L9.77831 6.85758C10.0009 8.61414 11.3823 9.99829 13.1389 10.2226L13.6346 10.2856C14.3998 10.3813 14.8946 11.1315 14.8946 11.9269C14.8946 12.7222 14.3989 13.4742 13.6106 13.5744L13.1425 13.6338ZM12.8038 3.80814L12.5697 3.8374C12.1778 3.88883 11.9277 4.2639 11.9277 4.66115C11.9277 5.05839 12.1645 5.43435 12.5582 5.48223L12.8055 5.51415C13.6834 5.62676 14.375 6.31839 14.4858 7.19623L14.5151 7.43032C14.563 7.82933 14.9416 8.07229 15.3389 8.07229C15.7326 8.07229 16.1138 7.80451 16.1599 7.44184L16.1919 7.19445C16.3045 6.31662 16.9961 5.62499 17.8739 5.51415L18.108 5.48489C18.5026 5.43524 18.75 5.05839 18.75 4.66115C18.75 4.2639 18.5026 3.88883 18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3389 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00567 13.6816 3.6973 12.8038 3.80814ZM15.3388 3.91203C15.1292 4.1987 14.8764 4.45161 14.5897 4.66124C14.8764 4.87079 15.1293 5.12358 15.339 5.41026C15.5485 5.12359 15.8013 4.87069 16.088 4.66105C15.8013 4.4515 15.5484 4.19871 15.3388 3.91203Z" fill="currentColor"/>
