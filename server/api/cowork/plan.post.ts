@@ -83,7 +83,7 @@ const RESPONSE_SCHEMA = {
   required: ['taskTitle', 'intro', 'sources', 'steps', 'findings', 'metric', 'summary', 'alsoPrepared'],
 }
 
-function buildPrompt(task: string, ctx: CoworkContext): string {
+function buildPrompt(task: string, ctx: CoworkContext, sources?: string[]): string {
   return [
     'You are Mekari Cowork — an autonomous AI co-worker embedded in a Mekari ERP suite.',
     'The suite has these connected products the user works across:',
@@ -98,6 +98,7 @@ function buildPrompt(task: string, ctx: CoworkContext): string {
     'names, customer names, PO/invoice numbers, SKUs) where the snapshot provides them.',
     '',
     `Today: ${ctx.today ?? 'today'}. User: ${ctx.user ?? 'the user'}.`,
+    sources && sources.length ? `Only use these connected sources: ${sources.join(', ')}.` : '',
     '',
     'ERP DATA SNAPSHOT (JSON):',
     JSON.stringify({ hr: ctx.hr, crm: ctx.crm, wms: ctx.wms, finance: ctx.finance }, null, 0),
@@ -156,8 +157,14 @@ function fallbackPlan(task: string, ctx: CoworkContext): CoworkPlan {
   }
 }
 
+// Models the client is allowed to pick (keeps arbitrary values out of the URL).
+const ALLOWED_MODELS = new Set([
+  'gemini-flash-latest', 'gemini-pro-latest', 'gemini-flash-lite-latest',
+  'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview',
+])
+
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ task?: string; context?: CoworkContext }>(event)
+  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[] }>(event)
   const task = (body?.task ?? '').trim()
   const ctx = body?.context ?? {}
   if (!task) {
@@ -167,7 +174,9 @@ export default defineEventHandler(async (event) => {
 
   const config = useRuntimeConfig()
   const apiKey = config.geminiApiKey as string
-  const model = (config.geminiModel as string) || 'gemini-flash-latest'
+  const model = (body?.model && ALLOWED_MODELS.has(body.model))
+    ? body.model
+    : ((config.geminiModel as string) || 'gemini-flash-latest')
 
   if (!apiKey) {
     return { plan: fallbackPlan(task, ctx), source: 'fallback', reason: 'no-api-key' }
@@ -178,7 +187,7 @@ export default defineEventHandler(async (event) => {
     const res = await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ parts: [{ text: buildPrompt(task, ctx) }] }],
+        contents: [{ parts: [{ text: buildPrompt(task, ctx, body?.sources) }] }],
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
