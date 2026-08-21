@@ -61,6 +61,10 @@ const lastUpdatedAt = computed(() => adjustment.value ? adjustmentUpdatedAt(adju
 const accountCode = computed(() => adjustment.value ? accountCodeFor(adjustment.value.account) : '')
 
 // ── Linked cycle count (ERP Stock Count only) ──────────────────────────────────
+// Wrong-bin serial scans the operator hit during counting — kept on the record as
+// notes so the manager reviewing the result can raise a warehouse transfer.
+const misplacedSerials = computed(() => adjustment.value?.misplacedSerials ?? [])
+
 const linkedCycleCount = computed(() => {
   if (isWmsRecord.value || !isCount.value) return null
   const id = adjustment.value?.linkedCycleCountId
@@ -903,6 +907,41 @@ onUnmounted(() => {
         </div>
       </section>
 
+      <!-- Misplaced serial numbers (WMS Cycle count) — notes from the count, for
+           the manager to reconcile with a warehouse transfer. Read-only at MVP:
+           the transfer is raised by hand, nothing is auto-created here. -->
+      <section v-if="misplacedSerials.length" class="detail-linked-section">
+        <h3 class="detail-linked-heading">{{ t('Misplaced serial numbers') }} ({{ misplacedSerials.length }})</h3>
+        <p class="detail-misplaced-note">
+          {{ t('The operator found these units at a bin the system does not have them in. Create a warehouse transfer to move them in the system.') }}
+        </p>
+        <div class="detail-linked-wrap">
+          <table class="detail-linked">
+            <thead>
+              <tr>
+                <th class="detail-th">{{ t('Serial number') }}</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('System location') }}</th>
+                <th class="detail-th">{{ t('Found at') }}</th>
+                <th class="detail-th">{{ t('Scanned at') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in misplacedSerials" :key="m.serial" class="detail-item-row">
+                <td class="detail-td detail-td--number">{{ m.serial }}</td>
+                <td class="detail-td">
+                  <span class="detail-misplaced-product">{{ m.productName }}</span>
+                  <span class="detail-misplaced-sku">{{ m.sku }}</span>
+                </td>
+                <td class="detail-td">{{ m.systemLocation }}</td>
+                <td class="detail-td"><strong>{{ m.countedLocation }}</strong></td>
+                <td class="detail-td">{{ formatDateTime(m.scannedAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- Linked cycle count (ERP Stock Count only) -->
       <section v-if="linkedCycleCount" class="detail-linked-section">
         <h3 class="detail-linked-heading">{{ t('Cycle counts') }} (1)</h3>
@@ -1418,6 +1457,9 @@ onUnmounted(() => {
 .detail-linked-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); flex-shrink: 0; }
 .detail-linked-heading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-linked-wrap { overflow-x: auto; }
+.detail-misplaced-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-misplaced-product { display: block; }
+.detail-misplaced-sku { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-linked {
   width: 100%; min-width: 700px; border-collapse: collapse; table-layout: auto;
   border-top: 1px solid var(--mp-border-default);

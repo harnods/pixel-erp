@@ -8,11 +8,11 @@ import { TODAY } from './master'
 import {
   accountForCategory, accountCodeFor, addAdjustment, stockAdjustments,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
-  type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
+  type StockAdjustment, type AdjustmentInput, type AdjustmentLine, type MisplacedSerial,
   IN_OUT_CATEGORIES, adjustmentLineItems,
 } from './stockAdjustments'
 
-export type { AdjustmentKind, AdjustmentCategory, AdjustmentStatus, StockAdjustment, AdjustmentInput, AdjustmentLine }
+export type { AdjustmentKind, AdjustmentCategory, AdjustmentStatus, StockAdjustment, AdjustmentInput, AdjustmentLine, MisplacedSerial }
 
 /**
  * WMS stock adjustments — separate data store from ERP. No approval workflow:
@@ -307,10 +307,15 @@ export function startWmsCount(id: string): StockAdjustment | undefined {
   return a
 }
 
-export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
+export function saveWmsCountDraft(
+  id: string,
+  lines: { sku: string; qty: number; location?: string }[],
+  misplacedSerials?: MisplacedSerial[],
+): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.lines = lines
+  a.misplacedSerials = misplacedSerials?.length ? misplacedSerials : undefined
   persist()
   return a
 }
@@ -318,12 +323,17 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number;
 // Finishing a count doesn't apply stock yet — it moves the task to "Counted"
 // (Awaiting approval tab) and waits for a manager to review it. Stock only
 // changes once approveWmsAdjustment runs.
-export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
+export function finishWmsCount(
+  id: string,
+  lines: { sku: string; qty: number; location?: string }[],
+  misplacedSerials?: MisplacedSerial[],
+): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.status = 'counted'
   a.endDate = new Date().toISOString()
   a.lines = lines
+  a.misplacedSerials = misplacedSerials?.length ? misplacedSerials : undefined
   persist()
   return a
 }

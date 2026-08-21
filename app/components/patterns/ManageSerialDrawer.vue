@@ -89,6 +89,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [boolean]
   'save': [serials: CommittedSerial[]]
+  /** Count mode — a serial rejected because the system stocks it in another bin.
+   *  The page keeps these as a note on the count for the manager to reconcile. */
+  'misplaced-scan': [payload: { serial: string; sku: string; systemLocation: string; countedLocation: string }]
 }>()
 
 const { t } = useLocale()
@@ -441,6 +444,14 @@ function handleDrawerScan(rawValue: string) {
         notifyScanError(
           `${v} ${t('is currently in')} ${resolved.location} — ${t('move it to')} ${props.countLocation} ${t('using warehouse transfer')}`,
         )
+        // The operator saw this unit here, so the rejection is a finding, not just
+        // a bad scan — hand it up to be recorded on the count for manager review.
+        emit('misplaced-scan', {
+          serial: resolved.serial ?? v,
+          sku: props.sku,
+          systemLocation: resolved.location,
+          countedLocation: props.countLocation,
+        })
         return
       }
       rows.value.push({ serial: resolved.serial ?? v, counted: true })
