@@ -51,7 +51,7 @@ const agentActions = computed(() => {
 
 // ── Plan / artifacts ──────────────────────────────────────────────────────────
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
-interface ActionItem { title: string; detail: string; owner: string; due: string; priority: 'High' | 'Medium' | 'Low' }
+interface ActionItem { title: string; detail: string; owner: string; due: string; priority: 'High' | 'Medium' | 'Low'; action?: string }
 interface Plan {
   taskTitle: string; intro: string; metric: string
   sources: { name: string; detail: string }[]
@@ -143,19 +143,32 @@ function statusProps(s: string) {
   return { status: 'draft', label: 'Scheduled' }
 }
 
-// ── Contextual action-item buttons (create real ERP records) ──────────────────
-function actionButton(a: ActionItem): string {
+// ── Action-item buttons ───────────────────────────────────────────────────────
+// The agent picked a skill action per item (a.action). Only show it if the agent
+// actually has that skill; otherwise fall back to a heuristic label.
+const agentActionLabels = computed(() => new Set(agentActions.value))
+function heuristicAction(a: ActionItem): string {
   const t = `${a.title} ${a.detail}`.toLowerCase()
   if (/purchase|reorder|requisition|restock|procure|buy/.test(t)) return 'Create purchase request'
   if (/count|cycle/.test(t)) return 'Create stock count'
-  if (/reminder|chase|collect|dunning|payment notice|overdue/.test(t)) return 'Create reminder'
+  if (/reminder|chase|collect|dunning|payment notice|overdue/.test(t)) return 'Draft reminder'
   if (/contract|renew|offboard|resign/.test(t)) return 'Review contract'
   if (/reconcil|journal|close|bill|invoice/.test(t)) return 'Open in finance'
   if (/work order|production|bom/.test(t)) return 'Create work order'
-  if (/deal|pipeline|follow.?up|prospect/.test(t)) return 'Open in CRM'
+  if (/deal|pipeline|follow.?up|prospect/.test(t)) return 'Draft follow-up'
   return 'Create task'
 }
-function doAction(a: ActionItem) { toast.notify({ variant: 'success', title: `${actionButton(a)} created` }) }
+// The button label for an item: the agent's chosen skill action if it's real,
+// else a heuristic — but only if the agent has ANY skills to act with.
+function actionButton(a: ActionItem): string {
+  if (a.action && agentActionLabels.value.has(a.action)) return a.action
+  return heuristicAction(a)
+}
+function doAction(a: ActionItem) {
+  const label = actionButton(a)
+  const who = taskAgent.value?.name ?? 'Cowork'
+  toast.notify({ variant: 'success', title: `${label} — done by ${who}` })
+}
 
 // ── Downloads ─────────────────────────────────────────────────────────────────
 function downloadBlob(name: string, mime: string, content: string) {

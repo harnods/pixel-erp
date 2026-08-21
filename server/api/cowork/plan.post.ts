@@ -57,8 +57,9 @@ const ARTIFACT_SCHEMAS: Record<string, any> = {
         title: { type: 'string' }, detail: { type: 'string' },
         owner: { type: 'string', description: 'A real name/role from the data' },
         due: { type: 'string' }, priority: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+        action: { type: 'string', description: 'The single most relevant capability from the actions you can take (verbatim), or "" if none fits.' },
       },
-      required: ['title', 'detail', 'owner', 'due', 'priority'],
+      required: ['title', 'detail', 'owner', 'due', 'priority', 'action'],
     },
   },
   email: {
@@ -87,7 +88,7 @@ const ARTIFACT_SCHEMAS: Record<string, any> = {
 
 const ARTIFACT_INSTRUCTIONS: Record<string, string> = {
   briefing: '- artifacts.briefing: { summary: 3-6 prioritised (High/Medium/Low) items the user must act on, each grounded in a specific record; findings: 2-4 specific observations }.',
-  actionItems: '- artifacts.actionItems: 3-6 concrete to-dos, each with an owner (a real name/role from the data), a due date, and a priority.',
+  actionItems: '- artifacts.actionItems: 3-6 concrete to-dos, each with an owner (a real name/role from the data), a due date, a priority, and an `action` set VERBATIM to the single most relevant capability from the actions you can take (listed above) — or "" if none of them fit. Only propose actions you are actually able to take.',
   email: '- artifacts.email: a ready-to-send email ({to, subject, body}) — e.g. a payment reminder to a specific overdue customer with the real amount. Use \\n for line breaks and sign off as the user.',
   spreadsheet: '- artifacts.spreadsheet: a table ({title, columns, rows}) of the actual records relevant to the task (e.g. overdue invoices with customer, number, balance, days overdue). Use real values from the snapshot.',
   pdf: '- artifacts.pdf: a formatted report ({title, sections:[{heading,body}]}) suitable for printing — an executive overview grounded in the data.',
@@ -157,7 +158,7 @@ function fallbackPlan(task: string, ctx: CoworkContext, requested: string[]) {
     findings: [{ title: 'Attention needed', detail: 'Review the highest-value overdue items first.' }],
   }
   if (requested.includes('actionItems')) artifacts.actionItems = overdue.slice(0, 3).map((i) => ({
-    title: `Chase ${i.customer}`, detail: `Follow up on ${i.number} (${i.balance}).`, owner: 'Finance', due: 'This week', priority: 'High',
+    title: `Chase ${i.customer}`, detail: `Follow up on ${i.number} (${i.balance}).`, owner: 'Finance', due: 'This week', priority: 'High', action: '',
   }))
   if (requested.includes('email') && overdue[0]) artifacts.email = {
     to: overdue[0].customer, subject: `Payment reminder — ${overdue[0].number}`,
