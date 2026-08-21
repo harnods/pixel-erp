@@ -8,7 +8,7 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import {
-  MpButton, MpInput, MpTextarea, MpSelect, MpToggle, MpUpload, MpUploadList, MpIcon,
+  MpButton, MpInput, MpTextarea, MpSelect, MpToggle, MpUpload, MpUploadList, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
   MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerOverlay, MpModalCloseButton,
@@ -76,6 +76,24 @@ onMounted(() => {
   visibilityEveryone.value = a.visibilityEveryone ?? true
   selectedEmployeeIds.value = [...(a.visibilityEmployees ?? [])]
 })
+
+// ── AI "Optimize" for the description / instruction textareas ──
+const optimizing = ref<'' | 'description' | 'instruction'>('')
+async function optimize(kind: 'description' | 'instruction') {
+  const text = (kind === 'description' ? description.value : instruction.value).trim()
+  if (!text || optimizing.value) return
+  optimizing.value = kind
+  try {
+    const res = await $fetch<{ text: string }>('/api/cowork/optimize', {
+      method: 'POST', body: { text, kind, model: model.value },
+    })
+    if (res?.text) {
+      if (kind === 'description') description.value = res.text
+      else instruction.value = res.text
+    }
+  } catch { infoToast('Could not optimize right now — please try again') }
+  finally { optimizing.value = '' }
+}
 
 // ── Files ──
 function fileSizeLabel(bytes: number): string {
@@ -192,13 +210,29 @@ function save() {
 
             <MpFormControl id="caf-desc" class="caf-field">
               <MpFormLabel>Description</MpFormLabel>
-              <MpTextarea id="caf-desc-input" v-model="description" is-full-width :rows="2" />
+              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description' }">
+                <textarea v-model="description" class="caf-ta__input" rows="2"></textarea>
+                <div class="caf-ta__foot">
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
+                    <MpSpinner v-if="optimizing === 'description'" size="sm" />
+                    <MpIcon v-else name="magic" size="sm" /> Optimize
+                  </button>
+                </div>
+              </div>
               <p class="caf-hint">Describe what this agent will help your team with.</p>
             </MpFormControl>
 
             <MpFormControl id="caf-instr" class="caf-field">
               <MpFormLabel>Instruction</MpFormLabel>
-              <MpTextarea id="caf-instr-input" v-model="instruction" is-full-width :rows="5" />
+              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction' }">
+                <textarea v-model="instruction" class="caf-ta__input" rows="5"></textarea>
+                <div class="caf-ta__foot">
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary caf-optimize" :disabled="optimizing === 'instruction'" @click="optimize('instruction')">
+                    <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
+                    <MpIcon v-else name="magic" size="sm" /> Optimize
+                  </button>
+                </div>
+              </div>
               <p class="caf-hint">Control your agent's behaviour by adding custom instructions.</p>
             </MpFormControl>
 
@@ -340,6 +374,14 @@ function save() {
 .caf-field--half { grid-column: 1 / 4; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+
+/* Textarea with a docked "Optimize" button inside the box */
+.caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+.caf-ta:focus-within { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47,111,235,0.12); }
+.caf-ta__input { display: block; width: 100%; box-sizing: border-box; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
+.caf-ta__foot { display: flex; justify-content: flex-end; padding: 0 var(--mp-spacing-2, 8px) var(--mp-spacing-2, 8px); }
+.caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+.caf-optimize:disabled { opacity: 0.7; cursor: default; }
 .caf-hint--tight { margin-top: 2px; max-width: 420px; }
 .caf-step-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
