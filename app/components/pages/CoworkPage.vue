@@ -876,11 +876,22 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       <span class="cw-muted">{{ c.desc }}</span>
                       <span v-if="c.usedBy?.length" class="cw-suggest-used">
                         <span class="cw-avatars">
-                          <img v-for="e in usedAvatars(c.usedBy)" :key="e!.id" :src="e!.photo" :alt="e!.fullName" class="cw-avatar" :title="e!.fullName">
+                          <span v-for="e in usedAvatars(c.usedBy)" :key="e!.id" class="cw-avatar-wrap" tabindex="0" @click.stop>
+                            <img :src="e!.photo" :alt="e!.fullName" class="cw-avatar">
+                            <span class="cw-avatar-coach">
+                              <img :src="e!.photo" alt="" class="cw-avatar-coach__av">
+                              <span class="cw-avatar-coach__body">
+                                <span class="cw-avatar-coach__name">{{ e!.fullName }}</span>
+                                <span class="cw-avatar-coach__meta">{{ e!.employeeId }}</span>
+                                <span class="cw-avatar-coach__meta">{{ [e!.jobPosition, e!.department].filter(Boolean).join(' · ') }}</span>
+                              </span>
+                            </span>
+                          </span>
                         </span>
                         Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
                       </span>
-                      <span class="cw-suggest-view">View details <MpIcon name="arrows-right" size="sm" /></span>
+                      <!-- Separate action: runs the task (card click elsewhere = view details). -->
+                      <button class="cw-suggest-run" type="button" @click.stop="runCatalog(c)">Run task <MpIcon name="arrows-right" size="sm" /></button>
                     </span>
                   </div>
                 </div>
@@ -1265,15 +1276,35 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-suggest-item { cursor: pointer; }
-.cw-suggest-view { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
-.cw-suggest-item:hover .cw-suggest-view,
-.cw-suggest-item:focus-visible .cw-suggest-view { text-decoration: underline; text-underline-offset: 2px; }
+/* Card hover hints it's clickable (view details); the title underlines. */
+.cw-suggest-item:hover .cw-suggest-title { text-decoration: underline; text-underline-offset: 2px; }
 .cw-suggest-item:focus-visible { outline: none; }
 .cw-suggest-item:focus-visible .cw-suggest-title { text-decoration: underline; }
+/* "Run task" is a separate action (stops propagation). */
+.cw-suggest-run { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-run:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cw-avatars { display: inline-flex; }
-.cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.cw-avatar + .cw-avatar { margin-left: -12px; }
+.cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); display: block; }
+.cw-avatar-wrap { position: relative; display: inline-flex; outline: none; }
+.cw-avatar-wrap + .cw-avatar-wrap { margin-left: -12px; }
+.cw-avatar-wrap:hover { z-index: 5; }
+/* Employee coachmark on avatar hover/focus */
+.cw-avatar-coach {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
+  display: none; align-items: center; gap: var(--mp-spacing-2, 8px);
+  min-width: 200px; padding: var(--mp-spacing-3, 12px);
+  background: var(--mp-background-neutral, #fff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-lg, 12px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14); cursor: default;
+}
+.cw-avatar-wrap:hover .cw-avatar-coach,
+.cw-avatar-wrap:focus-visible .cw-avatar-coach { display: flex; }
+.cw-avatar-coach__av { width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--mp-radii-full, 50%); object-fit: cover; }
+.cw-avatar-coach__body { display: flex; flex-direction: column; gap: 1px; }
+.cw-avatar-coach__name { font-size: var(--mp-font-sizes-sm, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); white-space: nowrap; }
+.cw-avatar-coach__meta { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); white-space: nowrap; }
 .cw-suggest-item:hover .cw-suggest-run { text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 900px) { .cw-suggest-grid { grid-template-columns: 1fr; } }
 .cw-composer__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); }
