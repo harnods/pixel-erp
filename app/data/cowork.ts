@@ -55,10 +55,17 @@ export interface CoworkRun {
 
 export type CoworkCadence = 'Daily' | 'Weekly' | 'Monthly'
 
+// Fixed category order for the Connections marketplace grid.
+export type CoworkConnectionCategory =
+  | 'Featured' | 'Productivity' | 'Business & operations' | 'Data & analytics' | 'Communication' | 'Finance'
+export const COWORK_CONNECTION_CATEGORIES: CoworkConnectionCategory[] =
+  ['Featured', 'Productivity', 'Business & operations', 'Data & analytics', 'Communication', 'Finance']
+
 export interface CoworkConnection {
   id: string
   name: string
-  category: string
+  /** Every category this app appears under (an app can be Featured + Productivity). */
+  categories: CoworkConnectionCategory[]
   connected: boolean
   detail?: string
   /** 'google' = a real OAuth connection (Google Identity Services); 'fake' = a
@@ -66,6 +73,8 @@ export interface CoworkConnection {
   provider: 'google' | 'fake'
   /** OAuth scope(s) requested for a real Google connection. */
   scope?: string
+  /** Brand colour for the logo tile (monogram fallback — no external assets). */
+  color?: string
 }
 
 /** Mekari products are connected by default (Cowork always works over them), so
@@ -629,20 +638,62 @@ const TASKS_SEED: CoworkTask[] = [
     schedule: { cadence: 'Daily', time: '07:00', nextRun: 'Tomorrow · 07:00', enabled: true } },
 ]
 
-// Only external connections are listed (Mekari products are built-in). The three
-// Google entries are REAL OAuth connections; the rest are demo-only.
+// The connections marketplace. Google entries (Gmail, Calendar, Contacts, Drive)
+// are REAL OAuth connections; the rest are demo-only. An app can belong to several
+// categories (e.g. Notion is Featured + Productivity) — one record, rendered in
+// each of its categories, sharing a single connected state.
 const CONNECTION_SEED: CoworkConnection[] = [
-  { id: 'gcal',     name: 'Google Calendar', category: 'Productivity', connected: false, provider: 'google',
-    detail: 'Meetings, deadlines & reminders', scope: 'https://www.googleapis.com/auth/calendar.readonly' },
-  { id: 'gmail',    name: 'Gmail', category: 'Email', connected: false, provider: 'google',
-    detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly' },
-  { id: 'gcontacts', name: 'Google Contacts', category: 'People', connected: false, provider: 'google',
-    detail: 'Match customers & stakeholders', scope: 'https://www.googleapis.com/auth/contacts.readonly' },
-  { id: 'sap',      name: 'SAP',    category: 'ERP', connected: false, provider: 'fake', detail: 'Finance & supply chain' },
-  { id: 'xero',     name: 'Xero',   category: 'Accounting', connected: false, provider: 'fake', detail: 'Ledgers & invoices' },
-  { id: 'notion',   name: 'Notion', category: 'Docs & wiki', connected: false, provider: 'fake', detail: 'Docs, notes & databases' },
-  { id: 'hubspot',  name: 'HubSpot', category: 'CRM', connected: false, provider: 'fake', detail: 'Marketing & sales pipeline' },
-  { id: 'slack',    name: 'Slack',  category: 'Messaging', connected: false, provider: 'fake', detail: 'Channels & DMs' },
+  // ── Google (real OAuth) ──
+  { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
+    detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
+  { id: 'gdrive', name: 'Google Drive', categories: ['Featured', 'Productivity'], connected: false, provider: 'google',
+    detail: 'Files, docs & sheets', scope: 'https://www.googleapis.com/auth/drive.readonly', color: '#1FA463' },
+  { id: 'gcal', name: 'Google Calendar', categories: ['Featured', 'Productivity'], connected: false, provider: 'google',
+    detail: 'Meetings, deadlines & reminders', scope: 'https://www.googleapis.com/auth/calendar.readonly', color: '#4285F4' },
+  { id: 'gcontacts', name: 'Google Contacts', categories: ['Productivity'], connected: false, provider: 'google',
+    detail: 'Match customers & stakeholders', scope: 'https://www.googleapis.com/auth/contacts.readonly', color: '#4285F4' },
+  // ── Featured / Communication ──
+  { id: 'notion', name: 'Notion', categories: ['Featured', 'Productivity'], connected: false, provider: 'fake', detail: 'Docs, notes & databases', color: '#111111' },
+  { id: 'slack', name: 'Slack', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Channels & DMs', color: '#611F69' },
+  // ── Productivity ──
+  { id: 'rovo', name: 'Atlassian Rovo', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'AI across Jira & Confluence', color: '#1868DB' },
+  { id: 'outlook-cal', name: 'Outlook Calendar', categories: ['Productivity', 'Communication'], connected: false, provider: 'fake', detail: 'Meetings & availability', color: '#0A64BC' },
+  { id: 'fireflies', name: 'Fireflies', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Meeting notes & transcripts', color: '#1F6FEB' },
+  { id: 'airtable', name: 'Airtable', categories: ['Productivity', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Databases & spreadsheets', color: '#FCB400' },
+  { id: 'asana', name: 'Asana', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Projects & tasks', color: '#F06A6A' },
+  { id: 'clickup', name: 'ClickUp', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Tasks, docs & goals', color: '#7B68EE' },
+  { id: 'monday', name: 'Monday.com', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Work management', color: '#FF3D57' },
+  { id: 'otter', name: 'Otter.ai', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Voice notes & transcripts', color: '#00A0DC' },
+  { id: 'mekari-sheets', name: 'Mekari Sheets', categories: ['Productivity', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Spreadsheets & reports', color: '#0A6E4E' },
+  { id: 'mekari-docs', name: 'Mekari Docs', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Documents & e-signing', color: '#0A6E4E' },
+  // ── Business & operations ──
+  { id: 'salesforce', name: 'Salesforce', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'CRM & sales cloud', color: '#00A1E0' },
+  { id: 'hubspot', name: 'HubSpot', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Marketing & sales pipeline', color: '#FF7A59' },
+  { id: 'sap', name: 'SAP', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'ERP & supply chain', color: '#0FAAFF' },
+  { id: 'shopify', name: 'Shopify', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Orders & storefront', color: '#5E8E3E' },
+  { id: 'zendesk', name: 'Zendesk', categories: ['Business & operations', 'Communication'], connected: false, provider: 'fake', detail: 'Support tickets', color: '#03363D' },
+  { id: 'jira', name: 'Jira', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Issues & sprints', color: '#1868DB' },
+  { id: 'servicenow', name: 'ServiceNow', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'IT & service ops', color: '#62D84E' },
+  // ── Data & analytics ──
+  { id: 'ga4', name: 'Google Analytics', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Traffic & conversions', color: '#E8710A' },
+  { id: 'looker', name: 'Looker Studio', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Dashboards & reports', color: '#4285F4' },
+  { id: 'tableau', name: 'Tableau', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Visual analytics', color: '#1F457E' },
+  { id: 'powerbi', name: 'Power BI', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Business intelligence', color: '#E97627' },
+  { id: 'bigquery', name: 'BigQuery', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Data warehouse', color: '#669DF6' },
+  { id: 'snowflake', name: 'Snowflake', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Cloud data platform', color: '#29B5E8' },
+  { id: 'metabase', name: 'Metabase', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Self-serve analytics', color: '#509EE3' },
+  // ── Communication ──
+  { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
+  { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
+  { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
+  { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
+  // ── Finance ──
+  { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
+  { id: 'quickbooks', name: 'QuickBooks', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Accounting & books', color: '#2CA01C' },
+  { id: 'stripe', name: 'Stripe', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Payments & payouts', color: '#635BFF' },
+  { id: 'wise', name: 'Wise', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Cross-border payments', color: '#9FE870' },
+  { id: 'paypal', name: 'PayPal', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Online payments', color: '#003087' },
+  { id: 'brex', name: 'Brex', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Cards & spend', color: '#111111' },
 ]
 
 function load<T>(key: string, seed: T[]): T[] {
@@ -650,10 +701,10 @@ function load<T>(key: string, seed: T[]): T[] {
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v1', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v2', CONNECTION_SEED))
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v1', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v2', coworkConnections) }
 
 let taskSeq = 1043
 export function nextTaskId(): string { return `CW-${taskSeq++}` }
