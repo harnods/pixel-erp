@@ -148,7 +148,7 @@ function removeAgent() {
 .cad-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
 .cad-inner { max-width: 720px; }
 .cad-head { display: flex; gap: var(--mp-spacing-4, 16px); align-items: flex-start; padding-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
-.cad-avatar { width: 72px; height: 72px; flex-shrink: 0; border-radius: var(--mp-radii-lg, 12px); object-fit: cover; background: var(--mp-background-neutral-subtle); }
+.cad-avatar { width: 72px; height: 72px; flex-shrink: 0; object-fit: contain; background: none; }
 .cad-name { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cad-role { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cad-desc { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }

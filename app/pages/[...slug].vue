@@ -122,6 +122,7 @@ const CashManagementDetailPage = asyncPage(() => import('~/components/pages/Cash
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
+const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
@@ -287,6 +288,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
     if (segs[2] === 'edit') return { component: CoworkTaskEditPage, id: segs[1]! }
     return { component: CoworkTaskDetailPage, id: segs[1]! }
+  }
+  // /cowork-skills/:id → Cowork skill detail (actions + definition).
+  if (segs.length >= 2 && segs[0] === 'cowork-skills') {
+    return { component: CoworkSkillDetailPage, id: segs[1]! }
   }
   // /cowork-agents/new → create form; /cowork-agents/:id/edit → edit; /cowork-agents/:id → detail.
   if (segs.length >= 2 && segs[0] === 'cowork-agents') {

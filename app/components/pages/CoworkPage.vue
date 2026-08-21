@@ -16,7 +16,7 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   css, toast,
@@ -30,10 +30,10 @@ import { useGoogleConnect } from '~/composables/useGoogleConnect'
 import { formatDateTime } from '~/utils/date'
 import {
   coworkTasks, coworkConnections, coworkAgents, coworkSkills,
-  COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES, COWORK_MODULES,
+  COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
   setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
-  addSkill, updateSkill, removeSkill,
+  addSkill, removeSkill,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
 
@@ -660,17 +660,13 @@ watch([section, agentGridEl], async () => {
 }, { immediate: true })
 onBeforeUnmount(() => agentRo?.disconnect())
 
-interface AgentSection { key: string; title: string; subtitle: string; items: typeof coworkAgents; filler: number }
-const agentSections = computed<AgentSection[]>(() => {
-  const groups: { key: string; title: string; subtitle: string; owned: boolean }[] = [
-    { key: 'mine', title: 'My agents', subtitle: 'Your trusted sidekicks for automating tasks and boosting productivity.', owned: true },
-    { key: 'browse', title: 'Browse agents', subtitle: 'Discover and add agents that combine instructions, knowledge and tasks.', owned: false },
-  ]
-  return groups.map((g) => {
-    const items = coworkAgents.filter((a) => a.owned === g.owned)
-    const rem = items.length % agentCols.value
-    return { ...g, items, filler: rem === 0 ? 0 : agentCols.value - rem }
-  }).filter((s) => s.items.length)
+// One flat list — an agent is shown only if it's visible to the current user
+// (shared with everyone, or the user is on its people list).
+const visibleAgents = computed(() => coworkAgents.filter((a) =>
+  a.visibilityEveryone || (a.visibilityEmployees ?? []).includes(CURRENT_USER_ID)))
+const agentFiller = computed(() => {
+  const rem = visibleAgents.value.length % agentCols.value
+  return rem === 0 ? 0 : agentCols.value - rem
 })
 function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
 function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
@@ -713,28 +709,16 @@ function skillMono(name: string): string {
 }
 
 interface SkillSection { key: string; title: string; items: CoworkSkill[]; filler: number }
+// All skills in a single grid (no category grouping).
 const skillSections = computed<SkillSection[]>(() => {
   const q = skillSearch.value.trim().toLowerCase()
-  const match = (s: CoworkSkill) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
-  const groups: { key: string; title: string; pick: (s: CoworkSkill) => boolean }[] = [
-    ...COWORK_MODULES.map((m) => ({ key: m, title: `${m} skills`, pick: (s: CoworkSkill) => s.module === m })),
-    { key: 'general', title: 'General skills', pick: (s: CoworkSkill) => !s.module },
-  ]
-  const out: SkillSection[] = []
-  for (const g of groups) {
-    const items = coworkSkills.filter((s) => g.pick(s) && match(s))
-    if (!items.length) continue
-    const rem = items.length % skillCols.value
-    out.push({ key: g.key, title: g.title, items, filler: rem === 0 ? 0 : skillCols.value - rem })
-  }
-  return out
+  const items = coworkSkills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+  if (!items.length) return []
+  const rem = items.length % skillCols.value
+  return [{ key: 'all', title: '', items, filler: rem === 0 ? 0 : skillCols.value - rem }]
 })
 
-// Run a skill's primary action — a real, grounded demo action (toast confirmation).
-function runSkillAction(s: CoworkSkill, a: CoworkSkillAction) {
-  toast.notify({ variant: 'success', title: `${a.label} — ${s.name}`, description: 'Cowork performed this action on your behalf.' })
-}
-function editSkill(s: CoworkSkill) { openSkillModal(s) }
+function openSkill(s: CoworkSkill) { router.push(`/cowork-skills/${s.id}`) }
 function deleteSkillById(s: CoworkSkill) {
   removeSkill(s.id)
   toast.notify({ variant: 'success', title: 'Skill deleted' })
@@ -742,21 +726,17 @@ function deleteSkillById(s: CoworkSkill) {
 
 // ── Create / edit skill modal (AI-generate from a prompt, or upload a .md) ─────
 const skillOpen = ref(false)
-const skillEditId = ref<string | null>(null)
 const skillPrompt = ref('')
 const skillGenerating = ref(false)
 const skillDraft = ref<{ name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string } | null>(null)
 const skillError = ref('')
 const skillFileInput = ref<HTMLInputElement | null>(null)
 
-function openSkillModal(existing?: CoworkSkill) {
-  skillEditId.value = existing?.id ?? null
+function openSkillModal() {
   skillPrompt.value = ''
   skillError.value = ''
   skillGenerating.value = false
-  skillDraft.value = existing
-    ? { name: existing.name, description: existing.description, module: existing.module, actions: existing.actions.map((a) => a.label), markdown: existing.markdown ?? '' }
-    : null
+  skillDraft.value = null
   skillOpen.value = true
 }
 function closeSkillModal() { skillOpen.value = false }
@@ -799,14 +779,12 @@ function saveSkill() {
   const d = skillDraft.value
   if (!d || !d.name.trim()) { skillError.value = 'Generate or upload a skill first'; return }
   const actions: CoworkSkillAction[] = (d.actions.length ? d.actions : ['Run skill']).map((label) => ({ id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
-  const payload = {
+  addSkill({
     name: d.name.trim(), description: d.description.trim(), module: d.module,
-    actions, markdown: d.markdown, source: 'custom' as const,
-    icon: 'magic', color: '#651fff', createdAt: new Date().toISOString(),
-  }
-  if (skillEditId.value) updateSkill(skillEditId.value, payload)
-  else addSkill(payload)
-  toast.notify({ variant: 'success', title: skillEditId.value ? 'Skill updated' : 'Skill created' })
+    actions, markdown: d.markdown, source: 'custom',
+    createdAt: new Date().toISOString(),
+  })
+  toast.notify({ variant: 'success', title: 'Skill created' })
   closeSkillModal()
 }
 
@@ -821,7 +799,8 @@ function handleQueryTriggers() {
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
   if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
-  if (q.new === '1' && section.value === 'Skills') { openSkillModal(); router.replace({ path: '/cowork-skills', query: {} }) }
+  // Create skill is not available yet — show a coming-soon notice instead of the modal.
+  if (q.new === '1' && section.value === 'Skills') { infoToast('Create skill — coming soon'); router.replace({ path: '/cowork-skills', query: {} }) }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -1410,36 +1389,30 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </section>
 
         <!-- ── Agents ── -->
-        <!-- ── Agents ── -->
+        <!-- ── Agents (one flat grid, filtered by visibility) ── -->
         <section v-else-if="section === 'Agents'" class="cw-agents">
-          <div ref="agentGridEl" class="cw-agent-sections">
-            <section v-for="sec in agentSections" :key="sec.key" class="cw-agent-section">
-              <h2 class="cw-agent-cat-title">{{ sec.title }}</h2>
-              <p class="cw-agent-cat-sub">{{ sec.subtitle }}</p>
-              <div class="cw-conn-clip">
-                <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
-                  <div v-for="a in sec.items" :key="a.id" class="cw-agent-cell" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
-                    <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
-                    <div class="cw-agent-main">
-                      <p class="cw-agent-name">{{ a.name }}</p>
-                      <p class="cw-agent-desc">{{ a.description }}</p>
-                    </div>
-                    <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
-                      <MpPopoverTrigger>
-                        <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
-                      </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ minWidth: '160px' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                          <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                        </MpPopoverList>
-                      </MpPopoverContent>
-                    </MpPopover>
-                  </div>
-                  <div v-for="n in sec.filler" :key="sec.key + '-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
+          <div ref="agentGridEl" class="cw-conn-clip">
+            <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+              <div v-for="a in visibleAgents" :key="a.id" class="cw-agent-cell" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
+                <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
+                <div class="cw-agent-main">
+                  <p class="cw-agent-name">{{ a.name }}</p>
+                  <p class="cw-agent-desc">{{ a.description }}</p>
                 </div>
+                <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                  <MpPopoverTrigger>
+                    <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '160px' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
+                      <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
               </div>
-            </section>
+              <div v-for="n in agentFiller" :key="'agent-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
+            </div>
           </div>
         </section>
 
@@ -1461,28 +1434,24 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
           <div ref="skillGridEl" class="cw-conn-sections">
             <section v-for="sec in skillSections" :key="sec.key" class="cw-conn-section">
-              <h2 class="cw-conn-cat-title">{{ sec.title }}</h2>
+              <h2 v-if="sec.title" class="cw-conn-cat-title">{{ sec.title }}</h2>
               <div class="cw-conn-clip">
                 <div class="cw-conn-grid" :style="{ '--cols': skillCols }">
-                  <div v-for="s in sec.items" :key="sec.key + '-' + s.id" class="cw-conn-cell cw-skill-cell">
+                  <div v-for="s in sec.items" :key="sec.key + '-' + s.id" class="cw-conn-cell cw-skill-cell" role="button" tabindex="0" @click="openSkill(s)" @keydown.enter="openSkill(s)">
                     <div class="cw-conn-main">
                       <div class="cw-conn-head">
-                        <span class="cw-skill-icon" :style="{ background: s.color || '#3a4749' }"><MpIcon :name="s.icon || 'magic'" size="md" /></span>
                         <span class="cw-conn-name">{{ s.name }}</span>
                         <MpBadge v-if="s.source === 'custom'" for="additionalInformation" type="announcement" size="sm">Custom</MpBadge>
                       </div>
                       <p class="cw-conn-desc">{{ s.description }}</p>
-                      <div class="cw-skill-actions">
-                        <button v-for="a in s.actions" :key="a.id" type="button" class="cw-skill-run" @click="runSkillAction(s, a)">{{ a.label }}</button>
-                      </div>
                     </div>
                     <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select placement="bottom-end">
                       <MpPopoverTrigger>
-                        <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name"><MpIcon name="menu-kebab" size="md" /></button>
+                        <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '160px' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="editSkill(s)">Edit skill</MpPopoverListItem>
+                          <MpPopoverListItem @click="openSkill(s)">View details</MpPopoverListItem>
                           <MpPopoverListItem v-if="s.source === 'custom'" @click="deleteSkillById(s)">Delete</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
@@ -1576,7 +1545,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     <MpModal id="cw-skill-modal" :is-open="skillOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeSkillModal">
       <MpModalContent>
         <MpModalHeader>
-          <span class="mcp-title">{{ skillEditId ? 'Edit skill' : 'Create skill' }}</span>
+          <span class="mcp-title">Create skill</span>
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
@@ -1600,7 +1569,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </MpModalBody>
         <MpModalFooter>
           <MpButton is-rounded variant="ghost" @click="closeSkillModal">Cancel</MpButton>
-          <MpButton is-rounded variant="primary" @click="saveSkill">{{ skillEditId ? 'Save changes' : 'Create skill' }}</MpButton>
+          <MpButton is-rounded variant="primary" @click="saveSkill">Create skill</MpButton>
         </MpModalFooter>
       </MpModalContent>
     </MpModal>
@@ -1826,7 +1795,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
   cursor: pointer;
 }
 .cw-agent-cell--filler { padding: 0; min-height: 160px; cursor: default; }
-.cw-agent-avatar { width: 72px; height: 72px; flex-shrink: 0; border-radius: var(--mp-radii-lg, 12px); object-fit: cover; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.cw-agent-avatar { width: 72px; height: 72px; flex-shrink: 0; object-fit: contain; background: none; }
 .cw-agent-main { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); min-width: 0; }
 .cw-agent-name { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cw-agent-cell:hover .cw-agent-name { text-decoration: underline; text-underline-offset: 2px; }
@@ -1916,11 +1885,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 }
 
 /* ── Skills grid (reuses the connection grid frame) ── */
-.cw-skill-cell { align-items: flex-start; }
-.cw-skill-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--mp-radii-sm, 6px); color: #fff; }
-.cw-skill-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-3, 12px); }
-.cw-skill-run { display: inline-flex; align-items: center; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); cursor: pointer; }
-.cw-skill-run:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+.cw-skill-cell { align-items: flex-start; cursor: pointer; }
 
 /* ── Create/edit skill modal ── */
 .skill-modal__label { margin: var(--mp-spacing-4, 16px) 0 var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }

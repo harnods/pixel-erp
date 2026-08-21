@@ -363,7 +363,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div class="ctd-chips">
+          <div v-if="taskAgent" class="ctd-agent">
+            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
+            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          </div>
+          <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
           </div>
 
@@ -408,7 +412,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div class="ctd-chips">
+          <div v-if="taskAgent" class="ctd-agent">
+            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
+            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          </div>
+          <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
           </div>
 
@@ -579,6 +587,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+.ctd-agent { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+.ctd-agent__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .ctd-freq { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ctd-freq__row { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-freq__k { min-width: 72px; color: var(--mp-text-secondary); }
