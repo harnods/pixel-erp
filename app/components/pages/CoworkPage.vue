@@ -865,7 +865,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <template v-for="g in suggestedGroups" :key="g.module">
                 <p class="cw-module-label">{{ g.module }}</p>
                 <div class="cw-suggest-grid">
-                  <!-- Card body opens the task detail (before running); "Run task" runs it. -->
+                  <!-- Clicking a card opens its task detail (pre-run); running happens
+                       from the detail page's "Run task" button. -->
                   <div v-for="c in g.items" :key="c.title" class="cw-suggest-item" role="button" tabindex="0" @click="previewTask(c)" @keydown.enter="previewTask(c)">
                     <span class="cw-suggest-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" fill="currentColor"/></svg>
@@ -879,7 +880,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         </span>
                         Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
                       </span>
-                      <button v-if="!hasRun(c)" class="cw-suggest-run" type="button" @click.stop="runCatalog(c)">Run task <MpIcon name="arrows-right" size="sm" /></button>
+                      <span class="cw-suggest-view">View details <MpIcon name="arrows-right" size="sm" /></span>
                     </span>
                   </div>
                 </div>
@@ -1263,8 +1264,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); background: #F8F8F8; border: 1px solid var(--mp-border-bold, #8c9596); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); display: flex; align-items: center; justify-content: center; color: var(--mp-text-default); }
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cw-suggest-run { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
-.cw-suggest-run:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cw-suggest-item { cursor: pointer; }
+.cw-suggest-view { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-item:hover .cw-suggest-view,
+.cw-suggest-item:focus-visible .cw-suggest-view { text-decoration: underline; text-underline-offset: 2px; }
+.cw-suggest-item:focus-visible { outline: none; }
+.cw-suggest-item:focus-visible .cw-suggest-title { text-decoration: underline; }
 .cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cw-avatars { display: inline-flex; }
 .cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); }
