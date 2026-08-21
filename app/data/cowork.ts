@@ -929,12 +929,6 @@ export const AGENT_SEED: CoworkAgent[] = [
     persona: 'a calm technical engineer. Diagnose from the symptoms, explain the fix clearly, and know when to escalate to a specialist.',
     taskTitles: [], connections: ['servicenow'], model: 'gemini-flash-latest', avatar: '/agents/technical-support.png', color: '#3538CD',
   },
-  {
-    id: 'default', name: 'Default agent', role: 'General', module: 'Finance', owned: false,
-    description: 'A blank, general-purpose agent you can point at any task.',
-    persona: 'a helpful general co-worker. Follow the task, ground answers in the data, and keep output clear and actionable.',
-    taskTitles: [], connections: [], model: 'gemini-flash-latest', avatar: '/agents/default.png', color: '#475467',
-  },
 ]
 
 // Sensible create-form defaults for the seeded agents (so details/edit reflect them).
@@ -967,7 +961,7 @@ function load<T>(key: string, seed: T[]): T[] {
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
-export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v2', AGENT_SEED))
+export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v3', AGENT_SEED))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
 // can be used anywhere (agent skill pickers, task actions).
 export const coworkSkills = reactive<CoworkSkill[]>(load('cowork-skills-v1', SKILL_SEED))
@@ -976,7 +970,7 @@ export const COWORK_SKILLS = coworkSkills
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
-function persistAgents() { saveSnapshot('cowork-agents-v2', coworkAgents) }
+function persistAgents() { saveSnapshot('cowork-agents-v3', coworkAgents) }
 function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
