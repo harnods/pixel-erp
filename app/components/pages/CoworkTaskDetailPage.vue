@@ -16,7 +16,7 @@ import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
   getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
-  agentForTaskTitle, agentForModule,
+  agentForTaskTitle, agentForModule, COWORK_SKILLS,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -38,6 +38,12 @@ const modelLabel = computed(() => MODEL_LABELS[task.value?.model ?? ''] ?? 'Gemi
 // its primary module. This agent's persona shapes the run result.
 const taskAgent = computed(() => agentForTaskTitle(task.value?.title) ?? agentForModule(task.value?.module))
 const agents = computed(() => taskAgent.value ? [taskAgent.value.name] : ['Cowork agent'])
+// The action labels this agent can take (from its enabled skills) — passed to the
+// run so action items map to real skills the agent has.
+const agentActions = computed(() => {
+  const ids = taskAgent.value?.skills ?? []
+  return COWORK_SKILLS.filter((s) => ids.includes(s.id)).flatMap((s) => s.actions.map((a) => a.label))
+})
 
 // Instruction + workflow are NOT generated here. Predefined tasks carry hardcoded
 // values; custom tasks get theirs from the run (see runTask). Opening a detail
@@ -88,7 +94,7 @@ async function runTask() {
       body: {
         task: task.value.prompt, context: build(), model: task.value.model,
         sources: task.value.sources, outputs: task.value.outputs,
-        agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona } : undefined,
+        agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
       },
     })
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }

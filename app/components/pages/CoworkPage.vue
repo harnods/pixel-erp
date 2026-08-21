@@ -29,11 +29,12 @@ import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
 import { formatDateTime } from '~/utils/date'
 import {
-  coworkTasks, coworkConnections, coworkAgents,
-  COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
+  coworkTasks, coworkConnections, coworkAgents, coworkSkills,
+  COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES, COWORK_MODULES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
   setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
-  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent,
+  addSkill, updateSkill, removeSkill,
+  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
 
 const route = useRoute()
@@ -671,9 +672,9 @@ const agentSections = computed<AgentSection[]>(() => {
     return { ...g, items, filler: rem === 0 ? 0 : agentCols.value - rem }
   }).filter((s) => s.items.length)
 })
-function openAgent(a: CoworkAgent) { infoToast(`${a.name} — agent details coming soon`) }
-function editAgent(a: CoworkAgent) { infoToast(`Edit ${a.name} — coming soon`) }
-function newAgent() { infoToast('New agent — coming soon') }
+function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
+function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
+function newAgent() { router.push('/cowork-agents/new') }
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
@@ -682,6 +683,131 @@ function toggleConnection(c: CoworkConnection) {
 }
 function manageConnection(c: CoworkConnection) {
   infoToast(`Manage ${c.name} — coming soon`)
+}
+
+// ── Skills grid (grouped by module; same responsive rules as Connections) ─────
+const skillSearch = ref('')
+const SKILL_MIN_CARD = 300
+const SKILL_MAX_COLS = 6
+const skillGridEl = ref<HTMLElement | null>(null)
+const skillCols = ref(3)
+function recomputeSkillCols() {
+  const w = skillGridEl.value?.clientWidth ?? 0
+  if (!w) return
+  skillCols.value = Math.max(1, Math.min(SKILL_MAX_COLS, Math.floor(w / SKILL_MIN_CARD)))
+}
+let skillRo: ResizeObserver | null = null
+watch([section, skillGridEl], async () => {
+  if (section.value !== 'Skills') { skillRo?.disconnect(); skillRo = null; return }
+  await nextTick()
+  recomputeSkillCols()
+  if (skillGridEl.value && 'ResizeObserver' in window && !skillRo) {
+    skillRo = new ResizeObserver(recomputeSkillCols)
+    skillRo.observe(skillGridEl.value)
+  }
+}, { immediate: true })
+onBeforeUnmount(() => skillRo?.disconnect())
+
+function skillMono(name: string): string {
+  return name.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2)
+}
+
+interface SkillSection { key: string; title: string; items: CoworkSkill[]; filler: number }
+const skillSections = computed<SkillSection[]>(() => {
+  const q = skillSearch.value.trim().toLowerCase()
+  const match = (s: CoworkSkill) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+  const groups: { key: string; title: string; pick: (s: CoworkSkill) => boolean }[] = [
+    ...COWORK_MODULES.map((m) => ({ key: m, title: `${m} skills`, pick: (s: CoworkSkill) => s.module === m })),
+    { key: 'general', title: 'General skills', pick: (s: CoworkSkill) => !s.module },
+  ]
+  const out: SkillSection[] = []
+  for (const g of groups) {
+    const items = coworkSkills.filter((s) => g.pick(s) && match(s))
+    if (!items.length) continue
+    const rem = items.length % skillCols.value
+    out.push({ key: g.key, title: g.title, items, filler: rem === 0 ? 0 : skillCols.value - rem })
+  }
+  return out
+})
+
+// Run a skill's primary action — a real, grounded demo action (toast confirmation).
+function runSkillAction(s: CoworkSkill, a: CoworkSkillAction) {
+  toast.notify({ variant: 'success', title: `${a.label} — ${s.name}`, description: 'Cowork performed this action on your behalf.' })
+}
+function editSkill(s: CoworkSkill) { openSkillModal(s) }
+function deleteSkillById(s: CoworkSkill) {
+  removeSkill(s.id)
+  toast.notify({ variant: 'success', title: 'Skill deleted' })
+}
+
+// ── Create / edit skill modal (AI-generate from a prompt, or upload a .md) ─────
+const skillOpen = ref(false)
+const skillEditId = ref<string | null>(null)
+const skillPrompt = ref('')
+const skillGenerating = ref(false)
+const skillDraft = ref<{ name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string } | null>(null)
+const skillError = ref('')
+const skillFileInput = ref<HTMLInputElement | null>(null)
+
+function openSkillModal(existing?: CoworkSkill) {
+  skillEditId.value = existing?.id ?? null
+  skillPrompt.value = ''
+  skillError.value = ''
+  skillGenerating.value = false
+  skillDraft.value = existing
+    ? { name: existing.name, description: existing.description, module: existing.module, actions: existing.actions.map((a) => a.label), markdown: existing.markdown ?? '' }
+    : null
+  skillOpen.value = true
+}
+function closeSkillModal() { skillOpen.value = false }
+
+async function generateSkill() {
+  const p = skillPrompt.value.trim()
+  if (!p) { skillError.value = 'Describe what the skill should do'; return }
+  skillError.value = ''
+  skillGenerating.value = true
+  try {
+    const res = await $fetch<{ skill: { name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string } }>('/api/cowork/skill', {
+      method: 'POST', body: { prompt: p },
+    })
+    skillDraft.value = res.skill
+  } catch {
+    skillError.value = 'Could not generate the skill. Please try again.'
+  } finally {
+    skillGenerating.value = false
+  }
+}
+
+function pickSkillFile() { skillFileInput.value?.click() }
+function onSkillFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    const md = String(reader.result ?? '')
+    const firstHeading = md.split('\n').find((l) => l.startsWith('# '))?.replace(/^#\s*/, '').trim()
+    const name = firstHeading || file.name.replace(/\.md$/i, '')
+    const desc = md.split('\n').find((l) => l.trim() && !l.startsWith('#'))?.trim().slice(0, 120) || 'Uploaded skill'
+    skillDraft.value = { name, description: desc, actions: ['Run skill'], markdown: md }
+  }
+  reader.readAsText(file)
+  input.value = ''
+}
+
+function saveSkill() {
+  const d = skillDraft.value
+  if (!d || !d.name.trim()) { skillError.value = 'Generate or upload a skill first'; return }
+  const actions: CoworkSkillAction[] = (d.actions.length ? d.actions : ['Run skill']).map((label) => ({ id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
+  const payload = {
+    name: d.name.trim(), description: d.description.trim(), module: d.module,
+    actions, markdown: d.markdown, source: 'custom' as const,
+    icon: 'magic', color: '#651fff', createdAt: new Date().toISOString(),
+  }
+  if (skillEditId.value) updateSkill(skillEditId.value, payload)
+  else addSkill(payload)
+  toast.notify({ variant: 'success', title: skillEditId.value ? 'Skill updated' : 'Skill created' })
+  closeSkillModal()
 }
 
 // Leaving a section (clicking a submenu item) closes any open task workspace.
@@ -695,6 +821,7 @@ function handleQueryTriggers() {
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
   if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
+  if (q.new === '1' && section.value === 'Skills') { openSkillModal(); router.replace({ path: '/cowork-skills', query: {} }) }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -1317,10 +1444,57 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </section>
 
         <!-- ── Skills ── -->
-        <section v-else-if="section === 'Skills'" class="cw-placeholder">
-          <MpIcon name="doc" size="lg" class="cw-placeholder__icon" />
-          <h3 class="cw-placeholder__title">Skills are coming soon</h3>
-          <p class="cw-placeholder__caption">Teach Cowork reusable skills — saved procedures and prompts it can apply across tasks, agents and modules.</p>
+        <section v-else-if="section === 'Skills'" class="cw-connections">
+          <!-- Filter bar: search (right) — same pattern as Connections -->
+          <div class="cw-filter">
+            <div class="cw-filter__left" />
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="skillSearch" class="cw-search__input" type="text" placeholder="Search skills...">
+                <button v-if="skillSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="skillSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div ref="skillGridEl" class="cw-conn-sections">
+            <section v-for="sec in skillSections" :key="sec.key" class="cw-conn-section">
+              <h2 class="cw-conn-cat-title">{{ sec.title }}</h2>
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': skillCols }">
+                  <div v-for="s in sec.items" :key="sec.key + '-' + s.id" class="cw-conn-cell cw-skill-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head">
+                        <span class="cw-skill-icon" :style="{ background: s.color || '#3a4749' }"><MpIcon :name="s.icon || 'magic'" size="md" /></span>
+                        <span class="cw-conn-name">{{ s.name }}</span>
+                        <MpBadge v-if="s.source === 'custom'" for="additionalInformation" type="announcement" size="sm">Custom</MpBadge>
+                      </div>
+                      <p class="cw-conn-desc">{{ s.description }}</p>
+                      <div class="cw-skill-actions">
+                        <button v-for="a in s.actions" :key="a.id" type="button" class="cw-skill-run" @click="runSkillAction(s, a)">{{ a.label }}</button>
+                      </div>
+                    </div>
+                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name"><MpIcon name="menu-kebab" size="md" /></button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '160px' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="editSkill(s)">Edit skill</MpPopoverListItem>
+                          <MpPopoverListItem v-if="s.source === 'custom'" @click="deleteSkillById(s)">Delete</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </div>
+                  <div v-for="n in sec.filler" :key="sec.key + '-filler-' + n" class="cw-conn-cell cw-conn-cell--filler" aria-hidden="true" />
+                </div>
+              </div>
+            </section>
+
+            <p v-if="!skillSections.length" class="cw-muted cw-conn-noresult">No skills match “{{ skillSearch }}”.</p>
+          </div>
         </section>
     </template>
 
@@ -1396,6 +1570,39 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Create / edit skill modal ── -->
+    <MpModal id="cw-skill-modal" :is-open="skillOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeSkillModal">
+      <MpModalContent>
+        <MpModalHeader>
+          <span class="mcp-title">{{ skillEditId ? 'Edit skill' : 'Create skill' }}</span>
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="skill-modal__label">Describe the skill</p>
+          <MpTextarea id="cw-skill-prompt" v-model="skillPrompt" :rows="3" is-full-width placeholder="e.g. Send a reprimand to employees who are chronically late" />
+          <div class="skill-gen-row">
+            <MpButton is-rounded variant="secondary" :is-loading="skillGenerating" @click="generateSkill"><MpIcon name="magic" size="sm" /> Generate with AI</MpButton>
+            <button type="button" class="cte-textbtn skill-upload" @click="pickSkillFile"><MpIcon name="attachment" size="sm" /> Upload .md</button>
+            <input ref="skillFileInput" type="file" accept=".md,text/markdown,text/plain" class="cw-hidden-file" @change="onSkillFile">
+          </div>
+          <p v-if="skillError" class="cw-form-error skill-modal__err">{{ skillError }}</p>
+
+          <div v-if="skillDraft" class="skill-draft">
+            <p class="skill-modal__label">Skill name</p>
+            <MpInput id="cw-skill-name" v-model="skillDraft.name" is-full-width />
+            <p class="skill-modal__label">Description</p>
+            <MpInput id="cw-skill-desc" v-model="skillDraft.description" is-full-width />
+            <p class="skill-modal__label">Definition (.md)</p>
+            <pre class="skill-md">{{ skillDraft.markdown }}</pre>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButton is-rounded variant="ghost" @click="closeSkillModal">Cancel</MpButton>
+          <MpButton is-rounded variant="primary" @click="saveSkill">{{ skillEditId ? 'Save changes' : 'Create skill' }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
     </MpModal>
   </div>
 </template>
@@ -1707,4 +1914,20 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
   .cw-run, .cw-run--single { grid-template-columns: 1fr; }
   .cw-form-row { grid-template-columns: 1fr; }
 }
+
+/* ── Skills grid (reuses the connection grid frame) ── */
+.cw-skill-cell { align-items: flex-start; }
+.cw-skill-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--mp-radii-sm, 6px); color: #fff; }
+.cw-skill-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-3, 12px); }
+.cw-skill-run { display: inline-flex; align-items: center; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); cursor: pointer; }
+.cw-skill-run:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+
+/* ── Create/edit skill modal ── */
+.skill-modal__label { margin: var(--mp-spacing-4, 16px) 0 var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.skill-modal__label:first-child { margin-top: 0; }
+.skill-modal__err { margin-top: var(--mp-spacing-2, 8px); }
+.skill-gen-row { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-3, 12px); }
+.skill-upload { color: var(--mp-text-link); }
+.skill-draft { margin-top: var(--mp-spacing-4, 16px); padding-top: var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.skill-md { margin: 0; max-height: 240px; overflow: auto; padding: var(--mp-spacing-3, 12px); background: var(--mp-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 8px); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); white-space: pre-wrap; }
 </style>

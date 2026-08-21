@@ -784,7 +784,58 @@ export interface CoworkAgent {
   color: string           // fallback tile / accent colour
   /** true = under "My agents" (already yours); false = under "Browse agents". */
   owned: boolean
+  // ── Create/edit form (Persona · Knowledge · Skills · Visibility) ──
+  /** Custom behaviour instruction the user writes (the editable "brain"). Falls
+   *  back to `persona` for the seeded agents. */
+  instruction?: string
+  /** Uploaded knowledge files (metadata only in the mock). */
+  knowledgeFiles?: { name: string; size: string }[]
+  /** Workspace areas the agent may draw knowledge from. */
+  knowledgeAreas?: CoworkModule[]
+  /** Pull from ALL workspace content (overrides knowledgeAreas). */
+  allWorkspace?: boolean
+  /** Enabled skill ids (see COWORK_SKILLS) — the actions this agent can take. */
+  skills?: string[]
+  /** Visibility: everyone in the company, or a specific set of employees. */
+  visibilityEveryone?: boolean
+  visibilityEmployees?: string[]   // employee ids
 }
+
+// ── Skills (master data) ──────────────────────────────────────────────────────
+// A skill is a capability an agent can use; each bundles the concrete ACTIONS the
+// agent may perform (which surface as the buttons on a task's action items). The
+// agent's persona + enabled skills are what the Gemini brain uses to decide what
+// to actually do.
+export interface CoworkSkillAction { id: string; label: string }
+export interface CoworkSkill {
+  id: string
+  name: string
+  description: string
+  module?: CoworkModule
+  actions: CoworkSkillAction[]
+  /** CDN icon name for the grid tile + accent colour. */
+  icon?: string
+  color?: string
+  /** 'built-in' = shipped; 'custom' = user-created (AI-generated or uploaded .md). */
+  source?: 'built-in' | 'custom'
+  /** The skill definition as markdown — how a skill is authored & stored. */
+  markdown?: string
+  createdAt?: string
+}
+const SKILL_SEED: CoworkSkill[] = [
+  { id: 'purchase-request', name: 'Raise purchase requests', module: 'WMS', description: 'Create a purchase request for low-stock or shortages.', actions: [{ id: 'create-pr', label: 'Create purchase request' }], icon: 'box', color: '#0A6E4E', source: 'built-in' },
+  { id: 'stock-count', name: 'Schedule stock counts', module: 'WMS', description: 'Create a cycle/stock count task for a location.', actions: [{ id: 'create-count', label: 'Create stock count' }], icon: 'box', color: '#0A6E4E', source: 'built-in' },
+  { id: 'work-order', name: 'Create work orders', module: 'Production', description: 'Open a production work order for a BOM.', actions: [{ id: 'create-wo', label: 'Create work order' }], icon: 'settings', color: '#6941C6', source: 'built-in' },
+  { id: 'payment-reminder', name: 'Chase payments', module: 'Finance', description: 'Draft and send payment reminders to overdue customers.', actions: [{ id: 'draft-reminder', label: 'Draft reminder' }, { id: 'send-reminder', label: 'Send reminder' }], icon: 'billing', color: '#B54708', source: 'built-in' },
+  { id: 'send-invoice', name: 'Send sales invoices', module: 'Sales', description: 'Issue a sales invoice to a customer and email it out.', actions: [{ id: 'draft-invoice', label: 'Draft invoice' }, { id: 'send-invoice', label: 'Send invoice' }], icon: 'billing', color: '#165082', source: 'built-in' },
+  { id: 'journal', name: 'Work in finance', module: 'Finance', description: 'Open invoices, bills and journals for review or posting.', actions: [{ id: 'open-finance', label: 'Open in finance' }], icon: 'billing', color: '#B54708', source: 'built-in' },
+  { id: 'crm-followup', name: 'Draft CRM follow-ups', module: 'CRM', description: 'Write personalised follow-up messages and open deals in CRM.', actions: [{ id: 'draft-followup', label: 'Draft follow-up' }, { id: 'open-crm', label: 'Open in CRM' }], icon: 'stats', color: '#165082', source: 'built-in' },
+  { id: 'hr-reprimand', name: 'Send HR notices', module: 'HR', description: 'Draft a reprimand or note to a chronically-late employee and their manager.', actions: [{ id: 'draft-reprimand', label: 'Draft reprimand' }, { id: 'send-reprimand', label: 'Send reprimand' }], icon: 'profile', color: '#B42318', source: 'built-in' },
+  { id: 'contract-review', name: 'Review contracts', module: 'HR', description: 'Flag contracts for renewal, conversion or offboarding.', actions: [{ id: 'review-contract', label: 'Review contract' }], icon: 'profile', color: '#B54708', source: 'built-in' },
+  { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
+  { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
+]
+export const COWORK_COMPANY = 'PT Central Perk Indonesia'
 export const AGENT_SEED: CoworkAgent[] = [
   {
     id: 'finance', name: 'Collections & Close', role: 'Finance agent', module: 'Finance',
@@ -830,6 +881,25 @@ export const AGENT_SEED: CoworkAgent[] = [
   },
 ]
 
+// Sensible create-form defaults for the seeded agents (so details/edit reflect them).
+const AGENT_DEFAULT_SKILLS: Record<string, string[]> = {
+  finance: ['payment-reminder', 'journal', 'create-task', 'send-email'],
+  people: ['hr-reprimand', 'contract-review', 'create-task', 'send-email'],
+  pipeline: ['crm-followup', 'create-task', 'send-email'],
+  orders: ['create-task'],
+  warehouse: ['purchase-request', 'stock-count', 'create-task'],
+  production: ['work-order', 'create-task'],
+}
+for (const a of AGENT_SEED) {
+  a.instruction ??= a.persona
+  a.skills ??= AGENT_DEFAULT_SKILLS[a.id] ?? ['create-task']
+  a.visibilityEveryone ??= true
+  a.visibilityEmployees ??= []
+  a.knowledgeAreas ??= [a.module]
+  a.allWorkspace ??= false
+  a.knowledgeFiles ??= []
+}
+
 function load<T>(key: string, seed: T[]): T[] {
   return loadSnapshot<T>(key) ?? seed
 }
@@ -837,11 +907,48 @@ function load<T>(key: string, seed: T[]): T[] {
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
 export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v1', AGENT_SEED))
+// Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
+// can be used anywhere (agent skill pickers, task actions).
+export const coworkSkills = reactive<CoworkSkill[]>(load('cowork-skills-v1', SKILL_SEED))
+// Back-compat: existing agent code imports COWORK_SKILLS — same reactive array.
+export const COWORK_SKILLS = coworkSkills
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
 function persistAgents() { saveSnapshot('cowork-agents-v1', coworkAgents) }
+function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
+let skillSeq = 1
+export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
+export function addSkill(s: Omit<CoworkSkill, 'id'> & { id?: string }): CoworkSkill {
+  const skill: CoworkSkill = { id: s.id ?? `skill-${Date.now().toString(36)}-${skillSeq++}`, ...s }
+  coworkSkills.unshift(skill)
+  persistSkills()
+  return skill
+}
+export function updateSkill(id: string, patch: Partial<CoworkSkill>): void {
+  const s = coworkSkills.find((x) => x.id === id)
+  if (s) { Object.assign(s, patch); persistSkills() }
+}
+export function removeSkill(id: string): void {
+  const i = coworkSkills.findIndex((x) => x.id === id)
+  if (i >= 0) { coworkSkills.splice(i, 1); persistSkills() }
+}
 export function getAgent(id: string): CoworkAgent | undefined { return coworkAgents.find((a) => a.id === id) }
+let agentSeq = 1
+export function addAgent(a: Omit<CoworkAgent, 'id'> & { id?: string }): CoworkAgent {
+  const agent: CoworkAgent = { id: a.id ?? `agent-${Date.now().toString(36)}-${agentSeq++}`, ...a }
+  coworkAgents.unshift(agent)
+  persistAgents()
+  return agent
+}
+export function updateAgent(id: string, patch: Partial<CoworkAgent>): void {
+  const a = coworkAgents.find((x) => x.id === id)
+  if (a) { Object.assign(a, patch); persistAgents() }
+}
+export function deleteAgentSafe(id: string): void {
+  const i = coworkAgents.findIndex((x) => x.id === id)
+  if (i >= 0) { coworkAgents.splice(i, 1); persistAgents() }
+}
 /** The agent that owns a module (drives a task's result). */
 export function agentForModule(m?: CoworkModule): CoworkAgent | undefined {
   return coworkAgents.find((a) => a.module === m)

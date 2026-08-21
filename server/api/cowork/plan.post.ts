@@ -93,12 +93,13 @@ const ARTIFACT_INSTRUCTIONS: Record<string, string> = {
   pdf: '- artifacts.pdf: a formatted report ({title, sections:[{heading,body}]}) suitable for printing — an executive overview grounded in the data.',
 }
 
-function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[], agent?: { name?: string; persona?: string }): string {
+function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[], agent?: { name?: string; persona?: string; actions?: string[] }): string {
   return [
     agent?.name
       ? `You are "${agent.name}", a specialist AI agent inside the Mekari Cowork co-worker (Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, Production).`
       : 'You are Mekari Cowork — an autonomous AI co-worker embedded in a Mekari ERP suite\n(Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, and Production).',
     agent?.persona ? `Act as ${agent.persona}` : '',
+    agent?.actions?.length ? `You can take these actions on action items — prefer them where relevant: ${agent.actions.join(', ')}.` : '',
     '',
     'You are given a task and a JSON snapshot of the REAL current data in the ERP.',
     'ACTUALLY DO THE TASK and produce the requested deliverables — do not describe',
