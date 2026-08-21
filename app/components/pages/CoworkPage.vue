@@ -453,7 +453,16 @@ function addConnection() { infoToast('Browse the connections marketplace — com
 // draw the grid; incomplete last rows are padded with empty cells. Columns scale
 // with width — 3 at a normal stage, up to 6 when very wide.
 const connSearch = ref('')
-const connCategory = ref<'All' | CoworkConnectionCategory>('All')
+// Left filter = connection status (All / Connected / Not connected).
+const connStatus = ref<'all' | 'connected' | 'not'>('all')
+const connStatusOptions = [
+  { value: 'all', label: 'All connections' },
+  { value: 'connected', label: 'Connected' },
+  { value: 'not', label: 'Not connected' },
+] as const
+const connStatusLabel = computed(() => connStatusOptions.find((o) => o.value === connStatus.value)?.label ?? '')
+// Logo tile falls back to a coloured monogram if the favicon fails to load.
+const connLogoFailed = reactive<Record<string, boolean>>({})
 const CONN_MIN_CARD = 300   // ~3 cols on a normal stage, scaling up to 6 when very wide
 const CONN_MAX_COLS = 6
 const connGridEl = ref<HTMLElement | null>(null)
@@ -482,11 +491,12 @@ function connLogo(name: string): string {
 interface ConnSection { category: CoworkConnectionCategory; items: CoworkConnection[]; filler: number }
 const connSections = computed<ConnSection[]>(() => {
   const q = connSearch.value.trim().toLowerCase()
-  const cats = connCategory.value === 'All' ? COWORK_CONNECTION_CATEGORIES : [connCategory.value]
   const out: ConnSection[] = []
-  for (const cat of cats) {
+  for (const cat of COWORK_CONNECTION_CATEGORIES) {
     const items = coworkConnections.filter((c) =>
-      c.categories.includes(cat) && (!q || c.name.toLowerCase().includes(q) || (c.detail ?? '').toLowerCase().includes(q)))
+      c.categories.includes(cat)
+      && (connStatus.value === 'all' || (connStatus.value === 'connected' ? c.connected : !c.connected))
+      && (!q || c.name.toLowerCase().includes(q) || (c.detail ?? '').toLowerCase().includes(q)))
     if (!items.length) continue
     const rem = items.length % connCols.value
     out.push({ category: cat, items, filler: rem === 0 ? 0 : connCols.value - rem })
@@ -953,15 +963,30 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Connections ── -->
         <section v-else-if="section === 'Connections'" class="cw-connections">
-          <!-- Filter bar: category (left) + search (right) -->
-          <div class="cw-conn-filter">
-            <MpSelect id="cw-conn-cat" v-model="connCategory" class="cw-conn-cat">
-              <option value="All">All connectors</option>
-              <option v-for="cat in COWORK_CONNECTION_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-            </MpSelect>
-            <div class="cw-conn-search">
-              <MpIcon name="search" size="sm" class="cw-conn-search__icon" />
-              <input v-model="connSearch" type="text" placeholder="Search connectors…" aria-label="Search connectors" />
+          <!-- Filter bar: status (left) + search (right) — same pattern as Tasks -->
+          <div class="cw-filter">
+            <div class="cw-filter__left">
+              <MpPopover id="cw-conn-status" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-conn-status-sel" placeholder="Status" :model-value="connStatus" :class="css({ width: '180px' })" @mousedown.prevent>
+                    <option :value="connStatus">{{ connStatusLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in connStatusOptions" :key="o.value" :is-active="o.value === connStatus" @click="connStatus = o.value">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="connSearch" class="cw-search__input" type="text" placeholder="Search connectors...">
+                <button v-if="connSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="connSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -973,7 +998,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <div v-for="c in sec.items" :key="sec.category + '-' + c.id" class="cw-conn-cell">
                     <div class="cw-conn-main">
                       <div class="cw-conn-head">
-                        <span class="cw-conn-logo" :style="{ background: c.color || '#3a4749' }">{{ connLogo(c.name) }}</span>
+                        <img v-if="!connLogoFailed[c.id]" class="cw-conn-logo-img" :src="`/connectors/${c.id}.png`" :alt="c.name" loading="lazy" @error="connLogoFailed[c.id] = true" />
+                        <span v-else class="cw-conn-logo" :style="{ background: c.color || '#3a4749' }">{{ connLogo(c.name) }}</span>
                         <span class="cw-conn-name">{{ c.name }}</span>
                       </div>
                       <p class="cw-conn-desc">{{ c.detail }}</p>
@@ -1127,17 +1153,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* ── Connections marketplace (Figma 1612:33080) ── */
 .cw-connections { display: flex; flex-direction: column; }
-/* Filter bar: category select (left) + search (right) */
-.cw-conn-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5, 20px); }
-.cw-conn-cat { width: 200px; }
-.cw-conn-search { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); width: 280px; max-width: 100%; height: 36px; padding: 0 var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); }
-.cw-conn-search:focus-within { border-color: var(--mp-border-brand-bold, #029861); }
-.cw-conn-search__icon { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
-.cw-conn-search input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
-.cw-conn-search input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
+.cw-connections .cw-filter { margin-bottom: var(--mp-spacing-5, 20px); }
 
 .cw-conn-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); }
-.cw-conn-cat-title { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
+/* Gap between the section title and its grid is 0 (per design). */
+.cw-conn-cat-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
 
 /* Edge-to-edge cards; borders draw the grid (clip the outer right/bottom). */
 .cw-conn-clip { overflow: hidden; }
@@ -1152,7 +1172,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-conn-cell--filler { padding: 0; min-height: 104px; }
 .cw-conn-main { flex: 1; min-width: 0; }
 .cw-conn-head { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
-.cw-conn-logo { width: 24px; height: 24px; flex-shrink: 0; border-radius: var(--mp-radii-md, 6px); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
+.cw-conn-logo, .cw-conn-logo-img { width: 24px; height: 24px; flex-shrink: 0; border-radius: var(--mp-radii-md, 6px); }
+.cw-conn-logo-img { object-fit: contain; }
+.cw-conn-logo { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
 .cw-conn-name { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cw-conn-desc { margin: var(--mp-spacing-1, 4px) 0 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .cw-conn-sample { display: inline-flex; align-items: center; gap: 4px; margin: var(--mp-spacing-1, 4px) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-success, #186f4a); }
