@@ -3,7 +3,7 @@ import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox, MpButton,
+  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -1083,8 +1083,15 @@ onUnmounted(() => {
                   <td class="detail-td"><strong>{{ m.countedLocation }}</strong></td>
                   <td class="detail-td">{{ formatDateTime(m.scannedAt) }}</td>
                   <td class="detail-td detail-td--action">
+                    <!-- MpButton variant="tertiary" renders solid-filled here (Pixel's
+                         runtime atomic CSS isn't emitted in this install — see the
+                         pixel-badge-atomic-css-gap memory), so this matches the
+                         View batch/serial icon buttons right above it: same
+                         hand-styled .detail-view-btn, not a new pattern. -->
                     <MpTooltip :id="`sad-tt-transfer-${m.serial}`" :label="t('Create warehouse transfer')" placement="top" use-portal>
-                      <MpButton variant="tertiary" size="sm" left-icon="warehouse" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])" />
+                      <button class="detail-view-btn" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
+                        <MpIcon name="warehouse" size="md" />
+                      </button>
                     </MpTooltip>
                   </td>
                 </tr>
