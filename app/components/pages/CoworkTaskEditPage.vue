@@ -11,7 +11,7 @@
  * (re)generated from it on save. Saving a predefined-task draft persists it to
  * the Tasks index with status 'draft' (saved, but not yet run).
  */
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import {
   MpButton, MpInput, MpTextarea, MpSelect, MpToggle, MpUpload, MpUploadList, MpIcon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
@@ -21,7 +21,17 @@ import { getTask, updateTask, taskHasRun, coworkConnections, type CoworkTask, ty
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const route = useRoute()
 const { build } = useCoworkContext()
+
+// Opened via "Edit schedule" → focus the Schedule field.
+onMounted(async () => {
+  if (route.query.focus === 'schedule') {
+    await nextTick()
+    document.getElementById('cte-cadence-input')?.focus()
+    document.getElementById('cte-cadence-input')?.scrollIntoView({ block: 'center' })
+  }
+})
 
 const task = computed<CoworkTask | undefined>(() => getTask(props.orderId))
 

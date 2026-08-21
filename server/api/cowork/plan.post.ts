@@ -93,10 +93,12 @@ const ARTIFACT_INSTRUCTIONS: Record<string, string> = {
   pdf: '- artifacts.pdf: a formatted report ({title, sections:[{heading,body}]}) suitable for printing — an executive overview grounded in the data.',
 }
 
-function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[]): string {
+function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[], agent?: { name?: string; persona?: string }): string {
   return [
-    'You are Mekari Cowork — an autonomous AI co-worker embedded in a Mekari ERP suite',
-    '(Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, and Production).',
+    agent?.name
+      ? `You are "${agent.name}", a specialist AI agent inside the Mekari Cowork co-worker (Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, Production).`
+      : 'You are Mekari Cowork — an autonomous AI co-worker embedded in a Mekari ERP suite\n(Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, and Production).',
+    agent?.persona ? `Act as ${agent.persona}` : '',
     '',
     'You are given a task and a JSON snapshot of the REAL current data in the ERP.',
     'ACTUALLY DO THE TASK and produce the requested deliverables — do not describe',
@@ -190,7 +192,7 @@ const ALLOWED_MODELS = new Set([
 ])
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[] }>(event)
+  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[]; agent?: { name?: string; persona?: string } }>(event)
   const task = (body?.task ?? '').trim()
   const ctx = body?.context ?? {}
   if (!task) {
@@ -213,7 +215,7 @@ export default defineEventHandler(async (event) => {
     const res = await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources) }] }],
+        contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources, body?.agent) }] }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema(requested), temperature: 0.6 },
       },
     })

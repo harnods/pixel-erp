@@ -762,15 +762,95 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'brex', name: 'Brex', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Cards & spend', color: '#111111' },
 ]
 
+// ── Agents ────────────────────────────────────────────────────────────────────
+// An agent is the "brain" behind a set of predefined tasks. It owns a module, a
+// persona (fed to the model so it shapes the task result), the tasks it runs, and
+// the connections it draws on. Names/descriptions are contextual to those tasks.
+export interface CoworkAgent {
+  id: string
+  name: string            // contextual identity, e.g. "Collections & Close"
+  role: string            // short role line, e.g. "Finance agent"
+  module: CoworkModule
+  description: string     // what it does (derived from its tasks)
+  /** Persona / operating instruction — prepended to the run prompt so the agent
+   *  actually shapes how the task result comes out. This is the "brain". */
+  persona: string
+  /** Catalog task titles this agent owns (see COWORK_CATALOG). */
+  taskTitles: string[]
+  /** Connection ids the agent typically uses (see CONNECTION_SEED). */
+  connections?: string[]
+  model: string
+  avatar: string          // /agents/<id>.png (72×72)
+  color: string           // fallback tile / accent colour
+  /** true = under "My agents" (already yours); false = under "Browse agents". */
+  owned: boolean
+}
+export const AGENT_SEED: CoworkAgent[] = [
+  {
+    id: 'finance', name: 'Collections & Close', role: 'Finance agent', module: 'Finance',
+    description: 'Chases overdue receivables, reconciles cash accounts, and runs the month-end close.',
+    persona: 'a meticulous finance analyst. Prioritise by cash impact and risk, ground every figure in Jurnal, chase the biggest exposures first, and draft firm-but-polite reminders. Never invent balances.',
+    taskTitles: ['Chase overdue receivables', 'Bank reconciliation review', 'Month-end close checklist'],
+    connections: ['xero', 'stripe'], model: 'gemini-flash-latest', avatar: '/agents/finance.png', owned: true, color: '#0A6E4E',
+  },
+  {
+    id: 'people', name: 'People Ops', role: 'HR agent', module: 'HR',
+    description: 'Reviews attendance, pre-checks payroll, and tracks contracts and handovers.',
+    persona: 'a fair, discreet HR business partner. Separate recurring patterns from one-offs, weigh context (probation, tenure, work-related reasons), and only escalate what a manager truly needs to see.',
+    taskTitles: ['Attendance exceptions review', 'Payroll run pre-check', 'Contracts expiring soon', 'Resignation handover plan'],
+    connections: ['gcal', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/people.png', owned: true, color: '#B54708',
+  },
+  {
+    id: 'pipeline', name: 'Pipeline Coach', role: 'CRM agent', module: 'CRM',
+    description: 'Reviews the sales pipeline and drafts follow-ups for the top prospects.',
+    persona: 'a sharp sales strategist. Rank deals by value and momentum, call out what has stalled, and write concise, personalised outreach that moves each deal to the next stage.',
+    taskTitles: ['Sales pipeline review', 'Draft follow-ups for top prospects'],
+    connections: ['hubspot', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/pipeline.png', owned: true, color: '#175CD3',
+  },
+  {
+    id: 'orders', name: 'Order Desk', role: 'Sales agent', module: 'Sales',
+    description: 'Finds sales orders ready to fulfil and flags anything blocked on stock.',
+    persona: 'an order-management specialist. Cross-check every order against warehouse stock, protect delivery dates, and surface blockers before they become late shipments.',
+    taskTitles: ['Sales orders needing fulfilment'],
+    connections: ['shopify'], model: 'gemini-flash-latest', avatar: '/agents/orders.png', owned: false, color: '#6941C6',
+  },
+  {
+    id: 'warehouse', name: 'Warehouse Planner', role: 'WMS agent', module: 'WMS',
+    description: 'Reorders low stock, plans outbound fulfilment, and schedules cycle counts.',
+    persona: 'a proactive warehouse planner. Prevent stockouts, size reorders by lead time and open demand, and keep picking, packing and shipping on schedule.',
+    taskTitles: ['Reorder low-stock SKUs', "Plan today's outbound fulfilment", 'Schedule cycle counts'],
+    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/warehouse.png', owned: true, color: '#0E7090',
+  },
+  {
+    id: 'production', name: 'Production Planner', role: 'Production agent', module: 'Production',
+    description: 'Flags at-risk work orders and checks BOM component availability.',
+    persona: 'a production planner who spots bottlenecks early. Tie every at-risk work order to a specific material or capacity constraint and recommend a concrete recovery.',
+    taskTitles: ['Work orders at risk', 'BOM vs stock check'],
+    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/production.png', owned: false, color: '#C11574',
+  },
+]
+
 function load<T>(key: string, seed: T[]): T[] {
   return loadSnapshot<T>(key) ?? seed
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
+export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v1', AGENT_SEED))
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
+function persistAgents() { saveSnapshot('cowork-agents-v1', coworkAgents) }
+export function getAgent(id: string): CoworkAgent | undefined { return coworkAgents.find((a) => a.id === id) }
+/** The agent that owns a module (drives a task's result). */
+export function agentForModule(m?: CoworkModule): CoworkAgent | undefined {
+  return coworkAgents.find((a) => a.module === m)
+}
+/** The agent that owns a given catalog task title. */
+export function agentForTaskTitle(title?: string): CoworkAgent | undefined {
+  if (!title) return undefined
+  return coworkAgents.find((a) => a.taskTitles.includes(title))
+}
 
 let taskSeq = 1043
 export function nextTaskId(): string { return `CW-${taskSeq++}` }

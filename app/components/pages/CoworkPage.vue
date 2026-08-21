@@ -29,11 +29,11 @@ import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useGoogleConnect } from '~/composables/useGoogleConnect'
 import { formatDateTime } from '~/utils/date'
 import {
-  coworkTasks, coworkConnections,
+  coworkTasks, coworkConnections, coworkAgents,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
-  setTaskScheduleEnabled, unscheduleTask, setConnection, addCoworkConnection, removeCoworkConnection,
-  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem,
+  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
+  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent,
 } from '~/data/cowork'
 
 const route = useRoute()
@@ -317,6 +317,8 @@ function removeTask(id: string) {
   deleteTask(id)
   toast.notify({ variant: 'success', title: 'Task deleted' })
 }
+function editTaskById(id: string) { router.push(`/cowork-tasks/${id}/edit`) }
+function editScheduleById(id: string) { router.push(`/cowork-tasks/${id}/edit?focus=schedule`) }
 
 // ── Overview data ────────────────────────────────────────────────────────────
 // Suggested tasks grouped by module (Finance, HR, Sales, CRM, WMS, Production).
@@ -635,6 +637,44 @@ const connSections = computed<ConnSection[]>(() => {
   }
   return out
 })
+// ── Agents grid (same responsive rules as Connections) ───────────────────────
+const AGENT_MIN_CARD = 300
+const AGENT_MAX_COLS = 6
+const agentGridEl = ref<HTMLElement | null>(null)
+const agentCols = ref(3)
+function recomputeAgentCols() {
+  const w = agentGridEl.value?.clientWidth ?? 0
+  if (!w) return
+  agentCols.value = Math.max(1, Math.min(AGENT_MAX_COLS, Math.floor(w / AGENT_MIN_CARD)))
+}
+let agentRo: ResizeObserver | null = null
+watch([section, agentGridEl], async () => {
+  if (section.value !== 'Agents') { agentRo?.disconnect(); agentRo = null; return }
+  await nextTick()
+  recomputeAgentCols()
+  if (agentGridEl.value && 'ResizeObserver' in window && !agentRo) {
+    agentRo = new ResizeObserver(recomputeAgentCols)
+    agentRo.observe(agentGridEl.value)
+  }
+}, { immediate: true })
+onBeforeUnmount(() => agentRo?.disconnect())
+
+interface AgentSection { key: string; title: string; subtitle: string; items: typeof coworkAgents; filler: number }
+const agentSections = computed<AgentSection[]>(() => {
+  const groups: { key: string; title: string; subtitle: string; owned: boolean }[] = [
+    { key: 'mine', title: 'My agents', subtitle: 'Your trusted sidekicks for automating tasks and boosting productivity.', owned: true },
+    { key: 'browse', title: 'Browse agents', subtitle: 'Discover and add agents that combine instructions, knowledge and tasks.', owned: false },
+  ]
+  return groups.map((g) => {
+    const items = coworkAgents.filter((a) => a.owned === g.owned)
+    const rem = items.length % agentCols.value
+    return { ...g, items, filler: rem === 0 ? 0 : agentCols.value - rem }
+  }).filter((s) => s.items.length)
+})
+function openAgent(a: CoworkAgent) { infoToast(`${a.name} — agent details coming soon`) }
+function editAgent(a: CoworkAgent) { infoToast(`Edit ${a.name} — coming soon`) }
+function newAgent() { infoToast('New agent — coming soon') }
+
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
   if (c.provider === 'google') connectGoogle(c)
@@ -654,6 +694,7 @@ function handleQueryTriggers() {
   const q = route.query
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
+  if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -1138,8 +1179,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <td>{{ s.schedule!.cadence }} · {{ s.schedule!.time }}</td>
                   <td>{{ s.schedule!.nextRun ?? '—' }}</td>
                   <td><MpToggle :is-checked="!!s.schedule!.enabled" :aria-label="`Toggle ${s.title}`" @update:is-checked="(v: boolean) => setTaskScheduleEnabled(s.id, v)" /></td>
-                  <td class="cw-td-actions">
-                    <button class="cw-kebab" type="button" aria-label="Remove schedule" @click="unscheduleTask(s.id)"><MpIcon name="delete" size="md" /></button>
+                  <td class="cw-td-actions" @click.stop>
+                    <MpPopover :id="`cw-sched-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <button class="cw-kebab" type="button" aria-label="Actions"><MpIcon name="menu-kebab" size="md" /></button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '160px' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="editTaskById(s.id)">Edit task</MpPopoverListItem>
+                          <MpPopoverListItem @click="editScheduleById(s.id)">Edit schedule</MpPopoverListItem>
+                          <MpPopoverListItem @click="removeTask(s.id)">Delete</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                   </td>
                 </tr>
                 <tr v-if="!schedRows.length"><td colspan="6" class="cw-empty">No scheduled tasks.</td></tr>
@@ -1231,10 +1283,37 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </section>
 
         <!-- ── Agents ── -->
-        <section v-else-if="section === 'Agents'" class="cw-placeholder">
-          <MpIcon name="magic" size="lg" class="cw-placeholder__icon" />
-          <h3 class="cw-placeholder__title">Agents are coming soon</h3>
-          <p class="cw-placeholder__caption">Build focused AI agents — each with its own instructions, tools and connections — to run a slice of your ERP on autopilot.</p>
+        <!-- ── Agents ── -->
+        <section v-else-if="section === 'Agents'" class="cw-agents">
+          <div ref="agentGridEl" class="cw-agent-sections">
+            <section v-for="sec in agentSections" :key="sec.key" class="cw-agent-section">
+              <h2 class="cw-agent-cat-title">{{ sec.title }}</h2>
+              <p class="cw-agent-cat-sub">{{ sec.subtitle }}</p>
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+                  <div v-for="a in sec.items" :key="a.id" class="cw-agent-cell" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
+                    <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
+                    <div class="cw-agent-main">
+                      <p class="cw-agent-name">{{ a.name }}</p>
+                      <p class="cw-agent-desc">{{ a.description }}</p>
+                    </div>
+                    <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '160px' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
+                          <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </div>
+                  <div v-for="n in sec.filler" :key="sec.key + '-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
+                </div>
+              </div>
+            </section>
+          </div>
         </section>
 
         <!-- ── Skills ── -->
@@ -1525,6 +1604,28 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-conn-action:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); }
 .cw-conn-action.is-connected { color: var(--mp-text-success, #186f4a); }
 .cw-conn-noresult { padding: var(--mp-spacing-6, 24px) 0; }
+
+/* ── Agents (Figma 4234:5952) — same edge-to-edge grid as Connections ── */
+.cw-agent-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); }
+.cw-agent-cat-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
+.cw-agent-cat-sub { margin: 2px 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); }
+.cw-agent-cell {
+  position: relative;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px);
+  min-height: 160px;
+  padding: var(--mp-spacing-5, 20px);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  cursor: pointer;
+}
+.cw-agent-cell--filler { padding: 0; min-height: 160px; cursor: default; }
+.cw-agent-avatar { width: 72px; height: 72px; flex-shrink: 0; border-radius: var(--mp-radii-lg, 12px); object-fit: cover; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.cw-agent-main { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); min-width: 0; }
+.cw-agent-name { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-agent-cell:hover .cw-agent-name { text-decoration: underline; text-underline-offset: 2px; }
+.cw-agent-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cw-agent-kebab { position: absolute; top: var(--mp-spacing-4, 16px); right: var(--mp-spacing-4, 16px); display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md, 6px); color: var(--mp-icon-default, #536062); cursor: pointer; }
+.cw-agent-kebab:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }

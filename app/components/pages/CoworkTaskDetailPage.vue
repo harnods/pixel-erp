@@ -16,6 +16,7 @@ import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
   getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
+  agentForTaskTitle, agentForModule,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -33,16 +34,10 @@ const MODEL_LABELS: Record<string, string> = {
   'gemini-2.5-pro': 'Gemini 2.5 Pro', 'gemini-3-flash-preview': 'Gemini 3 Flash',
 }
 const modelLabel = computed(() => MODEL_LABELS[task.value?.model ?? ''] ?? 'Gemini Flash')
-// The agents involved = one per module the task spans (a general orchestrator runs them).
-const MODULE_AGENT: Record<string, string> = {
-  HR: 'People agent', Finance: 'Finance agent', CRM: 'CRM agent',
-  Sales: 'Sales agent', WMS: 'Warehouse agent', Production: 'Production agent',
-}
-const agents = computed(() => {
-  const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
-  const list = [...new Set(mods.map((m) => MODULE_AGENT[m] ?? `${m} agent`))]
-  return list.length ? list : ['Cowork agent']
-})
+// The agent that drives this task — matched by the catalog task title first, then
+// its primary module. This agent's persona shapes the run result.
+const taskAgent = computed(() => agentForTaskTitle(task.value?.title) ?? agentForModule(task.value?.module))
+const agents = computed(() => taskAgent.value ? [taskAgent.value.name] : ['Cowork agent'])
 
 // Instruction + workflow are NOT generated here. Predefined tasks carry hardcoded
 // values; custom tasks get theirs from the run (see runTask). Opening a detail
@@ -90,7 +85,11 @@ async function runTask() {
   try {
     const res = await $fetch<{ plan: Plan }>('/api/cowork/plan', {
       method: 'POST',
-      body: { task: task.value.prompt, context: build(), model: task.value.model, sources: task.value.sources, outputs: task.value.outputs },
+      body: {
+        task: task.value.prompt, context: build(), model: task.value.model,
+        sources: task.value.sources, outputs: task.value.outputs,
+        agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona } : undefined,
+      },
     })
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
