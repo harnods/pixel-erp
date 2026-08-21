@@ -97,6 +97,7 @@ function removeAgent() {
           <h3 class="cad-h3">Skills</h3>
           <div v-for="s in skills" :key="s!.id" class="cad-skill">
             <p class="cad-skill__name">{{ s!.name }}</p>
+            <p class="cad-skill__desc">{{ s!.description }}</p>
             <div class="cad-chips">
               <span v-for="a in s!.actions" :key="a.id" class="cad-chip">{{ a.label }}</span>
             </div>
@@ -162,8 +163,9 @@ function removeAgent() {
 .cad-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); }
 .cad-chip { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
 .cad-file { margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cad-skill { margin-bottom: var(--mp-spacing-3); }
-.cad-skill__name { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cad-skill { margin-bottom: var(--mp-spacing-4); }
+.cad-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cad-skill__desc { margin: 2px 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .cad-person { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2, 8px) 0; }
 .cad-person__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cad-person__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }

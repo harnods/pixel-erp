@@ -328,6 +328,304 @@ const SPECS: Record<string, { name: string; description: string; spec: DocSpec }
       scripts: [],
     },
   },
+  'payroll-precheck': {
+    name: 'Pre-check payroll',
+    description: 'Verify attendance, changes and approvals are complete before a payroll run.',
+    spec: {
+      tier: 'premium',
+      purpose: 'Runs the pre-payroll checklist in Talenta: confirms attendance is reconciled, all changes (new hires, leavers, salary/allowance edits) are approved, and overtime and leave are finalised — so payroll runs clean.',
+      whenToUse: 'Use in the days before each payroll cut-off. Ground every figure in `Talenta/attendance` and `Talenta/payroll` — never estimate.',
+      table: {
+        headers: ['Check', 'Blocker if…'],
+        rows: [
+          ['Attendance reconciled', 'Missing clock-outs or open exceptions'],
+          ['Changes approved', 'Pending salary/allowance edits'],
+          ['New hires / leavers', 'Prorated pay not set'],
+          ['Overtime & leave', 'Unapproved OT or leave'],
+        ],
+      },
+      workflow: [
+        'Pull the pay-period attendance and confirm every exception is resolved.',
+        'List unapproved changes (salary, allowance, new hire, leaver) and flag them.',
+        'Check overtime and leave are finalised and approved.',
+        'Produce a go/no-go pre-check report with the outstanding blockers.',
+      ],
+      rules: [
+        'Never proceed if attendance has open exceptions.',
+        'Prorate new hires and leavers by working days.',
+      ],
+      actions: ['Build pre-check report', 'Flag blockers'],
+      references: [
+        { name: 'payroll-checklist.md', content: '# Payroll pre-check\n\n1. Attendance reconciled (no open exceptions).\n2. All changes approved before cut-off.\n3. New hires/leavers prorated.\n4. Overtime + leave finalised.' },
+      ],
+      scripts: [
+        { name: 'precheck_payroll.py', content: 'import sys\nsys.path.append("/opt/.sandbox-runtime")\nfrom talenta_api import ApiClient\n\nclient = ApiClient()\n# precheck_payroll.py --period current → outstanding blockers list.' },
+      ],
+    },
+  },
+  'resignation-handover': {
+    name: 'Plan resignation handovers',
+    description: 'Build a handover plan for a resigning employee — tasks, owners and knowledge transfer.',
+    spec: {
+      purpose: 'Turns a resignation into a concrete handover plan: open responsibilities, who they transfer to, knowledge to capture, access to revoke, and the timeline to the last working day.',
+      whenToUse: 'Use as soon as a resignation is confirmed in Talenta.',
+      workflow: [
+        'Pull the employee\'s role, active tasks and reports from Talenta.',
+        'Map each responsibility to a receiving owner.',
+        'List knowledge to document and access/accounts to revoke on the last day.',
+        'Draft the timed handover plan for the manager.',
+      ],
+      actions: ['Draft handover plan'],
+      references: [
+        { name: 'handover-template.md', content: '# Handover plan\n\n- Responsibilities → receiving owner\n- Knowledge to document\n- Access to revoke (last working day)\n- Timeline to LWD' },
+      ],
+      scripts: [],
+    },
+  },
+  'screen-candidates': {
+    name: 'Screen candidates',
+    description: 'Summarise CVs, match against the role, and shortlist the best candidates.',
+    spec: {
+      purpose: 'Reads candidate CVs, summarises strengths and gaps against the role requirements, and produces an objective shortlist with reasons.',
+      whenToUse: 'Use when screening applicants for an open requisition.',
+      workflow: [
+        'Load the role requirements and the candidate CVs.',
+        'Summarise each candidate: strengths, gaps, and fit score.',
+        'Shortlist the best matches with a one-line rationale each.',
+      ],
+      actions: ['Summarise CV', 'Shortlist'],
+      references: [
+        { name: 'scoring-rubric.md', content: '# Screening rubric\n\nScore on must-have skills, relevant experience, and role fit. Keep it objective; note gaps explicitly.' },
+      ],
+      scripts: [],
+    },
+  },
+  'pipeline-review': {
+    name: 'Review sales pipeline',
+    description: 'Rank open deals by value and momentum and surface the ones that have stalled.',
+    spec: {
+      tier: 'premium',
+      purpose: 'Reviews the Qontak pipeline, ranks open deals by value and momentum, and surfaces stalled deals so the team prioritises the right opportunities.',
+      whenToUse: 'Use for weekly pipeline reviews and forecasting. Ground stage, value and last activity in `Qontak/deals`.',
+      table: {
+        headers: ['Signal', 'Meaning'],
+        rows: [
+          ['No activity 14+ days', 'Stalled — needs a nudge'],
+          ['High value, late stage', 'Prioritise to close'],
+          ['Slipping close date', 'Forecast risk'],
+        ],
+      },
+      workflow: [
+        'Pull open deals with stage, value and last activity from Qontak.',
+        'Rank by value × momentum; flag deals stalled 14+ days.',
+        'Recommend the next action for each priority deal.',
+      ],
+      actions: ['Rank deals', 'Flag stalled deals'],
+      references: [
+        { name: 'stage-definitions.md', content: '# Pipeline stages\n\nNew → Qualified → Proposal sent → Negotiation → Won/Lost. A deal is stalled after 14 days with no activity.' },
+      ],
+      scripts: [
+        { name: 'rank_pipeline.py', content: 'import sys\nsys.path.append("/opt/.sandbox-runtime")\nfrom qontak_api import ApiClient\n\nclient = ApiClient()\n# rank_pipeline.py → open deals ranked by value × momentum.' },
+      ],
+    },
+  },
+  'campaign-analysis': {
+    name: 'Analyse marketing campaigns',
+    description: 'Read campaign and audience performance and recommend where to focus spend.',
+    spec: {
+      purpose: 'Reads campaign and audience performance, surfaces what is working, and recommends where to shift spend for the best return.',
+      whenToUse: 'Use for campaign reviews and budget planning.',
+      workflow: [
+        'Pull campaign metrics (reach, CTR, conversions, CPA).',
+        'Compare channels and audiences; find the best and worst performers.',
+        'Recommend a concrete spend reallocation.',
+      ],
+      actions: ['Summarise performance', 'Recommend spend'],
+      references: [
+        { name: 'kpi-reference.md', content: '# Campaign KPIs\n\nReach, CTR, conversion rate, CPA, ROAS. Judge channels on CPA and ROAS, not reach alone.' },
+      ],
+      scripts: [],
+    },
+  },
+  'ticket-triage': {
+    name: 'Triage support tickets',
+    description: 'Categorise incoming tickets, draft replies, and escalate anything risky to a human.',
+    spec: {
+      purpose: 'Triages incoming support tickets: categorises them, drafts a warm reply for the common cases, and flags risky or unhappy customers for a human.',
+      whenToUse: 'Use to clear the support queue quickly while keeping quality high.',
+      table: {
+        headers: ['Category', 'Handling'],
+        rows: [
+          ['How-to / FAQ', 'Draft reply from the knowledge base'],
+          ['Billing dispute', 'Draft reply + flag finance'],
+          ['Angry / churn risk', 'Escalate to a human'],
+        ],
+      },
+      workflow: [
+        'Read the ticket and categorise it.',
+        'Draft a reply for common cases; keep a warm, clear tone.',
+        'Escalate anything risky, unhappy, or account-critical.',
+      ],
+      actions: ['Draft reply', 'Escalate'],
+      references: [
+        { name: 'tone-guide.md', content: '# Support tone\n\nWarm, concise, solution-first. Acknowledge, resolve, and confirm the next step. Escalate churn risk immediately.' },
+      ],
+      scripts: [],
+    },
+  },
+  'fulfil-orders': {
+    name: 'Fulfil sales orders',
+    description: 'Find orders ready to pick/pack/ship, cross-check stock, and flag blockers.',
+    spec: {
+      tier: 'premium',
+      purpose: 'Finds sales orders ready to fulfil, cross-checks each against warehouse stock in Mekari WMS, and creates picking tasks — flagging anything blocked on stock before it becomes a late shipment.',
+      whenToUse: "Use daily to plan fulfilment. Ground availability in `WMS/inventory` and order status in `Sales/orders`.",
+      workflow: [
+        'List open sales orders ready to pick/pack/ship.',
+        'Cross-check each line against on-hand stock.',
+        'Create picking tasks for fulfillable orders; flag blocked ones.',
+        'Protect delivery dates — surface blockers early.',
+      ],
+      rules: [
+        'Never create a picking task for a line without available stock.',
+        'Flag partial-stock orders explicitly rather than shipping short silently.',
+      ],
+      actions: ['Create picking task', 'Flag blockers'],
+      references: [
+        { name: 'fulfilment-rules.md', content: '# Fulfilment rules\n\nFIFO by order date, then by delivery date. Do not split a shipment unless the customer allows partials.' },
+      ],
+      scripts: [
+        { name: 'ready_to_ship.py', content: 'import sys\nsys.path.append("/opt/.sandbox-runtime")\nfrom wms_api import ApiClient\n\nclient = ApiClient()\n# ready_to_ship.py → orders fully covered by stock vs blocked.' },
+      ],
+    },
+  },
+  'outbound-plan': {
+    name: 'Plan outbound fulfilment',
+    description: "Prioritise today's picking, packing and shipping for open outbound orders.",
+    spec: {
+      purpose: "Prioritises the day's outbound work — picking, packing and shipping — across open orders so cut-off times and delivery promises are met.",
+      whenToUse: 'Use each morning to sequence the outbound queue.',
+      workflow: [
+        'Pull open outbound orders with their delivery promises and carrier cut-offs.',
+        'Sequence by cut-off, then by delivery date.',
+        'Assign picking waves and flag anything at risk of missing cut-off.',
+      ],
+      actions: ['Prioritise picking'],
+      references: [
+        { name: 'cutoff-times.md', content: '# Carrier cut-offs\n\nSame-day dispatch requires picking complete by 14:00. Sequence outbound by cut-off first.' },
+      ],
+      scripts: [],
+    },
+  },
+  'work-orders-risk': {
+    name: 'Monitor at-risk work orders',
+    description: 'Flag work orders likely to miss their due date and recommend a recovery.',
+    spec: {
+      purpose: 'Watches open production work orders in Mekari WMS, ties each at-risk order to a specific material or capacity constraint, and recommends a concrete recovery.',
+      whenToUse: 'Use daily to catch slippage before it becomes a missed due date.',
+      workflow: [
+        'List open work orders with due dates and progress.',
+        'Identify the constraint for each at-risk order (material, capacity, upstream WO).',
+        'Recommend a recovery: expedite input, re-sequence, or adjust the date.',
+      ],
+      actions: ['Flag at-risk', 'Recommend recovery'],
+      references: [
+        { name: 'risk-signals.md', content: '# WO risk signals\n\nBehind schedule vs plan, blocked on a component, or waiting on an upstream work order.' },
+      ],
+      scripts: [],
+    },
+  },
+  'bom-check': {
+    name: 'Check BOM vs stock',
+    description: 'Verify component availability for open work orders and flag shortages.',
+    spec: {
+      purpose: 'Explodes each open work order\'s bill of materials and checks component availability in Mekari WMS, flagging shortages that would block the run.',
+      whenToUse: 'Use before releasing work orders to the floor.',
+      workflow: [
+        'Explode the BOM for each open work order.',
+        'Compare required components against on-hand stock.',
+        'Flag shortages and suggest a purchase request where needed.',
+      ],
+      actions: ['Check availability'],
+      references: [
+        { name: 'bom-reference.md', content: '# BOM\n\nEach finished good maps to input SKUs × quantity per unit. Required = qty per unit × work-order output.' },
+      ],
+      scripts: [],
+    },
+  },
+  'bank-recon': {
+    name: 'Reconcile bank statements',
+    description: 'Match statement lines to ledger entries and surface unreconciled items.',
+    spec: {
+      tier: 'premium',
+      purpose: 'Matches bank statement lines to ledger entries in Jurnal, auto-clears the confident matches, and surfaces the unreconciled items that need a human decision.',
+      whenToUse: 'Use for daily/weekly bank reconciliation. Ground every match in `Jurnal/bank` and the ledger — never fabricate a match.',
+      workflow: [
+        'Pull the bank statement lines and the open ledger entries.',
+        'Auto-match on amount + date + reference.',
+        'Surface unmatched lines with the likely counterpart to confirm.',
+      ],
+      rules: [
+        'Only auto-clear exact amount + date matches; everything else is proposed, not posted.',
+        'Never invent a ledger entry to force a match.',
+      ],
+      actions: ['Match lines', 'Flag unreconciled'],
+      references: [
+        { name: 'matching-rules.md', content: '# Matching rules\n\nAuto-clear on exact amount + date + reference. Otherwise propose the closest candidate for human confirmation.' },
+      ],
+      scripts: [
+        { name: 'reconcile.py', content: 'import sys\nsys.path.append("/opt/.sandbox-runtime")\nfrom jurnal_api import ApiClient\n\nclient = ApiClient()\n# reconcile.py → auto-matched vs unreconciled lines.' },
+      ],
+    },
+  },
+  'month-end-close': {
+    name: 'Run month-end close',
+    description: 'Build the month-end checklist and flag everything outstanding before closing the books.',
+    spec: {
+      tier: 'premium',
+      purpose: 'Assembles the month-end close checklist from Jurnal — reconciliations, accruals, unposted transactions, and open documents — and flags everything outstanding before the books can close.',
+      whenToUse: 'Use at each month-end close. Ground the checklist state in Jurnal.',
+      table: {
+        headers: ['Checklist item', 'Blocker if…'],
+        rows: [
+          ['Bank reconciled', 'Unreconciled statement lines'],
+          ['AR / AP posted', 'Draft invoices or bills'],
+          ['Accruals booked', 'Missing recurring accruals'],
+          ['Inter-company', 'Unmatched balances'],
+        ],
+      },
+      workflow: [
+        'Pull the close checklist state from Jurnal.',
+        'Flag unreconciled bank lines, unposted AR/AP, and missing accruals.',
+        'Produce a prioritised list of what must clear before close.',
+      ],
+      actions: ['Build checklist', 'Flag blockers'],
+      references: [
+        { name: 'close-checklist.md', content: '# Month-end close\n\n1. Bank reconciled.\n2. AR/AP posted (no drafts).\n3. Accruals + prepayments booked.\n4. Inter-company matched.\n5. Review P&L and balance sheet.' },
+      ],
+      scripts: [
+        { name: 'close_status.py', content: 'import sys\nsys.path.append("/opt/.sandbox-runtime")\nfrom jurnal_api import ApiClient\n\nclient = ApiClient()\n# close_status.py → outstanding close items.' },
+      ],
+    },
+  },
+  'diagnose-issue': {
+    name: 'Diagnose technical issues',
+    description: 'Diagnose an error from its symptoms, propose a fix, and escalate when needed.',
+    spec: {
+      purpose: 'Diagnoses a technical issue from its symptoms and logs, proposes a step-by-step fix, and knows when to escalate to a specialist.',
+      whenToUse: 'Use when a user reports an error or a system is misbehaving.',
+      workflow: [
+        'Capture the symptoms, recent changes, and any error logs.',
+        'Form the most likely cause and propose a step-by-step fix.',
+        'Escalate to a specialist if the fix is risky or out of scope.',
+      ],
+      actions: ['Diagnose', 'Escalate'],
+      references: [
+        { name: 'triage-runbook.md', content: '# Triage runbook\n\nReproduce → isolate → fix → verify. Escalate anything touching production data or security.' },
+      ],
+      scripts: [],
+    },
+  },
 }
 
 export const SKILL_DOCS: Record<string, SkillDoc> = Object.fromEntries(

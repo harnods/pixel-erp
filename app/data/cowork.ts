@@ -835,8 +835,29 @@ const SKILL_SEED: CoworkSkill[] = [
   { id: 'crm-followup', name: 'Draft CRM follow-ups', module: 'CRM', description: 'Write personalised follow-up messages and open deals in CRM.', actions: [{ id: 'draft-followup', label: 'Draft follow-up' }, { id: 'open-crm', label: 'Open in CRM' }], icon: 'stats', color: '#165082', source: 'built-in' },
   { id: 'hr-reprimand', name: 'Send HR notices', module: 'HR', description: 'Draft a reprimand or note to a chronically-late employee and their manager.', actions: [{ id: 'draft-reprimand', label: 'Draft reprimand' }, { id: 'send-reprimand', label: 'Send reprimand' }], icon: 'profile', color: '#B42318', source: 'built-in' },
   { id: 'contract-review', name: 'Review contracts', module: 'HR', description: 'Flag contracts for renewal, conversion or offboarding.', actions: [{ id: 'review-contract', label: 'Review contract' }], icon: 'profile', color: '#B54708', source: 'built-in' },
-  { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
-  { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
+  // ── HR ──
+  { id: 'payroll-precheck', name: 'Pre-check payroll', module: 'HR', description: 'Verify attendance, changes and approvals are complete before a payroll run.', actions: [{ id: 'build-precheck', label: 'Build pre-check report' }, { id: 'flag-issues', label: 'Flag blockers' }], source: 'built-in' },
+  { id: 'resignation-handover', name: 'Plan resignation handovers', module: 'HR', description: 'Build a handover plan for a resigning employee — tasks, owners and knowledge transfer.', actions: [{ id: 'draft-handover', label: 'Draft handover plan' }], source: 'built-in' },
+  { id: 'screen-candidates', name: 'Screen candidates', module: 'HR', description: 'Summarise CVs, match against the role, and shortlist the best candidates.', actions: [{ id: 'summarise-cv', label: 'Summarise CV' }, { id: 'shortlist', label: 'Shortlist' }], source: 'built-in' },
+  // ── CRM / Sales / Marketing / Support ──
+  { id: 'pipeline-review', name: 'Review sales pipeline', module: 'CRM', description: 'Rank open deals by value and momentum and surface the ones that have stalled.', actions: [{ id: 'rank-deals', label: 'Rank deals' }, { id: 'flag-stalled', label: 'Flag stalled deals' }], source: 'built-in' },
+  { id: 'campaign-analysis', name: 'Analyse marketing campaigns', module: 'CRM', description: 'Read campaign and audience performance and recommend where to focus spend.', actions: [{ id: 'summarise-campaign', label: 'Summarise performance' }, { id: 'recommend-spend', label: 'Recommend spend' }], source: 'built-in' },
+  { id: 'ticket-triage', name: 'Triage support tickets', module: 'CRM', description: 'Categorise incoming tickets, draft replies, and escalate anything risky to a human.', actions: [{ id: 'draft-reply', label: 'Draft reply' }, { id: 'escalate', label: 'Escalate' }], source: 'built-in' },
+  // ── Sales / Fulfilment ──
+  { id: 'fulfil-orders', name: 'Fulfil sales orders', module: 'Sales', description: 'Find orders ready to pick/pack/ship, cross-check stock, and flag blockers.', actions: [{ id: 'create-picking', label: 'Create picking task' }, { id: 'flag-blockers', label: 'Flag blockers' }], source: 'built-in' },
+  // ── WMS ──
+  { id: 'outbound-plan', name: 'Plan outbound fulfilment', module: 'WMS', description: "Prioritise today's picking, packing and shipping for open outbound orders.", actions: [{ id: 'prioritise-outbound', label: 'Prioritise picking' }], source: 'built-in' },
+  // ── Production ──
+  { id: 'work-orders-risk', name: 'Monitor at-risk work orders', module: 'Production', description: 'Flag work orders likely to miss their due date and recommend a recovery.', actions: [{ id: 'flag-risk', label: 'Flag at-risk' }, { id: 'recommend-recovery', label: 'Recommend recovery' }], source: 'built-in' },
+  { id: 'bom-check', name: 'Check BOM vs stock', module: 'Production', description: 'Verify component availability for open work orders and flag shortages.', actions: [{ id: 'check-bom', label: 'Check availability' }], source: 'built-in' },
+  // ── Finance ──
+  { id: 'bank-recon', name: 'Reconcile bank statements', module: 'Finance', description: 'Match statement lines to ledger entries and surface unreconciled items.', actions: [{ id: 'match-lines', label: 'Match lines' }, { id: 'flag-unreconciled', label: 'Flag unreconciled' }], source: 'built-in' },
+  { id: 'month-end-close', name: 'Run month-end close', module: 'Finance', description: 'Build the month-end checklist and flag everything outstanding before closing the books.', actions: [{ id: 'build-checklist', label: 'Build checklist' }, { id: 'flag-blockers', label: 'Flag blockers' }], source: 'built-in' },
+  // ── IT ──
+  { id: 'diagnose-issue', name: 'Diagnose technical issues', module: 'Production', description: 'Diagnose an error from its symptoms, propose a fix, and escalate when needed.', actions: [{ id: 'diagnose', label: 'Diagnose' }, { id: 'escalate', label: 'Escalate' }], source: 'built-in' },
+  // ── Cross-cutting ──
+  { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], source: 'built-in' },
+  { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], source: 'built-in' },
 ]
 export const COWORK_COMPANY = 'PT Central Perk Indonesia'
 export const AGENT_SEED: CoworkAgent[] = [
@@ -918,17 +939,17 @@ export const AGENT_SEED: CoworkAgent[] = [
 
 // Sensible create-form defaults for the seeded agents (so details/edit reflect them).
 const AGENT_DEFAULT_SKILLS: Record<string, string[]> = {
-  airene: ['payment-reminder', 'journal', 'crm-followup', 'create-task', 'send-email'],
-  sales: ['crm-followup', 'create-task', 'send-email'],
-  marketing: ['crm-followup', 'create-task', 'send-email'],
-  'customer-support': ['create-task', 'send-email'],
-  warehouse: ['purchase-request', 'stock-count', 'create-task'],
-  hr: ['hr-reprimand', 'contract-review', 'create-task', 'send-email'],
-  recruitment: ['create-task', 'send-email'],
-  production: ['work-order', 'create-task'],
-  fulfillment: ['create-task', 'send-email'],
-  'technical-support': ['create-task'],
-  default: ['create-task'],
+  airene: ['payment-reminder', 'bank-recon', 'month-end-close', 'journal', 'pipeline-review', 'crm-followup', 'create-task', 'send-email'],
+  sales: ['pipeline-review', 'crm-followup', 'send-invoice', 'create-task', 'send-email'],
+  marketing: ['campaign-analysis', 'crm-followup', 'create-task', 'send-email'],
+  'customer-support': ['ticket-triage', 'create-task', 'send-email'],
+  warehouse: ['purchase-request', 'outbound-plan', 'stock-count', 'create-task'],
+  hr: ['hr-reprimand', 'payroll-precheck', 'contract-review', 'resignation-handover', 'create-task', 'send-email'],
+  recruitment: ['screen-candidates', 'create-task', 'send-email'],
+  production: ['work-order', 'work-orders-risk', 'bom-check', 'create-task'],
+  fulfillment: ['fulfil-orders', 'send-invoice', 'create-task', 'send-email'],
+  'technical-support': ['diagnose-issue', 'create-task'],
+  default: ['create-task', 'send-email'],
 }
 for (const a of AGENT_SEED) {
   a.instruction ??= a.persona
