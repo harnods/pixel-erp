@@ -1365,8 +1365,8 @@ watch(aireneBridge.openContextSignal, () => {
 })
 
 // ── Resize panel ──────────────────────────────────────────────────────────
-const PANEL_MIN = 320
-const PANEL_MAX = 640
+const PANEL_MIN = 384
+const PANEL_MAX = 680
 const panelWidth = ref(PANEL_MIN)
 
 function startResize(e: MouseEvent) {
@@ -2575,9 +2575,12 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
 }
 
-/* History wrapper — anchor for the dropdown */
+/* History wrapper — anchor for the dropdown. min-width:0 lets the title
+   truncate so the header icons on the right never get clipped. */
 .airene-history-wrapper {
   position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .airene-new-chat {
@@ -2593,7 +2596,8 @@ function startResize(e: MouseEvent) {
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   border-radius: var(--mp-radii-md);
   line-height: var(--mp-line-heights-md);
-  max-width: 200px;
+  min-width: 0;
+  max-width: 100%;
 }
 .airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -2683,6 +2687,7 @@ function startResize(e: MouseEvent) {
 .airene-header-icons {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .airene-icon-btn {

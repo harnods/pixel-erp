@@ -157,7 +157,9 @@ const progressValue = computed(() => {
   return String(Math.min(100, Math.round((activeStepIndex.value / total) * 100)))
 })
 
-function assign(taskPrompt: string, title?: string, module?: CoworkModule) {
+// `run` = execute immediately (composer send, or a card's "Run task"); false =
+// just create the task and open its detail page in the pre-run state.
+function assign(taskPrompt: string, title?: string, module?: CoworkModule, run = true) {
   const p = taskPrompt.trim()
   if (!p) return
   // The selected sources ARE modules — a multi-source task spans multiple modules.
@@ -169,15 +171,16 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule) {
     prompt: p,
     module: primary,
     modules,
-    status: 'running',
+    status: run ? 'running' : 'scheduled',
     createdAt: new Date().toISOString(),
     outputs: OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name),
     sources: active,
     model: model.value,
   })
   prompt.value = ''
-  // Running happens on the task detail page (which owns the run history + result).
-  router.push({ path: `/cowork-tasks/${task.id}`, query: { run: '1' } })
+  // Running (when requested) happens on the task detail page, which owns the run
+  // history + result; otherwise the detail opens in its pre-run state.
+  router.push({ path: `/cowork-tasks/${task.id}`, query: run ? { run: '1' } : {} })
 }
 
 function inferModule(text: string): CoworkModule {
@@ -845,7 +848,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <template v-for="g in suggestedGroups" :key="g.module">
                 <p class="cw-module-label">{{ g.module }}</p>
                 <div class="cw-suggest-grid">
-                  <button v-for="c in g.items" :key="c.title" class="cw-suggest-item" type="button" @click="assign(c.prompt, c.title, c.module)">
+                  <!-- Card body opens the task detail (before running); "Run task" runs it. -->
+                  <div v-for="c in g.items" :key="c.title" class="cw-suggest-item" role="button" tabindex="0" @click="assign(c.prompt, c.title, c.module, false)" @keydown.enter="assign(c.prompt, c.title, c.module, false)">
                     <span class="cw-suggest-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" fill="currentColor"/></svg>
                     </span>
@@ -858,9 +862,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         </span>
                         Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
                       </span>
-                      <span v-if="!hasRun(c)" class="cw-suggest-run">Run task <MpIcon name="arrows-right" size="sm" /></span>
+                      <button v-if="!hasRun(c)" class="cw-suggest-run" type="button" @click.stop="assign(c.prompt, c.title, c.module, true)">Run task <MpIcon name="arrows-right" size="sm" /></button>
                     </span>
-                  </button>
+                  </div>
                 </div>
               </template>
             </div>
@@ -1242,7 +1246,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--mp-radii-full, 999px); background: #F8F8F8; border: 1px solid var(--mp-border-bold, #8c9596); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); display: flex; align-items: center; justify-content: center; color: var(--mp-text-default); }
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cw-suggest-run { display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-run { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
+.cw-suggest-run:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cw-avatars { display: inline-flex; }
 .cw-avatar { width: 32px; height: 32px; border-radius: var(--mp-radii-full, 999px); object-fit: cover; border: 2px solid var(--mp-background-neutral, #fff); background: var(--mp-background-neutral-subtle, #f8f9f9); }

@@ -42,6 +42,9 @@ interface Plan {
   }
 }
 
+// A task that's never actually executed shows a centered pre-run view (just its
+// details + Run task), not the run-history / result layout.
+const hasBeenRun = computed(() => !!(task.value && ((task.value.runs?.length ?? 0) > 0 || task.value.planJson)))
 const runs = computed<CoworkRun[]>(() => (task.value ? taskRuns(task.value) : []))
 const selectedRunId = ref<string | null>(null)
 const selectedRun = computed(() => runs.value.find((r) => r.id === selectedRunId.value) ?? runs.value[0])
@@ -306,7 +309,32 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     </header>
 
     <div class="ctd-stage">
-      <div class="ctd-grid">
+      <!-- Pre-run: centered task details only (before the task is ever run) -->
+      <div v-if="!hasBeenRun && !running" class="ctd-prerun">
+        <section class="ctd-prerun__card">
+          <h2 class="ctd-h2">Task details</h2>
+          <p class="ctd-desc">{{ task.prompt }}</p>
+
+          <p class="ctd-label">Sources</p>
+          <p class="ctd-value">{{ sourceLabels.join(', ') }}</p>
+
+          <p class="ctd-label">Output</p>
+          <div class="ctd-chips">
+            <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
+          </div>
+
+          <template v-if="task.schedule">
+            <p class="ctd-label">Frequency</p>
+            <div class="ctd-freq">
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Repeat</span><span>{{ task.schedule.cadence }}</span></div>
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Time</span><span>{{ task.schedule.time }}</span></div>
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Next run</span><span>{{ task.schedule.nextRun ?? '—' }}</span></div>
+            </div>
+          </template>
+        </section>
+      </div>
+
+      <div v-else class="ctd-grid">
         <!-- Left: task details + runs -->
         <section class="ctd-left">
           <h2 class="ctd-h2">Task details</h2>
@@ -452,6 +480,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); }
 .ctd-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: var(--mp-spacing-6); align-items: start; }
 @media (max-width: 1024px) { .ctd-grid { grid-template-columns: 1fr; } }
+
+/* Pre-run: task details centered in the stage, ~6 of 12 columns wide. */
+.ctd-prerun { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.ctd-prerun__card { grid-column: 4 / 10; }
+@media (max-width: 1024px) { .ctd-prerun__card { grid-column: 1 / -1; } }
 
 .ctd-muted { margin: 0; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); }
 .ctd-h2 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
