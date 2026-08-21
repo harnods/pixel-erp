@@ -15,7 +15,7 @@ import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
-  getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, nextRunId,
+  getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -25,6 +25,40 @@ const route = useRoute()
 const { build } = useCoworkContext()
 
 const task = computed<CoworkTask | undefined>(() => getTask(props.orderId))
+
+// ── Model / Agents / Instruction / Workflow (task details) ────────────────────
+const MODEL_LABELS: Record<string, string> = {
+  'gemini-flash-latest': 'Gemini Flash', 'gemini-pro-latest': 'Gemini Pro',
+  'gemini-flash-lite-latest': 'Gemini Flash Lite', 'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro', 'gemini-3-flash-preview': 'Gemini 3 Flash',
+}
+const modelLabel = computed(() => MODEL_LABELS[task.value?.model ?? ''] ?? 'Gemini Flash')
+// The agents involved = one per module the task spans (a general orchestrator runs them).
+const MODULE_AGENT: Record<string, string> = {
+  HR: 'People agent', Finance: 'Finance agent', CRM: 'CRM agent',
+  Sales: 'Sales agent', WMS: 'Warehouse agent', Production: 'Production agent',
+}
+const agents = computed(() => {
+  const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
+  const list = [...new Set(mods.map((m) => MODULE_AGENT[m] ?? `${m} agent`))]
+  return list.length ? list : ['Cowork agent']
+})
+
+// Instruction + workflow are AI-generated once (from the user's prompt) and cached.
+const preparing = ref(false)
+async function ensurePrepared() {
+  const t = task.value
+  if (!t || t.instruction || preparing.value) return
+  preparing.value = true
+  try {
+    const res = await $fetch<{ instruction: string; workflow: string[] }>('/api/cowork/prepare', {
+      method: 'POST',
+      body: { task: t.prompt, modules: t.modules ?? [t.module], outputs: t.outputs, sources: t.sources, model: t.model },
+    })
+    updateTask(t.id, { instruction: res.instruction, workflow: res.workflow })
+  } catch { /* leave unset; the UI just hides these rows */ }
+  finally { preparing.value = false }
+}
 
 // ── Plan / artifacts ──────────────────────────────────────────────────────────
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
@@ -271,6 +305,7 @@ const sourceLabels = computed(() =>
 
 onMounted(() => {
   selectedRunId.value = runs.value[0]?.id ?? null
+  ensurePrepared()
   if (route.query.run === '1' && !task.value?.runs?.length) {
     router.replace({ path: `/cowork-tasks/${props.orderId}`, query: {} })
     runTask()
@@ -315,6 +350,18 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <h2 class="ctd-h2">Task details</h2>
           <p class="ctd-desc">{{ task.prompt }}</p>
 
+          <p class="ctd-label">Instruction</p>
+          <p v-if="task.instruction" class="ctd-value ctd-instruction">{{ task.instruction }}</p>
+          <p v-else class="ctd-value ctd-muted-line"><MpSpinner size="sm" /> Generating instruction…</p>
+
+          <p class="ctd-label">Model</p>
+          <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
+
+          <p class="ctd-label">Agent</p>
+          <div class="ctd-chips">
+            <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
+          </div>
+
           <p class="ctd-label">Sources</p>
           <p class="ctd-value">{{ sourceLabels.join(', ') }}</p>
 
@@ -322,6 +369,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <div class="ctd-chips">
             <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
           </div>
+
+          <p class="ctd-label">Workflow</p>
+          <ol v-if="task.workflow?.length" class="ctd-workflow">
+            <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
+          </ol>
+          <p v-else class="ctd-value ctd-muted-line"><MpSpinner size="sm" /> Planning workflow…</p>
 
           <template v-if="task.schedule">
             <p class="ctd-label">Frequency</p>
@@ -340,6 +393,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <h2 class="ctd-h2">Task details</h2>
           <p class="ctd-desc">{{ plan?.intro ?? task.prompt }}</p>
 
+          <template v-if="task.instruction">
+            <p class="ctd-label">Instruction</p>
+            <p class="ctd-value ctd-instruction">{{ task.instruction }}</p>
+          </template>
+
+          <p class="ctd-label">Model</p>
+          <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
+
+          <p class="ctd-label">Agent</p>
+          <div class="ctd-chips">
+            <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
+          </div>
+
           <p class="ctd-label">Sources</p>
           <p class="ctd-value">{{ sourceLabels.join(', ') }}</p>
 
@@ -347,6 +413,13 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <div class="ctd-chips">
             <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
           </div>
+
+          <template v-if="task.workflow?.length">
+            <p class="ctd-label">Workflow</p>
+            <ol class="ctd-workflow">
+              <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
+            </ol>
+          </template>
 
           <template v-if="task.schedule">
             <p class="ctd-label">Frequency</p>
@@ -490,6 +563,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-h2 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctd-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
 .ctd-label { margin: var(--mp-spacing-4) 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ctd-instruction { line-height: var(--mp-line-heights-md, 20px); }
+.ctd-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
+.ctd-muted-line { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); color: var(--mp-text-secondary); }
+.ctd-workflow { margin: var(--mp-spacing-1, 4px) 0 0; padding-inline-start: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
+.ctd-workflow li { font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }

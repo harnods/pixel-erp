@@ -162,10 +162,12 @@ const progressValue = computed(() => {
 function assign(taskPrompt: string, title?: string, module?: CoworkModule, run = true) {
   const p = taskPrompt.trim()
   if (!p) return
-  // The selected sources ARE modules — a multi-source task spans multiple modules.
+  // A predefined card (module given) scopes to its own module; a free-form
+  // composer prompt uses the sources the user toggled on.
+  const fromCatalog = !!module
   const active = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name) as CoworkModule[]
   const primary = module ?? inferModule(p)
-  const modules = active.length ? active : [primary]
+  const modules = fromCatalog ? [primary] : (active.length ? active : [primary])
   const task = addTask({
     title: title ?? (p.length > 52 ? p.slice(0, 50) + '…' : p),
     prompt: p,
@@ -174,7 +176,7 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule, run =
     status: run ? 'running' : 'scheduled',
     createdAt: new Date().toISOString(),
     outputs: OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name),
-    sources: active,
+    sources: modules,
     model: model.value,
   })
   prompt.value = ''
@@ -907,7 +909,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               </thead>
               <!-- First-load skeleton -->
               <tbody v-if="loading">
-                <tr v-for="n in 5" :key="`sk-${n}`">
+                <tr v-for="n in 3" :key="`sk-${n}`">
                   <td><MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="80px" height="18px" rounded="sm" duration="0s" /></td>
@@ -986,7 +988,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               </thead>
               <!-- First-load skeleton -->
               <tbody v-if="loading">
-                <tr v-for="n in 5" :key="`sk-${n}`">
+                <tr v-for="n in 3" :key="`sk-${n}`">
                   <td><MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" /></td>
                   <td><MpSkeleton class="cw-skeleton" width="110px" height="14px" rounded="sm" duration="0s" /></td>

@@ -819,7 +819,10 @@ function importEmployees(mode: 'add' | 'update') {
 }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
-const aireneOpen = ref(false)
+// State lives in the module-level bridge singleton so the panel stays open and
+// the conversation is preserved when the user navigates between modules.
+const aireneBridge = useAireneBridge()
+const aireneOpen = aireneBridge.isOpen
 function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
@@ -885,7 +888,8 @@ interface ChatSession {
 }
 // The chat currently shown; upserted into the persisted history on every reply so
 // it can be reopened from any module. null = a brand-new, not-yet-saved chat.
-const activeSessionId = ref<string | null>(null)
+// Hoisted to the bridge singleton so it survives navigation.
+const activeSessionId = aireneBridge.activeSessionId
 
 // Seed historical sessions (relative to real Date.now())
 const DAY = 86_400_000
@@ -942,7 +946,8 @@ function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
 if (!loadSnapshot<ChatSession>('airene-chats-v1')) persistChats()
 
 // ── Active session ────────────────────────────────────────────────────────
-const messages = ref<ChatMessage[]>([])
+// Hoisted to the bridge singleton so the conversation survives navigation.
+const messages = aireneBridge.messages
 const chatBodyEl = ref<HTMLElement | null>(null)
 const inputText = ref('')
 const isTyping = ref(false)
@@ -1339,7 +1344,7 @@ function scrollChatToBottom() {
 provide('sendAireneMessage', sendMessage)
 
 // Bridge: let components above the page (e.g. the header search) drive the panel.
-const aireneBridge = useAireneBridge()
+// (aireneBridge is declared near the top, alongside the hoisted panel state.)
 watch(aireneBridge.toggleSignal, () => toggleAirene())
 watch(aireneBridge.sendSignal, () => {
   if (!aireneBridge.pendingText.value) return
@@ -2602,6 +2607,8 @@ function startResize(e: MouseEvent) {
 .airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
 
 .airene-chat-title {
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -39,6 +39,10 @@ export interface CoworkTask {
   outputs?: string[]
   sources?: string[]
   model?: string
+  /** AI-generated, cached on first open of the task detail: a clear instruction
+   *  derived from the user's prompt, and the workflow (steps) Cowork will run. */
+  instruction?: string
+  workflow?: string[]
   /** Execution history — each manual/scheduled run. The task's status/metric mirror
    *  the latest run. Older tasks may have none (synthesised from the task itself). */
   runs?: CoworkRun[]

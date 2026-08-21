@@ -1,5 +1,10 @@
 import { ref } from 'vue'
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 /**
  * Global bridge to the Airene chat panel.
  *
@@ -9,6 +14,13 @@ import { ref } from 'vue'
  * flows downward). This module-level singleton lets any component request an
  * action; `[...slug].vue` watches the signals and performs it.
  */
+// Live panel state — hoisted to module scope so the open/closed state AND the
+// current conversation survive page navigation (the routed [...slug].vue can be
+// re-created as the user moves between modules; module-level refs are not).
+const isOpen = ref(false)
+const messages = ref<ChatMessage[]>([])
+const activeSessionId = ref<string | null>(null)
+
 const toggleSignal = ref(0)
 const sendSignal = ref(0)
 const pendingText = ref('')
@@ -28,6 +40,10 @@ const pendingSessionId = ref('')
 
 export function useAireneBridge() {
   return {
+    // Live panel state (persist across navigation)
+    isOpen,
+    messages,
+    activeSessionId,
     // Signals watched by [...slug].vue
     toggleSignal,
     sendSignal,
