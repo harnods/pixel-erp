@@ -44,21 +44,9 @@ const agents = computed(() => {
   return list.length ? list : ['Cowork agent']
 })
 
-// Instruction + workflow are AI-generated once (from the user's prompt) and cached.
-const preparing = ref(false)
-async function ensurePrepared() {
-  const t = task.value
-  if (!t || t.instruction || preparing.value) return
-  preparing.value = true
-  try {
-    const res = await $fetch<{ instruction: string; workflow: string[] }>('/api/cowork/prepare', {
-      method: 'POST',
-      body: { task: t.prompt, modules: t.modules ?? [t.module], outputs: t.outputs, sources: t.sources, model: t.model },
-    })
-    updateTask(t.id, { instruction: res.instruction, workflow: res.workflow })
-  } catch { /* leave unset; the UI just hides these rows */ }
-  finally { preparing.value = false }
-}
+// Instruction + workflow are NOT generated here. Predefined tasks carry hardcoded
+// values; custom tasks get theirs from the run (see runTask). Opening a detail
+// never generates or persists anything on its own.
 
 // ── Plan / artifacts ──────────────────────────────────────────────────────────
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
@@ -107,6 +95,14 @@ async function runTask() {
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
+    // Custom tasks (typed prompts) get their instruction/workflow from the run's
+    // plan, generated once and cached; predefined tasks keep their hardcoded ones.
+    if (!task.value.instruction || !task.value.workflow?.length) {
+      updateTask(task.value.id, {
+        instruction: task.value.instruction || res.plan.intro,
+        workflow: task.value.workflow?.length ? task.value.workflow : (res.plan.steps ?? []).map((s) => s.title),
+      })
+    }
   } catch {
     addRun(task.value.id, { id: nextRunId(), ranAt: new Date().toISOString(), status: 'failed' })
   } finally {
@@ -305,7 +301,6 @@ const sourceLabels = computed(() =>
 
 onMounted(() => {
   selectedRunId.value = runs.value[0]?.id ?? null
-  ensurePrepared()
   if (route.query.run === '1' && !task.value?.runs?.length) {
     router.replace({ path: `/cowork-tasks/${props.orderId}`, query: {} })
     runTask()
@@ -350,9 +345,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <h2 class="ctd-h2">Task details</h2>
           <p class="ctd-desc">{{ task.prompt }}</p>
 
-          <p class="ctd-label">Instruction</p>
-          <p v-if="task.instruction" class="ctd-value ctd-instruction">{{ task.instruction }}</p>
-          <p v-else class="ctd-value ctd-muted-line"><MpSpinner size="sm" /> Generating instruction…</p>
+          <template v-if="task.instruction">
+            <p class="ctd-label">Instruction</p>
+            <p class="ctd-value ctd-instruction">{{ task.instruction }}</p>
+          </template>
 
           <p class="ctd-label">Model</p>
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
@@ -370,11 +366,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
           </div>
 
-          <p class="ctd-label">Workflow</p>
-          <ol v-if="task.workflow?.length" class="ctd-workflow">
-            <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
-          </ol>
-          <p v-else class="ctd-value ctd-muted-line"><MpSpinner size="sm" /> Planning workflow…</p>
+          <template v-if="task.workflow?.length">
+            <p class="ctd-label">Workflow</p>
+            <ol class="ctd-workflow">
+              <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
+            </ol>
+          </template>
 
           <template v-if="task.schedule">
             <p class="ctd-label">Frequency</p>

@@ -177,50 +177,102 @@ export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Fin
  *  Each becomes a "suggested task" card and a schedule template. */
 export interface CoworkCatalogItem {
   title: string; desc: string; module: CoworkModule; prompt: string
+  /** Predefined (hardcoded) task-detail info — shown on the pre-run detail page
+   *  without any generation. Custom (prompt) tasks derive these from their run. */
+  instruction: string
+  workflow: string[]
+  outputs: string[]
   /** Employee IDs (Talenta HR DB) who have run this predefined task before.
    *  length = how many times it's been used; drives the "Used N times" + avatars. */
   usedBy?: string[]
 }
+const OUT_BRIEF = ['Briefing summary']
+const OUT_BRIEF_ACTIONS = ['Briefing summary', 'Action items']
 export const COWORK_CATALOG: CoworkCatalogItem[] = [
   // ── HR / People (Talenta) ──
   { title: 'Attendance exceptions review', module: 'HR', desc: 'Late clock-ins, missing check-outs and unapproved absences this period.',
-    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.', usedBy: ['EMP-0001','EMP-0011'] },
+    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.',
+    instruction: "I will scan this period's attendance in Talenta, isolate every late clock-in, missing check-out and unapproved absence, and separate one-offs from recurring patterns so you know exactly who needs a follow-up.",
+    workflow: ["Read the latest attendance log from Talenta.", "Isolate late clock-ins, missing check-outs and unapproved absences.", "Match each to the employee profile and add the reason.", "Flag recurring patterns and who to escalate."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0001','EMP-0011'] },
   { title: 'Payroll run pre-check', module: 'HR', desc: 'Verify attendance, changes and approvals are complete before running payroll.',
-    prompt: 'Prepare a payroll run pre-check. Confirm attendance is complete, list pending data changes or approvals, and flag anything that would block this month\'s payroll.' },
+    prompt: 'Prepare a payroll run pre-check. Confirm attendance is complete, list pending data changes or approvals, and flag anything that would block this month\'s payroll.',
+    instruction: "I will run a pre-payroll check across Talenta — confirming attendance is complete, listing any pending data changes or approvals, and flagging anything that would block this month's payroll run.",
+    workflow: ["Confirm attendance and timesheets are finalised.", "List pending data changes and approvals.", "Cross-check contract and salary updates.", "Flag blockers before payroll is run."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Contracts expiring soon', module: 'HR', desc: 'Fixed-term contracts and probation periods ending in the next 60 days.',
-    prompt: 'Find employees whose contracts or probation periods end within the next 60 days. Recommend renewal, conversion or offboarding for each.' },
+    prompt: 'Find employees whose contracts or probation periods end within the next 60 days. Recommend renewal, conversion or offboarding for each.',
+    instruction: "I will find every employee whose fixed-term contract or probation ends within the next 60 days and recommend renewal, conversion or offboarding for each, with the reasoning.",
+    workflow: ["Pull contract and probation end dates from Talenta.", "Filter to those ending within 60 days.", "Recommend renew / convert / offboard for each.", "Draft a summary for HR to action."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Resignation handover plan', module: 'HR', desc: 'Coordinate handovers for employees who are resigning.',
-    prompt: 'For every employee currently resigning, build a handover checklist covering responsibilities, access revocation and knowledge transfer.' },
+    prompt: 'For every employee currently resigning, build a handover checklist covering responsibilities, access revocation and knowledge transfer.',
+    instruction: "I will build a handover plan for every employee currently resigning — covering their responsibilities, access to revoke, and the knowledge that must be transferred before they leave.",
+    workflow: ["List employees currently resigning.", "Map each person's responsibilities and systems.", "Build a handover + access-revocation checklist.", "Assign owners and due dates."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── Sales / CRM (Qontak) ──
   { title: 'Sales pipeline review', module: 'CRM', desc: 'Surface stalled deals and the highest-value opportunities to prioritise.',
-    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.', usedBy: ['EMP-0006','EMP-0013'] },
+    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.',
+    instruction: "I will review the open pipeline in Qontak, rank deals by stage and value, flag the ones that have stalled, and recommend the next best action for each priority deal.",
+    workflow: ["Pull the open pipeline and top accounts.", "Rank deals by stage and value.", "Flag deals with no recent activity.", "Recommend the next best action for each."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0006','EMP-0013'] },
   { title: 'Draft follow-ups for top prospects', module: 'CRM', desc: 'Prepare outreach for the highest-value prospects with no recent activity.',
-    prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.' },
+    prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.',
+    instruction: "I will identify the highest-value prospects that have gone quiet and draft a short, personalised follow-up message for each, ready for you to send.",
+    workflow: ["Find high-value prospects with no recent activity.", "Review each account's context and last touch.", "Draft a personalised follow-up per prospect.", "Prioritise who to contact first."],
+    outputs: ['Briefing summary', 'Email draft'] },
   { title: 'Sales orders needing fulfilment', module: 'Sales', desc: 'Open sales orders ready to pick, pack and ship.',
-    prompt: 'List open sales orders that are ready to fulfil, cross-check stock availability in the warehouse, and flag any that are blocked.' },
+    prompt: 'List open sales orders that are ready to fulfil, cross-check stock availability in the warehouse, and flag any that are blocked.',
+    instruction: "I will list the open sales orders ready to fulfil, cross-check each against warehouse stock, and flag any that are blocked so nothing slips.",
+    workflow: ["Pull open sales orders.", "Cross-check stock availability per order.", "Flag orders blocked on stock.", "Prioritise the ready-to-ship queue."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── WMS / Warehouse ──
   { title: 'Reorder low-stock SKUs', module: 'WMS', desc: 'Compare stock against reorder points and propose a purchase plan.',
-    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.', usedBy: ['EMP-0003','EMP-0010','EMP-0016','EMP-0009'] },
+    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.',
+    instruction: "I will compare warehouse on-hand stock against reorder points, list every SKU that is low or out of stock, and propose a sized reorder plan before it blocks any open orders.",
+    workflow: ["Read on-hand stock across warehouses.", "Compare against reorder points.", "Size the reorder for each low SKU.", "Rank by urgency and lead time."],
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'], usedBy: ['EMP-0003','EMP-0010','EMP-0016','EMP-0009'] },
   { title: 'Plan today\'s outbound fulfilment', module: 'WMS', desc: 'Prioritise picking, packing and shipping for open outbound orders.',
-    prompt: 'Plan today\'s outbound fulfilment. Prioritise picking, packing and shipping tasks for open outbound orders and flag any at risk of missing their delivery date.' },
+    prompt: 'Plan today\'s outbound fulfilment. Prioritise picking, packing and shipping tasks for open outbound orders and flag any at risk of missing their delivery date.',
+    instruction: "I will plan today's outbound fulfilment — prioritising picking, packing and shipping for the open orders and flagging any at risk of missing their delivery date.",
+    workflow: ["Pull open outbound orders.", "Prioritise picking, packing and shipping.", "Flag orders at risk of a late delivery.", "Produce today's fulfilment plan."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Schedule cycle counts', module: 'WMS', desc: 'Recommend which storage locations to count this week.',
-    prompt: 'Recommend a cycle-count plan for this week based on stock value and last-counted dates, and assign counters per storage zone.' },
+    prompt: 'Recommend a cycle-count plan for this week based on stock value and last-counted dates, and assign counters per storage zone.',
+    instruction: "I will recommend this week's cycle-count plan based on stock value and last-counted dates, and assign counters per storage zone.",
+    workflow: ["Review stock value and last-counted dates.", "Select the locations due for a count.", "Assign counters per zone.", "Produce the weekly count schedule."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── Production ──
   { title: 'Work orders at risk', module: 'Production', desc: 'Open work orders likely to miss their due date.',
-    prompt: 'Review open production work orders. Flag any at risk of missing their due date and identify the material or capacity constraint causing it.' },
+    prompt: 'Review open production work orders. Flag any at risk of missing their due date and identify the material or capacity constraint causing it.',
+    instruction: "I will review open production work orders, flag the ones at risk of missing their due date, and pinpoint the material or capacity constraint behind each.",
+    workflow: ["Pull open work orders and due dates.", "Assess progress vs plan.", "Flag at-risk orders and the constraint.", "Recommend how to recover each."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'BOM vs stock check', module: 'Production', desc: 'Verify component availability for open work orders.',
-    prompt: 'For each open work order, check the bill of materials against current component stock and list shortages that must be purchased or produced.' },
+    prompt: 'For each open work order, check the bill of materials against current component stock and list shortages that must be purchased or produced.',
+    instruction: "I will check each open work order's bill of materials against current component stock and list every shortage that must be purchased or produced first.",
+    workflow: ["List open work orders and their BOMs.", "Compare components against on-hand stock.", "List shortages per work order.", "Recommend purchase or produce for each."],
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'] },
 
   // ── Finance (Jurnal) ──
   { title: 'Chase overdue receivables', module: 'Finance', desc: 'Find overdue invoices and draft reminders for the biggest ones.',
-    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.', usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
+    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.',
+    instruction: "I will review overdue receivables in Jurnal, rank the largest overdue invoices by value and risk, draft payment reminders, and tell you exactly who to chase first.",
+    workflow: ["Pull overdue invoices and collection notes.", "Rank by value, risk and days overdue.", "Draft a reminder for the top accounts.", "Produce a prioritised chase list."],
+    outputs: ['Briefing summary', 'Action items', 'Email draft', 'Spreadsheet'], usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
   { title: 'Bank reconciliation review', module: 'Finance', desc: 'Match statement lines and surface unreconciled items.',
-    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.', usedBy: ['EMP-0005','EMP-0006'] },
+    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.',
+    instruction: "I will review bank reconciliation across your cash accounts, surface the unmatched statement lines, and suggest the likely matching transaction for each.",
+    workflow: ["Pull statement lines and ledger entries.", "Match lines to transactions.", "Surface the unmatched items.", "Suggest the likely match for each."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0005','EMP-0006'] },
   { title: 'Month-end close checklist', module: 'Finance', desc: 'Everything outstanding before books can be closed this month.',
-    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.', usedBy: ['EMP-0005'] },
+    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.',
+    instruction: "I will build the month-end close checklist — listing unreconciled accounts, unpaid bills, overdue invoices and any journals needing review — so you know exactly what stands between you and a clean close.",
+    workflow: ["Scan receivables, payables and bank reconciliation.", "List everything outstanding before close.", "Assign an owner and due date to each item.", "Compile the close checklist."],
+    outputs: ['Briefing summary', 'Action items', 'PDF report'], usedBy: ['EMP-0005'] },
 ]
 
 // ── Grounded run-result builders ──────────────────────────────────────────────
@@ -725,6 +777,37 @@ export function addTask(t: Omit<CoworkTask, 'id'> & { id?: string }): CoworkTask
   coworkTasks.unshift(task)
   persistTasks()
   return task
+}
+
+/** True once a task has actually been run (has a run or a cached plan). A draft
+ *  created by opening a task detail is false until "Run task" is clicked — which
+ *  is what keeps drafts out of the Tasks table. */
+export function taskHasRun(t: CoworkTask): boolean {
+  // Drafts (opened but not run) are status 'scheduled' with no runs; anything that
+  // has a run, a cached plan, or a non-scheduled status has been executed.
+  return (t.runs?.length ?? 0) > 0 || !!t.planJson || t.status !== 'scheduled'
+}
+/** Get (or create) the DRAFT task for a predefined catalog item. The draft carries
+ *  the hardcoded instruction/workflow/outputs so the detail never regenerates; it's
+ *  persisted (stable id) but filtered out of the Tasks table until it's run. */
+export function getOrCreateDraftTask(item: CoworkCatalogItem): CoworkTask {
+  const id = 'draft-' + item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const existing = coworkTasks.find((t) => t.id === id)
+  if (existing) return existing
+  return addTask({
+    id,
+    title: item.title,
+    prompt: item.prompt,
+    module: item.module,
+    modules: [item.module],
+    status: 'scheduled',
+    createdAt: new Date().toISOString(),
+    outputs: item.outputs,
+    sources: [item.module],
+    model: 'gemini-flash-latest',
+    instruction: item.instruction,
+    workflow: item.workflow,
+  })
 }
 export function updateTask(id: string, patch: Partial<CoworkTask>): void {
   const t = coworkTasks.find((x) => x.id === id)

@@ -31,9 +31,9 @@ import { formatDateTime } from '~/utils/date'
 import {
   coworkTasks, coworkConnections,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
-  addTask, updateTask, deleteTask, getTask,
+  addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
   setTaskScheduleEnabled, unscheduleTask, setConnection, addCoworkConnection, removeCoworkConnection,
-  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory,
+  type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem,
 } from '~/data/cowork'
 
 const route = useRoute()
@@ -51,7 +51,9 @@ const taskStatusOptions = [
   { value: 'failed',    label: 'Failed' },
   { value: 'scheduled', label: 'Scheduled' },
 ]
-const taskSource = computed(() => coworkTasks)
+// The Tasks table only shows tasks that have actually been run — drafts created
+// by opening a task detail (before "Run task") are excluded.
+const taskSource = computed(() => coworkTasks.filter(taskHasRun))
 const {
   search: taskSearch, statusFilter: taskStatus, currentPage: taskPage, perPage: taskPerPage,
   paginated: taskRows, total: taskTotal, setPage: taskSetPage, setPerPage: taskSetPerPage,
@@ -157,8 +159,21 @@ const progressValue = computed(() => {
   return String(Math.min(100, Math.round((activeStepIndex.value / total) * 100)))
 })
 
-// `run` = execute immediately (composer send, or a card's "Run task"); false =
-// just create the task and open its detail page in the pre-run state.
+// ── Predefined (catalog) tasks ────────────────────────────────────────────────
+// Opening a predefined task shows its detail in the pre-run state using the
+// HARDCODED instruction/workflow — no generation. It's a draft (not in the Tasks
+// table) until "Run task". "Run task" reuses the same draft and runs it.
+function previewTask(item: CoworkCatalogItem) {
+  const t = getOrCreateDraftTask(item)
+  router.push({ path: `/cowork-tasks/${t.id}`, query: {} })
+}
+function runCatalog(item: CoworkCatalogItem) {
+  const t = getOrCreateDraftTask(item)
+  router.push({ path: `/cowork-tasks/${t.id}`, query: { run: '1' } })
+}
+
+// `run` = execute immediately (composer send). Custom prompts are created and run;
+// their instruction/workflow are derived from the run (on the detail page).
 function assign(taskPrompt: string, title?: string, module?: CoworkModule, run = true) {
   const p = taskPrompt.trim()
   if (!p) return
@@ -851,7 +866,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <p class="cw-module-label">{{ g.module }}</p>
                 <div class="cw-suggest-grid">
                   <!-- Card body opens the task detail (before running); "Run task" runs it. -->
-                  <div v-for="c in g.items" :key="c.title" class="cw-suggest-item" role="button" tabindex="0" @click="assign(c.prompt, c.title, c.module, false)" @keydown.enter="assign(c.prompt, c.title, c.module, false)">
+                  <div v-for="c in g.items" :key="c.title" class="cw-suggest-item" role="button" tabindex="0" @click="previewTask(c)" @keydown.enter="previewTask(c)">
                     <span class="cw-suggest-icon">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" fill="currentColor"/></svg>
                     </span>
@@ -864,7 +879,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         </span>
                         Used {{ c.usedBy.length }} {{ c.usedBy.length === 1 ? 'time' : 'times' }}
                       </span>
-                      <button v-if="!hasRun(c)" class="cw-suggest-run" type="button" @click.stop="assign(c.prompt, c.title, c.module, true)">Run task <MpIcon name="arrows-right" size="sm" /></button>
+                      <button v-if="!hasRun(c)" class="cw-suggest-run" type="button" @click.stop="runCatalog(c)">Run task <MpIcon name="arrows-right" size="sm" /></button>
                     </span>
                   </div>
                 </div>
@@ -1319,7 +1334,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* Edge-to-edge cards; borders draw the grid (clip the outer right/bottom). */
 .cw-conn-clip { overflow: hidden; }
-.cw-conn-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); align-items: stretch; margin: 0 -1px -1px 0; }
+.cw-conn-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); align-items: stretch; margin: 0 -1px 0 0; }
 .cw-conn-cell {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-2, 8px);
   min-height: 104px;
