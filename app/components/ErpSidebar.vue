@@ -370,12 +370,18 @@ const erpNavGroups: NavItem[][] = [
       // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
       // Connections), each its own /cowork* route rendered in the stage.
       name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
-      panelSubmenu: [[
-        { label: 'Overview', to: 'Cowork' },
-        { label: 'Tasks', to: 'Cowork tasks' },
-        { label: 'Schedule', to: 'Cowork schedule' },
-        { label: 'Connections', to: 'Cowork connections' },
-      ]],
+      panelSubmenu: [
+        [
+          { label: 'New task', to: 'Cowork' },
+          { label: 'Tasks', to: 'Cowork tasks' },
+          { label: 'Schedule', to: 'Cowork schedule' },
+        ],
+        [
+          { label: 'Connections', to: 'Cowork connections' },
+          { label: 'Agents', to: 'Cowork agents' },
+          { label: 'Skills', to: 'Cowork skills' },
+        ],
+      ],
     },
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS

@@ -105,6 +105,8 @@ const section = computed(() => {
   if (p.startsWith('/cowork-tasks')) return 'Tasks'
   if (p.startsWith('/cowork-schedule')) return 'Schedule'
   if (p.startsWith('/cowork-connections')) return 'Connections'
+  if (p.startsWith('/cowork-agents')) return 'Agents'
+  if (p.startsWith('/cowork-skills')) return 'Skills'
   return 'Overview'
 })
 
@@ -1091,6 +1093,20 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <p v-if="!connSections.length" class="cw-muted cw-conn-noresult">No connectors match “{{ connSearch }}”.</p>
           </div>
         </section>
+
+        <!-- ── Agents ── -->
+        <section v-else-if="section === 'Agents'" class="cw-placeholder">
+          <MpIcon name="magic" size="lg" class="cw-placeholder__icon" />
+          <h3 class="cw-placeholder__title">Agents are coming soon</h3>
+          <p class="cw-placeholder__caption">Build focused AI agents — each with its own instructions, tools and connections — to run a slice of your ERP on autopilot.</p>
+        </section>
+
+        <!-- ── Skills ── -->
+        <section v-else-if="section === 'Skills'" class="cw-placeholder">
+          <MpIcon name="doc" size="lg" class="cw-placeholder__icon" />
+          <h3 class="cw-placeholder__title">Skills are coming soon</h3>
+          <p class="cw-placeholder__caption">Teach Cowork reusable skills — saved procedures and prompts it can apply across tasks, agents and modules.</p>
+        </section>
     </template>
 
     <!-- ── Custom MCP server modal ── -->
@@ -1346,6 +1362,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .mcp-warn__title { display: flex; align-items: center; gap: var(--mp-spacing-1, 6px); margin: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); background: var(--mp-background-warning-subtle, #fdf6e3); color: var(--mp-text-warning, #9a6700); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .mcp-warn__body { margin: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #3a4749); line-height: var(--mp-line-heights-md, 20px); }
 .mcp-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2, 8px); width: 100%; }
+
+/* ── Agents / Skills placeholder ── */
+.cw-placeholder { display: flex; flex-direction: column; align-items: center; text-align: center; padding: var(--mp-spacing-10, 64px) var(--mp-spacing-6, 24px); max-width: 480px; margin: 0 auto; }
+.cw-placeholder__icon { color: var(--mp-icon-default, #536062); margin-bottom: var(--mp-spacing-4, 16px); }
+.cw-placeholder__title { margin: 0 0 var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.cw-placeholder__caption { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); }
 
 /* Form row */
 .cw-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
