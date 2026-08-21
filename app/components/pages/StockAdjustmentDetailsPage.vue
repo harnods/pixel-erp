@@ -3,7 +3,7 @@ import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle,
+  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -23,7 +23,7 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
-import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment, type MisplacedSerial } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 import { putAwayTasks } from '~/data/putAwayTasks'
@@ -64,6 +64,85 @@ const accountCode = computed(() => adjustment.value ? accountCodeFor(adjustment.
 // Wrong-bin serial scans the operator hit during counting — kept on the record as
 // notes so the manager reviewing the result can raise a warehouse transfer.
 const misplacedSerials = computed(() => adjustment.value?.misplacedSerials ?? [])
+
+// ── Misplaced serials — bulk select + Create warehouse transfer ────────────────
+// A warehouse transfer moves stock between exactly one origin and one destination,
+// so a bulk selection only makes sense across rows that share the SAME origin →
+// found-at pair — mixing pairs would mean one transfer document can't represent
+// the move. Checking a row locks every other-pair row's checkbox until the
+// selection is cleared.
+const selectedMisplaced = ref<Set<string>>(new Set())
+function misplacedPairKey(m: MisplacedSerial): string {
+  return `${m.systemLocation}→${m.countedLocation}`
+}
+const activeMisplacedPairKey = computed(() => {
+  const first = misplacedSerials.value.find(m => selectedMisplaced.value.has(m.serial))
+  return first ? misplacedPairKey(first) : null
+})
+function isMisplacedDisabled(m: MisplacedSerial): boolean {
+  return activeMisplacedPairKey.value !== null && misplacedPairKey(m) !== activeMisplacedPairKey.value
+}
+function toggleMisplaced(m: MisplacedSerial): void {
+  if (isMisplacedDisabled(m)) return
+  const next = new Set(selectedMisplaced.value)
+  if (next.has(m.serial)) next.delete(m.serial)
+  else next.add(m.serial)
+  selectedMisplaced.value = next
+}
+function clearMisplacedSelection(): void { selectedMisplaced.value = new Set() }
+const misplacedSelectedLabel = computed(() => {
+  const n = selectedMisplaced.value.size
+  return `${n} ${n === 1 ? 'serial' : 'serials'} selected`
+})
+// Select-all in the bulk bar only ever spans the active pair — everything else
+// is disabled anyway (see isMisplacedDisabled), so "all" means all of that group.
+const misplacedSelectableRows = computed(() => {
+  const pair = activeMisplacedPairKey.value
+  return pair === null ? misplacedSerials.value : misplacedSerials.value.filter(m => misplacedPairKey(m) === pair)
+})
+const misplacedAllSelected = computed(() =>
+  misplacedSelectableRows.value.length > 0 && misplacedSelectableRows.value.every(m => selectedMisplaced.value.has(m.serial)))
+const misplacedSomeSelected = computed(() => !misplacedAllSelected.value && selectedMisplaced.value.size > 0)
+function toggleAllMisplaced(): void {
+  selectedMisplaced.value = misplacedAllSelected.value
+    ? new Set()
+    : new Set(misplacedSelectableRows.value.map(m => m.serial))
+}
+// Selection references serials by string, so a row resolved out from under it
+// (transfer created for it in another tab, say) just silently drops off here too.
+watch(misplacedSerials, (rows) => {
+  const live = new Set(rows.map(r => r.serial))
+  const next = new Set([...selectedMisplaced.value].filter(s => live.has(s)))
+  if (next.size !== selectedMisplaced.value.size) selectedMisplaced.value = next
+})
+
+/** Sends the operator straight to the real Create warehouse transfer form,
+ *  prefilled with the selected row(s) — origin warehouse, one line per SKU with
+ *  its serials attached, and a memo carrying the bin move the note describes.
+ *  WarehouseTransferFormPage reads these query params itself (new mode only)
+ *  and, on a successful save, resolves the note(s) off this record — see
+ *  its own prefillFromMisplaced()/handleSave(). MVP gap: a warehouse transfer
+ *  moves stock between two WAREHOUSES, not two bins in one, so there's no
+ *  destination to prefill — the operator still has to pick one. */
+function goCreateTransfer(targets: MisplacedSerial[]): void {
+  if (!adjustment.value || !targets.length) return
+  const lines: { sku: string; serials: string[] }[] = []
+  for (const m of targets) {
+    const line = lines.find(l => l.sku === m.sku)
+    if (line) line.serials.push(m.serial)
+    else lines.push({ sku: m.sku, serials: [m.serial] })
+  }
+  router.push({
+    path: '/warehouse-transfers/new',
+    query: {
+      warehouseId: adjustment.value.warehouseId,
+      originBin: targets[0]!.systemLocation,
+      destBin: targets[0]!.countedLocation,
+      lines: JSON.stringify(lines),
+      fromAdjustmentId: adjustment.value.id,
+    },
+  })
+}
 
 const linkedCycleCount = computed(() => {
   if (isWmsRecord.value || !isCount.value) return null
@@ -463,7 +542,23 @@ function startCounting() {
   router.push(`${detailBasePath()}/${props.orderId}/count`)
 }
 function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
+// Approving with misplaced serials still open isn't blocked — the count itself
+// is correct as counted; reconciling the bins is a separate follow-up the
+// manager can also do after approving. The reminder is just that: a reminder.
+const approveMisplacedWarnOpen = ref(false)
 function approve() {
+  if (!adjustment.value) return
+  if (isWmsCount.value && misplacedSerials.value.length) {
+    approveMisplacedWarnOpen.value = true
+    return
+  }
+  doApprove()
+}
+function approveAnyway() {
+  approveMisplacedWarnOpen.value = false
+  doApprove()
+}
+function doApprove() {
   if (!adjustment.value) return
   if (isWmsRecord.value) approveWmsAdjustment(adjustment.value.id)
   else approveAdjustment(adjustment.value.id)
@@ -911,34 +1006,80 @@ onUnmounted(() => {
            the manager to reconcile with a warehouse transfer. Read-only at MVP:
            the transfer is raised by hand, nothing is auto-created here. -->
       <section v-if="misplacedSerials.length" class="detail-linked-section">
-        <h3 class="detail-linked-heading">{{ t('Misplaced serial numbers') }} ({{ misplacedSerials.length }})</h3>
+        <h3 class="detail-linked-heading">
+          <MpIcon name="warning-triangle" size="sm" color="icon.warning" />
+          {{ t('Misplaced serial numbers') }} ({{ misplacedSerials.length }})
+        </h3>
         <p class="detail-misplaced-note">
           {{ t('The operator found these units at a bin the system does not have them in. Create a warehouse transfer to move them in the system.') }}
         </p>
-        <div class="detail-linked-wrap">
-          <table class="detail-linked">
-            <thead>
-              <tr>
-                <th class="detail-th">{{ t('Serial number') }}</th>
-                <th class="detail-th">{{ t('Product') }}</th>
-                <th class="detail-th">{{ t('System location') }}</th>
-                <th class="detail-th">{{ t('Found at') }}</th>
-                <th class="detail-th">{{ t('Scanned at') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="m in misplacedSerials" :key="m.serial" class="detail-item-row">
-                <td class="detail-td detail-td--number">{{ m.serial }}</td>
-                <td class="detail-td">
-                  <span class="detail-misplaced-product">{{ m.productName }}</span>
-                  <span class="detail-misplaced-sku">{{ m.sku }}</span>
-                </td>
-                <td class="detail-td">{{ m.systemLocation }}</td>
-                <td class="detail-td"><strong>{{ m.countedLocation }}</strong></td>
-                <td class="detail-td">{{ formatDateTime(m.scannedAt) }}</td>
-              </tr>
-            </tbody>
-          </table>
+
+        <div class="detail-items-section detail-items-section--bordered">
+          <div class="detail-items-scroll">
+            <table class="detail-linked detail-linked--misplaced">
+              <thead>
+                <!-- Bulk bar — replaces the column headers while anything's selected,
+                     same pattern as ErpTablePage's bulk-actions row. Only rows sharing
+                     the selection's origin→found-at pair can join it (see
+                     isMisplacedDisabled), so one transfer always covers a single,
+                     coherent move — select-all here only selects within that pair. -->
+                <tr v-if="selectedMisplaced.size" class="detail-tr-bulk">
+                  <th colspan="6" class="detail-th detail-th--bulk">
+                    <div class="detail-misplaced-bulkbar">
+                      <MpCheckbox
+                        id="sad-misplaced-select-all"
+                        :is-checked="misplacedAllSelected"
+                        :is-indeterminate="misplacedSomeSelected"
+                        @change="toggleAllMisplaced"
+                      />
+                      <span class="detail-misplaced-bulkbar__count">{{ misplacedSelectedLabel }}</span>
+                      <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="goCreateTransfer(misplacedSerials.filter(m => selectedMisplaced.has(m.serial)))">
+                        {{ t('Create warehouse transfer') }}
+                      </button>
+                      <button class="detail-misplaced-bulkbar__clear" type="button" @click="clearMisplacedSelection">{{ t('Clear') }}</button>
+                    </div>
+                  </th>
+                </tr>
+                <tr v-else>
+                  <th class="detail-th">{{ t('Serial number') }}</th>
+                  <th class="detail-th">{{ t('Product') }}</th>
+                  <th class="detail-th">{{ t('Origin location') }}</th>
+                  <th class="detail-th">{{ t('Found at') }}</th>
+                  <th class="detail-th">{{ t('Scanned at') }}</th>
+                  <th class="detail-th detail-th--action" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="m in misplacedSerials" :key="m.serial" class="detail-item-row">
+                  <td class="detail-td detail-td--number">
+                    <span class="detail-misplaced-serial-cell">
+                      <MpCheckbox
+                        :id="`sad-misplaced-${m.serial}`"
+                        :is-checked="selectedMisplaced.has(m.serial)"
+                        :is-disabled="isMisplacedDisabled(m)"
+                        @change="toggleMisplaced(m)"
+                      />
+                      {{ m.serial }}
+                    </span>
+                  </td>
+                  <td class="detail-td">
+                    <span class="detail-misplaced-product">{{ m.productName }}</span>
+                    <span class="detail-misplaced-sku">{{ m.sku }}</span>
+                  </td>
+                  <td class="detail-td">{{ m.systemLocation }}</td>
+                  <td class="detail-td"><strong>{{ m.countedLocation }}</strong></td>
+                  <td class="detail-td">{{ formatDateTime(m.scannedAt) }}</td>
+                  <td class="detail-td detail-td--action">
+                    <MpTooltip :id="`sad-tt-transfer-${m.serial}`" :label="t('Create warehouse transfer')" placement="top" use-portal>
+                      <button class="detail-view-btn" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
+                        <MpIcon name="warehouse" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -1189,6 +1330,29 @@ onUnmounted(() => {
       <MpModalOverlay />
     </MpModal>
 
+    <!-- Approve with misplaced serials still unresolved — a reminder, not a
+         blocker: the manager can approve now and reconcile the bins after. -->
+    <MpModal
+      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Misplaced serial numbers not resolved') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="sad-blocked-intro">
+            {{ t('This count still has serial numbers found at a different bin than the system. Create a warehouse transfer to move them before approving, or approve now and reconcile the bins later.') }}
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise" @click="approveMisplacedWarnOpen = false">{{ t('Back to review') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="approveAnyway">{{ t('Approve anyway') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
   </div>
 
   <div v-else class="sad-not-found">
@@ -1353,6 +1517,12 @@ onUnmounted(() => {
 .detail-items--split .detail-td:first-child { border-left: none; }
 .detail-loc-scroll--split .detail-td:last-child,
 .detail-items--split .detail-td:last-child { border-right: none; }
+/* Action column (view batch/serial icon) is a UI control, not a data cell —
+   the split-table divider before it reads as a stray line, so it never gets one. */
+.detail-loc-scroll--split .detail-th--action,
+.detail-items--split .detail-th--action,
+.detail-loc-scroll--split .detail-td--action,
+.detail-items--split .detail-td--action { border-left: none; }
 
 /* Every row closes with a right border — including the last column (overrides the
    split-mode suppression above) so each table reads as a bounded row on this page. */
@@ -1417,6 +1587,26 @@ onUnmounted(() => {
 }
 .detail-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
+/* Misplaced serials — checkbox merged into the Serial number cell (matches the
+   ErpTablePage convention: select-all in the header, per-row in the body, never
+   its own column), and a bulk-actions row that replaces the column headers
+   while anything's selected. */
+.detail-misplaced-serial-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.detail-th--bulk { padding: 0; }
+/* Left padding matches .detail-td's own (var(--mp-spacing-2)) so the bulk row's
+   select-all checkbox lands directly above the per-row checkboxes below it. */
+.detail-misplaced-bulkbar {
+  display: flex; align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) var(--mp-spacing-2);
+  text-transform: none; font-weight: normal;
+}
+.detail-misplaced-bulkbar__count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-misplaced-bulkbar__clear {
+  margin-left: auto; background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+}
+.detail-misplaced-bulkbar__clear:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 .detail-notes-left { display: flex; flex-direction: column; }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
 .detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
@@ -1455,7 +1645,7 @@ onUnmounted(() => {
 
 /* Linked cycle counts section */
 .detail-linked-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); flex-shrink: 0; }
-.detail-linked-heading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-linked-heading { margin: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-linked-wrap { overflow-x: auto; }
 .detail-misplaced-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-misplaced-product { display: block; }
@@ -1465,6 +1655,10 @@ onUnmounted(() => {
   border-top: 1px solid var(--mp-border-default);
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
+/* Misplaced serials table scrolls inside its own max-height box (see
+   .detail-items-scroll) — pin the header (both the normal columns and the
+   bulk-actions row) so it stays legible while the body scrolls underneath. */
+.detail-linked--misplaced .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-td--number { position: relative; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }

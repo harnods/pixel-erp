@@ -17,6 +17,7 @@ import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo } from '~/data/warehouseTransfers'
+import { resolveMisplacedSerials } from '~/data/wmsStockAdjustments'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
@@ -24,6 +25,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 const isEdit = computed(() => props.orderId !== 'new')
@@ -307,7 +309,43 @@ function prefill() {
   const lines = transferLineItems(t)
   rows.value = lines.map(l => ({ id: rowSeq++, sku: l.sku, productName: l.product.name, desc: l.product.desc, img: l.product.img, unit: l.unit, qty: String(l.qty), qtyError: false }))
 }
-onMounted(() => { if (isEdit.value) prefill() })
+// ── Prefill from a misplaced-serial note (Cycle count review → "Create warehouse
+// transfer") ─────────────────────────────────────────────────────────────────────
+// Origin + one line per SKU with its exact serials attached come from the query
+// string (see StockAdjustmentDetailsPage's goCreateTransfer); there's no real
+// destination to prefill (a transfer moves stock between two WAREHOUSES, the
+// note is a same-warehouse bin mismatch), so the operator still picks one.
+// `fromAdjustmentId`/`fromSerials` are kept only to resolve the note(s) off the
+// originating count once this transfer actually saves — see handleSave().
+const fromAdjustmentId = ref<string | null>(null)
+const fromSerials = ref<string[]>([])
+function prefillFromMisplaced() {
+  const q = route.query
+  if (!q.lines || typeof q.lines !== 'string') return
+  let lines: { sku: string; serials: string[] }[]
+  try { lines = JSON.parse(q.lines) } catch { return }
+  if (!Array.isArray(lines) || !lines.length) return
+
+  if (typeof q.warehouseId === 'string') originId.value = q.warehouseId
+  const originBin = typeof q.originBin === 'string' ? q.originBin : ''
+  const destBin = typeof q.destBin === 'string' ? q.destBin : ''
+  if (originBin && destBin) {
+    memo.value = `${t('Reconcile misplaced units found at')} ${destBin} (${t('system shows')} ${originBin}).`
+  }
+  fromAdjustmentId.value = typeof q.fromAdjustmentId === 'string' ? q.fromAdjustmentId : null
+  fromSerials.value = lines.flatMap(l => l.serials)
+
+  rows.value = lines.map(l => {
+    const row = makeRow(l.sku)
+    row.qty = String(l.serials.length)
+    if (isSerialTrackedSku(l.sku)) row.serialLines = l.serials.map(serial => ({ serial }))
+    return row
+  })
+}
+onMounted(() => {
+  if (isEdit.value) prefill()
+  else prefillFromMisplaced()
+})
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
 function goBack() {
@@ -379,7 +417,16 @@ async function handleSave() {
   } else {
     addTransfer(input)
     toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
-    router.push('/warehouse-transfers')
+    // Came from a misplaced-serial note (Cycle count review) — resolve it off
+    // that record now that the transfer moving it actually exists, and land
+    // back on the count instead of the generic transfers list so the manager
+    // sees the note gone.
+    if (fromAdjustmentId.value) {
+      resolveMisplacedSerials(fromAdjustmentId.value, fromSerials.value)
+      router.push(`/cycle-counts/${fromAdjustmentId.value}`)
+    } else {
+      router.push('/warehouse-transfers')
+    }
   }
 }
 
