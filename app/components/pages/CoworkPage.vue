@@ -16,8 +16,9 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -31,7 +32,7 @@ import {
   coworkTasks, coworkConnections,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask,
-  setTaskScheduleEnabled, unscheduleTask, setConnection,
+  setTaskScheduleEnabled, unscheduleTask, setConnection, addCoworkConnection, removeCoworkConnection,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory,
 } from '~/data/cowork'
 
@@ -439,6 +440,12 @@ async function connectGoogle(c: CoworkConnection) {
 function disconnectConnection(c: CoworkConnection) {
   if (c.provider === 'google' && c.scope) google.disconnect(c.scope)
   delete connSample[c.id]
+  // A custom MCP server is uninstalled (removed) rather than just disconnected.
+  if (c.id.startsWith('custom-')) {
+    removeCoworkConnection(c.id)
+    toast.notify({ variant: 'success', title: `${c.name} uninstalled` })
+    return
+  }
   setConnection(c.id, false)
   toast.notify({ variant: 'success', title: `${c.name} disconnected` })
 }
@@ -446,7 +453,47 @@ function connectFake(c: CoworkConnection) {
   setConnection(c.id, true)
   toast.notify({ variant: 'success', title: `${c.name} connected` })
 }
-function addConnection() { infoToast('Browse the connections marketplace — coming soon') }
+function addConnection() { openMcpModal() }
+
+// ── Custom MCP server modal ───────────────────────────────────────────────────
+const mcpOpen = ref(false)
+const mcpUrl = ref('')
+const mcpName = ref('')
+const mcpAuth = ref<'OAuth' | 'API key' | 'None'>('OAuth')
+const mcpAdvanced = ref(false)
+const mcpClientId = ref('')
+const mcpClientSecret = ref('')
+const mcpScope = ref('')
+const mcpError = ref('')
+const mcpRedirectUrl = computed(() =>
+  (typeof window !== 'undefined' ? window.location.origin : 'https://mekari-erp.vercel.app') + '/cowork/mcp/oauth/callback')
+const mcpUrlValid = computed(() => /^https?:\/\/.+\..+/.test(mcpUrl.value.trim()))
+function openMcpModal() {
+  mcpUrl.value = ''; mcpName.value = ''; mcpAuth.value = 'OAuth'; mcpAdvanced.value = false
+  mcpClientId.value = ''; mcpClientSecret.value = ''; mcpScope.value = ''; mcpError.value = ''
+  mcpOpen.value = true
+}
+function closeMcpModal() { mcpOpen.value = false }
+function copyRedirectUrl() {
+  navigator.clipboard?.writeText(mcpRedirectUrl.value)
+  infoToast('Redirect URL copied')
+}
+function connectMcp() {
+  if (!mcpUrlValid.value) { mcpError.value = 'Enter a valid MCP server URL starting with https://'; return }
+  let host = mcpUrl.value.trim()
+  try { host = new URL(mcpUrl.value.trim()).hostname.replace(/^www\./, '') } catch { /* keep raw */ }
+  const name = mcpName.value.trim() || host
+  // A Mekari AI MCP server carries the Mekari sparkle; others fall back to a monogram.
+  const isMekari = /mekari\./i.test(host)
+  addCoworkConnection({
+    name, categories: ['Featured'], connected: true, provider: 'fake',
+    detail: `Custom MCP · ${host}`,
+    color: isMekari ? '#7C3AED' : '#3a4749',
+    logo: isMekari ? '/connectors/mekari-mcp.svg' : undefined,
+  })
+  toast.notify({ variant: 'success', title: `${name} connected` })
+  closeMcpModal()
+}
 
 // ── Connections marketplace grid (responsive category sections) ───────────────
 // Mirrors the WMS Reports index: edge-to-edge cards whose 1px right/bottom borders
@@ -1001,7 +1048,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   <div v-for="c in sec.items" :key="sec.category + '-' + c.id" class="cw-conn-cell">
                     <div class="cw-conn-main">
                       <div class="cw-conn-head">
-                        <img v-if="!connLogoFailed[c.id]" class="cw-conn-logo-img" :src="`/connectors/${c.id}.png`" :alt="c.name" loading="lazy" @error="connLogoFailed[c.id] = true" />
+                        <img v-if="!connLogoFailed[c.id]" class="cw-conn-logo-img" :src="c.logo || `/connectors/${c.id}.png`" :alt="c.name" loading="lazy" @error="connLogoFailed[c.id] = true" />
                         <span v-else class="cw-conn-logo" :style="{ background: c.color || '#3a4749' }">{{ connLogo(c.name) }}</span>
                         <span class="cw-conn-name">{{ c.name }}</span>
                       </div>
@@ -1045,6 +1092,77 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
         </section>
     </template>
+
+    <!-- ── Custom MCP server modal ── -->
+    <MpModal id="cw-mcp-modal" :is-open="mcpOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeMcpModal">
+      <MpModalContent>
+        <MpModalHeader>
+          <span class="mcp-title">Custom MCP server <MpBadge for="additionalInformation" type="announcement" size="sm">Beta</MpBadge></span>
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="mcp-subtitle">Add your own server</p>
+
+          <label class="mcp-label" for="mcp-url">MCP server URL</label>
+          <div class="mcp-input-wrap" :class="{ 'is-valid': mcpUrlValid }">
+            <input id="mcp-url" v-model="mcpUrl" class="mcp-input" type="url" @input="mcpError = ''" />
+            <MpIcon v-if="mcpUrlValid" name="check" size="sm" class="mcp-valid-icon" />
+          </div>
+          <p v-if="mcpError" class="cw-form-error">{{ mcpError }}</p>
+
+          <label class="mcp-label" for="mcp-name">Name</label>
+          <input id="mcp-name" v-model="mcpName" class="mcp-input mcp-input--plain" type="text" />
+
+          <div class="mcp-auth-row">
+            <label class="mcp-label mcp-label--inline" for="mcp-auth">Authentication</label>
+            <select id="mcp-auth" v-model="mcpAuth" class="mcp-auth-select">
+              <option value="OAuth">OAuth</option>
+              <option value="API key">API key</option>
+              <option value="None">None</option>
+            </select>
+          </div>
+          <p class="mcp-help">You will be redirected to the third party website to complete authentication when you connect.</p>
+
+          <!-- Advanced settings accordion -->
+          <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
+            <span>Advanced settings</span>
+            <MpIcon :name="mcpAdvanced ? 'caret-down' : 'arrows-right'" size="sm" />
+          </button>
+          <div v-if="mcpAdvanced" class="mcp-adv">
+            <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
+
+            <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
+            <div class="mcp-input-wrap mcp-input-wrap--readonly">
+              <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
+              <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+            </div>
+
+            <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
+            <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+
+            <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
+            <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
+
+            <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
+            <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
+            <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
+          </div>
+
+          <!-- Trust warning -->
+          <div class="mcp-warn">
+            <p class="mcp-warn__title"><MpIcon name="warning-triangle" size="sm" /> Mekari Cowork hasn’t reviewed this server</p>
+            <p class="mcp-warn__body">Once connected, it can access and modify your agent’s content and share data externally. Only connect servers you trust.</p>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="mcp-footer">
+            <MpButton is-rounded variant="ghost" @click="closeMcpModal">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" @click="connectMcp">Connect</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
@@ -1203,6 +1321,31 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-conn-action:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); }
 .cw-conn-action.is-connected { color: var(--mp-text-success, #186f4a); }
 .cw-conn-noresult { padding: var(--mp-spacing-6, 24px) 0; }
+
+/* ── Custom MCP server modal ── */
+.mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.mcp-subtitle { margin: 0 0 var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #3a4749); }
+.mcp-label { display: block; margin: var(--mp-spacing-4, 16px) 0 var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default, #080d0e); }
+.mcp-input-wrap { position: relative; display: flex; align-items: center; }
+.mcp-input { width: 100%; height: 40px; padding: 0 var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); outline: none; }
+.mcp-input:focus { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47,111,235,0.12); }
+.mcp-input-wrap.is-valid .mcp-input { border-color: #2f6feb; padding-right: 36px; }
+.mcp-valid-icon { position: absolute; right: 10px; color: #2f6feb; }
+.mcp-input-wrap--readonly .mcp-input { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary); padding-right: 40px; }
+.mcp-copy { position: absolute; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: none; border-radius: var(--mp-radii-md, 6px); color: var(--mp-icon-default, #536062); cursor: pointer; }
+.mcp-copy:hover { background: var(--mp-background-neutral-hovered, #ebf0f1); }
+.mcp-auth-row { display: flex; align-items: center; justify-content: space-between; margin-top: var(--mp-spacing-4, 16px); }
+.mcp-label--inline { margin: 0; }
+.mcp-auth-select { border: none; background: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); cursor: pointer; }
+.mcp-help { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #3a4749); line-height: var(--mp-line-heights-md, 20px); }
+.mcp-adv-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: var(--mp-spacing-4, 16px); padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); cursor: pointer; }
+.mcp-adv-toggle:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.mcp-adv { margin-top: var(--mp-spacing-3, 12px); }
+.mcp-help--adv { margin-top: 0; }
+.mcp-warn { margin-top: var(--mp-spacing-5, 20px); border: 1px solid var(--mp-border-warning, #f2d98d); border-radius: var(--mp-radii-md, 8px); overflow: hidden; }
+.mcp-warn__title { display: flex; align-items: center; gap: var(--mp-spacing-1, 6px); margin: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); background: var(--mp-background-warning-subtle, #fdf6e3); color: var(--mp-text-warning, #9a6700); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.mcp-warn__body { margin: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #3a4749); line-height: var(--mp-line-heights-md, 20px); }
+.mcp-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2, 8px); width: 100%; }
 
 /* Form row */
 .cw-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }

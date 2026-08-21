@@ -75,6 +75,9 @@ export interface CoworkConnection {
   scope?: string
   /** Brand colour for the logo tile (monogram fallback — no external assets). */
   color?: string
+  /** Explicit logo path — overrides the /connectors/<id>.png convention (e.g. a
+   *  custom MCP server pointing at a known host). */
+  logo?: string
 }
 
 /** Mekari products are connected by default (Cowork always works over them), so
@@ -643,6 +646,10 @@ const TASKS_SEED: CoworkTask[] = [
 // categories (e.g. Notion is Featured + Productivity) — one record, rendered in
 // each of its categories, sharing a single connected state.
 const CONNECTION_SEED: CoworkConnection[] = [
+  // ── Mekari products (native, connected by default) ──
+  { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
+  { id: 'mekari-jurnal', name: 'Mekari Jurnal', categories: ['Featured', 'Finance'], connected: true, provider: 'fake', detail: 'Accounting & invoicing', color: '#0A6E4E' },
+  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E' },
   // ── Google (real OAuth) ──
   { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
     detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
@@ -701,10 +708,10 @@ function load<T>(key: string, seed: T[]): T[] {
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v2', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v2', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
 
 let taskSeq = 1043
 export function nextTaskId(): string { return `CW-${taskSeq++}` }
@@ -767,4 +774,18 @@ export function unscheduleTask(id: string): void {
 export function setConnection(id: string, connected: boolean): void {
   const c = coworkConnections.find((x) => x.id === id)
   if (c) { c.connected = connected; persistConnections() }
+}
+
+let connSeq = 1
+/** Add a connection (e.g. a custom MCP server the user connected). */
+export function addCoworkConnection(c: Omit<CoworkConnection, 'id'> & { id?: string }): CoworkConnection {
+  const conn: CoworkConnection = { id: c.id ?? `custom-${connSeq++}`, ...c }
+  coworkConnections.unshift(conn)
+  persistConnections()
+  return conn
+}
+/** Remove a connection entirely (custom MCP servers can be uninstalled). */
+export function removeCoworkConnection(id: string): void {
+  const i = coworkConnections.findIndex((x) => x.id === id)
+  if (i >= 0) { coworkConnections.splice(i, 1); persistConnections() }
 }
