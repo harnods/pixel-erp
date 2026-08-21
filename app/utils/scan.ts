@@ -11,6 +11,10 @@ export interface ScanResolution {
   batchNo?: string
   /** Set only when kind === 'serial'. */
   serial?: string
+  /** Set only when kind === 'serial' — the bin this exact unit is stocked in.
+   *  A serial is one physical unit in one place, so a flow that counts/picks
+   *  per bin can tell "right unit, wrong bin" apart from "unknown code". */
+  location?: string
 }
 
 /** A physical barcode doesn't carry case — a scanner (or an operator typing
@@ -51,7 +55,7 @@ export function resolveScan(warehouseId: string, rawValue: string): ScanResoluti
     if (batch) return { kind: 'batch', sku: item.sku, batchNo: batch.batchNo }
     const su = item.serials
     const serialUnit = su && (su.available.find(u => sameCode(u.serial, v)) ?? su.reserved.find(u => sameCode(u.serial, v)))
-    if (serialUnit) return { kind: 'serial', sku: item.sku, serial: serialUnit.serial }
+    if (serialUnit) return { kind: 'serial', sku: item.sku, serial: serialUnit.serial, location: serialUnit.location }
   }
   const bySku = wh.stock.find(item => sameCode(item.sku, v))
   if (bySku) return { kind: 'sku', sku: bySku.sku }
