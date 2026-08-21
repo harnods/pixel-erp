@@ -89,14 +89,18 @@ async function runTask() {
   activeStep.value = 0
   stepTimer = setInterval(() => { if (activeStep.value < STEP_TITLES.length) activeStep.value += 1 }, 1200)
   try {
-    const res = await $fetch<{ plan: Plan }>('/api/cowork/plan', {
-      method: 'POST',
-      body: {
-        task: task.value.prompt, context: build(), model: task.value.model,
-        sources: task.value.sources, outputs: task.value.outputs,
-        agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
-      },
-    })
+    const reqBody = {
+      task: task.value.prompt, context: build(), model: task.value.model,
+      sources: task.value.sources, outputs: task.value.outputs,
+      agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
+    }
+    // The plan endpoint always returns a usable plan; retry once on a network blip.
+    let res: { plan: Plan }
+    try {
+      res = await $fetch<{ plan: Plan }>('/api/cowork/plan', { method: 'POST', body: reqBody })
+    } catch {
+      res = await $fetch<{ plan: Plan }>('/api/cowork/plan', { method: 'POST', body: reqBody })
+    }
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
@@ -301,7 +305,13 @@ function buildChatSuggestions(): string[] {
     'Draft a follow-up I can send',
   ]
 }
-function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions()) }
+// The agents that own this task = the agents for the modules it spans. One → the
+// chat locks to it; several → the user can switch among them (but not to others).
+function taskAgentIds(): string[] {
+  const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
+  return [...new Set(mods.map((m) => agentForModule(m)?.id).filter(Boolean))] as string[]
+}
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds()) }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.

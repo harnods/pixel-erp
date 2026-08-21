@@ -8,6 +8,7 @@ const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-load
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
+import { coworkAgents, COWORK_SKILLS, type CoworkAgent } from '~/data/cowork'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
@@ -1143,6 +1144,9 @@ function startNewChat() {
   contextSuggestions.value = [...DEFAULT_CONTEXT_SUGGESTIONS]
   historyOpen.value = false
   kebabOpen.value = false
+  // A fresh chat is general (any agent), back to the default assistant.
+  restrictAgents.value = []
+  activeAgentId.value = 'airene'
 }
 
 function loadSession(session: ChatSession) {
@@ -1225,6 +1229,32 @@ const moduleInfo = computed<ModuleChat>(() => MODULE_CHAT[moduleKeyFromPath(rout
 const chatContext = ref('')
 // Grounding context fed to the model (e.g. a Cowork task result). Not shown.
 const aireneGround = ref('')
+
+// ── Agent switcher ────────────────────────────────────────────────────────────
+// You chat WITH an agent. In a general ERP-module chat you can pick any agent; in
+// a Cowork-task chat the choice is limited to the agent(s) that own the task (one
+// agent → locked, several → switchable). The model then answers in-character and
+// declines anything outside that agent's area/skills.
+const activeAgentId = aireneBridge.activeAgentId
+const restrictAgents = aireneBridge.restrictAgents
+const availableAgents = computed<CoworkAgent[]>(() =>
+  restrictAgents.value.length
+    ? coworkAgents.filter((a) => restrictAgents.value.includes(a.id))
+    : coworkAgents)
+const activeAgent = computed<CoworkAgent | undefined>(() =>
+  availableAgents.value.find((a) => a.id === activeAgentId.value)
+  ?? availableAgents.value[0]
+  ?? coworkAgents.find((a) => a.id === 'airene'))
+const canSwitchAgent = computed(() => availableAgents.value.length > 1)
+const agentMenuOpen = ref(false)
+function pickAgent(a: CoworkAgent) { activeAgentId.value = a.id; agentMenuOpen.value = false }
+// Payload sent to the chat API so the model role-plays the agent and gates answers.
+function activeAgentPayload() {
+  const a = activeAgent.value
+  if (!a) return undefined
+  const skills = (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean)
+  return { name: a.name, role: a.role, module: a.module, persona: a.instruction || a.persona, skills }
+}
 // When the chat is opened about a specific task result, the empty-state greeting
 // and suggestions become contextual to that result instead of the generic ones.
 const DEFAULT_CONTEXT_SUGGESTIONS = [
@@ -1325,6 +1355,8 @@ async function sendMessage(text: string, context?: string) {
       body: {
         messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
         context: aireneGround.value || buildModuleGround(),
+        agent: activeAgentPayload(),
+        roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
       },
     })
     reply = res.reply
@@ -2020,6 +2052,34 @@ function startResize(e: MouseEvent) {
                 </div>
               </div>
               <p class="airene-greeting-title">Hi, I'm here.</p>
+
+              <!-- Agent switcher: which agent you're chatting with -->
+              <div class="airene-agent-wrap">
+                <button v-if="canSwitchAgent" type="button" class="airene-agent-btn" @click="agentMenuOpen = !agentMenuOpen">
+                  <img :src="activeAgent!.avatar" :alt="activeAgent!.name" class="airene-agent-av">
+                  <span class="airene-agent-name">{{ activeAgent!.name }}</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span v-else class="airene-agent-static">
+                  <img :src="activeAgent!.avatar" :alt="activeAgent!.name" class="airene-agent-av">
+                  <span class="airene-agent-name">{{ activeAgent!.name }}</span>
+                </span>
+
+                <template v-if="agentMenuOpen">
+                  <div class="airene-agent-backdrop" @click="agentMenuOpen = false" />
+                  <div class="airene-agent-menu">
+                    <button v-for="a in availableAgents" :key="a.id" type="button" class="airene-agent-item" :class="{ 'is-active': a.id === activeAgent!.id }" @click="pickAgent(a)">
+                      <img :src="a.avatar" :alt="a.name" class="airene-agent-av">
+                      <span class="airene-agent-meta">
+                        <span class="airene-agent-name">{{ a.name }}</span>
+                        <span class="airene-agent-role">{{ a.role }}</span>
+                      </span>
+                      <MpIcon v-if="a.id === activeAgent!.id" name="check" size="sm" class="airene-agent-check" />
+                    </button>
+                  </div>
+                </template>
+              </div>
+
               <p v-if="chatContext" class="airene-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
               <p v-else class="airene-greeting-msg">{{ moduleInfo.greeting }}</p>
 
@@ -2976,6 +3036,23 @@ function startResize(e: MouseEvent) {
   line-height: var(--mp-line-heights-lg, 24px);
   color: var(--mp-text-default);
 }
+
+/* Agent switcher */
+.airene-agent-wrap { position: relative; margin-top: var(--mp-spacing-2, 8px); }
+.airene-agent-btn, .airene-agent-static { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
+.airene-agent-btn { cursor: pointer; }
+.airene-agent-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+.airene-agent-av { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: var(--mp-background-neutral-subtle, #f8f9f9); flex: 0 0 auto; }
+.airene-agent-name { font-weight: var(--mp-font-weights-medium, 500); }
+.airene-agent-btn svg { color: var(--mp-text-secondary); }
+.airene-agent-backdrop { position: fixed; inset: 0; z-index: 40; }
+.airene-agent-menu { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 50; min-width: 240px; max-height: 320px; overflow-y: auto; background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); box-shadow: var(--mp-shadows-md); padding: var(--mp-spacing-1, 4px); text-align: left; }
+.airene-agent-item { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); width: 100%; padding: var(--mp-spacing-2, 8px); border: none; background: none; border-radius: var(--mp-radii-md, 6px); cursor: pointer; font-family: inherit; text-align: left; }
+.airene-agent-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.airene-agent-item.is-active { background: var(--mp-background-neutral-subtle, #f0f1f3); }
+.airene-agent-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.airene-agent-role { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.airene-agent-check { color: var(--mp-icon-brand, #029861); flex: 0 0 auto; }
 
 .airene-greeting-msg {
   margin: 0;

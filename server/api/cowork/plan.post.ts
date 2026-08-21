@@ -193,39 +193,54 @@ const ALLOWED_MODELS = new Set([
   'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview',
 ])
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[]; agent?: { name?: string; persona?: string } }>(event)
-  const task = (body?.task ?? '').trim()
-  const ctx = body?.context ?? {}
-  if (!task) {
-    setResponseStatus(event, 400)
-    return { error: 'Missing task' }
-  }
-
-  // Which artifacts to produce (default briefing). Slack is never in OUTPUT_KEYS.
-  const requested = [...new Set((body?.outputs ?? []).map((o) => OUTPUT_KEYS[o]).filter(Boolean))]
-  if (!requested.length) requested.push('briefing')
-
-  const config = useRuntimeConfig()
-  const apiKey = config.geminiApiKey as string
-  const model = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : ((config.geminiModel as string) || 'gemini-flash-latest')
-
-  if (!apiKey) return { plan: fallbackPlan(task, ctx, requested), source: 'fallback', reason: 'no-api-key' }
-
+  // Wrapped so the endpoint NEVER 500s — a run should always get a usable plan
+  // (real or deterministic fallback), never a hard failure.
+  let ctx: CoworkContext = {}
+  let requested: string[] = ['briefing']
+  let task = ''
   try {
+    const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[]; agent?: { name?: string; persona?: string; actions?: string[] } }>(event)
+    task = (body?.task ?? '').trim()
+    ctx = body?.context ?? {}
+    if (!task) { setResponseStatus(event, 400); return { error: 'Missing task' } }
+
+    // Which artifacts to produce (default briefing). Slack is never in OUTPUT_KEYS.
+    requested = [...new Set((body?.outputs ?? []).map((o) => OUTPUT_KEYS[o]).filter(Boolean))]
+    if (!requested.length) requested = ['briefing']
+
+    const config = useRuntimeConfig()
+    const apiKey = config.geminiApiKey as string
+    const model = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : ((config.geminiModel as string) || 'gemini-flash-latest')
+
+    if (!apiKey) return { plan: fallbackPlan(task, ctx, requested), source: 'fallback', reason: 'no-api-key' }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-    const res = await $fetch<any>(url, {
-      method: 'POST',
-      body: {
-        contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources, body?.agent) }] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema(requested), temperature: 0.6 },
-      },
-    })
-    const text: string | undefined = res?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('')
-    if (!text) throw new Error('Empty model response')
-    const plan = JSON.parse(text)
-    return { plan, source: 'gemini', model }
+    const payload = {
+      contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources, body?.agent) }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema(requested), temperature: 0.6 },
+    }
+    // Retry transient Gemini errors (429 rate-limit / 5xx overload) with backoff.
+    let lastErr: any
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await $fetch<any>(url, { method: 'POST', body: payload, timeout: 45000 })
+        const text: string | undefined = res?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('')
+        if (!text) throw new Error('Empty model response')
+        return { plan: JSON.parse(text), source: 'gemini', model }
+      } catch (err: any) {
+        lastErr = err
+        const status = err?.status ?? err?.statusCode ?? err?.response?.status
+        const retryable = status === 429 || (typeof status === 'number' && status >= 500) || /overload|timeout|fetch failed/i.test(String(err?.message ?? ''))
+        if (attempt < 2 && retryable) { await sleep(600 * (attempt + 1)); continue }
+        break
+      }
+    }
+    return { plan: fallbackPlan(task, ctx, requested), source: 'fallback', reason: String(lastErr?.message ?? lastErr) }
   } catch (err: any) {
-    return { plan: fallbackPlan(task, ctx, requested), source: 'fallback', reason: String(err?.message ?? err) }
+    // Absolute backstop — still return a plan so the run never hard-fails.
+    return { plan: fallbackPlan(task || 'Task', ctx, requested), source: 'fallback', reason: String(err?.message ?? err) }
   }
 })
