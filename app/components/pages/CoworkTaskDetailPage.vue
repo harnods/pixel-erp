@@ -51,7 +51,7 @@ const agentActions = computed(() => {
 
 // ── Plan / artifacts ──────────────────────────────────────────────────────────
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
-interface ActionItem { title: string; detail: string; owner: string; due: string; priority: 'High' | 'Medium' | 'Low' }
+interface ActionItem { title: string; detail: string; owner: string; due: string; priority: 'High' | 'Medium' | 'Low'; action?: string }
 interface Plan {
   taskTitle: string; intro: string; metric: string
   sources: { name: string; detail: string }[]
@@ -89,14 +89,18 @@ async function runTask() {
   activeStep.value = 0
   stepTimer = setInterval(() => { if (activeStep.value < STEP_TITLES.length) activeStep.value += 1 }, 1200)
   try {
-    const res = await $fetch<{ plan: Plan }>('/api/cowork/plan', {
-      method: 'POST',
-      body: {
-        task: task.value.prompt, context: build(), model: task.value.model,
-        sources: task.value.sources, outputs: task.value.outputs,
-        agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
-      },
-    })
+    const reqBody = {
+      task: task.value.prompt, context: build(), model: task.value.model,
+      sources: task.value.sources, outputs: task.value.outputs,
+      agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
+    }
+    // The plan endpoint always returns a usable plan; retry once on a network blip.
+    let res: { plan: Plan }
+    try {
+      res = await $fetch<{ plan: Plan }>('/api/cowork/plan', { method: 'POST', body: reqBody })
+    } catch {
+      res = await $fetch<{ plan: Plan }>('/api/cowork/plan', { method: 'POST', body: reqBody })
+    }
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
@@ -143,19 +147,32 @@ function statusProps(s: string) {
   return { status: 'draft', label: 'Scheduled' }
 }
 
-// ── Contextual action-item buttons (create real ERP records) ──────────────────
-function actionButton(a: ActionItem): string {
+// ── Action-item buttons ───────────────────────────────────────────────────────
+// The agent picked a skill action per item (a.action). Only show it if the agent
+// actually has that skill; otherwise fall back to a heuristic label.
+const agentActionLabels = computed(() => new Set(agentActions.value))
+function heuristicAction(a: ActionItem): string {
   const t = `${a.title} ${a.detail}`.toLowerCase()
   if (/purchase|reorder|requisition|restock|procure|buy/.test(t)) return 'Create purchase request'
   if (/count|cycle/.test(t)) return 'Create stock count'
-  if (/reminder|chase|collect|dunning|payment notice|overdue/.test(t)) return 'Create reminder'
+  if (/reminder|chase|collect|dunning|payment notice|overdue/.test(t)) return 'Draft reminder'
   if (/contract|renew|offboard|resign/.test(t)) return 'Review contract'
   if (/reconcil|journal|close|bill|invoice/.test(t)) return 'Open in finance'
   if (/work order|production|bom/.test(t)) return 'Create work order'
-  if (/deal|pipeline|follow.?up|prospect/.test(t)) return 'Open in CRM'
+  if (/deal|pipeline|follow.?up|prospect/.test(t)) return 'Draft follow-up'
   return 'Create task'
 }
-function doAction(a: ActionItem) { toast.notify({ variant: 'success', title: `${actionButton(a)} created` }) }
+// The button label for an item: the agent's chosen skill action if it's real,
+// else a heuristic — but only if the agent has ANY skills to act with.
+function actionButton(a: ActionItem): string {
+  if (a.action && agentActionLabels.value.has(a.action)) return a.action
+  return heuristicAction(a)
+}
+function doAction(a: ActionItem) {
+  const label = actionButton(a)
+  const who = taskAgent.value?.name ?? 'Cowork'
+  toast.notify({ variant: 'success', title: `${label} — done by ${who}` })
+}
 
 // ── Downloads ─────────────────────────────────────────────────────────────────
 function downloadBlob(name: string, mime: string, content: string) {
@@ -288,7 +305,13 @@ function buildChatSuggestions(): string[] {
     'Draft a follow-up I can send',
   ]
 }
-function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions()) }
+// The agents that own this task = the agents for the modules it spans. One → the
+// chat locks to it; several → the user can switch among them (but not to others).
+function taskAgentIds(): string[] {
+  const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
+  return [...new Set(mods.map((m) => agentForModule(m)?.id).filter(Boolean))] as string[]
+}
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds()) }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.
@@ -363,7 +386,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div class="ctd-chips">
+          <div v-if="taskAgent" class="ctd-agent">
+            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
+            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          </div>
+          <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
           </div>
 
@@ -408,7 +435,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div class="ctd-chips">
+          <div v-if="taskAgent" class="ctd-agent">
+            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
+            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          </div>
+          <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
           </div>
 
@@ -579,6 +610,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+.ctd-agent { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+.ctd-agent__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .ctd-freq { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ctd-freq__row { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-freq__k { min-width: 72px; color: var(--mp-text-secondary); }

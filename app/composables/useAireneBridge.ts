@@ -20,6 +20,11 @@ export interface ChatMessage {
 const isOpen = ref(false)
 const messages = ref<ChatMessage[]>([])
 const activeSessionId = ref<string | null>(null)
+// Which agent the user is chatting with (agent id). `restrictAgents` limits the
+// switcher to a set (e.g. the agents that own the task the chat was opened about);
+// empty = any agent can be picked (general ERP-module chat).
+const activeAgentId = ref<string>('airene')
+const restrictAgents = ref<string[]>([])
 
 const toggleSignal = ref(0)
 const sendSignal = ref(0)
@@ -44,6 +49,8 @@ export function useAireneBridge() {
     isOpen,
     messages,
     activeSessionId,
+    activeAgentId,
+    restrictAgents,
     // Signals watched by [...slug].vue
     toggleSignal,
     sendSignal,
@@ -65,11 +72,15 @@ export function useAireneBridge() {
       pendingFresh.value = fresh
       sendSignal.value++
     },
-    /** Open the chat with a grounding context but no message sent yet. */
-    openWithContext(ground: string, label: string, suggestions: string[] = []) {
+    /** Open the chat with a grounding context but no message sent yet. `agents`
+     *  restricts (and defaults) the agent switcher — e.g. the agents that own the
+     *  task this chat is about. One agent → locked; multiple → switchable. */
+    openWithContext(ground: string, label: string, suggestions: string[] = [], agents: string[] = []) {
       pendingGround.value = ground
       pendingLabel.value = label
       pendingSuggestions.value = suggestions
+      restrictAgents.value = agents
+      if (agents.length) activeAgentId.value = agents[0]!
       openContextSignal.value++
     },
     /** Open a previously-saved chat session by id (from the mini-DB history). */

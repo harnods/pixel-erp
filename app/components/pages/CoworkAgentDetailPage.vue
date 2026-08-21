@@ -97,6 +97,7 @@ function removeAgent() {
           <h3 class="cad-h3">Skills</h3>
           <div v-for="s in skills" :key="s!.id" class="cad-skill">
             <p class="cad-skill__name">{{ s!.name }}</p>
+            <p class="cad-skill__desc">{{ s!.description }}</p>
             <div class="cad-chips">
               <span v-for="a in s!.actions" :key="a.id" class="cad-chip">{{ a.label }}</span>
             </div>
@@ -148,7 +149,7 @@ function removeAgent() {
 .cad-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
 .cad-inner { max-width: 720px; }
 .cad-head { display: flex; gap: var(--mp-spacing-4, 16px); align-items: flex-start; padding-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
-.cad-avatar { width: 72px; height: 72px; flex-shrink: 0; border-radius: var(--mp-radii-lg, 12px); object-fit: cover; background: var(--mp-background-neutral-subtle); }
+.cad-avatar { width: 72px; height: 72px; flex-shrink: 0; object-fit: contain; background: none; }
 .cad-name { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cad-role { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cad-desc { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
@@ -162,8 +163,9 @@ function removeAgent() {
 .cad-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); }
 .cad-chip { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
 .cad-file { margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cad-skill { margin-bottom: var(--mp-spacing-3); }
-.cad-skill__name { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cad-skill { margin-bottom: var(--mp-spacing-4); }
+.cad-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cad-skill__desc { margin: 2px 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .cad-person { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2, 8px) 0; }
 .cad-person__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cad-person__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }

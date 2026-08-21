@@ -818,8 +818,11 @@ export interface CoworkSkill {
   color?: string
   /** 'built-in' = shipped; 'custom' = user-created (AI-generated or uploaded .md). */
   source?: 'built-in' | 'custom'
-  /** The skill definition as markdown — how a skill is authored & stored. */
+  /** The skill definition as markdown (SKILL.md) — how a skill is authored & stored,
+   *  exactly like Claude skills: a folder with SKILL.md + references/ + scripts/. */
   markdown?: string
+  references?: { name: string; content?: string }[]
+  scripts?: { name: string; content?: string }[]
   createdAt?: string
 }
 const SKILL_SEED: CoworkSkill[] = [
@@ -832,63 +835,115 @@ const SKILL_SEED: CoworkSkill[] = [
   { id: 'crm-followup', name: 'Draft CRM follow-ups', module: 'CRM', description: 'Write personalised follow-up messages and open deals in CRM.', actions: [{ id: 'draft-followup', label: 'Draft follow-up' }, { id: 'open-crm', label: 'Open in CRM' }], icon: 'stats', color: '#165082', source: 'built-in' },
   { id: 'hr-reprimand', name: 'Send HR notices', module: 'HR', description: 'Draft a reprimand or note to a chronically-late employee and their manager.', actions: [{ id: 'draft-reprimand', label: 'Draft reprimand' }, { id: 'send-reprimand', label: 'Send reprimand' }], icon: 'profile', color: '#B42318', source: 'built-in' },
   { id: 'contract-review', name: 'Review contracts', module: 'HR', description: 'Flag contracts for renewal, conversion or offboarding.', actions: [{ id: 'review-contract', label: 'Review contract' }], icon: 'profile', color: '#B54708', source: 'built-in' },
-  { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
-  { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], icon: 'doc', color: '#3a4749', source: 'built-in' },
+  // ── HR ──
+  { id: 'payroll-precheck', name: 'Pre-check payroll', module: 'HR', description: 'Verify attendance, changes and approvals are complete before a payroll run.', actions: [{ id: 'build-precheck', label: 'Build pre-check report' }, { id: 'flag-issues', label: 'Flag blockers' }], source: 'built-in' },
+  { id: 'resignation-handover', name: 'Plan resignation handovers', module: 'HR', description: 'Build a handover plan for a resigning employee — tasks, owners and knowledge transfer.', actions: [{ id: 'draft-handover', label: 'Draft handover plan' }], source: 'built-in' },
+  { id: 'screen-candidates', name: 'Screen candidates', module: 'HR', description: 'Summarise CVs, match against the role, and shortlist the best candidates.', actions: [{ id: 'summarise-cv', label: 'Summarise CV' }, { id: 'shortlist', label: 'Shortlist' }], source: 'built-in' },
+  // ── CRM / Sales / Marketing / Support ──
+  { id: 'pipeline-review', name: 'Review sales pipeline', module: 'CRM', description: 'Rank open deals by value and momentum and surface the ones that have stalled.', actions: [{ id: 'rank-deals', label: 'Rank deals' }, { id: 'flag-stalled', label: 'Flag stalled deals' }], source: 'built-in' },
+  { id: 'campaign-analysis', name: 'Analyse marketing campaigns', module: 'CRM', description: 'Read campaign and audience performance and recommend where to focus spend.', actions: [{ id: 'summarise-campaign', label: 'Summarise performance' }, { id: 'recommend-spend', label: 'Recommend spend' }], source: 'built-in' },
+  { id: 'ticket-triage', name: 'Triage support tickets', module: 'CRM', description: 'Categorise incoming tickets, draft replies, and escalate anything risky to a human.', actions: [{ id: 'draft-reply', label: 'Draft reply' }, { id: 'escalate', label: 'Escalate' }], source: 'built-in' },
+  // ── Sales / Fulfilment ──
+  { id: 'fulfil-orders', name: 'Fulfil sales orders', module: 'Sales', description: 'Find orders ready to pick/pack/ship, cross-check stock, and flag blockers.', actions: [{ id: 'create-picking', label: 'Create picking task' }, { id: 'flag-blockers', label: 'Flag blockers' }], source: 'built-in' },
+  // ── WMS ──
+  { id: 'outbound-plan', name: 'Plan outbound fulfilment', module: 'WMS', description: "Prioritise today's picking, packing and shipping for open outbound orders.", actions: [{ id: 'prioritise-outbound', label: 'Prioritise picking' }], source: 'built-in' },
+  // ── Production ──
+  { id: 'work-orders-risk', name: 'Monitor at-risk work orders', module: 'Production', description: 'Flag work orders likely to miss their due date and recommend a recovery.', actions: [{ id: 'flag-risk', label: 'Flag at-risk' }, { id: 'recommend-recovery', label: 'Recommend recovery' }], source: 'built-in' },
+  { id: 'bom-check', name: 'Check BOM vs stock', module: 'Production', description: 'Verify component availability for open work orders and flag shortages.', actions: [{ id: 'check-bom', label: 'Check availability' }], source: 'built-in' },
+  // ── Finance ──
+  { id: 'bank-recon', name: 'Reconcile bank statements', module: 'Finance', description: 'Match statement lines to ledger entries and surface unreconciled items.', actions: [{ id: 'match-lines', label: 'Match lines' }, { id: 'flag-unreconciled', label: 'Flag unreconciled' }], source: 'built-in' },
+  { id: 'month-end-close', name: 'Run month-end close', module: 'Finance', description: 'Build the month-end checklist and flag everything outstanding before closing the books.', actions: [{ id: 'build-checklist', label: 'Build checklist' }, { id: 'flag-blockers', label: 'Flag blockers' }], source: 'built-in' },
+  // ── IT ──
+  { id: 'diagnose-issue', name: 'Diagnose technical issues', module: 'Production', description: 'Diagnose an error from its symptoms, propose a fix, and escalate when needed.', actions: [{ id: 'diagnose', label: 'Diagnose' }, { id: 'escalate', label: 'Escalate' }], source: 'built-in' },
+  // ── Cross-cutting ──
+  { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], source: 'built-in' },
+  { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], source: 'built-in' },
 ]
 export const COWORK_COMPANY = 'PT Central Perk Indonesia'
 export const AGENT_SEED: CoworkAgent[] = [
+  // ── My agents: the default assistant ──
   {
-    id: 'finance', name: 'Collections & Close', role: 'Finance agent', module: 'Finance',
-    description: 'Chases overdue receivables, reconciles cash accounts, and runs the month-end close.',
-    persona: 'a meticulous finance analyst. Prioritise by cash impact and risk, ground every figure in Jurnal, chase the biggest exposures first, and draft firm-but-polite reminders. Never invent balances.',
+    id: 'airene', name: 'Mekari Airene', role: 'Default agent', module: 'Finance', owned: true,
+    description: 'Your all-round co-worker across HR, sales, CRM, warehouse, finance and production.',
+    persona: 'Mekari Airene, a versatile, reliable co-worker. Ground everything in the ERP data, prioritise what matters, and hand off to a specialist agent when a task is clearly in one domain.',
     taskTitles: ['Chase overdue receivables', 'Bank reconciliation review', 'Month-end close checklist'],
-    connections: ['xero', 'stripe'], model: 'gemini-flash-latest', avatar: '/agents/finance.png', owned: true, color: '#0A6E4E',
+    connections: ['xero', 'stripe'], model: 'gemini-flash-latest', avatar: '/agents/airene.png', color: '#7C3AED',
   },
+  // ── Browse agents (10) ──
   {
-    id: 'people', name: 'People Ops', role: 'HR agent', module: 'HR',
-    description: 'Reviews attendance, pre-checks payroll, and tracks contracts and handovers.',
-    persona: 'a fair, discreet HR business partner. Separate recurring patterns from one-offs, weigh context (probation, tenure, work-related reasons), and only escalate what a manager truly needs to see.',
-    taskTitles: ['Attendance exceptions review', 'Payroll run pre-check', 'Contracts expiring soon', 'Resignation handover plan'],
-    connections: ['gcal', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/people.png', owned: true, color: '#B54708',
-  },
-  {
-    id: 'pipeline', name: 'Pipeline Coach', role: 'CRM agent', module: 'CRM',
-    description: 'Reviews the sales pipeline and drafts follow-ups for the top prospects.',
-    persona: 'a sharp sales strategist. Rank deals by value and momentum, call out what has stalled, and write concise, personalised outreach that moves each deal to the next stage.',
+    id: 'sales', name: 'Sales agent', role: 'Sales', module: 'CRM', owned: false,
+    description: 'Reviews the pipeline, prioritises deals, and drafts follow-ups for top prospects.',
+    persona: 'a sharp sales strategist. Rank deals by value and momentum, flag stalled ones, and write concise, personalised outreach that moves each deal forward.',
     taskTitles: ['Sales pipeline review', 'Draft follow-ups for top prospects'],
-    connections: ['hubspot', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/pipeline.png', owned: true, color: '#175CD3',
+    connections: ['hubspot', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/sales.png', color: '#6941C6',
   },
   {
-    id: 'orders', name: 'Order Desk', role: 'Sales agent', module: 'Sales',
-    description: 'Finds sales orders ready to fulfil and flags anything blocked on stock.',
-    persona: 'an order-management specialist. Cross-check every order against warehouse stock, protect delivery dates, and surface blockers before they become late shipments.',
-    taskTitles: ['Sales orders needing fulfilment'],
-    connections: ['shopify'], model: 'gemini-flash-latest', avatar: '/agents/orders.png', owned: false, color: '#6941C6',
+    id: 'marketing', name: 'Marketing agent', role: 'Marketing', module: 'CRM', owned: false,
+    description: 'Analyses campaigns and audience performance and suggests where to focus spend.',
+    persona: 'a data-driven marketer. Read the numbers, surface what is working, and recommend the next campaign move in plain language.',
+    taskTitles: [], connections: ['hubspot', 'ga4'], model: 'gemini-flash-latest', avatar: '/agents/marketing.png', color: '#DD2590',
   },
   {
-    id: 'warehouse', name: 'Warehouse Planner', role: 'WMS agent', module: 'WMS',
+    id: 'customer-support', name: 'Customer support agent', role: 'Support', module: 'CRM', owned: false,
+    description: 'Triages customer tickets, drafts replies, and flags issues that need a human.',
+    persona: 'an empathetic support specialist. Resolve quickly, keep a warm tone, and escalate anything risky or unhappy to a person.',
+    taskTitles: [], connections: ['zendesk', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/customer-support.png', color: '#155EEF',
+  },
+  {
+    id: 'warehouse', name: 'Warehouse agent', role: 'Warehouse', module: 'WMS', owned: false,
     description: 'Reorders low stock, plans outbound fulfilment, and schedules cycle counts.',
     persona: 'a proactive warehouse planner. Prevent stockouts, size reorders by lead time and open demand, and keep picking, packing and shipping on schedule.',
     taskTitles: ['Reorder low-stock SKUs', "Plan today's outbound fulfilment", 'Schedule cycle counts'],
-    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/warehouse.png', owned: true, color: '#0E7090',
+    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/warehouse.png', color: '#0E7090',
   },
   {
-    id: 'production', name: 'Production Planner', role: 'Production agent', module: 'Production',
+    id: 'hr', name: 'HR agent', role: 'People', module: 'HR', owned: false,
+    description: 'Reviews attendance, pre-checks payroll, and tracks contracts and handovers.',
+    persona: 'a fair, discreet HR business partner. Separate recurring patterns from one-offs, weigh context, and only escalate what a manager truly needs to see.',
+    taskTitles: ['Attendance exceptions review', 'Payroll run pre-check', 'Contracts expiring soon', 'Resignation handover plan'],
+    connections: ['gcal', 'gmail'], model: 'gemini-flash-latest', avatar: '/agents/hr.png', color: '#B54708',
+  },
+  {
+    id: 'recruitment', name: 'Recruitment agent', role: 'Talent', module: 'HR', owned: false,
+    description: 'Screens candidates, summarises CVs, and keeps the hiring pipeline moving.',
+    persona: 'a thorough recruiter. Match candidates to the role objectively, summarise strengths and gaps, and flag the best people to move forward.',
+    taskTitles: [], connections: ['gmail'], model: 'gemini-flash-latest', avatar: '/agents/recruitment.png', color: '#7839EE',
+  },
+  {
+    id: 'production', name: 'Production agent', role: 'Production', module: 'Production', owned: false,
     description: 'Flags at-risk work orders and checks BOM component availability.',
     persona: 'a production planner who spots bottlenecks early. Tie every at-risk work order to a specific material or capacity constraint and recommend a concrete recovery.',
     taskTitles: ['Work orders at risk', 'BOM vs stock check'],
-    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/production.png', owned: false, color: '#C11574',
+    connections: ['sap'], model: 'gemini-flash-latest', avatar: '/agents/production.png', color: '#C11574',
+  },
+  {
+    id: 'fulfillment', name: 'Fulfillment agent', role: 'Fulfilment', module: 'Sales', owned: false,
+    description: 'Finds sales orders ready to fulfil and flags anything blocked on stock.',
+    persona: 'an order-management specialist. Cross-check every order against warehouse stock, protect delivery dates, and surface blockers before they become late shipments.',
+    taskTitles: ['Sales orders needing fulfilment'],
+    connections: ['shopify'], model: 'gemini-flash-latest', avatar: '/agents/fulfillment.png', color: '#DC6803',
+  },
+  {
+    id: 'technical-support', name: 'Technical support agent', role: 'IT', module: 'Production', owned: false,
+    description: 'Handles technical issues, diagnoses errors, and guides fixes step by step.',
+    persona: 'a calm technical engineer. Diagnose from the symptoms, explain the fix clearly, and know when to escalate to a specialist.',
+    taskTitles: [], connections: ['servicenow'], model: 'gemini-flash-latest', avatar: '/agents/technical-support.png', color: '#3538CD',
   },
 ]
 
 // Sensible create-form defaults for the seeded agents (so details/edit reflect them).
 const AGENT_DEFAULT_SKILLS: Record<string, string[]> = {
-  finance: ['payment-reminder', 'journal', 'create-task', 'send-email'],
-  people: ['hr-reprimand', 'contract-review', 'create-task', 'send-email'],
-  pipeline: ['crm-followup', 'create-task', 'send-email'],
-  orders: ['create-task'],
-  warehouse: ['purchase-request', 'stock-count', 'create-task'],
-  production: ['work-order', 'create-task'],
+  airene: ['payment-reminder', 'bank-recon', 'month-end-close', 'journal', 'pipeline-review', 'crm-followup', 'create-task', 'send-email'],
+  sales: ['pipeline-review', 'crm-followup', 'send-invoice', 'create-task', 'send-email'],
+  marketing: ['campaign-analysis', 'crm-followup', 'create-task', 'send-email'],
+  'customer-support': ['ticket-triage', 'create-task', 'send-email'],
+  warehouse: ['purchase-request', 'outbound-plan', 'stock-count', 'create-task'],
+  hr: ['hr-reprimand', 'payroll-precheck', 'contract-review', 'resignation-handover', 'create-task', 'send-email'],
+  recruitment: ['screen-candidates', 'create-task', 'send-email'],
+  production: ['work-order', 'work-orders-risk', 'bom-check', 'create-task'],
+  fulfillment: ['fulfil-orders', 'send-invoice', 'create-task', 'send-email'],
+  'technical-support': ['diagnose-issue', 'create-task'],
+  default: ['create-task', 'send-email'],
 }
 for (const a of AGENT_SEED) {
   a.instruction ??= a.persona
@@ -906,7 +961,7 @@ function load<T>(key: string, seed: T[]): T[] {
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
-export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v1', AGENT_SEED))
+export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v3', AGENT_SEED))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
 // can be used anywhere (agent skill pickers, task actions).
 export const coworkSkills = reactive<CoworkSkill[]>(load('cowork-skills-v1', SKILL_SEED))
@@ -915,7 +970,7 @@ export const COWORK_SKILLS = coworkSkills
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
-function persistAgents() { saveSnapshot('cowork-agents-v1', coworkAgents) }
+function persistAgents() { saveSnapshot('cowork-agents-v3', coworkAgents) }
 function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
