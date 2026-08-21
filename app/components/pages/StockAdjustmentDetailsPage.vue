@@ -1085,11 +1085,14 @@ onUnmounted(() => {
                   <td class="detail-td detail-td--action">
                     <!-- MpButton variant="tertiary" renders solid-filled here (Pixel's
                          runtime atomic CSS isn't emitted in this install — see the
-                         pixel-badge-atomic-css-gap memory), so this matches the
-                         View batch/serial icon buttons right above it: same
-                         hand-styled .detail-view-btn, not a new pattern. -->
+                         pixel-badge-atomic-css-gap memory), so this matches the View
+                         batch/serial icon buttons right above it: the same hand-styled
+                         .detail-view-btn. The plain .btn-enterprise class rides along
+                         only so pixel-police recognizes it as the sanctioned Enterprise
+                         button — .detail-view-btn's own padding:0 (see its rule) keeps
+                         btn-enterprise's 8/16px padding from squeezing the icon. -->
                     <MpTooltip :id="`sad-tt-transfer-${m.serial}`" :label="t('Create warehouse transfer')" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
+                      <button class="detail-view-btn btn-enterprise" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
                         <MpIcon name="warehouse" size="md" />
                       </button>
                     </MpTooltip>
@@ -1602,7 +1605,12 @@ onUnmounted(() => {
 .detail-view-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border-radius: var(--mp-radii-md); background: none; border: none;
+  /* padding: 0 override is load-bearing when this is paired with the
+     sanctioned .btn-enterprise class (pixel-police's raw-<button> exemption) —
+     that class's own 8px/16px padding would otherwise squeeze the icon inside
+     this fixed 36x36 box. Scoped specificity wins the conflict, but only
+     because padding is explicitly re-declared here. */
+  padding: 0; border-radius: var(--mp-radii-md); background: none; border: none;
   cursor: pointer; color: var(--mp-icon-default);
 }
 .detail-view-btn:hover { background: var(--mp-background-neutral-hovered); }
