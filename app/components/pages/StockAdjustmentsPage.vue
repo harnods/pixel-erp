@@ -44,17 +44,14 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 const { currentPageKey } = useNavigation()
 // WMS sub-pages use their own data store; ERP uses the shared stock adjustments store.
+// (/stock-counts is retired — pathToLabel() aliases it to "Stock adjustments", so
+// this page never sees a "Stock counts" key any more.)
 const kindFilter = computed<'count' | 'in-out' | null>(() => {
   if (currentPageKey.value === 'Cycle counts') return 'count'
-  if (currentPageKey.value === 'Stock counts') return 'count'
   if (currentPageKey.value === 'Stock inout') return 'in-out'
   return null
 })
-// Only Cycle counts and Stock inout pages use the WMS dataset; Stock counts is ERP.
 const isWmsPage  = computed(() => currentPageKey.value === 'Cycle counts' || currentPageKey.value === 'Stock inout')
-// ERP Stock counts is a unified stock-adjustment ledger (count + in/out together) —
-// unlike WMS Cycle counts, it doesn't restrict to kind==='count' or show task fields.
-const isErpStockCounts = computed(() => currentPageKey.value === 'Stock counts')
 const activeList    = computed(() => isWmsPage.value ? wmsStockAdjustments : stockAdjustments)
 const activeWhOpts  = computed(() => isWmsPage.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
 function canCancel(a: StockAdjustment): boolean { return isWmsPage.value ? canCancelWmsAdjustment(a) : canCancelAdjustment(a) }
@@ -111,10 +108,10 @@ const visibleColumns = computed(() =>
   columns.filter(c =>
     colVis[c.key]
     && !(kindFilter.value && c.key === 'account')
-    && !(kindFilter.value === 'count' && !isErpStockCounts.value && c.key === 'category')
-    && !(kindFilter.value === 'count' && !isErpStockCounts.value && c.key === 'tags')
-    && !(kindFilter.value === 'count' && !isErpStockCounts.value && !isAwaiting.value && c.key === 'date')
-    && !((kindFilter.value !== 'count' || isErpStockCounts.value) && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
+    && !(kindFilter.value === 'count' && c.key === 'category')
+    && !(kindFilter.value === 'count' && c.key === 'tags')
+    && !(kindFilter.value === 'count' && !isAwaiting.value && c.key === 'date')
+    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
     && !(c.key === 'totalSku' && currentPageKey.value !== 'Cycle counts')
   )
@@ -243,10 +240,8 @@ const baseRows = computed<StockAdjustment[]>(() => {
   // but the operator who counted it only has the Count task tab — dropping it
   // there would make the task disappear the moment they finished counting.
   else if (currentPageKey.value === 'Cycle counts') { /* no status filter */ }
-  // Stock counts has no Awaiting approval tab — show every status in the one flat list.
-  else if (isErpStockCounts.value) { /* no status filter */ }
   else list = list.filter(a => a.status !== 'draft')
-  if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
+  if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
   if (categoryFilter.value.length) list = list.filter(a => categoryFilter.value.includes(a.category))
   if (statusFilter.value.length) list = list.filter(a => statusFilter.value.includes(a.status))
@@ -283,7 +278,7 @@ function basePathFor(row: StockAdjustment): string {
 function viewDetails(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}`) }
 function editAdjustment(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}/edit`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
-// WMS cycle counts only — Stock counts (ERP) and Stock in/out have no counting flow.
+// WMS cycle counts only — Stock adjustments and Stock in/out have no counting flow.
 function startCountingAndNavigate(row: StockAdjustment) {
   if (row.status === 'not_started') startWmsCount(row.id)
   router.push(`${basePathFor(row)}/${row.id}/count`)
@@ -435,8 +430,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Category — multi-select (hidden for WMS stock count; shown for ERP Stock counts, which mixes count + in/out) -->
-        <MpPopover v-if="kindFilter !== 'count' || isErpStockCounts" id="sa-category-filter" :is-close-on-select="false">
+        <!-- Category — multi-select (hidden for WMS stock count) -->
+        <MpPopover v-if="kindFilter !== 'count'" id="sa-category-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
               id="sa-category-select" :placeholder="t('Category')"
@@ -463,7 +458,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopover>
 
         <!-- Status — multi-select (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
-        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" :is-close-on-select="false">
+        <MpPopover v-if="kindFilter === 'count' && !isCycleAwaiting" id="sa-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
               id="sa-status-select" :placeholder="t('Status')"
