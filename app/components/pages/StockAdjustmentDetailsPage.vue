@@ -3,7 +3,7 @@ import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox,
+  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox, MpButton,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -34,6 +34,7 @@ import { getPickingLineItems } from '~/data/pickingTaskDetails'
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.orderId.startsWith('cc-'))
@@ -43,6 +44,15 @@ const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 // Also true for 'closed' — closing discards a.lines, so there's no real
 // counted data left to show either, same as a task that never started.
 const isNotStarted = computed(() => isWmsCount.value && (adjustment.value?.status === 'not_started' || adjustment.value?.status === 'closed'))
+
+// A Counted task is normally the manager's review page (on-hand/variance/reason
+// columns, Approve). Reached from the Count task tab, though, the viewer is the
+// operator who submitted it — not a manager — so it renders like In progress
+// instead, with "Update counting" as the primary action. The list only marks
+// this ?from=count-task when the row was clicked from that tab (not Awaiting
+// approval); see StockAdjustmentsPage's viewDetails(). Independent of the demo
+// "As user / As manager" FAB toggle — that's a separate, page-local concern.
+const isOperatorView = computed(() => isWmsCount.value && adjustment.value?.status === 'counted' && route.query.from === 'count-task')
 
 // /stock-adjustments/:id also serves WMS Cycle count records — tell the sidebar
 // this detail page belongs under "Cycle counts" so it doesn't default to
@@ -311,7 +321,10 @@ const itemsHaveTracked = computed(() => lineItems.value.some(i => isBatchTracked
 
 // ── Variance reason (Counted status only — manager reviews each variance before approving) ──
 // A no-variance row has nothing to explain, so its reason select stays disabled.
-const isCountedStatus = computed(() => isWmsCount.value && adjustment.value?.status === 'counted')
+// Excludes isOperatorView: the operator's own re-entry into their just-submitted
+// count isn't a review, so it renders without the manager-only on-hand/variance/
+// reason columns — same shape as In progress.
+const isCountedStatus = computed(() => isWmsCount.value && adjustment.value?.status === 'counted' && !isOperatorView.value)
 const REASON_OPTIONS = [
   t('Miscount / human error'),
   t('Damage / spoilage'),
@@ -477,7 +490,7 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 ]
 const approvalLog = computed(() => adjustment.value ? adjustmentApprovalLog(adjustment.value) : null)
 const approvalLogOpen = ref(false)
-const canApprove = computed(() => viewAs.value === 'manager' && (
+const canApprove = computed(() => !isOperatorView.value && viewAs.value === 'manager' && (
   adjustment.value?.status === 'draft' || (isWmsCount.value && adjustment.value?.status === 'counted')
 ))
 
@@ -1036,7 +1049,7 @@ onUnmounted(() => {
                       <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="goCreateTransfer(misplacedSerials.filter(m => selectedMisplaced.has(m.serial)))">
                         {{ t('Create warehouse transfer') }}
                       </button>
-                      <button class="detail-misplaced-bulkbar__clear" type="button" @click="clearMisplacedSelection">{{ t('Clear') }}</button>
+                      <a class="detail-misplaced-bulkbar__clear" @click="clearMisplacedSelection">{{ t('Clear') }}</a>
                     </div>
                   </th>
                 </tr>
@@ -1071,9 +1084,7 @@ onUnmounted(() => {
                   <td class="detail-td">{{ formatDateTime(m.scannedAt) }}</td>
                   <td class="detail-td detail-td--action">
                     <MpTooltip :id="`sad-tt-transfer-${m.serial}`" :label="t('Create warehouse transfer')" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
-                        <MpIcon name="warehouse" size="md" />
-                      </button>
+                      <MpButton variant="tertiary" size="sm" left-icon="warehouse" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])" />
                     </MpTooltip>
                   </td>
                 </tr>
@@ -1181,11 +1192,13 @@ onUnmounted(() => {
         <button v-if="canCloseTask" class="detail-btn detail-btn--secondary" @click="askClose">{{ t('Close task') }}</button>
         <button class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print stock card') }}</button>
         <button v-if="canApprove" class="detail-btn detail-btn--primary" @click="approve">{{ t('Approve') }}</button>
-        <!-- Not started / In progress: split button. Completed/Closed: no
-             actions left, terminal record. -->
-        <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress'" class="detail-split-btn">
+        <!-- Not started / In progress: split button. Operator view of a Counted
+             task gets the same button, labeled for what it actually is — the
+             operator revising their own submitted count, not starting fresh.
+             Completed/Closed: no actions left, terminal record. -->
+        <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress' || isOperatorView" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
-            {{ adjustment.status === 'in_progress' ? t('Continue counting') : t('Start counting') }}
+            {{ isOperatorView ? t('Update counting') : (adjustment.status === 'in_progress' ? t('Continue counting') : t('Start counting')) }}
           </button>
           <MpPopover id="sad-wms-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -1602,7 +1615,7 @@ onUnmounted(() => {
 }
 .detail-misplaced-bulkbar__count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-misplaced-bulkbar__clear {
-  margin-left: auto; background: none; border: none; padding: 0; cursor: pointer;
+  margin-left: auto; cursor: pointer; text-decoration: none;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
 }
 .detail-misplaced-bulkbar__clear:hover { text-decoration: underline; text-underline-offset: 2px; }

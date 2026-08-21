@@ -935,6 +935,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Stock count": "Perhitungan stok",
   "Start counting": "Mulai perhitungan",
   "Continue counting": "Lanjutkan perhitungan",
+  "Update counting": "Perbarui perhitungan",
   "stock adjustment": "penyesuaian stok",
   "stock adjustments": "penyesuaian stok",
   "These adjustments": "Penyesuaian ini",

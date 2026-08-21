@@ -275,7 +275,15 @@ watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = [] })
 function basePathFor(row: StockAdjustment): string {
   return (isWmsPage.value && row.kind === 'count') ? '/cycle-counts' : '/stock-adjustments'
 }
-function viewDetails(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}`) }
+// A Counted cycle count clicked from the Count task tab (not Awaiting approval)
+// is the operator's own task, not a manager review — the detail page reads
+// this flag to render like In progress (Update counting) instead of the
+// manager review layout. Only meaningful for that exact case; harmless as a
+// no-op query param otherwise.
+function viewDetails(row: StockAdjustment) {
+  const fromCountTask = isWmsPage.value && row.kind === 'count' && row.status === 'counted' && !isCycleAwaiting.value
+  router.push({ path: `${basePathFor(row)}/${row.id}`, query: fromCountTask ? { from: 'count-task' } : undefined })
+}
 function editAdjustment(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}/edit`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 // WMS cycle counts only — Stock adjustments and Stock in/out have no counting flow.
