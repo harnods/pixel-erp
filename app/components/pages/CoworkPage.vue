@@ -1276,11 +1276,12 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-suggest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cw-suggest-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-suggest-item { cursor: pointer; }
-/* Card hover hints it's clickable (view details); the title underlines. */
-.cw-suggest-item:hover .cw-suggest-title { text-decoration: underline; text-underline-offset: 2px; }
+/* Underline the title only when hovering the title itself (= click to view details);
+   NOT on general card hover, so it never looks like the whole card runs the task. */
+.cw-suggest-title:hover,
+.cw-suggest-item:focus-visible .cw-suggest-title { text-decoration: underline; text-underline-offset: 2px; }
 .cw-suggest-item:focus-visible { outline: none; }
-.cw-suggest-item:focus-visible .cw-suggest-title { text-decoration: underline; }
-/* "Run task" is a separate action (stops propagation). */
+/* "Run task" is a separate action — it only underlines on its OWN hover. */
 .cw-suggest-run { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: var(--mp-spacing-2); padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #165082); }
 .cw-suggest-run:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cw-suggest-used { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
@@ -1305,7 +1306,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-avatar-coach__body { display: flex; flex-direction: column; gap: 1px; }
 .cw-avatar-coach__name { font-size: var(--mp-font-sizes-sm, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); white-space: nowrap; }
 .cw-avatar-coach__meta { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); white-space: nowrap; }
-.cw-suggest-item:hover .cw-suggest-run { text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 900px) { .cw-suggest-grid { grid-template-columns: 1fr; } }
 .cw-composer__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); }
 .cw-conn-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
