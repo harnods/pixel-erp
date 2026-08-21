@@ -508,6 +508,9 @@ function toggleConnection(c: CoworkConnection) {
   if (c.provider === 'google') connectGoogle(c)
   else connectFake(c)
 }
+function manageConnection(c: CoworkConnection) {
+  infoToast(`Manage ${c.name} — coming soon`)
+}
 
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })
@@ -1006,16 +1009,30 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       <p v-if="connSample[c.id]" class="cw-conn-sample"><MpIcon name="check" size="sm" /> {{ connSample[c.id] }}</p>
                       <p v-if="connError[c.id]" class="cw-form-error cw-conn-err">{{ connError[c.id] }}</p>
                     </div>
+                    <!-- Connected → kebab menu (Manage / Uninstall); otherwise a "+" to connect. -->
+                    <MpPopover v-if="c.connected" :id="'cw-conn-menu-' + c.id" is-close-on-select placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + c.name">
+                          <MpIcon name="menu-kebab" size="md" />
+                        </button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '160px' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="manageConnection(c)">Manage</MpPopoverListItem>
+                          <MpPopoverListItem @click="disconnectConnection(c)">Uninstall</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                     <button
+                      v-else
                       class="cw-conn-action"
-                      :class="{ 'is-connected': c.connected }"
                       type="button"
-                      :title="c.connected ? 'Disconnect ' + c.name : 'Connect ' + c.name"
-                      :aria-label="c.connected ? 'Disconnect ' + c.name : 'Connect ' + c.name"
+                      :title="'Connect ' + c.name"
+                      :aria-label="'Connect ' + c.name"
                       @click="toggleConnection(c)"
                     >
                       <MpSpinner v-if="connecting === c.id" size="sm" />
-                      <MpIcon v-else :name="c.connected ? 'check' : 'add'" size="md" />
+                      <MpIcon v-else name="add" size="md" />
                     </button>
                   </div>
                   <!-- Empty cells complete the last row (grid stays a full rectangle). -->
