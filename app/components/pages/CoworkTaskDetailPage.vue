@@ -15,7 +15,7 @@ import { useCoworkContext } from '~/composables/useCoworkContext'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
-  getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, nextRunId,
+  getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -25,6 +25,28 @@ const route = useRoute()
 const { build } = useCoworkContext()
 
 const task = computed<CoworkTask | undefined>(() => getTask(props.orderId))
+
+// ── Model / Agents / Instruction / Workflow (task details) ────────────────────
+const MODEL_LABELS: Record<string, string> = {
+  'gemini-flash-latest': 'Gemini Flash', 'gemini-pro-latest': 'Gemini Pro',
+  'gemini-flash-lite-latest': 'Gemini Flash Lite', 'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro', 'gemini-3-flash-preview': 'Gemini 3 Flash',
+}
+const modelLabel = computed(() => MODEL_LABELS[task.value?.model ?? ''] ?? 'Gemini Flash')
+// The agents involved = one per module the task spans (a general orchestrator runs them).
+const MODULE_AGENT: Record<string, string> = {
+  HR: 'People agent', Finance: 'Finance agent', CRM: 'CRM agent',
+  Sales: 'Sales agent', WMS: 'Warehouse agent', Production: 'Production agent',
+}
+const agents = computed(() => {
+  const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
+  const list = [...new Set(mods.map((m) => MODULE_AGENT[m] ?? `${m} agent`))]
+  return list.length ? list : ['Cowork agent']
+})
+
+// Instruction + workflow are NOT generated here. Predefined tasks carry hardcoded
+// values; custom tasks get theirs from the run (see runTask). Opening a detail
+// never generates or persists anything on its own.
 
 // ── Plan / artifacts ──────────────────────────────────────────────────────────
 interface SummaryItem { title: string; detail: string; priority: 'High' | 'Medium' | 'Low' }
@@ -42,6 +64,9 @@ interface Plan {
   }
 }
 
+// A task that's never actually executed shows a centered pre-run view (just its
+// details + Run task), not the run-history / result layout.
+const hasBeenRun = computed(() => !!(task.value && ((task.value.runs?.length ?? 0) > 0 || task.value.planJson)))
 const runs = computed<CoworkRun[]>(() => (task.value ? taskRuns(task.value) : []))
 const selectedRunId = ref<string | null>(null)
 const selectedRun = computed(() => runs.value.find((r) => r.id === selectedRunId.value) ?? runs.value[0])
@@ -70,8 +95,19 @@ async function runTask() {
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
+    // Running clears the draft state and marks the task completed.
+    updateTask(task.value.id, { status: 'completed', saved: false })
+    // Custom tasks (typed prompts) get their instruction/workflow from the run's
+    // plan, generated once and cached; predefined tasks keep their hardcoded ones.
+    if (!task.value.instruction || !task.value.workflow?.length) {
+      updateTask(task.value.id, {
+        instruction: task.value.instruction || res.plan.intro,
+        workflow: task.value.workflow?.length ? task.value.workflow : (res.plan.steps ?? []).map((s) => s.title),
+      })
+    }
   } catch {
     addRun(task.value.id, { id: nextRunId(), ranAt: new Date().toISOString(), status: 'failed' })
+    updateTask(task.value.id, { status: 'failed', saved: false })
   } finally {
     if (stepTimer) { clearInterval(stepTimer); stepTimer = null }
     running.value = false
@@ -79,7 +115,7 @@ async function runTask() {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-function editTask() { infoToast('Edit task — coming soon') }
+function editTask() { if (task.value) router.push(`/cowork-tasks/${task.value.id}/edit`) }
 function setSchedule() { router.push({ path: '/cowork', query: { focus: '1' } }) }
 function removeTask() {
   if (!task.value) return
@@ -98,6 +134,7 @@ function statusProps(s: string) {
   if (s === 'running') return { status: 'in progress', label: 'Running' }
   if (s === 'completed') return { status: 'completed', label: 'Completed' }
   if (s === 'failed') return { status: 'failed', label: 'Failed' }
+  if (s === 'draft') return { status: 'draft', label: 'Draft' }
   return { status: 'draft', label: 'Scheduled' }
 }
 
@@ -306,11 +343,24 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     </header>
 
     <div class="ctd-stage">
-      <div class="ctd-grid">
-        <!-- Left: task details + runs -->
-        <section class="ctd-left">
+      <!-- Pre-run: centered task details only (before the task is ever run) -->
+      <div v-if="!hasBeenRun && !running" class="ctd-prerun">
+        <section class="ctd-prerun__card">
           <h2 class="ctd-h2">Task details</h2>
-          <p class="ctd-desc">{{ plan?.intro ?? task.prompt }}</p>
+          <p class="ctd-desc">{{ task.prompt }}</p>
+
+          <template v-if="task.instruction">
+            <p class="ctd-label">Instruction</p>
+            <p class="ctd-value ctd-instruction">{{ task.instruction }}</p>
+          </template>
+
+          <p class="ctd-label">Model</p>
+          <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
+
+          <p class="ctd-label">Agent</p>
+          <div class="ctd-chips">
+            <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
+          </div>
 
           <p class="ctd-label">Sources</p>
           <p class="ctd-value">{{ sourceLabels.join(', ') }}</p>
@@ -319,6 +369,58 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <div class="ctd-chips">
             <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
           </div>
+
+          <template v-if="task.workflow?.length">
+            <p class="ctd-label">Workflows</p>
+            <ul class="ctd-workflow">
+              <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
+            </ul>
+          </template>
+
+          <template v-if="task.schedule">
+            <p class="ctd-label">Frequency</p>
+            <div class="ctd-freq">
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Repeat</span><span>{{ task.schedule.cadence }}</span></div>
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Time</span><span>{{ task.schedule.time }}</span></div>
+              <div class="ctd-freq__row"><span class="ctd-freq__k">Next run</span><span>{{ task.schedule.nextRun ?? '—' }}</span></div>
+            </div>
+          </template>
+        </section>
+      </div>
+
+      <div v-else class="ctd-grid">
+        <!-- Left: task details + runs -->
+        <section class="ctd-left">
+          <h2 class="ctd-h2">Task details</h2>
+          <p class="ctd-desc">{{ plan?.intro ?? task.prompt }}</p>
+
+          <template v-if="task.instruction">
+            <p class="ctd-label">Instruction</p>
+            <p class="ctd-value ctd-instruction">{{ task.instruction }}</p>
+          </template>
+
+          <p class="ctd-label">Model</p>
+          <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
+
+          <p class="ctd-label">Agent</p>
+          <div class="ctd-chips">
+            <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
+          </div>
+
+          <p class="ctd-label">Sources</p>
+          <p class="ctd-value">{{ sourceLabels.join(', ') }}</p>
+
+          <p class="ctd-label">Output</p>
+          <div class="ctd-chips">
+            <span v-for="o in outputLabels" :key="o" class="ctd-chip">{{ o }}</span>
+          </div>
+
+          <template v-if="task.workflow?.length">
+            <p class="ctd-label">Workflows</p>
+            <ul class="ctd-workflow">
+              <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
+            </ul>
+          </template>
 
           <template v-if="task.schedule">
             <p class="ctd-label">Frequency</p>
@@ -453,10 +555,22 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: var(--mp-spacing-6); align-items: start; }
 @media (max-width: 1024px) { .ctd-grid { grid-template-columns: 1fr; } }
 
+/* Pre-run: task details centered in the stage, ~6 of 12 columns wide. */
+.ctd-prerun { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.ctd-prerun__card { grid-column: 4 / 10; }
+@media (max-width: 1024px) { .ctd-prerun__card { grid-column: 1 / -1; } }
+
 .ctd-muted { margin: 0; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); }
 .ctd-h2 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctd-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
 .ctd-label { margin: var(--mp-spacing-4) 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ctd-instruction { line-height: var(--mp-line-heights-md, 20px); }
+.ctd-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
+.ctd-muted-line { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); color: var(--mp-text-secondary); }
+.ctd-workflow { margin: var(--mp-spacing-1, 4px) 0 0; padding-inline-start: var(--mp-spacing-5, 20px); list-style: disc; }
+.ctd-workflow li { font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2, 8px); }
+.ctd-workflow li::marker { color: var(--mp-text-secondary); }
+.ctd-workflow li:last-child { margin-bottom: 0; }
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }

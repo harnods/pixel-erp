@@ -241,17 +241,8 @@ function hasVariance(difference: number): boolean { return difference !== 0 }
 // Keyed by SKU (not by line) so the reason stays consistent whether the operator
 // is looking at the By location or By SKU grouping of the same variance.
 const varianceReasons = reactive<Record<string, string>>({})
-// Every SKU with a variance must have a reason picked before the manager can
-// approve — checked against wmsCountLines (the finest-grained source) so it's
-// correct regardless of which grouping (By location / By SKU) is on screen.
-const missingReasonSkus = computed(() => {
-  if (!isCountedStatus.value) return []
-  const skus = new Set<string>()
-  for (const item of wmsCountLines.value) {
-    if (hasVariance(item.difference)) skus.add(item.sku)
-  }
-  return [...skus].filter((sku) => !varianceReasons[sku])
-})
+// A variance reason is optional, not a gate: per the PRD the manager can approve
+// a counted task whether or not every variance has been given a reason.
 
 // ── WMS stock count: merge batch-split rows into one per (SKU, location) — the
 // Batch no. column moves into the View batch drawer instead of separate rows,
@@ -470,10 +461,6 @@ function startCounting() {
 function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
 function approve() {
   if (!adjustment.value) return
-  if (missingReasonSkus.value.length) {
-    toast.notify({ variant: 'error', title: t('Select a reason for every variance before approving'), maxWidth: 'max-content' })
-    return
-  }
   if (isWmsRecord.value) approveWmsAdjustment(adjustment.value.id)
   else approveAdjustment(adjustment.value.id)
   toast.notify({ variant: 'success', title: `${adjustment.value.number} ${t('approved')}` , maxWidth: 'max-content'})

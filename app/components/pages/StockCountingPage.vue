@@ -295,6 +295,17 @@ const activeSerialOnHand = computed(() => {
   if (!serialDrawerKey.value) return 0
   return mergedCountRows.value.find(r => r.key === serialDrawerKey.value)?.prevOnHand ?? 0
 })
+// The bin this drawer is counting at — a serial stocked in a different bin can't
+// be counted here (one serial = one unit), so the drawer needs to know where
+// "here" is. Null in a warehouse without storage locations: nothing to compare.
+const activeSerialLocation = computed(() => {
+  if (!serialDrawerKey.value) return null
+  const row = mergedCountRows.value.find(r => r.key === serialDrawerKey.value)
+  if (row) return row.storageLocation === '—' ? null : row.storageLocation
+  const added = Object.entries(addedByLoc.value)
+    .find(([, rows]) => rows.some(r => r.id === serialDrawerKey.value))
+  return added?.[0] ?? null
+})
 function serialCount(key: string): number { return serialLinesByKey.value[key]?.length ?? 0 }
 function saveSerialLines(serials: CommittedSerial[]) {
   const key = serialDrawerKey.value
@@ -1083,6 +1094,7 @@ onUnmounted(() => {
     kind="count"
     :target-count="activeSerialOnHand"
     :location-on-hand="activeSerialOnHand"
+    :count-location="activeSerialLocation"
     :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s }))"
     :initial-scan="serialDrawerInitialScan"
     @update:open="serialDrawerOpen = $event"

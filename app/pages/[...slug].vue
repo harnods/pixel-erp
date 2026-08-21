@@ -28,14 +28,17 @@ import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
+import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
 import { employees } from '~/data/employees'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
+import { useCoworkContext } from '~/composables/useCoworkContext'
 
 const { pageTitle, currentPageKey } = useNavigation()
+const { build: buildCoworkContext } = useCoworkContext()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +69,8 @@ const pageRegistry: Record<string, Component> = {
   'Cowork tasks':      defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork schedule':   defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
@@ -116,6 +121,7 @@ const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/St
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
+const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -275,7 +281,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
   // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
+  // /cowork-tasks/:id/edit → Cowork task edit form.
   if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
+    if (segs[2] === 'edit') return { component: CoworkTaskEditPage, id: segs[1]! }
     return { component: CoworkTaskDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
@@ -593,6 +601,8 @@ const pageTabs: Record<string, string[]> = {
 // every sibling badge in the same section follows it too, since only one tab's
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
+// Cycle counts' Recommendations tab has its own single-warehouse selector.
+const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
@@ -653,7 +663,8 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (openTasks) out['Count task'] = openTasks
     const awaiting = awaitingWmsCountApprovalCount()
     if (awaiting) out['Awaiting approval'] = awaiting
-    const recommendations = recommendationCount()
+    // Scoped to the one warehouse the Recommendations tab is showing.
+    const recommendations = recommendationCount(recommendationWarehouseId.value)
     if (recommendations) out['Recommendations'] = recommendations
     return out
   }
@@ -814,7 +825,10 @@ function importEmployees(mode: 'add' | 'update') {
 }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
-const aireneOpen = ref(false)
+// State lives in the module-level bridge singleton so the panel stays open and
+// the conversation is preserved when the user navigates between modules.
+const aireneBridge = useAireneBridge()
+const aireneOpen = aireneBridge.isOpen
 function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
@@ -876,7 +890,12 @@ interface ChatSession {
   title: string
   messages: ChatMessage[]
   createdAt: number   // timestamp ms
+  module?: string     // which ERP module the chat started in (for the history label)
 }
+// The chat currently shown; upserted into the persisted history on every reply so
+// it can be reopened from any module. null = a brand-new, not-yet-saved chat.
+// Hoisted to the bridge singleton so it survives navigation.
+const activeSessionId = aireneBridge.activeSessionId
 
 // Seed historical sessions (relative to real Date.now())
 const DAY = 86_400_000
@@ -928,9 +947,13 @@ const CHAT_SEED: ChatSession[] = [
 // Persisted chat history (mini-DB) — survives reload/new-chat.
 const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
 function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
+// Materialise the seed history to the mini-DB on first load, so other surfaces
+// (e.g. the header search "Recent chats") can read it too.
+if (!loadSnapshot<ChatSession>('airene-chats-v1')) persistChats()
 
 // ── Active session ────────────────────────────────────────────────────────
-const messages = ref<ChatMessage[]>([])
+// Hoisted to the bridge singleton so the conversation survives navigation.
+const messages = aireneBridge.messages
 const chatBodyEl = ref<HTMLElement | null>(null)
 const inputText = ref('')
 const isTyping = ref(false)
@@ -955,6 +978,9 @@ function toggleHistory(e: MouseEvent) {
 function onOutsideClick(e: MouseEvent) {
   if (!historyWrapperEl.value?.contains(e.target as Node)) {
     historyOpen.value = false
+  }
+  if (!kebabWrapperEl.value?.contains(e.target as Node)) {
+    kebabOpen.value = false
   }
 }
 
@@ -1070,31 +1096,75 @@ const groupedHistory = computed(() => {
   return { yesterday, thisWeek, older }
 })
 
-function startNewChat() {
-  // save current session to history if it has messages
-  if (messages.value.length > 0) {
-    const first = messages.value.find(m => m.role === 'user')
-    const title = first
-      ? (first.text.length > 32 ? first.text.slice(0, 32) + '…' : first.text)
-      : 'Chat'
+// Upsert the currently-shown conversation into the persisted history, so it's
+// available from any module without an explicit "save" step.
+function persistActiveSession() {
+  if (messages.value.length === 0) return
+  const first = messages.value.find(m => m.role === 'user')
+  const title = first
+    ? (first.text.length > 32 ? first.text.slice(0, 32) + '…' : first.text)
+    : 'Chat'
+  const existing = activeSessionId.value
+    ? chatSessions.value.find(s => s.id === activeSessionId.value)
+    : null
+  if (existing) {
+    existing.title = title
+    existing.messages = [...messages.value]
+  } else {
+    const id = Date.now().toString()
+    activeSessionId.value = id
     chatSessions.value.unshift({
-      id: Date.now().toString(),
-      title,
-      messages: [...messages.value],
-      createdAt: Date.now(),
+      id, title, messages: [...messages.value], createdAt: Date.now(),
+      module: chatContext.value ? undefined : moduleInfo.value.label,
     })
-    persistChats()   // keep the old chat in the mini-DB
   }
+  persistChats()
+}
+
+function startNewChat() {
+  // Current chat is already persisted (upserted on each reply); just reset the view.
   messages.value = []
+  activeSessionId.value = null
+  chatContext.value = ''
+  aireneGround.value = ''
+  contextSuggestions.value = [...DEFAULT_CONTEXT_SUGGESTIONS]
+  historyOpen.value = false
+  kebabOpen.value = false
+}
+
+function loadSession(session: ChatSession) {
+  messages.value = [...session.messages]
+  activeSessionId.value = session.id
   chatContext.value = ''
   aireneGround.value = ''
   historyOpen.value = false
 }
 
-function loadSession(session: ChatSession) {
-  messages.value = [...session.messages]
+// Kebab menu: clear the current conversation, or delete it from history.
+const kebabOpen = ref(false)
+const kebabWrapperEl = ref<HTMLElement | null>(null)
+function removeActiveSession() {
+  if (!activeSessionId.value) return
+  const i = chatSessions.value.findIndex(s => s.id === activeSessionId.value)
+  if (i >= 0) { chatSessions.value.splice(i, 1); persistChats() }
+}
+function clearChat() {
+  removeActiveSession()
+  messages.value = []
+  activeSessionId.value = null
   chatContext.value = ''
-  historyOpen.value = false
+  aireneGround.value = ''
+  kebabOpen.value = false
+  infoToast('Chat cleared')
+}
+function deleteChat() {
+  removeActiveSession()
+  messages.value = []
+  activeSessionId.value = null
+  chatContext.value = ''
+  aireneGround.value = ''
+  kebabOpen.value = false
+  toast.notify({ variant: 'success', title: 'Chat deleted' })
 }
 
 // Dummy AI response for the WhatsApp draft scenario
@@ -1105,6 +1175,38 @@ function getAiResponse(userMsg: string): string {
   }
   return `I've reviewed the invoice details. Here's what I found:\n\nInvoice #40030 is currently overdue by 2 days (due 01/05/2025). The outstanding balance is Rp4,500,000.\n\nWould you like me to send a payment reminder or draft a follow-up message?`
 }
+
+// ── Module-aware greeting + suggestions (general chat, not a task) ────────────
+// The Airene drawer lives on every ERP page; when opened without a task context
+// its greeting, preset prompts and grounding adapt to the module you're in.
+interface ModuleChat { label: string; greeting: string; suggestions: string[]; ground: string[] }
+const MODULE_CHAT: Record<string, ModuleChat> = {
+  HR: { label: 'HR', greeting: 'I can help with employees, attendance, payroll and contracts.',
+    suggestions: ['Who was late this week and why?', 'Which contracts expire in the next 60 days?', 'Summarise headcount by department', 'Which employees are resigning?'], ground: ['hr'] },
+  Finance: { label: 'Finance', greeting: 'I can help with invoices, bills, cash flow and collections.',
+    suggestions: ['Which customers are overdue and why?', 'How much am I owed right now?', 'What needs clearing before month-end close?', 'Draft a payment reminder for the biggest overdue'], ground: ['finance', 'crm'] },
+  CRM: { label: 'CRM', greeting: 'I can help with your pipeline, customers and deals.',
+    suggestions: ['Which deals should I prioritise?', 'Which deals are stalled?', 'Who are my top customers?', 'Draft a follow-up for a stalled deal'], ground: ['crm', 'finance'] },
+  WMS: { label: 'Warehouse', greeting: 'I can help with stock, warehouses and fulfilment.',
+    suggestions: ['Which SKUs are below reorder point?', "What's out of stock?", 'What outbound orders are at risk today?', 'Plan today’s cycle counts'], ground: ['wms'] },
+  Production: { label: 'Production', greeting: 'I can help with work orders, BOMs and production.',
+    suggestions: ['Which work orders are at risk?', 'Check components vs BOM for open work orders', 'What is blocking production today?', 'Summarise open work orders'], ground: ['production', 'wms'] },
+  Sales: { label: 'Sales', greeting: 'I can help with orders, quotes and deliveries.',
+    suggestions: ['Which sales orders are ready to fulfil?', 'Which orders are blocked on stock?', 'Summarise open sales orders', 'How much am I owed right now?'], ground: ['crm', 'wms', 'finance'] },
+  General: { label: 'Mekari ERP', greeting: 'I can help across HR, sales, CRM, warehouse, finance and production.',
+    suggestions: ['How much am I owed right now?', 'Which customers are overdue and why?', 'Which SKUs are below reorder point?', 'Who was late this week?'], ground: ['hr', 'crm', 'wms', 'finance', 'production'] },
+}
+function moduleKeyFromPath(path: string): keyof typeof MODULE_CHAT {
+  const p = path.toLowerCase()
+  if (/(^\/hr|employee|attendance|payroll|leave|recruit)/.test(p)) return 'HR'
+  if (/(crm|deal|pipeline|prospect|contact)/.test(p)) return 'CRM'
+  if (/(work-order|bill-of-material|production|bom)/.test(p)) return 'Production'
+  if (/(sales-order|sales-quote|sales-deliver|quote)/.test(p)) return 'Sales'
+  if (/(warehouse|storage|receiv|picking|packing|deliver|stock|inbound|outbound|cycle|put-away|transfer|courier|shipment|product)/.test(p)) return 'WMS'
+  if (/(invoice|bill|cash|expense|bank|purchase|payment|journal|finance|jurnal|tax)/.test(p)) return 'Finance'
+  return 'General'
+}
+const moduleInfo = computed<ModuleChat>(() => MODULE_CHAT[moduleKeyFromPath(route.path)] ?? MODULE_CHAT.General!)
 
 // Context chip — set when entry point is from the AI popover
 const chatContext = ref('')
@@ -1200,7 +1302,8 @@ async function sendMessage(text: string, context?: string) {
   await nextTick()
   scrollChatToBottom()
 
-  // Real Gemini reply, grounded on the current context (task result if any).
+  // Real Gemini reply. Grounded on the task result if the chat was opened about
+  // one; otherwise on a snapshot of the module the user is currently in.
   isTyping.value = true
   let reply = ''
   try {
@@ -1208,7 +1311,7 @@ async function sendMessage(text: string, context?: string) {
       method: 'POST',
       body: {
         messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
-        context: aireneGround.value || undefined,
+        context: aireneGround.value || buildModuleGround(),
       },
     })
     reply = res.reply
@@ -1217,9 +1320,24 @@ async function sendMessage(text: string, context?: string) {
   }
   isTyping.value = false
   messages.value.push({ role: 'assistant', text: reply })
+  persistActiveSession()
 
   await nextTick()
   scrollChatToBottom()
+}
+
+// Grounding snapshot for a general (non-task) chat — just the modules relevant to
+// the page the user opened the drawer from, so answers stay accurate.
+function buildModuleGround(): string {
+  try {
+    const snap = buildCoworkContext() as Record<string, any>
+    const info = moduleInfo.value
+    const slice: Record<string, any> = {}
+    for (const k of info.ground) if (snap[k]) slice[k] = snap[k]
+    return `You are Airene helping the user inside the ${info.label} area of the Mekari ERP. `
+      + `Today is ${snap.today}. Answer from this real ERP data; if asked about something outside it, say so briefly.\n`
+      + JSON.stringify(slice)
+  } catch { return '' }
 }
 
 function scrollChatToBottom() {
@@ -1232,9 +1350,20 @@ function scrollChatToBottom() {
 provide('sendAireneMessage', sendMessage)
 
 // Bridge: let components above the page (e.g. the header search) drive the panel.
-const aireneBridge = useAireneBridge()
+// (aireneBridge is declared near the top, alongside the hoisted panel state.)
 watch(aireneBridge.toggleSignal, () => toggleAirene())
-watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+watch(aireneBridge.sendSignal, () => {
+  if (!aireneBridge.pendingText.value) return
+  if (aireneBridge.pendingFresh.value) startNewChat()
+  sendMessage(aireneBridge.pendingText.value)
+})
+// Open a saved chat session (e.g. a "recent chat" chosen from the header search).
+watch(aireneBridge.openSessionSignal, () => {
+  const s = chatSessions.value.find(x => x.id === aireneBridge.pendingSessionId.value)
+  if (s) loadSession(s)
+  else startNewChat()
+  aireneOpen.value = true
+})
 // Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
 watch(aireneBridge.openContextSignal, () => {
   startNewChat()
@@ -1247,8 +1376,8 @@ watch(aireneBridge.openContextSignal, () => {
 })
 
 // ── Resize panel ──────────────────────────────────────────────────────────
-const PANEL_MIN = 320
-const PANEL_MAX = 640
+const PANEL_MIN = 384
+const PANEL_MAX = 680
 const panelWidth = ref(PANEL_MIN)
 
 function startResize(e: MouseEvent) {
@@ -1327,7 +1456,7 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Cowork connections'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-connections', query: { add: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Add connection
+            Custom connection
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
@@ -1733,7 +1862,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1820,18 +1949,24 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
             <div class="airene-header-icons">
-              <!-- Chat bubble icon -->
-              <button class="airene-icon-btn" aria-label="Chat history">
+              <!-- New chat -->
+              <button class="airene-icon-btn" aria-label="New chat" title="New chat" @click="startNewChat">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path fill-rule="evenodd" clip-rule="evenodd" d="M5.86533 3.46533C5.42991 3.90075 5.15 4.55044 5.15 5.4V6.85H10.152C11.1384 6.85 12.0188 7.18209 12.6543 7.81768C13.2899 8.45327 13.622 9.33358 13.622 10.32V13.576C13.622 13.7282 13.6145 13.881 13.5977 14.0329L13.85 14.1994V12.88C13.85 12.4658 14.1858 12.13 14.6 12.13C15.4492 12.13 16.1012 11.852 16.5301 11.4172L16.5372 11.4101L16.5372 11.4101C16.972 10.9812 17.25 10.3292 17.25 9.47998V5.4C17.25 4.55044 16.9701 3.90075 16.5347 3.46533C16.0993 3.02991 15.4496 2.75 14.6 2.75H7.8C6.95044 2.75 6.30075 3.02991 5.86533 3.46533ZM13.1053 15.5051L13.1275 15.5197C14.0847 16.1642 15.35 15.4577 15.35 14.328V13.5747C16.2263 13.442 17.0034 13.0716 17.5943 12.4743C18.3573 11.7195 18.75 10.6609 18.75 9.47998V5.4C18.75 4.20956 18.3499 3.15925 17.5953 2.40467C16.8407 1.65009 15.7904 1.25 14.6 1.25H7.8C6.60956 1.25 5.55925 1.65009 4.80467 2.40467C4.05009 3.15925 3.65 4.20956 3.65 5.4V6.9941C3.03903 7.1655 2.50536 7.48857 2.0941 7.95C1.53737 8.57466 1.25 9.40203 1.25 10.32V13.576C1.25 14.5633 1.58266 15.4433 2.22167 16.0823C2.68831 16.549 3.29034 16.8518 3.97 16.9784V17.456C3.97 18.4665 5.10358 19.1227 5.97955 18.5257L8.20277 17.046H10.152C11.4362 17.046 12.5087 16.4804 13.1053 15.5051ZM4.464 8.36331C3.9064 8.41663 3.4912 8.6369 3.2139 8.94803C2.93463 9.26138 2.75 9.718 2.75 10.32V13.576C2.75 14.2206 2.96134 14.7007 3.28233 15.0217C3.59416 15.3335 4.0735 15.546 4.71999 15.546C5.13421 15.546 5.46999 15.8818 5.46999 16.296V17.063L7.56045 15.6716C7.68355 15.5897 7.82813 15.546 7.976 15.546H10.152C11.1869 15.546 11.8368 15.0112 12.0407 14.2009C12.0429 14.1922 12.0452 14.1835 12.0477 14.1749C12.0958 14.0095 12.122 13.8103 12.122 13.576V10.32C12.122 9.67445 11.9101 9.19476 11.5937 8.87834C11.2772 8.56192 10.7976 8.35 10.152 8.35H4.71999C4.6427 8.35 4.56798 8.35532 4.464 8.36331Z" fill="currentColor"/>
                 </svg>
               </button>
               <!-- Kebab / more -->
-              <button class="airene-icon-btn" aria-label="More options">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C11.1 6 12 5.1 12 4C12 2.9 11.1 2 10 2C8.9 2 8 2.9 8 4C8 5.1 8.9 6 10 6ZM10 8C8.9 8 8 8.9 8 10C8 11.1 8.9 12 10 12C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8ZM8 16C8 14.9 8.9 14 10 14C11.1 14 12 14.9 12 16C12 17.1 11.1 18 10 18C8.9 18 8 17.1 8 16Z" fill="currentColor"/>
-                </svg>
-              </button>
+              <div ref="kebabWrapperEl" class="airene-kebab-wrapper">
+                <button class="airene-icon-btn" aria-label="More options" @click.stop="kebabOpen = !kebabOpen">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C11.1 6 12 5.1 12 4C12 2.9 11.1 2 10 2C8.9 2 8 2.9 8 4C8 5.1 8.9 6 10 6ZM10 8C8.9 8 8 8.9 8 10C8 11.1 8.9 12 10 12C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8ZM8 16C8 14.9 8.9 14 10 14C11.1 14 12 14.9 12 16C12 17.1 11.1 18 10 18C8.9 18 8 17.1 8 16Z" fill="currentColor"/>
+                  </svg>
+                </button>
+                <div v-if="kebabOpen" class="airene-kebab-menu" @click.stop>
+                  <button class="airene-kebab-item" @click="clearChat">Clear chat</button>
+                  <button class="airene-kebab-item airene-kebab-item--danger" @click="deleteChat">Delete chat</button>
+                </div>
+              </div>
               <!-- Hide / close panel -->
               <button class="airene-icon-btn" aria-label="Close panel" @click="aireneOpen = false">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1861,7 +1996,7 @@ function startResize(e: MouseEvent) {
               </div>
               <p class="airene-greeting-title">Hi, I'm here.</p>
               <p v-if="chatContext" class="airene-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
-              <p v-else class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
+              <p v-else class="airene-greeting-msg">{{ moduleInfo.greeting }}</p>
 
               <!-- Contextual suggestions (chat opened about a task result) -->
               <div v-if="chatContext" class="airene-suggestion-list">
@@ -1871,7 +2006,16 @@ function startResize(e: MouseEvent) {
                 </button>
               </div>
 
+              <!-- Module-aware suggestions (general chat) -->
               <div v-else class="airene-suggestion-list">
+                <button v-for="s in moduleInfo.suggestions" :key="s" class="airene-suggestion-item" @click="sendMessage(s)">
+                  <MpIcon name="airene-brand" size="sm" class="airene-sug-icon" />
+                  {{ s }}
+                </button>
+              </div>
+
+              <!-- (legacy hardcoded finance suggestions kept out of render) -->
+              <div v-if="false" class="airene-suggestion-list">
                 <button class="airene-suggestion-item" @click="sendMessage('Import sales invoices')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M8.45 15H2.05C1.60818 15 1.25 14.6418 1.25 14.2V7.8C1.25 7.35818 1.60818 7 2.05 7H8.45C8.89182 7 9.25 7.35818 9.25 7.8V14.2C9.25 14.6418 8.89182 15 8.45 15ZM4.6168 10.9933L3.03984 13.4H4.18184L5.11992 11.7129C5.17422 11.6216 5.20938 11.549 5.2252 11.4954H5.23868C5.27266 11.5825 5.30898 11.6573 5.34746 11.7197L6.2582 13.4H7.39336L5.87422 10.98L7.35586 8.6H6.28886L5.4461 10.1164C5.38946 10.2257 5.33516 10.3384 5.28282 10.4544H5.27266C5.2455 10.3831 5.1957 10.2748 5.12324 10.1297L4.33476 8.6H3.17246L4.6168 10.9933Z" fill="#1FB088"/>
@@ -2420,9 +2564,12 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
 }
 
-/* History wrapper — anchor for the dropdown */
+/* History wrapper — anchor for the dropdown. min-width:0 lets the title
+   truncate so the header icons on the right never get clipped. */
 .airene-history-wrapper {
   position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .airene-new-chat {
@@ -2438,11 +2585,14 @@ function startResize(e: MouseEvent) {
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   border-radius: var(--mp-radii-md);
   line-height: var(--mp-line-heights-md);
-  max-width: 200px;
+  min-width: 0;
+  max-width: 100%;
 }
 .airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
 
 .airene-chat-title {
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2528,6 +2678,7 @@ function startResize(e: MouseEvent) {
 .airene-header-icons {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .airene-icon-btn {
@@ -2544,6 +2695,36 @@ function startResize(e: MouseEvent) {
   padding: var(--mp-spacing-2);
 }
 .airene-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Kebab (…) menu — clear / delete chat */
+.airene-kebab-wrapper { position: relative; display: inline-flex; }
+.airene-kebab-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 160px;
+  padding: var(--mp-spacing-1, 4px);
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default, #e0e2e6);
+  border-radius: var(--mp-radii-lg, 12px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.airene-kebab-item {
+  display: block;
+  width: 100%;
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-md, 8px);
+}
+.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-kebab-item--danger { color: var(--mp-text-critical, #d3382e); }
 
 /* ── Chat body ───────────────────────────────────────────────────────────── */
 

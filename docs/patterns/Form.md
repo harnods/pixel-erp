@@ -17,8 +17,28 @@
 | Column gap | `6` (`MpFlex gap="6"`) between fields (horizontal, same row) |
 | Row gap | **`20px`** (`--mp-spacing-5`) between stacked fields — the standard vertical spacing for every form / filter drawer. |
 | Stage padding | `24px` (see `DESIGN.md` → Layout) |
-| Action group | Always **last**, primary + tertiary buttons |
+| Action group | Always **last**, **right-aligned** within the form width; primary + ghost `Cancel` (see [Button.md](Button.md)). No border-top divider above it. |
 | Page title | Set via `useNavigation()` on mount |
+
+### Field widths (6-column grid)
+
+Within the 558px / 6-column form, fields take whole or half rows:
+
+- **Full-width (span 6)**: text inputs, textareas, and multi-select toggle lists
+  (Sources, Output).
+- **Half-width (span 3)**: selects (`Model`, `Schedule`, `Time`) and the
+  **`MpUpload` attachment field**. Two half-width fields share a row (e.g.
+  `Schedule` + `Time`); a lone half-width field (e.g. `Model`) sits on its own row
+  and must **not** be paired with an unrelated field beside it.
+
+### Multi-select toggle list (Sources / Output / …)
+
+When a field is "pick any of these" (e.g. which sources a task may read, which
+outputs it produces), render a **plain list of `MpToggle` rows — NOT a bordered
+box**: label on the left, `MpToggle` on the right, rows separated by a
+`border-bottom` only (no outer border, radius, or fill). An inline
+`+ Add …` action (e.g. `Add connection`) sits as the last row, styled as a text
+link. Live reference: [CoworkTaskEditPage.vue](../../app/components/pages/CoworkTaskEditPage.vue).
 
 ---
 

@@ -11,7 +11,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
 import { pipelineStages } from './crm'
 
 export type CoworkModule = 'HR' | 'Sales' | 'CRM' | 'WMS' | 'Finance' | 'Production'
-export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed'
+export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed' | 'draft'
 
 export interface CoworkTask {
   id: string
@@ -31,6 +31,9 @@ export interface CoworkTask {
   planJson?: string
   /** True when this run was created from a schedule. */
   scheduled?: boolean
+  /** True once a predefined-task draft has been edited & saved — it then appears in
+   *  the Tasks index (status 'draft' = saved but not yet run). */
+  saved?: boolean
   /** Recurrence set when the task was created (shown in the Tasks "Schedule"
    *  column, and the Schedule page lists every task that has one); absent = a
    *  one-off run ("No schedule"). */
@@ -39,6 +42,10 @@ export interface CoworkTask {
   outputs?: string[]
   sources?: string[]
   model?: string
+  /** AI-generated, cached on first open of the task detail: a clear instruction
+   *  derived from the user's prompt, and the workflow (steps) Cowork will run. */
+  instruction?: string
+  workflow?: string[]
   /** Execution history — each manual/scheduled run. The task's status/metric mirror
    *  the latest run. Older tasks may have none (synthesised from the task itself). */
   runs?: CoworkRun[]
@@ -55,10 +62,17 @@ export interface CoworkRun {
 
 export type CoworkCadence = 'Daily' | 'Weekly' | 'Monthly'
 
+// Fixed category order for the Connections marketplace grid.
+export type CoworkConnectionCategory =
+  | 'Featured' | 'Productivity' | 'Business & operations' | 'Data & analytics' | 'Communication' | 'Finance'
+export const COWORK_CONNECTION_CATEGORIES: CoworkConnectionCategory[] =
+  ['Featured', 'Productivity', 'Business & operations', 'Data & analytics', 'Communication', 'Finance']
+
 export interface CoworkConnection {
   id: string
   name: string
-  category: string
+  /** Every category this app appears under (an app can be Featured + Productivity). */
+  categories: CoworkConnectionCategory[]
   connected: boolean
   detail?: string
   /** 'google' = a real OAuth connection (Google Identity Services); 'fake' = a
@@ -66,6 +80,11 @@ export interface CoworkConnection {
   provider: 'google' | 'fake'
   /** OAuth scope(s) requested for a real Google connection. */
   scope?: string
+  /** Brand colour for the logo tile (monogram fallback — no external assets). */
+  color?: string
+  /** Explicit logo path — overrides the /connectors/<id>.png convention (e.g. a
+   *  custom MCP server pointing at a known host). */
+  logo?: string
 }
 
 /** Mekari products are connected by default (Cowork always works over them), so
@@ -161,50 +180,102 @@ export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Fin
  *  Each becomes a "suggested task" card and a schedule template. */
 export interface CoworkCatalogItem {
   title: string; desc: string; module: CoworkModule; prompt: string
+  /** Predefined (hardcoded) task-detail info — shown on the pre-run detail page
+   *  without any generation. Custom (prompt) tasks derive these from their run. */
+  instruction: string
+  workflow: string[]
+  outputs: string[]
   /** Employee IDs (Talenta HR DB) who have run this predefined task before.
    *  length = how many times it's been used; drives the "Used N times" + avatars. */
   usedBy?: string[]
 }
+const OUT_BRIEF = ['Briefing summary']
+const OUT_BRIEF_ACTIONS = ['Briefing summary', 'Action items']
 export const COWORK_CATALOG: CoworkCatalogItem[] = [
   // ── HR / People (Talenta) ──
   { title: 'Attendance exceptions review', module: 'HR', desc: 'Late clock-ins, missing check-outs and unapproved absences this period.',
-    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.', usedBy: ['EMP-0001','EMP-0011'] },
+    prompt: 'Review attendance across the workforce this period. List employees with late clock-ins, missing check-outs or unapproved absences, and flag anyone needing a follow-up.',
+    instruction: "I will scan this period's attendance in Talenta, isolate every late clock-in, missing check-out and unapproved absence, and separate one-offs from recurring patterns so you know exactly who needs a follow-up.",
+    workflow: ["Read the latest attendance log from Talenta.", "Isolate late clock-ins, missing check-outs and unapproved absences.", "Match each to the employee profile and add the reason.", "Flag recurring patterns and who to escalate."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0001','EMP-0011'] },
   { title: 'Payroll run pre-check', module: 'HR', desc: 'Verify attendance, changes and approvals are complete before running payroll.',
-    prompt: 'Prepare a payroll run pre-check. Confirm attendance is complete, list pending data changes or approvals, and flag anything that would block this month\'s payroll.' },
+    prompt: 'Prepare a payroll run pre-check. Confirm attendance is complete, list pending data changes or approvals, and flag anything that would block this month\'s payroll.',
+    instruction: "I will run a pre-payroll check across Talenta — confirming attendance is complete, listing any pending data changes or approvals, and flagging anything that would block this month's payroll run.",
+    workflow: ["Confirm attendance and timesheets are finalised.", "List pending data changes and approvals.", "Cross-check contract and salary updates.", "Flag blockers before payroll is run."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Contracts expiring soon', module: 'HR', desc: 'Fixed-term contracts and probation periods ending in the next 60 days.',
-    prompt: 'Find employees whose contracts or probation periods end within the next 60 days. Recommend renewal, conversion or offboarding for each.' },
+    prompt: 'Find employees whose contracts or probation periods end within the next 60 days. Recommend renewal, conversion or offboarding for each.',
+    instruction: "I will find every employee whose fixed-term contract or probation ends within the next 60 days and recommend renewal, conversion or offboarding for each, with the reasoning.",
+    workflow: ["Pull contract and probation end dates from Talenta.", "Filter to those ending within 60 days.", "Recommend renew / convert / offboard for each.", "Draft a summary for HR to action."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Resignation handover plan', module: 'HR', desc: 'Coordinate handovers for employees who are resigning.',
-    prompt: 'For every employee currently resigning, build a handover checklist covering responsibilities, access revocation and knowledge transfer.' },
+    prompt: 'For every employee currently resigning, build a handover checklist covering responsibilities, access revocation and knowledge transfer.',
+    instruction: "I will build a handover plan for every employee currently resigning — covering their responsibilities, access to revoke, and the knowledge that must be transferred before they leave.",
+    workflow: ["List employees currently resigning.", "Map each person's responsibilities and systems.", "Build a handover + access-revocation checklist.", "Assign owners and due dates."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── Sales / CRM (Qontak) ──
   { title: 'Sales pipeline review', module: 'CRM', desc: 'Surface stalled deals and the highest-value opportunities to prioritise.',
-    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.', usedBy: ['EMP-0006','EMP-0013'] },
+    prompt: 'Review the sales pipeline and top customers. Surface the open deals worth prioritising, flag stalled ones, and suggest the next best action for each.',
+    instruction: "I will review the open pipeline in Qontak, rank deals by stage and value, flag the ones that have stalled, and recommend the next best action for each priority deal.",
+    workflow: ["Pull the open pipeline and top accounts.", "Rank deals by stage and value.", "Flag deals with no recent activity.", "Recommend the next best action for each."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0006','EMP-0013'] },
   { title: 'Draft follow-ups for top prospects', module: 'CRM', desc: 'Prepare outreach for the highest-value prospects with no recent activity.',
-    prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.' },
+    prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.',
+    instruction: "I will identify the highest-value prospects that have gone quiet and draft a short, personalised follow-up message for each, ready for you to send.",
+    workflow: ["Find high-value prospects with no recent activity.", "Review each account's context and last touch.", "Draft a personalised follow-up per prospect.", "Prioritise who to contact first."],
+    outputs: ['Briefing summary', 'Email draft'] },
   { title: 'Sales orders needing fulfilment', module: 'Sales', desc: 'Open sales orders ready to pick, pack and ship.',
-    prompt: 'List open sales orders that are ready to fulfil, cross-check stock availability in the warehouse, and flag any that are blocked.' },
+    prompt: 'List open sales orders that are ready to fulfil, cross-check stock availability in the warehouse, and flag any that are blocked.',
+    instruction: "I will list the open sales orders ready to fulfil, cross-check each against warehouse stock, and flag any that are blocked so nothing slips.",
+    workflow: ["Pull open sales orders.", "Cross-check stock availability per order.", "Flag orders blocked on stock.", "Prioritise the ready-to-ship queue."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── WMS / Warehouse ──
   { title: 'Reorder low-stock SKUs', module: 'WMS', desc: 'Compare stock against reorder points and propose a purchase plan.',
-    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.', usedBy: ['EMP-0003','EMP-0010','EMP-0016','EMP-0009'] },
+    prompt: 'Check warehouse stock against reorder points. List SKUs that are low or out of stock and propose a reorder plan before they block open sales orders.',
+    instruction: "I will compare warehouse on-hand stock against reorder points, list every SKU that is low or out of stock, and propose a sized reorder plan before it blocks any open orders.",
+    workflow: ["Read on-hand stock across warehouses.", "Compare against reorder points.", "Size the reorder for each low SKU.", "Rank by urgency and lead time."],
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'], usedBy: ['EMP-0003','EMP-0010','EMP-0016','EMP-0009'] },
   { title: 'Plan today\'s outbound fulfilment', module: 'WMS', desc: 'Prioritise picking, packing and shipping for open outbound orders.',
-    prompt: 'Plan today\'s outbound fulfilment. Prioritise picking, packing and shipping tasks for open outbound orders and flag any at risk of missing their delivery date.' },
+    prompt: 'Plan today\'s outbound fulfilment. Prioritise picking, packing and shipping tasks for open outbound orders and flag any at risk of missing their delivery date.',
+    instruction: "I will plan today's outbound fulfilment — prioritising picking, packing and shipping for the open orders and flagging any at risk of missing their delivery date.",
+    workflow: ["Pull open outbound orders.", "Prioritise picking, packing and shipping.", "Flag orders at risk of a late delivery.", "Produce today's fulfilment plan."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'Schedule cycle counts', module: 'WMS', desc: 'Recommend which storage locations to count this week.',
-    prompt: 'Recommend a cycle-count plan for this week based on stock value and last-counted dates, and assign counters per storage zone.' },
+    prompt: 'Recommend a cycle-count plan for this week based on stock value and last-counted dates, and assign counters per storage zone.',
+    instruction: "I will recommend this week's cycle-count plan based on stock value and last-counted dates, and assign counters per storage zone.",
+    workflow: ["Review stock value and last-counted dates.", "Select the locations due for a count.", "Assign counters per zone.", "Produce the weekly count schedule."],
+    outputs: OUT_BRIEF_ACTIONS },
 
   // ── Production ──
   { title: 'Work orders at risk', module: 'Production', desc: 'Open work orders likely to miss their due date.',
-    prompt: 'Review open production work orders. Flag any at risk of missing their due date and identify the material or capacity constraint causing it.' },
+    prompt: 'Review open production work orders. Flag any at risk of missing their due date and identify the material or capacity constraint causing it.',
+    instruction: "I will review open production work orders, flag the ones at risk of missing their due date, and pinpoint the material or capacity constraint behind each.",
+    workflow: ["Pull open work orders and due dates.", "Assess progress vs plan.", "Flag at-risk orders and the constraint.", "Recommend how to recover each."],
+    outputs: OUT_BRIEF_ACTIONS },
   { title: 'BOM vs stock check', module: 'Production', desc: 'Verify component availability for open work orders.',
-    prompt: 'For each open work order, check the bill of materials against current component stock and list shortages that must be purchased or produced.' },
+    prompt: 'For each open work order, check the bill of materials against current component stock and list shortages that must be purchased or produced.',
+    instruction: "I will check each open work order's bill of materials against current component stock and list every shortage that must be purchased or produced first.",
+    workflow: ["List open work orders and their BOMs.", "Compare components against on-hand stock.", "List shortages per work order.", "Recommend purchase or produce for each."],
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'] },
 
   // ── Finance (Jurnal) ──
   { title: 'Chase overdue receivables', module: 'Finance', desc: 'Find overdue invoices and draft reminders for the biggest ones.',
-    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.', usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
+    prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.',
+    instruction: "I will review overdue receivables in Jurnal, rank the largest overdue invoices by value and risk, draft payment reminders, and tell you exactly who to chase first.",
+    workflow: ["Pull overdue invoices and collection notes.", "Rank by value, risk and days overdue.", "Draft a reminder for the top accounts.", "Produce a prioritised chase list."],
+    outputs: ['Briefing summary', 'Action items', 'Email draft', 'Spreadsheet'], usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
   { title: 'Bank reconciliation review', module: 'Finance', desc: 'Match statement lines and surface unreconciled items.',
-    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.', usedBy: ['EMP-0005','EMP-0006'] },
+    prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.',
+    instruction: "I will review bank reconciliation across your cash accounts, surface the unmatched statement lines, and suggest the likely matching transaction for each.",
+    workflow: ["Pull statement lines and ledger entries.", "Match lines to transactions.", "Surface the unmatched items.", "Suggest the likely match for each."],
+    outputs: OUT_BRIEF_ACTIONS, usedBy: ['EMP-0005','EMP-0006'] },
   { title: 'Month-end close checklist', module: 'Finance', desc: 'Everything outstanding before books can be closed this month.',
-    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.', usedBy: ['EMP-0005'] },
+    prompt: 'Build a month-end close checklist. List unreconciled accounts, unpaid bills, overdue invoices and any journals needing review before closing the books.',
+    instruction: "I will build the month-end close checklist — listing unreconciled accounts, unpaid bills, overdue invoices and any journals needing review — so you know exactly what stands between you and a clean close.",
+    workflow: ["Scan receivables, payables and bank reconciliation.", "List everything outstanding before close.", "Assign an owner and due date to each item.", "Compile the close checklist."],
+    outputs: ['Briefing summary', 'Action items', 'PDF report'], usedBy: ['EMP-0005'] },
 ]
 
 // ── Grounded run-result builders ──────────────────────────────────────────────
@@ -629,20 +700,66 @@ const TASKS_SEED: CoworkTask[] = [
     schedule: { cadence: 'Daily', time: '07:00', nextRun: 'Tomorrow · 07:00', enabled: true } },
 ]
 
-// Only external connections are listed (Mekari products are built-in). The three
-// Google entries are REAL OAuth connections; the rest are demo-only.
+// The connections marketplace. Google entries (Gmail, Calendar, Contacts, Drive)
+// are REAL OAuth connections; the rest are demo-only. An app can belong to several
+// categories (e.g. Notion is Featured + Productivity) — one record, rendered in
+// each of its categories, sharing a single connected state.
 const CONNECTION_SEED: CoworkConnection[] = [
-  { id: 'gcal',     name: 'Google Calendar', category: 'Productivity', connected: false, provider: 'google',
-    detail: 'Meetings, deadlines & reminders', scope: 'https://www.googleapis.com/auth/calendar.readonly' },
-  { id: 'gmail',    name: 'Gmail', category: 'Email', connected: false, provider: 'google',
-    detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly' },
-  { id: 'gcontacts', name: 'Google Contacts', category: 'People', connected: false, provider: 'google',
-    detail: 'Match customers & stakeholders', scope: 'https://www.googleapis.com/auth/contacts.readonly' },
-  { id: 'sap',      name: 'SAP',    category: 'ERP', connected: false, provider: 'fake', detail: 'Finance & supply chain' },
-  { id: 'xero',     name: 'Xero',   category: 'Accounting', connected: false, provider: 'fake', detail: 'Ledgers & invoices' },
-  { id: 'notion',   name: 'Notion', category: 'Docs & wiki', connected: false, provider: 'fake', detail: 'Docs, notes & databases' },
-  { id: 'hubspot',  name: 'HubSpot', category: 'CRM', connected: false, provider: 'fake', detail: 'Marketing & sales pipeline' },
-  { id: 'slack',    name: 'Slack',  category: 'Messaging', connected: false, provider: 'fake', detail: 'Channels & DMs' },
+  // ── Mekari products (native, connected by default) ──
+  { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
+  { id: 'mekari-jurnal', name: 'Mekari Jurnal', categories: ['Featured', 'Finance'], connected: true, provider: 'fake', detail: 'Accounting & invoicing', color: '#0A6E4E' },
+  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E' },
+  // ── Google (real OAuth) ──
+  { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
+    detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
+  { id: 'gdrive', name: 'Google Drive', categories: ['Featured', 'Productivity'], connected: false, provider: 'google',
+    detail: 'Files, docs & sheets', scope: 'https://www.googleapis.com/auth/drive.readonly', color: '#1FA463' },
+  { id: 'gcal', name: 'Google Calendar', categories: ['Featured', 'Productivity'], connected: false, provider: 'google',
+    detail: 'Meetings, deadlines & reminders', scope: 'https://www.googleapis.com/auth/calendar.readonly', color: '#4285F4' },
+  { id: 'gcontacts', name: 'Google Contacts', categories: ['Productivity'], connected: false, provider: 'google',
+    detail: 'Match customers & stakeholders', scope: 'https://www.googleapis.com/auth/contacts.readonly', color: '#4285F4' },
+  // ── Featured / Communication ──
+  { id: 'notion', name: 'Notion', categories: ['Featured', 'Productivity'], connected: false, provider: 'fake', detail: 'Docs, notes & databases', color: '#111111' },
+  { id: 'slack', name: 'Slack', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Channels & DMs', color: '#611F69' },
+  // ── Productivity ──
+  { id: 'rovo', name: 'Atlassian Rovo', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'AI across Jira & Confluence', color: '#1868DB' },
+  { id: 'outlook-cal', name: 'Outlook Calendar', categories: ['Productivity', 'Communication'], connected: false, provider: 'fake', detail: 'Meetings & availability', color: '#0A64BC' },
+  { id: 'fireflies', name: 'Fireflies', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Meeting notes & transcripts', color: '#1F6FEB' },
+  { id: 'airtable', name: 'Airtable', categories: ['Productivity', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Databases & spreadsheets', color: '#FCB400' },
+  { id: 'asana', name: 'Asana', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Projects & tasks', color: '#F06A6A' },
+  { id: 'clickup', name: 'ClickUp', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Tasks, docs & goals', color: '#7B68EE' },
+  { id: 'monday', name: 'Monday.com', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Work management', color: '#FF3D57' },
+  { id: 'otter', name: 'Otter.ai', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Voice notes & transcripts', color: '#00A0DC' },
+  { id: 'mekari-sheets', name: 'Mekari Sheets', categories: ['Productivity', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Spreadsheets & reports', color: '#0A6E4E' },
+  { id: 'mekari-docs', name: 'Mekari Docs', categories: ['Productivity'], connected: false, provider: 'fake', detail: 'Documents & e-signing', color: '#0A6E4E' },
+  // ── Business & operations ──
+  { id: 'salesforce', name: 'Salesforce', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'CRM & sales cloud', color: '#00A1E0' },
+  { id: 'hubspot', name: 'HubSpot', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Marketing & sales pipeline', color: '#FF7A59' },
+  { id: 'sap', name: 'SAP', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'ERP & supply chain', color: '#0FAAFF' },
+  { id: 'shopify', name: 'Shopify', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Orders & storefront', color: '#5E8E3E' },
+  { id: 'zendesk', name: 'Zendesk', categories: ['Business & operations', 'Communication'], connected: false, provider: 'fake', detail: 'Support tickets', color: '#03363D' },
+  { id: 'jira', name: 'Jira', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'Issues & sprints', color: '#1868DB' },
+  { id: 'servicenow', name: 'ServiceNow', categories: ['Business & operations'], connected: false, provider: 'fake', detail: 'IT & service ops', color: '#62D84E' },
+  // ── Data & analytics ──
+  { id: 'ga4', name: 'Google Analytics', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Traffic & conversions', color: '#E8710A' },
+  { id: 'looker', name: 'Looker Studio', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Dashboards & reports', color: '#4285F4' },
+  { id: 'tableau', name: 'Tableau', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Visual analytics', color: '#1F457E' },
+  { id: 'powerbi', name: 'Power BI', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Business intelligence', color: '#E97627' },
+  { id: 'bigquery', name: 'BigQuery', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Data warehouse', color: '#669DF6' },
+  { id: 'snowflake', name: 'Snowflake', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Cloud data platform', color: '#29B5E8' },
+  { id: 'metabase', name: 'Metabase', categories: ['Data & analytics'], connected: false, provider: 'fake', detail: 'Self-serve analytics', color: '#509EE3' },
+  // ── Communication ──
+  { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
+  { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
+  { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
+  { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
+  // ── Finance ──
+  { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
+  { id: 'quickbooks', name: 'QuickBooks', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Accounting & books', color: '#2CA01C' },
+  { id: 'stripe', name: 'Stripe', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Payments & payouts', color: '#635BFF' },
+  { id: 'wise', name: 'Wise', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Cross-border payments', color: '#9FE870' },
+  { id: 'paypal', name: 'PayPal', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Online payments', color: '#003087' },
+  { id: 'brex', name: 'Brex', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Cards & spend', color: '#111111' },
 ]
 
 function load<T>(key: string, seed: T[]): T[] {
@@ -650,10 +767,10 @@ function load<T>(key: string, seed: T[]): T[] {
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v1', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v1', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
 
 let taskSeq = 1043
 export function nextTaskId(): string { return `CW-${taskSeq++}` }
@@ -663,6 +780,37 @@ export function addTask(t: Omit<CoworkTask, 'id'> & { id?: string }): CoworkTask
   coworkTasks.unshift(task)
   persistTasks()
   return task
+}
+
+/** True once a task has actually been run (has a run or a cached plan). A draft
+ *  created by opening a task detail is false until "Run task" is clicked — which
+ *  is what keeps drafts out of the Tasks table. */
+export function taskHasRun(t: CoworkTask): boolean {
+  // Drafts (opened but not run) are status 'scheduled'/'draft' with no runs; anything
+  // that has a run, a cached plan, or a run-bearing status has been executed.
+  return (t.runs?.length ?? 0) > 0 || !!t.planJson || (t.status !== 'scheduled' && t.status !== 'draft')
+}
+/** Get (or create) the DRAFT task for a predefined catalog item. The draft carries
+ *  the hardcoded instruction/workflow/outputs so the detail never regenerates; it's
+ *  persisted (stable id) but filtered out of the Tasks table until it's run. */
+export function getOrCreateDraftTask(item: CoworkCatalogItem): CoworkTask {
+  const id = 'draft-' + item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const existing = coworkTasks.find((t) => t.id === id)
+  if (existing) return existing
+  return addTask({
+    id,
+    title: item.title,
+    prompt: item.prompt,
+    module: item.module,
+    modules: [item.module],
+    status: 'scheduled',
+    createdAt: new Date().toISOString(),
+    outputs: item.outputs,
+    sources: [item.module],
+    model: 'gemini-flash-latest',
+    instruction: item.instruction,
+    workflow: item.workflow,
+  })
 }
 export function updateTask(id: string, patch: Partial<CoworkTask>): void {
   const t = coworkTasks.find((x) => x.id === id)
@@ -716,4 +864,18 @@ export function unscheduleTask(id: string): void {
 export function setConnection(id: string, connected: boolean): void {
   const c = coworkConnections.find((x) => x.id === id)
   if (c) { c.connected = connected; persistConnections() }
+}
+
+let connSeq = 1
+/** Add a connection (e.g. a custom MCP server the user connected). */
+export function addCoworkConnection(c: Omit<CoworkConnection, 'id'> & { id?: string }): CoworkConnection {
+  const conn: CoworkConnection = { id: c.id ?? `custom-${connSeq++}`, ...c }
+  coworkConnections.unshift(conn)
+  persistConnections()
+  return conn
+}
+/** Remove a connection entirely (custom MCP servers can be uninstalled). */
+export function removeCoworkConnection(id: string): void {
+  const i = coworkConnections.findIndex((x) => x.id === id)
+  if (i >= 0) { coworkConnections.splice(i, 1); persistConnections() }
 }

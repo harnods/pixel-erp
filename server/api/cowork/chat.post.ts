@@ -21,8 +21,8 @@ export default defineEventHandler(async (event) => {
 
   const system = [
     'You are Airene, the Mekari AI assistant inside an ERP suite (Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, Production).',
-    'Answer concisely and practically, grounded in the context provided. If the user asks for a draft (email, message, action list), produce it directly.',
-    body?.context ? `\nCONTEXT — the result of a Cowork task the user just ran:\n${body.context}` : '',
+    'Answer concisely and practically, grounded ONLY in the context provided (a snapshot of the real ERP data, or the result of a task the user ran). If the user asks for a draft (email, message, action list), produce it directly. If something is outside the provided data, say so briefly.',
+    body?.context ? `\nCONTEXT (real ERP data / task result):\n${body.context}` : '',
   ].join('\n')
 
   if (!apiKey) {

@@ -32,8 +32,10 @@ import {
 } from '~/data/stockAdjustments'
 import {
   wmsStockAdjustments, wmsAdjustmentWarehouseOptions, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount, approveWmsAdjustment,
+  canCloseWmsCount, closeWmsCount,
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
+import { useScenario } from '~/composables/useScenario'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +58,18 @@ function canCancel(a: StockAdjustment): boolean { return isWmsPage.value ? canCa
 function activeCancel(ids: string[]): void {
   const fn = isWmsPage.value ? cancelWmsAdjustment : cancelAdjustment
   for (const id of ids) fn(id)
+}
+
+// ─── Role — closing a cycle count task is a warehouse manager's call ─────────
+// The WMS Ops / WMS Ops 2 scenarios preview a warehouse operator, who can count
+// but never close someone's task; ERP and WMS Standalone preview the manager.
+const { activeScenario } = useScenario()
+const isWarehouseOperator = computed(() => activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2')
+const isCycleCounts = computed(() => currentPageKey.value === 'Cycle counts')
+// Cycle counts swap the row/bulk "Cancel" action for "Close task" — same
+// eligibility (not yet submitted for approval), manager-only.
+function canCloseRow(row: StockAdjustment): boolean {
+  return isCycleCounts.value && !isWarehouseOperator.value && canCloseWmsCount(row)
 }
 
 // ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
@@ -146,14 +160,15 @@ const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const statusFilter = ref<string[]>([])
 const assigneeFilter = ref<string[]>([])
-// 'counted' (Awaiting approval) deliberately excluded — the Count task tab's
-// own base list always filters status !== 'counted' out (see baseRows below),
-// and the Awaiting approval tab hides this filter entirely (every row there
-// is already Counted) — so a "Counted" checkbox here could never match
-// anything, on either tab.
+// 'counted' is a real, filterable state on the Count task tab — a counted task
+// stays listed there (the operator who counted it can't see the Awaiting
+// approval tab, so hiding it would make the task vanish for them) while also
+// appearing under Awaiting approval for the manager to review. The Awaiting
+// approval tab hides this filter entirely — every row there is already Counted.
 const STATUS_OPTIONS = [
   { value: 'not_started', label: t('Open') },
   { value: 'in_progress', label: t('In progress') },
+  { value: 'counted',     label: t('Counted')     },
   { value: 'completed',   label: t('Completed')   },
   { value: 'closed',      label: t('Closed')      },
 ]
@@ -220,7 +235,11 @@ const baseRows = computed<StockAdjustment[]>(() => {
   let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else if (isCycleAwaiting.value) list = list.filter(a => a.status === 'counted')
-  else if (currentPageKey.value === 'Cycle counts') list = list.filter(a => a.status !== 'counted')
+  // Cycle counts' "Count task" tab lists every task at every stage, Counted
+  // included: a counted task also shows under Awaiting approval for the manager,
+  // but the operator who counted it only has the Count task tab — dropping it
+  // there would make the task disappear the moment they finished counting.
+  else if (currentPageKey.value === 'Cycle counts') { /* no status filter */ }
   else list = list.filter(a => a.status !== 'draft')
   if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
@@ -323,6 +342,37 @@ function confirmCancel() {
   _bulkDeselect?.()
   cancelOpen.value = false
   toast.notify({ variant: 'success', title: `${n} ${t('adjustment')}${n > 1 ? 's' : ''} ${t('canceled')}`, maxWidth: 'max-content' })
+}
+
+// ─── Close task (Cycle counts, manager only) → confirmation modal ─────────────
+// Distinct from Cancel: any quantities counted so far are discarded and the task
+// becomes a terminal, read-only "Closed" record — same action as the one on the
+// count task's detail page.
+function closableSelection(sel: Set<number>): StockAdjustment[] {
+  return selectedAdjustmentsOf(sel).filter(canCloseRow)
+}
+function bulkClosable(sel: Set<number>): boolean {
+  return closableSelection(sel).length > 0
+}
+const closeOpen = ref(false)
+const closeIds = ref<string[]>([])
+let _closeDeselect: (() => void) | null = null
+function askCloseRow(row: StockAdjustment) {
+  closeIds.value = [row.id]
+  _closeDeselect = null
+  closeOpen.value = true
+}
+function askBulkClose(sel: Set<number>, deselectAll: () => void) {
+  closeIds.value = closableSelection(sel).map(a => a.id)
+  _closeDeselect = deselectAll
+  closeOpen.value = true
+}
+function confirmClose() {
+  const n = closeIds.value.length
+  for (const id of closeIds.value) closeWmsCount(id)
+  _closeDeselect?.()
+  closeOpen.value = false
+  toast.notify({ variant: 'success', title: `${n} ${n > 1 ? t('tasks') : t('task')} ${t('closed')}`, maxWidth: 'max-content' })
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -471,7 +521,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Bulk bar → approve (manager, awaiting tab) + cancel ── -->
+    <!-- ── Bulk bar → approve (manager, awaiting tab) + cancel / close task ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         v-if="isAnyAwaiting && viewAs === 'manager'"
@@ -481,7 +531,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('Approve') }}
       </button>
       <button
-        v-if="bulkCancelable(selectedRows as Set<number>)"
+        v-if="isCycleCounts ? bulkClosable(selectedRows as Set<number>) : false"
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        :class="css({ color: 'var(--mp-text-critical)' })"
+        @click="askBulkClose(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Close task') }}
+      </button>
+      <button
+        v-if="!isCycleCounts && bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical)' })"
         @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
@@ -571,7 +629,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               >{{ t('Continue counting') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem
-                v-if="canCancel(row as unknown as StockAdjustment)"
+                v-if="canCloseRow(row as unknown as StockAdjustment)"
+                :class="css({ color: 'var(--mp-text-critical)' })"
+                @click="askCloseRow(row as unknown as StockAdjustment)"
+              >{{ t('Close task') }}</MpPopoverListItem>
+              <MpPopoverListItem
+                v-if="!isCycleCounts && canCancel(row as unknown as StockAdjustment)"
                 :class="css({ color: 'var(--mp-text-critical)' })"
                 @click="askCancelRow(row as unknown as StockAdjustment)"
               >{{ t('Cancel') }}</MpPopoverListItem>
@@ -614,10 +677,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="canCancel(row as unknown as StockAdjustment)"
+              v-if="canCloseRow(row as unknown as StockAdjustment)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="askCloseRow(row as unknown as StockAdjustment)"
+            >{{ t('Close task') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="!isCycleCounts && canCancel(row as unknown as StockAdjustment)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="askCancelRow(row as unknown as StockAdjustment)"
-            >Cancel</MpPopoverListItem>
+            >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -677,6 +745,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep') }} {{ cancelIds.length > 1 ? t('adjustments') : t('adjustment') }}</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel') }} {{ cancelIds.length > 1 ? t('adjustments') : t('adjustment') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Close task confirmation (Cycle counts) ── -->
+  <MpModal
+    id="sa-close" :is-open="closeOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>{{ closeIds.length > 1 ? `${t('Close')} ${closeIds.length} ${t('count tasks')}?` : t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <p>{{ t("Counted data will be canceled and can't be resumed. This task will become read-only with a Closed status.") }}</p>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeOpen = false">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmClose">{{ t('Close') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

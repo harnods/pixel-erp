@@ -31,10 +31,13 @@ export function recommendationReasons(cfg: WarehouseConfig, warehouseId: string,
   return reasons
 }
 
-/** Count of SKUs currently flagged for a cycle count recommendation — each warehouse's own config decides whether it's in scope at all. */
-export function recommendationCount(): number {
+/** Count of SKUs currently flagged for a cycle count recommendation — each warehouse's own config decides whether it's in scope at all.
+ *  Pass a warehouseId to count just that one: the Recommendations tab shows a
+ *  single warehouse at a time, and its badge has to match what the table lists. */
+export function recommendationCount(warehouseId?: string): number {
   let count = 0
   for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
+    if (warehouseId && wh.id !== warehouseId) continue
     const cfg = getWarehouseConfig(wh.id)
     if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
