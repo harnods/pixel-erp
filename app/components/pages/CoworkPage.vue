@@ -46,14 +46,15 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 // ── Tasks table state — status filter (left) + search (right) + pagination ────
 const taskStatusOptions = [
+  { value: 'draft',     label: 'Draft' },
   { value: 'running',   label: 'Running' },
   { value: 'completed', label: 'Completed' },
   { value: 'failed',    label: 'Failed' },
   { value: 'scheduled', label: 'Scheduled' },
 ]
-// The Tasks table only shows tasks that have actually been run — drafts created
-// by opening a task detail (before "Run task") are excluded.
-const taskSource = computed(() => coworkTasks.filter(taskHasRun))
+// The Tasks table shows tasks that have run OR that were edited & saved (status
+// 'draft' = saved but not yet run). Unsaved preview-drafts stay excluded.
+const taskSource = computed(() => coworkTasks.filter((t) => taskHasRun(t) || t.saved))
 const {
   search: taskSearch, statusFilter: taskStatus, currentPage: taskPage, perPage: taskPerPage,
   paginated: taskRows, total: taskTotal, setPage: taskSetPage, setPerPage: taskSetPerPage,
@@ -179,10 +180,8 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule, run =
   if (!p) return
   // A predefined card (module given) scopes to its own module; a free-form
   // composer prompt uses the sources the user toggled on.
-  const fromCatalog = !!module
-  const active = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name) as CoworkModule[]
   const primary = module ?? inferModule(p)
-  const modules = fromCatalog ? [primary] : (active.length ? active : [primary])
+  const modules = [primary]
   const task = addTask({
     title: title ?? (p.length > 52 ? p.slice(0, 50) + '…' : p),
     prompt: p,
@@ -191,10 +190,11 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule, run =
     status: run ? 'running' : 'scheduled',
     createdAt: new Date().toISOString(),
     outputs: OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name),
-    sources: modules,
+    sources: activeSourceNames.value.length ? activeSourceNames.value : [primary],
     model: model.value,
   })
   prompt.value = ''
+  attachedFiles.value = []
   // Running (when requested) happens on the task detail page, which owns the run
   // history + result; otherwise the detail opens in its pre-run state.
   router.push({ path: `/cowork-tasks/${task.id}`, query: run ? { run: '1' } : {} })
@@ -228,7 +228,7 @@ function startRun(task: CoworkTask) {
 
 async function fetchPlan(task: CoworkTask) {
   try {
-    const activeSources = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name)
+    const activeSources = activeSourceNames.value
     const activeOutputs = OUTPUTS.filter((o) => isOutputOn(o.id)).map((o) => o.name)
     const res = await $fetch<{ plan: Plan; source: 'gemini' | 'fallback' }>('/api/cowork/plan', {
       method: 'POST',
@@ -344,13 +344,19 @@ const MODELS = [
 const model = ref(MODELS[0].id)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? 'Gemini Flash')
 
-// ── Sources (which ERP domains Cowork may read) ──────────────────────────────
-const SOURCE_MODULES = ['Finance', 'HR', 'Sales', 'CRM', 'WMS', 'Production']
-const sources = computed(() => SOURCE_MODULES.map((name) => ({ id: name, name })))
+// ── Sources (which connected data Cowork may read) ───────────────────────────
+// Sources are the workspace's connectors (the Connections page). A task's module
+// badges are inferred from the prompt (inferModule) — sources only scope which
+// connected data the run may read, and default to everything currently connected.
+const sourceConnections = computed(() => coworkConnections.filter((c) => c.connected))
 const sourceOff = reactive<Record<string, boolean>>({})   // id → excluded
-function isSourceOn(id: string) { return !sourceOff[id] }
+function isSourceOn(id: string) {
+  if (id in sourceOff) return !sourceOff[id]
+  return !!coworkConnections.find((c) => c.id === id)?.connected   // default: connected → on
+}
 function toggleSource(id: string, on: boolean) { sourceOff[id] = !on }
-const activeSourceCount = computed(() => sources.value.filter((s) => isSourceOn(s.id)).length)
+const activeSourceCount = computed(() => sourceConnections.value.filter((s) => isSourceOn(s.id)).length)
+const activeSourceNames = computed(() => sourceConnections.value.filter((s) => isSourceOn(s.id)).map((s) => s.name))
 
 // ── Output (what Cowork should produce for the task) ─────────────────────────
 const OUTPUTS = [
@@ -379,6 +385,7 @@ function statusProps(s: CoworkTask['status']) {
   if (s === 'running') return { status: 'in progress', label: 'Running' }
   if (s === 'completed') return { status: 'completed', label: 'Completed' }
   if (s === 'failed') return { status: 'failed', label: 'Failed' }
+  if (s === 'draft') return { status: 'draft', label: 'Draft' }
   return { status: 'draft', label: 'Scheduled' }
 }
 
@@ -388,6 +395,13 @@ function statusProps(s: CoworkTask['status']) {
 const schedCadence = ref<CoworkCadence>('Weekly')
 const schedTime = ref('08:00')
 const schedOpen = ref(false)   // controlled schedule popover (so the real button can close it)
+const srcOpen = ref(false)     // controlled sources popover (so it closes when opening the connection modal / navigating away)
+const outOpen = ref(false)     // controlled output popover (mutually exclusive with sources/schedule)
+const advOpen = ref(false)     // controlled advanced-settings popover (mutually exclusive with the others)
+
+// Advanced settings — skip confirmations. The right agent is auto-routed from the
+// prompt (inferModule); there's no manual agent picker.
+const skipConfirm = ref(false)
 function fmtTime(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
   const ap = h! < 12 ? 'am' : 'pm'
@@ -405,11 +419,31 @@ const scheduleLabel = computed(() => {
   const s = matchedTask.value?.schedule
   return s ? `Every ${cadenceWord[s.cadence]} at ${fmtTime(s.time)}` : 'Schedule'
 })
+// The composer's popovers (Output / Sources / Schedule / Advanced) are mutually
+// exclusive — opening one closes the others so they never overlap.
+function closeComposerPopovers() { outOpen.value = false; srcOpen.value = false; schedOpen.value = false; advOpen.value = false }
+// The composer popovers are is-manual (so we can keep them mutually exclusive),
+// which disables Pixel's own outside-click close — handle it ourselves. A click
+// outside both the trigger buttons and the popover content (.cw-src, rendered in
+// a portal) closes whichever is open.
+function onComposerDocClick(e: MouseEvent) {
+  if (!outOpen.value && !srcOpen.value && !schedOpen.value && !advOpen.value) return
+  const t = e.target as HTMLElement | null
+  if (t?.closest('.cw-foot-btn') || t?.closest('.cw-src')) return
+  closeComposerPopovers()
+}
+onMounted(() => document.addEventListener('click', onComposerDocClick))
+onBeforeUnmount(() => document.removeEventListener('click', onComposerDocClick))
+function openSources() { const v = !srcOpen.value; closeComposerPopovers(); srcOpen.value = v }
+function openOutput() { const v = !outOpen.value; closeComposerPopovers(); outOpen.value = v }
+function openAdvanced() { const v = !advOpen.value; closeComposerPopovers(); advOpen.value = v }
 // Opening the popover prefills cadence/time from the existing schedule (if any).
 function openSchedulePopover() {
   const s = matchedTask.value?.schedule
   if (s) { schedCadence.value = s.cadence; schedTime.value = s.time }
-  schedOpen.value = !schedOpen.value
+  const v = !schedOpen.value
+  closeComposerPopovers()
+  schedOpen.value = v
 }
 function scheduleFromPrompt() {
   const t = prompt.value.trim()
@@ -426,9 +460,8 @@ function scheduleFromPrompt() {
     updateTask(existing.id, { schedule })
     toast.notify({ variant: 'success', title: 'Schedule updated' })
   } else {
-    const active = sources.value.filter((s) => isSourceOn(s.id)).map((s) => s.name) as CoworkModule[]
     const primary = inferModule(t)
-    addTask({ title, prompt: t, module: primary, modules: active.length ? active : [primary], status: 'scheduled', createdAt: new Date().toISOString(), schedule })
+    addTask({ title, prompt: t, module: primary, modules: [primary], sources: activeSourceNames.value.length ? activeSourceNames.value : [primary], status: 'scheduled', createdAt: new Date().toISOString(), schedule })
     toast.notify({ variant: 'success', title: 'Task scheduled' })
   }
 }
@@ -476,6 +509,36 @@ function connectFake(c: CoworkConnection) {
   toast.notify({ variant: 'success', title: `${c.name} connected` })
 }
 function addConnection() { openMcpModal() }
+
+// Add from local files — attach documents from the user's machine as a source.
+// Attached files show as chips inside the composer (above the prompt textarea).
+interface AttachedFile { name: string; ext: string; sizeLabel: string; icon: string }
+const attachedFiles = ref<AttachedFile[]>([])
+const localFileInput = ref<HTMLInputElement | null>(null)
+function addLocalFiles() { localFileInput.value?.click() }
+function fileSizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+// File-type → Pixel document icon.
+function fileIcon(ext: string): string {
+  const e = ext.toLowerCase()
+  if (e === 'pdf') return 'pdf-document'
+  if (['doc', 'docx'].includes(e)) return 'word-document'
+  if (['xls', 'xlsx', 'csv'].includes(e)) return 'excel-document'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].includes(e)) return 'image-document'
+  return 'document'
+}
+function onLocalFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  for (const f of Array.from(input.files ?? [])) {
+    const rawExt = f.name.split('.').pop() || 'file'
+    attachedFiles.value.push({ name: f.name, ext: rawExt.toUpperCase(), sizeLabel: fileSizeLabel(f.size), icon: fileIcon(rawExt) })
+  }
+  input.value = ''
+}
+function removeAttachedFile(i: number) { attachedFiles.value.splice(i, 1) }
 
 // ── Custom MCP server modal ───────────────────────────────────────────────────
 const mcpOpen = ref(false)
@@ -761,20 +824,34 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
             <!-- Composer -->
             <div class="cw-composer2">
-              <textarea
-                ref="promptEl"
-                v-model="prompt"
-                class="cw-composer2__input"
-                rows="3"
-                placeholder="Assign a task to Cowork — it works across HR, Sales, CRM, WMS, finance & production…"
-                @keydown.enter.exact.prevent="assign(prompt)"
-              />
+              <!-- White field holds the attached-file chips AND the prompt textarea -->
+              <div class="cw-composer2__field">
+                <!-- Attached local files (chips) -->
+                <div v-if="attachedFiles.length" class="cw-files">
+                  <div v-for="(f, i) in attachedFiles" :key="i" class="cw-file">
+                    <MpIcon :name="f.icon" size="lg" class="cw-file__icon" />
+                    <span class="cw-file__meta">
+                      <span class="cw-file__name">{{ f.name }}</span>
+                      <span class="cw-file__sub">{{ f.ext }} · {{ f.sizeLabel }}</span>
+                    </span>
+                    <button type="button" class="cw-file__x" aria-label="Remove file" @click="removeAttachedFile(i)"><MpIcon name="close" size="sm" /></button>
+                  </div>
+                </div>
+                <textarea
+                  ref="promptEl"
+                  v-model="prompt"
+                  class="cw-composer2__input"
+                  rows="3"
+                  placeholder="Assign a task to Cowork — it works across HR, Sales, CRM, WMS, finance & production…"
+                  @keydown.enter.exact.prevent="assign(prompt)"
+                />
+              </div>
               <div class="cw-composer2__foot">
                 <div class="cw-composer2__left">
                   <!-- Output popover: what Cowork should produce for this task -->
-                  <MpPopover id="cw-output" placement="bottom-start">
+                  <MpPopover id="cw-output" is-manual :is-open="outOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="outOpen = false">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount"> ({{ activeOutputCount }})</span></button>
+                      <button class="cw-foot-btn" type="button" @click="openOutput"><MpIcon name="doc" size="sm" /> Output<span v-if="activeOutputCount"> ({{ activeOutputCount }})</span></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '260px' })">
                       <div class="cw-src">
@@ -790,18 +867,25 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                   </MpPopover>
 
                   <!-- Sources popover: connected sources with on/off toggles -->
-                  <MpPopover id="cw-source" placement="bottom-start">
+                  <MpPopover id="cw-source" is-manual :is-open="srcOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="srcOpen = false">
                     <MpPopoverTrigger>
-                      <button class="cw-foot-btn" type="button"><MpIcon name="add" size="sm" /> Sources<span v-if="activeSourceCount"> ({{ activeSourceCount }})</span></button>
+                      <button class="cw-foot-btn" type="button" @click="openSources"><MpIcon name="add" size="sm" /> Sources<span v-if="activeSourceCount"> ({{ activeSourceCount }})</span></button>
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '260px' })">
+                    <MpPopoverContent :class="css({ minWidth: '280px' })">
                       <div class="cw-src">
                         <p class="cw-src__head">Sources</p>
                         <p class="cw-src__hint">Choose which connected data Cowork may use.</p>
-                        <div v-for="s in sources" :key="s.id" class="cw-src__row">
-                          <span class="cw-src__name">{{ s.name }}</span>
-                          <MpToggle :is-checked="isSourceOn(s.id)" :aria-label="`Toggle ${s.name}`" @update:is-checked="(v: boolean) => toggleSource(s.id, v)" />
+                        <div class="cw-src__list">
+                          <div v-for="s in sourceConnections" :key="s.id" class="cw-src__row">
+                            <span class="cw-src__name">{{ s.name }}</span>
+                            <MpToggle :is-checked="isSourceOn(s.id)" :aria-label="`Toggle ${s.name}`" @update:is-checked="(v: boolean) => toggleSource(s.id, v)" />
+                          </div>
                         </div>
+                        <div class="cw-src__divider" />
+                        <button type="button" class="cw-src__action" @click="srcOpen = false; addLocalFiles()"><MpIcon name="attachment" size="sm" /> Add from local files</button>
+                        <div class="cw-src__divider" />
+                        <button type="button" class="cw-src__action" @click="srcOpen = false; addConnection()"><MpIcon name="add" size="sm" /> Add connection</button>
+                        <button type="button" class="cw-src__action" @click="srcOpen = false; router.push('/cowork-connections')"><MpIcon name="settings" size="sm" /> Manage connections</button>
                       </div>
                     </MpPopoverContent>
                   </MpPopover>
@@ -826,6 +910,25 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                         <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="scheduleFromPrompt(); schedOpen = false">
                           {{ matchedTask ? 'Update schedule' : `Set schedule ${schedCadence.toLowerCase()} at ${schedTime}` }}
                         </MpButton>
+                      </div>
+                    </MpPopoverContent>
+                  </MpPopover>
+
+                  <!-- Advanced settings popover: skip confirmations + pick an agent -->
+                  <MpPopover id="cw-advanced" is-manual :is-open="advOpen" placement="bottom-start" use-portal :is-keep-alive="false" @close="advOpen = false">
+                    <MpPopoverTrigger>
+                      <button class="cw-foot-btn" type="button" @click="openAdvanced"><MpIcon name="settings" size="sm" /> Advanced settings</button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '300px' })">
+                      <div class="cw-src">
+                        <p class="cw-src__head">Advanced settings</p>
+                        <div class="cw-adv-row">
+                          <div class="cw-adv-row__text">
+                            <span class="cw-src__name">Skip confirmations</span>
+                            <span class="cw-adv-row__caption">No approval needed before Cowork runs actions on your behalf.</span>
+                          </div>
+                          <MpToggle :is-checked="skipConfirm" aria-label="Toggle skip confirmations" @update:is-checked="(v: boolean) => skipConfirm = v" />
+                        </div>
                       </div>
                     </MpPopoverContent>
                   </MpPopover>
@@ -1142,6 +1245,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         </section>
     </template>
 
+    <!-- Hidden picker for "Add from local files" (Sources popover) -->
+    <input ref="localFileInput" type="file" multiple class="cw-hidden-file" @change="onLocalFiles" />
+
     <!-- ── Custom MCP server modal ── -->
     <MpModal id="cw-mcp-modal" :is-open="mcpOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeMcpModal">
       <MpModalContent>
@@ -1175,7 +1281,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <!-- Advanced settings accordion -->
           <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
             <span>Advanced settings</span>
-            <MpIcon :name="mcpAdvanced ? 'caret-down' : 'arrows-right'" size="sm" />
+            <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
           </button>
           <div v-if="mcpAdvanced" class="mcp-adv">
             <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
@@ -1235,12 +1341,25 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 /* Gray-subtle tray (20px), holding a fully-rounded white input card on top and
    the footer row below — so the input has rounded corners top AND bottom. */
 .cw-composer2 { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-1, 4px); }
-.cw-composer2__input { display: block; width: 100%; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); min-height: 76px; }
+/* The white field wraps the chips + textarea so files sit INSIDE the input box. */
+.cw-composer2__field { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 20px; background: var(--mp-background-neutral, #fff); padding: var(--mp-spacing-2, 8px); }
+.cw-composer2__field:focus-within { border-color: var(--mp-border-bold, #8c9596); }
+.cw-composer2__input { display: block; width: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); padding: var(--mp-spacing-2, 8px); background: transparent; min-height: 60px; }
 .cw-composer2__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
-.cw-composer2__input:focus { border-color: var(--mp-border-bold, #8c9596); }
 /* Symmetric gap around the button row: the 4px tray padding below is topped up by
    the footer's 4px bottom so buttons→edge equals buttons→input (8px). */
 .cw-composer2__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-1); background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* Attached local-file chips inside the composer (above the textarea). */
+.cw-files { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-1, 4px) 0; }
+.cw-file { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); max-width: 280px; padding: var(--mp-spacing-2, 8px); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 10px); }
+.cw-file__icon { flex: 0 0 auto; display: inline-flex; width: 32px; height: 32px; }
+.cw-file__icon :deep(svg) { width: 32px; height: 32px; }
+.cw-file__meta { display: flex; flex-direction: column; min-width: 0; }
+.cw-file__name { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cw-file__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cw-file__x { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; background: none; border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-secondary); cursor: pointer; opacity: 0; transition: opacity 0.12s ease; }
+.cw-file:hover .cw-file__x, .cw-file__x:focus-visible { opacity: 1; }
+.cw-file__x:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 .cw-composer2__left { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cw-foot-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); }
 .cw-foot-btn:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-default); }
@@ -1259,6 +1378,17 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-src__hint { margin: 2px 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cw-src__row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-1); }
 .cw-src__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* The connector list can be long → cap the height and let it scroll. */
+.cw-src__list { max-height: 240px; overflow-y: auto; margin: 0 calc(var(--mp-spacing-1) * -1); padding: 0 var(--mp-spacing-1); }
+.cw-src__divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) calc(var(--mp-spacing-2) * -1); }
+.cw-src__action { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); width: 100%; padding: var(--mp-spacing-2, 8px) var(--mp-spacing-1, 4px); border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left; border-radius: var(--mp-radii-md, 6px); }
+.cw-src__action:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.cw-src__action :deep(svg) { color: var(--mp-icon-default, #536062); }
+.cw-hidden-file { display: none; }
+/* Advanced settings popover */
+.cw-adv-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-1); }
+.cw-adv-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cw-adv-row__caption { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
 .cw-sched-label { margin: var(--mp-spacing-3) 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .cw-seg { display: flex; gap: var(--mp-spacing-1); flex-wrap: wrap; }
 .cw-seg__btn { flex: 1 1 auto; min-width: 52px; padding: 6px 10px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); cursor: pointer; font-family: inherit; }

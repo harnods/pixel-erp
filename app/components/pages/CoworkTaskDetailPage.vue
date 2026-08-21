@@ -95,6 +95,8 @@ async function runTask() {
     const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
+    // Running clears the draft state and marks the task completed.
+    updateTask(task.value.id, { status: 'completed', saved: false })
     // Custom tasks (typed prompts) get their instruction/workflow from the run's
     // plan, generated once and cached; predefined tasks keep their hardcoded ones.
     if (!task.value.instruction || !task.value.workflow?.length) {
@@ -105,6 +107,7 @@ async function runTask() {
     }
   } catch {
     addRun(task.value.id, { id: nextRunId(), ranAt: new Date().toISOString(), status: 'failed' })
+    updateTask(task.value.id, { status: 'failed', saved: false })
   } finally {
     if (stepTimer) { clearInterval(stepTimer); stepTimer = null }
     running.value = false
@@ -112,7 +115,7 @@ async function runTask() {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-function editTask() { infoToast('Edit task — coming soon') }
+function editTask() { if (task.value) router.push(`/cowork-tasks/${task.value.id}/edit`) }
 function setSchedule() { router.push({ path: '/cowork', query: { focus: '1' } }) }
 function removeTask() {
   if (!task.value) return
@@ -131,6 +134,7 @@ function statusProps(s: string) {
   if (s === 'running') return { status: 'in progress', label: 'Running' }
   if (s === 'completed') return { status: 'completed', label: 'Completed' }
   if (s === 'failed') return { status: 'failed', label: 'Failed' }
+  if (s === 'draft') return { status: 'draft', label: 'Draft' }
   return { status: 'draft', label: 'Scheduled' }
 }
 
@@ -367,10 +371,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
 
           <template v-if="task.workflow?.length">
-            <p class="ctd-label">Workflow</p>
-            <ol class="ctd-workflow">
+            <p class="ctd-label">Workflows</p>
+            <ul class="ctd-workflow">
               <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
-            </ol>
+            </ul>
           </template>
 
           <template v-if="task.schedule">
@@ -412,10 +416,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
 
           <template v-if="task.workflow?.length">
-            <p class="ctd-label">Workflow</p>
-            <ol class="ctd-workflow">
+            <p class="ctd-label">Workflows</p>
+            <ul class="ctd-workflow">
               <li v-for="(w, i) in task.workflow" :key="i">{{ w }}</li>
-            </ol>
+            </ul>
           </template>
 
           <template v-if="task.schedule">
@@ -563,8 +567,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-instruction { line-height: var(--mp-line-heights-md, 20px); }
 .ctd-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
 .ctd-muted-line { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); color: var(--mp-text-secondary); }
-.ctd-workflow { margin: var(--mp-spacing-1, 4px) 0 0; padding-inline-start: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
-.ctd-workflow li { font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.ctd-workflow { margin: var(--mp-spacing-1, 4px) 0 0; padding-inline-start: var(--mp-spacing-5, 20px); list-style: disc; }
+.ctd-workflow li { font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2, 8px); }
+.ctd-workflow li::marker { color: var(--mp-text-secondary); }
+.ctd-workflow li:last-child { margin-bottom: 0; }
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }

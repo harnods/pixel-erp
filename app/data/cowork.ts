@@ -11,7 +11,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
 import { pipelineStages } from './crm'
 
 export type CoworkModule = 'HR' | 'Sales' | 'CRM' | 'WMS' | 'Finance' | 'Production'
-export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed'
+export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed' | 'draft'
 
 export interface CoworkTask {
   id: string
@@ -31,6 +31,9 @@ export interface CoworkTask {
   planJson?: string
   /** True when this run was created from a schedule. */
   scheduled?: boolean
+  /** True once a predefined-task draft has been edited & saved — it then appears in
+   *  the Tasks index (status 'draft' = saved but not yet run). */
+  saved?: boolean
   /** Recurrence set when the task was created (shown in the Tasks "Schedule"
    *  column, and the Schedule page lists every task that has one); absent = a
    *  one-off run ("No schedule"). */
@@ -783,9 +786,9 @@ export function addTask(t: Omit<CoworkTask, 'id'> & { id?: string }): CoworkTask
  *  created by opening a task detail is false until "Run task" is clicked — which
  *  is what keeps drafts out of the Tasks table. */
 export function taskHasRun(t: CoworkTask): boolean {
-  // Drafts (opened but not run) are status 'scheduled' with no runs; anything that
-  // has a run, a cached plan, or a non-scheduled status has been executed.
-  return (t.runs?.length ?? 0) > 0 || !!t.planJson || t.status !== 'scheduled'
+  // Drafts (opened but not run) are status 'scheduled'/'draft' with no runs; anything
+  // that has a run, a cached plan, or a run-bearing status has been executed.
+  return (t.runs?.length ?? 0) > 0 || !!t.planJson || (t.status !== 'scheduled' && t.status !== 'draft')
 }
 /** Get (or create) the DRAFT task for a predefined catalog item. The draft carries
  *  the hardcoded instruction/workflow/outputs so the detail never regenerates; it's

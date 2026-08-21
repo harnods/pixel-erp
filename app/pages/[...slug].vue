@@ -121,6 +121,7 @@ const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/St
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
+const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -280,7 +281,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
   // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
+  // /cowork-tasks/:id/edit → Cowork task edit form.
   if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
+    if (segs[2] === 'edit') return { component: CoworkTaskEditPage, id: segs[1]! }
     return { component: CoworkTaskDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
