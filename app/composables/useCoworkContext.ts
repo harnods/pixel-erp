@@ -48,10 +48,28 @@ export function useCoworkContext() {
       .slice(0, 4)
       .map((c) => ({ name: c.company, ltv: money(c.lifetimeValue), openDeals: c.openDeals }))
 
-    // ── WMS ──
-    const rows = productIndexRows()
+    // ── WMS (real stock straight from the inventory DB) ──
+    const rows = productIndexRows()                              // aggregate across all warehouses
     const lowStock = rows.filter((r) => r.available <= r.minStock && r.available > 0)
     const outOfStock = rows.filter((r) => r.available <= 0)
+    const totalOnHand = rows.reduce((a, r) => a + r.onHand, 0)
+    const invItem = (r: typeof rows[number]) => ({
+      sku: r.sku, name: r.name, category: r.category, unit: r.unit,
+      onHand: r.onHand, reserved: r.reserved, available: r.available, minStock: r.minStock,
+    })
+    // Per-warehouse stock — rescoped to each warehouse's own quantities. This is what
+    // lets the co-worker answer "report gudang Medan" with THAT warehouse's real
+    // numbers instead of the aggregate.
+    const stockByWarehouse = warehouses.map((w) => {
+      const wr = productIndexRows([w.id]).filter((r) => r.onHand > 0 || r.reserved > 0)
+      return {
+        warehouse: w.name,
+        skusInStock: wr.length,
+        totalOnHand: wr.reduce((a, r) => a + r.onHand, 0),
+        lowStock: wr.filter((r) => r.available <= r.minStock && r.available > 0).length,
+        items: wr.map(invItem),
+      }
+    })
 
     // ── Finance ──
     const overdue = salesInvoices.filter((i) => i.status === 'overdue')
@@ -98,6 +116,14 @@ export function useCoworkContext() {
           clockIn: a.clockIn, minutesLate: a.minutesLate,
           reason: a.reason, analysis: a.analysis,
         })),
+        // Full employee directory — real records so any "tell me about / list / whose
+        // manager / salary / join date" question is answered from the DB, not invented.
+        directory: employees.map((e) => ({
+          id: e.employeeId, name: e.fullName, position: e.jobPosition, department: e.department,
+          jobLevel: e.jobLevel, employmentStatus: e.employmentStatus, status: e.status,
+          joinDate: e.joinDate, manager: e.directManager, branch: e.branch,
+          email: e.email, phone: e.phone, basicSalary: e.basicSalary,
+        })),
       },
       crm: {
         customers: crmCustomers.length,
@@ -107,13 +133,24 @@ export function useCoworkContext() {
         openPipelineValue: money(openValue),
         orders: crmOrders.length,
         topCustomers,
+        pipelineByStage: pipelineStages.map((s) => ({ stage: s.name, deals: s.count, value: money(s.value) })),
+        // Full customer list — real records for any customer question.
+        customersList: crmCustomers.map((c) => ({
+          company: c.company, status: c.status, ltv: money(c.lifetimeValue),
+          openDeals: c.openDeals, owner: (c as Record<string, any>).owner ?? undefined,
+        })),
       },
       wms: {
-        warehouses: warehouses.length,
-        skus: rows.length,
+        warehouses: warehouses.map((w) => w.name),
+        warehouseCount: warehouses.length,
+        totalSkus: rows.length,
+        totalOnHandUnits: totalOnHand,
         lowStock: lowStock.length,
         outOfStock: outOfStock.length,
-        lowStockExamples: lowStock.slice(0, 5).map((r) => ({ sku: r.sku, name: r.name, available: r.available, minStock: r.minStock })),
+        // Full aggregate stock (every SKU across ALL warehouses) — use for totals.
+        inventory: rows.map(invItem),
+        // Per-warehouse stock — use ONLY the named warehouse for "gudang X" reports.
+        stockByWarehouse,
       },
       finance: {
         overdueInvoices: overdue.length,
@@ -139,12 +176,15 @@ export function useCoworkContext() {
           const top = Object.entries(byCust).sort((a, b) => b[1] - a[1])[0]
           return top ? `${top[0]} (${money(top[1])})` : undefined
         })(),
-        unpaidBillExamples: unpaidBills.slice(0, 5).map((b) => ({ number: `BILL-${b.number}`, vendor: b.beneficiary.name, balance: money(b.balanceDue) })),
+        // Full unpaid-bills + open-invoice lists (real records, not just counts).
+        unpaidBillsList: unpaidBills.map((b) => ({ number: `BILL-${b.number}`, vendor: b.beneficiary.name, balance: money(b.balanceDue), status: b.status })),
+        openInvoicesList: openInvoices.map((i) => ({ number: `INV-${i.number}`, customer: i.customer.name, balance: money(i.balance), dueDate: i.dueDate })),
       },
       production: {
         totalWorkOrders: workOrders.length,
         openWorkOrders: openWO.length,
-        openExamples: openWO.slice(0, 6).map((w) => ({ number: w.number, product: w.bomName, status: w.status, produced: w.producedQty, planned: w.plannedQty, dueDate: w.planEndDate })),
+        // Every open work order (real records) — not just the first few.
+        openWorkOrdersList: openWO.map((w) => ({ number: w.number, product: w.bomName, status: w.status, produced: w.producedQty, planned: w.plannedQty, dueDate: w.planEndDate })),
       },
     }
   }

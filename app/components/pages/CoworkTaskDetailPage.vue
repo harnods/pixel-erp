@@ -76,6 +76,28 @@ const plan = computed<Plan | null>(() => {
   try { return p ? (JSON.parse(p) as Plan) : null } catch { return null }
 })
 
+// ── Reasoning trace (auditable: what was done, from which source, and when) ─────
+const reasoningOpen = ref(false)
+const KNOWN_SOURCES = ['Mekari WMS', 'Talenta', 'Jurnal', 'Qontak', 'WMS', 'Production', 'Finance', 'CRM', 'Sales', 'HR']
+function fmtDuration(ms?: number): string {
+  if (!ms || ms < 1000) return 'a few seconds'
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60); const r = s % 60
+  return r ? `${m}m ${r}s` : `${m}m`
+}
+const workedFor = computed(() => {
+  const d = selectedRun.value?.durationMs
+  if (d) return fmtDuration(d)
+  return `${(plan.value?.steps?.length ?? 4) * 7 + 4}s` // seeded runs: estimate from steps
+})
+// Highlight the data sources referenced in a step so the trail is auditable.
+function highlightSources(text: string): string {
+  const esc = (text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const re = new RegExp('\\b(' + KNOWN_SOURCES.join('|') + ')\\b', 'g')
+  return esc.replace(re, '<code class="ctd-src-chip">$1</code>')
+}
+
 // ── Run (manual) ──────────────────────────────────────────────────────────────
 const running = ref(false)
 const STEP_TITLES = ['Reading task context', 'Pulling ERP records', 'Cross-checking data', 'Producing deliverables']
@@ -87,6 +109,7 @@ async function runTask() {
   if (!task.value || running.value) return
   running.value = true
   activeStep.value = 0
+  const startedAt = Date.now()
   stepTimer = setInterval(() => { if (activeStep.value < STEP_TITLES.length) activeStep.value += 1 }, 1200)
   try {
     const reqBody = {
@@ -101,7 +124,7 @@ async function runTask() {
     } catch {
       res = await $fetch<{ plan: Plan }>('/api/cowork/plan', { method: 'POST', body: reqBody })
     }
-    const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, planJson: JSON.stringify(res.plan) }
+    const run: CoworkRun = { id: nextRunId(), ranAt: new Date().toISOString(), status: 'completed', metric: res.plan.metric, durationMs: Date.now() - startedAt, planJson: JSON.stringify(res.plan) }
     addRun(task.value.id, run)
     selectedRunId.value = run.id
     // Running clears the draft state and marks the task completed.
@@ -515,6 +538,30 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <h3 class="ctd-metric">{{ plan.metric }}</h3>
             <hr class="ctd-hr">
 
+            <!-- Reasoning: an auditable trace of what the agent did, from which
+                 data source, and when — collapsible like a "thinking" log. -->
+            <div v-if="plan.steps?.length || plan.sources?.length" class="ctd-reasoning">
+              <button type="button" class="ctd-worked" @click="reasoningOpen = !reasoningOpen">
+                <span>Worked for {{ workedFor }}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="ctd-worked__chev" :class="{ 'is-open': reasoningOpen }"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div v-if="reasoningOpen" class="ctd-reasoning__body">
+                <p class="ctd-reasoning__label">Reasoning</p>
+                <div v-for="(s, i) in plan.steps" :key="'reason-' + i" class="ctd-reason-step">
+                  <p class="ctd-reason-step__title">{{ s.title }}</p>
+                  <p class="ctd-reason-step__detail" v-html="highlightSources(s.detail)" />
+                </div>
+                <template v-if="plan.sources?.length">
+                  <p class="ctd-reason-step__title ctd-reason-sources__title">Sources used</p>
+                  <ul class="ctd-reason-sources">
+                    <li v-for="s in plan.sources" :key="s.name"><strong>{{ s.name }}</strong> — {{ s.detail }}</li>
+                  </ul>
+                </template>
+                <p class="ctd-reason-ts">Run at {{ formatDateTime(selectedRun?.ranAt) }}</p>
+              </div>
+            </div>
+            <hr class="ctd-hr">
+
             <template v-if="plan.artifacts?.briefing">
               <p class="ctd-sec">Executive summary</p>
               <div v-for="(s, i) in plan.artifacts.briefing.summary" :key="s.title" class="ctd-item">
@@ -638,6 +685,23 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-openchat { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
 .ctd-metric { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: 28px; color: var(--mp-text-default); }
 .ctd-hr { border: none; border-top: 1px solid var(--mp-border-default); margin: var(--mp-spacing-4) 0; }
+
+/* Reasoning trace — boxed, subtle gray background, 12px throughout. */
+.ctd-reasoning { background: var(--mp-background-neutral-subtle, #f6f7f8); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-3, 12px); font-size: 12px; }
+.ctd-worked { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1, 4px); width: 100%; padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.ctd-worked__chev { color: var(--mp-text-secondary); transition: transform 0.15s ease; flex: 0 0 auto; }
+.ctd-worked__chev.is-open { transform: rotate(180deg); }
+.ctd-reasoning__body { margin-top: var(--mp-spacing-3, 12px); }
+.ctd-reasoning__label { margin: 0 0 var(--mp-spacing-2, 8px); font-size: 12px; font-weight: var(--mp-font-weights-semi-bold, 600); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
+.ctd-reason-step { margin-bottom: var(--mp-spacing-2, 8px); }
+.ctd-reason-step__title { margin: 0 0 2px; font-size: 12px; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.ctd-reason-step__detail { margin: 0; font-size: 12px; line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.ctd-reason-step__detail :deep(.ctd-src-chip), .ctd-src-chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; background: var(--mp-background-information-subtle, #eaf1fb); color: var(--mp-text-link, #165082); border-radius: 4px; padding: 1px 5px; }
+.ctd-reason-sources__title { margin-top: var(--mp-spacing-3, 12px); }
+.ctd-reason-sources { margin: var(--mp-spacing-1, 4px) 0 0; padding-inline-start: var(--mp-spacing-5, 20px); list-style: disc; }
+.ctd-reason-sources li { margin-bottom: 2px; font-size: 12px; line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.ctd-reason-sources li::marker { color: var(--mp-text-secondary); }
+.ctd-reason-ts { margin: var(--mp-spacing-3, 12px) 0 0; font-size: 12px; color: var(--mp-text-secondary); }
 .ctd-sec { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .ctd-sec:first-child { margin-top: 0; }
 .ctd-item { padding: var(--mp-spacing-1, 4px) 0; }

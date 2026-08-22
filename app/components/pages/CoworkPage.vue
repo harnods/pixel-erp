@@ -184,7 +184,7 @@ function assign(taskPrompt: string, title?: string, module?: CoworkModule, run =
   const primary = module ?? inferModule(p)
   const modules = [primary]
   const task = addTask({
-    title: title ?? (p.length > 52 ? p.slice(0, 50) + '…' : p),
+    title: title ?? (p.length > 40 ? p.slice(0, 40) + '…' : p),
     prompt: p,
     module: primary,
     modules,
@@ -455,7 +455,7 @@ function scheduleFromPrompt() {
     : schedCadence.value === 'Weekly' ? `Next Mon · ${schedTime.value}`
     : `1st of month · ${schedTime.value}`
   const schedule = { cadence: schedCadence.value, time: schedTime.value, nextRun, enabled: true }
-  const title = t.length > 52 ? t.slice(0, 50) + '…' : t
+  const title = t.length > 40 ? t.slice(0, 40) + '…' : t
   // Scheduling attaches the recurrence to the task (existing prompt → update it;
   // otherwise create the task with the schedule so it shows in both Tasks & Schedule).
   const existing = coworkTasks.find((x) => x.prompt === t)

@@ -6,6 +6,8 @@
  */
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { salesInvoices } from './salesInvoices'
+import { daysSince, simDaysAgo } from './simClock'
 // The "Sales pipeline review" briefing reuses the canonical CRM pipeline so the
 // co-worker's numbers match the CRM module (data/crm.ts).
 import { pipelineStages } from './crm'
@@ -56,6 +58,8 @@ export interface CoworkRun {
   ranAt: string
   status: CoworkTaskStatus
   metric?: string
+  /** How long the run took, ms — shown as "Worked for Ns" on the reasoning trace. */
+  durationMs?: number
   /** Stringified plan (artifacts) for this run. */
   planJson?: string
 }
@@ -150,28 +154,45 @@ export interface ReceivableCollection {
   history: string
   owner: string
 }
-export const receivablesCollections: ReceivableCollection[] = [
-  { invoiceId: 'SI023', invoiceNumber: 'INV-40023', customerId: 'C003', customer: 'PT Teknologi Nusantara',
-    amount: 44_000_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Disputed delivery — customer claims 2 line items on the DO were short-shipped and is withholding payment until a credit note is issued.',
-    riskLevel: 'High', lastContact: { date: '2026-08-14', channel: 'Phone', outcome: 'AP manager Ibu Sari agreed to release payment once the credit note for the short-shipment is received.' },
-    promiseToPay: '2026-08-29', history: 'Repeat late payer — pays on average 24 days late; also holds INV-40006 (Rp8.9M). Lifetime spend Rp96M across 6 invoices, 2 currently overdue.', owner: 'Andi Pratama (Finance)' },
-  { invoiceId: 'SI003', invoiceNumber: 'INV-40003', customerId: 'C005', customer: 'PT Cahaya Abadi Sentosa',
-    amount: 23_750_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Cash-flow constraint — customer is waiting on a payment from their own client and requested a 30-day extension.',
-    riskLevel: 'Medium', lastContact: { date: '2026-08-11', channel: 'WhatsApp', outcome: 'Requested to split into 2 instalments; awaiting our approval.' },
-    promiseToPay: '2026-09-05', history: 'Generally reliable — settled INV-40019 (Rp78.5M) on time in May. First time overdue in 12 months.', owner: 'Andi Pratama (Finance)' },
-  { invoiceId: 'SI012', invoiceNumber: 'INV-40012', customerId: 'C018', customer: 'PT Kreasindo Media Cipta',
-    amount: 11_200_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Invoice never reached AP — sent to the wrong email; PIC changed and the new finance contact only received it last week.',
-    riskLevel: 'Low', lastContact: { date: '2026-08-18', channel: 'Email', outcome: 'New PIC Bp. Rangga confirmed receipt and scheduled payment in their next run.' },
-    promiseToPay: '2026-08-25', history: 'New customer — this is their first invoice with us. No prior payment history yet.', owner: 'Dewi Lestari (Finance)' },
-  { invoiceId: 'SI018', invoiceNumber: 'INV-40018', customerId: 'C019', customer: 'CV Mitra Usaha Bersama',
-    amount: 9_000_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Unresponsive — three reminders sent with no reply; phone number on file goes to voicemail.',
-    riskLevel: 'High', lastContact: { date: '2026-08-05', channel: 'Email', outcome: 'No response to the 3rd reminder.' },
-    history: 'Slow payer — averages 40+ days late; previous invoice also required 4 reminders before payment.', owner: 'Dewi Lestari (Finance)' },
-  { invoiceId: 'SI006', invoiceNumber: 'INV-40006', customerId: 'C003', customer: 'PT Teknologi Nusantara',
-    amount: 8_900_000, dueDate: '2026-05-05', daysOverdue: 107, reason: 'Rolled into the same dispute as INV-40023 — customer is holding all payments pending the credit note.',
-    riskLevel: 'Medium', lastContact: { date: '2026-08-14', channel: 'Phone', outcome: 'Bundled with INV-40023; release expected together.' },
-    promiseToPay: '2026-08-29', history: 'Same account as INV-40023 (Rp44M). Combined exposure Rp52.9M — the largest single-customer overdue balance.', owner: 'Andi Pratama (Finance)' },
+// Collection narratives — attached (cycled) to the REAL overdue invoices so the
+// chase-receivables task is rich AND grounded in actual AR data.
+interface CollectionNarrative {
+  reason: string; riskLevel: 'High' | 'Medium' | 'Low'
+  channel: 'Email' | 'Phone' | 'WhatsApp' | 'Meeting'; outcome: string
+  promiseInDays: number | null; history: string; owner: string
+}
+const COLLECTION_NARRATIVES: CollectionNarrative[] = [
+  { reason: 'Disputed delivery — customer claims line items were short-shipped and is withholding payment until a credit note is issued.', riskLevel: 'High', channel: 'Phone', outcome: 'AP manager agreed to release payment once the credit note is received.', promiseInDays: 7, history: 'Repeat late payer — pays on average 24 days late.', owner: 'Andi Pratama (Finance)' },
+  { reason: 'Cash-flow constraint — waiting on a payment from their own client; requested a 30-day extension.', riskLevel: 'Medium', channel: 'WhatsApp', outcome: 'Requested to split into 2 instalments; awaiting our approval.', promiseInDays: 14, history: 'Generally reliable — first time overdue in 12 months.', owner: 'Andi Pratama (Finance)' },
+  { reason: 'Invoice never reached AP — sent to the wrong email; the new finance PIC only received it last week.', riskLevel: 'Low', channel: 'Email', outcome: 'New PIC confirmed receipt and scheduled payment in their next run.', promiseInDays: 3, history: 'New customer — first invoice with us, no prior history yet.', owner: 'Dewi Lestari (Finance)' },
+  { reason: 'Unresponsive — three reminders sent with no reply; phone on file goes to voicemail.', riskLevel: 'High', channel: 'Email', outcome: 'No response to the 3rd reminder.', promiseInDays: null, history: 'Slow payer — averages 40+ days late; previous invoice needed 4 reminders.', owner: 'Dewi Lestari (Finance)' },
+  { reason: 'Approval delay in their finance team over a new vendor form.', riskLevel: 'Medium', channel: 'Phone', outcome: 'Vendor form completed; payment scheduled.', promiseInDays: 5, history: 'Occasional late payer — usually settles within 2 weeks of a reminder.', owner: 'Andi Pratama (Finance)' },
+  { reason: 'Partial payment made; remainder held pending a pricing query.', riskLevel: 'Medium', channel: 'Meeting', outcome: 'Pricing clarified; balance release in progress.', promiseInDays: 6, history: 'Large B2B account — pays in tranches, needs occasional nudging.', owner: 'Andi Pratama (Finance)' },
+  { reason: 'Awaiting PO-to-invoice match on their side before releasing payment.', riskLevel: 'Low', channel: 'Email', outcome: 'Confirmed match; payment expected shortly.', promiseInDays: 4, history: 'Reliable payer — usually clears within days once matched.', owner: 'Dewi Lestari (Finance)' },
 ]
+// Derived from the real overdue sales invoices (data/salesInvoices.ts), sorted by
+// exposure, so figures/customers/dates always match the AR ledger.
+export const receivablesCollections: ReceivableCollection[] = [...salesInvoices]
+  .filter((inv) => inv.status === 'overdue')
+  .sort((a, b) => b.balance - a.balance)
+  .map((inv, idx) => {
+    const n = COLLECTION_NARRATIVES[idx % COLLECTION_NARRATIVES.length]!
+    return {
+      invoiceId: inv.id,
+      invoiceNumber: `INV-${inv.number}`,
+      customerId: inv.customer.id,
+      customer: inv.customer.name,
+      amount: inv.balance,
+      dueDate: inv.dueDate,
+      daysOverdue: daysSince(inv.dueDate),
+      reason: n.reason,
+      riskLevel: n.riskLevel,
+      lastContact: { date: simDaysAgo(3 + (idx % 10)), channel: n.channel, outcome: n.outcome },
+      ...(n.promiseInDays != null ? { promiseToPay: simDaysAgo(-n.promiseInDays) } : {}),
+      history: n.history,
+      owner: n.owner,
+    }
+  })
 
 /** Modules Cowork can act on — used for the catalog and the module filter. */
 export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production']
