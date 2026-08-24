@@ -23,7 +23,7 @@ import { formatDate } from '~/utils/date'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
-import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
+import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 
@@ -142,10 +142,14 @@ const remainingRawMaterials = computed<CompleteWorkOrderRow[]>(() =>
   rawMaterials.value
     .map(r => {
       const consumed = consumedFor(r.productId)
+      const reserved = wo.value
+        ? remainingReservation(wo.value.id, r.productId, wo.value.materialReservations?.[r.productId])
+        : {}
       return {
         productId: r.productId, product: r.product, sku: r.sku,
         needed: r.needed, consumed, remaining: Math.max(0, r.needed - consumed), unit: r.unit,
         trackingLabel: trackingLabelForMaterial(r.productId),
+        reservedBatch: reserved.batchSelection, reservedSerial: reserved.serialSelection,
       }
     })
     .filter(r => r.remaining > 0),
@@ -172,6 +176,10 @@ function onAutoConsumeAndComplete() {
       warehouseId: AUTO_CONSUME_WAREHOUSE_ID,
       memo: 'Auto-consumed on work order completion',
       recordedBy: CURRENT_USER,
+      // Whatever of the reservation was still unconsumed goes with it, so the
+      // reservation reads back as fully consumed afterward.
+      batchSelection: r.reservedBatch,
+      serialSelection: r.reservedSerial,
     })
   })
   completeWorkOrder()

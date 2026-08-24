@@ -21,7 +21,10 @@ import { warehouses } from '~/data/warehouses'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
-import { addWorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
+import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
+import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -162,17 +165,53 @@ const num = (v: string) => Number(v) || 0
 const productName = (id: string) => productOptions.find(p => p.id === id)?.name ?? ''
 
 // ── Raw materials ────────────────────────────────────────────────────────────
-interface RawRow { id: number; productId: string; purchaseCost: number; warehouseId: string; needed: string; unit: string; requiredDate: string }
+interface RawRow {
+  id: number; productId: string; purchaseCost: number; warehouseId: string; needed: string; unit: string; requiredDate: string
+  /** Batch/serial units reserved for this row — picked up front via Manage batch/serial number. */
+  batchSelection: PickedBatch[]
+  serialSelection: string[]
+}
 let rawSeq = 0
-const makeRaw = (): RawRow => ({ id: rawSeq++, productId: '', purchaseCost: 0, warehouseId: '', needed: '', unit: '', requiredDate: '' })
+const makeRaw = (): RawRow => ({ id: rawSeq++, productId: '', purchaseCost: 0, warehouseId: '', needed: '', unit: '', requiredDate: '', batchSelection: [], serialSelection: [] })
 const rawRows = ref<RawRow[]>([makeRaw()])
 const bulkSetWarehouse = ref(false)
 function onRawProduct(row: RawRow, id: string) {
   const p = CATALOG.find(c => c.id === id)
   row.purchaseCost = p?.price ?? 0
   if (p && !row.unit) row.unit = p.unit
+  row.batchSelection = []
+  row.serialSelection = []
   appendIfLast(rawRows, row.id, makeRaw)
 }
+function onRawWarehouse(row: RawRow) {
+  row.batchSelection = []
+  row.serialSelection = []
+}
+
+// ── Reserve batch/serial number — picked up front, consumed later by the
+// Material consume & return flow (see NewMaterialRecordPage.vue, which
+// pre-fills its own pick drawer from whatever of this reservation is left). ──
+function trackingTypeFor(productId: string): 'serial' | 'batch' | undefined {
+  const category = catalogProduct(productId)?.category ?? ''
+  if (isSerialized(category)) return 'serial'
+  if (isBatchTracked(category)) return 'batch'
+  return undefined
+}
+function reservedCount(row: RawRow): number {
+  return trackingTypeFor(row.productId) === 'serial'
+    ? row.serialSelection.length
+    : row.batchSelection.reduce((s, b) => s + b.qty, 0)
+}
+const activeRawDrawerRow = ref<RawRow | null>(null)
+function openRawTracking(row: RawRow) {
+  if (!row.warehouseId) { toast.notify({ variant: 'warning', title: t('Select warehouse first') }); return }
+  if (!num(row.needed)) { toast.notify({ variant: 'warning', title: t('Input the needed qty first') }); return }
+  activeRawDrawerRow.value = row
+}
+function closeRawTracking() { activeRawDrawerRow.value = null }
+function onRawSerialDrawerSave(serials: string[]) { if (activeRawDrawerRow.value) activeRawDrawerRow.value.serialSelection = serials }
+function onRawBatchDrawerSave(batches: PickedBatch[]) { if (activeRawDrawerRow.value) activeRawDrawerRow.value.batchSelection = batches }
+const rawDrawerWarehouseName = computed(() => warehouseOptions.find(w => w.id === activeRawDrawerRow.value?.warehouseId)?.name ?? '')
 const rawEstimated = (r: RawRow) => num(r.needed) * r.purchaseCost
 const rawSubtotal = computed(() => rawRows.value.reduce((s, r) => s + rawEstimated(r), 0))
 
@@ -251,6 +290,7 @@ function fillFromBom(id: string) {
   rawRows.value = bom.rawMaterials.map(r => ({
     id: rawSeq++, productId: r.productId, purchaseCost: r.purchaseCost, warehouseId: wh,
     needed: String(r.needed), unit: r.unit, requiredDate: reqDate,
+    batchSelection: [], serialSelection: [],
   }))
   if (bom.allowBomAdjustment) rawRows.value.push(makeRaw())
 
@@ -334,6 +374,19 @@ function parseDateRange(v: Date[]): { start: string; end: string } {
   return { start, end: v[1] ? toLocalIso(v[1]) : start }
 }
 
+// Reservation attached to the saved WorkOrder — only tracked rows with an
+// actual pick contribute an entry.
+function buildMaterialReservations(): Record<string, WorkOrderMaterialReservation> | undefined {
+  const out: Record<string, WorkOrderMaterialReservation> = {}
+  for (const row of rawRows.value) {
+    if (!row.productId) continue
+    const type = trackingTypeFor(row.productId)
+    if (type === 'serial' && row.serialSelection.length) out[row.productId] = { serialSelection: [...row.serialSelection] }
+    else if (type === 'batch' && row.batchSelection.length) out[row.productId] = { batchSelection: row.batchSelection.map(b => ({ ...b })) }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 // Save persists a real WorkOrder (linked to the chosen BOM) and opens its actual
 // detail page — there is no distinct "draft" status yet, so both actions save the
 // same "not started" record. The from-PR flag (+ its request no.) is preserved so
@@ -353,6 +406,7 @@ function saveWorkOrder() {
     planStartDate: start,
     planEndDate: end,
     sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
+    materialReservations: buildMaterialReservations(),
   })
 }
 function handleSave() {
@@ -564,9 +618,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" :placeholder="t('Select warehouse')" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" :placeholder="t('Select warehouse')" is-searchable is-clearable use-portal is-full-width @update:model-value="onRawWarehouse(row)" />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input">
+                    <MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width />
+                    <template v-if="row.productId && trackingTypeFor(row.productId)">
+                      <span v-if="reservedCount(row) > 0" class="wo-tracked-hint">{{ reservedCount(row) }} {{ t('of') }} {{ num(row.needed) }} {{ t('selected') }}</span>
+                      <a class="wo-tracking" @click.prevent="openRawTracking(row)">{{ trackingTypeFor(row.productId) === 'serial' ? t('Manage serial number') : t('Manage batch') }}</a>
+                    </template>
+                  </td>
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
@@ -867,6 +927,36 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <!-- ── Manage serial number / Manage batch — reserve up front, consumed later
+         by the Material consume & return flow. ── -->
+    <PickSerialNumberDrawer
+      v-if="activeRawDrawerRow && trackingTypeFor(activeRawDrawerRow.productId) === 'serial'"
+      :open="!!activeRawDrawerRow"
+      :product-name="productName(activeRawDrawerRow.productId)"
+      :product-img="catalogProduct(activeRawDrawerRow.productId)?.img"
+      :sku="catalogProduct(activeRawDrawerRow.productId)?.sku ?? ''"
+      :warehouse-id="activeRawDrawerRow.warehouseId"
+      :warehouse-name="rawDrawerWarehouseName"
+      :target-count="num(activeRawDrawerRow.needed)"
+      :model-value="activeRawDrawerRow.serialSelection"
+      @update:open="(v: boolean) => { if (!v) closeRawTracking() }"
+      @save="onRawSerialDrawerSave"
+    />
+    <PickBatchDrawer
+      v-if="activeRawDrawerRow && trackingTypeFor(activeRawDrawerRow.productId) === 'batch'"
+      :open="!!activeRawDrawerRow"
+      :product-name="productName(activeRawDrawerRow.productId)"
+      :product-img="catalogProduct(activeRawDrawerRow.productId)?.img"
+      :sku="catalogProduct(activeRawDrawerRow.productId)?.sku ?? ''"
+      :warehouse-id="activeRawDrawerRow.warehouseId"
+      :warehouse-name="rawDrawerWarehouseName"
+      :unit="activeRawDrawerRow.unit"
+      :target-count="num(activeRawDrawerRow.needed)"
+      :model-value="activeRawDrawerRow.batchSelection"
+      @update:open="(v: boolean) => { if (!v) closeRawTracking() }"
+      @save="onRawBatchDrawerSave"
+    />
   </div>
 </template>
 
@@ -1033,6 +1123,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-td--input :deep([class*='autocomplete']),
 .wo-td--input :deep(.mp-datepicker__root) { border-radius: 0; border-color: transparent; }
 .wo-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }
+.wo-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wo-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.wo-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 .wo-del-btn {
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);

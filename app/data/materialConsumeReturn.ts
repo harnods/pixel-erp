@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
-import { workOrders, type WorkOrderStatus } from './workOrders'
+import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } from './workOrders'
 import { billOfMaterials } from './billOfMaterials'
 import { warehouses } from './warehouses'
 
@@ -24,6 +24,11 @@ export interface MaterialConsumeReturnRecord {
   warehouseId: string
   memo: string
   recordedBy: string
+  /** Which specific batch/serial units this record consumed or returned — only
+   *  set for tracked (batch- or serial-managed) products. Used to work out how
+   *  much of a work order's material reservation is still unconsumed. */
+  batchSelection?: { batchNo: string; qty: number }[]
+  serialSelection?: string[]
 }
 
 const CRR_RECORDER_POOL = ['Agung Mulyadi', 'Siti Rahma', 'Bayu Saputra']
@@ -96,6 +101,33 @@ export function persistMaterialConsumeReturn(): void {
 
 export function recordsForWorkOrder(workOrderId: string): MaterialConsumeReturnRecord[] {
   return materialConsumeReturnRecords.filter(r => r.workOrderId === workOrderId)
+}
+
+/**
+ * What's left of a work order's batch/serial reservation for one product,
+ * after subtracting whatever's already been consumed against it (a Return
+ * doesn't give reservation back — it returns already-consumed stock, not
+ * un-reserves it). Used to pre-fill the Material consume pick drawer and to
+ * show what's still reserved-but-unconsumed in the "Complete work order" guard.
+ */
+export function remainingReservation(
+  workOrderId: string,
+  productId: string,
+  reservation: WorkOrderMaterialReservation | undefined,
+): WorkOrderMaterialReservation {
+  if (!reservation) return {}
+  const consumedBatch = new Map<string, number>()
+  const consumedSerial = new Set<string>()
+  for (const r of recordsForWorkOrder(workOrderId)) {
+    if (r.productId !== productId || r.type !== 'Consume') continue
+    for (const b of r.batchSelection ?? []) consumedBatch.set(b.batchNo, (consumedBatch.get(b.batchNo) ?? 0) + b.qty)
+    for (const s of r.serialSelection ?? []) consumedSerial.add(s)
+  }
+  const batchSelection = reservation.batchSelection
+    ?.map(b => ({ batchNo: b.batchNo, qty: b.qty - (consumedBatch.get(b.batchNo) ?? 0) }))
+    .filter(b => b.qty > 0)
+  const serialSelection = reservation.serialSelection?.filter(s => !consumedSerial.has(s))
+  return { batchSelection, serialSelection }
 }
 
 let addSeq = materialConsumeReturnRecords.length

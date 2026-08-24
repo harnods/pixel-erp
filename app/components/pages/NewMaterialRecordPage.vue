@@ -21,7 +21,7 @@ import { workOrders } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
-import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
+import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
 
@@ -88,9 +88,27 @@ function netConsumed(productId: string): number {
     .reduce((s, r) => s + r.qty, 0)
 }
 
+// ── Reservation pre-fill (Consume only) ──────────────────────────────────────
+// Batch/serial units were already picked for this work order at creation time
+// (New work order → Raw materials → Manage batch/serial number). Consuming
+// should start from whatever of that reservation hasn't been consumed yet —
+// not an empty drawer — so the operator is just confirming, not re-picking.
+function remainingReservedBatch(productId: string): PickedBatch[] {
+  if (!wo.value) return []
+  return remainingReservation(wo.value.id, productId, wo.value.materialReservations?.[productId]).batchSelection ?? []
+}
+function remainingReservedSerial(productId: string): string[] {
+  if (!wo.value) return []
+  return remainingReservation(wo.value.id, productId, wo.value.materialReservations?.[productId]).serialSelection ?? []
+}
+
 const rows = reactive<MaterialRow[]>(
   (bom.value?.rawMaterials ?? []).map((r) => {
     const p = catalogProduct(r.productId)
+    const trackingType = trackingTypeFor(r.productId)
+    const prefillSerial = isConsume.value && trackingType === 'serial' ? remainingReservedSerial(r.productId) : []
+    const prefillBatch = isConsume.value && trackingType === 'batch' ? remainingReservedBatch(r.productId) : []
+    const prefillQty = trackingType === 'serial' ? prefillSerial.length : trackingType === 'batch' ? prefillBatch.reduce((s, b) => s + b.qty, 0) : 0
     return {
       productId: r.productId,
       product: p?.name ?? '—',
@@ -99,11 +117,11 @@ const rows = reactive<MaterialRow[]>(
       neededQty: r.needed,
       onHandQty: r.needed,
       consumedQty: Math.max(0, netConsumed(r.productId)),
-      qtyValue: '',
+      qtyValue: prefillQty > 0 ? String(prefillQty) : '',
       selected: true,
-      trackingType: trackingTypeFor(r.productId),
-      serialSelection: [],
-      batchSelection: [],
+      trackingType,
+      serialSelection: prefillSerial,
+      batchSelection: prefillBatch,
     }
   }),
 )
@@ -209,6 +227,8 @@ function handleSave() {
       warehouseId: warehouseId.value,
       memo: memo.value,
       recordedBy: CURRENT_USER,
+      batchSelection: row.trackingType === 'batch' ? row.batchSelection : undefined,
+      serialSelection: row.trackingType === 'serial' ? row.serialSelection : undefined,
     })
     saved++
   })
