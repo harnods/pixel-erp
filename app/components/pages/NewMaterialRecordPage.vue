@@ -394,10 +394,10 @@ function handleSave() {
                         :max="row.consumedQty"
                         @update:model-value="(v: string) => { row.qtyValue = v; onReturnQtyInput(row) }"
                       />
-                      <template v-if="row.trackingType">
+                      <template v-if="row.trackingType && row.consumedQty > 0">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
                         <a
-                          class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId || row.consumedQty === 0 }"
+                          class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }"
                           @click.prevent="openTracking(row)"
                         >{{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}</a>
                       </template>
