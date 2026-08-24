@@ -16,7 +16,7 @@ import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, css, toast,
+  MpIcon, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -138,11 +138,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="detail-btn detail-btn--secondary detail-btn--icon">
-          <MpIcon name="hierarchy" size="sm" />
-          {{ t('View BOM hierarchy') }}
-        </button>
-
         <button class="detail-btn detail-btn--primary" @click="createWorkOrder">{{ t('Create work order') }}</button>
       </div>
     </header>
@@ -157,6 +152,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="bom.name" />
             <ContentList :label="t('BOM no.')" :value="bom.number" />
+            <MpButton variant="textLink" size="sm" class="bomd-hierarchy-link">
+              {{ t('View BOM hierarchy') }}
+            </MpButton>
             <ContentList :label="t('Description')">
               <template v-if="bom.description">
                 <span>{{ descDisplay }}</span>
@@ -481,6 +479,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 /* ── Info grid — 2 columns ───────────────────────────────────────────────── */
 .bom-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 900px; }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
+.bomd-hierarchy-link {
+  align-self: flex-start; height: auto; margin-top: -6px; padding: 0;
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
+}
 .bom-show-more { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .bom-show-more:hover { text-decoration: underline; text-underline-offset: 2px; }
 .bom-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
