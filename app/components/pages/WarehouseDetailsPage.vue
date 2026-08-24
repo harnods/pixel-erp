@@ -583,21 +583,24 @@ function openPrintAll(labels: BarcodeLabelInfo[], scope: string) {
   printFilename.value = `Barcodes - ${warehouse.value?.name ?? 'warehouse'} (${scope}).pdf`
   printBarcodeOptionsOpen.value = true
 }
-// Plain-SKU products — one label per SKU (the SKU's own barcode).
-function printAllPlainBarcodes() {
-  openPrintAll(
-    filteredStock.value.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
-    'products',
-  )
-}
 // Bulk "Print barcode" from the Products table's row checkboxes — indices are
-// into `pagedStock` (the table's current page), same as ErpTablePage's own selection.
+// into `pagedStock` (the table's current page), same as ErpTablePage's own
+// selection. Serial-tracked products print one label per serial (available +
+// reserved, matching the Serial numbers tab's own "print all"); anything else
+// prints its own SKU barcode.
 function printSelectedPlainBarcodes(selectedRows: Set<number>) {
   const rows = pagedStock.value.filter((_, i) => selectedRows.has(i))
-  openPrintAll(
-    rows.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
-    'selected products',
-  )
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of rows) {
+    if (s.serials) {
+      for (const u of [...s.serials.available, ...s.serials.reserved]) {
+        labels.push({ barcode: u.serial, batchNo: u.serial, productName: s.name, sku: s.sku })
+      }
+    } else {
+      labels.push({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'selected products')
 }
 // Batch products — one label per batch (each batch's own barcode, generated on first use).
 function printAllBatchBarcodes() {
@@ -966,7 +969,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       </svg>
                     </button>
                   </div>
-                  <button v-if="filteredStock.length" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">{{ t('Print all barcode') }}</button>
                 </div>
               </template>
 
