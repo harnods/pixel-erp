@@ -583,6 +583,13 @@ function openPrintAll(labels: BarcodeLabelInfo[], scope: string) {
   printFilename.value = `Barcodes - ${warehouse.value?.name ?? 'warehouse'} (${scope}).pdf`
   printBarcodeOptionsOpen.value = true
 }
+// Plain-SKU products — one label per SKU (the SKU's own barcode).
+function printAllPlainBarcodes() {
+  openPrintAll(
+    filteredStock.value.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
+    'products',
+  )
+}
 // Bulk "Print barcode" from the Products table's row checkboxes — indices are
 // into `pagedStock` (the table's current page), same as ErpTablePage's own
 // selection. Serial-tracked products print one label per serial (available +
@@ -601,6 +608,18 @@ function printSelectedPlainBarcodes(selectedRows: Set<number>) {
     }
   }
   openPrintAll(labels, 'selected products')
+}
+// Batch products — one label per batch (each batch's own barcode, generated on first use).
+function printAllBatchBarcodes() {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredBatchProducts.value) {
+    for (const b of s.batches ?? []) {
+      let barcode = getBatchBarcode(s.sku, b.batchNo)
+      if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(s.sku, b.batchNo, barcode) }
+      labels.push({ barcode, batchNo: b.batchNo, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'batches')
 }
 // Batch products — one label per batch (each batch's own barcode, generated on
 // first use), scoped to the checked product groups.
@@ -998,6 +1017,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       </svg>
                     </button>
                   </div>
+                  <button v-if="filteredStock.length" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">{{ t('Print all barcode') }}</button>
                 </div>
               </template>
 
@@ -1159,6 +1179,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </svg>
                   </button>
                 </div>
+                <button v-if="filteredBatchProducts.length" class="wh-print-all-btn" type="button" @click="printAllBatchBarcodes">{{ t('Print all barcode') }}</button>
               </div>
             </div>
 
@@ -1197,7 +1218,17 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </th>
                   </tr>
                   <tr v-else>
-                    <th class="wh-bth">{{ t('Product') }}</th>
+                    <th class="wh-bth">
+                      <span class="wh-batch-th-check">
+                        <MpCheckbox
+                          id="wh-batch-select-all"
+                          :is-checked="batchAllSelected"
+                          :is-indeterminate="batchSomeSelected"
+                          @change="toggleAllBatchProducts"
+                        />
+                      </span>
+                      {{ t('Product') }}
+                    </th>
                     <th v-if="batchColVisibility.sku" class="wh-bth">{{ t('SKU') }}</th>
                     <th v-if="batchColVisibility.batch" class="wh-bth">{{ t('Batch') }}</th>
                     <th v-if="batchColVisibility.location" class="wh-bth">{{ t('Location') }}</th>
@@ -1220,24 +1251,25 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1"
                       >
                         <div class="wh-batch-product">
-                          <span class="wh-batch-checkbox" @click.stop>
+                          <span class="wh-batch-lead" @click.stop>
                             <MpCheckbox
                               :id="`wh-batch-select-${p.id}`"
                               :is-checked="selectedBatchProducts.has(p.id)"
                               @change="toggleBatchProduct(p.id)"
                             />
-                          </span>
-                          <button
-                            class="wh-expand-btn"
-                            :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
-                          >
-                            <svg
-                              width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                              class="wh-expand-chevron" :class="{ 'wh-expand-chevron--open': isBatchExpanded(p.id) }"
+                            <button
+                              class="wh-expand-btn"
+                              :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
+                              @click="toggleBatch(p.id)"
                             >
-                              <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                          </button>
+                              <svg
+                                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                                class="wh-expand-chevron" :class="{ 'wh-expand-chevron--open': isBatchExpanded(p.id) }"
+                              >
+                                <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                              </svg>
+                            </button>
+                          </span>
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
@@ -2303,9 +2335,16 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* ── Batch table cells ── */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
-/* Checkbox sits before the expand chevron; margin-top matches .wh-expand-btn's own
-   so it lines up with the product name/thumbnail row instead of the group's top edge. */
-.wh-batch-checkbox { flex-shrink: 0; display: inline-flex; margin-top: var(--mp-spacing-1); }
+/* Checkbox + expand chevron sit in their own row, centered against each other AND
+   against the thumb: this pair's box is the same height as .wh-thumb (var(--mp-sizes-8)),
+   so with the outer .wh-batch-product still top-aligned (for the 2-line subtitle case),
+   the pair's own vertical center lands on the thumb's vertical center. */
+.wh-batch-lead {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  height: var(--mp-sizes-8, 32px);
+}
+/* Header select-all checkbox — inline with "Product", no fixed height needed. */
+.wh-batch-th-check { display: inline-flex; vertical-align: middle; margin-right: var(--mp-spacing-1); }
 .wh-expand-btn {
   flex-shrink: 0;
   display: inline-flex;
@@ -2313,7 +2352,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   justify-content: center;
   width: var(--mp-sizes-6, 24px);
   height: var(--mp-sizes-6, 24px);
-  margin-top: var(--mp-spacing-1);
   border: none;
   background: none;
   cursor: pointer;
