@@ -99,7 +99,7 @@ const rows = reactive<MaterialRow[]>(
       neededQty: r.needed,
       onHandQty: r.needed,
       consumedQty: Math.max(0, netConsumed(r.productId)),
-      qtyValue: '0',
+      qtyValue: '',
       selected: true,
       trackingType: trackingTypeFor(r.productId),
       serialSelection: [],
@@ -135,6 +135,10 @@ const remainingQty = (row: MaterialRow) =>
 const activeDrawerRow = ref<MaterialRow | null>(null)
 function openTracking(row: MaterialRow) {
   if (!warehouseId.value) return
+  if (num(row.qtyValue) <= 0) {
+    toast.notify({ variant: 'warning', title: 'Input the qty first' })
+    return
+  }
   activeDrawerRow.value = row
 }
 function closeTracking() { activeDrawerRow.value = null }
@@ -527,8 +531,8 @@ function handleSave() {
 .mr-td--input { padding: 0; vertical-align: top; white-space: normal; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
 .mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.mr-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.mr-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mr-tracking--disabled { color: var(--mp-text-disabled); cursor: not-allowed; pointer-events: none; }
 
