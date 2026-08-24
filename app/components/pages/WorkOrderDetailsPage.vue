@@ -1038,7 +1038,7 @@ function suppressFabClick(e: MouseEvent) {
 .wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
 .wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .wod-hierarchy-link {
-  align-self: flex-start; height: auto; margin-top: 2px; padding: 0;
+  align-self: flex-start; height: auto; margin-top: -6px; padding: 0;
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
 }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
