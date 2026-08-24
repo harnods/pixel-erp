@@ -172,6 +172,11 @@ function drawerTargetCount(row: MaterialRow): number {
   const ceiling = isConsume.value ? row.onHandQty : row.consumedQty
   return Math.min(num(row.qtyValue), ceiling)
 }
+// A return can never exceed what was actually consumed for this work order —
+// clamp the typed qty back down the moment it goes over.
+function onReturnQtyInput(row: MaterialRow) {
+  if (num(row.qtyValue) > row.consumedQty) row.qtyValue = row.consumedQty > 0 ? String(row.consumedQty) : ''
+}
 const drawerWarehouseName = computed(() => warehouseOptions.find(w => w.id === warehouseId.value)?.name ?? '')
 function drawerProductImg(row: MaterialRow): string | undefined {
   return catalogProduct(row.productId)?.img
@@ -381,7 +386,10 @@ function handleSave() {
                   <template v-else>
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
                     <td class="mr-td mr-td--input">
-                      <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                      <MpInput
+                        :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width
+                        :max="row.consumedQty" @update:model-value="onReturnQtyInput(row)"
+                      />
                       <template v-if="row.trackingType">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
                         <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
