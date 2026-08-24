@@ -11,10 +11,11 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import { MpAutocomplete } from '@mekari/pixel3'
-import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest } from '~/data'
+import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
+import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
@@ -45,6 +46,15 @@ function toTagData(values: string[]): DataInterface[] {
 }
 
 const vendor       = ref(source.value?.vendor.name ?? '')
+// Vendor is a searchable select over the vendor master with quick-add — same
+// behaviour as New sales invoice's Customer / New expense's Beneficiary picker.
+const vendorOptions = ref(vendors.map(v => ({ id: v.name, name: v.name })))
+function onVendorAdd(_suggestions: unknown, currentSearch: string) {
+  const name = currentSearch.trim()
+  if (!name) return
+  if (!vendorOptions.value.some(v => v.id === name)) vendorOptions.value.push({ id: name, name })
+  vendor.value = name
+}
 const emailTags    = ref<DataInterface[]>(toTagData(source.value?.email ?? []))
 const txDate       = ref(isoToDMY(source.value?.date ?? todayISO()))
 const dueDate      = ref(isoToDMY(source.value?.dueDate ?? ''))
@@ -203,6 +213,12 @@ function nextPoId(): string {
   return `po-${String(nextSuffix(purchaseOrders.map(o => o.id))).padStart(3, '0')}`
 }
 
+// ── Transaction no. settings (auto-numbering) — shared global component ────────
+const noSettingsOpen = ref(false)
+const nextTxNo = computed(() => nextPoNumber(purchaseOrders[0]?.number ?? 'PO-2026-0000'))
+const txNoFormats = [{ label: 'Auto', value: 'auto' }]
+function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = false }
+
 function onCancel() { closePurchaseOrderForm?.() }
 // Breadcrumb → back to the originating index (Purchase requests when built from
 // requests, else the Purchase orders list).
@@ -288,12 +304,26 @@ function onSendToFulfillment() {
         <section class="po-header1 po-dashed-divider">
           <MpFormControl id="f-vendor" class="po-field po-col-span-3">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
-            <MpInput id="f-vendor-inp" v-model="vendor" is-full-width />
+            <MpAutocomplete
+              id="f-vendor-inp"
+              v-model="vendor"
+              :data="vendorOptions"
+              label-prop="name"
+              value-prop="id"
+              is-searchable is-clearable use-portal is-full-width
+              is-show-button-action
+              placeholder="Select vendor"
+              @button-action="onVendorAdd"
+            >
+              <template #buttonAction="{ currentSearch }">
+                {{ currentSearch ? `Add "${currentSearch}" as a new vendor` : 'Add new vendor' }}
+              </template>
+            </MpAutocomplete>
           </MpFormControl>
 
           <MpFormControl id="f-email" class="po-field po-col-span-3">
             <MpFormLabel>Email</MpFormLabel>
-            <MpInputTag id="f-email-inp" :data="emailTags" placeholder="+ Add email" @change="onEmailChange" />
+            <MpInputTag id="f-email-inp" :data="emailTags" placeholder="+Add email" @change="onEmailChange" />
           </MpFormControl>
 
           <div class="po-header1-total">
@@ -354,7 +384,7 @@ function onSendToFulfillment() {
               <MpFormLabel>
                 <span class="po-label-row">
                   Transaction no.
-                  <MpButton class="po-label-icon" aria-label="Transaction number settings">
+                  <MpButton class="po-label-icon" aria-label="Transaction no. settings" @click="noSettingsOpen = true">
                     <MpIcon name="settings" size="sm" />
                   </MpButton>
                 </span>
@@ -560,16 +590,6 @@ function onSendToFulfillment() {
                   <td class="pit-td pit-td--del" />
                 </tr>
               </tbody>
-              <tbody>
-                <tr class="pit-add-row">
-                  <td colspan="9">
-                    <button type="button" class="pit-add-btn" @click="addPrOpen = true">
-                      <MpIcon name="add" size="sm" />
-                      Add purchase request
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
             </table>
           </div>
         </section>
@@ -727,6 +747,15 @@ function onSendToFulfillment() {
       @save="onAddPurchaseRequests"
     />
 
+    <NumberFormatSettingsModal
+      v-model:open="noSettingsOpen"
+      title="Transaction no. settings"
+      caption="Transaction numbers are auto-generated by the system."
+      :next-number="nextTxNo"
+      :existing-formats="txNoFormats"
+      @save="onNoFormatSave"
+    />
+
   </div>
 </template>
 
@@ -797,7 +826,9 @@ function onSendToFulfillment() {
 /* ── 12-col grid utility — every field ≤ 3 cols, unused cols stay blank ── */
 .po-col-span-3 { grid-column: span 3; }
 
-/* ── Header section 1 ── */
+/* ── Header section 1 — SAME 12-col grid as header section 2 so Vendor/Email
+      line up exactly under Transaction date / Estimated delivery date (each 3/12).
+      Total sits in the last 3 cols, right-aligned, at xl/20px. ── */
 .po-header1 {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -807,11 +838,12 @@ function onSendToFulfillment() {
 .po-header1-total {
   grid-column: 10 / span 3;
   justify-self: end;
-  align-self: end;
+  align-self: flex-end;
+  padding-bottom: var(--mp-spacing-2);
 }
 .po-header1-total-value {
   margin: 0;
-  font-size: var(--mp-font-sizes-lg);
+  font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
   white-space: nowrap;
