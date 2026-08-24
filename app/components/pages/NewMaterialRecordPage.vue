@@ -385,7 +385,7 @@ function handleSave() {
                   </template>
                   <template v-else>
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
-                    <td class="mr-td mr-td--input">
+                    <td class="mr-td mr-td--input" :class="{ 'mr-td--input-disabled': row.consumedQty === 0 }">
                       <MpInput
                         :id="`mr-qty-${row.productId}`"
                         :model-value="row.consumedQty === 0 ? '0' : row.qtyValue"
@@ -568,6 +568,10 @@ function handleSave() {
 .mr-td--input { padding: 0; vertical-align: middle; white-space: normal; height: 64px; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
 .mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+/* Disabled (nothing to return) — fill the whole cell like the locked columns
+   beside it, instead of a gray input floating on the cell's own white background. */
+.mr-td--input-disabled { background: var(--mp-background-neutral-subtle); }
+.mr-td--input-disabled :deep([class*='input']) { background: transparent; }
 .mr-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mr-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
