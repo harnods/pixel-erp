@@ -590,6 +590,15 @@ function printAllPlainBarcodes() {
     'products',
   )
 }
+// Bulk "Print barcode" from the Products table's row checkboxes — indices are
+// into `pagedStock` (the table's current page), same as ErpTablePage's own selection.
+function printSelectedPlainBarcodes(selectedRows: Set<number>) {
+  const rows = pagedStock.value.filter((_, i) => selectedRows.has(i))
+  openPrintAll(
+    rows.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
+    'selected products',
+  )
+}
 // Batch products — one label per batch (each batch's own barcode, generated on first use).
 function printAllBatchBarcodes() {
   const labels: BarcodeLabelInfo[] = []
@@ -923,6 +932,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               :sort-key="stockSortKey"
               :sort-dir="stockSortDir"
               :has-active-filter="!!search"
+              has-checkbox
+              bulk-label="product"
               @page-change="onProductsPageChange"
               @per-page-change="onProductsPerPageChange"
               @sort-change="setStockSort"
@@ -1039,6 +1050,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
+              </template>
+
+              <!-- bulk selection actions -->
+              <template #bulk-actions="{ selectedRows, deselectAll }">
+                <button
+                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  type="button"
+                  @click="printSelectedPlainBarcodes(selectedRows as Set<number>); deselectAll()"
+                >{{ t('Print barcode') }}</button>
               </template>
 
               <!-- full empty state -->
