@@ -441,7 +441,7 @@ function suppressFabClick(e: MouseEvent) {
               <template v-else>{{ bomNo }}</template>
             </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
-            <MpButton variant="textLink" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
+            <MpButton variant="textLink" size="sm" class="wod-hierarchy-link">
               {{ t('View work order hierarchy') }}
             </MpButton>
           </div>
@@ -1037,7 +1037,10 @@ function suppressFabClick(e: MouseEvent) {
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
 .wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
 .wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.wod-hierarchy-link { align-self: flex-start; margin-top: var(--mp-spacing-1); padding-left: 0; padding-right: 0; }
+.wod-hierarchy-link {
+  align-self: flex-start; height: auto; margin-top: 2px; padding: 0;
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
+}
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }
 .wod-attach-name { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); }
