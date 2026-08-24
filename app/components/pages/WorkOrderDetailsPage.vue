@@ -12,17 +12,20 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpSelect, MpDatePicker, css,
+  MpIcon, MpSelect, MpDatePicker, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
-import { recordsForWorkOrder } from '~/data/materialConsumeReturn'
+import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
+import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
+import { warehouses } from '~/data/warehouses'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -99,34 +102,88 @@ const collapsed = reactive<Record<string, boolean>>({
 // ── Line-item status derivation (from the work order status) ─────────────────────
 const routingLineStatus = computed(() => STATUS_LABEL[wo.value?.status ?? 'not started'])
 
-// Adjusted qty = the (possibly adjusted) planned qty; consumed = actual used per
-// status; variance = adjusted − consumed.
-function adjustedFor(r: { needed: number; adjusted: number }) {
-  return wo.value?.status === 'canceled' ? 0 : r.adjusted
+// Consumed = the real total from this work order's Material consume & return
+// records (Consume qty net of any Return qty) — the same records the Material
+// consume & return tab lists. Difference is simply needed − consumed.
+function consumedFor(productId: string): number {
+  if (!wo.value) return 0
+  return Math.max(0, recordsForWorkOrder(wo.value.id)
+    .filter(r => r.productId === productId)
+    .reduce((s, r) => s + r.qty, 0))
 }
-function varianceFor(r: { needed: number; adjusted: number }) {
-  return adjustedFor(r) - consumedFor(r.needed)
-}
-function consumedFor(needed: number) {
-  const s = wo.value?.status
-  if (s === 'partially produced' || s === 'partially completed') return Math.round(needed * 0.5)
-  if (s === 'completed') return needed
-  return 0
+function varianceFor(r: { needed: number; productId: string }) {
+  return r.needed - consumedFor(r.productId)
 }
 // Actual start/end shown only when the work order has reached that stage.
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 // ── Line-item data — sourced from the real BOM this work order was raised from ──
-// `adjusted` = needed qty after the "adjust work order" action; the BOM template
-// doesn't track an execution warehouse, so a representative default is used.
+// The BOM template doesn't track an execution warehouse, so a representative
+// default is used for display.
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, adjusted: r.needed, unit: r.unit }
+  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+// ── Complete work order — blocked by unconsumed raw material qty ────────────
+// Clicking "Complete work order" while any raw material still has qty left to
+// consume shows a confirmation (Figma: Work Order Details / Partial
+// Consumption / Auto-consume Remaining) instead of completing outright.
+const CURRENT_USER = 'Rizal Candra'
+const AUTO_CONSUME_WAREHOUSE_ID = warehouses.find(w => w.status === 'active')?.id ?? warehouses[0]?.id ?? ''
+function trackingLabelForMaterial(productId: string): string | undefined {
+  const category = catalogProduct(productId)?.category ?? ''
+  if (isSerialized(category)) return 'View serial number'
+  if (isBatchTracked(category)) return 'View batch'
+  return undefined
+}
+const remainingRawMaterials = computed<CompleteWorkOrderRow[]>(() =>
+  rawMaterials.value
+    .map(r => {
+      const consumed = consumedFor(r.productId)
+      return {
+        productId: r.productId, product: r.product, sku: r.sku,
+        needed: r.needed, consumed, remaining: Math.max(0, r.needed - consumed), unit: r.unit,
+        trackingLabel: trackingLabelForMaterial(r.productId),
+      }
+    })
+    .filter(r => r.remaining > 0),
+)
+const showCompleteModal = ref(false)
+function completeWorkOrder() {
+  if (!wo.value) return
+  wo.value.status = 'completed'
+  wo.value.endDate = new Date().toISOString().slice(0, 10)
+  persistWorkOrders()
+  toast.notify({ variant: 'success', title: 'Work order completed' })
+}
+function onAutoConsumeAndComplete() {
+  if (!wo.value) return
+  const isoDate = new Date().toISOString().slice(0, 10)
+  remainingRawMaterials.value.forEach((r) => {
+    addMaterialConsumeReturnRecord({
+      workOrderId: wo.value!.id,
+      type: 'Consume',
+      productId: r.productId,
+      date: isoDate,
+      qty: r.remaining,
+      unit: r.unit,
+      warehouseId: AUTO_CONSUME_WAREHOUSE_ID,
+      memo: 'Auto-consumed on work order completion',
+      recordedBy: CURRENT_USER,
+    })
+  })
+  completeWorkOrder()
+}
+function handlePrimaryAction() {
+  if (primaryAction.value !== 'Complete work order') return
+  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  completeWorkOrder()
+}
 
 // ── Material consume & return — sourced from the persisted store ────────────
 // Seeded with one Consume record per raw material actually consumed (mirrors
@@ -355,7 +412,7 @@ function suppressFabClick(e: MouseEvent) {
           {{ t('View work order hierarchy') }}
         </button>
 
-        <button v-if="primaryAction" class="detail-btn detail-btn--primary">{{ primaryAction }}</button>
+        <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
     </header>
 
@@ -419,7 +476,6 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Adjusted qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Difference') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
@@ -434,8 +490,7 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(adjustedFor(r)) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.needed)) }}</td>
+                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td wod-td--num">{{ num(varianceFor(r)) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
@@ -809,6 +864,12 @@ function suppressFabClick(e: MouseEvent) {
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <CompleteWorkOrderModal
+      v-model:is-open="showCompleteModal"
+      :rows="remainingRawMaterials"
+      @complete="onAutoConsumeAndComplete"
+    />
   </div>
 
   <!-- Not found -->
