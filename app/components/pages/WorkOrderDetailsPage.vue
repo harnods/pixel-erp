@@ -274,6 +274,63 @@ onMounted(() => {
   })
 })
 onUnmounted(() => { crrStageObserver?.disconnect() })
+
+// ── Demo flow FAB — draggable so it can be moved off whatever it's covering ──
+// Position is persisted (per browser) so it stays where it was last dropped.
+const FAB_POS_KEY = 'wod-flow-fab-pos'
+const fabPos = ref<{ left: number; top: number } | null>(null)
+const fabDragging = ref(false)
+let fabDidDrag = false
+onMounted(() => {
+  try {
+    const saved = localStorage.getItem(FAB_POS_KEY)
+    if (saved) fabPos.value = JSON.parse(saved)
+  } catch { /* ignore malformed/unavailable storage */ }
+})
+function onFabPointerDown(e: PointerEvent) {
+  if (e.button !== undefined && e.button !== 0) return
+  const btn = e.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  const startX = e.clientX
+  const startY = e.clientY
+  const startLeft = rect.left
+  const startTop = rect.top
+  fabDidDrag = false
+  function onMove(ev: PointerEvent) {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (!fabDidDrag && Math.hypot(dx, dy) > 4) { fabDidDrag = true; fabDragging.value = true }
+    if (!fabDidDrag) return
+    const maxLeft = window.innerWidth - rect.width
+    const maxTop = window.innerHeight - rect.height
+    fabPos.value = {
+      left: Math.min(Math.max(0, startLeft + dx), maxLeft),
+      top: Math.min(Math.max(0, startTop + dy), maxTop),
+    }
+  }
+  function onUp() {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    fabDragging.value = false
+    if (fabDidDrag) {
+      if (fabPos.value) {
+        try { localStorage.setItem(FAB_POS_KEY, JSON.stringify(fabPos.value)) } catch { /* ignore */ }
+      }
+      // The button followed the cursor, so it's still under it at release —
+      // the browser fires a native click there next, which would open the
+      // popover Pixel's own trigger listens for. A capture-phase listener on
+      // window runs before that (bubble-phase) listener ever sees the event,
+      // so swallow this one click and let normal clicks through afterward.
+      window.addEventListener('click', suppressFabClick, { capture: true, once: true })
+    }
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+function suppressFabClick(e: MouseEvent) {
+  e.preventDefault()
+  e.stopImmediatePropagation()
+}
 </script>
 
 <template>
@@ -763,7 +820,12 @@ onUnmounted(() => { crrStageObserver?.disconnect() })
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wod-flow-fab" :aria-label="t('Change work order flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <button
+          class="wod-flow-fab" :class="{ 'wod-flow-fab--dragging': fabDragging }"
+          :style="fabPos ? { left: fabPos.left + 'px', top: fabPos.top + 'px', right: 'auto', bottom: 'auto' } : undefined"
+          :aria-label="t('Change work order flow')"
+          @pointerdown="onFabPointerDown"
+        ><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="wod-flow-fab-heading">{{ t('Work order flow') }}</p>
@@ -805,10 +867,12 @@ onUnmounted(() => { crrStageObserver?.disconnect() })
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: grab; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+  touch-action: none; user-select: none;
 }
 .wod-flow-fab:hover { opacity: 0.9; }
+.wod-flow-fab--dragging { cursor: grabbing; opacity: 0.85; transition: none; }
 .wod-flow-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Material consume & return ───────────────────────────────────────────── */
