@@ -387,14 +387,19 @@ function handleSave() {
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
                     <td class="mr-td mr-td--input">
                       <MpInput
-                        :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width
-                        :max="row.consumedQty" @update:model-value="onReturnQtyInput(row)"
+                        :id="`mr-qty-${row.productId}`"
+                        :model-value="row.consumedQty === 0 ? '0' : row.qtyValue"
+                        type="number" placeholder="0" is-full-width
+                        :is-disabled="row.consumedQty === 0"
+                        :max="row.consumedQty"
+                        @update:model-value="(v: string) => { row.qtyValue = v; onReturnQtyInput(row) }"
                       />
                       <template v-if="row.trackingType">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
-                        <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
-                          {{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}
-                        </a>
+                        <a
+                          class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId || row.consumedQty === 0 }"
+                          @click.prevent="openTracking(row)"
+                        >{{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}</a>
                       </template>
                     </td>
                   </template>
