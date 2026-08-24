@@ -2353,7 +2353,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   height: var(--mp-sizes-8, 32px);
 }
 /* Header select-all checkbox — inline with "Product", no fixed height needed. */
-.wh-batch-th-check { display: inline-flex; vertical-align: middle; margin-right: var(--mp-spacing-1); }
+.wh-batch-th-check { display: inline-flex; align-items: center; vertical-align: middle; margin-right: var(--mp-spacing-1); }
+.wh-batch-th-check :deep(.mp-checkbox__root) { vertical-align: middle; }
 .wh-expand-btn {
   flex-shrink: 0;
   display: inline-flex;
