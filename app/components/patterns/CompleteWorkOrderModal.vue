@@ -9,7 +9,6 @@
  * A custom Teleport overlay, not MpModal — MpModal renders with no structural
  * CSS in this Pixel3 build (see ConfirmModal.vue for the same root cause/fix).
  */
-import { ref } from 'vue'
 import { MpIcon } from '@mekari/pixel3'
 
 export interface CompleteWorkOrderRow {
@@ -22,6 +21,8 @@ export interface CompleteWorkOrderRow {
   unit: string
   /** "View batch" / "View serial number" — only set for tracked materials. */
   trackingLabel?: string
+  /** Warehouse the reservation below was picked from. */
+  warehouseId?: string
   /** The work order's reservation for this product, minus whatever's already
    *  been consumed — i.e. what's still reserved but sitting unconsumed. */
   reservedBatch?: { batchNo: string; qty: number }[]
@@ -37,21 +38,12 @@ const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'adjust'): void
   (e: 'complete'): void
+  (e: 'view-tracking', row: CompleteWorkOrderRow): void
 }>()
 
 function close() { emit('update:isOpen', false) }
 function adjust() { emit('adjust'); close() }
 function complete() { emit('complete'); close() }
-
-// "View batch" / "View serial number" expands an inline row showing exactly
-// which reserved units are still sitting unconsumed for that material.
-const expanded = ref<Set<string>>(new Set())
-function toggleExpand(productId: string) {
-  const next = new Set(expanded.value)
-  if (next.has(productId)) next.delete(productId)
-  else next.add(productId)
-  expanded.value = next
-}
 </script>
 
 <template>
@@ -80,33 +72,17 @@ function toggleExpand(productId: string) {
               </tr>
             </thead>
             <tbody>
-              <template v-for="r in rows" :key="r.productId">
-                <tr class="cwo-tr">
-                  <td class="cwo-td">{{ r.product }}</td>
-                  <td class="cwo-td">{{ r.sku }}</td>
-                  <td class="cwo-td cwo-td--num">{{ r.needed }}</td>
-                  <td class="cwo-td cwo-td--num">
-                    <span>{{ r.consumed }}</span>
-                    <a v-if="r.trackingLabel" class="cwo-tracking" @click.prevent="toggleExpand(r.productId)">
-                      {{ expanded.has(r.productId) ? 'Hide' : r.trackingLabel }}
-                    </a>
-                  </td>
-                  <td class="cwo-td cwo-td--num">{{ r.remaining }}</td>
-                  <td class="cwo-td">{{ r.unit }}</td>
-                </tr>
-                <tr v-if="expanded.has(r.productId)" class="cwo-tr cwo-tr--detail">
-                  <td class="cwo-td cwo-td--detail" colspan="6">
-                    <p class="cwo-reserved-heading">Reserved, not yet consumed</p>
-                    <div v-if="r.reservedSerial?.length" class="cwo-reserved-list">
-                      <span v-for="s in r.reservedSerial" :key="s" class="cwo-reserved-chip">{{ s }}</span>
-                    </div>
-                    <div v-else-if="r.reservedBatch?.length" class="cwo-reserved-list">
-                      <span v-for="b in r.reservedBatch" :key="b.batchNo" class="cwo-reserved-chip">{{ b.batchNo }} · {{ b.qty }} {{ r.unit }}</span>
-                    </div>
-                    <p v-else class="cwo-reserved-empty">No reservation on file for this material.</p>
-                  </td>
-                </tr>
-              </template>
+              <tr v-for="r in rows" :key="r.productId" class="cwo-tr">
+                <td class="cwo-td">{{ r.product }}</td>
+                <td class="cwo-td">{{ r.sku }}</td>
+                <td class="cwo-td cwo-td--num">{{ r.needed }}</td>
+                <td class="cwo-td cwo-td--num">
+                  <span>{{ r.consumed }}</span>
+                  <a v-if="r.trackingLabel" class="cwo-tracking" @click.prevent="emit('view-tracking', r)">{{ r.trackingLabel }}</a>
+                </td>
+                <td class="cwo-td cwo-td--num">{{ r.remaining }}</td>
+                <td class="cwo-td">{{ r.unit }}</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -176,16 +152,6 @@ function toggleExpand(productId: string) {
 .cwo-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .cwo-tracking { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .cwo-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cwo-tr--detail .cwo-td { background: var(--mp-background-neutral-subtle); }
-.cwo-td--detail { padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); }
-.cwo-reserved-heading { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
-.cwo-reserved-list { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
-.cwo-reserved-chip {
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums; color: var(--mp-text-default);
-}
-.cwo-reserved-empty { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .cwo-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);

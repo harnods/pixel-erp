@@ -127,7 +127,7 @@ export function remainingReservation(
     ?.map(b => ({ batchNo: b.batchNo, qty: b.qty - (consumedBatch.get(b.batchNo) ?? 0) }))
     .filter(b => b.qty > 0)
   const serialSelection = reservation.serialSelection?.filter(s => !consumedSerial.has(s))
-  return { batchSelection, serialSelection }
+  return { warehouseId: reservation.warehouseId, batchSelection, serialSelection }
 }
 
 let addSeq = materialConsumeReturnRecords.length

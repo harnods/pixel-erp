@@ -19,6 +19,8 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
+import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
@@ -150,12 +152,28 @@ const remainingRawMaterials = computed<CompleteWorkOrderRow[]>(() =>
         productId: r.productId, product: r.product, sku: r.sku,
         needed: r.needed, consumed, remaining: Math.max(0, r.needed - consumed), unit: r.unit,
         trackingLabel: trackingLabelForMaterial(r.productId),
+        warehouseId: reserved.warehouseId,
         reservedBatch: reserved.batchSelection, reservedSerial: reserved.serialSelection,
       }
     })
     .filter(r => r.remaining > 0),
 )
 const showCompleteModal = ref(false)
+
+// "View batch" / "View serial number" in the complete-work-order modal opens
+// the same pick drawer used elsewhere, pre-filled with what's still reserved
+// but unconsumed — read-only in effect, since there's nothing to save back to
+// mid-completion; closing (Cancel or Save) just dismisses it.
+const viewTrackingRow = ref<CompleteWorkOrderRow | null>(null)
+function onViewTracking(row: CompleteWorkOrderRow) { viewTrackingRow.value = row }
+function closeViewTracking() { viewTrackingRow.value = null }
+const viewTrackingWarehouseName = computed(() => warehouses.find(w => w.id === viewTrackingRow.value?.warehouseId)?.name ?? '')
+const viewTrackingType = computed<'serial' | 'batch' | undefined>(() => {
+  const category = viewTrackingRow.value ? catalogProduct(viewTrackingRow.value.productId)?.category ?? '' : ''
+  if (isSerialized(category)) return 'serial'
+  if (isBatchTracked(category)) return 'batch'
+  return undefined
+})
 function completeWorkOrder() {
   if (!wo.value) return
   wo.value.status = 'completed'
@@ -874,6 +892,38 @@ function suppressFabClick(e: MouseEvent) {
       v-model:is-open="showCompleteModal"
       :rows="remainingRawMaterials"
       @complete="onAutoConsumeAndComplete"
+      @view-tracking="onViewTracking"
+    />
+
+    <!-- "View batch" / "View serial number" from the complete-work-order modal —
+         same pick drawer used elsewhere, just for looking at what's still
+         reserved but unconsumed; nothing here is persisted on close. -->
+    <PickSerialNumberDrawer
+      v-if="viewTrackingRow && viewTrackingType === 'serial'"
+      :open="!!viewTrackingRow"
+      :product-name="viewTrackingRow.product"
+      :product-img="catalogProduct(viewTrackingRow.productId)?.img"
+      :sku="viewTrackingRow.sku"
+      :warehouse-id="viewTrackingRow.warehouseId ?? ''"
+      :warehouse-name="viewTrackingWarehouseName"
+      :target-count="viewTrackingRow.reservedSerial?.length ?? 0"
+      :model-value="viewTrackingRow.reservedSerial ?? []"
+      @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
+      @save="closeViewTracking"
+    />
+    <PickBatchDrawer
+      v-if="viewTrackingRow && viewTrackingType === 'batch'"
+      :open="!!viewTrackingRow"
+      :product-name="viewTrackingRow.product"
+      :product-img="catalogProduct(viewTrackingRow.productId)?.img"
+      :sku="viewTrackingRow.sku"
+      :warehouse-id="viewTrackingRow.warehouseId ?? ''"
+      :warehouse-name="viewTrackingWarehouseName"
+      :unit="viewTrackingRow.unit"
+      :target-count="(viewTrackingRow.reservedBatch ?? []).reduce((s, b) => s + b.qty, 0)"
+      :model-value="viewTrackingRow.reservedBatch ?? []"
+      @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
+      @save="closeViewTracking"
     />
   </div>
 
@@ -889,6 +939,10 @@ function suppressFabClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
+   1400) — without this it'd render behind that modal instead of on top of it. */
+:deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
+
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
 .wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }

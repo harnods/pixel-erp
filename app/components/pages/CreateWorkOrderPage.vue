@@ -381,8 +381,8 @@ function buildMaterialReservations(): Record<string, WorkOrderMaterialReservatio
   for (const row of rawRows.value) {
     if (!row.productId) continue
     const type = trackingTypeFor(row.productId)
-    if (type === 'serial' && row.serialSelection.length) out[row.productId] = { serialSelection: [...row.serialSelection] }
-    else if (type === 'batch' && row.batchSelection.length) out[row.productId] = { batchSelection: row.batchSelection.map(b => ({ ...b })) }
+    if (type === 'serial' && row.serialSelection.length) out[row.productId] = { warehouseId: row.warehouseId, serialSelection: [...row.serialSelection] }
+    else if (type === 'batch' && row.batchSelection.length) out[row.productId] = { warehouseId: row.warehouseId, batchSelection: row.batchSelection.map(b => ({ ...b })) }
   }
   return Object.keys(out).length ? out : undefined
 }

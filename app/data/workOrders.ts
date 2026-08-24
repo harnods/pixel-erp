@@ -54,6 +54,8 @@ export interface WorkOrder {
 }
 
 export interface WorkOrderMaterialReservation {
+  /** Warehouse the reservation was picked from — needed to look the units back up later. */
+  warehouseId?: string
   batchSelection?: { batchNo: string; qty: number }[]
   serialSelection?: string[]
 }
