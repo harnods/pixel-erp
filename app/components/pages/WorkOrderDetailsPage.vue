@@ -192,7 +192,11 @@ function onAutoConsumeAndComplete() {
       date: isoDate,
       qty: r.remaining,
       unit: r.unit,
-      warehouseId: AUTO_CONSUME_WAREHOUSE_ID,
+      // The warehouse the material was actually reserved from at work order
+      // creation — same warehouse "View batch"/"View serial number" showed.
+      // Falls back to the default only for untracked materials with no
+      // reservation to read a warehouse from.
+      warehouseId: r.warehouseId ?? AUTO_CONSUME_WAREHOUSE_ID,
       memo: 'Auto-consumed on work order completion',
       recordedBy: CURRENT_USER,
       // Whatever of the reservation was still unconsumed goes with it, so the
