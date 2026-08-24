@@ -2284,6 +2284,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   color: var(--mp-text-subtle);
   margin-top: var(--mp-spacing-0\.5);
 }
+/* Row-select checkbox (ErpTablePage's own .erp-cell-check) centers itself
+   against the WHOLE Name cell, which grows taller when the subtitle wraps to
+   2 lines — so it drifts above the thumbnail's own center. Pin the row to
+   top-align (like every other checkbox+content pairing in this file) and
+   nudge the checkbox down to the thumb's own vertical center instead. */
+:deep(.erp-products .erp-cell-check) { align-items: flex-start; }
+:deep(.erp-products .erp-cell-check > [data-pixel-component="MpCheckbox"]) {
+  margin-top: calc((var(--mp-sizes-8, 32px) - var(--mp-sizes-4, 16px)) / 2);
+}
 /* Strip td padding on the 4 wrapper columns so .wh-col-row fills the full cell */
 :deep(.erp-products td[data-col="locations"]),
 :deep(.erp-products td[data-col="onHand"]),
