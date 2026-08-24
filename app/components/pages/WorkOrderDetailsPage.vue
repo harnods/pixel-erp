@@ -12,7 +12,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpSelect, MpDatePicker, css, toast,
+  MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -37,6 +37,7 @@ const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.valu
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
+function goBom() { if (bom.value) router.push(`/bill-of-materials/${bom.value.id}`) }
 
 // ── Flow (Default vs From production request) ────────────────────────────────
 // From-PR adds the "Linked transactions" bottom tab. Preselected via ?source=pr.
@@ -412,11 +413,6 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="detail-btn detail-btn--secondary detail-btn--icon">
-          <MpIcon name="hierarchy" size="sm" />
-          {{ t('View work order hierarchy') }}
-        </button>
-
         <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
     </header>
@@ -440,8 +436,14 @@ function suppressFabClick(e: MouseEvent) {
         <div class="wod-info-grid">
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="wo.bomName" />
-            <ContentList :label="t('BOM no.')" :value="bomNo" />
+            <ContentList :label="t('BOM no.')">
+              <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
+              <template v-else>{{ bomNo }}</template>
+            </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
+            <MpButton variant="textLink" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
+              {{ t('View work order hierarchy') }}
+            </MpButton>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Type')" :value="wo.type" />
@@ -1033,6 +1035,9 @@ function suppressFabClick(e: MouseEvent) {
 /* ── Work order info grid — 4 columns ────────────────────────────────────── */
 .wod-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
+.wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
+.wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.wod-hierarchy-link { align-self: flex-start; margin-top: var(--mp-spacing-1); padding-left: 0; padding-right: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }
 .wod-attach-name { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); }
