@@ -1,29 +1,51 @@
 import type { PurchaseInvoice } from './types'
+import { vendors } from './vendors'
+import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
-export const purchaseInvoices: PurchaseInvoice[] = [
-  { id: 'PI001', number: 'PINV-2025-001', vendor: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  date: '2025-04-01', dueDate: '2025-05-01', amount: 32_500_000,  status: 'paid',    itemCount: 4,  hasAttachment: true,  tags: ['Supplies']     },
-  { id: 'PI002', number: 'PINV-2025-002', vendor: { id: 'V002', name: 'CV Abadi Jaya Teknik' },         date: '2025-04-02', dueDate: '2025-05-02', amount: 87_000_000,  status: 'open',    itemCount: 6,  hasAttachment: false                          },
-  { id: 'PI003', number: 'PINV-2025-003', vendor: { id: 'V003', name: 'PT Mitra Global Solusi' },       date: '2025-04-03', dueDate: '2026-05-05', amount: 15_200_000,  status: 'overdue', itemCount: 2,  hasAttachment: false                          },
-  { id: 'PI004', number: 'PINV-2025-004', vendor: { id: 'V004', name: 'PT Karya Cipta Mandiri' },       date: '2025-04-05', dueDate: '2025-05-05', amount: 24_800_000,  status: 'open',    itemCount: 3,  hasAttachment: true                           },
-  { id: 'PI005', number: 'PINV-2025-005', vendor: { id: 'V005', name: 'CV Berkah Utama Indonesia' },    date: '2025-04-07', dueDate: '2025-05-07', amount: 9_750_000,   status: 'paid',    itemCount: 5,  hasAttachment: false, tags: ['Retail']       },
-  { id: 'PI006', number: 'PINV-2025-006', vendor: { id: 'V006', name: 'PT Teknindo Nusantara' },        date: '2025-04-08', dueDate: '2026-05-05', amount: 41_000_000,  status: 'overdue', itemCount: 7,  hasAttachment: false                          },
-  { id: 'PI007', number: 'PINV-2025-007', vendor: { id: 'V007', name: 'PT Solusi Pratama Abadi' },      date: '2025-04-09', dueDate: '2025-05-09', amount: 18_300_000,  status: 'open',    itemCount: 4,  hasAttachment: true,  tags: ['B2B']          },
-  { id: 'PI008', number: 'PINV-2025-008', vendor: { id: 'V008', name: 'CV Harapan Bangsa Jaya' },       date: '2025-04-10', dueDate: '2025-05-10', amount: 6_500_000,   status: 'open',    itemCount: 2,  hasAttachment: false                          },
-  { id: 'PI009', number: 'PINV-2025-009', vendor: { id: 'V003', name: 'PT Mitra Global Solusi' },       date: '2025-04-11', dueDate: '2025-05-11', amount: 63_200_000,  status: 'open',    itemCount: 9,  hasAttachment: true                           },
-  { id: 'PI010', number: 'PINV-2025-010', vendor: { id: 'V009', name: 'PT Dinamika Usaha Bersama' },    date: '2025-04-12', dueDate: '2025-05-12', amount: 4_400_000,   status: 'paid',    itemCount: 1,  hasAttachment: false                          },
-  { id: 'PI011', number: 'PINV-2025-011', vendor: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },   date: '2025-04-14', dueDate: '2025-05-14', amount: 112_000_000, status: 'open',    itemCount: 10, hasAttachment: false, tags: ['Supplies', 'VIP'] },
-  { id: 'PI012', number: 'PINV-2025-012', vendor: { id: 'V010', name: 'CV Prima Sentosa Raya' },        date: '2025-04-15', dueDate: '2026-05-05', amount: 7_800_000,   status: 'overdue', itemCount: 2,  hasAttachment: true                           },
-  { id: 'PI013', number: 'PINV-2025-013', vendor: { id: 'V002', name: 'CV Abadi Jaya Teknik' },         date: '2025-04-16', dueDate: '2025-05-16', amount: 3_200_000,   status: 'open',    itemCount: 1,  hasAttachment: false                          },
-  { id: 'PI014', number: 'PINV-2025-014', vendor: { id: 'V005', name: 'CV Berkah Utama Indonesia' },    date: '2025-04-17', dueDate: '2025-05-17', amount: 21_500_000,  status: 'paid',    itemCount: 3,  hasAttachment: false                          },
-  { id: 'PI015', number: 'PINV-2025-015', vendor: { id: 'V004', name: 'PT Karya Cipta Mandiri' },       date: '2025-04-18', dueDate: '2025-05-18', amount: 145_000_000, status: 'open',    itemCount: 14, hasAttachment: true,  tags: ['VIP']          },
-  { id: 'PI016', number: 'PINV-2025-016', vendor: { id: 'V006', name: 'PT Teknindo Nusantara' },        date: '2025-04-19', dueDate: '2025-05-19', amount: 5_100_000,   status: 'paid',    itemCount: 2,  hasAttachment: false                          },
-  { id: 'PI017', number: 'PINV-2025-017', vendor: { id: 'V007', name: 'PT Solusi Pratama Abadi' },      date: '2025-04-20', dueDate: '2025-05-20', amount: 28_900_000,  status: 'open',    itemCount: 5,  hasAttachment: false, tags: ['B2B']          },
-  { id: 'PI018', number: 'PINV-2025-018', vendor: { id: 'V008', name: 'CV Harapan Bangsa Jaya' },       date: '2025-04-21', dueDate: '2026-05-05', amount: 11_700_000,  status: 'overdue', itemCount: 3,  hasAttachment: false                          },
-  { id: 'PI019', number: 'PINV-2025-019', vendor: { id: 'V009', name: 'PT Dinamika Usaha Bersama' },    date: '2025-04-22', dueDate: '2025-05-22', amount: 52_300_000,  status: 'paid',    itemCount: 7,  hasAttachment: true                           },
-  { id: 'PI020', number: 'PINV-2025-020', vendor: { id: 'V010', name: 'CV Prima Sentosa Raya' },        date: '2025-04-23', dueDate: '2025-05-23', amount: 198_000_000, status: 'open',    itemCount: 16, hasAttachment: false, tags: ['VIP', 'B2B']   },
-  { id: 'PI021', number: 'PINV-2025-021', vendor: { id: 'V003', name: 'PT Mitra Global Solusi' },       date: '2025-04-23', dueDate: '2025-05-23', amount: 2_600_000,   status: 'paid',    itemCount: 1,  hasAttachment: false                          },
-  { id: 'PI022', number: 'PINV-2025-022', vendor: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },   date: '2025-04-23', dueDate: '2025-05-23', amount: 8_250_000,   status: 'open',    itemCount: 2,  hasAttachment: false                          },
-  { id: 'PI023', number: 'PINV-2025-023', vendor: { id: 'V006', name: 'PT Teknindo Nusantara' },        date: '2025-04-24', dueDate: '2026-05-05', amount: 37_500_000,  status: 'overdue', itemCount: 4,  hasAttachment: true,  tags: ['Retail']       },
-  { id: 'PI024', number: 'PINV-2025-024', vendor: { id: 'V004', name: 'PT Karya Cipta Mandiri' },       date: '2025-04-24', dueDate: '2025-05-24', amount: 16_900_000,  status: 'open',    itemCount: 3,  hasAttachment: false                          },
-  { id: 'PI025', number: 'PINV-2025-025', vendor: { id: 'V002', name: 'CV Abadi Jaya Teknik' },         date: '2025-04-24', dueDate: '2025-05-24', amount: 1_800_000,   status: 'paid',    itemCount: 1,  hasAttachment: false                          },
+/**
+ * Vendor invoices (AP) — a deterministic TIME SERIES spanning 1 Jan 2026 → today
+ * (22 Aug 2026), using the shared `vendors` master so AP reconciles to one vendor
+ * identity. Status is derived from the due date vs "today":
+ *   • due passed + unpaid → overdue   • due passed + paid → paid   • not due → open
+ */
+const PINV_COUNT = 80
+const AMOUNTS = [
+  1_800_000, 6_400_000, 16_900_000, 9_200_000, 37_500_000, 12_000_000,
+  24_800_000, 74_000_000, 3_300_000, 52_000_000, 28_000_000, 18_500_000,
 ]
+
+function buildPurchaseInvoices(): PurchaseInvoice[] {
+  const out: PurchaseInvoice[] = []
+  for (let i = 0; i < PINV_COUNT; i++) {
+    const offset = Math.floor((i * SIM_SPAN_DAYS) / PINV_COUNT)
+    const date = simDay(offset)
+    const dueDate = simDay(offset + 30)
+    const vendor = vendors[i % vendors.length]!
+    const amount = AMOUNTS[i % AMOUNTS.length]! + (i % 4) * 900_000
+    const duePassed = daysUntil(dueDate) < 0
+
+    let status: PurchaseInvoice['status']
+    if (duePassed) status = (i % 7 === 0 || i % 12 === 0) ? 'overdue' : 'paid'
+    else status = 'open'
+
+    const tags: string[] = []
+    if (amount >= 50_000_000) tags.push('Import')
+    if (i % 5 === 0) tags.push('Raw material')
+
+    out.push({
+      id: `PI${String(i + 1).padStart(3, '0')}`,
+      number: `PINV-2026-${String(i + 1).padStart(3, '0')}`,
+      vendor: { id: vendor.id, name: vendor.name },
+      date,
+      dueDate,
+      amount,
+      status,
+      itemCount: 1 + (i % 6),
+      hasAttachment: i % 3 === 0,
+      ...(tags.length ? { tags } : {}),
+    })
+  }
+  return out.reverse() // newest first
+}
+
+export const purchaseInvoices: PurchaseInvoice[] = buildPurchaseInvoices()

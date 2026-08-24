@@ -23,6 +23,7 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
@@ -98,6 +99,7 @@ const pageRegistry: Record<string, Component> = {
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
+  'Purchase requests': defineAsyncComponent(() => import('~/components/pages/PurchaseRequestsPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
@@ -135,6 +137,8 @@ const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
+const PurchaseRequestsPage = asyncPage(() => import('~/components/pages/PurchaseRequestsPage.vue'))
+const PurchaseRequestsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseRequestsAwaitingApprovalPage.vue'))
 const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
@@ -204,6 +208,7 @@ const poDetailOrderId = ref<string | null>(null)
 const poFormOpen = ref(false)
 const poFormDuplicateId = ref<string | null>(null)
 const poFormRejectionBanner = ref<{ user: string; date: string; reason?: string } | null>(null)
+const poFormPrIds = ref<string[]>([])
 const showPurchaseOrderDetail = computed(() => currentPageKey.value === 'Purchase orders' && !!poDetailOrderId.value && !poFormOpen.value)
 const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchase orders' && poFormOpen.value)
 provide('openPurchaseOrder',  (id: string) => { poDetailOrderId.value = id })
@@ -227,14 +232,34 @@ function openNewPurchaseOrderForm() {
   poFormOpen.value = true
   poFormDuplicateId.value = null
   poFormRejectionBanner.value = null
+  poFormPrIds.value = []
 }
+// Create a PO from one or more purchase requests — jump to Purchase orders and
+// open the form pre-loaded with those requests (carried via ?fromPr so it
+// survives the page-key change that would otherwise reset the form state).
+provide('createPurchaseOrderFromRequests', (ids: string[]) => {
+  router.push({ path: '/purchase-orders', query: { fromPr: ids.join(',') } })
+})
 provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: string; reason?: string } | null) => {
   poFormOpen.value = true
   poFormDuplicateId.value = id
   poFormRejectionBanner.value = banner ?? null
 })
-provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
-watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
+provide('closePurchaseOrderForm', () => {
+  poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = []
+  if (route.query.fromPr) router.replace({ query: { ...route.query, fromPr: undefined } })
+})
+watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = [] })
+// Open the PO form pre-loaded from purchase requests when arriving with ?fromPr
+// (runs after the reset watch above, so it wins on the same navigation).
+watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr]) => {
+  if (key === 'Purchase orders' && fromPr) {
+    poFormPrIds.value = String(fromPr).split(',').filter(Boolean)
+    poFormOpen.value = true
+    poFormDuplicateId.value = null
+    poFormRejectionBanner.value = null
+  }
+}, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
@@ -600,6 +625,7 @@ const pageTabs: Record<string, string[]> = {
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
+  'Purchase requests': ['All requests', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -662,6 +688,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (purchaseInvoices.length) out['Awaiting Approval'] = purchaseInvoices.length
     if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
     return out
+  }
+  if (currentPageKey.value === 'Purchase requests') {
+    const awaiting = awaitingPurchaseRequestCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
@@ -788,6 +818,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All purchase invoices': PurchaseInvoicesPage,
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+  },
+  // Awaiting approval reuses the Expenses approval-queue table (Approve button +
+  // task/comment icons), context-adapted to purchase requests.
+  'Purchase requests': {
+    'All requests': PurchaseRequestsPage,
+    'Awaiting approval': PurchaseRequestsAwaitingApprovalPage,
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
@@ -1460,7 +1496,7 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <!-- Purchase Orders detail/form overlay — own layout, bypasses the title bar below -->
-      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" />
+      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" :purchase-request-ids="poFormPrIds" />
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
 
       <template v-else>
@@ -1551,6 +1587,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            {{ t('Import') }}
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New purchase request') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Sales quotes'" class="page-title-actions">
@@ -1857,11 +1904,11 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase orders'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="infoToast('Import purchase orders — coming soon')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 15V3M12 3L8 7M12 3l4 4M4 15v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
+            Import
           </button>
           <button class="btn-enterprise btn-enterprise--primary" @click="openNewPurchaseOrderForm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2485,11 +2532,16 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
-  /* side/bottom padding scrolls with content; the top 24px is a fixed border
+  /* side/bottom padding scrolls with content; the top gap is a fixed border
      (borders don't scroll) so content keeps a 24px gap from the stage's top edge.
+     The gap is 23px border + 1px padding (still 24px total): the 1px padding lands
+     the first child JUST inside the overflow clip boundary, so a top-border element
+     flush at the top (e.g. the rounded filter-bar search) isn't shaved by the clip.
      Bottom is 80px so the last row of content clears the fold with breathing room. */
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-20, 80px);
-  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+  padding: 1px var(--mp-spacing-6) var(--mp-spacing-20, 80px);
+  border-top: calc(var(--mp-spacing-6) - 1px) solid var(--mp-background-stage);
+  /* Keep focus scroll-into-view clear of the fixed top border too. */
+  scroll-padding-top: var(--mp-spacing-6);
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);

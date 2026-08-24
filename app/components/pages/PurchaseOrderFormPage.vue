@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpFormControl, MpFormLabel, MpInput, MpTextarea,
-  MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
+  MpButton, MpTextlink, MpFormControl, MpFormLabel, MpInput, MpTextarea,
+  MpInputGroup, MpInputLeftAddon,
   MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon,
@@ -10,17 +10,21 @@ import {
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
-import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products } from '~/data'
-import type { POLineItem, POAttachment } from '~/data/purchaseOrderDetails'
-import type { PurchaseOrder } from '~/data/types'
+import { MpAutocomplete } from '@mekari/pixel3'
+import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest } from '~/data'
+import type { POAttachment } from '~/data/purchaseOrderDetails'
+import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
+import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
   rejectionBanner?: { user: string; date: string; reason?: string } | null
+  purchaseRequestIds?: string[] | null
 }>()
 
 const closePurchaseOrderForm = inject<() => void>('closePurchaseOrderForm')
 const openPurchaseOrder = inject<(id: string) => void>('openPurchaseOrder')
+const router = useRouter()
 
 const source = computed(() => props.duplicateOrderId ? getPurchaseOrderDetail(props.duplicateOrderId) : null)
 
@@ -61,56 +65,96 @@ const priceIncludesTax = ref(false)
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
 function onTagsChange(data: DataInterface[])  { tagsList.value = data }
 
-type EditableItem = POLineItem & { _key: number }
+// ── Line-item model ──────────────────────────────────────────────────────────
+// A PO is built either from purchase requests (accordion groups, with requested /
+// available / qty-to-order columns) or blank (flat product rows). Both use the
+// same editable-cell pattern as NewExpensePage's form table (ex-* cells).
+interface POLine {
+  _key: number
+  product: string; sku: string; description: string
+  requestedQty?: number; availableQty?: number     // only for request-sourced lines
+  qty: number                                       // qty to order
+  unit: string; unitCost: number; discountPct: number; taxLabel: string
+}
+interface POGroup { prId: string; prNumber: number; collapsed: boolean; lines: POLine[] }
+
 let _seq = 0
-const items = ref<EditableItem[]>((source.value?.lineItems ?? []).map(it => ({ ...it, _key: ++_seq })))
-
-function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
-
-function lineAmount(item: EditableItem) {
-  return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
+function lineFromPR(l: PurchaseRequestLine): POLine {
+  return {
+    _key: ++_seq, product: l.product, sku: l.sku, description: l.description,
+    requestedQty: l.requestedQty, availableQty: l.availableQty,
+    qty: l.requestedQty, unit: l.unit, unitCost: l.unitCost, discountPct: 0, taxLabel: l.taxLabel,
+  }
+}
+function groupFromPR(id: string): POGroup | null {
+  const pr = getPurchaseRequest(id)
+  if (!pr) return null
+  return { prId: pr.id, prNumber: pr.number, collapsed: false, lines: pr.lines.map(lineFromPR) }
 }
 
-function productMatches(query: string) {
-  const q = query.trim().toLowerCase()
-  if (!q) return products
-  return products.filter(p => p.name.toLowerCase().includes(q))
+// From-PR mode → accordion groups. Blank/duplicate mode → flat product rows.
+const groups = ref<POGroup[]>((props.purchaseRequestIds ?? []).map(groupFromPR).filter((g): g is POGroup => !!g))
+const fromPr = computed(() => groups.value.length > 0)
+
+const blankItems = ref<POLine[]>((source.value?.lineItems ?? []).map(it => ({
+  _key: ++_seq, product: it.product, sku: it.sku, description: it.description,
+  qty: it.qty, unit: it.unit, unitCost: it.unitPrice, discountPct: it.discountPct, taxLabel: it.taxLabel,
+})))
+
+// Every editable line across the current mode (drives totals).
+const allLines = computed<POLine[]>(() => fromPr.value ? groups.value.flatMap(g => g.lines) : blankItems.value)
+
+function lineAmount(line: POLine) {
+  return Math.round(line.qty * line.unitCost * (1 - line.discountPct / 100))
 }
 
-const NEW_ROW_KEY = -1
-const openProductRow = ref<number | null>(null)
+function toggleGroup(g: POGroup) { g.collapsed = !g.collapsed }
+function removeGroup(prId: string) { groups.value = groups.value.filter(g => g.prId !== prId) }
+function removeGroupLine(g: POGroup, key: number) { g.lines = g.lines.filter(l => l._key !== key) }
+function removeBlankItem(key: number) { blankItems.value = blankItems.value.filter(l => l._key !== key) }
 
-function selectProduct(item: EditableItem, p: typeof products[number]) {
-  item.product = p.name
-  item.sku = p.code
-  item.unit = p.unit
-  item.unitPrice = p.price
-  openProductRow.value = null
+// Product select (fills sku / unit / unit cost from the master).
+function onProductSelect(line: POLine) {
+  const p = products.find(pp => pp.name === line.product)
+  if (p) { line.sku = p.code; line.unit = p.unit; if (!line.unitCost) line.unitCost = p.price }
 }
 
-const newRowSearch = ref('')
-function selectNewProduct(p: typeof products[number]) {
-  items.value.push({
-    _key: ++_seq,
-    product: p.name,
-    sku: p.code,
-    description: '',
-    qty: 1,
-    unit: p.unit,
-    unitPrice: p.price,
-    discountPct: 0,
-    taxLabel: 'PPN 11%',
-    amount: p.price,
+// Blank mode: a trailing empty row that materialises a new line on product select.
+const newProduct = ref('')
+function onNewProduct() {
+  const p = products.find(pp => pp.name === newProduct.value)
+  if (!p) return
+  blankItems.value.push({
+    _key: ++_seq, product: p.name, sku: p.code, description: '',
+    qty: 1, unit: p.unit, unitCost: p.price, discountPct: 0, taxLabel: 'PPN 11%',
   })
-  newRowSearch.value = ''
-  openProductRow.value = null
+  newProduct.value = ''
 }
 
-const unitOptions = computed(() => Array.from(new Set([...UNIT_OPTIONS, ...items.value.map(i => i.unit)])))
-const taxOptions   = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.value.map(i => i.taxLabel)])))
+// ── Add-purchase-request modal ──
+const addPrOpen = ref(false)
+function onAddPurchaseRequests(ids: string[]) {
+  // Keep existing groups; append any newly-selected requests (dedup by id).
+  const existing = new Set(groups.value.map(g => g.prId))
+  for (const id of ids) {
+    if (existing.has(id)) continue
+    const g = groupFromPR(id)
+    if (g) groups.value.push(g)
+  }
+  // Also drop groups the user deselected in the modal.
+  const keep = new Set(ids)
+  groups.value = groups.value.filter(g => keep.has(g.prId))
+}
+const selectedPrIds = computed(() => groups.value.map(g => g.prId))
 
-const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
-const discountTotal = computed(() => items.value.reduce((s, it) => s + Math.round(it.qty * it.unitPrice * it.discountPct / 100), 0))
+const unitOptions = computed(() => Array.from(new Set([...UNIT_OPTIONS, ...allLines.value.map(i => i.unit)])))
+const taxOptions   = computed(() => Array.from(new Set([...TAX_OPTIONS, ...allLines.value.map(i => i.taxLabel)])))
+// MpAutocomplete needs {name} objects (label-prop/value-prop = "name").
+const unitData = computed(() => unitOptions.value.map(u => ({ name: u })))
+const taxData  = computed(() => taxOptions.value.map(x => ({ name: x })))
+
+const subtotal      = computed(() => allLines.value.reduce((s, it) => s + it.qty * it.unitCost, 0))
+const discountTotal = computed(() => allLines.value.reduce((s, it) => s + Math.round(it.qty * it.unitCost * it.discountPct / 100), 0))
 
 const globalDiscountType  = ref<'%' | 'Rp'>('%')
 const globalDiscountValue = ref(0)
@@ -160,6 +204,12 @@ function nextPoId(): string {
 }
 
 function onCancel() { closePurchaseOrderForm?.() }
+// Breadcrumb → back to the originating index (Purchase requests when built from
+// requests, else the Purchase orders list).
+function goBack() {
+  if (fromPr.value) router.push('/purchase-requests')
+  else onCancel()
+}
 
 /**
  * Duplicating → actually create the new order (status resets to "awaiting
@@ -178,7 +228,7 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     total: grandTotal.value,
     balance: grandTotal.value,
     status: 'draft',
-    itemCount: items.value.length,
+    itemCount: allLines.value.length,
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t => String(t.value)),
     duplicatedFromId: props.duplicateOrderId,
@@ -206,11 +256,15 @@ function onSendToFulfillment() {
 <template>
   <div class="po-form-page">
 
-    <!-- ── Fixed header bar (mirrors detail-bar) ── -->
-    <header class="po-form-bar">
-      <div class="po-form-bar-left">
-        <MpButton class="po-crumb" @click="onCancel">Purchase orders</MpButton>
-        <h1 class="po-form-h1">New purchase order</h1>
+    <!-- ── Title bar — canonical detail/form breadcrumb (mirrors NewExpensePage) ── -->
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <nav class="detail-breadcrumb-trail">
+          <MpTextlink id="po-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ fromPr ? 'Purchase request' : 'Purchase orders' }}</MpTextlink>
+        </nav>
+        <div class="detail-titlerow-left">
+          <h1 class="detail-title">New purchase order</h1>
+        </div>
       </div>
     </header>
 
@@ -297,7 +351,14 @@ function onSendToFulfillment() {
 
           <div class="po-header2-col po-col-span-3">
             <MpFormControl id="f-tx-no" class="po-field">
-              <MpFormLabel>Transaction no.</MpFormLabel>
+              <MpFormLabel>
+                <span class="po-label-row">
+                  Transaction no.
+                  <MpButton class="po-label-icon" aria-label="Transaction number settings">
+                    <MpIcon name="settings" size="sm" />
+                  </MpButton>
+                </span>
+              </MpFormLabel>
               <MpInput id="f-tx-no-inp" placeholder="Auto" is-disabled is-full-width />
             </MpFormControl>
 
@@ -328,228 +389,284 @@ function onSendToFulfillment() {
             <MpCheckbox v-model:is-checked="priceIncludesTax">Price includes tax</MpCheckbox>
           </div>
 
-          <table class="po-items-table">
-            <thead>
-              <tr>
-                <th class="po-th po-th--drag" />
-                <th class="po-th po-th--product">PRODUCT</th>
-                <th class="po-th">DESCRIPTION</th>
-                <th class="po-th po-th--num">QTY</th>
-                <th class="po-th">UNIT</th>
-                <th class="po-th po-th--num">UNIT COST</th>
-                <th class="po-th po-th--num">DISCOUNT</th>
-                <th class="po-th">TAX</th>
-                <th class="po-th po-th--num">AMOUNT</th>
-                <th class="po-th po-th--remove" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in items" :key="item._key" class="po-item-row">
-                <td class="po-td po-td--drag">
-                  <MpButton variant="ghost" size="md" left-icon="drag" aria-label="Drag to reorder" />
-                </td>
-                <td class="po-td po-td--product">
-                  <MpPopover
-                    is-manual
-                    :is-open="openProductRow === item._key"
-                    is-close-on-select
-                    use-portal
-                    :is-keep-alive="false"
-                    placement="bottom-start"
-                    is-adaptive-width
-                    @close="openProductRow = null"
-                  >
-                    <MpPopoverTrigger>
-                      <MpInput
-                        :id="`f-product-${item._key}`"
-                        v-model="item.product"
-                        is-full-width
-                        @focus="openProductRow = item._key"
-                      />
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="p in productMatches(item.product)"
-                          :key="p.id"
-                          @click="selectProduct(item, p)"
-                        >
-                          {{ p.name }}
-                        </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(item.product).length" is-disabled>No results</MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
-                </td>
-                <td class="po-td">
-                  <MpInput v-model="item.description" is-full-width />
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInput type="number" :model-value="item.qty" is-full-width
-                    @update:model-value="(v) => item.qty = Number(v)" />
-                </td>
-                <td class="po-td po-td--unit">
-                  <MpSelect v-model="item.unit" is-full-width>
-                    <option v-for="opt in unitOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInputGroup :id="`f-unitcost-group-${item._key}`">
-                    <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                    <MpInput type="number" :model-value="item.unitPrice"
-                      @update:model-value="(v) => item.unitPrice = Number(v)" />
-                  </MpInputGroup>
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInputGroup :id="`f-discount-group-${item._key}`">
-                    <MpInput type="number" :model-value="item.discountPct"
-                      @update:model-value="(v) => item.discountPct = Number(v)" />
-                    <MpInputRightAddon>%</MpInputRightAddon>
-                  </MpInputGroup>
-                </td>
-                <td class="po-td po-td--tax">
-                  <MpSelect v-model="item.taxLabel" is-full-width>
-                    <option v-for="opt in taxOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
-                </td>
-                <td class="po-td po-td--num po-td--amount">{{ fmt(lineAmount(item)) }}</td>
-                <td class="po-td po-td--remove">
-                  <MpButton
-                    variant="ghost" size="sm" left-icon="minus-circular"
-                    :aria-label="`Remove ${item.product}`"
-                    @click="removeItem(item._key)"
-                  />
-                </td>
-              </tr>
-              <tr class="po-item-row po-item-row--empty">
-                <td class="po-td po-td--drag">
-                  <MpButton variant="ghost" size="md" left-icon="drag" aria-label="Drag to reorder" is-disabled />
-                </td>
-                <td class="po-td po-td--product">
-                  <MpPopover
-                    is-manual
-                    :is-open="openProductRow === NEW_ROW_KEY"
-                    is-close-on-select
-                    use-portal
-                    :is-keep-alive="false"
-                    placement="bottom-start"
-                    is-adaptive-width
-                    @close="openProductRow = null"
-                  >
-                    <MpPopoverTrigger>
-                      <MpInput
-                        id="f-product-new"
-                        v-model="newRowSearch"
-                        class="po-select--product"
-                        placeholder="Select product"
-                        is-full-width
-                        @focus="openProductRow = NEW_ROW_KEY"
-                      />
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="p in productMatches(newRowSearch)"
-                          :key="p.id"
-                          @click="selectNewProduct(p)"
-                        >
-                          {{ p.name }}
-                        </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(newRowSearch).length" is-disabled>No results</MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
-                </td>
-                <td class="po-td" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--unit" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--tax" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--remove" />
-              </tr>
-            </tbody>
-          </table>
+          <!-- ══ From purchase requests → accordion form-table (ex-* cell pattern).
+               Product / requested / available / unit / amount are locked (from the
+               request); only description, qty-to-order, unit cost, discount and tax
+               are editable. A whole request is removed via the group header ⊖ —
+               individual request lines can't be removed. ══ -->
+          <div v-if="fromPr" class="pit-scroll">
+            <table class="pit-table pit-table--pr">
+              <colgroup>
+                <col class="pit-col-product" />
+                <col class="pit-col-desc" />
+                <col class="pit-col-num" />
+                <col class="pit-col-num" />
+                <col class="pit-col-num" />
+                <col class="pit-col-unit" />
+                <col class="pit-col-cost" />
+                <col class="pit-col-num" />
+                <col class="pit-col-tax" />
+                <col class="pit-col-amount" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="pit-th">PRODUCT</th>
+                  <th class="pit-th">DESCRIPTION</th>
+                  <th class="pit-th pit-th--num">REQUESTED QTY</th>
+                  <th class="pit-th pit-th--num">AVAILABLE QTY</th>
+                  <th class="pit-th pit-th--num">QTY TO ORDER</th>
+                  <th class="pit-th">UNIT</th>
+                  <th class="pit-th pit-th--num">UNIT COST</th>
+                  <th class="pit-th pit-th--num">DISCOUNT</th>
+                  <th class="pit-th">TAX</th>
+                  <th class="pit-th pit-th--num">AMOUNT</th>
+                </tr>
+              </thead>
+              <tbody v-for="g in groups" :key="g.prId" class="pit-group-body">
+                <!-- Group header (accordion toggle + remove) -->
+                <tr class="pit-group-row">
+                  <td class="pit-group-cell" colspan="10">
+                    <div class="pit-group-inner">
+                      <button type="button" class="pit-group-toggle" @click="toggleGroup(g)">
+                        <MpIcon name="caret-down" size="sm" class="pit-group-caret" :class="{ 'pit-group-caret--collapsed': g.collapsed }" />
+                        Purchase Request #{{ g.prNumber }}
+                      </button>
+                      <MpButton class="pit-group-remove" :aria-label="`Remove Purchase Request #${g.prNumber}`" @click="removeGroup(g.prId)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </MpButton>
+                    </div>
+                  </td>
+                </tr>
+                <!-- Lines -->
+                <template v-if="!g.collapsed">
+                  <tr v-for="line in g.lines" :key="line._key" class="pit-tr">
+                    <td class="pit-td pit-td--ro pit-td--clip pit-td--border" :title="line.product">{{ line.product }}</td>
+                    <td class="pit-td pit-td--input pit-td--border">
+                      <MpInput :id="`po-desc-${line._key}`" v-model="line.description" is-full-width />
+                    </td>
+                    <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.requestedQty }}</td>
+                    <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.availableQty }}</td>
+                    <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                      <MpInput :id="`po-qty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
+                    </td>
+                    <td class="pit-td pit-td--ro pit-td--clip pit-td--border">{{ line.unit }}</td>
+                    <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                      <div class="pit-affix-cell">
+                        <span class="pit-affix pit-affix--prefix">Rp</span>
+                        <MpInput :id="`po-cost-${line._key}`" type="number" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => line.unitCost = Number(v)" />
+                      </div>
+                    </td>
+                    <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                      <div class="pit-affix-cell">
+                        <MpInput :id="`po-disc-${line._key}`" type="number" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => line.discountPct = Number(v)" />
+                        <span class="pit-affix pit-affix--suffix">%</span>
+                      </div>
+                    </td>
+                    <td class="pit-td pit-td--input pit-td--border">
+                      <MpAutocomplete :id="`po-tax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
+                    </td>
+                    <td class="pit-td pit-td--num pit-td--ro">{{ fmt(lineAmount(line)) }}</td>
+                  </tr>
+                </template>
+              </tbody>
+              <tbody>
+                <tr class="pit-add-row">
+                  <td colspan="10">
+                    <button type="button" class="pit-add-btn" @click="addPrOpen = true">
+                      <MpIcon name="add" size="sm" />
+                      Add purchase request
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ══ Blank / duplicate → flat product form-table (ex-* cell pattern) ══ -->
+          <div v-else class="pit-scroll">
+            <table class="pit-table pit-table--flat">
+              <colgroup>
+                <col class="pit-col-product" />
+                <col class="pit-col-desc" />
+                <col class="pit-col-num" />
+                <col class="pit-col-unit" />
+                <col class="pit-col-cost" />
+                <col class="pit-col-num" />
+                <col class="pit-col-tax" />
+                <col class="pit-col-amount" />
+                <col class="pit-col-del" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="pit-th">PRODUCT</th>
+                  <th class="pit-th">DESCRIPTION</th>
+                  <th class="pit-th pit-th--num">QTY</th>
+                  <th class="pit-th">UNIT</th>
+                  <th class="pit-th pit-th--num">UNIT COST</th>
+                  <th class="pit-th pit-th--num">DISCOUNT</th>
+                  <th class="pit-th">TAX</th>
+                  <th class="pit-th pit-th--num">AMOUNT</th>
+                  <th class="pit-th pit-th--del" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in blankItems" :key="line._key" class="pit-tr">
+                  <td class="pit-td pit-td--input pit-td--border">
+                    <MpAutocomplete :id="`po-bprod-${line._key}`" v-model="line.product" :data="products" label-prop="name" value-prop="name" is-searchable use-portal is-full-width placeholder="Select product" @update:model-value="onProductSelect(line)" />
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--border">
+                    <MpInput :id="`po-bdesc-${line._key}`" v-model="line.description" is-full-width />
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                    <MpInput :id="`po-bqty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--border">
+                    <MpAutocomplete :id="`po-bunit-${line._key}`" v-model="line.unit" :data="unitData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                    <div class="pit-affix-cell">
+                      <span class="pit-affix pit-affix--prefix">Rp</span>
+                      <MpInput :id="`po-bcost-${line._key}`" type="number" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => line.unitCost = Number(v)" />
+                    </div>
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--num pit-td--border">
+                    <div class="pit-affix-cell">
+                      <MpInput :id="`po-bdisc-${line._key}`" type="number" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => line.discountPct = Number(v)" />
+                      <span class="pit-affix pit-affix--suffix">%</span>
+                    </div>
+                  </td>
+                  <td class="pit-td pit-td--input pit-td--border">
+                    <MpAutocomplete :id="`po-btax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
+                  </td>
+                  <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ fmt(lineAmount(line)) }}</td>
+                  <td class="pit-td pit-td--del">
+                    <MpButton class="pit-del-btn" :aria-label="`Remove ${line.product}`" @click="removeBlankItem(line._key)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </td>
+                </tr>
+                <!-- Trailing empty row — picking a product appends a new line -->
+                <tr class="pit-tr">
+                  <td class="pit-td pit-td--input pit-td--border">
+                    <MpAutocomplete id="po-bprod-new" v-model="newProduct" :data="products" label-prop="name" value-prop="name" is-searchable use-portal is-full-width placeholder="Select product" @update:model-value="onNewProduct" />
+                  </td>
+                  <td class="pit-td pit-td--border" />
+                  <td class="pit-td pit-td--num pit-td--border" />
+                  <td class="pit-td pit-td--border" />
+                  <td class="pit-td pit-td--num pit-td--border" />
+                  <td class="pit-td pit-td--num pit-td--border" />
+                  <td class="pit-td pit-td--border" />
+                  <td class="pit-td pit-td--num pit-td--border" />
+                  <td class="pit-td pit-td--del" />
+                </tr>
+              </tbody>
+              <tbody>
+                <tr class="pit-add-row">
+                  <td colspan="9">
+                    <button type="button" class="pit-add-btn" @click="addPrOpen = true">
+                      <MpIcon name="add" size="sm" />
+                      Add purchase request
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
-        <!-- ── Notes + Attachment + Totals ── -->
-        <section class="po-bottom-section">
-          <MpFormControl id="f-message" class="po-note-field po-note-field--message">
-            <MpFormLabel>Message</MpFormLabel>
-            <MpTextarea id="f-message-inp" v-model="message" is-full-width />
-            <span class="po-field-caption">Visible to vendor</span>
-          </MpFormControl>
+        <!-- ── Notes + Attachment + Totals (identical component set to NewSalesInvoicePage) ── -->
+        <section class="si-bottom-section">
+          <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
+          <div class="si-notes-col">
+            <MpFormControl id="f-message" class="si-note-field">
+              <MpFormLabel>Message</MpFormLabel>
+              <MpTextarea id="f-message-inp" v-model="message" is-full-width />
+              <span class="si-field-caption">Visible to vendor</span>
+            </MpFormControl>
 
-          <MpFormControl id="f-memo" class="po-note-field po-note-field--memo">
-            <MpFormLabel>Memo</MpFormLabel>
-            <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
-            <span class="po-field-caption">Only visible to you and your team</span>
-          </MpFormControl>
+            <MpFormControl id="f-memo" class="si-note-field">
+              <MpFormLabel>Memo</MpFormLabel>
+              <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
+              <span class="si-field-caption">Only visible to you and your team</span>
+            </MpFormControl>
 
-          <section class="po-attachment-section">
-            <h3 class="po-section-heading">Attachment</h3>
-            <MpUpload
-              id="f-attachment"
-              button-text="Choose file"
-              placeholder="or drag and drop here"
-              is-multiple
-              is-full-width
-              @change="onFilesChange"
-            />
-            <p class="po-field-caption">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
-            <div v-if="attachments.length" class="po-attachment-list">
-              <MpUploadList
-                v-for="(a, idx) in attachments"
-                :key="a.name + idx"
-                :title="a.name"
-                :subtitle="`${a.sizeKB} KB`"
-                :icon-name="iconForFile(a.name)"
-                status="success"
-                is-show-remove-button
-                @remove="removeAttachment(idx)"
+            <div class="si-attachment-section">
+              <span class="si-attachment-label">Attachment</span>
+              <MpUpload
+                id="f-attachment" button-text="Choose file" placeholder="or drag and drop here"
+                is-multiple is-full-width @change="onFilesChange"
               />
+              <p class="si-field-caption">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction</p>
+              <div v-if="attachments.length" class="si-attachment-list">
+                <MpUploadList
+                  v-for="(a, idx) in attachments" :key="a.name + idx"
+                  :title="a.name" :subtitle="`${a.sizeKB} KB`" :icon-name="iconForFile(a.name)"
+                  status="success" is-show-remove-button @remove="removeAttachment(idx)"
+                />
+              </div>
             </div>
-          </section>
+          </div>
 
-          <div class="po-totals-col">
-            <div class="po-totals-row po-totals-row--h3">
+          <div class="si-totals-col">
+            <div class="si-totals-row si-totals-row--h3">
               <span>Subtotal</span>
               <span>{{ fmt(subtotal) }}</span>
             </div>
-            <div class="po-totals-row">
-              <span>Discount per line</span>
-              <span class="po-deduction">({{ fmt(discountTotal) }})</span>
+
+            <!-- Discount block — the swap affordance sits in the gutter, as designed -->
+            <div class="si-discount-block">
+              <MpButton class="si-discount-swap" aria-label="Switch discount mode">
+                <MpIcon name="sort-default" size="sm" />
+              </MpButton>
+              <div class="si-discount-rows">
+                <div class="si-totals-row">
+                  <span>Discount per line</span>
+                  <span class="si-deduction">({{ fmt(discountTotal) }})</span>
+                </div>
+                <div class="si-totals-row">
+                  <span class="si-inline-field-label">
+                    <span>Global discount</span>
+                    <MpInputGroup id="f-global-discount-group" class="si-unit-field">
+                      <MpInputLeftAddon has-background class="si-unit-addon">
+                        <MpPopover id="f-global-discount-unit" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
+                          <MpPopoverTrigger>
+                            <MpButton class="si-unit-trigger">
+                              <span>{{ globalDiscountType }}</span>
+                              <MpIcon name="chevrons-down" size="sm" />
+                            </MpButton>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem :is-active="globalDiscountType === 'Rp'" @click="globalDiscountType = 'Rp'">Rp</MpPopoverListItem>
+                              <MpPopoverListItem :is-active="globalDiscountType === '%'" @click="globalDiscountType = '%'">%</MpPopoverListItem>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </MpInputLeftAddon>
+                      <MpInput type="number" :model-value="globalDiscountValue" is-full-width
+                        @update:model-value="(v) => globalDiscountValue = Number(v)" />
+                    </MpInputGroup>
+                  </span>
+                  <span class="si-deduction">({{ fmt(globalDiscountAmount) }})</span>
+                </div>
+              </div>
             </div>
-            <div class="po-totals-row">
-              <span class="po-global-discount-label">
-                <span>Global discount</span>
-                <MpInputGroup id="f-global-discount-group" class="po-global-discount">
-                  <MpInputLeftAddon>
-                    <MpSelect class="po-prefix-toggle" v-model="globalDiscountType">
-                      <option value="%">%</option>
-                      <option value="Rp">Rp</option>
-                    </MpSelect>
-                  </MpInputLeftAddon>
-                  <MpInput type="number" :model-value="globalDiscountValue"
-                    @update:model-value="(v) => globalDiscountValue = Number(v)" />
-                </MpInputGroup>
-              </span>
-              <span class="po-deduction">({{ fmt(globalDiscountAmount) }})</span>
-            </div>
-            <div class="po-totals-row">
+
+            <div class="si-totals-row">
               <span>PPN 11%</span>
               <span>{{ fmt(taxAmount) }}</span>
             </div>
-            <div class="po-totals-row">
+            <div class="si-totals-row">
               <span>Shipping fee</span>
-              <MpInputGroup id="f-shipping-fee-group" class="po-shipping-fee">
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                <MpInput type="number" :model-value="shippingFee"
+              <MpInputGroup id="f-shipping-fee-group" class="si-unit-field">
+                <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
+                <MpInput type="number" :model-value="shippingFee" is-full-width
                   @update:model-value="(v) => shippingFee = Number(v)" />
               </MpInputGroup>
             </div>
-            <div class="po-totals-row po-totals-row--h3 po-totals-row--total">
+
+            <div class="si-total-rule" />
+            <div class="si-totals-row si-totals-row--h3">
               <span>Total</span>
               <span>{{ fmt(grandTotal) }}</span>
             </div>
@@ -560,20 +677,7 @@ function onSendToFulfillment() {
         <footer class="po-form-footer">
           <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">Cancel</button>
 
-          <MpPopover id="po-save-close-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary">
-                Save &amp; close
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click="onSave">Save &amp; close</MpPopoverListItem>
-                <MpPopoverListItem @click="onSaveAndNew">Save &amp; new</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">Save &amp; close</button>
 
           <MpPopover id="po-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -600,16 +704,12 @@ function onSendToFulfillment() {
               <MpPopoverList>
                 <MpPopoverListItem>Preview</MpPopoverListItem>
                 <MpPopoverListItem>Print draft PDF</MpPopoverListItem>
-                <MpPopoverListItem @click="onSendToFulfillment">Send to fulfillment</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
                 <MpPopoverListItem :class="css({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--mp-spacing-2)' })">
                   Purchase settings
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/>
-                    <path d="M19.4 13.5a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V19.5a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H4.5a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H10a1.65 1.65 0 001-1.51V4.5a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V10a1.65 1.65 0 001.51 1h.09a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5"/>
-                  </svg>
+                  <MpIcon name="settings" size="sm" />
                 </MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
@@ -618,6 +718,14 @@ function onSendToFulfillment() {
 
       </div><!-- /po-form-stage -->
     </div><!-- /po-form-stage-wrapper -->
+
+    <!-- ── Add purchase request (dual-pane drawer) ── -->
+    <AddPurchaseRequestDrawer
+      :is-open="addPrOpen"
+      :selected-ids="selectedPrIds"
+      @update:is-open="addPrOpen = $event"
+      @save="onAddPurchaseRequests"
+    />
 
   </div>
 </template>
@@ -632,40 +740,24 @@ function onSendToFulfillment() {
   overflow: hidden;
 }
 
-/* ── Header bar (matches detail-bar exactly) ── */
-.po-form-bar {
-  flex-shrink: 0;
-  height: var(--mp-sizes-18, 72px);
-  box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
-  padding: 0 var(--mp-spacing-6);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-4);
+/* ── Title bar — canonical detail/form breadcrumb (verbatim from NewExpensePage) ── */
+.detail-bar {
+  flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.po-form-bar-left {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0;
-  min-width: 0;
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; }
+.detail-breadcrumb {
+  align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
 }
-.po-crumb {
-  width: auto !important; height: auto !important; min-width: 0 !important;
-  background: none !important; border: none !important; padding: 0 !important;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-link);
-  cursor: pointer;
-  text-align: left;
-}
-.po-crumb:hover { text-decoration: underline; text-underline-offset: 2px; }
-.po-form-h1 {
-  margin: 0;
-  font-size: var(--mp-font-sizes-xl);
-  font-weight: var(--mp-font-weights-bold);
+.detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.detail-title {
+  margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
-  line-height: 1.2;
 }
 
 /* ── Stage wrapper (matches detail-stage-wrapper) ── */
@@ -739,6 +831,13 @@ function onSendToFulfillment() {
 }
 
 .po-field { min-width: 0; }
+/* Transaction-no. label gear (auto-numbering settings) — mirrors NewSalesInvoicePage. */
+.po-label-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.po-label-icon {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  padding: 0 !important; border: none !important; background: none !important; min-width: 0 !important;
+  cursor: pointer; color: var(--mp-text-secondary);
+}
 .po-field--checkbox {
   display: flex;
   align-items: center;
@@ -748,155 +847,174 @@ function onSendToFulfillment() {
 /* MpInputTag needs an explicit full-width hook */
 .po-field :deep(.input-tag__root) { width: 100%; }
 
-/* ── Line items ── */
+/* ── Line items — form table mirroring NewExpensePage's ex-* cell pattern ── */
 .po-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.po-items-header-row { display: flex; justify-content: flex-end; }
 
-.po-items-header-row {
-  display: flex;
-  justify-content: flex-end;
-}
+.pit-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.pit-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; font-size: var(--mp-font-sizes-md); }
+/* Sum of fixed column widths — the table stays this wide and pit-scroll scrolls,
+   so no column (esp. DESCRIPTION) collapses on a narrow viewport. */
+.pit-table--pr { min-width: 1452px; }
+.pit-table--flat { min-width: 1272px; }
 
-.po-items-table { width: 100%; border-collapse: collapse; font-size: var(--mp-font-sizes-md); }
+/* Columns */
+.pit-col-product { width: 220px; }
+.pit-col-desc { width: 260px; }
+.pit-col-num { width: 112px; }
+.pit-col-unit { width: 104px; }
+.pit-col-cost { width: 150px; }
+.pit-col-tax { width: 120px; }
+.pit-col-amount { width: 150px; }
+.pit-col-del { width: 44px; }
 
-/* Header row — same treatment as .erp-th (ErpTablePage.vue) but white background */
-.po-th {
-  height: var(--mp-sizes-7, 28px);
+/* Header — subtle-gray, uppercase (matches ErpTablePage .erp-th) */
+.pit-th {
+  height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  text-align: left;
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-  border-bottom: 1px solid var(--mp-border-default);
-  background: var(--mp-background-neutral, #fff);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.po-th--drag   { width: 40px; padding: 0; }
-.po-th--num    { text-align: right; }
-.po-th--product { min-width: 200px; }
-.po-th--remove  { width: 40px; border-right: none; }
-.po-th { border-right: 1px solid var(--mp-border-default); }
+.pit-th--num { text-align: right; }
+.pit-th--del { padding: 0; }
 
-/* Rows — vertical column dividers only, no horizontal row separators */
-.po-td {
-  height: var(--mp-sizes-13, 52px);
-  box-sizing: border-box;
-  padding: var(--mp-spacing-4) var(--mp-spacing-2) 0;
-  vertical-align: top;
+/* Body cells — 40px baseline; editable cells own the focus ring (child borderless) */
+.pit-td {
+  height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   color: var(--mp-text-default);
-  border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
+  vertical-align: middle;
 }
-.po-td--remove { border-right: none; }
-.po-td--drag   { color: var(--mp-text-secondary); cursor: grab; width: 40px; padding: 0; text-align: center; }
-.po-td--num    { text-align: right; }
-.po-td--amount { font-weight: var(--mp-font-weights-regular); font-size: var(--mp-font-sizes-md); padding-top: var(--mp-spacing-4); }
-.po-td--remove { text-align: center; width: 40px; }
-.po-td--product { min-width: 200px; position: relative; }
-.po-td--unit, .po-td--tax { min-width: 104px; }
+.pit-td--border { border-right: 1px solid var(--mp-border-default); }
+.pit-td--num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Read-only / calculated / locked cells (product, unit, requested, available, amount) */
+.pit-td--ro { background: var(--mp-background-neutral-subtle); }
+.pit-td--clip { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Editable cell */
+.pit-td--input { padding: 0; vertical-align: middle; }
+.pit-td--input :deep([class*='input']),
+.pit-td--input :deep([class*='autocomplete']) {
+  border-radius: 0; border-color: transparent; background: transparent;
+  box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: strip inner control chrome so the cell owns the ring */
+}
+.pit-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pit-num-input :deep(input) { text-align: right; }
 
-/* Borderless MpInput/MpSelect chrome inside table cells, filled to row min-height */
-.po-td { padding-top: 0; padding-bottom: 0; }
-.po-td :deep(.mp-input__root),
-.po-td :deep(.mp-select__root),
-.po-td :deep(.mp-input-group__root) {
-  height: var(--mp-sizes-13, 52px);
-  border: none;
-  border-radius: 0;
-  background: transparent;
+/* Affix cell (Rp prefix / % suffix) fills the 40px cell height */
+.pit-affix-cell { display: flex; align-items: stretch; height: var(--mp-sizes-10, 40px); }
+.pit-affix {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.po-td :deep(.mp-input__control),
-.po-td :deep(.mp-select__control),
-.po-td :deep(.mp-input-addon__root) {
-  border: none;
-  border-radius: 0;
-  box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
-}
-.po-td--amount { padding-top: 0; display: flex; align-items: center; justify-content: flex-end; }
-.po-td--drag :deep(.mp-button) { height: 52px; }
-.po-td--remove :deep(.mp-button__root) { height: 52px; }
+.pit-affix-cell .pit-num-input { flex: 1; min-width: 0; }
 
-/* Prefix/suffix (Rp / %) containers get a neutral-subtle background */
-.po-td :deep(.mp-input-addon__root) {
-  background: var(--mp-background-neutral-subtle);
+/* Delete button */
+.pit-td--del { padding: 0; text-align: center; vertical-align: middle; }
+.pit-del-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
+  cursor: pointer; color: var(--mp-text-secondary);
 }
+.pit-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
 
-.po-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
+/* Accordion group header row */
+.pit-group-cell {
+  padding: 0 var(--mp-spacing-2) 0 0;
+  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #fff);
+}
+.pit-group-inner { display: flex; align-items: center; }
+.pit-group-toggle {
+  flex: 1; display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; cursor: pointer; text-align: left;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.pit-group-caret { transition: transform 150ms ease; }
+.pit-group-caret--collapsed { transform: rotate(-90deg); }
+.pit-group-remove {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
+  cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
+}
+.pit-group-remove:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-danger); }
+
+/* Add purchase request row */
+.pit-add-row td { padding: var(--mp-spacing-2) 0; }
+.pit-add-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  border: none; background: transparent; cursor: pointer; padding: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
+}
+.pit-add-btn:hover { background: var(--mp-background-neutral-hovered); border-radius: var(--mp-radii-sm); }
 
 
-/* ── Notes + Attachment + Totals — 12-col grid, auto middle gap ── */
-.po-bottom-section {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  column-gap: var(--mp-spacing-5);
-  row-gap: var(--mp-spacing-4);
-}
-.po-note-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.po-note-field--message { grid-column: 1 / span 4; grid-row: 1; }
-.po-note-field--memo    { grid-column: 1 / span 4; grid-row: 2; }
-.po-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: 2px; }
+/* ── Notes + Attachment + Totals — identical to NewSalesInvoicePage (si-*) ── */
+.si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
+/* Message / Memo / Attachment sit a constant 20px apart (literal, not the rem token). */
+.si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+.si-note-field { display: flex; flex-direction: column; }
+.si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 
-.po-totals-col {
-  grid-column: 9 / span 4;
-  grid-row: 1 / span 3;
-  display: flex;
-  flex-direction: column;
+.si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); width: 100%; }
+.si-attachment-label {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px);
 }
-.po-totals-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2) 0;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-default);
-}
-.po-totals-row--h3 {
-  font-weight: var(--mp-font-weights-semi-bold);
-  font-size: var(--mp-font-sizes-lg);
-}
-.po-totals-row--total { padding-top: var(--mp-spacing-3); }
-.po-deduction { color: var(--mp-text-secondary); }
+.si-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
 
-.po-global-discount-label {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-3);
+.si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
+.si-totals-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.po-global-discount, .po-shipping-fee { max-width: 180px; }
-.po-global-discount :deep(.mp-input-addon__root),
-.po-shipping-fee :deep(.mp-input-addon__root) {
-  background: var(--mp-background-neutral-subtle);
-}
-.po-prefix-toggle {
-  width: auto !important;
-  min-width: 0 !important;
-}
-.po-prefix-toggle :deep(.mp-select__control) {
-  border: none !important;
-  box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: removing the default shadow */
-  background: transparent !important;
-  padding-left: 0 !important;
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  cursor: pointer;
+.si-totals-row--h3 { font-weight: var(--mp-font-weights-semi-bold); font-size: var(--mp-font-sizes-lg); }
+.si-deduction { color: var(--mp-text-secondary); white-space: nowrap; }
+
+.si-total-rule {
+  height: var(--mp-border-width-sm, 1px); margin: var(--mp-spacing-2) 0;
+  background: repeating-linear-gradient(
+    to right,
+    var(--mp-border-default) 0, var(--mp-border-default) 4px,
+    transparent 4px, transparent 8px
+  );
 }
 
-/* ── Attachment — same column as Message/Memo, narrower (3/12) ── */
-.po-attachment-section {
-  grid-column: 1 / span 3;
-  grid-row: 3;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+.si-discount-block { position: relative; }
+.si-discount-rows { display: flex; flex-direction: column; }
+.si-discount-swap {
+  position: absolute; left: -28px; top: var(--mp-spacing-2);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
+  color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.po-section-heading {
-  margin: 0 0 var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+
+/* Standalone prefixed fields: MpInputGroup + MpInputLeftAddon, Rp/% switcher as a
+   popover trigger inside the addon (verbatim from NewSalesInvoicePage). */
+.si-unit-field { width: 180px; flex-shrink: 0; }
+.si-unit-addon :deep(.mp-input-addon__root) {
+  padding: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md);
 }
-.po-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.si-unit-trigger {
+  display: flex !important; align-items: center; gap: 4px;
+  padding: var(--mp-spacing-1\.5, 6px) !important; min-width: 0 !important;
+  background: none !important; border: none !important; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); border-radius: var(--mp-radii-md) !important;
+}
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Footer — scrolls with content, not sticky ── */
 .po-form-footer {
@@ -906,6 +1024,8 @@ function onSendToFulfillment() {
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
+/* Save & share dropdown chevron inherits the primary button's white text */
+.po-form-footer .btn-enterprise--primary :deep(svg) { color: var(--mp-text-inverse, #fff); }
 
 /* ── Enterprise pill buttons (matches app/pages/index.vue .btn-enterprise) ── */
 .btn-enterprise {

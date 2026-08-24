@@ -1,161 +1,67 @@
 import { reactive } from 'vue'
-import type { PurchaseOrder } from './types'
+import type { PurchaseOrder, PurchaseOrderStatus } from './types'
+import { vendors } from './vendors'
+import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
-export const purchaseOrders: PurchaseOrder[] = reactive([
-  // open
-  {
-    id: 'po-001', number: 'PO-2025-0001',
-    vendor: { id: 'v1', name: 'PT Sumber Makmur Abadi' },
-    date: '2025-06-01', dueDate: '2025-07-01',
-    total: 18_500_000, balance: 18_500_000,
-    status: 'open', itemCount: 4, hasAttachment: true,
-    tags: ['Import', 'Raw material'],
-  },
-  {
-    id: 'po-002', number: 'PO-2025-0002',
-    vendor: { id: 'v2', name: 'CV Maju Bersama' },
-    date: '2025-06-03', dueDate: '2025-07-03',
-    total: 7_200_000, balance: 7_200_000,
-    status: 'open', itemCount: 2,
-    tags: ['Office supply'],
-  },
-  {
-    id: 'po-003', number: 'PO-2025-0003',
-    vendor: { id: 'v3', name: 'PT Global Teknindo' },
-    date: '2025-06-05', dueDate: '2025-07-05',
-    total: 34_000_000, balance: 34_000_000,
-    status: 'open', itemCount: 6, hasAttachment: true,
-  },
-  {
-    id: 'po-004', number: 'PO-2025-0004',
-    vendor: { id: 'v4', name: 'UD Karya Utama' },
-    date: '2025-06-08', dueDate: '2025-07-08',
-    total: 5_750_000, balance: 5_750_000,
-    status: 'open', itemCount: 1,
-  },
-  {
-    id: 'po-005', number: 'PO-2025-0005',
-    vendor: { id: 'v5', name: 'PT Nusantara Logistik' },
-    date: '2025-06-10', dueDate: '2025-07-10',
-    total: 12_300_000, balance: 12_300_000,
-    status: 'open', itemCount: 3, hasAttachment: true,
-    tags: ['Logistics'],
-  },
-  {
-    id: 'po-006', number: 'PO-2025-0006',
-    vendor: { id: 'v6', name: 'PT Cipta Mandiri Jaya' },
-    date: '2025-06-12', dueDate: '2025-07-12',
-    total: 9_800_000, balance: 9_800_000,
-    status: 'open', itemCount: 2,
-  },
-  // partially-processed
-  {
-    id: 'po-007', number: 'PO-2025-0007',
-    vendor: { id: 'v1', name: 'PT Sumber Makmur Abadi' },
-    date: '2025-05-15', dueDate: '2025-06-15',
-    total: 22_000_000, balance: 11_000_000,
-    status: 'partially-processed', itemCount: 5, hasAttachment: true,
-    tags: ['Import'],
-  },
-  {
-    id: 'po-008', number: 'PO-2025-0008',
-    vendor: { id: 'v7', name: 'PT Artha Sentosa' },
-    date: '2025-05-20', dueDate: '2025-06-20',
-    total: 8_400_000, balance: 4_200_000,
-    status: 'partially-processed', itemCount: 2,
-  },
-  {
-    id: 'po-009', number: 'PO-2025-0009',
-    vendor: { id: 'v3', name: 'PT Global Teknindo' },
-    date: '2025-05-22', dueDate: '2025-06-22',
-    total: 41_500_000, balance: 15_000_000,
-    status: 'partially-processed', itemCount: 8, hasAttachment: true,
-    tags: ['Equipment'],
-  },
-  {
-    id: 'po-010', number: 'PO-2025-0010',
-    vendor: { id: 'v8', name: 'CV Berkah Sejahtera' },
-    date: '2025-05-25', dueDate: '2025-06-25',
-    total: 6_600_000, balance: 3_300_000,
-    status: 'partially-processed', itemCount: 3,
-  },
-  // closed
-  {
-    id: 'po-011', number: 'PO-2025-0011',
-    vendor: { id: 'v2', name: 'CV Maju Bersama' },
-    date: '2025-04-10', dueDate: '2025-05-10',
-    total: 15_000_000, balance: 0,
-    status: 'closed', itemCount: 4, hasAttachment: true,
-    tags: ['Office supply'],
-  },
-  {
-    id: 'po-012', number: 'PO-2025-0012',
-    vendor: { id: 'v9', name: 'PT Indo Prima Perkasa' },
-    date: '2025-04-15', dueDate: '2025-05-15',
-    total: 27_800_000, balance: 0,
-    status: 'closed', itemCount: 6,
-  },
-  {
-    id: 'po-013', number: 'PO-2025-0013',
-    vendor: { id: 'v5', name: 'PT Nusantara Logistik' },
-    date: '2025-04-20', dueDate: '2025-05-20',
-    total: 9_150_000, balance: 0,
-    status: 'closed', itemCount: 3, hasAttachment: true,
-    tags: ['Logistics'],
-  },
-  // draft (awaiting approval)
-  {
-    id: 'po-014', number: 'PO-2025-0014',
-    vendor: { id: 'v10', name: 'PT Surya Abadi Teknik' },
-    date: '2025-06-18', dueDate: '2025-07-18',
-    total: 32_000_000, balance: 32_000_000,
-    status: 'draft', itemCount: 5, hasAttachment: true,
-    tags: ['Equipment'],
-  },
-  {
-    id: 'po-015', number: 'PO-2025-0015',
-    vendor: { id: 'v4', name: 'UD Karya Utama' },
-    date: '2025-06-19', dueDate: '2025-07-19',
-    total: 4_500_000, balance: 4_500_000,
-    status: 'draft', itemCount: 1,
-  },
-  {
-    id: 'po-016', number: 'PO-2025-0016',
-    vendor: { id: 'v7', name: 'PT Artha Sentosa' },
-    date: '2025-06-20', dueDate: '2025-07-20',
-    total: 19_750_000, balance: 19_750_000,
-    status: 'draft', itemCount: 4, hasAttachment: true,
-    tags: ['Import', 'Raw material'],
-  },
-  {
-    id: 'po-017', number: 'PO-2025-0017',
-    vendor: { id: 'v11', name: 'CV Putra Mandiri' },
-    date: '2025-06-21', dueDate: '2025-07-21',
-    total: 8_200_000, balance: 8_200_000,
-    status: 'draft', itemCount: 2,
-  },
-  // rejected
-  {
-    id: 'po-018', number: 'PO-2025-0018',
-    vendor: { id: 'v6', name: 'PT Cipta Mandiri Jaya' },
-    date: '2025-06-02', dueDate: '2025-07-02',
-    total: 11_000_000, balance: 11_000_000,
-    status: 'rejected', itemCount: 3,
-    tags: ['Office supply'],
-  },
-  {
-    id: 'po-019', number: 'PO-2025-0019',
-    vendor: { id: 'v8', name: 'CV Berkah Sejahtera' },
-    date: '2025-06-07', dueDate: '2025-07-07',
-    total: 6_300_000, balance: 6_300_000,
-    status: 'rejected', itemCount: 2, hasAttachment: true,
-  },
-  {
-    id: 'po-020', number: 'PO-2025-0020',
-    vendor: { id: 'v9', name: 'PT Indo Prima Perkasa' },
-    date: '2025-06-14', dueDate: '2025-07-14',
-    total: 24_500_000, balance: 24_500_000,
-    status: 'rejected', itemCount: 5, hasAttachment: true,
-    tags: ['Equipment'],
-  },
-])
+/**
+ * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
+ * (22 Aug 2026), coherent with the rest of the production-ready mock DB. Vendors
+ * come from the shared `vendors` master (coffee suppliers) so a vendor id means
+ * the same supplier across Purchases and AP. Status spreads across the tabs:
+ *   • all      → open / partially-processed / closed
+ *   • awaiting → draft
+ *   • rejected → rejected
+ * Everything is a pure function of the index → same data every load, real dates.
+ */
+const PO_COUNT = 60
+const AMOUNTS = [
+  7_200_000, 18_500_000, 42_000_000, 9_800_000, 63_000_000, 12_400_000,
+  28_500_000, 155_000_000, 5_600_000, 88_000_000, 34_000_000, 21_000_000,
+]
+const TAG_POOL = [['Import', 'Raw material'], ['Packaging'], ['Equipment'], ['Logistics'], ['Office supply'], ['Utilities']]
+
+function buildPurchaseOrders(): PurchaseOrder[] {
+  const out: PurchaseOrder[] = []
+  for (let i = 0; i < PO_COUNT; i++) {
+    const offset = Math.floor((i * SIM_SPAN_DAYS) / PO_COUNT)
+    const date = simDay(offset)
+    const dueDate = simDay(offset + 30)
+    const vendor = vendors[i % vendors.length]!
+    const total = AMOUNTS[i % AMOUNTS.length]! + (i % 4) * 1_100_000
+    const dueIn = daysUntil(dueDate)
+
+    // Status: recent orders are still moving (draft/open/partial); older ones are
+    // received (awaiting invoice) then closed; a few are voided/rejected.
+    let status: PurchaseOrderStatus
+    if (i % 19 === 0) status = 'voided'
+    else if (i % 17 === 0) status = 'rejected'
+    else if (dueIn > 7 && i % 4 === 0) status = 'draft'          // recent, awaiting approval
+    else if (dueIn >= 0) status = i % 3 === 0 ? 'partially-processed' : 'open'
+    else status = i % 6 === 0 ? 'awaiting invoice' : (i % 5 === 0 ? 'open' : 'closed')
+
+    const balance = (status === 'closed' || status === 'voided') ? 0
+      : status === 'partially-processed' ? Math.round(total / 2)
+      : total
+
+    const po: PurchaseOrder = {
+      id: `po-${String(i + 1).padStart(3, '0')}`,
+      number: `PO-2026-${String(i + 1).padStart(4, '0')}`,
+      vendor: { id: vendor.id, name: vendor.name },
+      date,
+      dueDate,
+      total,
+      balance,
+      status,
+      itemCount: 1 + (i % 8),
+      hasAttachment: i % 3 === 0,
+      tags: TAG_POOL[i % TAG_POOL.length],
+    }
+    if (status === 'rejected') {
+      po.rejection = { user: 'You', date: simDay(offset + 2), reason: 'Budget not approved for this period.' }
+    }
+    out.push(po)
+  }
+  return out.reverse() // newest first
+}
+
+export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
