@@ -105,7 +105,13 @@ function aggregateStock(warehouseIds?: string[]): Map<string, StockTotals> {
  *  catalog — scaled to the aggregated (multi-warehouse) available quantities here,
  *  so "low stock" stays the notable minority case it's meant to represent. */
 function minStockFor(catalogIndex: number): number {
-  return Math.round((((catalogIndex * 11) % 35) + 5) / 5) * 5
+  // Most SKUs sit comfortably above their reorder point. A deterministic ~1-in-4
+  // subset are high-velocity items with a higher reorder point (150–180) so they
+  // genuinely sit at/below the line given typical on-hand — this is the REAL
+  // low-stock the WMS low-stock badge and the Cowork reorder task surface (no
+  // hardcoded stock literals anywhere).
+  if (catalogIndex % 4 === 0) return 150 + (catalogIndex % 4) * 10   // 150 (high reorder point)
+  return Math.round((((catalogIndex * 11) % 35) + 5) / 5) * 5        // 5–40 (healthy)
 }
 
 // A small, deterministic subset of catalog products awaiting approval before they

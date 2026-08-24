@@ -11,6 +11,11 @@ import { daysSince, simDaysAgo } from './simClock'
 // The "Sales pipeline review" briefing reuses the canonical CRM pipeline so the
 // co-worker's numbers match the CRM module (data/crm.ts).
 import { pipelineStages } from './crm'
+// Real-data grounding for the HR / WMS / contract tasks.
+import { attendanceExceptionsForDate, attendanceName, LATEST_ATTENDANCE_DATE } from './attendance'
+import type { AttendanceException } from './attendance'
+import { expiringContracts, type Contract } from './contracts'
+import { productIndexRows } from './productsIndex'
 
 export type CoworkModule = 'HR' | 'Sales' | 'CRM' | 'WMS' | 'Finance' | 'Production'
 export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed' | 'draft'
@@ -95,43 +100,12 @@ export interface CoworkConnection {
  *  they are NOT listed on the Connections page — they show as built-in sources. */
 export const COWORK_BUILTIN = ['Talenta', 'Qontak', 'Jurnal', 'Mekari WMS']
 
-// ── HR attendance exceptions (Talenta) — grounding data for the attendance /
-//    payroll pre-check tasks. Employee IDs reference the Talenta employees table. ──
-export type AttendanceExceptionType = 'Late clock-in' | 'Missing check-out' | 'Unapproved absence'
-export interface AttendanceException {
-  employeeId: string
-  date: string
-  type: AttendanceExceptionType
-  /** Clock-in time (for late arrivals) vs the 09:00 shift start. */
-  clockIn?: string
-  /** Minutes late (late clock-ins only). */
-  minutesLate?: number
-  /** The stated / inferred reason for this exception. */
-  reason: string
-  /** Co-worker's read on the pattern — the "why" analysis the user asks for. */
-  analysis: string
-}
-// Latest working day = 2026-08-19 (the daily attendance task runs each morning).
-export const attendanceExceptions: AttendanceException[] = [
-  { employeeId: 'EMP-0006', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:47', minutesLate: 47,
-    reason: 'Commute delay — reported heavy traffic on the toll road.',
-    analysis: '3rd late clock-in this month, all on Mondays and all traffic-related. Pattern suggests a recurring Monday commute issue, not occasional — worth a flexible-start conversation.' },
-  { employeeId: 'EMP-0016', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:22', minutesLate: 22,
-    reason: 'Dropped child at school; no prior notice filed.',
-    analysis: 'First lateness in 60 days. Isolated, low concern — a one-off family obligation.' },
-  { employeeId: 'EMP-0010', date: '2026-08-19', type: 'Missing check-out',
-    reason: 'Forgot to clock out — last badge activity 18:30, likely left without tapping.',
-    analysis: 'Recurring: 4th missing check-out this month. Not an attendance risk but will distort overtime calc — needs a reminder or auto-checkout rule.' },
-  { employeeId: 'EMP-0011', date: '2026-08-19', type: 'Unapproved absence',
-    reason: 'No clock-in and no leave request filed; unreachable at 10:00 check.',
-    analysis: '2nd unapproved absence in two weeks — and still on probation (joined Jun 2026). Escalating pattern; raise with their manager today before it affects the probation review.' },
-  { employeeId: 'EMP-0009', date: '2026-08-19', type: 'Late clock-in', clockIn: '09:15', minutesLate: 15,
-    reason: 'Stayed late on the month-end close the night before and started later by agreement.',
-    analysis: 'Finance is mid-close; the lateness offsets overtime worked the previous evening. Not a concern — expected during close week.' },
-  { employeeId: 'EMP-0003', date: '2026-08-19', type: 'Missing check-out',
-    reason: 'System glitch at the Jakarta gate turnstile reported by facilities.',
-    analysis: 'Facilities confirmed a reader outage 18:00–19:00; affects several staff, not an individual issue. Exclude from lateness stats.' },
-]
+// ── HR attendance exceptions — now generated deterministically from the REAL
+//    employee directory (see data/attendance.ts), so every flagged person matches
+//    the directory the co-worker is also given. Re-exported here for existing
+//    importers (useCoworkContext). ──
+export type { AttendanceExceptionType, AttendanceException } from './attendance'
+export { attendanceExceptions } from './attendance'
 
 // ── Receivables collections (Jurnal) — the "who hasn't paid, why, and history"
 //    grounding for the finance tasks + chat. Each row references a real overdue
@@ -308,10 +282,6 @@ function money(n: number): string {
   if (n >= 1_000_000) return `Rp${Math.round(n / 1_000_000)}M`
   return `Rp${n.toLocaleString('id-ID')}`
 }
-const EMP_NAMES: Record<string, string> = {
-  'EMP-0006': 'Agus Pratama', 'EMP-0016': 'Doni Kurniawan', 'EMP-0010': 'Fajar Nugroho',
-  'EMP-0011': 'Indah Permatasari', 'EMP-0009': 'Maya Kusuma', 'EMP-0003': 'Budi Santoso',
-}
 
 function receivablesPlan(rows: ReceivableCollection[] = receivablesCollections, daysAdj = 0) {
   // As-of adjustment: the same invoice was fewer days overdue in an earlier run.
@@ -373,8 +343,8 @@ function receivablesPlan(rows: ReceivableCollection[] = receivablesCollections, 
   }
 }
 
-function attendancePlan(ex: AttendanceException[] = attendanceExceptions) {
-  const name = (id: string) => EMP_NAMES[id] ?? id
+function attendancePlan(ex: AttendanceException[] = attendanceExceptionsForDate(LATEST_ATTENDANCE_DATE)) {
+  const name = (id: string) => attendanceName(id)
   const prio = (e: AttendanceException): 'High' | 'Medium' | 'Low' =>
     e.type === 'Unapproved absence' ? 'High' : (e.minutesLate && e.minutesLate > 30 ? 'Medium' : 'Low')
   return {
@@ -435,18 +405,26 @@ function scheduledRuns(taskId: string, runs: { ranAt: string; plan: any }[]): Co
   }))
 }
 
-// Low-stock SKUs — real coffee catalog names with coherent on-hand vs reorder point.
-const LOW_STOCK = [
-  { sku: 'GB-ARB-GAYO-G1', name: 'Green Beans Arabica Gayo Grade 1', onHand: 6, reorder: 20, unit: 'Sack', lead: '10 days' },
-  { sku: 'GB-ROB-LAMP', name: 'Green Beans Robusta Lampung', onHand: 9, reorder: 25, unit: 'Sack', lead: '7 days' },
-  { sku: 'RB-HOUSE-MED', name: 'Roasted Beans House Blend Medium', onHand: 14, reorder: 40, unit: 'Bag', lead: '3 days' },
-  { sku: 'RB-ESP-DARK', name: 'Roasted Beans Espresso Blend Dark', onHand: 0, reorder: 30, unit: 'Bag', lead: '3 days' },
-  { sku: 'GB-ARB-TORAJA', name: 'Green Beans Arabica Toraja Sapan', onHand: 4, reorder: 15, unit: 'Sack', lead: '12 days' },
-]
-type LowStock = typeof LOW_STOCK
-function reorderPlan(stock: LowStock = LOW_STOCK) {
+// Low-stock SKUs — computed from the REAL warehouse inventory (productIndexRows),
+// so the reorder plan matches the stock the co-worker sees on the WMS pages and in
+// its own WMS context. `minStock` is the reorder point; `onTheWay` is real
+// in-transit qty. No hardcoded stock literals.
+interface LowStockRow { sku: string; name: string; onHand: number; available: number; reorder: number; unit: string; onTheWay: number; suggest: number }
+function computeLowStock(): LowStockRow[] {
+  // Same "low stock" definition the WMS pages + Cowork context use: available
+  // (on-hand minus reserved) at or below the reorder point.
+  return productIndexRows()
+    .filter((r) => r.available <= r.minStock)
+    .map((r) => ({
+      sku: r.sku, name: r.name, onHand: r.onHand, available: r.available, reorder: r.minStock, unit: r.unit,
+      onTheWay: r.onTheWay, suggest: Math.max(r.minStock * 2 - r.available - r.onTheWay, r.minStock),
+    }))
+    .sort((a, b) => (a.available - a.reorder) - (b.available - b.reorder))   // most-below-line first
+}
+function reorderPlan(stock: LowStockRow[] = computeLowStock()) {
   const LOW_STOCK = stock
-  const out = LOW_STOCK.filter((s) => s.onHand === 0)
+  const out = LOW_STOCK.filter((s) => s.available <= 0)
+  const wayNote = (s: LowStockRow) => s.onTheWay > 0 ? ` ${s.onTheWay} ${s.unit.toLowerCase()} already on the way.` : ''
   return {
     taskTitle: 'Reorder low-stock SKUs',
     intro: 'Compared warehouse on-hand stock against reorder points and drafted a purchase plan for everything below the line.',
@@ -454,38 +432,38 @@ function reorderPlan(stock: LowStock = LOW_STOCK) {
     sources: [
       { name: 'Mekari WMS — stock', detail: `${LOW_STOCK.length} SKUs at/under reorder point` },
       { name: 'Sales orders', detail: 'Cross-checked open orders that need these SKUs' },
-      { name: 'Vendor lead times', detail: 'Used to prioritise the reorder' },
+      { name: 'In-transit stock', detail: 'Netted off quantities already on the way' },
     ],
     steps: [
       { title: 'Read stock levels', detail: 'Pulled on-hand quantities across active warehouses.' },
-      { title: 'Compare reorder points', detail: `Found ${LOW_STOCK.length} SKUs below their reorder point (${out.length} out of stock).` },
-      { title: 'Size the reorder', detail: 'Proposed quantities to bring each back above the line.' },
+      { title: 'Compare reorder points', detail: `Found ${LOW_STOCK.length} SKUs at/below their reorder point (${out.length} out of stock).` },
+      { title: 'Size the reorder', detail: 'Proposed quantities to bring each back above the line, net of stock on the way.' },
       { title: 'Draft the plan', detail: 'Produced a reorder list ranked by urgency.' },
     ],
     artifacts: {
       briefing: {
         summary: LOW_STOCK.map((s) => ({
-          title: `${s.name} — ${s.onHand}/${s.reorder} ${s.unit}`,
-          detail: `${s.onHand === 0 ? 'OUT OF STOCK. ' : ''}On-hand ${s.onHand} vs reorder point ${s.reorder}. Vendor lead time ${s.lead}. Suggest ordering ${Math.max(s.reorder * 2 - s.onHand, s.reorder)} ${s.unit.toLowerCase()}.`,
-          priority: s.onHand === 0 ? 'High' : (s.onHand < s.reorder / 2 ? 'Medium' : 'Low'),
+          title: `${s.name} — ${s.available}/${s.reorder} ${s.unit}`,
+          detail: `${s.available <= 0 ? 'OUT OF STOCK. ' : ''}Available ${s.available} (on-hand ${s.onHand}) vs reorder point ${s.reorder}.${wayNote(s)} Suggest ordering ${s.suggest} ${s.unit.toLowerCase()}.`,
+          priority: s.available <= 0 ? 'High' : (s.available < s.reorder / 2 ? 'Medium' : 'Low'),
         })),
         findings: (() => {
           const f: { title: string; detail: string }[] = []
-          const zero = LOW_STOCK.find((s) => s.onHand === 0)
-          if (zero) f.push({ title: 'Out of stock', detail: `${zero.name} is at zero — this blocks cafe orders; expedite the ${zero.lead} reorder today.` })
-          const longLead = [...LOW_STOCK].sort((a, b) => parseInt(b.lead) - parseInt(a.lead))[0]
-          if (longLead) f.push({ title: 'Long lead time', detail: `${longLead.name} has a ${longLead.lead} lead time and only ${longLead.onHand} ${longLead.unit.toLowerCase()} left — order now to avoid a stockout.` })
-          return f
+          const zero = LOW_STOCK.find((s) => s.available <= 0)
+          if (zero) f.push({ title: 'Out of stock', detail: `${zero.name} has no available stock — this blocks cafe orders; expedite a reorder today.${wayNote(zero)}` })
+          const deepest = [...LOW_STOCK].sort((a, b) => (a.available - a.reorder) - (b.available - b.reorder))[0]
+          if (deepest && deepest !== zero) f.push({ title: 'Furthest below the line', detail: `${deepest.name}: only ${deepest.available} available of a ${deepest.reorder} ${deepest.unit.toLowerCase()} reorder point — order ${deepest.suggest} now.` })
+          return f.length ? f : [{ title: 'All clear', detail: 'No SKUs are at or below their reorder point.' }]
         })(),
       },
-      actionItems: LOW_STOCK.filter((s) => s.onHand < s.reorder / 2).map((s) => ({
-        title: `Raise PR for ${s.name}`, detail: `Order ${Math.max(s.reorder * 2 - s.onHand, s.reorder)} ${s.unit.toLowerCase()} (lead ${s.lead}).`,
-        owner: 'Warehouse — Budi Santoso', due: s.onHand === 0 ? 'Today' : 'This week', priority: s.onHand === 0 ? 'High' : 'Medium',
+      actionItems: LOW_STOCK.filter((s) => s.available < s.reorder / 2).map((s) => ({
+        title: `Raise PR for ${s.name}`, detail: `Order ${s.suggest} ${s.unit.toLowerCase()}.${wayNote(s)}`,
+        owner: 'Warehouse — Wulan Santoso', due: s.available <= 0 ? 'Today' : 'This week', priority: s.available <= 0 ? 'High' : 'Medium',
       })),
       spreadsheet: {
         title: 'Low-stock reorder plan',
-        columns: ['SKU', 'Product', 'On-hand', 'Reorder point', 'Suggested order', 'Lead time'],
-        rows: LOW_STOCK.map((s) => [s.sku, s.name, `${s.onHand} ${s.unit}`, `${s.reorder} ${s.unit}`, `${Math.max(s.reorder * 2 - s.onHand, s.reorder)} ${s.unit}`, s.lead]),
+        columns: ['SKU', 'Product', 'On-hand', 'Available', 'Reorder point', 'On the way', 'Suggested order'],
+        rows: LOW_STOCK.map((s) => [s.sku, s.name, `${s.onHand} ${s.unit}`, `${s.available} ${s.unit}`, `${s.reorder} ${s.unit}`, `${s.onTheWay} ${s.unit}`, `${s.suggest} ${s.unit}`]),
       },
     },
   }
@@ -586,6 +564,57 @@ function monthEndPlan(rows: ReceivableCollection[] = receivablesCollections) {
   }
 }
 
+// Contracts expiring soon — reads the real contracts table (data/contracts.ts),
+// counterparties are the vendor master. Was previously a metric literal with no
+// builder at all.
+function contractsPlan(days = 60, rows: Contract[] = expiringContracts(days)) {
+  const daysLeft = (iso: string) => Math.max(0, Math.round((new Date(iso + 'T00:00:00').getTime() - new Date('2026-08-22T00:00:00').getTime()) / 86_400_000))
+  const totalValue = rows.reduce((a, c) => a + c.annualValue, 0)
+  const prio = (c: Contract): 'High' | 'Medium' | 'Low' => daysLeft(c.endDate) <= 14 ? 'High' : (daysLeft(c.endDate) <= 30 ? 'Medium' : 'Low')
+  return {
+    taskTitle: 'Contracts expiring soon',
+    intro: `Scanned every active contract and pulled the ones ending within the next ${days} days, with a renew / renegotiate / offboard call for each.`,
+    metric: `${rows.length} contracts expiring in ${days} days`,
+    sources: [
+      { name: 'Contracts register', detail: `${rows.length} contracts ending within ${days} days (${money(totalValue)}/yr)` },
+      { name: 'Vendor master', detail: 'Counterparty details and payables' },
+    ],
+    steps: [
+      { title: 'Load contracts', detail: 'Read the contracts register across vendors, software, lease, utilities and insurance.' },
+      { title: 'Filter by end date', detail: `Kept the ${rows.length} contracts ending within ${days} days.` },
+      { title: 'Assess each', detail: 'Checked auto-renew, value and the captured note.' },
+      { title: 'Recommend action', detail: 'Set renew / renegotiate / offboard with an owner and due date.' },
+    ],
+    artifacts: {
+      briefing: {
+        summary: rows.map((c) => ({
+          title: `${c.title} — ${c.party} (${daysLeft(c.endDate)} days)`,
+          detail: `${c.type} · ${money(c.annualValue)}/yr · ends ${c.endDate}. ${c.autoRenew ? 'Auto-renews — review before the cancel window. ' : 'No auto-renew — action needed to continue. '}${c.note}`,
+          priority: prio(c),
+        })),
+        findings: (() => {
+          const f: { title: string; detail: string }[] = []
+          const soonest = rows[0]
+          if (soonest) f.push({ title: 'Expiring first', detail: `${soonest.title} (${soonest.party}) ends in ${daysLeft(soonest.endDate)} days — decide this week.` })
+          const autos = rows.filter((c) => c.autoRenew)
+          if (autos.length) f.push({ title: 'Auto-renewing', detail: `${autos.length} contract${autos.length > 1 ? 's' : ''} will auto-renew unless cancelled in time — confirm you still want ${autos.map((c) => c.party).join(', ')}.` })
+          return f.length ? f : [{ title: 'Nothing urgent', detail: `No contracts expire within ${days} days.` }]
+        })(),
+      },
+      actionItems: rows.map((c) => ({
+        title: `${c.autoRenew ? 'Review before auto-renewal' : 'Renew / renegotiate'}: ${c.title}`,
+        detail: `${c.party} — ${money(c.annualValue)}/yr, ends ${c.endDate}. ${c.note}`,
+        owner: c.owner, due: daysLeft(c.endDate) <= 14 ? 'This week' : 'This month', priority: prio(c),
+      })),
+      spreadsheet: {
+        title: 'Contracts expiring soon',
+        columns: ['Contract', 'Party', 'Type', 'Ends', 'Days left', 'Annual value', 'Auto-renew'],
+        rows: rows.map((c) => [c.title, c.party, c.type, c.endDate, String(daysLeft(c.endDate)), money(c.annualValue), c.autoRenew ? 'Yes' : 'No']),
+      },
+    },
+  }
+}
+
 // ── Historical "as-of" data so each past run genuinely differs ────────────────
 // Receivables that were overdue in earlier weeks but have since been resolved /
 // weren't overdue yet — used to compose each weekly run's row set.
@@ -608,37 +637,12 @@ const RC_04 = [RC[0]!, RC[1]!, RC[3]!, RC[4]!]                                  
 const RC_28 = [...RC_04, RC_HIST.sukses!, RC_HIST.maju!, RC_HIST.bintang!]      // 7
 const RC_11 = [...RC, RC_HIST.sukses!]                                          // 6
 
-// Attendance exception sets per past day (the latest = attendanceExceptions).
-const ATT = (employeeId: string, type: AttendanceExceptionType, extra: Partial<AttendanceException> & { reason: string; analysis: string }): AttendanceException =>
-  ({ employeeId, date: extra.date ?? '', type, ...extra })
-const ATT_18: AttendanceException[] = [
-  ATT('EMP-0006', 'Late clock-in', { date: '2026-08-18', clockIn: '09:31', minutesLate: 31, reason: 'Traffic on the toll road.', analysis: 'Monday lateness again — fits the recurring commute pattern.' }),
-  ATT('EMP-0009', 'Missing check-out', { date: '2026-08-18', reason: 'Stayed late on the month-end close and forgot to tap out.', analysis: 'Close-week overtime; adjust the timesheet manually.' }),
-  ATT('EMP-0010', 'Late clock-in', { date: '2026-08-18', clockIn: '09:14', minutesLate: 14, reason: 'Client meeting ran over.', analysis: 'Work-related, minor.' }),
-  ATT('EMP-0011', 'Unapproved absence', { date: '2026-08-18', reason: 'No clock-in, no leave filed.', analysis: 'First of the two probation absences this fortnight — watch closely.' }),
-]
-const ATT_15: AttendanceException[] = [
-  ATT('EMP-0016', 'Late clock-in', { date: '2026-08-15', clockIn: '09:18', minutesLate: 18, reason: 'School run.', analysis: 'One-off, low concern.' }),
-  ATT('EMP-0010', 'Missing check-out', { date: '2026-08-15', reason: 'Left from a client site without tapping.', analysis: 'Field visit — expected; log as remote.' }),
-  ATT('EMP-0006', 'Late clock-in', { date: '2026-08-15', clockIn: '09:22', minutesLate: 22, reason: 'Traffic.', analysis: 'Consistent commute delay.' }),
-]
-const ATT_14: AttendanceException[] = [
-  ATT('EMP-0006', 'Late clock-in', { date: '2026-08-14', clockIn: '09:12', minutesLate: 12, reason: 'Traffic.', analysis: 'Minor.' }),
-  ATT('EMP-0016', 'Late clock-in', { date: '2026-08-14', clockIn: '09:27', minutesLate: 27, reason: 'Overslept after late deployment the night before.', analysis: 'IT ran a late release; acceptable.' }),
-  ATT('EMP-0009', 'Late clock-in', { date: '2026-08-14', clockIn: '09:10', minutesLate: 10, reason: 'Early bank run before office.', analysis: 'Work-related.' }),
-  ATT('EMP-0003', 'Missing check-out', { date: '2026-08-14', reason: 'Forgot to tap out after a late inbound receiving.', analysis: 'Recurring for warehouse late shifts — enable auto-checkout.' }),
-  ATT('EMP-0011', 'Late clock-in', { date: '2026-08-14', clockIn: '09:35', minutesLate: 35, reason: 'Transport issue.', analysis: 'On probation — note but not yet escalate.' }),
-]
-const ATT_13: AttendanceException[] = [
-  ATT('EMP-0006', 'Late clock-in', { date: '2026-08-13', clockIn: '09:20', minutesLate: 20, reason: 'Traffic.', analysis: 'Start of the recurring pattern.' }),
-  ATT('EMP-0010', 'Late clock-in', { date: '2026-08-13', clockIn: '09:08', minutesLate: 8, reason: 'Client call.', analysis: 'Negligible.' }),
-]
-
 const RECEIVABLES_PLAN = receivablesPlan()
 const ATTENDANCE_PLAN = attendancePlan()
 const REORDER_PLAN = reorderPlan()
 const PIPELINE_PLAN = pipelinePlan()
 const MONTHEND_PLAN = monthEndPlan()
+const CONTRACTS_PLAN = contractsPlan()
 
 // Per-run plans (most recent first) for each scheduled task — distinct content.
 const RECEIVABLES_RUNS = [
@@ -647,20 +651,22 @@ const RECEIVABLES_RUNS = [
   { ranAt: '2026-08-04T08:00:00', plan: receivablesPlan(RC_04, -14) },
   { ranAt: '2026-07-28T08:00:00', plan: receivablesPlan(RC_28, -21) },
 ]
+// Attendance — daily; each past day's exceptions come from the deterministic
+// generator keyed to that date (real employees), so each run genuinely differs.
 const ATTENDANCE_RUNS = [
   { ranAt: '2026-08-19T07:00:00', plan: ATTENDANCE_PLAN },
-  { ranAt: '2026-08-18T07:00:00', plan: attendancePlan(ATT_18) },
-  { ranAt: '2026-08-15T07:00:00', plan: attendancePlan(ATT_15) },
-  { ranAt: '2026-08-14T07:00:00', plan: attendancePlan(ATT_14) },
-  { ranAt: '2026-08-13T07:00:00', plan: attendancePlan(ATT_13) },
+  { ranAt: '2026-08-18T07:00:00', plan: attendancePlan(attendanceExceptionsForDate('2026-08-18')) },
+  { ranAt: '2026-08-15T07:00:00', plan: attendancePlan(attendanceExceptionsForDate('2026-08-15')) },
+  { ranAt: '2026-08-14T07:00:00', plan: attendancePlan(attendanceExceptionsForDate('2026-08-14')) },
+  { ranAt: '2026-08-13T07:00:00', plan: attendancePlan(attendanceExceptionsForDate('2026-08-13')) },
 ]
-// Reorder — daily; each day a different low-stock set (restocks land, new ones dip).
-const LS_18 = [LOW_STOCK[3]!, LOW_STOCK[2]!, LOW_STOCK[4]!]   // Espresso Dark, House Blend, Toraja
-const LS_17 = [LOW_STOCK[1]!, LOW_STOCK[2]!, LOW_STOCK[3]!, LOW_STOCK[4]!]
+// Reorder — daily; past runs slice the real low-stock list so each day differs
+// without inventing quantities (restocks land / new SKUs dip below the line).
+const LOW_NOW = computeLowStock()
 const REORDER_RUNS = [
   { ranAt: '2026-08-19T07:30:00', plan: REORDER_PLAN },
-  { ranAt: '2026-08-18T07:30:00', plan: reorderPlan(LS_18) },
-  { ranAt: '2026-08-17T07:30:00', plan: reorderPlan(LS_17) },
+  { ranAt: '2026-08-18T07:30:00', plan: reorderPlan(LOW_NOW.slice(1)) },
+  { ranAt: '2026-08-17T07:30:00', plan: reorderPlan(LOW_NOW.slice(0, Math.max(1, LOW_NOW.length - 1))) },
 ]
 // Pipeline — weekly snapshots (deals move between stages week to week).
 const PIPE_11: PStage[] = [
@@ -683,6 +689,11 @@ const MONTHEND_RUNS = [
   { ranAt: '2026-08-18T09:00:00', plan: MONTHEND_PLAN },
   { ranAt: '2026-07-18T09:00:00', plan: monthEndPlan(RC_28) },   // last month: more open items
 ]
+// Contracts — weekly; a wider 90-day horizon last week (more contracts in view).
+const CONTRACTS_RUNS = [
+  { ranAt: '2026-08-17T14:41:00', plan: CONTRACTS_PLAN },
+  { ranAt: '2026-08-10T14:41:00', plan: contractsPlan(90) },
+]
 
 // ── Seeds ────────────────────────────────────────────────────────────────────
 const TASKS_SEED: CoworkTask[] = [
@@ -694,7 +705,10 @@ const TASKS_SEED: CoworkTask[] = [
     schedule: { cadence: 'Monthly', time: '09:00', nextRun: '1 Sep · 09:00', enabled: true } },
   { id: 'CW-1041', title: 'Contracts expiring soon', module: 'HR', modules: ['HR'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Contracts expiring soon')!.prompt,
-    createdAt: '2026-08-17T14:40:00', completedAt: '2026-08-17T14:41:05', metric: '2 contracts expiring in 60 days' },
+    createdAt: '2026-08-10T14:40:00', completedAt: '2026-08-17T14:41:05', metric: CONTRACTS_PLAN.metric,
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'], sources: ['Contracts', 'Vendors'],
+    planJson: JSON.stringify(CONTRACTS_PLAN), runs: scheduledRuns('CW-1041', CONTRACTS_RUNS),
+    schedule: { cadence: 'Weekly', time: '14:40', nextRun: 'Mon, 24 Aug · 14:40', enabled: true } },
   { id: 'CW-1040', title: 'Sales pipeline review', module: 'CRM', modules: ['CRM', 'Sales'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Sales pipeline review')!.prompt,
     createdAt: '2026-08-04T08:00:00', completedAt: '2026-08-18T08:00:00', metric: PIPELINE_PLAN.metric,

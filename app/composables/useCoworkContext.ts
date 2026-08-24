@@ -12,6 +12,7 @@ import {
 // CRM lives in its own module (not re-exported through the data barrel).
 import { crmCustomers, pipelineStages, crmOrders } from '~/data/crm'
 import { attendanceExceptions, receivablesCollections } from '~/data/cowork'
+import { expiringContracts } from '~/data/contracts'
 
 export interface CoworkContext {
   today: string
@@ -123,6 +124,12 @@ export function useCoworkContext() {
           jobLevel: e.jobLevel, employmentStatus: e.employmentStatus, status: e.status,
           joinDate: e.joinDate, manager: e.directManager, branch: e.branch,
           email: e.email, phone: e.phone, basicSalary: e.basicSalary,
+        })),
+        // Contracts ending within 60 days — grounds the "Contracts expiring soon"
+        // task/chat (party = real vendor, value + end date from the contracts table).
+        contractsExpiring: expiringContracts(60).map((c) => ({
+          title: c.title, party: c.party, type: c.type, endDate: c.endDate,
+          annualValue: money(c.annualValue), owner: c.owner, autoRenew: c.autoRenew, note: c.note,
         })),
       },
       crm: {
