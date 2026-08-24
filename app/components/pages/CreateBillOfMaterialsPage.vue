@@ -1015,7 +1015,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral-subtle);
 }
 .bf-td:last-child { border-right: none; }
-.bf-tr:last-child .bf-td { border-bottom: none; }
+/* :last-child alone only strips the border within each <tbody> — Production
+   cost has one <tbody> per cost group, so that would (wrongly) leave every
+   group's last row borderless instead of just the table's true last row. */
+.bf-table-scroll tbody:last-of-type > tr.bf-tr:last-child .bf-td { border-bottom: none; }
 .bf-td--num { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .bf-td--right { text-align: right; }
 .bf-td--grip { padding: 0; text-align: center; color: var(--mp-text-disabled); cursor: grab; }
