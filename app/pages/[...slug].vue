@@ -84,6 +84,9 @@ const pageRegistry: Record<string, Component> = {
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
+  // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
+  // resolves via detailMatch (/inventory-report/dual-unit).
+  'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 }
@@ -215,6 +218,7 @@ const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptRevi
 const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/UnclassifiedReviewPage.vue'))
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
+const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
@@ -234,6 +238,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
     return { component: WmsReportDetailPage, id: segs[1]! }
+  }
+  // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
+  // View report). Only the built slug matches; anything else falls through to the
+  // Inventory reports index rather than rendering the wrong report.
+  if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
+    return { component: DualUnitInventoryReportPage, id: segs[1]! }
   }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through
@@ -1545,7 +1555,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>

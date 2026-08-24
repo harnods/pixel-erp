@@ -85,6 +85,7 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouse settings',
   'Mekari pay',
   'Wms report',
+  'Inventory report',
   // Real components that were previously under-reported by this set:
   'Data migration', // pageRegistry (DataMigrationPage) + /data-migration/wms-cutover/* flow
   'Crm',            // detailMatch /crm → CrmDealsPage
@@ -267,7 +268,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Financials', { to: 'Financial report' }),
       leaf('Sales', { to: 'Sales report' }),
       leaf('Purchases', { to: 'Purchase report' }),
-      leaf('Inventory', { to: 'Inventory report' }),
+      leaf('Inventory', { to: 'Inventory report', note: 'Reports › Inventory index (report cards); Dual Unit Inventory Report via /inventory-report/dual-unit.' }),
       leaf('WMS', { to: 'WMS report', note: 'Reports › WMS index (four report cards); detail tables via /wms-report/:slug.' }),
       leaf('Tax', { to: 'Tax report' }),
       leaf('Cash & bank', { to: 'Cash & bank report' }),

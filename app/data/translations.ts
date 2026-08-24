@@ -1866,4 +1866,52 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Opening balance published": "Saldo awal berhasil diterbitkan",
   "No data migration in progress. Connected systems that need setup will appear here.":
     "Tidak ada migrasi data berjalan. Sistem terhubung yang perlu disiapkan akan muncul di sini.",
+
+  // ── Reports › Inventory — index + Dual Unit Inventory Report ──────────────────
+  "View report": "Lihat laporan",
+  "Coming soon": "Segera hadir",
+  "Dual Unit Inventory": "Persediaan Dua Satuan",
+  "Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.":
+    "Mutasi stok dan stok tersedia dalam satuan dasar dan satuan persediaan sekunder, per batch. Untuk produk yang memakai satuan persediaan sekunder.",
+  "Stock mutation": "Mutasi stok",
+  "Every stock movement per product over a period, with the running balance after each transaction.":
+    "Setiap pergerakan stok per produk dalam satu periode, beserta saldo berjalan setelah tiap transaksi.",
+  "Inventory valuation": "Nilai persediaan",
+  "On-hand quantity, average cost, and stock value per product at the end of a period.":
+    "Kuantitas tersedia, biaya rata-rata, dan nilai stok per produk pada akhir periode.",
+  "Stock card": "Kartu stok",
+  "One product’s full stock history in a single card, from beginning balance to ending balance.":
+    "Riwayat stok lengkap satu produk dalam satu kartu, dari saldo awal sampai saldo akhir.",
+
+  "Dual Unit Inventory Report": "Laporan Persediaan Dua Satuan",
+  "Select date": "Pilih tanggal",
+  "Search product, SKU or batch": "Cari produk, SKU, atau batch",
+  "Expand all": "Buka semua",
+  "Collapse all": "Tutup semua",
+  "Product SKU": "SKU produk",
+  "Transaction": "Transaksi",
+  "Secondary unit": "Satuan sekunder",
+  "Mutation": "Mutasi",
+  "Stock": "Stok",
+  "Value": "Nilai",
+  "Total on-hand stock": "Total stok tersedia",
+  "Tolerance": "Toleransi",
+  "Exp.": "Kedaluwarsa",
+  "Beginning balance": "Saldo awal",
+  "Purchase delivery": "Pengiriman pembelian",
+  "No report data found": "Data laporan tidak ditemukan",
+  "No dual unit products": "Belum ada produk dua satuan",
+  "Products with a secondary inventory unit will appear here.":
+    "Produk dengan satuan persediaan sekunder akan muncul di sini.",
+  // CSV export header labels (export template column names)
+  "Mutation in Base Unit": "Mutasi satuan dasar",
+  "Stock in Base Unit": "Stok satuan dasar",
+  "Mutation in Secondary Unit": "Mutasi satuan sekunder",
+  "Stock in Secondary Unit": "Stok satuan sekunder",
+  // Transaction types coming from the shared batch ledger (productDetails.ts)
+  "Manual Stock Out": "Barang keluar manual",
+  "Sales Return": "Retur penjualan",
+  "Purchase Delivery": "Pengiriman pembelian",
+  "Purchase Order": "Pesanan pembelian",
+  "Stock In/Out": "Barang masuk/keluar",
 }
