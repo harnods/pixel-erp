@@ -560,12 +560,12 @@ function handleSave() {
 
 /* Editable qty cell — the input owns the full cell, cell owns the focus ring.
    Tracked rows stack a "N of target selected" hint + the Manage link underneath
-   the input, so top-align (not middle) once there's more than just the input.
-   `height` (not min-height — table cells largely ignore min-height for row
-   sizing) reserves room for that stacked hint+link even on rows that don't
-   render it (untracked, or disabled with the link hidden), so every row in the
-   table lines up at the same height instead of the tracked rows sticking out. */
-.mr-td--input { padding: 0; vertical-align: top; white-space: normal; height: 64px; }
+   the input. `height` (not min-height — table cells largely ignore min-height
+   for row sizing) reserves room for that stack even on rows that don't render
+   it (untracked, or disabled with the link hidden), so every row in the table
+   lines up at the same height; vertical-align: middle then centers whichever
+   content — input alone, or input+hint+link — within that reserved space. */
+.mr-td--input { padding: 0; vertical-align: middle; white-space: normal; height: 64px; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
 .mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .mr-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
