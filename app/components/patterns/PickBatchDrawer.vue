@@ -21,7 +21,7 @@ const DEMO_DESCS = [
   'Single origin, certified organic, lot #B12',
 ]
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   productName: string
   productImg?: string
@@ -32,7 +32,15 @@ const props = defineProps<{
   /** Selected qty shown as "X / targetCount <unit>" */
   targetCount: number
   modelValue: PickedBatch[]
-}>()
+  /** View only — e.g. "what's still reserved" from the complete-work-order
+   *  guard. Shows just the picked batches as plain rows, no editing, no
+   *  Available/search/Save; a single Close replaces Cancel/Save. */
+  isReadOnly?: boolean
+  title?: string
+}>(), {
+  isReadOnly: false,
+  title: 'Manage batch',
+})
 
 const emit = defineEmits<{
   'update:open': [boolean]
@@ -63,7 +71,9 @@ watch(() => props.open, (isOpen) => {
 
 const filteredRows = computed(() => {
   const q = search.value.trim().toLowerCase()
-  return q ? rows.filter(r => r.batchNo.toLowerCase().includes(q)) : rows
+  const base = q ? rows.filter(r => r.batchNo.toLowerCase().includes(q)) : rows
+  // Read-only view: just the batches actually picked, not the whole pool.
+  return props.isReadOnly ? base.filter(r => num(r.qty) > 0) : base
 })
 const num = (v: string) => Number(v) || 0
 const totalSelected = computed(() => rows.reduce((s, r) => s + num(r.qty), 0))
@@ -89,10 +99,10 @@ function handleSave() {
 <template>
   <Transition name="pbd">
   <div v-if="open" class="pbd-overlay" @click.self="handleCancel">
-    <div class="pbd-panel" role="dialog" aria-label="Manage batch">
+    <div class="pbd-panel" role="dialog" :aria-label="title">
 
       <header class="pbd-header">
-        <h2 class="pbd-title">Manage batch</h2>
+        <h2 class="pbd-title">{{ title }}</h2>
         <button class="pbd-close" type="button" aria-label="Close" @click="handleCancel">
           <MpIcon name="close" size="md" />
         </button>
@@ -120,7 +130,7 @@ function handleSave() {
           </div>
         </div>
 
-        <div class="pbd-search">
+        <div v-if="!isReadOnly" class="pbd-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
@@ -149,13 +159,14 @@ function handleSave() {
                 <td class="pbd-td pbd-td--muted">{{ formatDate(row.expiryDate) }}</td>
                 <td class="pbd-td pbd-td--muted">{{ row.desc }}</td>
                 <td class="pbd-td pbd-td--muted pbd-td--right">{{ row.available }}</td>
-                <td class="pbd-td pbd-td--input">
+                <td v-if="isReadOnly" class="pbd-td pbd-td--right">{{ row.qty }}</td>
+                <td v-else class="pbd-td pbd-td--input">
                   <input v-model="row.qty" class="pbd-qty-input" type="number" min="0" :max="row.available" placeholder="0" @input="onQtyInput(row)" />
                 </td>
                 <td class="pbd-td pbd-td--muted">{{ unit }}</td>
               </tr>
               <tr v-if="!filteredRows.length">
-                <td class="pbd-td pbd-td--empty" colspan="6">No batches found.</td>
+                <td class="pbd-td pbd-td--empty" colspan="6">{{ isReadOnly ? 'Nothing reserved.' : 'No batches found.' }}</td>
               </tr>
             </tbody>
           </table>
@@ -164,8 +175,11 @@ function handleSave() {
       </div>
 
       <footer class="pbd-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+        <button v-if="isReadOnly" class="btn-enterprise btn-enterprise--primary" type="button" @click="handleCancel">Close</button>
+        <template v-else>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+        </template>
       </footer>
 
     </div>

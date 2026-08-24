@@ -901,6 +901,8 @@ function suppressFabClick(e: MouseEvent) {
     <PickSerialNumberDrawer
       v-if="viewTrackingRow && viewTrackingType === 'serial'"
       :open="!!viewTrackingRow"
+      is-read-only
+      :title="viewTrackingRow.trackingLabel"
       :product-name="viewTrackingRow.product"
       :product-img="catalogProduct(viewTrackingRow.productId)?.img"
       :sku="viewTrackingRow.sku"
@@ -909,11 +911,12 @@ function suppressFabClick(e: MouseEvent) {
       :target-count="viewTrackingRow.reservedSerial?.length ?? 0"
       :model-value="viewTrackingRow.reservedSerial ?? []"
       @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
-      @save="closeViewTracking"
     />
     <PickBatchDrawer
       v-if="viewTrackingRow && viewTrackingType === 'batch'"
       :open="!!viewTrackingRow"
+      is-read-only
+      :title="viewTrackingRow.trackingLabel"
       :product-name="viewTrackingRow.product"
       :product-img="catalogProduct(viewTrackingRow.productId)?.img"
       :sku="viewTrackingRow.sku"
@@ -923,7 +926,6 @@ function suppressFabClick(e: MouseEvent) {
       :target-count="(viewTrackingRow.reservedBatch ?? []).reduce((s, b) => s + b.qty, 0)"
       :model-value="viewTrackingRow.reservedBatch ?? []"
       @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
-      @save="closeViewTracking"
     />
   </div>
 
