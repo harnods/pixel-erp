@@ -549,7 +549,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpFormLabel>{{ t('Produced qty') }}</MpFormLabel>
               <MpInputGroup id="wo-qty-group" is-full-width>
                 <MpInput id="wo-qty-input" v-model="producedQty" type="number" placeholder="0" is-full-width />
-                <MpInputRightAddon>Pcs</MpInputRightAddon>
+                <MpInputRightAddon has-background>Pcs</MpInputRightAddon>
               </MpInputGroup>
             </MpFormControl>
           </div>
