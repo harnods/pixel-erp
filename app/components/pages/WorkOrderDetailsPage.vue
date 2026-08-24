@@ -104,15 +104,12 @@ const routingLineStatus = computed(() => STATUS_LABEL[wo.value?.status ?? 'not s
 
 // Consumed = the real total from this work order's Material consume & return
 // records (Consume qty net of any Return qty) — the same records the Material
-// consume & return tab lists. Difference is simply needed − consumed.
+// consume & return tab lists.
 function consumedFor(productId: string): number {
   if (!wo.value) return 0
   return Math.max(0, recordsForWorkOrder(wo.value.id)
     .filter(r => r.productId === productId)
     .reduce((s, r) => s + r.qty, 0))
-}
-function varianceFor(r: { needed: number; productId: string }) {
-  return r.needed - consumedFor(r.productId)
 }
 // Actual start/end shown only when the work order has reached that stage.
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
@@ -477,7 +474,6 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Difference') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -491,7 +487,6 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
                   <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(varianceFor(r)) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
