@@ -147,14 +147,16 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Bill of materials info ── -->
       <section class="bom-section">
-        <h2 class="bom-section-title">{{ t('Bill of materials info') }}</h2>
+        <div class="bom-section-head-static">
+          <h2 class="bom-section-title">{{ t('Bill of materials info') }}</h2>
+          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="bomd-hierarchy-link">
+            {{ t('View BOM hierarchy') }}
+          </MpButton>
+        </div>
         <div class="bom-info-grid">
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="bom.name" />
             <ContentList :label="t('BOM no.')" :value="bom.number" />
-            <MpButton variant="textLink" size="sm" class="bomd-hierarchy-link">
-              {{ t('View BOM hierarchy') }}
-            </MpButton>
             <ContentList :label="t('Description')">
               <template v-if="bom.description">
                 <span>{{ descDisplay }}</span>
@@ -471,6 +473,12 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 .bom-chevron { flex-shrink: 0; color: var(--mp-icon-default); transition: transform 0.15s ease; }
 .bom-chevron--open { transform: rotate(180deg); }
 .bom-section > .bom-section-title { margin-bottom: var(--mp-spacing-5); }
+/* Non-collapsible section head — title left, action right, same row as the
+   collapsible sections' .bom-section-head but a plain div, not a toggle button. */
+.bom-section-head-static {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-bottom: var(--mp-spacing-5);
+}
 .bom-subsection-title {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
@@ -479,10 +487,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 /* ── Info grid — 2 columns ───────────────────────────────────────────────── */
 .bom-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 900px; }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
-.bomd-hierarchy-link {
-  align-self: flex-start; height: auto; margin-top: -6px; padding: 0;
-  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
-}
+.bomd-hierarchy-link { flex-shrink: 0; }
 .bom-show-more { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .bom-show-more:hover { text-decoration: underline; text-underline-offset: 2px; }
 .bom-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }

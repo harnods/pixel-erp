@@ -454,7 +454,12 @@ function suppressFabClick(e: MouseEvent) {
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
-        <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
+        <div class="wod-section-head-static">
+          <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
+          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
+            {{ t('View work order hierarchy') }}
+          </MpButton>
+        </div>
         <div class="wod-info-grid">
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="wo.bomName" />
@@ -463,9 +468,6 @@ function suppressFabClick(e: MouseEvent) {
               <template v-else>{{ bomNo }}</template>
             </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
-            <MpButton variant="textLink" size="sm" class="wod-hierarchy-link">
-              {{ t('View work order hierarchy') }}
-            </MpButton>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Type')" :value="wo.type" />
@@ -1087,6 +1089,12 @@ function suppressFabClick(e: MouseEvent) {
 .wod-chevron { flex-shrink: 0; color: var(--mp-icon-default); transition: transform 0.15s ease; }
 .wod-chevron--open { transform: rotate(180deg); }
 .wod-section > .wod-section-title { margin-bottom: var(--mp-spacing-5); }
+/* Non-collapsible section head — title left, action right, same row as the
+   collapsible sections' .wod-section-head but a plain div, not a toggle button. */
+.wod-section-head-static {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-bottom: var(--mp-spacing-5);
+}
 .wod-subsection-title {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
@@ -1097,10 +1105,7 @@ function suppressFabClick(e: MouseEvent) {
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
 .wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
 .wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.wod-hierarchy-link {
-  align-self: flex-start; height: auto; margin-top: -6px; padding: 0;
-  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
-}
+.wod-hierarchy-link { flex-shrink: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }
 .wod-attach-name { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); }
