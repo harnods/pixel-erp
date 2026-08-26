@@ -213,6 +213,7 @@ function togglePolicies(branch: string, type: string) {
 function visiblePolicies(row: XpmAssignment) {
   return isPolicyExpanded(row.branch, row.transactionType) ? row.policies : row.policies.slice(0, POLICY_LIMIT)
 }
+function openPolicy(_name: string) { router.push('/xpm-policy') }
 
 // Activity log — opened from the "Last updated by …" link (ERP ActivityLogModal).
 const activityOpen = ref(false)
@@ -479,7 +480,9 @@ const activityEntries = computed<ActivityEntry[]>(() => {
                             <td class="asg-td asg-td--type">{{ row.transactionType }}</td>
                             <td class="asg-td">
                               <ul class="asg-policies">
-                                <li v-for="pol in visiblePolicies(row)" :key="pol">{{ pol }}</li>
+                                <li v-for="pol in visiblePolicies(row)" :key="pol">
+                                  <button class="asg-policy" type="button" @click="openPolicy(pol)">{{ pol }}</button>
+                                </li>
                               </ul>
                               <button
                                 v-if="row.policies.length > POLICY_LIMIT"
@@ -813,17 +816,18 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 /* Assigned branches & policies — merged-Branch table */
 .acct-assign { margin-top: var(--mp-spacing-6, 24px); }
 .acct-assign__sub { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.acct-assign__wrap { overflow-x: auto; border-top: 1px solid var(--mp-border-default); }
-.asg-table { width: 100%; border-collapse: collapse; }
-.asg-th { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
-.asg-th + .asg-th { border-left: 1px solid var(--mp-border-default); }
-.asg-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top; border-bottom: 1px solid var(--mp-border-default); }
-.asg-td + .asg-td { border-left: 1px solid var(--mp-border-default); }
-.asg-td--branch { font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; }
+.acct-assign__wrap { overflow-x: auto; }
+/* Merged-cell table → full outer border (border-collapse merges it with the
+   internal dividers, so no doubles); no bold text anywhere. */
+.asg-table { width: 100%; border-collapse: collapse; border: 1px solid var(--mp-border-default); }
+.asg-th { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); white-space: nowrap; }
+.asg-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); vertical-align: top; border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); }
 .asg-td--type { white-space: nowrap; }
 .asg-policies { list-style: disc; margin: 0; padding-left: var(--mp-spacing-4, 16px); display: flex; flex-direction: column; gap: 2px; }
 .asg-policies li { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.asg-more { margin-top: var(--mp-spacing-2, 8px); padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #1f6bb8); }
+.asg-policy { padding: 0; border: none; background: none; cursor: pointer; text-align: left; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #1f6bb8); }
+.asg-policy:hover { text-decoration: underline; }
+.asg-more { margin-top: var(--mp-spacing-2, 8px); padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #1f6bb8); }
 .asg-more:hover { text-decoration: underline; }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
 .acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); align-items: start; padding: var(--mp-spacing-2) 0; }
