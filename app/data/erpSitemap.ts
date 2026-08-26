@@ -359,7 +359,6 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Stock adjustments'),
       leaf('Cycle counts'),
       leaf('Storage locations'),
-      leaf('Couriers'),
     ],
   },
   {

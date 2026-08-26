@@ -357,9 +357,10 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Billing' },
   ],
   [
+    // Storage locations is NOT here — it's a top-level nav item in WMS Standalone
+    // (right after Cycle counts), not a settings page.
     { label: 'Inventory', to: 'Inventory settings' },
     { label: 'Warehouse', to: 'Warehouse settings' },
-    { label: 'Storage locations' },
   ],
 ]
 
@@ -505,7 +506,6 @@ const erpNavGroups: NavItem[][] = [
         ],
         [
           { label: 'Storage locations' },
-          { label: 'Couriers' },
           { label: 'Warehouse reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'WMS' } },
           { label: 'Warehouse settings', iconType: 'settings' },
         ],
@@ -624,13 +624,16 @@ const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.
 // the page handle Receipts / Receiving / Put-away and Orders / Picking / etc.
 const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
-    { name: 'Home', icon: 'home' },
+    // No "Home" — WMS Standalone opens on Dashboard (see ErpUserMenu.selectScenario).
     { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
-      // WMS Standalone has no report index — the four reports (mirroring the ERP
-      // report pages) sit directly in the level-2 panel, led by Overview.
+      // WMS Standalone has no report index — the reports sit directly in the
+      // level-2 panel: the two warehouse-stock reports first, then the four
+      // inbound/outbound performance reports.
       panelSubmenu: [[
+        { label: 'Warehouse stock quantity', path: '/wms-report/warehouse-stock-quantity' },
+        { label: 'Warehouse item movement', path: '/wms-report/warehouse-item-movement' },
         { label: 'Inbound timeliness', path: '/wms-report/inbound-timeliness' },
         { label: 'Inbound accuracy', path: '/wms-report/inbound-accuracy' },
         { label: 'Outbound timeliness', path: '/wms-report/outbound-timeliness' },
@@ -640,7 +643,7 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   ],
   [
     // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
-    // "Inventory" menu instead of a flat "Products" leaf.
+    // "Inventory" menu minus Price rules, which is an ERP-only commercial concern.
     {
       name: 'Inventory', icon: 'products',
       panelSubmenu: [[
@@ -648,7 +651,6 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
         { label: 'Categories' },
         { label: 'Variant options' },
         { label: 'Units' },
-        { label: 'Price rules' },
       ]],
     },
     { name: 'Warehouses', icon: 'warehouse' },
@@ -664,6 +666,9 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     // ledger (same page/content as ERP's), "Cycle counts" is the WMS count-task flow.
     { name: 'Stock adjustments', icon: 'table-view-list' },
     { name: 'Cycle counts', icon: 'chart-of-account' },
+    // Promoted out of Settings — storage locations are day-to-day warehouse
+    // structure in WMS Standalone, not configuration.
+    { name: 'Storage locations', icon: 'location' },
   ],
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },

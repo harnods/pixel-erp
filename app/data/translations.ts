@@ -1907,4 +1907,18 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Opening balance published": "Saldo awal berhasil diterbitkan",
   "No data migration in progress. Connected systems that need setup will appear here.":
     "Tidak ada migrasi data berjalan. Sistem terhubung yang perlu disiapkan akan muncul di sini.",
+
+  // ── WMS reports (Reports panel + report tables) ─────────────────────────────
+  "Warehouse stock quantity": "Kuantitas stok gudang",
+  "Warehouse item movement": "Perpindahan barang gudang",
+  "Inbound timeliness": "Ketepatan waktu barang masuk",
+  "Inbound accuracy": "Akurasi barang masuk",
+  "Outbound timeliness": "Ketepatan waktu barang keluar",
+  "Outbound accuracy": "Akurasi barang keluar",
+  "Movement type": "Jenis perpindahan",
+  "Reference number": "Nomor referensi",
+  "In qty": "Jumlah masuk",
+  "Out qty": "Jumlah keluar",
+  "On the way": "Dalam perjalanan",
+  "Min stock": "Stok minimum",
 }
