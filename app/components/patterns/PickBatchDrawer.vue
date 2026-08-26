@@ -198,7 +198,7 @@ function handleSave() {
 
 .pbd-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: rgba(20, 23, 28, 0.45);
   display: flex; justify-content: flex-end;
 }
 .pbd-panel {
@@ -207,9 +207,9 @@ function handleSave() {
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
+  border: 1px solid var(--mp-border-default);
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }
 
 .pbd-header {

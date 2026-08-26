@@ -107,7 +107,7 @@ function complete() { emit('complete'); close() }
 
 .cwo-overlay {
   position: fixed; inset: 0; z-index: 1400;
-  background: rgba(8, 13, 14, 0.45);
+  background: rgba(20, 23, 28, 0.45);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 80px var(--mp-spacing-4) var(--mp-spacing-4);
   overflow-y: auto;
@@ -115,8 +115,8 @@ function complete() { emit('complete'); close() }
 .cwo-panel {
   width: min(880px, 100%);
   background: var(--mp-background-stage, #fff);
+  border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-lg, 12px);
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1);
   display: flex; flex-direction: column;
 }
 

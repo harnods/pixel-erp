@@ -970,7 +970,7 @@ function suppressFabClick(e: MouseEvent) {
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: grab; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse); cursor: grab; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
   touch-action: none; user-select: none;
 }
