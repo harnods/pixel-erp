@@ -130,11 +130,31 @@ export function walletBalance(walletId: string, currency = 'IDR'): number {
 export function walletMovements(walletId: string, currency = 'IDR'): XpmMovementWithBalance[] {
   return walletLedger(walletId, currency).rows.slice().reverse()
 }
-/** Stats strip figures — all derived from the ledger. */
-export function walletStats(walletId: string, currency = 'IDR') {
+/** Cash-flow window options for the stats strip. Balance & pending are always
+ *  point-in-time; only Money in / Money out are scoped by this window. */
+export type XpmStatsPeriod = 'This month' | 'Last month' | 'Last 30 days' | 'This quarter' | 'All time'
+export const XPM_STATS_PERIODS: XpmStatsPeriod[] = ['This month', 'Last month', 'Last 30 days', 'This quarter', 'All time']
+
+function inStatsPeriod(dateISO: string, period: XpmStatsPeriod): boolean {
+  if (period === 'All time') return true
+  const [ty, tm, td] = XPM_TODAY.split('-').map(Number) as [number, number, number]
+  const [dy, dm] = dateISO.split('-').map(Number) as [number, number, number]
+  if (period === 'This month') return dy === ty && dm === tm
+  if (period === 'Last month') { const lm = tm === 1 ? 12 : tm - 1; const ly = tm === 1 ? ty - 1 : ty; return dy === ly && dm === lm }
+  if (period === 'This quarter') { const q0 = Math.floor((tm - 1) / 3) * 3 + 1; return dy === ty && dm >= q0 && dm <= q0 + 2 }
+  // Last 30 days — inclusive rolling window ending on XPM_TODAY.
+  const today = Date.UTC(ty, tm - 1, td)
+  const d = Date.UTC(dy, dm - 1, Number(dateISO.split('-')[2]))
+  return d <= today && d >= today - 30 * 86400000
+}
+
+/** Stats strip figures — balance/pending are point-in-time; money in/out are
+ *  scoped to `period` (default "This month"), all derived from the ledger. */
+export function walletStats(walletId: string, currency = 'IDR', period: XpmStatsPeriod = 'This month') {
   const { rows, balance } = walletLedger(walletId, currency)
-  const monthIn = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0)
-  const monthOut = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0)
+  const scoped = rows.filter(r => inStatsPeriod(r.date, period))
+  const monthIn = scoped.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0)
+  const monthOut = scoped.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0)
   const pending = xpmWallets.find(w => w.id === walletId)?.pendingPayouts ?? 0
   return { balance, pending, monthIn, monthOut }
 }

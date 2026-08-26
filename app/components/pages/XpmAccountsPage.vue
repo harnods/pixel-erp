@@ -23,6 +23,7 @@ import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
   topUpWallet, moveMoneyBetween,
+  XPM_STATS_PERIODS, type XpmStatsPeriod,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
@@ -38,14 +39,19 @@ function selectWallet(i: number) { selectedIndex.value = i }
 const activeCurrency = computed(() => selectedWallet.value.currency)
 
 // ── Stats strip — derived from the ledger ────────────────────────────────────
+// Balance & Pending payouts are point-in-time (current / as of today); Money in
+// and Money out are cash FLOWS, so they're scoped to a selectable window and the
+// caption follows the choice. Default "This month".
+const statsPeriod = ref<XpmStatsPeriod>('This month')
 const stats = computed(() => {
   const cur = activeCurrency.value
-  const s = walletStats(selectedWallet.value.id, cur)
+  const s = walletStats(selectedWallet.value.id, cur, statsPeriod.value)
+  const flowCaption = statsPeriod.value
   return [
     { label: 'Balance',         caption: 'Per 21 Jul 2026', value: formatMoney(s.balance, cur) },
     { label: 'Pending payouts', caption: 'As of today',     value: formatMoney(s.pending, cur) },
-    { label: 'Money in',        caption: 'This month',      value: formatMoney(s.monthIn, cur) },
-    { label: 'Money out',       caption: 'This month',      value: formatMoney(s.monthOut, cur) },
+    { label: 'Money in',        caption: flowCaption,       value: formatMoney(s.monthIn, cur) },
+    { label: 'Money out',       caption: flowCaption,       value: formatMoney(s.monthOut, cur) },
   ]
 })
 
@@ -156,7 +162,12 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   <div class="acct">
     <!-- ── Left · wallet sidemenu ── -->
     <aside class="acct-side">
-      <div class="acct-side__title">Accounts</div>
+      <div class="acct-side__titlerow">
+        <span class="acct-side__title">Accounts</span>
+        <button class="acct-side__add" type="button" aria-label="Add wallet" title="Add wallet" @click="infoToast('Add wallet — coming soon')">
+          <MpIcon name="add" size="md" />
+        </button>
+      </div>
       <ul class="acct-side__list">
         <li v-for="(w, i) in wallets" :key="w.id">
           <button
@@ -170,9 +181,8 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                 <span class="acct-wallet__name">{{ w.name }}</span>
                 <span v-if="w.isDefault" class="acct-wallet__badge">Default</span>
               </div>
-              <span v-if="w.tag" class="acct-wallet__tag">{{ w.tag }}</span>
               <div v-for="b in walletDisplayBalances(w)" :key="b.currency" class="acct-wallet__bal">
-                <span>{{ b.currency }}</span><span>•</span><span>{{ formatMoney(b.amount, b.currency) }}</span>
+                <span>{{ b.currency }}</span><span class="acct-wallet__dot" aria-hidden="true" /><span>{{ formatMoney(b.amount, b.currency) }}</span>
               </div>
             </div>
           </button>
@@ -190,7 +200,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
           <button class="btn-enterprise btn-enterprise--primary" type="button" @click="openTopUp">Top up</button>
           <MpPopover id="acct-more-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary acct-kebab" type="button" aria-label="More actions">
+              <button class="acct-kebab" type="button" aria-label="More actions">
                 <MpIcon name="menu-kebab" size="md" />
               </button>
             </MpPopoverTrigger>
@@ -207,11 +217,21 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
       <!-- Stage -->
       <div class="acct-stage">
         <!-- Stats strip -->
-        <div class="acct-stats">
-          <div v-for="s in stats" :key="s.label" class="acct-stat">
-            <span class="acct-stat__label">{{ s.label }}</span>
-            <span class="acct-stat__cap">{{ s.caption }}</span>
-            <span class="acct-stat__val">{{ s.value }}</span>
+        <div class="acct-stats-block">
+          <div class="acct-stats-head">
+            <div class="filter-select-wrap acct-period">
+              <select class="filter-select" v-model="statsPeriod" aria-label="Cash-flow period">
+                <option v-for="pd in XPM_STATS_PERIODS" :key="pd" :value="pd">{{ pd }}</option>
+              </select>
+              <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+          <div class="acct-stats">
+            <div v-for="s in stats" :key="s.label" class="acct-stat">
+              <span class="acct-stat__label">{{ s.label }}</span>
+              <span class="acct-stat__cap">{{ s.caption }}</span>
+              <span class="acct-stat__val">{{ s.value }}</span>
+            </div>
           </div>
         </div>
 
@@ -497,22 +517,34 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   overflow-y: auto;
 }
-.acct-side__title {
+.acct-side__titlerow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2, 8px);
   min-height: 36px;
+}
+.acct-side__title {
   font-size: var(--mp-font-sizes-sm, 12px);
   font-weight: var(--mp-font-weights-semi-bold);
   letter-spacing: 2.88px;
   text-transform: uppercase;
   color: var(--mp-text-default, #080d0e);
 }
-.acct-side__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.acct-side__add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  border: none; background: transparent; border-radius: var(--mp-radii-md, 6px);
+  cursor: pointer; color: var(--mp-text-secondary, #3a4749);
+}
+.acct-side__add:hover { background: var(--mp-background-neutral-hovered); }
+.acct-side__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); }
 .acct-wallet {
   display: block;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--mp-border-default, #e3e7e9);
+  /* Inactive: no visible border (transparent keeps the box metrics stable). */
+  border: 1px solid transparent;
   border-radius: var(--mp-radii-md, 6px);
   background: var(--mp-background-neutral, #fff);
   overflow: hidden;
@@ -526,6 +558,10 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .acct-wallet--active .acct-wallet__head { background: var(--mp-background-neutral-subtle-selected, #ebf0f1); }
+/* Very subtle hover on non-active wallets (a hair darker than the subtle head). */
+.acct-wallet:not(.acct-wallet--active) { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.acct-wallet:not(.acct-wallet--active):hover,
+.acct-wallet:not(.acct-wallet--active):hover .acct-wallet__head { background: #eef1f2; }
 .acct-wallet__namerow { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
 .acct-wallet__name { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
 .acct-wallet__badge {
@@ -537,8 +573,8 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   line-height: var(--mp-line-heights-xs, 12px);
 }
 .acct-wallet--active .acct-wallet__badge { background: var(--mp-background-neutral, #fff); }
-.acct-wallet__tag { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
-.acct-wallet__bal { display: flex; align-items: center; gap: 2px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
+.acct-wallet__bal { display: flex; align-items: center; gap: var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
+.acct-wallet__dot { flex-shrink: 0; width: 3px; height: 3px; border-radius: var(--mp-radii-full, 999px); background: currentColor; }
 
 /* ── Right · content ── */
 .acct-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
@@ -558,8 +594,14 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acct-titlebar__actions { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); flex-shrink: 0; }
-/* Secondary icon-only button (kebab) — square, keeps the grey bold border. */
-.acct-kebab { padding: var(--mp-spacing-2, 8px); }
+/* Ghost icon-only button (kebab) — borderless, hover fill only. */
+.acct-kebab {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: var(--mp-spacing-2, 8px);
+  border: none; background: transparent; border-radius: var(--mp-radii-md, 6px);
+  cursor: pointer; color: var(--mp-text-secondary, #3a4749);
+}
+.acct-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Stage */
 .acct-stage {
@@ -571,6 +613,9 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 }
 
 /* Stats strip — plain divided cells (no outer box) */
+.acct-stats-block { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); }
+.acct-stats-head { display: flex; justify-content: flex-end; }
+.acct-period { width: 148px; }
 .acct-stats { display: flex; gap: var(--mp-spacing-6, 24px); }
 .acct-stat {
   flex: 1; min-width: 0;
