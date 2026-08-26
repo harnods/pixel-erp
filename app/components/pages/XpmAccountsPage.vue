@@ -814,13 +814,18 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 .acct-info__updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Assigned branches & policies — merged-Branch table */
-.acct-assign { margin-top: var(--mp-spacing-6, 24px); }
+.acct-assign { margin-top: var(--mp-spacing-8, 32px); }
+.acct-assign .acct-info__title { margin-bottom: 0; }
 .acct-assign__sub { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.acct-assign__wrap { overflow-x: auto; }
+/* overflow:hidden + radius clips the collapsed table's outer border to rounded
+   6px corners (border-radius is ignored on a border-collapse table itself). */
+.acct-assign__wrap { overflow: hidden; border-radius: var(--mp-radii-md, 6px); }
 /* Merged-cell table → full outer border (border-collapse merges it with the
    internal dividers, so no doubles); no bold text anywhere. */
 .asg-table { width: 100%; border-collapse: collapse; border: 1px solid var(--mp-border-default); }
-.asg-th { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); white-space: nowrap; }
+/* Header matches the ERP table header (ErpTablePage .erp-th): 28px, 12px
+   semibold, text-default, uppercase, neutral-subtle fill. */
+.asg-th { height: var(--mp-sizes-7, 28px); line-height: 1; vertical-align: middle; text-align: left; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal, 0); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); white-space: nowrap; }
 .asg-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); vertical-align: top; border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); }
 .asg-td--type { white-space: nowrap; }
 .asg-policies { list-style: disc; margin: 0; padding-left: var(--mp-spacing-4, 16px); display: flex; flex-direction: column; gap: 2px; }
