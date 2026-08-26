@@ -120,7 +120,7 @@ const pageRegistry: Record<string, Component> = {
   // Products, Warehouses, Users, Vendors, Policy, Integration). 'Home' branches by
   // scenario below; Accounts/Budgeting/My claims/My trips have collision-free slugs.
   'Xpm transactions':   defineAsyncComponent(() => import('~/components/pages/XpmTransactionsPage.vue')),
-  'Accounts':           defineAsyncComponent(() => import('~/components/pages/XpmAccountsPage.vue')),
+  // 'Accounts' is a full-bleed page (own sidemenu + title bar) — resolved via detailMatch below.
   'Budgeting':          defineAsyncComponent(() => import('~/components/pages/XpmBudgetingPage.vue')),
   'Xpm purchases':      defineAsyncComponent(() => import('~/components/pages/XpmPurchasesPage.vue')),
   'Xpm trips':          defineAsyncComponent(() => import('~/components/pages/XpmTripsPage.vue')),
@@ -325,6 +325,7 @@ const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDeta
 const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
 const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
 const XpmClaimDetailPage = asyncPage(() => import('~/components/pages/XpmClaimDetailPage.vue'))
+const XpmAccountsPage = asyncPage(() => import('~/components/pages/XpmAccountsPage.vue'))
 // Tabbed XPM index pages read the active tab from ?tab= themselves, so every tab
 // maps to the SAME component (identical ref → stays mounted, re-filters on change).
 const XpmTransactionsTabPage = asyncPage(() => import('~/components/pages/XpmTransactionsPage.vue'))
@@ -644,6 +645,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     return { component: EmployeeDetailsPage, id: segs[1]! }
   }
   // ── XPM (Mekari Expense) detail / form routes ────────────────────────────────
+  // /accounts → full-bleed wallets page (own sidemenu + title bar + stage).
+  if (segs[0] === 'accounts') {
+    return { component: XpmAccountsPage, id: segs[1] ?? '' }
+  }
   // /xpm-trips/:code → trip detail (owns its title bar).
   if (segs.length >= 2 && segs[0] === 'xpm-trips') {
     return { component: XpmTripDetailPage, id: segs[1]! }
@@ -1990,17 +1995,6 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
-        <div v-else-if="currentPageKey === 'Accounts'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="triggerXpm('editWallet')">Edit wallet</button>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="triggerXpm('moveMoney')">
-            <MpIcon name="transfer" size="md" />
-            Move money
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('topUp')">
-            <MpIcon name="add" size="md" color="icon.inverse" />
-            Top up
-          </button>
-        </div>
         <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('setBudget')">
             <MpIcon name="add" size="md" color="icon.inverse" />

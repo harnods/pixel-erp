@@ -46,7 +46,7 @@ export interface XpmWallet {
   description: string
 }
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main', name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   description: 'Company operating wallet — funds payouts and card floats.', balances: [{ currency: 'IDR', amount: 0 }, { currency: 'USD', amount: 930 }] },
+  { id: 'w-main', name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   description: 'Company operating wallet — funds payouts and card floats.', balances: [{ currency: 'IDR', amount: 7770900 }, { currency: 'USD', amount: 930 }] },
   { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                    type: 'Sub-wallet', description: 'Dedicated pool for approved employee reimbursements.',       balances: [{ currency: 'IDR', amount: 6773797 }] },
   { id: 'w-card', name: 'Card float',          tag: 'Sub-wallet',                    type: 'Sub-wallet', description: 'Balance that funds virtual and physical spending cards.',    balances: [{ currency: 'IDR', amount: 2180000 }, { currency: 'SGD', amount: 120 }] },
 ]
