@@ -6,6 +6,8 @@
  * Transactions, Claims, Cards and Budgeting stay coherent. No backend — this is
  * the single source the XPM pages read from.
  */
+import { reactive } from 'vue'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 // ── Transactions (ledger) ──────────────────────────────────────────────────────
 export type XpmTxnSource = 'Card' | 'Reimbursement' | 'Cash advance' | 'Bill' | 'Travel'
@@ -34,7 +36,12 @@ export const xpmTransactions: XpmTransaction[] = [
   { id: 'TX-90131', date: '2026-07-16T18:10:00', source: 'Card',          description: 'LinkedIn Recruiter',           name: 'People card',   account: 'Card float',        status: 'Cleared',          amount: 12800000 },
 ]
 
-// ── Wallets / Accounts ─────────────────────────────────────────────────────────
+// ── Wallets / Accounts (accurate ledger, persisted to the mini-DB) ──────────────
+// Balances are NOT hardcoded — they are DERIVED from a real movement ledger
+// (opening balance + running in/out). Top-ups and transfers append movements and
+// persist them, so the numbers stay internally consistent and survive a refresh
+// (and reset with "Reset demo data"). Primary currency is IDR; a wallet may carry
+// extra static foreign balances (USD/SGD) surfaced in the sidemenu only.
 export interface XpmWalletBalance { currency: string; amount: number }
 export interface XpmWallet {
   id: string
@@ -42,14 +49,118 @@ export interface XpmWallet {
   tag: string
   isDefault?: boolean
   type: string
-  balances: XpmWalletBalance[]
   description: string
+  currency: string                 // primary ledger currency
+  opening: number                  // opening balance for the primary-currency ledger
+  pendingPayouts: number           // real figure surfaced in the stats strip
+  secondary?: XpmWalletBalance[]    // extra static foreign balances (display only)
 }
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main', name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   description: 'Company operating wallet — funds payouts and card floats.', balances: [{ currency: 'IDR', amount: 7770900 }, { currency: 'USD', amount: 930 }] },
-  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                    type: 'Sub-wallet', description: 'Dedicated pool for approved employee reimbursements.',       balances: [{ currency: 'IDR', amount: 6773797 }] },
-  { id: 'w-card', name: 'Card float',          tag: 'Sub-wallet',                    type: 'Sub-wallet', description: 'Balance that funds virtual and physical spending cards.',    balances: [{ currency: 'IDR', amount: 2180000 }, { currency: 'SGD', amount: 120 }] },
+  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', opening: 5000000, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.', secondary: [{ currency: 'USD', amount: 930 }] },
+  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', opening: 4000000, pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
+  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', opening: 5000000, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.', secondary: [{ currency: 'SGD', amount: 120 }] },
 ]
+
+export type XpmMovementCategory = 'Top-up' | 'Payment' | 'FX' | 'Payout' | 'Transfer'
+export interface XpmMovement {
+  id: string
+  walletId: string
+  date: string          // ISO date (anchored to Jul 2026 = "this month")
+  description: string
+  category: XpmMovementCategory
+  direction: 'in' | 'out'
+  amount: number
+  currency: string
+}
+
+// Seed ledger — chronological (oldest first). Running balances are computed, never
+// stored, so they can never drift from the movements.
+const SEED_WALLET_MOVEMENTS: XpmMovement[] = [
+  // Main account (opening 5.000.000)
+  { id: 'M001', walletId: 'w-main', date: '2026-07-16', description: 'Refund — cancelled booking', category: 'Payment', direction: 'in',  amount: 1000000, currency: 'IDR' },
+  { id: 'M002', walletId: 'w-main', date: '2026-07-17', description: 'Vendor payout — PT Sinar Jaya', category: 'Payment', direction: 'out', amount: 2500000, currency: 'IDR' },
+  { id: 'M003', walletId: 'w-main', date: '2026-07-18', description: 'Card float replenish', category: 'Transfer', direction: 'out', amount: 2000000, currency: 'IDR' },
+  { id: 'M004', walletId: 'w-main', date: '2026-07-19', description: 'Top up — Bank transfer', category: 'Top-up', direction: 'in',  amount: 10000000, currency: 'IDR' },
+  { id: 'M005', walletId: 'w-main', date: '2026-07-20', description: 'AWS — July invoice', category: 'Payment', direction: 'out', amount: 8000000, currency: 'IDR' },
+  { id: 'M006', walletId: 'w-main', date: '2026-07-21', description: 'Top up — Bank transfer', category: 'Top-up', direction: 'in',  amount: 5000000, currency: 'IDR' },
+  // Reimbursement pool (opening 4.000.000)
+  { id: 'M010', walletId: 'w-reimb', date: '2026-07-17', description: 'Top up from Main account', category: 'Transfer', direction: 'in',  amount: 3000000, currency: 'IDR' },
+  { id: 'M011', walletId: 'w-reimb', date: '2026-07-18', description: 'Payout — Indah Permata', category: 'Payout', direction: 'out', amount: 450000, currency: 'IDR' },
+  { id: 'M012', walletId: 'w-reimb', date: '2026-07-19', description: 'Payout — Tom Okafor', category: 'Payout', direction: 'out', amount: 1250000, currency: 'IDR' },
+  { id: 'M013', walletId: 'w-reimb', date: '2026-07-20', description: 'Top up from Main account', category: 'Transfer', direction: 'in',  amount: 2000000, currency: 'IDR' },
+  { id: 'M014', walletId: 'w-reimb', date: '2026-07-21', description: 'Payout — Maya Chen', category: 'Payout', direction: 'out', amount: 1840000, currency: 'IDR' },
+  // Card float (opening 5.000.000)
+  { id: 'M020', walletId: 'w-card', date: '2026-07-16', description: 'Google Workspace', category: 'Payment', direction: 'out', amount: 2400000, currency: 'IDR' },
+  { id: 'M021', walletId: 'w-card', date: '2026-07-18', description: 'Card float replenish', category: 'Transfer', direction: 'in',  amount: 4000000, currency: 'IDR' },
+  { id: 'M022', walletId: 'w-card', date: '2026-07-19', description: 'Figma annual seats', category: 'Payment', direction: 'out', amount: 5100000, currency: 'IDR' },
+  { id: 'M023', walletId: 'w-card', date: '2026-07-20', description: 'Adobe Creative Cloud renewal', category: 'Payment', direction: 'out', amount: 899000, currency: 'IDR' },
+  { id: 'M024', walletId: 'w-card', date: '2026-07-21', description: 'Card float replenish', category: 'Transfer', direction: 'in',  amount: 2000000, currency: 'IDR' },
+]
+
+/** Persisted movement ledger — snapshot wins over the seed; reset restores seed. */
+export const xpmWalletMovements = reactive<XpmMovement[]>(
+  loadSnapshot<XpmMovement>('xpm-wallet-movements') ?? JSON.parse(JSON.stringify(SEED_WALLET_MOVEMENTS)),
+)
+function persistMovements() { saveSnapshot('xpm-wallet-movements', xpmWalletMovements) }
+
+let movementSeq = xpmWalletMovements.reduce((max, m) => Math.max(max, Number(m.id.replace(/\D/g, '')) || 0), 100)
+function nextMovementId() { return 'M' + (++movementSeq) }
+
+/** The scenario's "today" — all seed movements fall in this month. */
+export const XPM_TODAY = '2026-07-21'
+
+interface XpmMovementWithBalance extends XpmMovement { balance: number }
+/** Compute the running ledger for a wallet+currency (chronological). */
+function walletLedger(walletId: string, currency = 'IDR'): { opening: number; rows: XpmMovementWithBalance[]; balance: number } {
+  const opening = xpmWallets.find(w => w.id === walletId)?.opening ?? 0
+  const rows = xpmWalletMovements
+    .filter(m => m.walletId === walletId && m.currency === currency)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+  let bal = opening
+  const withBal = rows.map(m => { bal += m.direction === 'in' ? m.amount : -m.amount; return { ...m, balance: bal } })
+  return { opening, rows: withBal, balance: bal }
+}
+
+/** Current derived balance for a wallet's primary currency. */
+export function walletBalance(walletId: string, currency = 'IDR'): number {
+  return walletLedger(walletId, currency).balance
+}
+/** Movement rows for the table — newest first, each with its running balance. */
+export function walletMovements(walletId: string, currency = 'IDR'): XpmMovementWithBalance[] {
+  return walletLedger(walletId, currency).rows.slice().reverse()
+}
+/** Stats strip figures — all derived from the ledger. */
+export function walletStats(walletId: string, currency = 'IDR') {
+  const { rows, balance } = walletLedger(walletId, currency)
+  const monthIn = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0)
+  const monthOut = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0)
+  const pending = xpmWallets.find(w => w.id === walletId)?.pendingPayouts ?? 0
+  return { balance, pending, monthIn, monthOut }
+}
+/** Display balances for the sidemenu: derived primary + any static foreign ones. */
+export function walletDisplayBalances(wallet: XpmWallet): XpmWalletBalance[] {
+  return [{ currency: wallet.currency, amount: walletBalance(wallet.id, wallet.currency) }, ...(wallet.secondary ?? [])]
+}
+/** Sum of all wallets' primary-currency balances (for the "All wallets ≈" line). */
+export function walletsTotalPrimary(): number {
+  return xpmWallets.reduce((s, w) => s + walletBalance(w.id, w.currency), 0)
+}
+
+/** Top up a wallet — appends an in-movement and persists. */
+export function topUpWallet(walletId: string, amount: number, source = 'Bank transfer', note?: string) {
+  if (!(amount > 0)) return
+  xpmWalletMovements.push({ id: nextMovementId(), walletId, date: XPM_TODAY, description: note?.trim() ? note.trim() : `Top up — ${source}`, category: 'Top-up', direction: 'in', amount, currency: 'IDR' })
+  persistMovements()
+}
+/** Move money between wallets — appends the paired out/in movements and persists. */
+export function moveMoneyBetween(fromId: string, toId: string, amount: number, note?: string) {
+  if (!(amount > 0) || fromId === toId) return
+  const nameOf = (id: string) => xpmWallets.find(w => w.id === id)?.name ?? id
+  xpmWalletMovements.push({ id: nextMovementId(), walletId: fromId, date: XPM_TODAY, description: note?.trim() ? note.trim() : `Transfer to ${nameOf(toId)}`, category: 'Transfer', direction: 'out', amount, currency: 'IDR' })
+  xpmWalletMovements.push({ id: nextMovementId(), walletId: toId,   date: XPM_TODAY, description: note?.trim() ? note.trim() : `Transfer from ${nameOf(fromId)}`, category: 'Transfer', direction: 'in',  amount, currency: 'IDR' })
+  persistMovements()
+}
 
 // ── Claims (admin index) ───────────────────────────────────────────────────────
 export interface XpmClaim {

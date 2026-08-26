@@ -295,8 +295,13 @@ if (import.meta.client) {
   mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
 }
 
-// Main nav collapses while a panel is open, or on narrow (tablet/mobile) viewports
-const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value)
+// Some full-bleed pages render their OWN level-2 sidemenu inside the content area
+// (e.g. XPM Accounts → the wallet list). Force the main nav to the icon rail there
+// so the two level-2 columns don't stack side by side.
+const hasOwnLevel2 = computed(() => route.path === '/accounts' || route.path.startsWith('/accounts/'))
+// Main nav collapses while a panel is open, on narrow viewports, or on a page that
+// owns its own level-2 sidemenu.
+const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value && !hasOwnLevel2.value)
 // Arrow points left when nav is expanded OR when a panel is visible
 const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value && isPanelVisible.value))
 

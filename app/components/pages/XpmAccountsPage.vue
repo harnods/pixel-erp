@@ -3,105 +3,99 @@
  * XpmAccountsPage — XPM (Mekari Expense) "Accounts" (company wallets).
  *
  * Full-bleed page (routed via detailMatch): owns the whole content area — a left
- * wallet sidemenu (level-2 style), its own 72px title bar showing the SELECTED
- * wallet name + actions, then the stage: a stats strip, Transactions / Wallet info
- * tabs, a filter bar and the movement table. Mirrors Figma node 4317:3444.
+ * wallet sidemenu, its own 72px title bar showing the SELECTED wallet name +
+ * actions, then a stats strip, Transactions / Wallet info tabs, a filter bar and
+ * the movement table. Mirrors Figma node 4317:3444.
+ *
+ * All figures come from the persisted wallet ledger in app/data/xpm.ts — balances
+ * and stats are DERIVED from real movements, and Top up / Move money mutate the
+ * ledger (and persist), so the numbers stay accurate and survive a refresh.
  */
 import {
-  MpIcon, MpBadge, MpButton, MpButtonGroup,
+  MpIcon, MpBadge, MpButton, MpButtonGroup, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpFormControl, MpFormLabel, MpInput, MpSelect, MpTextarea, MpToggle,
   css, toast,
 } from '@mekari/pixel3'
-import { xpmWallets, type XpmWallet } from '~/data/xpm'
+import {
+  xpmWallets, type XpmWallet,
+  walletMovements, walletStats, walletDisplayBalances,
+  topUpWallet, moveMoneyBetween,
+} from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
 import { infoToast } from '~/utils/toasts'
+
+const num = (s: string) => Number(String(s).replace(/[^\d]/g, '')) || 0
 
 // ── Selection state ──────────────────────────────────────────────────────────
 const wallets = computed<XpmWallet[]>(() => xpmWallets)
 const selectedIndex = ref(0)
 const selectedWallet = computed(() => wallets.value[selectedIndex.value]!)
 function selectWallet(i: number) { selectedIndex.value = i }
+const activeCurrency = computed(() => selectedWallet.value.currency)
 
-// Show the wallet's first (primary) currency — the design surfaces one currency.
-const activeCurrency = computed(() => selectedWallet.value.balances[0]?.currency ?? 'IDR')
-const activeBalance = computed(() => selectedWallet.value.balances[0]?.amount ?? 0)
-
-// ── Stats strip (Balance / Pending payouts / Money in / Money out) ───────────
+// ── Stats strip — derived from the ledger ────────────────────────────────────
 const stats = computed(() => {
   const cur = activeCurrency.value
-  const seed = (selectedWallet.value.id.length) + cur.charCodeAt(0)
-  const scale = cur === 'IDR' ? 1_000_000 : 100
+  const s = walletStats(selectedWallet.value.id, cur)
   return [
-    { label: 'Balance',         caption: 'Per 21 Jul 2026', value: formatMoney(activeBalance.value, cur), tone: 'default' as const },
-    { label: 'Pending payouts', caption: 'As of today',     value: formatMoney((seed % 5 + 1) * scale, cur), tone: 'default' as const },
-    { label: 'Money in',        caption: 'This month',      value: formatMoney((seed % 7 + 3) * scale, cur), tone: 'default' as const },
-    { label: 'Money out',       caption: 'This month',      value: formatMoney((seed % 4 + 2) * scale, cur), tone: 'default' as const },
+    { label: 'Balance',         caption: 'Per 21 Jul 2026', value: formatMoney(s.balance, cur) },
+    { label: 'Pending payouts', caption: 'As of today',     value: formatMoney(s.pending, cur) },
+    { label: 'Money in',        caption: 'This month',      value: formatMoney(s.monthIn, cur) },
+    { label: 'Money out',       caption: 'This month',      value: formatMoney(s.monthOut, cur) },
   ]
 })
 
-// ── Movement rows (local mock, per wallet) ───────────────────────────────────
-interface MovementRow { date: string; description: string; in?: number; out?: number; balance: number }
-function movementsFor(walletId: string, currency: string): MovementRow[] {
-  const u = currency === 'IDR' ? 1_000_000 : 100
-  const base: Record<string, MovementRow[]> = {
-    'w-main': [
-      { date: '2026-07-21', description: 'Top up — Bank transfer',       in: 15 * u,           balance: 15 * u },
-      { date: '2026-07-20', description: 'AWS — July invoice',                       out: 8 * u, balance: 7 * u },
-      { date: '2026-07-19', description: 'FX buy — USD funding',                     out: 5 * u, balance: 2 * u },
-      { date: '2026-07-18', description: 'Card float replenish',                     out: 2 * u, balance: 0 },
-      { date: '2026-07-16', description: 'Refund — cancelled booking',   in: 1 * u,            balance: 1 * u },
-    ],
-    'w-reimb': [
-      { date: '2026-07-21', description: 'Payout — Maya Chen',                       out: 1 * u, balance: 6 * u },
-      { date: '2026-07-20', description: 'Top up from Main account',      in: 4 * u,            balance: 7 * u },
-      { date: '2026-07-19', description: 'Payout — Tom Okafor',                      out: 1 * u, balance: 3 * u },
-      { date: '2026-07-18', description: 'Payout — Indah Permata',                   out: 1 * u, balance: 4 * u },
-      { date: '2026-07-17', description: 'Top up from Main account',      in: 5 * u,            balance: 5 * u },
-    ],
-    'w-card': [
-      { date: '2026-07-21', description: 'Adobe Creative Cloud renewal',            out: 1 * u, balance: 2 * u },
-      { date: '2026-07-20', description: 'Figma annual seats',                      out: 3 * u, balance: 3 * u },
-      { date: '2026-07-19', description: 'Card float replenish',          in: 4 * u,            balance: 6 * u },
-      { date: '2026-07-18', description: 'Google Workspace',                        out: 2 * u, balance: 2 * u },
-      { date: '2026-07-16', description: 'LinkedIn Recruiter',                      out: 1 * u, balance: 4 * u },
-    ],
-  }
-  return base[walletId] ?? base['w-main']!
-}
-const movements = computed(() => movementsFor(selectedWallet.value.id, activeCurrency.value))
-
-// ── Filter bar (visual state) ────────────────────────────────────────────────
-const typeFilter = ref('')
-const periodFilter = ref('')
-const search = ref('')
-const typeOptions = ['Top-ups', 'Payments', 'FX']
+// ── Movements + filters ──────────────────────────────────────────────────────
+const CAT_GROUP: Record<string, string> = { 'Top-up': 'Top-ups', 'Payment': 'Payments', 'Payout': 'Payments', 'Transfer': 'Transfers', 'FX': 'FX' }
+const typeOptions = ['Top-ups', 'Payments', 'Transfers']
 const periodOptions = ['This month', 'Last month', 'All time']
+
+const filterTypes = ref<string[]>([])
+const filterPeriod = ref('')
+const search = ref('')
+// The inline Type/Period selects are single-select proxies over the filter state.
+const typeFilter = computed<string>({ get: () => filterTypes.value[0] ?? '', set: v => { filterTypes.value = v ? [v] : [] } })
+
+const rawMovements = computed(() => walletMovements(selectedWallet.value.id, activeCurrency.value))
 const filteredMovements = computed(() => {
   const s = search.value.trim().toLowerCase()
-  if (!s) return movements.value
-  return movements.value.filter(m => m.description.toLowerCase().includes(s))
+  return rawMovements.value.filter(m => {
+    if (filterTypes.value.length && !filterTypes.value.includes(CAT_GROUP[m.category] ?? m.category)) return false
+    // Seed data all falls in the current month; "Last month" honestly yields none.
+    if (filterPeriod.value === 'Last month') return false
+    if (s && !m.description.toLowerCase().includes(s)) return false
+    return true
+  })
 })
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 const activeTabIndex = ref(0)
 
-// ── Drawers ──────────────────────────────────────────────────────────────────
+// ── All filters drawer ───────────────────────────────────────────────────────
+const showFilters = ref(false)
+const draftTypes = ref<string[]>([])
+const draftPeriod = ref('')
+function openFilters() { draftTypes.value = [...filterTypes.value]; draftPeriod.value = filterPeriod.value; showFilters.value = true }
+function closeFilters() { showFilters.value = false }
+function toggleDraftType(t: string) { draftTypes.value = draftTypes.value.includes(t) ? draftTypes.value.filter(x => x !== t) : [...draftTypes.value, t] }
+function resetFilters() { draftTypes.value = []; draftPeriod.value = '' }
+function applyFilters() { filterTypes.value = [...draftTypes.value]; filterPeriod.value = draftPeriod.value; closeFilters() }
+const activeFilterCount = computed(() => (filterTypes.value.length ? 1 : 0) + (filterPeriod.value ? 1 : 0))
+
+// ── Drawers: Edit / Move / Top up ────────────────────────────────────────────
 const showEdit = ref(false)
 const showMove = ref(false)
 const showTopUp = ref(false)
 
 // Edit wallet
-const eName = ref('')
-const eCurrency = ref('IDR')
-const eType = ref('Primary')
-const eDefault = ref(false)
+const eName = ref(''); const eCurrency = ref('IDR'); const eType = ref('Primary'); const eDefault = ref(false)
 function openEdit() {
   eName.value = selectedWallet.value.name
-  eCurrency.value = selectedWallet.value.balances[0]?.currency ?? 'IDR'
+  eCurrency.value = selectedWallet.value.currency
   eType.value = selectedWallet.value.type
   eDefault.value = !!selectedWallet.value.isDefault
   showEdit.value = true
@@ -110,10 +104,7 @@ function closeEdit() { showEdit.value = false }
 function saveEdit() { closeEdit(); toast.notify({ variant: 'success', title: 'Wallet saved.', maxWidth: 'max-content' }) }
 
 // Move money
-const mFrom = ref('')
-const mTo = ref('')
-const mAmount = ref('')
-const mNote = ref('')
+const mFrom = ref(''); const mTo = ref(''); const mAmount = ref(''); const mNote = ref('')
 function openMove() {
   mFrom.value = selectedWallet.value.name
   mTo.value = wallets.value.find(w => w.id !== selectedWallet.value.id)?.name ?? ''
@@ -121,15 +112,23 @@ function openMove() {
   showMove.value = true
 }
 function closeMove() { showMove.value = false }
-function saveMove() { closeMove(); toast.notify({ variant: 'success', title: 'Money moved.', maxWidth: 'max-content' }) }
+function saveMove() {
+  const fromId = wallets.value.find(w => w.name === mFrom.value)?.id
+  const toId = wallets.value.find(w => w.name === mTo.value)?.id
+  if (fromId && toId) moveMoneyBetween(fromId, toId, num(mAmount.value), mNote.value)
+  closeMove()
+  toast.notify({ variant: 'success', title: 'Money moved.', maxWidth: 'max-content' })
+}
 
 // Top up
-const tAmount = ref('')
-const tSource = ref('Bank transfer')
-const tNote = ref('')
+const tAmount = ref(''); const tSource = ref('Bank transfer'); const tNote = ref('')
 function openTopUp() { tAmount.value = ''; tSource.value = 'Bank transfer'; tNote.value = ''; showTopUp.value = true }
 function closeTopUp() { showTopUp.value = false }
-function saveTopUp() { closeTopUp(); toast.notify({ variant: 'success', title: 'Top up complete.', maxWidth: 'max-content' }) }
+function saveTopUp() {
+  topUpWallet(selectedWallet.value.id, num(tAmount.value), tSource.value, tNote.value)
+  closeTopUp()
+  toast.notify({ variant: 'success', title: 'Top up complete.', maxWidth: 'max-content' })
+}
 
 // ── Funding rules (mock, Wallet info tab) ────────────────────────────────────
 const fundingRules = computed(() => {
@@ -172,7 +171,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                 <span v-if="w.isDefault" class="acct-wallet__badge">Default</span>
               </div>
               <span v-if="w.tag" class="acct-wallet__tag">{{ w.tag }}</span>
-              <div v-for="b in w.balances" :key="b.currency" class="acct-wallet__bal">
+              <div v-for="b in walletDisplayBalances(w)" :key="b.currency" class="acct-wallet__bal">
                 <span>{{ b.currency }}</span><span>•</span><span>{{ formatMoney(b.amount, b.currency) }}</span>
               </div>
             </div>
@@ -187,11 +186,13 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
       <div class="acct-titlebar">
         <h1 class="acct-titlebar__title">{{ selectedWallet.name }}</h1>
         <div class="acct-titlebar__actions">
-          <MpButton variant="secondary" is-rounded @click="openMove">Move money</MpButton>
-          <MpButton variant="primary" is-rounded @click="openTopUp">Top up</MpButton>
+          <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="openMove">Move money</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="openTopUp">Top up</button>
           <MpPopover id="acct-more-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <MpButton variant="ghost" left-icon="menu-kebab" aria-label="More actions" />
+              <button class="btn-enterprise btn-enterprise--secondary acct-kebab" type="button" aria-label="More actions">
+                <MpIcon name="menu-kebab" size="md" />
+              </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="popoverContentClass">
               <MpPopoverList>
@@ -215,7 +216,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
         </div>
 
         <!-- Tabs -->
-        <MpTabs id="acct-tabs" v-model="activeTabIndex" variant-color="green" class="acct-tabs">
+        <MpTabs id="acct-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="acct-tabs detail-tabs">
           <MpTabList>
             <MpTab id="acct-tab-txn" value="transactions">Transactions</MpTab>
             <MpTab id="acct-tab-info" value="info">Wallet info</MpTab>
@@ -235,13 +236,15 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                       <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                     <div class="filter-select-wrap">
-                      <select class="filter-select" v-model="periodFilter">
+                      <select class="filter-select" v-model="filterPeriod">
                         <option value="">Period</option>
                         <option v-for="o in periodOptions" :key="o" :value="o">{{ o }}</option>
                       </select>
                       <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
-                    <button class="filter-all-btn" @click="infoToast('All filters — coming soon')"><MpIcon name="filter" size="md" /> All filters</button>
+                    <button class="filter-all-btn" @click="openFilters">
+                      <MpIcon name="filter" size="md" /> All filters<template v-if="activeFilterCount"> ({{ activeFilterCount }})</template>
+                    </button>
                   </div>
                   <div class="filter-right">
                     <div class="filter-btn-group">
@@ -270,12 +273,15 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="(m, i) in filteredMovements" :key="i" class="acct-tr">
+                      <tr v-for="m in filteredMovements" :key="m.id" class="acct-tr">
                         <td class="acct-td">{{ formatDateLong(m.date) }}</td>
                         <td class="acct-td">{{ m.description }}</td>
-                        <td class="acct-td acct-td--right acct-td--in">{{ m.in != null ? formatMoney(m.in, activeCurrency) : '—' }}</td>
-                        <td class="acct-td acct-td--right">{{ m.out != null ? formatMoney(m.out, activeCurrency) : '—' }}</td>
+                        <td class="acct-td acct-td--right">{{ m.direction === 'in' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
+                        <td class="acct-td acct-td--right">{{ m.direction === 'out' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
                         <td class="acct-td acct-td--right">{{ formatMoney(m.balance, activeCurrency) }}</td>
+                      </tr>
+                      <tr v-if="!filteredMovements.length" class="acct-tr">
+                        <td class="acct-td acct-td--empty" colspan="5">No movement matches your filters.</td>
                       </tr>
                     </tbody>
                   </table>
@@ -298,7 +304,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                     <div class="acct-dl__row"><dt>Wallet name</dt><dd>{{ selectedWallet.name }}</dd></div>
                     <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
                     <div class="acct-dl__row"><dt>Wallet type</dt><dd>{{ selectedWallet.type }}</dd></div>
-                    <div class="acct-dl__row"><dt>Currency</dt><dd>{{ selectedWallet.balances.map(b => b.currency).join(', ') }}</dd></div>
+                    <div class="acct-dl__row"><dt>Currency</dt><dd>{{ [selectedWallet.currency, ...(selectedWallet.secondary?.map(b => b.currency) ?? [])].join(', ') }}</dd></div>
                     <div class="acct-dl__row"><dt>Default account</dt><dd>{{ selectedWallet.isDefault ? 'Yes — company default' : 'No' }}</dd></div>
                     <div class="acct-dl__row"><dt>Wallet owner</dt><dd>Finance team</dd></div>
                     <div class="acct-dl__row"><dt>Created on</dt><dd>{{ formatDateLong('2026-01-14') }}</dd></div>
@@ -327,6 +333,47 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
       </div>
     </div>
   </div>
+
+  <!-- ── All filters drawer (ERP custom-overlay pattern) ── -->
+  <Teleport to="body">
+    <Transition name="acctf">
+      <div v-if="showFilters" class="acctf-overlay" @click.self="closeFilters">
+        <div class="acctf-panel" role="dialog" aria-label="All filters">
+          <header class="acctf-header">
+            <span class="acctf-title">All filters</span>
+            <button class="acctf-close" type="button" aria-label="Close" @click="closeFilters"><MpIcon name="close" size="md" /></button>
+          </header>
+          <div class="acctf-body">
+            <div class="acctf-field">
+              <span class="acctf-field-label">Type</span>
+              <ul class="acctf-checklist">
+                <li v-for="opt in typeOptions" :key="opt" class="acctf-check-item" @click="toggleDraftType(opt)">
+                  <span @click.stop><MpCheckbox :id="`acctf-type-${opt}`" :is-checked="draftTypes.includes(opt)" @change="() => toggleDraftType(opt)" /></span>
+                  <span class="acctf-check-label">{{ opt }}</span>
+                </li>
+              </ul>
+            </div>
+            <div class="acctf-field">
+              <span class="acctf-field-label">Period</span>
+              <ul class="acctf-checklist">
+                <li v-for="opt in periodOptions" :key="opt" class="acctf-check-item" @click="draftPeriod = draftPeriod === opt ? '' : opt">
+                  <span @click.stop><MpCheckbox :id="`acctf-period-${opt}`" :is-checked="draftPeriod === opt" @change="() => (draftPeriod = draftPeriod === opt ? '' : opt)" /></span>
+                  <span class="acctf-check-label">{{ opt }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <footer class="acctf-footer">
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">Reset filter</button>
+            <div class="acctf-footer-right">
+              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeFilters">Cancel</button>
+              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyFilters">Apply</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
   <!-- ── Edit wallet drawer ── -->
   <MpDrawer id="xpm-edit-wallet-drawer" :is-open="showEdit" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeEdit">
@@ -511,6 +558,8 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acct-titlebar__actions { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); flex-shrink: 0; }
+/* Secondary icon-only button (kebab) — square, keeps the grey bold border. */
+.acct-kebab { padding: var(--mp-spacing-2, 8px); }
 
 /* Stage */
 .acct-stage {
@@ -534,9 +583,13 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-stat__cap { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-stat__val { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
 
-/* Tabs */
+/* Tabs — active-state + tab-to-content gap overrides (matches ERP detail pages) */
 .acct-tabs { width: 100%; }
-.acct-panel { padding-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
+.detail-tabs :deep(.mp-tab--isSelected_true),
+.detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.acct-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
 
 /* Filter bar (shared ERP pattern) */
 .filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
@@ -557,7 +610,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: var(--mp-radii-full, 999px); }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Movement table */
+/* Movement table — default text colour throughout */
 .acct-table-wrap { overflow-x: auto; }
 .acct-table { width: 100%; border-collapse: collapse; }
 .acct-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
@@ -565,10 +618,9 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-tr:hover { background: var(--mp-background-neutral-hovered); }
 .acct-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); vertical-align: middle; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
 .acct-td--right { text-align: right; }
-.acct-td--in { color: var(--mp-text-success, #0a7a4a); }
+.acct-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-5) var(--mp-spacing-3); }
 
 /* Wallet info */
-.acct-info { }
 .acct-card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-4); }
 .acct-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
 .acct-card__heading { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
@@ -583,6 +635,27 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-rule { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; }
 .acct-rule__desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
+/* ── All filters overlay ── */
+.acctf-enter-active, .acctf-leave-active { transition: background-color 250ms ease; }
+.acctf-enter-from, .acctf-leave-to { background-color: transparent; }
+.acctf-enter-active .acctf-panel { transition: transform 350ms ease-out; }
+.acctf-leave-active .acctf-panel { transition: transform 250ms ease-in; }
+.acctf-enter-from .acctf-panel, .acctf-leave-to .acctf-panel { transform: translateX(calc(100% + 12px)); }
+.acctf-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8,13,14,0.45)); display: flex; justify-content: flex-end; }
+.acctf-panel { margin: var(--mp-spacing-3); width: min(420px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
+.acctf-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.acctf-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.acctf-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.acctf-close:hover { background: var(--mp-background-neutral-hovered); }
+.acctf-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
+.acctf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.acctf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.acctf-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.acctf-check-item { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; }
+.acctf-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.acctf-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.acctf-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
 /* ── Drawers (floating card) ── */
 .dr-card { display: flex; flex-direction: column; height: 100%; }
 .dr-header { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
@@ -594,7 +667,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .dr-toggle-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .dr-footer { display: flex; justify-content: flex-end; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 
-/* Responsive: stack the sidemenu above the content on narrow viewports */
+/* Responsive */
 @media (max-width: 900px) {
   .acct { flex-direction: column; height: auto; }
   .acct-side { width: 100%; }
