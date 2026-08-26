@@ -112,6 +112,30 @@ const pageRegistry: Record<string, Component> = {
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
+
+  // ── XPM (Mekari Expense) scenario pages ──────────────────────────────────────
+  // Registered globally like every other scenario's pages; the XPM sidebar is the
+  // only thing that links here. Keys prefixed 'Xpm …' where the plain slug would
+  // collide with an ERP/WMS route (Reports, Transactions, Trips, Claims, Cards,
+  // Products, Warehouses, Users, Vendors, Policy, Integration). 'Home' branches by
+  // scenario below; Accounts/Budgeting/My claims/My trips have collision-free slugs.
+  'Xpm transactions':   defineAsyncComponent(() => import('~/components/pages/XpmTransactionsPage.vue')),
+  'Accounts':           defineAsyncComponent(() => import('~/components/pages/XpmAccountsPage.vue')),
+  'Budgeting':          defineAsyncComponent(() => import('~/components/pages/XpmBudgetingPage.vue')),
+  'Xpm purchases':      defineAsyncComponent(() => import('~/components/pages/XpmPurchasesPage.vue')),
+  'Xpm trips':          defineAsyncComponent(() => import('~/components/pages/XpmTripsPage.vue')),
+  'Xpm claims':         defineAsyncComponent(() => import('~/components/pages/XpmClaimsPage.vue')),
+  'Xpm cards':          defineAsyncComponent(() => import('~/components/pages/XpmCardsPage.vue')),
+  'My claims':          defineAsyncComponent(() => import('~/components/pages/XpmMyClaimsPage.vue')),
+  // Undesigned in the source app → faithful scaffold stand-ins.
+  'Xpm reports':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm products':       defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm warehouses':     defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'My trips':           defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm users':          defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -294,6 +318,20 @@ const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
 const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendingSetupPage.vue'))
+
+// ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
+const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
+const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
+const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
+const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
+const XpmClaimDetailPage = asyncPage(() => import('~/components/pages/XpmClaimDetailPage.vue'))
+// Tabbed XPM index pages read the active tab from ?tab= themselves, so every tab
+// maps to the SAME component (identical ref → stays mounted, re-filters on change).
+const XpmTransactionsTabPage = asyncPage(() => import('~/components/pages/XpmTransactionsPage.vue'))
+const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.vue'))
+const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
+const { activeScenario: xpmActiveScenario } = useScenario()
+const { trigger: triggerXpm } = useXpmActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -605,12 +643,31 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
     return { component: EmployeeDetailsPage, id: segs[1]! }
   }
+  // ── XPM (Mekari Expense) detail / form routes ────────────────────────────────
+  // /xpm-trips/:code → trip detail (owns its title bar).
+  if (segs.length >= 2 && segs[0] === 'xpm-trips') {
+    return { component: XpmTripDetailPage, id: segs[1]! }
+  }
+  // /xpm-cards/:id → card detail.
+  if (segs.length >= 2 && segs[0] === 'xpm-cards') {
+    return { component: XpmCardDetailPage, id: segs[1]! }
+  }
+  // /my-claims/create → request claim form; /my-claims/:id → claim detail;
+  // /my-claims/:id/edit → edit claim (reuses the form in edit mode).
+  if (segs.length >= 2 && segs[0] === 'my-claims') {
+    if (segs[1] === 'create') return { component: XpmClaimFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: XpmClaimFormPage, id: segs[1]! }
+    return { component: XpmClaimDetailPage, id: segs[1]! }
+  }
   return null
 })
 
-const currentComponent = computed<Component>(
-  () => pageRegistry[currentPageKey.value] ?? PlaceholderPage,
-)
+const currentComponent = computed<Component>(() => {
+  // Home ('/') is shared across scenarios by URL; render the Expense home when the
+  // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
+  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
+  return pageRegistry[currentPageKey.value] ?? PlaceholderPage
+})
 
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
@@ -630,6 +687,10 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
+  'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
+  'Xpm cards':         ['Virtual cards', 'Physical cards'],
+  'Xpm purchases':     ['Invoice', 'Order', 'Quote', 'Request'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: Pending +
@@ -843,6 +904,17 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
+  'Xpm transactions': {
+    'All': XpmTransactionsTabPage, 'Card': XpmTransactionsTabPage, 'Reimbursement': XpmTransactionsTabPage,
+    'Cash advance': XpmTransactionsTabPage, 'Bill': XpmTransactionsTabPage, 'Travel': XpmTransactionsTabPage,
+  },
+  'Xpm cards': {
+    'Virtual cards': XpmCardsTabPage, 'Physical cards': XpmCardsTabPage,
+  },
+  'Xpm purchases': {
+    'Invoice': XpmPurchasesTabPage, 'Order': XpmPurchasesTabPage, 'Quote': XpmPurchasesTabPage, 'Request': XpmPurchasesTabPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -1915,6 +1987,52 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New purchase order
+          </button>
+        </div>
+        <!-- ── XPM (Mekari Expense) title-bar actions ── -->
+        <div v-else-if="currentPageKey === 'Accounts'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="triggerXpm('editWallet')">Edit wallet</button>
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="triggerXpm('moveMoney')">
+            <MpIcon name="transfer" size="md" />
+            Move money
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('topUp')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Top up
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('setBudget')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Set budget
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm purchases'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createPurchase')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create purchase
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm trips'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('travelPolicy')">Manage travel policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('claimPolicy')">Manage claim policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm cards'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createCard')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create card
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'My claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="triggerXpm('myLimits')">
+            <MpIcon name="protection" size="md" />
+            My limits
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/my-claims/create')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Request claim
           </button>
         </div>
           </div>

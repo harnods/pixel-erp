@@ -686,12 +686,60 @@ const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   ]
 })
 
+// XPM (Mekari Expense) nav — mirrors the standalone Expense product's own sidebar
+// (Home / Reports · Accounts / Transactions / Budgeting · Purchasing / Trips /
+// Claims / Cards · My claims / My trips · Settings). Routes are global-by-URL like
+// every other scenario; only the tree swaps. Purchasing + Settings carry a level-2
+// panel (same UI as ERP's Reports/Settings). Icons reuse the CDN set 1:1 with the
+// source app.
+const xpmNavGroups: NavItem[][] = [
+  [
+    { name: 'Home', icon: 'home' },
+    { name: 'Reports', icon: 'reports', to: 'Xpm reports' },
+  ],
+  [
+    { name: 'Accounts', icon: 'wallet' },
+    { name: 'Transactions', icon: 'log', to: 'Xpm transactions' },
+    { name: 'Budgeting', icon: 'finance' },
+  ],
+  [
+    {
+      name: 'Purchasing', icon: 'expenses',
+      panelSubmenu: [[
+        { label: 'Purchases', to: 'Xpm purchases' },
+        { label: 'Products', to: 'Xpm products' },
+        { label: 'Warehouses', to: 'Xpm warehouses' },
+      ]],
+    },
+    { name: 'Trips', icon: 'voucher', to: 'Xpm trips' },
+    { name: 'Claims', icon: 'protection', to: 'Xpm claims' },
+    { name: 'Cards', icon: 'billing', to: 'Xpm cards' },
+  ],
+  [
+    { name: 'My claims', icon: 'reimbursement' },
+    { name: 'My trips', icon: 'business-trip' },
+  ],
+  [
+    {
+      name: 'Settings', icon: 'settings',
+      panelSubmenu: [[
+        { label: 'Users', to: 'Xpm users' },
+        { label: 'Vendors', to: 'Xpm vendors' },
+        { label: 'Policy', to: 'Xpm policy' },
+        { label: 'Integration', to: 'Xpm integration' },
+      ]],
+    },
+  ],
+]
+
 // Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
-// Ops menu; WMS Standalone uses the full WMS nav; ERP uses the ERP nav.
+// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; ERP
+// uses the ERP nav.
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
   if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
+  if (activeScenario.value === 'XPM') return xpmNavGroups
   return erpNavGroups
 })
 
