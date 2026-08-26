@@ -8,11 +8,11 @@ import { TODAY } from './master'
 import {
   accountForCategory, accountCodeFor, addAdjustment, stockAdjustments,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
-  type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
+  type StockAdjustment, type AdjustmentInput, type AdjustmentLine, type MisplacedSerial,
   IN_OUT_CATEGORIES, adjustmentLineItems,
 } from './stockAdjustments'
 
-export type { AdjustmentKind, AdjustmentCategory, AdjustmentStatus, StockAdjustment, AdjustmentInput, AdjustmentLine }
+export type { AdjustmentKind, AdjustmentCategory, AdjustmentStatus, StockAdjustment, AdjustmentInput, AdjustmentLine, MisplacedSerial }
 
 /**
  * WMS stock adjustments — separate data store from ERP. No approval workflow:
@@ -111,6 +111,39 @@ function generate(count = 24): StockAdjustment[] {
       }
     }
     out.push(record)
+  }
+  // Demo scenario — Cycle Count #20094 (cc-006) always carries 5 misplaced-serial
+  // notes and sits "Counted" (Awaiting approval), so the manager-review bulk
+  // actions have real data to exercise without walking a live count first. Split
+  // across 3 origin→found-at pairs (2 + 2 + 1) so selecting one pair's rows while
+  // a different pair's rows sit disabled is visible immediately.
+  const demoRecord = out.find(r => r.id === 'cc-006')
+  if (demoRecord) {
+    demoRecord.status = 'counted'
+    demoRecord.startDate ??= isoOffsetTs(-2, 8, 0)
+    demoRecord.endDate ??= isoOffsetTs(-1, 15, 30)
+    demoRecord.misplacedSerials = [
+      // Bin 03 → Bin 01 (4)
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101150', systemLocation: 'Bin 03', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 9, 12) },
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101172', systemLocation: 'Bin 03', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 9, 18) },
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101179', systemLocation: 'Bin 03', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 9, 24) },
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101186', systemLocation: 'Bin 03', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 9, 31) },
+      // Bin 02 → Bin 01 (3)
+      { sku: '2103', productName: 'Coffee Grinder Filter Bulk 98mm', serial: '210301044', systemLocation: 'Bin 02', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 10, 5) },
+      { sku: '2201', productName: 'Batch Brewer 2.5L Thermal', serial: '220100091', systemLocation: 'Bin 02', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 10, 41) },
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101194', systemLocation: 'Bin 02', countedLocation: 'Bin 01', scannedAt: isoOffsetTs(-1, 10, 47) },
+      // Bin 01 → Bin 03 (2)
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101183', systemLocation: 'Bin 01', countedLocation: 'Bin 03', scannedAt: isoOffsetTs(-1, 11, 2) },
+      { sku: '2103', productName: 'Coffee Grinder Filter Bulk 98mm', serial: '210301051', systemLocation: 'Bin 01', countedLocation: 'Bin 03', scannedAt: isoOffsetTs(-1, 11, 9) },
+      // Bin 01 → Bin 02 (3)
+      { sku: '2103', productName: 'Coffee Grinder Filter Bulk 98mm', serial: '210301058', systemLocation: 'Bin 01', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 11, 20) },
+      { sku: '2103', productName: 'Coffee Grinder Filter Bulk 98mm', serial: '210301065', systemLocation: 'Bin 01', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 11, 26) },
+      { sku: '2201', productName: 'Batch Brewer 2.5L Thermal', serial: '220100108', systemLocation: 'Bin 01', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 11, 33) },
+      // Bin 03 → Bin 02 (3)
+      { sku: '2201', productName: 'Batch Brewer 2.5L Thermal', serial: '220100115', systemLocation: 'Bin 03', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 12, 2) },
+      { sku: '2201', productName: 'Batch Brewer 2.5L Thermal', serial: '220100122', systemLocation: 'Bin 03', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 12, 9) },
+      { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101201', systemLocation: 'Bin 03', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 12, 15) },
+    ]
   }
   return out
 }
@@ -307,10 +340,30 @@ export function startWmsCount(id: string): StockAdjustment | undefined {
   return a
 }
 
-export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
+export function saveWmsCountDraft(
+  id: string,
+  lines: { sku: string; qty: number; location?: string }[],
+  misplacedSerials?: MisplacedSerial[],
+): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.lines = lines
+  a.misplacedSerials = misplacedSerials?.length ? misplacedSerials : undefined
+  persist()
+  return a
+}
+
+/** A manager (or whoever's reconciling the count) has raised a warehouse transfer
+ *  for one or more misplaced-serial notes — drop them off the record, since the
+ *  note's only job was to surface the mismatch until a transfer existed to fix it.
+ *  Clearing the field entirely once nothing's left keeps the review page's "no
+ *  misplaced serials" section hidden the same way it starts out (see
+ *  saveWmsCountDraft/finishWmsCount, which apply the same undefined-when-empty rule). */
+export function resolveMisplacedSerials(id: string, serials: string[]): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find(x => x.id === id)
+  if (!a?.misplacedSerials?.length) return a
+  const remaining = a.misplacedSerials.filter(m => !serials.includes(m.serial))
+  a.misplacedSerials = remaining.length ? remaining : undefined
   persist()
   return a
 }
@@ -318,12 +371,17 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number;
 // Finishing a count doesn't apply stock yet — it moves the task to "Counted"
 // (Awaiting approval tab) and waits for a manager to review it. Stock only
 // changes once approveWmsAdjustment runs.
-export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
+export function finishWmsCount(
+  id: string,
+  lines: { sku: string; qty: number; location?: string }[],
+  misplacedSerials?: MisplacedSerial[],
+): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.status = 'counted'
   a.endDate = new Date().toISOString()
   a.lines = lines
+  a.misplacedSerials = misplacedSerials?.length ? misplacedSerials : undefined
   persist()
   return a
 }

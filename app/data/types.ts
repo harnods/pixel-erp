@@ -8,6 +8,9 @@ export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
 export type FileClassification = 'bill' | 'invoice' | 'receipt' | 'bank_statement' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
+/** Purchase request statuses mirror the sales-order set (same badge colours). */
+export type PurchaseRequestStatus = 'open' | 'partially processed' | 'closed' | 'voided'
+export type UrgencyLevel = 'low' | 'medium' | 'high'
 export type ProductStatus    = 'active' | 'inactive'
 export type ContactType      = 'company' | 'individual'
 
@@ -196,6 +199,34 @@ export interface SalesOrder {
   shippingFee: number                     // IDR
 }
 
+/** A requested line on a purchase request — the source rows a purchase order
+ *  is built from (grouped by request in the PO form's accordion table). */
+export interface PurchaseRequestLine {
+  product: string
+  sku: string
+  description: string
+  requestedQty: number
+  availableQty: number      // on-hand stock available now
+  unit: string
+  unitCost: number          // IDR
+  taxLabel: string
+}
+
+export interface PurchaseRequest {
+  id: string
+  number: number                          // rendered as "Purchase Request #90010"
+  date: string                            // request date, ISO
+  procurementStaff: string                // who raised the request (the "requestor")
+  requiredDate: string                    // ISO — when the goods are needed
+  status: PurchaseRequestStatus
+  totalProducts: number                   // number of line items requested (= lines.length)
+  urgency: UrgencyLevel
+  tags?: string[]
+  attachment?: boolean                    // has a supporting document attached
+  awaitingApproval?: boolean              // sits in the "Awaiting approval" queue
+  lines: PurchaseRequestLine[]            // requested products
+}
+
 export interface SalesQuote {
   id: string
   number: number                          // rendered as "Sales Quote #20090"
@@ -239,7 +270,7 @@ export interface SalesDelivery {
   tags?: string[]
 }
 
-export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'closed' | 'draft' | 'rejected' | 'approved'
+export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
 
 export interface PurchaseOrder {
   id: string

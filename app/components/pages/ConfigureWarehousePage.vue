@@ -145,7 +145,7 @@ function onLocationPrioritySaved(order: string[]) {
   draft.locationPriority = order
 }
 
-// ─── Cycle counts (WMS Standalone only) ─────────────────────────────────────
+// ─── Cycle counts (WMS Standalone + ERP) ────────────────────────────────────
 const cycleCountActiveRules = computed(() =>
   [draft.cycleCountRuleNeg, draft.cycleCountRuleVar, draft.cycleCountRuleMin].filter(Boolean).length
 )
@@ -465,7 +465,7 @@ const toggleConfirmItems = computed((): string[] => {
             <span v-else class="cw-sub-value">{{ draft.scanThresholdValue }} {{ t('pcs') }}</span>
           </div>
 
-          <template v-if="activeScenario === 'WMS Standalone'">
+          <template v-if="activeScenario === 'WMS Standalone' || activeScenario === 'ERP'">
             <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Cycle counts') }}</h3>
 
             <!-- Cycle count recommendation master toggle -->

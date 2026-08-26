@@ -78,7 +78,6 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
-  'Stock counts',
   'Work orders',
   'Bill of materials',
   'Company profile',
@@ -233,7 +232,6 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('New task', 'built'), a('Details', 'built'), a('Count', 'built'), a('Start / Close', 'built'),
     a('Edit', 'partial', '→ placeholder'), a('Recommendations', 'built'),
   ],
-  'Stock counts': [a('Index', 'built'), a('Create', 'built')],
   'Stock inout': [a('Index', 'built'), a('Create', 'built')],
   // ── Reports ──
   'WMS': [a('Index', 'built'), a('Details', 'built'), a('Export', 'built')],
@@ -358,12 +356,8 @@ export const SITEMAP: SitemapModule[] = [
         ],
       }),
       leaf('Warehouse transfers'),
-      leaf('Stock adjustments', {
-        children: [
-          leaf('Cycle counts'),
-          leaf('Stock counts'),
-        ],
-      }),
+      leaf('Stock adjustments'),
+      leaf('Cycle counts'),
       leaf('Storage locations'),
       leaf('Couriers'),
     ],

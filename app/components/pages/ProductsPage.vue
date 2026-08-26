@@ -1035,15 +1035,9 @@ function closeExportModal() { exportModalOpen.value = false }
 
 /* ── Mobile ─────────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
-  /* Stats: two equal-width columns → 2 rows (instead of one cramped 4-across row) */
-  .stats-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--mp-spacing-4);
-    align-items: stretch;
-  }
-  .stat-card { padding-right: 0; }
-  .stat-card--bordered { border-right: none; }
+  /* Stats: keep horizontal and scroll/swipe instead of stacking (index pages). */
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .stat-card { flex: 0 0 auto; }
 
   /* Filter bar: drop Product type + Warehouse (keep All filters) on the left, and
      Airene + Export (keep column settings) on the right. Search stays. */

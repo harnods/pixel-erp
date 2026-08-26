@@ -1,0 +1,91 @@
+/*
+ * Shared CRM (Qontak) list-page chrome — title bar + filter bar + table + tags.
+ * Used by the full-bleed CRM pages (Customers, Products, Orders, Tasks, Settings)
+ * so they match CrmDealsPage without each re-declaring the layout. Registered
+ * globally in nuxt.config.ts. Scoped, page-specific tweaks live in each SFC.
+ */
+
+/* The CRM page sits on the gray surface; the white stage below the title bar has
+   a rounded top (like the ERP stage) so the top-left corner reads consistent. */
+.crm { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+
+/* ── Title bar (on the gray surface) ── */
+.crm-titlebar {
+  flex-shrink: 0; min-height: 72px; box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+}
+
+/* The white stage's rounded top-left/right corner (ERP consistency). Whatever is
+   the first white element below the title bar carries the rounding. */
+.crm-filter, .crm-stage--top {
+  border-top-left-radius: var(--mp-radii-xl, 12px);
+  border-top-right-radius: var(--mp-radii-xl, 12px);
+}
+.crm-titlebar__left { display: flex; align-items: baseline; gap: var(--mp-spacing-3); }
+.crm-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default, #272b32); }
+.crm-subtitle { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #656f80); }
+.crm-titlebar__right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+.crm-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  cursor: pointer; white-space: nowrap; border: 1px solid transparent;
+}
+.crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default, #272b32); }
+.crm-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* Enterprise primary — emerald, matching .btn-enterprise--primary. */
+.crm-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse, #fff); }
+.crm-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
+
+/* ── Filter bar ── */
+.crm-filter {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage, #fff);
+}
+.crm-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.crm-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.crm-link { background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
+.crm-search { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #fff); width: 240px; }
+.crm-search__ic { color: var(--mp-text-secondary, #656f80); flex-shrink: 0; }
+.crm-search__input { border: none; outline: none; background: none; flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.crm-search__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
+
+/* ── Stage + table ── */
+.crm-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); }
+.crm-table-scroll { width: 100%; overflow-x: auto; }
+.crm-table { width: 100%; border-collapse: collapse; }
+.crm-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  text-align: left; padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary, #656f80); white-space: nowrap;
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+}
+.crm-table thead th.num, .crm-table td.num { text-align: right; }
+.crm-table tbody td {
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default, #272b32);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: middle;
+}
+.crm-table tbody tr { cursor: pointer; transition: background 100ms; }
+.crm-table tbody tr:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+
+/* ── Status tags ── */
+.tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); text-transform: capitalize; white-space: nowrap; }
+.tag--green { background: var(--mp-background-success-subtle, #e5f4ec); color: var(--mp-text-success, #186f4a); }
+.tag--warn { background: var(--mp-background-warning-subtle, #fffaea); color: var(--mp-text-warning-bold, #a14a0b); }
+.tag--danger { background: var(--mp-background-danger-subtle, #fdecea); color: var(--mp-text-danger, #a8352d); }
+.tag--blue { background: var(--mp-background-information-subtle, #dbe7f4); color: var(--mp-text-link, #165082); }
+.tag--muted { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-secondary, #656f80); }
+
+/* ── Mobile (≤640px) — stack title/filter bars; search takes the full row ── */
+@media (max-width: 640px) {
+  .crm-titlebar { flex-wrap: wrap; padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); }
+  .crm-filter { flex-wrap: wrap; }
+  .crm-filter__right { flex: 1 1 100%; }
+  .crm-filter__right .crm-search { flex: 1; width: auto; }
+}

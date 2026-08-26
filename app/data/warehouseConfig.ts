@@ -43,7 +43,7 @@ export interface WarehouseConfig {
   locationPriority: string[]
   scanThreshold: boolean
   scanThresholdValue: number
-  // Cycle counts — WMS Standalone only (no equivalent in ERP), per-warehouse.
+  // Cycle counts — WMS Standalone + ERP, per-warehouse.
   cycleCountRec: boolean
   cycleCountAutoTask: boolean
   cycleCountRuleNeg: boolean
