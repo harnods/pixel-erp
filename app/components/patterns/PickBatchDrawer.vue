@@ -154,7 +154,7 @@ function handleSave() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in filteredRows" :key="row.batchNo" class="pbd-tr">
+              <tr v-for="row in filteredRows" :key="row.batchNo" class="pbd-tr" :class="{ 'pbd-tr--static': isReadOnly }">
                 <td class="pbd-td pbd-td--muted">{{ row.batchNo }}</td>
                 <td class="pbd-td pbd-td--muted">{{ formatDate(row.expiryDate) }}</td>
                 <td class="pbd-td pbd-td--muted">{{ row.desc }}</td>
@@ -288,6 +288,9 @@ function handleSave() {
 }
 .pbd-td--muted { color: var(--mp-text-secondary); }
 .pbd-td--right { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+/* Read-only view: nothing here is editable, so the "which cell can I edit"
+   gray goes away — every cell in the row reads as plain white text. */
+.pbd-tr--static .pbd-td { background: var(--mp-background-neutral, #fff); }
 .pbd-td--input { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
 .pbd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6) 0; background: var(--mp-background-neutral, #fff); }
 .pbd-qty-input {

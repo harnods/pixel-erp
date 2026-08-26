@@ -59,32 +59,34 @@ function complete() { emit('complete'); close() }
 
         <p class="cwo-desc">Review remaining components and choose how to close this work order</p>
 
-        <div class="cwo-table-scroll">
-          <table class="cwo-table">
-            <thead>
-              <tr>
-                <th class="cwo-th">Product</th>
-                <th class="cwo-th">SKU</th>
-                <th class="cwo-th cwo-th--num">Needed qty</th>
-                <th class="cwo-th cwo-th--num">Consumed qty</th>
-                <th class="cwo-th cwo-th--num">Remaining qty</th>
-                <th class="cwo-th">Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rows" :key="r.productId" class="cwo-tr">
-                <td class="cwo-td">{{ r.product }}</td>
-                <td class="cwo-td">{{ r.sku }}</td>
-                <td class="cwo-td cwo-td--num">{{ r.needed }}</td>
-                <td class="cwo-td cwo-td--num">
-                  <span>{{ r.consumed }}</span>
-                  <a v-if="r.trackingLabel" class="cwo-tracking" @click.prevent="emit('view-tracking', r)">{{ r.trackingLabel }}</a>
-                </td>
-                <td class="cwo-td cwo-td--num">{{ r.remaining }}</td>
-                <td class="cwo-td">{{ r.unit }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="cwo-table-section">
+          <div class="cwo-table-scroll">
+            <table class="cwo-table">
+              <thead>
+                <tr>
+                  <th class="cwo-th">Product</th>
+                  <th class="cwo-th">SKU</th>
+                  <th class="cwo-th cwo-th--num">Needed qty</th>
+                  <th class="cwo-th cwo-th--num">Consumed qty</th>
+                  <th class="cwo-th cwo-th--num">Remaining qty</th>
+                  <th class="cwo-th">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in rows" :key="r.productId" class="cwo-tr">
+                  <td class="cwo-td">{{ r.product }}</td>
+                  <td class="cwo-td">{{ r.sku }}</td>
+                  <td class="cwo-td cwo-td--num">{{ r.needed }}</td>
+                  <td class="cwo-td cwo-td--num">
+                    <span>{{ r.consumed }}</span>
+                    <a v-if="r.trackingLabel" class="cwo-tracking" @click.prevent="emit('view-tracking', r)">{{ r.trackingLabel }}</a>
+                  </td>
+                  <td class="cwo-td cwo-td--num">{{ r.remaining }}</td>
+                  <td class="cwo-td">{{ r.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="cwo-footer">
@@ -133,12 +135,20 @@ function complete() { emit('complete'); close() }
 
 .cwo-desc { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-5) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.cwo-table-scroll { overflow-x: auto; padding: var(--mp-spacing-3) var(--mp-spacing-5) var(--mp-spacing-4); }
+/* Bordered, internally-scrolling panel — matches PurchaseReceivingModal.vue's
+   .pr-items-section--bordered pattern for a modal-hosted table. */
+.cwo-table-section {
+  margin: var(--mp-spacing-3) var(--mp-spacing-5) var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg);
+  overflow: hidden;
+}
+.cwo-table-scroll { max-height: 320px; overflow-y: auto; overflow-x: auto; }
 .cwo-table { width: 100%; border-collapse: collapse; }
 .cwo-th {
+  position: sticky; top: 0; z-index: 1;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral-subtle);
-  border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
   text-align: left; white-space: nowrap;
   font-size: var(--mp-font-sizes-xs, 11px); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: 0.02em; color: var(--mp-text-secondary);
@@ -148,7 +158,7 @@ function complete() { emit('complete'); close() }
   padding: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
 }
-.cwo-tr:nth-child(even) .cwo-td { background: var(--mp-background-neutral-subtle); }
+.cwo-tr:last-child .cwo-td { border-bottom: none; }
 .cwo-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .cwo-tracking { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .cwo-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
