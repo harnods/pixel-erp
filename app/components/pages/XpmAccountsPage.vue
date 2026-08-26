@@ -12,7 +12,7 @@
  * ledger (and persist), so the numbers stay accurate and survive a refresh.
  */
 import {
-  MpIcon, MpBadge, MpButton, MpButtonGroup, MpCheckbox,
+  MpIcon, MpBadge, MpButton, MpButtonGroup, MpCheckbox, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
@@ -21,9 +21,8 @@ import {
 } from '@mekari/pixel3'
 import {
   xpmWallets, type XpmWallet,
-  walletMovements, walletStats, walletDisplayBalances,
+  walletMovements, walletStats, walletDisplayBalances, walletCurrencies,
   topUpWallet, moveMoneyBetween,
-  XPM_STATS_PERIODS, type XpmStatsPeriod,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
@@ -35,23 +34,26 @@ const num = (s: string) => Number(String(s).replace(/[^\d]/g, '')) || 0
 const wallets = computed<XpmWallet[]>(() => xpmWallets)
 const selectedIndex = ref(0)
 const selectedWallet = computed(() => wallets.value[selectedIndex.value]!)
-function selectWallet(i: number) { selectedIndex.value = i }
-const activeCurrency = computed(() => selectedWallet.value.currency)
+// Currency the detail view is scoped to. Multi-currency wallets get a toggle;
+// switching wallets resets to the wallet's primary currency.
+const activeCurrency = ref(selectedWallet.value.currency)
+const walletCurrencyList = computed(() => walletCurrencies(selectedWallet.value))
+function selectWallet(i: number) {
+  selectedIndex.value = i
+  activeCurrency.value = selectedWallet.value.currency
+}
 
 // ── Stats strip — derived from the ledger ────────────────────────────────────
 // Balance & Pending payouts are point-in-time (current / as of today); Money in
-// and Money out are cash FLOWS, so they're scoped to a selectable window and the
-// caption follows the choice. Default "This month".
-const statsPeriod = ref<XpmStatsPeriod>('This month')
+// and Money out are the current month's cash flows.
 const stats = computed(() => {
   const cur = activeCurrency.value
-  const s = walletStats(selectedWallet.value.id, cur, statsPeriod.value)
-  const flowCaption = statsPeriod.value
+  const s = walletStats(selectedWallet.value.id, cur)
   return [
-    { label: 'Balance',         caption: 'Per 21 Jul 2026', value: formatMoney(s.balance, cur) },
-    { label: 'Pending payouts', caption: 'As of today',     value: formatMoney(s.pending, cur) },
-    { label: 'Money in',        caption: flowCaption,       value: formatMoney(s.monthIn, cur) },
-    { label: 'Money out',       caption: flowCaption,       value: formatMoney(s.monthOut, cur) },
+    { label: 'Balance',         caption: 'As of today', value: formatMoney(s.balance, cur) },
+    { label: 'Pending payouts', caption: 'As of today', value: formatMoney(s.pending, cur) },
+    { label: 'Money in',        caption: 'This month',      value: formatMoney(s.monthIn, cur) },
+    { label: 'Money out',       caption: 'This month',      value: formatMoney(s.monthOut, cur) },
   ]
 })
 
@@ -164,9 +166,11 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
     <aside class="acct-side">
       <div class="acct-side__titlerow">
         <span class="acct-side__title">Accounts</span>
-        <button class="acct-side__add" type="button" aria-label="Add wallet" title="Add wallet" @click="infoToast('Add wallet — coming soon')">
-          <MpIcon name="add" size="md" />
-        </button>
+        <MpTooltip id="acct-add-wallet-tt" label="New wallet" placement="top" use-portal>
+          <button class="acct-side__add" type="button" aria-label="New wallet" @click="infoToast('Add wallet — coming soon')">
+            <MpIcon name="add" size="md" />
+          </button>
+        </MpTooltip>
       </div>
       <ul class="acct-side__list">
         <li v-for="(w, i) in wallets" :key="w.id">
@@ -216,22 +220,24 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 
       <!-- Stage -->
       <div class="acct-stage">
+        <!-- Currency toggle (multi-currency wallets only) — scopes the whole detail -->
+        <div v-if="walletCurrencyList.length > 1" class="acct-seg">
+          <button
+            v-for="cur in walletCurrencyList"
+            :key="cur"
+            type="button"
+            class="acct-seg__btn"
+            :class="{ 'acct-seg__btn--active': activeCurrency === cur }"
+            @click="activeCurrency = cur"
+          >{{ cur }}</button>
+        </div>
+
         <!-- Stats strip -->
-        <div class="acct-stats-block">
-          <div class="acct-stats-head">
-            <div class="filter-select-wrap acct-period">
-              <select class="filter-select" v-model="statsPeriod" aria-label="Cash-flow period">
-                <option v-for="pd in XPM_STATS_PERIODS" :key="pd" :value="pd">{{ pd }}</option>
-              </select>
-              <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-          </div>
-          <div class="acct-stats">
-            <div v-for="s in stats" :key="s.label" class="acct-stat">
-              <span class="acct-stat__label">{{ s.label }}</span>
-              <span class="acct-stat__cap">{{ s.caption }}</span>
-              <span class="acct-stat__val">{{ s.value }}</span>
-            </div>
+        <div class="acct-stats">
+          <div v-for="s in stats" :key="s.label" class="acct-stat">
+            <span class="acct-stat__label">{{ s.label }}</span>
+            <span class="acct-stat__cap">{{ s.caption }}</span>
+            <span class="acct-stat__val">{{ s.value }}</span>
           </div>
         </div>
 
@@ -612,10 +618,22 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   border-top-left-radius: var(--mp-radii-md, 6px);
 }
 
+/* Currency segmented toggle */
+.acct-seg {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px;
+  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+}
+.acct-seg__btn {
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-4, 16px);
+  border: none; background: transparent; cursor: pointer;
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749);
+}
+.acct-seg__btn--active { background: var(--mp-background-neutral, #fff); color: var(--mp-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold); }
+
 /* Stats strip — plain divided cells (no outer box) */
-.acct-stats-block { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); }
-.acct-stats-head { display: flex; justify-content: flex-end; }
-.acct-period { width: 148px; }
 .acct-stats { display: flex; gap: var(--mp-spacing-6, 24px); }
 .acct-stat {
   flex: 1; min-width: 0;

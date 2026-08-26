@@ -50,16 +50,17 @@ export interface XpmWallet {
   isDefault?: boolean
   type: string
   description: string
-  currency: string                 // primary ledger currency
-  opening: number                  // opening balance for the primary-currency ledger
-  pendingPayouts: number           // real figure surfaced in the stats strip
-  secondary?: XpmWalletBalance[]    // extra static foreign balances (display only)
+  currency: string                    // primary currency (listed first)
+  openings: Record<string, number>    // opening balance per currency ledger
+  pendingPayouts: number              // real figure surfaced in the stats strip
 }
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', opening: 5000000, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.', secondary: [{ currency: 'USD', amount: 930 }] },
-  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', opening: 4000000, pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
-  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', opening: 5000000, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.', secondary: [{ currency: 'SGD', amount: 120 }] },
+  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000, USD: 500 }, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.' },
+  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },           pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
+  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000, SGD: 200 }, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.' },
 ]
+/** Currencies a wallet holds (primary first). */
+export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }
 
 export type XpmMovementCategory = 'Top-up' | 'Payment' | 'FX' | 'Payout' | 'Transfer'
 export interface XpmMovement {
@@ -95,6 +96,13 @@ const SEED_WALLET_MOVEMENTS: XpmMovement[] = [
   { id: 'M022', walletId: 'w-card', date: '2026-07-19', description: 'Figma annual seats', category: 'Payment', direction: 'out', amount: 5100000, currency: 'IDR' },
   { id: 'M023', walletId: 'w-card', date: '2026-07-20', description: 'Adobe Creative Cloud renewal', category: 'Payment', direction: 'out', amount: 899000, currency: 'IDR' },
   { id: 'M024', walletId: 'w-card', date: '2026-07-21', description: 'Card float replenish', category: 'Transfer', direction: 'in',  amount: 2000000, currency: 'IDR' },
+  // Main account — USD ledger (opening 500 → 930)
+  { id: 'M030', walletId: 'w-main', date: '2026-07-17', description: 'Client refund (USD)', category: 'Payment', direction: 'in',  amount: 200, currency: 'USD' },
+  { id: 'M031', walletId: 'w-main', date: '2026-07-19', description: 'Vendor — SaaS (USD)', category: 'Payment', direction: 'out', amount: 120, currency: 'USD' },
+  { id: 'M032', walletId: 'w-main', date: '2026-07-20', description: 'Incoming payment (USD)', category: 'Payment', direction: 'in',  amount: 350, currency: 'USD' },
+  // Card float — SGD ledger (opening 200 → 120)
+  { id: 'M040', walletId: 'w-card', date: '2026-07-18', description: 'Vendor — tooling (SGD)', category: 'Payment', direction: 'out', amount: 100, currency: 'SGD' },
+  { id: 'M041', walletId: 'w-card', date: '2026-07-20', description: 'Refund (SGD)', category: 'Payment', direction: 'in',  amount: 20, currency: 'SGD' },
 ]
 
 /** Persisted movement ledger — snapshot wins over the seed; reset restores seed. */
@@ -112,7 +120,7 @@ export const XPM_TODAY = '2026-07-21'
 interface XpmMovementWithBalance extends XpmMovement { balance: number }
 /** Compute the running ledger for a wallet+currency (chronological). */
 function walletLedger(walletId: string, currency = 'IDR'): { opening: number; rows: XpmMovementWithBalance[]; balance: number } {
-  const opening = xpmWallets.find(w => w.id === walletId)?.opening ?? 0
+  const opening = xpmWallets.find(w => w.id === walletId)?.openings[currency] ?? 0
   const rows = xpmWalletMovements
     .filter(m => m.walletId === walletId && m.currency === currency)
     .slice()
@@ -155,12 +163,14 @@ export function walletStats(walletId: string, currency = 'IDR', period: XpmStats
   const scoped = rows.filter(r => inStatsPeriod(r.date, period))
   const monthIn = scoped.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0)
   const monthOut = scoped.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0)
-  const pending = xpmWallets.find(w => w.id === walletId)?.pendingPayouts ?? 0
+  // Pending payouts is an IDR figure — only meaningful on the primary currency.
+  const w = xpmWallets.find(x => x.id === walletId)
+  const pending = w && currency === w.currency ? w.pendingPayouts : 0
   return { balance, pending, monthIn, monthOut }
 }
-/** Display balances for the sidemenu: derived primary + any static foreign ones. */
+/** Display balances for the sidemenu — one derived balance per currency ledger. */
 export function walletDisplayBalances(wallet: XpmWallet): XpmWalletBalance[] {
-  return [{ currency: wallet.currency, amount: walletBalance(wallet.id, wallet.currency) }, ...(wallet.secondary ?? [])]
+  return walletCurrencies(wallet).map(cur => ({ currency: cur, amount: walletBalance(wallet.id, cur) }))
 }
 /** Sum of all wallets' primary-currency balances (for the "All wallets ≈" line). */
 export function walletsTotalPrimary(): number {
