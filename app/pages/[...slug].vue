@@ -740,6 +740,10 @@ const currentTabs = computed<string[]>(() => {
     }
     // WMS doesn't deal in the ERP-side product approval workflow.
     if (currentPageKey.value === 'Product list' && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
+    // Transfers and stock adjustments go through a manager sign-off in ERP only —
+    // in WMS these pages are a single flat list, so the tab bar disappears entirely.
+    if ((currentPageKey.value === 'Warehouse transfers' || currentPageKey.value === 'Stock adjustments')
+      && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
     return true
   })
 })
