@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * XpmTransactionsPage — XPM (Mekari Expense) transactions ledger.
+ * XpmTransactionsPage · XPM (Mekari Expense) transactions ledger.
  *
  * Index page built on the shared ErpTablePage + useTableState pattern. Section
  * tabs (All / Card / Reimbursement / Cash advance / Bill / Travel) are supplied by
- * the shell (`[...slug].vue` › pageTabs) — this page just reads the active tab from
+ * the shell (`[...slug].vue` › pageTabs) · this page just reads the active tab from
  * the URL and filters `xpmTransactions` by `source`. Export lives in the filter bar
  * (no title-bar create action).
  */
@@ -100,7 +100,7 @@ const columns: TableColumn[] = [
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />

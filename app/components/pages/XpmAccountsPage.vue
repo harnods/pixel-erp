@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
- * XpmAccountsPage — XPM (Mekari Expense) "Accounts" (company wallets).
+ * XpmAccountsPage · XPM (Mekari Expense) "Accounts" (company wallets).
  *
- * Full-bleed page (routed via detailMatch): owns the whole content area — a left
+ * Full-bleed page (routed via detailMatch): owns the whole content area · a left
  * wallet sidemenu, its own 72px title bar showing the SELECTED wallet name +
  * actions, then a stats strip, Transactions / Wallet info tabs, a filter bar and
  * the movement table. Mirrors Figma node 4317:3444.
  *
- * All figures come from the persisted wallet ledger in app/data/xpm.ts — balances
+ * All figures come from the persisted wallet ledger in app/data/xpm.ts · balances
  * and stats are DERIVED from real movements, and Top up / Move money mutate the
  * ledger (and persist), so the numbers stay accurate and survive a refresh.
  */
@@ -38,11 +38,11 @@ const router = useRouter()
 const wallets = computed<XpmWallet[]>(() => xpmWallets)
 const selectedIndex = ref(0)
 const selectedWallet = computed(() => wallets.value[selectedIndex.value]!)
-// Single-currency for now — every wallet is IDR.
+// Single-currency for now · every wallet is IDR.
 const activeCurrency = computed(() => selectedWallet.value.currency)
 function selectWallet(i: number) { selectedIndex.value = i }
 
-// ── Stats strip — derived from the ledger ────────────────────────────────────
+// ── Stats strip · derived from the ledger ────────────────────────────────────
 // Balance & Pending payouts are point-in-time (current / as of today); Money in
 // and Money out are the current month's cash flows.
 const currentBalance = computed(() => walletStats(selectedWallet.value.id, activeCurrency.value).balance)
@@ -63,7 +63,7 @@ const stats = computed(() => {
 // Filter by transaction type + period (This month / Last month / Custom range,
 // the custom range uses the shared AdvancedDateRangePicker). Gray-header table,
 // pagination, column settings and the Airene toggle all come from ErpTablePage.
-const TYPE_OPTIONS = ['Top-up', 'Payment', 'Payout', 'Transfer']
+const TYPE_OPTIONS = ['Top up', 'Payment', 'Payout', 'Transfer']
 const PERIOD_OPTIONS = ['This month', 'Last month', 'Custom'] as const
 const typeFilter = ref('')
 const periodMode = ref<'This month' | 'Last month' | 'Custom'>('This month')
@@ -205,7 +205,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
       <div class="acct-side__titlerow">
         <span class="acct-side__title">Accounts</span>
         <MpTooltip id="acct-add-wallet-tt" label="New wallet" placement="bottom" use-portal>
-          <button class="acct-side__add" type="button" aria-label="New wallet" @click="infoToast('Add wallet — coming soon')">
+          <button class="acct-side__add" type="button" aria-label="New wallet" @click="infoToast('Add wallet · coming soon')">
             <MpIcon name="add" size="md" />
           </button>
         </MpTooltip>
@@ -250,7 +250,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
               <MpPopoverList>
                 <MpPopoverListItem @click="openEdit">Edit wallet</MpPopoverListItem>
                 <MpPopoverListItem @click="viewLedger">View balance ledger</MpPopoverListItem>
-                <MpPopoverListItem @click="infoToast('Archive wallet — coming soon')">Archive wallet</MpPopoverListItem>
+                <MpPopoverListItem @click="infoToast('Archive wallet · coming soon')">Archive wallet</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -265,17 +265,12 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
             <span class="acct-stat__label">{{ s.label }}</span>
             <span class="acct-stat__cap">{{ s.caption }}</span>
             <span class="acct-stat__val">{{ s.value }}</span>
+            <!-- Empty wallet: a Top up prompt inside the Balance stat -->
+            <template v-if="s.label === 'Balance' && isZeroBalance">
+              <span class="acct-stat__hint">Wallet is empty. Top up to start spending.</span>
+              <button class="acct-stat__topup" type="button" @click="openTopUp">Top up</button>
+            </template>
           </div>
-        </div>
-
-        <!-- Zero-balance top-up banner -->
-        <div v-if="isZeroBalance" class="acct-zero">
-          <MpIcon name="info" size="md" class="acct-zero__icon" />
-          <div class="acct-zero__text">
-            <p class="acct-zero__title">{{ selectedWallet.name }} has no balance yet</p>
-            <p class="acct-zero__sub">Top up this wallet to start funding payouts and card spend.</p>
-          </div>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="openTopUp">Top up</button>
         </div>
 
         <!-- Tabs -->
@@ -311,7 +306,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                     <MpPopover id="acct-type-filter" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                       <MpPopoverTrigger>
                         <button type="button" class="filter-trigger">
-                          <span class="filter-trigger__label">{{ typeFilter || 'Transaction type' }}</span>
+                          <span class="filter-trigger__label" :class="{ 'filter-trigger__label--placeholder': !typeFilter }">{{ typeFilter || 'Transaction type' }}</span>
                           <svg class="filter-trigger__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                       </MpPopoverTrigger>
@@ -359,7 +354,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                       </MpTooltip>
                       <ColumnSettingsMenu id="acct-columns" :items="columnItems" :visibility="columnVisibility" />
                       <MpTooltip id="acct-export-tt" label="Export" placement="bottom" use-portal>
-                        <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="upload" size="md" /></button>
+                        <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="upload" size="md" /></button>
                       </MpTooltip>
                     </div>
                     <div class="filter-search">
@@ -374,8 +369,8 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                   <button class="cell-link" type="button" @click="router.push(`/accounts/txn/${(row as Record<string, unknown>).id}`)">{{ (row as Record<string, unknown>).number }}</button>
                 </template>
                 <template #cell-date="{ value }">{{ formatDateLong(value as string) }}</template>
-                <template #cell-moneyIn="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '—' }}</template>
-                <template #cell-moneyOut="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '—' }}</template>
+                <template #cell-moneyIn="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '' }}</template>
+                <template #cell-moneyOut="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '' }}</template>
                 <template #cell-balance="{ value }">{{ formatMoney(value as number, activeCurrency) }}</template>
               </ErpTablePage>
             </MpTabPanel>
@@ -396,7 +391,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                     <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
                     <div class="acct-dl__row"><dt>Wallet type</dt><dd>{{ selectedWallet.type }}</dd></div>
                     <div class="acct-dl__row"><dt>Currency</dt><dd>{{ [selectedWallet.currency, ...(selectedWallet.secondary?.map(b => b.currency) ?? [])].join(', ') }}</dd></div>
-                    <div class="acct-dl__row"><dt>Default account</dt><dd>{{ selectedWallet.isDefault ? 'Yes — company default' : 'No' }}</dd></div>
+                    <div class="acct-dl__row"><dt>Default account</dt><dd>{{ selectedWallet.isDefault ? 'Yes · company default' : 'No' }}</dd></div>
                     <div class="acct-dl__row"><dt>Wallet owner</dt><dd>Finance team</dd></div>
                     <div class="acct-dl__row"><dt>Created on</dt><dd>{{ formatDateLong('2026-01-14') }}</dd></div>
                   </dl>
@@ -406,9 +401,9 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                   <div class="acct-card__head">
                     <div class="acct-card__heading">
                       <span class="acct-card__title">Funding rules</span>
-                      <span class="acct-card__sub">Which spend this wallet pays for — by branch, type and policy</span>
+                      <span class="acct-card__sub">Which spend this wallet pays for · by branch, type and policy</span>
                     </div>
-                    <MpButton variant="secondary" size="sm" is-rounded @click="infoToast('Add rule — coming soon')">Add rule</MpButton>
+                    <MpButton variant="secondary" size="sm" is-rounded @click="infoToast('Add rule · coming soon')">Add rule</MpButton>
                   </div>
                   <ul class="acct-rules">
                     <li v-for="(r, i) in fundingRules" :key="i" class="acct-rule">
@@ -624,7 +619,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acct-titlebar__actions { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); flex-shrink: 0; }
-/* Ghost icon-only button (kebab) — borderless, hover fill only. */
+/* Ghost icon-only button (kebab) · borderless, hover fill only. */
 .acct-kebab {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px; padding: var(--mp-spacing-2, 8px);
@@ -642,20 +637,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   border-top-left-radius: var(--mp-radii-md, 6px);
 }
 
-/* Zero-balance top-up banner (below the stats) */
-.acct-zero {
-  display: flex; align-items: center; gap: var(--mp-spacing-3, 12px);
-  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
-  border: 1px solid var(--mp-border-information, #bcd7f5);
-  border-radius: var(--mp-radii-md, 6px);
-  background: var(--mp-background-information-subtle, #eef5fd);
-}
-.acct-zero__icon { flex-shrink: 0; color: var(--mp-icon-information, #2f6fd6); }
-.acct-zero__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.acct-zero__title { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
-.acct-zero__sub { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
-
-/* Stats strip — plain divided cells (no outer box) */
+/* Stats strip · plain divided cells (no outer box) */
 .acct-stats { display: flex; gap: var(--mp-spacing-6, 24px); }
 .acct-stat {
   flex: 1; min-width: 0;
@@ -667,8 +649,11 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-stat__label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default, #080d0e); }
 .acct-stat__cap { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-stat__val { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
+.acct-stat__hint { margin-top: var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary, #3a4749); }
+.acct-stat__topup { align-self: flex-start; margin-top: 2px; padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #1f6bb8); }
+.acct-stat__topup:hover { text-decoration: underline; }
 
-/* Tabs — active-state + tab-to-content gap overrides (matches ERP detail pages) */
+/* Tabs · active-state + tab-to-content gap overrides (matches ERP detail pages) */
 .acct-tabs { width: 100%; }
 .detail-tabs :deep(.mp-tab--isSelected_true),
 .detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
@@ -684,6 +669,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .filter-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); width: 180px; height: 36px; padding: 0 var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); cursor: pointer; }
 .filter-trigger:hover { background: var(--mp-background-neutral-hovered); }
 .filter-trigger__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-trigger__label--placeholder { color: var(--mp-text-placeholder); }
 .filter-trigger__chev { flex-shrink: 0; width: 20px; height: 20px; color: var(--mp-text-default); }
 .filter-select-wrap { position: relative; display: inline-flex; align-items: center; width: 160px; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); }
 .filter-select { appearance: none; background: transparent; border: none; outline: none; width: 100%; padding: var(--mp-spacing-2) var(--mp-spacing-10) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: pointer; }
@@ -700,7 +686,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: var(--mp-radii-full, 999px); }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Movement table — default text colour throughout */
+/* Movement table · default text colour throughout */
 .acct-table-wrap { overflow-x: auto; }
 .acct-table { width: 100%; border-collapse: collapse; }
 .acct-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }

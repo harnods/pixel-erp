@@ -40,7 +40,7 @@ interface Activity { title: string; txn: string; date: string; kind: 'Debit' | '
 const activity: Activity[] = [
   { title: 'Adobe Creative Cloud', txn: 'TXN-88214', date: '21/07/2026', kind: 'Debit',  amount: 899000 },
   { title: 'Figma annual seats',   txn: 'TXN-88190', date: '20/07/2026', kind: 'Debit',  amount: 5100000 },
-  { title: 'Top-up from wallet',   txn: 'TXN-88155', date: '18/07/2026', kind: 'Credit', amount: 10000000 },
+  { title: 'Top up from wallet',   txn: 'TXN-88155', date: '18/07/2026', kind: 'Credit', amount: 10000000 },
   { title: 'Google Workspace',     txn: 'TXN-88101', date: '17/07/2026', kind: 'Debit',  amount: 2400000 },
   { title: 'FX conversion fee',    txn: 'TXN-88099', date: '17/07/2026', kind: 'Fee',    amount: 45000 },
 ]
@@ -210,7 +210,7 @@ function proceedTopUp() {
             <div class="xpm-drawer-content">
               <div class="xpm-banner">
                 <MpIcon name="info" size="md" class="xpm-banner-icon" />
-                <span>The source wallet is debited the moment the top-up succeeds — no bank transfer needed.</span>
+                <span>The source wallet is debited the moment the top-up succeeds · no bank transfer needed.</span>
               </div>
 
               <div class="xpm-drawer-field">
@@ -229,7 +229,7 @@ function proceedTopUp() {
               </div>
 
               <div class="xpm-drawer-field">
-                <span class="xpm-field-label">Top-up amount</span>
+                <span class="xpm-field-label">Top up amount</span>
                 <MpInputGroup id="xpm-topup-amount-group" is-full-width>
                   <MpInputLeftAddon>Rp</MpInputLeftAddon>
                   <MpInput id="xpm-topup-amount" v-model="topUpAmount" placeholder="0" />

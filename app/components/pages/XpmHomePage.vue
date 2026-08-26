@@ -3,7 +3,7 @@ import { h } from 'vue'
 import { infoToast } from '~/utils/toasts'
 import { MpIcon } from '@mekari/pixel3'
 
-// ── Reusable AI sparkle (4-point star) — matches the SearchBox / Airene mark.
+// ── Reusable AI sparkle (4-point star) · matches the SearchBox / Airene mark.
 // Copied verbatim from HrHomePage so the AI notes read as one system.
 const SPARKLE_D_A = 'M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z'
 const SPARKLE_D_B = 'M14.4956 3.07205L14.2977 3.04651C13.5955 2.95643 13.0422 2.40312 12.9535 1.70085L12.9301 1.51358C12.8911 1.20643 12.5889 1 12.2711 1C11.9561 1 11.6553 1.19791 11.6142 1.50436L11.5887 1.70227C11.4986 2.40454 10.9453 2.95784 10.243 3.04651L10.0557 3.06992C9.7422 3.11107 9.54216 3.41113 9.54216 3.72892C9.54216 4.04672 9.73156 4.34749 10.0465 4.38579L10.2444 4.41133C10.9467 4.50142 11.5 5.05472 11.5887 5.75699L11.6121 5.94427C11.6504 6.26348 11.9533 6.45785 12.2711 6.45785C12.586 6.45785 12.8911 6.24362 12.9279 5.95349L12.9535 5.75558C13.0436 5.05331 13.5969 4.5 14.2991 4.41133L14.4864 4.38792C14.8021 4.3482 15 4.04672 15 3.72892C15 3.41113 14.8021 3.11107 14.4956 3.07205Z'
@@ -14,7 +14,7 @@ const Sparkle = (props: { size?: number }) =>
   ])
 
 function soon(what: string) {
-  infoToast(`${what} — coming soon`)
+  infoToast(`${what} · coming soon`)
 }
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ const stats: Stat[] = [
 // ── Waiting on you (review queue) ─────────────────────────────────────────────
 interface Waiting { photo: string; name: string; memo: string; flag: string; flagTone: 'warn' | 'muted' | 'danger'; amount: string }
 const waiting: Waiting[] = [
-  { photo: '/hr-home/people0.png', name: 'Maya Chen',     memo: 'Client dinner — Nobu Downtown',    flag: 'Missing itemization',    flagTone: 'warn',   amount: 'Rp184.000' },
+  { photo: '/hr-home/people0.png', name: 'Maya Chen',     memo: 'Client dinner · Nobu Downtown',    flag: 'Missing itemization',    flagTone: 'warn',   amount: 'Rp184.000' },
   { photo: '/hr-home/people1.png', name: 'Daniel Reyes',  memo: 'Flight SFO → JFK, onsite week',     flag: 'In policy',              flagTone: 'muted',  amount: 'Rp412.500' },
   { photo: '/hr-home/people2.png', name: 'Priya Sharma',  memo: 'Adobe Creative Cloud renewal',      flag: 'Possible duplicate',     flagTone: 'danger', amount: 'Rp59.990' },
   { photo: '/hr-home/people3.png', name: 'Tom Okafor',    memo: 'Team offsite venue deposit',        flag: 'Over limit +Rp250.000',  flagTone: 'warn',   amount: 'Rp1.250.000' },
@@ -64,9 +64,9 @@ const waiting: Waiting[] = [
 
 // ── Copilot digest ────────────────────────────────────────────────────────────
 const digest: string[] = [
-  'Transport is at 98% of its hard cap — blocks new claims in ~4 days at the current pace.',
-  '3 software renewals hit cards this week — Rp5.100.000; one card lacks the balance.',
-  '2 claims look like duplicates (same vendor, same amount, 1 day apart) — review those first.',
+  'Transport is at 98% of its hard cap · blocks new claims in ~4 days at the current pace.',
+  '3 software renewals hit cards this week · Rp5.100.000; one card lacks the balance.',
+  '2 claims look like duplicates (same vendor, same amount, 1 day apart) · review those first.',
 ]
 
 // ── Spend this month (by category) ────────────────────────────────────────────
@@ -83,7 +83,7 @@ const events: EventItem[] = [
   { day: '24', month: 'JUL', title: 'Disbursement run',            sub: '14 approved claims · Rp8.120.000' },
   { day: '25', month: 'JUL', title: 'Adobe & Figma renewals',      sub: 'Rp5.100.000 on the Marketing card' },
   { day: '31', month: 'JUL', title: 'July spend closes',           sub: 'Reconcile before the month cutoff' },
-  { day: '01', month: 'AUG', title: 'Q3 travel budget resets',     sub: 'New per-diem caps take effect' },
+  { day: '01', month: 'AUG', title: 'Q3 travel budget resets',     sub: 'New per diem caps take effect' },
 ]
 
 // ── Spend trend ───────────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ const trendBars = [
             </header>
             <div class="ai-note">
               <Sparkle :size="16" />
-              <span>Rp9.773.990 is waiting on you — Priya's renewal looks like a duplicate and Tom's deposit is over limit. <a class="ai-note__link" @click.prevent="soon('Review flagged')">Review flagged →</a></span>
+              <span>Rp9.773.990 is waiting on you · Priya's renewal looks like a duplicate and Tom's deposit is over limit. <a class="ai-note__link" @click.prevent="soon('Review flagged')">Review flagged →</a></span>
             </div>
             <div class="wait-list">
               <div v-for="w in waiting" :key="w.name" class="wait">
@@ -243,7 +243,7 @@ const trendBars = [
                 <p class="digest__text">{{ d }}</p>
               </div>
             </div>
-            <p class="digest__foot">Every line is traceable — click through to the source.</p>
+            <p class="digest__foot">Every line is traceable · click through to the source.</p>
           </section>
 
           <!-- Upcoming -->

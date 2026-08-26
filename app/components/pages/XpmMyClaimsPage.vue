@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * XPM My claims — the requester's own reimbursement & cash-advance claims.
+ * XPM My claims · the requester's own reimbursement & cash-advance claims.
  * Standard ERP index pattern: warning banner + summary stats + custom table
  * (ErpTablePage + useTableState). The title-bar "My limits" secondary button
  * lives in the shell and fires the `myLimits` action bus, which opens the
  * read-only My limits drawer here. (The primary "Request claim" button is
- * handled by the shell — it navigates to /my-claims/create.)
+ * handled by the shell · it navigates to /my-claims/create.)
  */
 import {
   MpIcon, MpButton, MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody,
@@ -22,7 +22,7 @@ import { useXpmActions } from '~/composables/useXpmActions'
 
 const router = useRouter()
 
-// ── Title-bar action bus — "My limits" opens the limits drawer ──
+// ── Title-bar action bus · "My limits" opens the limits drawer ──
 const showLimitsDrawer = ref(false)
 const { pending } = useXpmActions()
 watch(() => pending.value, (p) => { if (p?.action === 'myLimits') showLimitsDrawer.value = true })
@@ -79,7 +79,7 @@ const myLimits = [
       <div class="myclaims-warning">
         <MpIcon name="warning-triangle" size="md" class="myclaims-warning__icon" />
         <span class="myclaims-warning__text">1,271 claims are awaiting refund or settlement and need your action.</span>
-        <MpButton is-rounded variant="primary" size="sm" @click="infoToast('View — coming soon')">View</MpButton>
+        <MpButton is-rounded variant="primary" size="sm" @click="infoToast('View · coming soon')">View</MpButton>
       </div>
 
       <div class="myclaims-stats">
@@ -140,7 +140,7 @@ const myLimits = [
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />
@@ -214,7 +214,7 @@ const myLimits = [
 .myclaims-warning__icon { color: var(--mp-icon-warning, #e46910); flex-shrink: 0; }
 .myclaims-warning__text { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-warning-bold, #a14a0b); line-height: var(--mp-line-heights-md); }
 
-/* ── Summary stats — horizontally scrollable groups ── */
+/* ── Summary stats · horizontally scrollable groups ── */
 .myclaims-stats { display: flex; gap: var(--mp-spacing-6); overflow-x: auto; margin-top: var(--mp-spacing-4); }
 .myclaims-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); min-width: 0; }
 .myclaims-group__label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

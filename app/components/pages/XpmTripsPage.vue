@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * XpmTripsPage — XPM (Mekari Expense) business travel index.
+ * XpmTripsPage · XPM (Mekari Expense) business travel index.
  *
  * Built on the shared ErpTablePage + useTableState pattern. No section tabs —
  * `xpmTrips` is shown whole, narrowed by two filter-bar selects (trip type +
@@ -39,7 +39,7 @@ const {
     (!typeFilter.value || row.tripType === typeFilter.value),
 })
 
-// typeFilter isn't watched by useTableState — reset to page 1 when it changes.
+// typeFilter isn't watched by useTableState · reset to page 1 when it changes.
 watch(typeFilter, () => setPage(1))
 
 const columns: TableColumn[] = [
@@ -69,10 +69,10 @@ const policyRows = [
   { label: 'Hotel nightly cap', value: 'Rp1.500.000 per night domestic; USD 180 international.' },
 ]
 const perDiemRows = [
-  { zone: 'Zone 1 — Jabodetabek',   rate: 'Rp350.000/day' },
-  { zone: 'Zone 2 — Java',          rate: 'Rp300.000/day' },
-  { zone: 'Zone 3 — Outer islands', rate: 'Rp400.000/day' },
-  { zone: 'Zone 4 — International',  rate: 'USD 75/day' },
+  { zone: 'Zone 1 · Jabodetabek',   rate: 'Rp350.000/day' },
+  { zone: 'Zone 2 · Java',          rate: 'Rp300.000/day' },
+  { zone: 'Zone 3 · Outer islands', rate: 'Rp400.000/day' },
+  { zone: 'Zone 4 · International',  rate: 'USD 75/day' },
 ]
 
 function closeDrawer() { showPolicyDrawer.value = false }
@@ -120,7 +120,7 @@ function savePolicy() {
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />

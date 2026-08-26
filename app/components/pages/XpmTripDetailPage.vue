@@ -20,7 +20,7 @@ function initials(name: string): string {
 }
 
 function goBack() { router.push('/xpm-trips') }
-function exportPdf() { infoToast('Export PDF — coming soon') }
+function exportPdf() { infoToast('Export PDF · coming soon') }
 function comingSoon() { infoToast('This action is coming soon') }
 </script>
 
@@ -114,7 +114,7 @@ function comingSoon() { infoToast('This action is coming soon') }
           <!-- Trip expenses -->
           <section class="xpm-card">
             <h2 class="xpm-card-title">Trip expenses · report</h2>
-            <p class="xpm-empty">Trip report not submitted yet — expenses appear here after settlement.</p>
+            <p class="xpm-empty">Trip report not submitted yet · expenses appear here after settlement.</p>
           </section>
         </div>
 

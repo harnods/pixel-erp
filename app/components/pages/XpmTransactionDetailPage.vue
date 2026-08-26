@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * XpmTransactionDetailPage — detail view for a single wallet movement.
+ * XpmTransactionDetailPage · detail view for a single wallet movement.
  * Reached from the Accounts › Transactions table (Number textlink) at
  * /accounts/txn/:id. Full-bleed: owns its 72px title bar + padded stage.
  */
@@ -40,8 +40,8 @@ const cur = computed(() => m.value?.currency ?? 'IDR')
           <ContentList label="Transaction type" :value="m.category" />
           <ContentList label="Date" :value="formatDateLong(m.date)" />
           <ContentList label="Description" :value="m.description" />
-          <ContentList label="Money in" :value="m.direction === 'in' ? formatMoney(m.amount, cur) : '—'" />
-          <ContentList label="Money out" :value="m.direction === 'out' ? formatMoney(m.amount, cur) : '—'" />
+          <ContentList label="Money flow" :value="m.direction === 'in' ? 'Money in' : 'Money out'" />
+          <ContentList label="Amount" :value="formatMoney(m.amount, cur)" />
           <ContentList label="Balance after" :value="formatMoney(found?.balance ?? 0, cur)" />
         </div>
       </div>

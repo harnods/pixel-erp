@@ -33,7 +33,7 @@ const categoryError = ref('')
 const amountError = ref('')
 const vendorError = ref('')
 
-// Edit mode — prefill from the claim.
+// Edit mode · prefill from the claim.
 onMounted(() => {
   if (!isEdit.value) return
   const claim: XpmClaim | undefined = xpmMyClaims.find((c) => c.id === props.orderId)

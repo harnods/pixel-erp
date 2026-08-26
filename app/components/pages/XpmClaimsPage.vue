@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * XPM Claims — admin index of employee reimbursement & cash-advance claims.
+ * XPM Claims · admin index of employee reimbursement & cash-advance claims.
  * Standard ERP index pattern: filter bar + summary stats + custom table
  * (ErpTablePage + useTableState). The title-bar "Manage claim policy" button
  * lives in the shell and fires the `claimPolicy` action bus, which opens the
@@ -22,7 +22,7 @@ import { useXpmActions } from '~/composables/useXpmActions'
 
 const router = useRouter()
 
-// ── Title-bar action bus — "Manage claim policy" opens the policy drawer ──
+// ── Title-bar action bus · "Manage claim policy" opens the policy drawer ──
 const showPolicyDrawer = ref(false)
 const { pending } = useXpmActions()
 watch(() => pending.value, (p) => { if (p?.action === 'claimPolicy') showPolicyDrawer.value = true })
@@ -113,7 +113,7 @@ function savePolicy() {
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />

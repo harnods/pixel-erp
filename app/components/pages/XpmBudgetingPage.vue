@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * XpmBudgetingPage — XPM (Mekari Expense) budgeting.
+ * XpmBudgetingPage · XPM (Mekari Expense) budgeting.
  *
  * Single "Configured budgets" table (Budgeting has no section tabs in the shell).
  * The title-bar primary "Set budget" button lives in `[...slug].vue` and fires the
- * `'setBudget'` action on the XPM action bus — this page watches for it and opens a
+ * `'setBudget'` action on the XPM action bus · this page watches for it and opens a
  * floating "New budget" drawer. Built on ErpTablePage + useTableState.
  */
 import {
@@ -111,7 +111,7 @@ function saveBudget() {
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />
@@ -144,7 +144,7 @@ function saveBudget() {
     @close="closeBudget"
   >
     <MpDrawerContent>
-      <!-- Floating variant: MpDrawerBody is the white card — header / scroll body /
+      <!-- Floating variant: MpDrawerBody is the white card · header / scroll body /
            footer all live inside it. -->
       <MpDrawerBody>
         <div class="bd-card">

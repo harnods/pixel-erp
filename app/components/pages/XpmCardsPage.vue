@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * XpmCardsPage — XPM (Mekari Expense) spending cards index.
+ * XpmCardsPage · XPM (Mekari Expense) spending cards index.
  *
  * Built on the shared ErpTablePage + useTableState pattern. The section tabs
  * (Virtual cards / Physical cards) are owned by the shell (`[...slug].vue` ›
- * pageTabs) — this page reads the active tab from the URL and filters `xpmCards`
+ * pageTabs) · this page reads the active tab from the URL and filters `xpmCards`
  * by `type`. The title-bar "New card" primary button reaches the page through the
  * useXpmActions bus, which opens the create drawer.
  */
@@ -123,7 +123,7 @@ function createCard() {
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />

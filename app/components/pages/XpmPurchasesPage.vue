@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * XpmPurchasesPage — XPM (Mekari Expense) purchasing documents index.
+ * XpmPurchasesPage · XPM (Mekari Expense) purchasing documents index.
  *
  * Built on the shared ErpTablePage + useTableState pattern. Section tabs
  * (Invoice / Order / Quote / Request) are owned by the shell (`[...slug].vue` ›
- * pageTabs) — this page reads the active tab from the URL and filters
+ * pageTabs) · this page reads the active tab from the URL and filters
  * `xpmPurchases` by `type`. On the Request tab the 2nd column switches from
  * "Vendor" to "Requester". The title-bar "New purchase" primary button reaches
  * the page through the useXpmActions bus, which opens the create drawer.
@@ -108,7 +108,7 @@ function createPurchase() {
       </div>
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="download" size="md" /></button>
+          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />
