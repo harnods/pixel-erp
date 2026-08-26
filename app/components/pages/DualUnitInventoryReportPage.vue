@@ -4,21 +4,26 @@
  * (PRD "Dual Unit Inventory", Story 14).
  *
  * Laid out to match the agreed export template: one group per DUI product, expanding
- * into batch blocks (batch no + unit conversion + expiry + tolerance in one merged
- * cell) with a line per stock mutation in the filtered range, showing mutation AND
- * running stock in BOTH units, closed by a "Total on-hand stock" line carrying ending
- * stock, average cost and valuation.
+ * into batch blocks with a line per stock mutation in the filtered range, showing
+ * mutation AND running stock in BOTH units, closed by a "Total on-hand stock" line
+ * carrying ending stock, average cost and valuation.
  *
- * Groups are EXPANDED on load (the template is always fully expanded); collapsing a
- * product folds it to a one-line summary. Rows come from `dualUnitReportGroups()` —
- * this page only filters, formats and exports.
+ * One deliberate addition to the template: each batch gets its OWN line, carrying that
+ * batch's ending stock (plus its unit conversion, expiry and tolerance). In the sheet a
+ * batch's stock is only readable off its last mutation row, whose position moves with
+ * the number of mutations — the batch line puts the answer at the head of the block.
+ *
+ * Products and batches are EXPANDED on load (the template is always fully expanded) and
+ * collapse independently; a collapsed row keeps its summary figures. Rows come from
+ * `dualUnitReportGroups()` — this page only filters, formats and exports.
  *
  * Full-bleed (rendered via detailMatch in [...slug].vue), so it draws its own 72px
  * title bar with the Reports breadcrumb and its own 24px stage padding.
  */
 import { ref, computed, watch } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpTooltip, MpIcon, MpCheckbox, css } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
 import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDate } from '~/utils/date'
 import { formatIDR } from '~/utils/currency'
@@ -37,7 +42,9 @@ const TITLE = 'Dual Unit Inventory Report'
 // rows and the "From … - …" caption. Defaults to the current month of the mock
 // timeline, not the real clock, which is why AdvanceDateFilter gets `:today`.
 const dateFilter = ref<DateFilterValue>({ mode: 'month', date: TODAY_ISO })
-const warehouseFilter = ref<string[]>([]) // empty = all warehouses
+// MultiSelectDropdown works in plain option strings, so the selection is held as
+// warehouse NAMES and mapped back to ids for the row builder. Empty = all warehouses.
+const warehouseNames = ref<string[]>([])
 const search = ref('')
 
 const range = computed(() => {
@@ -57,26 +64,19 @@ function captionDate(d: Date): string {
 }
 const rangeCaption = computed(() => `${t('From')} ${captionDate(range.value.start)} - ${captionDate(range.value.end)}`)
 
-const warehouseOptions = computed(() =>
-  warehouses.filter((w) => !w.isDefault && w.status === 'active').map((w) => ({ value: w.id, label: w.name })),
-)
-const warehouseLabel = computed(() => {
-  const n = warehouseFilter.value.length
-  if (n === 0) return t('All warehouses')
-  if (n === 1) return warehouseOptions.value.find((o) => o.value === warehouseFilter.value[0])?.label ?? ''
-  return `${n} ${t('warehouses')}`
+const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
+const warehouseOptions = computed(() => activeWarehouses.value.map((w) => w.name))
+const warehouseIds = computed(() => {
+  if (!warehouseNames.value.length) return []
+  const idByName = new Map(activeWarehouses.value.map((w) => [w.name, w.id]))
+  return warehouseNames.value.map((n) => idByName.get(n)).filter((id): id is string => Boolean(id))
 })
-function toggleWarehouse(id: string) {
-  warehouseFilter.value = warehouseFilter.value.includes(id)
-    ? warehouseFilter.value.filter((v) => v !== id)
-    : [...warehouseFilter.value, id]
-}
 
 // ── Rows ────────────────────────────────────────────────────────────────────────
 const groups = computed<DuiReportGroup[]>(() => dualUnitReportGroups({
   from: fromIso.value,
   to: toIsoDate.value,
-  warehouseIds: warehouseFilter.value,
+  warehouseIds: warehouseIds.value,
   search: search.value,
 }))
 
@@ -130,7 +130,7 @@ const pagedGroups = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return groups.value.slice(start, start + perPage.value)
 })
-watch([dateFilter, warehouseFilter, search, perPage], () => { currentPage.value = 1 })
+watch([dateFilter, warehouseNames, search, perPage], () => { currentPage.value = 1 })
 
 // ── Cell formatting ─────────────────────────────────────────────────────────────
 const qtyFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
@@ -212,7 +212,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Title bar (full-bleed detail) ── -->
     <div class="dui-titlebar">
       <div class="dui-titlebar-left">
-        <button class="dui-breadcrumb" @click="router.push('/inventory-report')">{{ t('Reports') }}</button>
+        <MpButton class="dui-breadcrumb" variant="textLink" size="sm" @click="router.push('/inventory-report')">{{ t('Reports') }}</MpButton>
         <h1 class="dui-title">{{ t(TITLE) }}</h1>
       </div>
     </div>
@@ -230,48 +230,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             :placeholder="t('Select date')"
           />
 
-          <MpPopover id="dui-wh" :is-close-on-select="false">
-            <MpPopoverTrigger>
-              <button type="button" class="filter-trigger" :style="{ width: '200px' }">
-                <span class="filter-trigger-label">{{ warehouseLabel }}</span>
-                <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '320px' })">
-              <div class="checkbox-filter-list">
-                <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
-                  <MpCheckbox
-                    :id="`dui-wh-${opt.value}`"
-                    :is-checked="warehouseFilter.includes(opt.value)"
-                    @change="toggleWarehouse(opt.value)"
-                    @click.stop
-                  >
-                    {{ opt.label }}
-                  </MpCheckbox>
-                </label>
-              </div>
-            </MpPopoverContent>
-          </MpPopover>
+          <MultiSelectDropdown
+            id="dui-wh"
+            v-model="warehouseNames"
+            :options="warehouseOptions"
+            :placeholder="t('All warehouses')"
+          />
 
-          <button v-if="total" type="button" class="dui-toggle-all" @click="toggleAll">
+          <MpButton v-if="total" class="dui-toggle-all" variant="textLink" size="sm" @click="toggleAll">
             {{ allCollapsed ? t('Expand all') : t('Collapse all') }}
-          </button>
+          </MpButton>
         </div>
 
         <div class="dui-filter-right">
           <MpTooltip id="tt-dui-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="exportCsv"><MpIcon name="download" size="md" /></button>
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" @click="exportCsv" />
           </MpTooltip>
+          <!-- Search pill: the project's sanctioned pattern (erp.css .filter-search) —
+               MpInput can't sit borderless inside the pill, so the input stays raw. -->
           <div class="filter-search">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
+            <MpIcon name="search" size="md" />
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product, SKU or batch')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-              </svg>
-            </button>
+            <MpIcon v-if="search" name="close" size="sm" class="search-clear" role="button" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
         </div>
       </div>
@@ -306,11 +286,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <tr class="dui-group-row" @click="toggleGroup(g.sku)">
                 <td class="dui-td dui-td--sku" :rowspan="isExpanded(g.sku) ? groupRowspan(g) : 1">
                   <span class="dui-sku-cell">
-                    <button class="dui-expand-btn" type="button" :aria-label="isExpanded(g.sku) ? t('Collapse') : t('Expand')">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="dui-chevron" :class="{ 'dui-chevron--open': isExpanded(g.sku) }">
-                        <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                    </button>
+                    <MpButton
+                      class="dui-expand-btn" variant="ghost" size="sm"
+                      :left-icon="isExpanded(g.sku) ? 'chevrons-down' : 'chevrons-right'"
+                      :aria-label="isExpanded(g.sku) ? t('Collapse') : t('Expand')"
+                    />
                     <span>{{ g.sku }}</span>
                   </span>
                 </td>
@@ -336,11 +316,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <tr class="dui-batch-row" @click="toggleBatch(g.sku, b.batchNo)">
                     <td class="dui-td dui-td--batch">
                       <span class="dui-batch-cell">
-                        <button class="dui-expand-btn" type="button" :aria-label="isBatchExpanded(g.sku, b.batchNo) ? t('Collapse') : t('Expand')">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="dui-chevron" :class="{ 'dui-chevron--open': isBatchExpanded(g.sku, b.batchNo) }">
-                            <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                        </button>
+                        <MpButton
+                          class="dui-expand-btn" variant="ghost" size="sm"
+                          :left-icon="isBatchExpanded(g.sku, b.batchNo) ? 'chevrons-down' : 'chevrons-right'"
+                          :aria-label="isBatchExpanded(g.sku, b.batchNo) ? t('Collapse') : t('Expand')"
+                        />
                         <span class="dui-batch-text">
                           <span class="dui-batch-no">{{ b.batchNo }} · {{ b.conversionLabel || '—' }}</span>
                           <span v-if="batchMeta(b.expiryDate, b.tolerancePct)" class="dui-batch-meta">{{ batchMeta(b.expiryDate, b.tolerancePct) }}</span>
@@ -416,11 +396,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: 0 var(--mp-spacing-6); flex-shrink: 0;
 }
 .dui-titlebar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+/* Breadcrumb is an MpButton textLink; only strip its padding so it sits tight above the title. */
 .dui-breadcrumb {
-  align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
+  align-self: flex-start; padding: 0;
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
 }
-.dui-breadcrumb:hover { text-decoration: underline; }
 .dui-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
@@ -440,33 +420,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .dui-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .dui-filter-left { display: flex; gap: var(--mp-spacing-3); align-items: center; flex-wrap: wrap; }
 .dui-filter-right { display: flex; gap: var(--mp-spacing-3); align-items: center; margin-left: auto; }
-.filter-trigger {
-  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
-  height: 40px; padding: 0 12px;
-  border: 1px solid var(--mp-border-form, var(--mp-border-default)); border-radius: 8px;
-  background: var(--mp-background-default, #fff);
-  font-size: 14px; color: var(--mp-text-default); cursor: pointer; text-align: left;
-}
-.filter-trigger:hover { border-color: var(--mp-border-bold); }
-.filter-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.filter-trigger .chev { color: var(--mp-icon-default); flex: none; }
-/* Expand/collapse all — a text link, not a competing button. */
-.dui-toggle-all {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md); color: var(--mp-text-link);
-}
-.dui-toggle-all:hover { text-decoration: underline; }
-.filter-icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary); padding: var(--mp-spacing-2);
-}
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* Expand/collapse all — a text link, so it never competes with a real action. */
+.dui-toggle-all { padding: 0; }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  height: 40px; padding: 0 var(--mp-spacing-3);
+  height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, #fff); color: var(--mp-text-secondary); min-width: 260px;
 }
@@ -475,18 +433,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
-.search-clear-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; background: none; color: var(--mp-icon-default); cursor: pointer; padding: 0; flex: none;
-}
-.search-clear-btn:hover { color: var(--mp-text-default); }
-.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
-.checkbox-filter-item {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
-  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-}
-.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.search-clear { color: var(--mp-icon-default); cursor: pointer; flex: none; }
+.search-clear:hover { color: var(--mp-text-default); }
 
 /* Report period line — sits directly above the table, like the template's subtitle. */
 .dui-range-caption {
@@ -516,11 +464,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 .dui-td {
   height: var(--mp-sizes-10, 40px);
-  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-3);
+  padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3);
   border-bottom: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top; white-space: nowrap;
 }
-.dui-td--right { text-align: right; padding: 10px var(--mp-spacing-3) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+.dui-td--right { text-align: right; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 
 /* Product line — the merged SKU cell + bold name, chevron toggles the block. */
 .dui-group-row { cursor: pointer; }
@@ -528,15 +476,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .dui-td--sku { vertical-align: top; border-right: 1px solid var(--mp-border-default); }
 .dui-sku-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .dui-td--product { font-weight: var(--mp-font-weights-semi-bold); }
+/* Row expander — a ghost MpButton shrunk to the chevron itself, so it sits inside the
+   cell's text line. The icon direction (right / down) carries the open state. */
 .dui-expand-btn {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
   width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
-  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  min-width: var(--mp-sizes-6, 24px); padding: 0;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.dui-expand-btn:hover { background: var(--mp-background-neutral-hovered); }
-.dui-chevron { transition: transform 0.15s ease; }
-.dui-chevron--open { transform: rotate(90deg); }
 
 /* Batch line — a second-level group row: identity + unit conversion + expiry/tolerance
    on the left, the batch's own ending stock on the right. Sits on the frame tone so the

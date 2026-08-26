@@ -85,7 +85,7 @@ function viewReport(slug: string) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <button v-if="r.built" type="button" class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</button>
+        <button v-if="r.built" type="button" class="btn-enterprise btn-enterprise--secondary report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</button>
         <span v-else class="report-soon">{{ t('Coming soon') }}</span>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
@@ -128,7 +128,8 @@ function viewReport(slug: string) {
   white-space: nowrap;
 }
 .report-card-desc {
-  height: 96px;
+  /* Fixed block so every card's action sits on the same baseline across the row. */
+  height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
   font-weight: var(--mp-font-weights-regular, 400);
@@ -136,23 +137,8 @@ function viewReport(slug: string) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
-.report-view-btn {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4, 16px);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral, #fff);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md, 14px);
-  font-weight: var(--mp-font-weights-semi-bold, 600);
-  line-height: var(--mp-line-heights-md, 20px);
-  cursor: pointer;
-}
-.report-view-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* Visual comes from .btn-enterprise--secondary (erp.css); only the placement is local. */
+.report-view-btn { align-self: flex-start; }
 
 /* Not built yet — a caption, not a disabled button (DESIGN.md button rules). */
 .report-soon {
