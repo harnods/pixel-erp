@@ -864,7 +864,13 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 /* Responsive */
 @media (max-width: 900px) {
   .acct { flex-direction: column; height: auto; }
-  .acct-side { width: 100%; }
+  /* Wallet list becomes a horizontal, swipeable card row instead of a tall
+     full-width list that pushes the content off-screen. */
+  .acct-side { width: 100%; overflow: visible; padding-bottom: var(--mp-spacing-3, 12px); }
+  .acct-side__list { flex-direction: row; overflow-x: auto; gap: var(--mp-spacing-3, 12px); padding-bottom: var(--mp-spacing-1, 4px); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .acct-side__list::-webkit-scrollbar { display: none; }
+  .acct-side__list > li { flex: 0 0 auto; }
+  .acct-wallet { width: 220px; }
   .acct-stats { flex-wrap: wrap; }
   .acct-stat { flex: 1 1 45%; }
 }
