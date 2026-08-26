@@ -94,6 +94,10 @@ const props = withDefaults(defineProps<{
    *  the sticky actions column — see BillsReviewFilesPage.vue). Off by default so
    *  every other page's column widths stay exactly as declared. */
   lastColumnFlexible?: boolean
+  /** Pin the actions column to the right edge while the table scrolls horizontally.
+   *  On by default (the ERP standard); set false for a table whose actions column
+   *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
+  stickyActions?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -111,6 +115,7 @@ const props = withDefaults(defineProps<{
   actionsWidth: undefined,
   filterEmptyLabel: undefined,
   lastColumnFlexible: false,
+  stickyActions: true,
 })
 
 const emit = defineEmits<{
@@ -517,7 +522,8 @@ const bulkCountLabel = computed(() => {
             <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
               v-if="$slots.actions && !loading"
-              class="erp-th erp-th--actions erp-th--fixed"
+              class="erp-th erp-th--actions"
+              :class="{ 'erp-th--fixed': stickyActions }"
               :style="{ width: actionsWidth, minWidth: actionsWidth }"
             />
 
@@ -575,7 +581,8 @@ const bulkCountLabel = computed(() => {
               <!-- Actions td — sticky right -->
               <td
                 v-if="$slots.actions"
-                class="erp-td erp-td--actions erp-td--fixed"
+                class="erp-td erp-td--actions"
+                :class="{ 'erp-td--fixed': stickyActions }"
                 :style="{ width: actionsWidth, minWidth: actionsWidth }"
               >
                 <slot name="actions" :row="row" />
@@ -630,7 +637,8 @@ const bulkCountLabel = computed(() => {
               <!-- match data-row columns during pagination; hidden on first load -->
               <td
                 v-if="$slots.actions && !loading"
-                class="erp-td erp-td--actions erp-td--fixed"
+                class="erp-td erp-td--actions"
+                :class="{ 'erp-td--fixed': stickyActions }"
                 :style="{ width: actionsWidth, minWidth: actionsWidth }"
               />
               <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />

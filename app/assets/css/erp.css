@@ -68,6 +68,13 @@
   line-height: var(--mp-line-heights-sm);
 }
 
+/* ── Button size: xs — a step down from sm, for tight row-action columns ───────── */
+.btn-enterprise--xs {
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+}
+
 /* ── Button variant: plain (no border/background — bulk bar secondary action) ── */
 .btn-enterprise--plain {
   background: transparent;
