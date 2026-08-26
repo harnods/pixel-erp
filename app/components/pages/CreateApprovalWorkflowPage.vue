@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
-  MpInput, MpInputTag, MpSelect, MpRadio, MpToggle,
+  MpInput, MpInputTag, MpSelect, MpRadio, MpToggle, MpTextarea, MpText, MpButton, MpTooltip,
   MpInputGroup, MpInputLeftAddon, toast, type DataInterface,
 } from '@mekari/pixel3'
 import {
@@ -22,7 +22,8 @@ const router = useRouter()
 const { t } = useLocale()
 const { projectAccountingEnabled } = useApprovalWorkflowScenario()
 
-const DESC_MAX = 160
+const NAME_MAX = 60
+const DESC_MAX = 256
 
 const name = ref('')
 const description = ref('')
@@ -212,19 +213,23 @@ async function save() {
     <div class="caw-stage">
       <div class="caw-form-group">
 
-        <!-- ── Workflow name + Description ── -->
-        <div class="caw-row">
-          <MpFormControl id="awf-name" class="caw-field-name" is-required :is-invalid="!!nameError">
+        <!-- ── Workflow name + Description (both with a character counter) ── -->
+        <MpFormControl id="awf-name" is-required :is-invalid="!!nameError">
+          <div class="caw-label-row">
             <MpFormLabel>{{ t('Workflow name') }}</MpFormLabel>
-            <MpInput id="awf-name-input" v-model="name" :placeholder="t('Example: Sales Invoice Rule 001')" is-full-width @update:model-value="nameError = ''" />
-            <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
-          </MpFormControl>
+            <span class="caw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
+          </div>
+          <MpInput id="awf-name-input" v-model="name" :maxlength="NAME_MAX" :placeholder="t('Example: Sales Invoice Rule 001')" is-full-width @update:model-value="nameError = ''" />
+          <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
+        </MpFormControl>
 
-          <MpFormControl id="awf-description" class="caw-field-description">
+        <MpFormControl id="awf-description">
+          <div class="caw-label-row">
             <MpFormLabel>{{ t('Description') }}</MpFormLabel>
-            <MpInput id="awf-description-input" v-model="description" :maxlength="DESC_MAX" :placeholder="t('Optional')" is-full-width />
-          </MpFormControl>
-        </div>
+            <span class="caw-counter">{{ description.length }} / {{ DESC_MAX }}</span>
+          </div>
+          <MpTextarea id="awf-description-input" v-model="description" :maxlength="DESC_MAX" :placeholder="t('Optional')" is-full-width />
+        </MpFormControl>
 
         <div class="caw-divider" />
 
@@ -240,26 +245,12 @@ async function save() {
             <MpFormControl v-if="projectAccountingEnabled" id="awf-applies-to">
               <MpFormLabel>{{ t('Applies to') }}</MpFormLabel>
               <div class="caw-radio-group caw-radio-group--inline">
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-applies-to-transaction"
-                    name="awf-applies-to"
-                    value="transaction"
-                    :is-checked="appliesTo === 'transaction'"
-                    @change="appliesTo = 'transaction'"
-                  />
-                  <span>{{ t('Transaction') }}</span>
-                </label>
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-applies-to-project"
-                    name="awf-applies-to"
-                    value="project"
-                    :is-checked="appliesTo === 'project'"
-                    @change="appliesTo = 'project'"
-                  />
-                  <span>{{ t('Project Action') }}</span>
-                </label>
+                <MpRadio id="awf-applies-to-transaction" name="awf-applies-to" value="transaction" v-model="appliesTo">
+                  {{ t('Transaction') }}
+                </MpRadio>
+                <MpRadio id="awf-applies-to-project" name="awf-applies-to" value="project" v-model="appliesTo">
+                  {{ t('Project Action') }}
+                </MpRadio>
               </div>
             </MpFormControl>
 
@@ -268,7 +259,7 @@ async function save() {
               <MpSelect
                 id="awf-transaction-type-input"
                 :model-value="transactionType"
-                :placeholder="t('Select transaction type')"
+                :placeholder="transactionType ? undefined : t('Select transaction type')"
                 is-full-width
                 @change="(_e: Event, v: string) => { transactionType = v as ApprovalTransactionType; transactionTypeError = '' }"
               >
@@ -285,7 +276,7 @@ async function save() {
                 <MpSelect
                   id="awf-project-action-input"
                   :model-value="projectAction"
-                  :placeholder="t('Select action type')"
+                  :placeholder="projectAction ? undefined : t('Select action type')"
                   is-full-width
                   @change="(_e: Event, v: string) => { projectAction = v as ProjectAction; projectActionError = '' }"
                 >
@@ -303,7 +294,9 @@ async function save() {
             <MpFormControl v-if="showAmountField" id="awf-min-amount" class="caw-field-half">
               <MpFormLabel>{{ amountLabel }}</MpFormLabel>
               <MpInputGroup id="awf-min-amount-group">
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                <MpInputLeftAddon id="awf-min-amount-left-addon" has-background>
+                  <MpText weight="semiBold">Rp</MpText>
+                </MpInputLeftAddon>
                 <MpInput
                   id="awf-min-amount-input"
                   type="number"
@@ -322,26 +315,12 @@ async function save() {
             <MpFormControl v-if="showProjectScopeField" id="awf-project-scope" :is-invalid="projectsError">
               <MpFormLabel>{{ t('Applies to projects') }}</MpFormLabel>
               <div class="caw-radio-group">
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-project-scope-all"
-                    name="awf-project-scope"
-                    value="all"
-                    :is-checked="projectScope === 'all'"
-                    @change="projectScope = 'all'"
-                  />
-                  <span>{{ t('All projects') }}</span>
-                </label>
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-project-scope-some"
-                    name="awf-project-scope"
-                    value="some"
-                    :is-checked="projectScope === 'some'"
-                    @change="projectScope = 'some'"
-                  />
-                  <span>{{ t('Some projects') }}</span>
-                </label>
+                <MpRadio id="awf-project-scope-all" name="awf-project-scope" value="all" v-model="projectScope">
+                  {{ t('All projects') }}
+                </MpRadio>
+                <MpRadio id="awf-project-scope-some" name="awf-project-scope" value="some" v-model="projectScope">
+                  {{ t('Some projects') }}
+                </MpRadio>
               </div>
 
               <div v-if="projectScope === 'some'" class="caw-created-by-users">
@@ -365,26 +344,12 @@ async function save() {
             <MpFormControl v-if="appliesTo === 'transaction'" id="awf-created-by" :is-invalid="createdByError">
               <MpFormLabel>{{ t('Transaction created by') }}</MpFormLabel>
               <div class="caw-radio-group">
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-created-by-all"
-                    name="awf-created-by"
-                    value="all"
-                    :is-checked="createdByScope === 'all'"
-                    @change="createdByScope = 'all'"
-                  />
-                  <span>{{ t('All users') }}</span>
-                </label>
-                <label class="caw-radio-item">
-                  <MpRadio
-                    id="awf-created-by-some"
-                    name="awf-created-by"
-                    value="some"
-                    :is-checked="createdByScope === 'some'"
-                    @change="createdByScope = 'some'"
-                  />
-                  <span>{{ t('Some users') }}</span>
-                </label>
+                <MpRadio id="awf-created-by-all" name="awf-created-by" value="all" v-model="createdByScope">
+                  {{ t('All users') }}
+                </MpRadio>
+                <MpRadio id="awf-created-by-some" name="awf-created-by" value="some" v-model="createdByScope">
+                  {{ t('Some users') }}
+                </MpRadio>
               </div>
 
               <div v-if="createdByScope === 'some'" class="caw-created-by-users">
@@ -416,34 +381,31 @@ async function save() {
             <div v-for="(level, idx) in levels" :key="idx" class="caw-level">
               <div class="caw-level-header">
                 <span class="caw-level-title">{{ t('Approval level') }} {{ idx + 1 }}</span>
-                <button
-                  v-if="levels.length > 1"
-                  type="button"
-                  class="caw-level-remove btn-enterprise"
-                  :aria-label="`${t('Remove approver level')} ${idx + 1}`"
-                  @click="removeLevel(idx)"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                  </svg>
-                </button>
+                <MpTooltip v-if="levels.length > 1" :id="`awf-level-remove-tooltip-${idx}`" :label="t('Delete')">
+                  <MpButton
+                    variant="ghost"
+                    size="sm"
+                    left-icon="delete"
+                    :aria-label="`${t('Remove approver level')} ${idx + 1}`"
+                    @click="removeLevel(idx)"
+                  />
+                </MpTooltip>
               </div>
 
-              <div class="caw-level-condition">
-                <span>{{ t('Transaction require approval from') }}</span>
-                <MpSelect
-                  :id="`awf-level-match-${idx}`"
-                  class="caw-level-match-select"
-                  :model-value="level.matchType"
-                  @change="(_e: Event, v: string) => level.matchType = v as 'any' | 'all'"
-                >
-                  <option value="any">{{ t('Any') }}</option>
-                  <option value="all">{{ t('All') }}</option>
-                </MpSelect>
-                <span>{{ t('approver below:') }}</span>
-              </div>
+              <MpFormControl :id="`awf-level-match-${idx}`">
+                <MpFormLabel>{{ t('Transaction require approval from') }}</MpFormLabel>
+                <div class="caw-radio-group caw-radio-group--inline">
+                  <MpRadio :id="`awf-level-match-${idx}-any`" :name="`awf-level-match-${idx}`" value="any" v-model="level.matchType">
+                    {{ t('Any') }}
+                  </MpRadio>
+                  <MpRadio :id="`awf-level-match-${idx}-all`" :name="`awf-level-match-${idx}`" value="all" v-model="level.matchType">
+                    {{ t('All') }}
+                  </MpRadio>
+                </div>
+              </MpFormControl>
 
               <MpFormControl :id="`awf-level-approvers-${idx}`" is-required :is-invalid="!!levelErrors[idx]">
+                <MpFormLabel>{{ t('Approver') }}</MpFormLabel>
                 <MpInputTag
                   :id="`awf-level-approvers-input-${idx}`"
                   :data="level.approvers"
@@ -460,7 +422,7 @@ async function save() {
             </div>
           </div>
 
-          <button type="button" class="caw-add-level-btn btn-enterprise" @click="addLevel">
+          <button type="button" class="caw-add-level-btn btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addLevel">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -472,15 +434,14 @@ async function save() {
 
         <!-- ── Section: Apply workflow ── -->
         <div class="caw-section">
-          <h2 class="caw-section-title">{{ t('Apply workflow') }}</h2>
           <div class="caw-toggle-row">
             <MpToggle
               id="awf-apply-to-draft"
               :is-checked="applyToDraft"
-              :aria-label="t('Apply this workflow to the transaction draft')"
               @update:is-checked="(v: boolean) => applyToDraft = v"
-            />
-            <span>{{ t('Apply this workflow to the transaction draft') }}</span>
+            >
+              {{ t('Apply this workflow to the transaction draft') }}
+            </MpToggle>
           </div>
         </div>
 
@@ -560,25 +521,20 @@ async function save() {
 }
 
 .caw-form-group {
-  width: 640px;
+  width: var(--mp-sizes-containers-sm, 640px);
   max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5, 20px);
 }
 
-.caw-row {
-  display: flex;
-  gap: var(--mp-spacing-6);
-  align-items: flex-start;
-}
-.caw-field-name { flex: 1; min-width: 0; }
-.caw-field-description { flex: 1; min-width: 0; }
-
 .caw-divider {
-  height: 1px;
+  height: var(--mp-borders-sm, 1px);
   background: var(--mp-border-default);
 }
+
+.caw-label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); }
+.caw-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .caw-section {
   display: flex;
@@ -615,14 +571,6 @@ async function save() {
   flex-direction: row;
   gap: var(--mp-spacing-5);
 }
-.caw-radio-item {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  cursor: pointer;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
 .caw-created-by-users { margin-top: var(--mp-spacing-2); }
 
 /* ── Approval levels ── */
@@ -650,50 +598,10 @@ async function save() {
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.caw-level-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-7, 28px);
-  height: var(--mp-sizes-7, 28px);
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: var(--mp-radii-md);
-  cursor: pointer;
-  color: var(--mp-text-secondary);
-}
-.caw-level-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger); }
-
-.caw-level-condition {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
-.caw-level-match-select {
-  width: auto !important;
-  min-width: 92px !important;
-}
-
 .caw-add-level-btn {
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-bold, #8c9596);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer;
-  font-family: inherit;
+  width: auto;
 }
-.caw-add-level-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Apply workflow toggle ── */
 .caw-toggle-row {
