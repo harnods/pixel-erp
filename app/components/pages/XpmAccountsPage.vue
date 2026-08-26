@@ -655,13 +655,12 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .cell-link { padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #1f6bb8); }
 .cell-link:hover { text-decoration: underline; }
 
-/* Wallet info (plain details, no box) */
-.acct-info { padding-top: var(--mp-spacing-5, 20px); max-width: 640px; }
+/* Wallet info (plain details, no box, no row dividers — matches ERP ContentList) */
+.acct-info { max-width: 640px; }
 .acct-info__title { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .acct-info__updated { margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
-.acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
-.acct-dl__row:last-child { border-bottom: none; }
+.acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); align-items: start; padding: var(--mp-spacing-2) 0; }
 .acct-dl__row dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .acct-dl__row dd { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
