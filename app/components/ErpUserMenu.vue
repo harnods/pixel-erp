@@ -268,7 +268,7 @@ function onPopoverClose() {
 }
 
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
-const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2", "XPM"];
+const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
 const { navigate } = useNavigation();
 // Product-switcher rail visibility (top-right "Show ERP Menu" toggle).

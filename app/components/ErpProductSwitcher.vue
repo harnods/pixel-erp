@@ -13,6 +13,7 @@ import { isHrPath } from '~/utils/hrRoutes'
 
 const router = useRouter()
 const route = useRoute()
+const { activeScenario, setScenario } = useScenario()
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -23,27 +24,36 @@ const companies = ['PT Central Perk Indonesia', 'Central Perk Roastery Co.', 'Ce
 const activeCompany = ref(companies[0]!)
 function chooseCompany(name: string) { activeCompany.value = name; companyOpen.value = false }
 
-interface Product { key: string; label: string; icon: string; to?: string }
+interface Product { key: string; label: string; icon: string; to?: string; scenario?: Scenario }
 const products: Product[] = [
-  { key: 'ERP',   label: 'ERP',            icon: 'application',   to: '/' },
-  { key: 'HR',    label: 'HR',             icon: 'employee',      to: '/hr' },
-  { key: 'CRM',   label: 'CRM',            icon: 'pipeline',      to: '/crm' },
-  { key: 'Tax',   label: 'Tax',            icon: 'promo',         to: '/tax' },
-  { key: 'Trip',  label: 'Trip & expense', icon: 'business-trip' },
-  { key: 'Sales', label: 'Sales channel',  icon: 'shop' },
-  { key: 'POS',   label: 'POS',            icon: 'calculator' },
+  { key: 'ERP',   label: 'ERP',               icon: 'application',   to: '/', scenario: 'ERP' },
+  { key: 'HR',    label: 'HR',                icon: 'employee',      to: '/hr', scenario: 'ERP' },
+  { key: 'CRM',   label: 'CRM',               icon: 'pipeline',      to: '/crm', scenario: 'ERP' },
+  { key: 'Tax',   label: 'Tax',               icon: 'promo',         to: '/tax', scenario: 'ERP' },
+  // Spend management = the XPM (Mekari Expense) scenario. Selecting it flips the
+  // scenario (so the sidebar swaps to the Expense nav) and lands on its Home.
+  { key: 'XPM',   label: 'Spend management',  icon: 'wallet',        to: '/', scenario: 'XPM' },
+  { key: 'Sales', label: 'Sales channel',     icon: 'shop' },
+  { key: 'POS',   label: 'POS',               icon: 'calculator' },
 ]
 
 const activeKey = computed(() =>
-  isHrPath(route.path) ? 'HR'
+  activeScenario.value === 'XPM' ? 'XPM'
+    : isHrPath(route.path) ? 'HR'
     : route.path.startsWith('/crm') ? 'CRM'
     : route.path.startsWith('/tax') ? 'Tax'
     : 'ERP')
 
 function choose(p: Product) {
   open.value = false
-  if (p.to) router.push(p.to)
-  else infoToast(`${p.label} — coming soon`)
+  if (p.to) {
+    // Set the scenario BEFORE navigating so the sidebar + Home render the right
+    // product on the first paint (ERP for ERP/HR/CRM/Tax, XPM for Spend management).
+    if (p.scenario && p.scenario !== activeScenario.value) setScenario(p.scenario)
+    router.push(p.to)
+  } else {
+    infoToast(`${p.label} — coming soon`)
+  }
 }
 
 function onDocClick(e: MouseEvent) {
