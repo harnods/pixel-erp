@@ -25,7 +25,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
-  topUpWallet, moveMoneyBetween, movementNumber, XPM_TODAY,
+  topUpWallet, moveMoneyBetween, movementNumber, XPM_TODAY, xpmPeople,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong, formatDateTimeLong } from '~/utils/date'
@@ -177,6 +177,13 @@ function saveTopUp() {
 }
 
 const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
+
+// Wallet info — the three people roles, each resolved from the employee directory.
+const peopleRows = computed(() => [
+  { label: 'Wallet holder',      people: xpmPeople(selectedWallet.value.holder) },
+  { label: 'Expense card admin', people: xpmPeople(selectedWallet.value.cardAdmin) },
+  { label: 'Assigned accountant', people: xpmPeople(selectedWallet.value.accountant) },
+])
 </script>
 
 <template>
@@ -363,9 +370,20 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                 <dl class="acct-dl">
                   <div class="acct-dl__row"><dt>Wallet name</dt><dd>{{ selectedWallet.name }}</dd></div>
                   <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
-                  <div class="acct-dl__row"><dt>Wallet holder</dt><dd>{{ selectedWallet.holder }}</dd></div>
-                  <div class="acct-dl__row"><dt>Expense card admin</dt><dd>{{ selectedWallet.cardAdmin }}</dd></div>
-                  <div class="acct-dl__row"><dt>Assigned accountant</dt><dd>{{ selectedWallet.accountant }}</dd></div>
+                  <div v-for="r in peopleRows" :key="r.label" class="acct-dl__row">
+                    <dt>{{ r.label }}</dt>
+                    <dd>
+                      <div class="user-chips">
+                        <div v-for="p in r.people" :key="p.employeeId" class="user-chip">
+                          <img :src="p.photo" alt="" class="user-chip__avatar">
+                          <div class="user-chip__main">
+                            <span class="user-chip__name">{{ p.name }}</span>
+                            <span class="user-chip__meta">{{ p.employeeId }} | {{ p.jobPosition }} | {{ p.organization }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </dd>
+                  </div>
                 </dl>
                 <p class="acct-info__updated">Last updated {{ formatDateTimeLong(selectedWallet.updatedAt) }} by {{ selectedWallet.updatedBy }}</p>
               </div>
@@ -661,8 +679,17 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-info__updated { margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
 .acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); align-items: start; padding: var(--mp-spacing-2) 0; }
-.acct-dl__row dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.acct-dl__row dd { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* Label + value share the same size/weight (14px regular); label is greyed. */
+.acct-dl__row dt { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.acct-dl__row dd { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
+
+/* User chips (holder / card admin / accountant) — avatar lg + name + meta */
+.user-chips { display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.user-chip { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); }
+.user-chip__avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--mp-radii-full, 999px); object-fit: cover; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.user-chip__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.user-chip__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.user-chip__meta { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Drawers (floating card) ── */
 .dr-card { display: flex; flex-direction: column; height: 100%; }

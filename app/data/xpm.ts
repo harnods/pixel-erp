@@ -8,6 +8,7 @@
  */
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { employees } from './employees'
 
 // ── Transactions (ledger) ──────────────────────────────────────────────────────
 export type XpmTxnSource = 'Card' | 'Reimbursement' | 'Cash advance' | 'Bill' | 'Travel'
@@ -53,9 +54,9 @@ export interface XpmWallet {
   currency: string                    // primary currency (listed first)
   openings: Record<string, number>    // opening balance per currency ledger
   pendingPayouts: number              // real figure surfaced in the stats strip
-  holder: string                      // person accountable for the wallet
-  cardAdmin: string                   // who administers the expense cards it funds
-  accountant: string                  // who reconciles it
+  holder: string[]                    // employee IDs accountable for the wallet
+  cardAdmin: string[]                 // employee IDs administering its expense cards
+  accountant: string[]                // employee IDs who reconcile it
   updatedAt: string                   // ISO datetime of the last change
   updatedBy: string                   // who made that change
 }
@@ -64,19 +65,34 @@ export interface XpmWallet {
 // card float, per-store petty cash, store operations, COGS to suppliers,
 // marketing, facilities and travel.
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main',   name: 'Main account',            tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 1000000, description: 'Company operating wallet that funds payouts and tops up every sub-wallet.',        holder: 'Rizal Candra',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T09:14:00', updatedBy: 'Sari Wulandari' },
-  { id: 'w-reimb',  name: 'Reimbursement pool',       tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements and cash advances.',            holder: 'Citra Purnama',  cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T08:02:00', updatedBy: 'Citra Purnama' },
-  { id: 'w-card',   name: 'Card float',               tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 0,       description: 'Balance that funds the virtual and physical spending cards.',                        holder: 'Maya Chen',      cardAdmin: 'Bayu Ferdian',    accountant: 'Fitri Handayani', updatedAt: '2026-07-21T07:40:00', updatedBy: 'Bayu Ferdian' },
-  { id: 'w-store',  name: 'Store operations · Jakarta', tag: 'Sub-wallet',                   type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 8000000 },  pendingPayouts: 2400000, description: 'Day-to-day outlet spend across Jakarta stores: supplies, utilities and packaging.', holder: 'Daniel Reyes',   cardAdmin: 'Agus Firmansyah', accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T18:30:00', updatedBy: 'Daniel Reyes' },
-  { id: 'w-cogs',   name: 'Supplier payments · COGS', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 30000000 }, pendingPayouts: 15600000, description: 'Pays coffee beans, dairy, syrups and packaging suppliers for cost of goods sold.',  holder: 'Priya Sharma',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-20T16:12:00', updatedBy: 'Priya Sharma' },
-  { id: 'w-mktg',   name: 'Marketing & campaigns',    tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 12000000 }, pendingPayouts: 1800000, description: 'Ad spend, promos and store collateral for the marketing team.',                    holder: 'Maya Chen',      cardAdmin: 'Dewi Lestari',    accountant: 'Fitri Handayani', updatedAt: '2026-07-21T11:05:00', updatedBy: 'Maya Chen' },
-  { id: 'w-fac',    name: 'Facilities & maintenance', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 6000000 },  pendingPayouts: 0,       description: 'Equipment servicing, repairs and outlet maintenance.',                              holder: 'Tom Okafor',     cardAdmin: 'Agus Firmansyah', accountant: 'Fitri Handayani', updatedAt: '2026-07-20T14:48:00', updatedBy: 'Tom Okafor' },
-  { id: 'w-travel', name: 'Travel & per diem',        tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 550000,  description: 'Regional store visits, audits and per-diem for the operations team.',               holder: 'Rizal Candra',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-20T10:20:00', updatedBy: 'Rizal Candra' },
+  { id: 'w-main',   name: 'Main account',            tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 1000000, description: 'Company operating wallet that funds payouts and tops up every sub-wallet.',        holder: ['EMP-0001'],            cardAdmin: ['EMP-0002', 'EMP-0016'], accountant: ['EMP-0009'],            updatedAt: '2026-07-21T09:14:00', updatedBy: 'Maya Kusuma' },
+  { id: 'w-reimb',  name: 'Reimbursement pool',       tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements and cash advances.',            holder: ['EMP-0007'],            cardAdmin: ['EMP-0002'],             accountant: ['EMP-0009'],            updatedAt: '2026-07-21T08:02:00', updatedBy: 'Putri Ayu' },
+  { id: 'w-card',   name: 'Card float',               tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 0,       description: 'Balance that funds the virtual and physical spending cards.',                        holder: ['EMP-0005'],            cardAdmin: ['EMP-0002', 'EMP-0005'], accountant: ['EMP-0009'],            updatedAt: '2026-07-21T07:40:00', updatedBy: 'Anita Wijaya' },
+  { id: 'w-store',  name: 'Store operations · Jakarta', tag: 'Sub-wallet',                   type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 8000000 },  pendingPayouts: 2400000, description: 'Day-to-day outlet spend across Jakarta stores: supplies, utilities and packaging.', holder: ['EMP-0004', 'EMP-0011'], cardAdmin: ['EMP-0001'],             accountant: ['EMP-0009'],            updatedAt: '2026-07-21T18:30:00', updatedBy: 'Siti Rahmawati' },
+  { id: 'w-cogs',   name: 'Supplier payments · COGS', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 30000000 }, pendingPayouts: 15600000, description: 'Pays coffee beans, dairy, syrups and packaging suppliers for cost of goods sold.',  holder: ['EMP-0003', 'EMP-0012'], cardAdmin: ['EMP-0002'],             accountant: ['EMP-0009', 'EMP-0002'], updatedAt: '2026-07-20T16:12:00', updatedBy: 'Budi Santoso' },
+  { id: 'w-mktg',   name: 'Marketing & campaigns',    tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 12000000 }, pendingPayouts: 1800000, description: 'Ad spend, promos and store collateral for the marketing team.',                    holder: ['EMP-0005'],            cardAdmin: ['EMP-0005'],             accountant: ['EMP-0002'],            updatedAt: '2026-07-21T11:05:00', updatedBy: 'Dewi Lestari' },
+  { id: 'w-fac',    name: 'Facilities & maintenance', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 6000000 },  pendingPayouts: 0,       description: 'Equipment servicing, repairs and outlet maintenance.',                              holder: ['EMP-0006'],            cardAdmin: ['EMP-0001'],             accountant: ['EMP-0002'],            updatedAt: '2026-07-20T14:48:00', updatedBy: 'Agus Pratama' },
+  { id: 'w-travel', name: 'Travel & per diem',        tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 550000,  description: 'Regional store visits, audits and per diem for the operations team.',               holder: ['EMP-0001', 'EMP-0004'], cardAdmin: ['EMP-0002'],             accountant: ['EMP-0009'],            updatedAt: '2026-07-20T10:20:00', updatedBy: 'Rizal Candra' },
   // Empty wallet · no movements → balance Rp0 (demonstrates the top-up prompt).
-  { id: 'w-petty',  name: 'Petty cash · Jakarta HQ',  tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 0 },        pendingPayouts: 0,       description: 'Small cash float for incidental spend at the Jakarta head office.',                 holder: 'Eka Setiawan',   cardAdmin: 'Agus Firmansyah', accountant: 'Fitri Handayani', updatedAt: '2026-07-15T09:00:00', updatedBy: 'Eka Setiawan' },
+  { id: 'w-petty',  name: 'Petty cash · Jakarta HQ',  tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 0 },        pendingPayouts: 0,       description: 'Small cash float for incidental spend at the Jakarta head office.',                 holder: ['EMP-0007'],            cardAdmin: ['EMP-0001'],             accountant: ['EMP-0009'],            updatedAt: '2026-07-15T09:00:00', updatedBy: 'Putri Ayu' },
 ]
 /** Currencies a wallet holds (primary first). */
 export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }
+
+/** Resolve employee IDs to a light person shape (from the employee directory). */
+export interface XpmPerson { employeeId: string; name: string; jobPosition: string; organization: string; photo: string }
+export function xpmPeople(ids: string[]): XpmPerson[] {
+  return ids.map(id => {
+    const e = employees.find(x => x.employeeId === id || x.id === id)
+    return {
+      employeeId: e?.employeeId ?? id,
+      name: e?.fullName ?? id,
+      jobPosition: e?.jobPosition ?? '',
+      organization: e?.department ?? '',
+      photo: e?.photo ?? '',
+    }
+  })
+}
 
 export type XpmMovementCategory = 'Top up' | 'Payment' | 'FX' | 'Payout' | 'Transfer'
 export interface XpmMovement {
