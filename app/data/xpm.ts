@@ -53,13 +53,27 @@ export interface XpmWallet {
   currency: string                    // primary currency (listed first)
   openings: Record<string, number>    // opening balance per currency ledger
   pendingPayouts: number              // real figure surfaced in the stats strip
+  holder: string                      // person accountable for the wallet
+  cardAdmin: string                   // who administers the expense cards it funds
+  accountant: string                  // who reconciles it
+  updatedAt: string                   // ISO datetime of the last change
+  updatedBy: string                   // who made that change
 }
+// PT Central Perk Indonesia — a coffee-shop chain. Wallets mirror how an F&B
+// operator actually ring-fences spend: operating cash, a reimbursement pool, a
+// card float, per-store petty cash, store operations, COGS to suppliers,
+// marketing, facilities and travel.
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 1000000, description: 'Company operating wallet · funds payouts and card floats.' },
-  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 }, pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
-  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.' },
-  // Empty wallet · no movements → balance Rp0 (demonstrates the top-up banner).
-  { id: 'w-petty', name: 'Petty cash · Jakarta HQ', tag: 'Sub-wallet',                  type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 0 }, pendingPayouts: 0,             description: 'Small cash float for the Jakarta HQ office.' },
+  { id: 'w-main',   name: 'Main account',            tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 1000000, description: 'Company operating wallet that funds payouts and tops up every sub-wallet.',        holder: 'Rizal Candra',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T09:14:00', updatedBy: 'Sari Wulandari' },
+  { id: 'w-reimb',  name: 'Reimbursement pool',       tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements and cash advances.',            holder: 'Citra Purnama',  cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T08:02:00', updatedBy: 'Citra Purnama' },
+  { id: 'w-card',   name: 'Card float',               tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 },  pendingPayouts: 0,       description: 'Balance that funds the virtual and physical spending cards.',                        holder: 'Maya Chen',      cardAdmin: 'Bayu Ferdian',    accountant: 'Fitri Handayani', updatedAt: '2026-07-21T07:40:00', updatedBy: 'Bayu Ferdian' },
+  { id: 'w-store',  name: 'Store operations · Jakarta', tag: 'Sub-wallet',                   type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 8000000 },  pendingPayouts: 2400000, description: 'Day-to-day outlet spend across Jakarta stores: supplies, utilities and packaging.', holder: 'Daniel Reyes',   cardAdmin: 'Agus Firmansyah', accountant: 'Sari Wulandari',  updatedAt: '2026-07-21T18:30:00', updatedBy: 'Daniel Reyes' },
+  { id: 'w-cogs',   name: 'Supplier payments · COGS', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 30000000 }, pendingPayouts: 15600000, description: 'Pays coffee beans, dairy, syrups and packaging suppliers for cost of goods sold.',  holder: 'Priya Sharma',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-20T16:12:00', updatedBy: 'Priya Sharma' },
+  { id: 'w-mktg',   name: 'Marketing & campaigns',    tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 12000000 }, pendingPayouts: 1800000, description: 'Ad spend, promos and store collateral for the marketing team.',                    holder: 'Maya Chen',      cardAdmin: 'Dewi Lestari',    accountant: 'Fitri Handayani', updatedAt: '2026-07-21T11:05:00', updatedBy: 'Maya Chen' },
+  { id: 'w-fac',    name: 'Facilities & maintenance', tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 6000000 },  pendingPayouts: 0,       description: 'Equipment servicing, repairs and outlet maintenance.',                              holder: 'Tom Okafor',     cardAdmin: 'Agus Firmansyah', accountant: 'Fitri Handayani', updatedAt: '2026-07-20T14:48:00', updatedBy: 'Tom Okafor' },
+  { id: 'w-travel', name: 'Travel & per diem',        tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },  pendingPayouts: 550000,  description: 'Regional store visits, audits and per-diem for the operations team.',               holder: 'Rizal Candra',   cardAdmin: 'Bayu Ferdian',    accountant: 'Sari Wulandari',  updatedAt: '2026-07-20T10:20:00', updatedBy: 'Rizal Candra' },
+  // Empty wallet · no movements → balance Rp0 (demonstrates the top-up prompt).
+  { id: 'w-petty',  name: 'Petty cash · Jakarta HQ',  tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 0 },        pendingPayouts: 0,       description: 'Small cash float for incidental spend at the Jakarta head office.',                 holder: 'Eka Setiawan',   cardAdmin: 'Agus Firmansyah', accountant: 'Fitri Handayani', updatedAt: '2026-07-15T09:00:00', updatedBy: 'Eka Setiawan' },
 ]
 /** Currencies a wallet holds (primary first). */
 export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }
@@ -98,6 +112,31 @@ const SEED_WALLET_MOVEMENTS: XpmMovement[] = [
   { id: 'M022', walletId: 'w-card', date: '2026-07-19', description: 'Figma annual seats', category: 'Payment', direction: 'out', amount: 5100000, currency: 'IDR' },
   { id: 'M023', walletId: 'w-card', date: '2026-07-20', description: 'Adobe Creative Cloud renewal', category: 'Payment', direction: 'out', amount: 899000, currency: 'IDR' },
   { id: 'M024', walletId: 'w-card', date: '2026-07-21', description: 'Card float replenish', category: 'Transfer', direction: 'in',  amount: 2000000, currency: 'IDR' },
+  // Store operations · Jakarta (opening 8.000.000 → 16.200.000)
+  { id: 'M030', walletId: 'w-store', date: '2026-07-16', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 20000000, currency: 'IDR' },
+  { id: 'M031', walletId: 'w-store', date: '2026-07-17', description: 'Milk & dairy supply · Greenfields', category: 'Payment', direction: 'out', amount: 6500000, currency: 'IDR' },
+  { id: 'M032', walletId: 'w-store', date: '2026-07-18', description: 'Cleaning supplies · store network', category: 'Payment', direction: 'out', amount: 2200000, currency: 'IDR' },
+  { id: 'M033', walletId: 'w-store', date: '2026-07-19', description: 'Cups & packaging · Indogravure', category: 'Payment', direction: 'out', amount: 4800000, currency: 'IDR' },
+  { id: 'M034', walletId: 'w-store', date: '2026-07-20', description: 'Store electricity · PLN', category: 'Payment', direction: 'out', amount: 3300000, currency: 'IDR' },
+  { id: 'M035', walletId: 'w-store', date: '2026-07-21', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 5000000, currency: 'IDR' },
+  // Supplier payments · COGS (opening 30.000.000 → 29.000.000)
+  { id: 'M040', walletId: 'w-cogs', date: '2026-07-16', description: 'Coffee beans · Toraja Coffee Co', category: 'Payment', direction: 'out', amount: 18000000, currency: 'IDR' },
+  { id: 'M041', walletId: 'w-cogs', date: '2026-07-17', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 40000000, currency: 'IDR' },
+  { id: 'M042', walletId: 'w-cogs', date: '2026-07-18', description: 'Syrups & flavors · Monin Indonesia', category: 'Payment', direction: 'out', amount: 7400000, currency: 'IDR' },
+  { id: 'M043', walletId: 'w-cogs', date: '2026-07-20', description: 'Coffee beans · Gayo Highlands', category: 'Payment', direction: 'out', amount: 15600000, currency: 'IDR' },
+  // Marketing & campaigns (opening 12.000.000 → 11.600.000)
+  { id: 'M050', walletId: 'w-mktg', date: '2026-07-16', description: 'Meta Ads · July flight', category: 'Payment', direction: 'out', amount: 5100000, currency: 'IDR' },
+  { id: 'M051', walletId: 'w-mktg', date: '2026-07-18', description: 'Influencer campaign · iced series', category: 'Payment', direction: 'out', amount: 3500000, currency: 'IDR' },
+  { id: 'M052', walletId: 'w-mktg', date: '2026-07-19', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 10000000, currency: 'IDR' },
+  { id: 'M053', walletId: 'w-mktg', date: '2026-07-21', description: 'Store posters · print run', category: 'Payment', direction: 'out', amount: 1800000, currency: 'IDR' },
+  // Facilities & maintenance (opening 6.000.000 → 8.200.000)
+  { id: 'M060', walletId: 'w-fac', date: '2026-07-17', description: 'Espresso machine service · La Marzocco', category: 'Payment', direction: 'out', amount: 3200000, currency: 'IDR' },
+  { id: 'M061', walletId: 'w-fac', date: '2026-07-19', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 8000000, currency: 'IDR' },
+  { id: 'M062', walletId: 'w-fac', date: '2026-07-20', description: 'AC maintenance · 4 outlets', category: 'Payment', direction: 'out', amount: 2600000, currency: 'IDR' },
+  // Travel & per diem (opening 4.000.000 → 6.200.000)
+  { id: 'M070', walletId: 'w-travel', date: '2026-07-16', description: 'Top up · Bank transfer', category: 'Top up', direction: 'in',  amount: 6000000, currency: 'IDR' },
+  { id: 'M071', walletId: 'w-travel', date: '2026-07-18', description: 'Regional store visit · per diem', category: 'Payout', direction: 'out', amount: 1500000, currency: 'IDR' },
+  { id: 'M072', walletId: 'w-travel', date: '2026-07-20', description: 'Flight · outlet audit Surabaya', category: 'Payment', direction: 'out', amount: 2300000, currency: 'IDR' },
 ]
 
 /** Persisted movement ledger · snapshot wins over the seed; reset restores seed. */

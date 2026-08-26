@@ -12,7 +12,7 @@
  * ledger (and persist), so the numbers stay accurate and survive a refresh.
  */
 import {
-  MpIcon, MpBadge, MpButton, MpButtonGroup, MpTooltip,
+  MpIcon, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
@@ -28,7 +28,7 @@ import {
   topUpWallet, moveMoneyBetween, movementNumber, XPM_TODAY,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
-import { formatDateLong } from '~/utils/date'
+import { formatDateLong, formatDateTimeLong } from '~/utils/date'
 import { infoToast } from '~/utils/toasts'
 
 const num = (s: string) => Number(String(s).replace(/[^\d]/g, '')) || 0
@@ -175,25 +175,6 @@ function saveTopUp() {
   closeTopUp()
   toast.notify({ variant: 'success', title: 'Top up complete.', maxWidth: 'max-content' })
 }
-
-// ── Funding rules (mock, Wallet info tab) ────────────────────────────────────
-const fundingRules = computed(() => {
-  const map: Record<string, { scope: string; desc: string }[]> = {
-    'w-main': [
-      { scope: 'All branches', desc: 'Bills & vendor payouts · pays from this wallet' },
-      { scope: 'Travel', desc: 'Flights & lodging · pays from this wallet' },
-    ],
-    'w-reimb': [
-      { scope: 'All branches', desc: 'Approved reimbursements · pays from this wallet' },
-      { scope: 'Cash advance', desc: 'Per-diem disbursements · pays from this wallet' },
-    ],
-    'w-card': [
-      { scope: 'Marketing', desc: 'Subscriptions & ads · pays from this wallet' },
-      { scope: 'Engineering', desc: 'Software & tooling · pays from this wallet' },
-    ],
-  }
-  return map[selectedWallet.value.id] ?? []
-})
 
 const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 </script>
@@ -375,43 +356,18 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
               </ErpTablePage>
             </MpTabPanel>
 
-            <!-- Wallet info -->
+            <!-- Wallet info (plain details, not boxed) -->
             <MpTabPanel value="info">
-              <div class="acct-panel acct-info">
-                <div class="acct-card">
-                  <div class="acct-card__head">
-                    <div class="acct-card__heading">
-                      <span class="acct-card__title">Wallet details</span>
-                      <span class="acct-card__sub">Name, purpose and the people accountable for this wallet</span>
-                    </div>
-                    <MpButton variant="secondary" size="sm" is-rounded @click="openEdit">Edit</MpButton>
-                  </div>
-                  <dl class="acct-dl">
-                    <div class="acct-dl__row"><dt>Wallet name</dt><dd>{{ selectedWallet.name }}</dd></div>
-                    <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
-                    <div class="acct-dl__row"><dt>Wallet type</dt><dd>{{ selectedWallet.type }}</dd></div>
-                    <div class="acct-dl__row"><dt>Currency</dt><dd>{{ [selectedWallet.currency, ...(selectedWallet.secondary?.map(b => b.currency) ?? [])].join(', ') }}</dd></div>
-                    <div class="acct-dl__row"><dt>Default account</dt><dd>{{ selectedWallet.isDefault ? 'Yes · company default' : 'No' }}</dd></div>
-                    <div class="acct-dl__row"><dt>Wallet owner</dt><dd>Finance team</dd></div>
-                    <div class="acct-dl__row"><dt>Created on</dt><dd>{{ formatDateLong('2026-01-14') }}</dd></div>
-                  </dl>
-                </div>
-
-                <div class="acct-card">
-                  <div class="acct-card__head">
-                    <div class="acct-card__heading">
-                      <span class="acct-card__title">Funding rules</span>
-                      <span class="acct-card__sub">Which spend this wallet pays for · by branch, type and policy</span>
-                    </div>
-                    <MpButton variant="secondary" size="sm" is-rounded @click="infoToast('Add rule · coming soon')">Add rule</MpButton>
-                  </div>
-                  <ul class="acct-rules">
-                    <li v-for="(r, i) in fundingRules" :key="i" class="acct-rule">
-                      <MpBadge for="additionalInformation" type="announcement" size="sm">{{ r.scope }}</MpBadge>
-                      <span class="acct-rule__desc">{{ r.desc }}</span>
-                    </li>
-                  </ul>
-                </div>
+              <div class="acct-info">
+                <h3 class="acct-info__title">Wallet info</h3>
+                <dl class="acct-dl">
+                  <div class="acct-dl__row"><dt>Wallet name</dt><dd>{{ selectedWallet.name }}</dd></div>
+                  <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
+                  <div class="acct-dl__row"><dt>Wallet holder</dt><dd>{{ selectedWallet.holder }}</dd></div>
+                  <div class="acct-dl__row"><dt>Expense card admin</dt><dd>{{ selectedWallet.cardAdmin }}</dd></div>
+                  <div class="acct-dl__row"><dt>Assigned accountant</dt><dd>{{ selectedWallet.accountant }}</dd></div>
+                </dl>
+                <p class="acct-info__updated">Last updated {{ formatDateTimeLong(selectedWallet.updatedAt) }} by {{ selectedWallet.updatedBy }}</p>
               </div>
             </MpTabPanel>
           </MpTabPanels>
@@ -699,20 +655,15 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .cell-link { padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #1f6bb8); }
 .cell-link:hover { text-decoration: underline; }
 
-/* Wallet info */
-.acct-card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-4); }
-.acct-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
-.acct-card__heading { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.acct-card__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.acct-card__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+/* Wallet info (plain details, no box) */
+.acct-info { padding-top: var(--mp-spacing-5, 20px); max-width: 640px; }
+.acct-info__title { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.acct-info__updated { margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
-.acct-dl__row { display: grid; grid-template-columns: 180px 1fr; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
+.acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
 .acct-dl__row:last-child { border-bottom: none; }
 .acct-dl__row dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .acct-dl__row dd { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.acct-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.acct-rule { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; }
-.acct-rule__desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 /* ── Drawers (floating card) ── */
 .dr-card { display: flex; flex-direction: column; height: 100%; }
