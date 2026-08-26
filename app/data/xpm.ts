@@ -79,6 +79,46 @@ export const xpmWallets: XpmWallet[] = [
 /** Currencies a wallet holds (primary first). */
 export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }
 
+// ── Wallet assignments (which branch + expense policy this wallet covers) ───────
+// One branch can cover several transaction types (Claims / Trips), and one
+// (branch, type) can be covered by many policies via this wallet.
+export interface XpmAssignment { branch: string; transactionType: string; policies: string[] }
+const WALLET_ASSIGNMENTS: Record<string, XpmAssignment[]> = {
+  'w-main': [
+    { branch: 'Jakarta Pusat', transactionType: 'Claims', policies: ['Meals & entertainment cap', 'Transport reimbursement', 'Store supplies policy', 'Training & workshop', 'Fuel & parking', 'Client dinner policy'] },
+    { branch: 'Jakarta Pusat', transactionType: 'Trips',  policies: ['Per diem domestic', 'Flight booking policy', 'Hotel nightly cap'] },
+  ],
+  'w-reimb': [
+    { branch: 'Jakarta Pusat', transactionType: 'Claims', policies: ['Meals & entertainment cap', 'Transport reimbursement', 'Barista uniform allowance'] },
+    { branch: 'Bandung',       transactionType: 'Claims', policies: ['Meals & entertainment cap', 'Fuel & parking'] },
+  ],
+  'w-card': [
+    { branch: 'Jakarta Pusat', transactionType: 'Claims', policies: ['Store supplies policy', 'Training & workshop'] },
+  ],
+  'w-store': [
+    { branch: 'Bandung', transactionType: 'Claims', policies: ['Store supplies policy', 'Barista uniform allowance', 'Fuel & parking', 'Cleaning contract', 'Utilities policy'] },
+    { branch: 'Bandung', transactionType: 'Trips',  policies: ['Per diem domestic'] },
+  ],
+  'w-cogs': [
+    { branch: 'Surabaya', transactionType: 'Claims', policies: ['Supplier onboarding', 'Bulk purchase policy'] },
+  ],
+  'w-mktg': [
+    { branch: 'Jakarta Pusat', transactionType: 'Claims', policies: ['Campaign spend policy', 'Influencer policy', 'Print collateral'] },
+    { branch: 'Bali',          transactionType: 'Trips',  policies: ['Per diem domestic', 'Flight booking policy'] },
+  ],
+  'w-fac': [
+    { branch: 'Bandung', transactionType: 'Claims', policies: ['Maintenance contract', 'Equipment service'] },
+  ],
+  'w-travel': [
+    { branch: 'Jakarta Pusat', transactionType: 'Trips', policies: ['Per diem domestic', 'Per diem international', 'Flight booking policy', 'Hotel nightly cap', 'Team offsite policy'] },
+    { branch: 'Surabaya',      transactionType: 'Trips', policies: ['Per diem domestic'] },
+  ],
+  'w-petty': [
+    { branch: 'Jakarta Pusat', transactionType: 'Claims', policies: ['Petty cash policy'] },
+  ],
+}
+export function walletAssignments(id: string): XpmAssignment[] { return WALLET_ASSIGNMENTS[id] ?? [] }
+
 /** Resolve employee IDs to a light person shape (from the employee directory). */
 export interface XpmPerson { employeeId: string; name: string; jobPosition: string; organization: string; photo: string }
 export function xpmPeople(ids: string[]): XpmPerson[] {

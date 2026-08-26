@@ -27,6 +27,7 @@ import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
   topUpWallet, moveMoneyBetween, movementNumber, XPM_TODAY, xpmPeople,
+  walletAssignments, type XpmAssignment,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong, formatDateTimeLong } from '~/utils/date'
@@ -185,6 +186,33 @@ const peopleRows = computed(() => [
   { label: 'Expense card admin', people: xpmPeople(selectedWallet.value.cardAdmin) },
   { label: 'Assigned accountant', people: xpmPeople(selectedWallet.value.accountant) },
 ])
+
+// Assigned branches & policies — grouped by branch so the Branch cell can merge
+// (rowspan) across its transaction types. Each (branch, type) can list many
+// policies; show the first few and reveal the rest via "Load more policy".
+const POLICY_LIMIT = 3
+const assignmentGroups = computed(() => {
+  const groups: { branch: string; rows: XpmAssignment[] }[] = []
+  for (const a of walletAssignments(selectedWallet.value.id)) {
+    let g = groups.find(x => x.branch === a.branch)
+    if (!g) { g = { branch: a.branch, rows: [] }; groups.push(g) }
+    g.rows.push(a)
+  }
+  return groups
+})
+const expandedPolicies = ref<Set<string>>(new Set())
+watch(() => selectedWallet.value.id, () => { expandedPolicies.value = new Set() })
+function policyKey(branch: string, type: string) { return `${branch}::${type}` }
+function isPolicyExpanded(branch: string, type: string) { return expandedPolicies.value.has(policyKey(branch, type)) }
+function togglePolicies(branch: string, type: string) {
+  const key = policyKey(branch, type)
+  const next = new Set(expandedPolicies.value)
+  next.has(key) ? next.delete(key) : next.add(key)
+  expandedPolicies.value = next
+}
+function visiblePolicies(row: XpmAssignment) {
+  return isPolicyExpanded(row.branch, row.transactionType) ? row.policies : row.policies.slice(0, POLICY_LIMIT)
+}
 
 // Activity log — opened from the "Last updated by …" link (ERP ActivityLogModal).
 const activityOpen = ref(false)
@@ -430,6 +458,44 @@ const activityEntries = computed<ActivityEntry[]>(() => {
                   </div>
                 </dl>
                 <a class="acct-info__updated" @click.prevent="activityOpen = true">Last updated {{ formatDateTimeLong(selectedWallet.updatedAt) }} by {{ selectedWallet.updatedBy }}</a>
+
+                <!-- Assigned branches & policies -->
+                <section class="acct-assign">
+                  <h3 class="acct-info__title">Assigned branches &amp; policies</h3>
+                  <p class="acct-assign__sub">Branches and expense policies this wallet funds.</p>
+                  <div class="acct-assign__wrap">
+                    <table class="asg-table">
+                      <thead>
+                        <tr>
+                          <th class="asg-th">Branch</th>
+                          <th class="asg-th">Transaction type</th>
+                          <th class="asg-th">Policy</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template v-for="grp in assignmentGroups" :key="grp.branch">
+                          <tr v-for="(row, i) in grp.rows" :key="grp.branch + row.transactionType" class="asg-tr">
+                            <td v-if="i === 0" :rowspan="grp.rows.length" class="asg-td asg-td--branch">{{ grp.branch }}</td>
+                            <td class="asg-td asg-td--type">{{ row.transactionType }}</td>
+                            <td class="asg-td">
+                              <ul class="asg-policies">
+                                <li v-for="pol in visiblePolicies(row)" :key="pol">{{ pol }}</li>
+                              </ul>
+                              <button
+                                v-if="row.policies.length > POLICY_LIMIT"
+                                type="button"
+                                class="asg-more"
+                                @click="togglePolicies(row.branch, row.transactionType)"
+                              >
+                                {{ isPolicyExpanded(row.branch, row.transactionType) ? 'Show less' : `Load more policy (+${row.policies.length - POLICY_LIMIT})` }}
+                              </button>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
             </MpTabPanel>
           </MpTabPanels>
@@ -743,6 +809,22 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 .acct-info__title { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .acct-info__updated { display: inline-block; align-self: flex-start; margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1f6bb8); cursor: pointer; }
 .acct-info__updated:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Assigned branches & policies — merged-Branch table */
+.acct-assign { margin-top: var(--mp-spacing-6, 24px); }
+.acct-assign__sub { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.acct-assign__wrap { overflow-x: auto; border-top: 1px solid var(--mp-border-default); }
+.asg-table { width: 100%; border-collapse: collapse; }
+.asg-th { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
+.asg-th + .asg-th { border-left: 1px solid var(--mp-border-default); }
+.asg-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top; border-bottom: 1px solid var(--mp-border-default); }
+.asg-td + .asg-td { border-left: 1px solid var(--mp-border-default); }
+.asg-td--branch { font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; }
+.asg-td--type { white-space: nowrap; }
+.asg-policies { list-style: disc; margin: 0; padding-left: var(--mp-spacing-4, 16px); display: flex; flex-direction: column; gap: 2px; }
+.asg-policies li { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.asg-more { margin-top: var(--mp-spacing-2, 8px); padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #1f6bb8); }
+.asg-more:hover { text-decoration: underline; }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
 .acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); align-items: start; padding: var(--mp-spacing-2) 0; }
 /* Label + value share the same size/weight (14px regular); label is greyed. */
