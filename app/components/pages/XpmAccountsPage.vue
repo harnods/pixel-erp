@@ -816,7 +816,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 /* Assigned branches & policies — merged-Branch table */
 .acct-assign { margin-top: var(--mp-spacing-8, 32px); }
 .acct-assign .acct-info__title { margin-bottom: 0; }
-.acct-assign__sub { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.acct-assign__sub { margin: 0 0 var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 /* overflow:hidden + radius clips the collapsed table's outer border to rounded
    6px corners (border-radius is ignored on a border-collapse table itself). */
 .acct-assign__wrap { overflow: hidden; border-radius: var(--mp-radii-md, 6px); }
