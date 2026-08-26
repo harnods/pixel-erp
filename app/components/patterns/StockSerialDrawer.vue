@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpSpinner,
+  MpIcon, MpSpinner, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import {
@@ -11,7 +11,7 @@ import { warehouses } from '~/data/warehouses'
 import ContentList from '~/components/patterns/ContentList.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import { generateBarcodeLabelPdf, generateBarcodeSheetPdf, type BarcodeLabelInfo } from '~/utils/barcodeLabelPdf'
 import type jsPDF from 'jspdf'
 
 const props = defineProps<{
@@ -79,12 +79,39 @@ watch(() => props.open, (v) => {
   shown.value  = PAGE
   search.value = ''
   step.value = 'list'
+  selected.value = new Set()
   nextTick(setupObserver)
 })
 
 watch(search, () => {
   shown.value = PAGE
   nextTick(setupObserver)
+})
+
+// ── Bulk selection — checkboxes on the currently loaded rows (visibleRows),
+// same scope as what's actually rendered under progressive loading. ──
+const selected = ref<Set<string>>(new Set())
+function toggleRow(row: SerialUnit): void {
+  const next = new Set(selected.value)
+  if (next.has(row.serial)) next.delete(row.serial)
+  else next.add(row.serial)
+  selected.value = next
+}
+function clearSelection(): void { selected.value = new Set() }
+const allSelected  = computed(() => visibleRows.value.length > 0 && visibleRows.value.every(r => selected.value.has(r.serial)))
+const someSelected = computed(() => !allSelected.value && selected.value.size > 0)
+function toggleAll(): void {
+  selected.value = allSelected.value ? new Set() : new Set(visibleRows.value.map(r => r.serial))
+}
+const selectedLabel = computed(() => {
+  const n = selected.value.size
+  return `${n} ${n === 1 ? 'serial number' : 'serial numbers'} selected`
+})
+// Selection can go stale once rows are filtered out (search) — drop anything no longer visible.
+watch(visibleRows, (rows) => {
+  const live = new Set(rows.map(r => r.serial))
+  const next = new Set([...selected.value].filter(s => live.has(s)))
+  if (next.size !== selected.value.size) selected.value = next
 })
 
 onUnmounted(() => scrollObserver?.disconnect())
@@ -110,11 +137,32 @@ function backToList() { step.value = 'list' }
 // A serial number's barcode IS the serial number itself — no separate generated code.
 const detailBarcode = computed(() => detailSerial.value?.serial ?? '')
 
-// ── Print barcode — options modal (qty + columns) then the shared PDF preview ──
+// ── Print barcode — options modal (qty + columns) then the shared PDF preview.
+// One target row prints a single label; a bulk target (row-selection "Print
+// barcode" or the drawer-wide "Print all barcode") prints one label per serial
+// on a shared sheet via generateBarcodeSheetPdf. ──
 const printBarcodeOptionsOpen = ref(false)
 const printBarcodeTarget = ref<SerialUnit | null>(null)
+const printBulkTarget = ref<SerialUnit[] | null>(null)
+const printBulkFilename = ref('')
 function printSerialBarcode(row: SerialUnit) {
   printBarcodeTarget.value = row
+  printBulkTarget.value = null
+  printBarcodeOptionsOpen.value = true
+}
+function printSelectedBarcodes() {
+  const rows = visibleRows.value.filter(r => selected.value.has(r.serial))
+  if (!rows.length) return
+  printBarcodeTarget.value = null
+  printBulkTarget.value = rows
+  printBulkFilename.value = `Barcodes - ${props.product?.sku ?? 'serial numbers'} (selected).pdf`
+  printBarcodeOptionsOpen.value = true
+}
+function printAllBarcodes() {
+  if (!filtered.value.length) return
+  printBarcodeTarget.value = null
+  printBulkTarget.value = filtered.value
+  printBulkFilename.value = `Barcodes - ${props.product?.sku ?? 'serial numbers'} (all).pdf`
   printBarcodeOptionsOpen.value = true
 }
 
@@ -122,16 +170,28 @@ const barcodePreviewOpen = ref(false)
 const barcodePreviewDoc = ref<jsPDF | null>(null)
 const barcodePreviewFilename = ref('')
 async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
-  const row = printBarcodeTarget.value
-  if (!props.product || !row) return
+  if (!props.product) return
+  const bulk = printBulkTarget.value
+  const row  = printBarcodeTarget.value
   printBarcodeOptionsOpen.value = false
-  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
-    barcode: row.serial,
-    batchNo: row.serial,
-    productName: props.product.name,
-    sku: props.product.sku,
-  }, qty, columns)
-  barcodePreviewFilename.value = `Barcode - ${row.serial}.pdf`
+  if (bulk) {
+    const labels: BarcodeLabelInfo[] = bulk.map(u => ({
+      barcode: u.serial, batchNo: u.serial, productName: props.product!.name, sku: props.product!.sku,
+    }))
+    barcodePreviewDoc.value = await generateBarcodeSheetPdf(labels, columns, qty)
+    barcodePreviewFilename.value = printBulkFilename.value
+  } else if (row) {
+    barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+      barcode: row.serial,
+      batchNo: row.serial,
+      productName: props.product.name,
+      sku: props.product.sku,
+    }, qty, columns)
+    barcodePreviewFilename.value = `Barcode - ${row.serial}.pdf`
+  } else {
+    return
+  }
+  if (bulk) clearSelection()
   barcodePreviewOpen.value = true
 }
 
@@ -229,8 +289,35 @@ const receiptNumber = computed(() =>
               <col style="width: 56px" />
             </colgroup>
             <thead>
-              <tr>
-                <th class="ssd-th">Serial number</th>
+              <!-- Bulk bar — replaces the column headers while anything's selected,
+                   same pattern as the misplaced-serials bulk bar (StockAdjustmentDetailsPage). -->
+              <tr v-if="selected.size" class="ssd-tr-bulk">
+                <th :colspan="initialTab === 'reserved' ? 4 : 3" class="ssd-th ssd-th--bulk">
+                  <div class="ssd-bulkbar">
+                    <MpCheckbox
+                      id="ssd-select-all"
+                      :is-checked="allSelected"
+                      :is-indeterminate="someSelected"
+                      @change="toggleAll"
+                    />
+                    <span class="ssd-bulkbar__count">{{ selectedLabel }}</span>
+                    <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="printSelectedBarcodes">Print barcode</button>
+                    <a class="ssd-bulkbar__clear" @click="clearSelection">Clear</a>
+                  </div>
+                </th>
+              </tr>
+              <tr v-else>
+                <th class="ssd-th">
+                  <span class="ssd-serial-cell">
+                    <MpCheckbox
+                      id="ssd-select-all"
+                      :is-checked="allSelected"
+                      :is-indeterminate="someSelected"
+                      @change="toggleAll"
+                    />
+                    Serial number
+                  </span>
+                </th>
                 <th class="ssd-th">Storage location</th>
                 <th v-if="initialTab === 'reserved'" class="ssd-th">Sales order</th>
                 <th class="ssd-th"></th>
@@ -239,7 +326,14 @@ const receiptNumber = computed(() =>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="ssd-tr">
                 <td class="ssd-td">
-                  <a class="cell-link cell-text" @click.stop="openDetail(row)">{{ row.serial }}</a>
+                  <span class="ssd-serial-cell">
+                    <MpCheckbox
+                      :id="`ssd-select-${row.serial}`"
+                      :is-checked="selected.has(row.serial)"
+                      @change="toggleRow(row)"
+                    />
+                    <a class="cell-link cell-text" @click.stop="openDetail(row)">{{ row.serial }}</a>
+                  </span>
                 </td>
                 <td class="ssd-td ssd-td--muted">{{ row.location }}</td>
                 <td v-if="initialTab === 'reserved'" class="ssd-td">{{ salesNoFor(row.serial) }}</td>
@@ -287,6 +381,12 @@ const receiptNumber = computed(() =>
           </table>
         </div>
       </div>
+
+      <footer v-if="filtered.length" class="ssd-footer">
+        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="printAllBarcodes">
+          Print all barcode
+        </button>
+      </footer>
       </template>
 
       <PrintBarcodeOptionsModal
@@ -445,6 +545,28 @@ const receiptNumber = computed(() =>
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .ssd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 
+/* Row selection — checkbox merged into the Serial number cell (matches the
+   misplaced-serials pattern in StockAdjustmentDetailsPage), and a bulk-actions
+   row that replaces the column headers while anything's selected. */
+/* vertical-align: middle — an inline-flex box still defaults to baseline
+   alignment within its line box, which left the checkbox a couple px off from
+   the header/row text next to it even with align-items: center centering its
+   own children. */
+.ssd-serial-cell { display: inline-flex; align-items: center; vertical-align: middle; gap: var(--mp-spacing-2); }
+.ssd-serial-cell :deep(.mp-checkbox__root) { vertical-align: middle; }
+.ssd-th--bulk { padding: 0; }
+.ssd-bulkbar {
+  display: flex; align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) var(--mp-spacing-2);
+  text-transform: none; font-weight: normal;
+}
+.ssd-bulkbar__count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ssd-bulkbar__clear {
+  margin-left: auto; cursor: pointer; text-decoration: none;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+}
+.ssd-bulkbar__clear:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* Serial number cell — value is a link that switches to the detail step */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
@@ -460,5 +582,13 @@ const receiptNumber = computed(() =>
   background: var(--mp-background-neutral);
 }
 .ssd-td--count-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Sticky footer — secondary "Print all barcode" action, left-icon variant */
+.ssd-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default);
+  background: var(--mp-background-stage);
+}
 
 </style>

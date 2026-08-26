@@ -13,10 +13,12 @@ export * from './master'
 export * from './persist'
 export * from './users'
 export * from './customers'
+export * from './vendors'
 export * from './catalog'
 export * from './products'
 export * from './purchaseOrders'
 export * from './purchaseOrderDetails'
+export * from './purchaseRequests'
 export * from './customProducts'
 export * from './inventory'
 export * from './productsIndex'
@@ -83,6 +85,9 @@ export * from './bankStatementReviewFiles'
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'
 export * from './reviewFiles'
+
+// ── HR (Employees) ──────────────────────────────────────────────────────────
+export * from './employees'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 export * from './approvalWorkflows'

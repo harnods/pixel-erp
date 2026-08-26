@@ -80,12 +80,21 @@ const props = defineProps<{
    *  auto-open (page-level scan of a tracked SKU's specific code) is replayed
    *  here on open, so that first scan isn't lost/needs re-scanning inside. */
   initialScan?: string | null
+  /** Count mode only — the bin this row is being counted at. A serial is a
+   *  single physical unit, so one that's stocked in a different bin can't also
+   *  be counted here; passing the bin lets the scan say which one it's in. */
+  countLocation?: string | null
 }>()
 
 const emit = defineEmits<{
   'update:open': [boolean]
   'save': [serials: CommittedSerial[]]
+  /** Count mode — a serial rejected because the system stocks it in another bin.
+   *  The page keeps these as a note on the count for the manager to reconcile. */
+  'misplaced-scan': [payload: { serial: string; sku: string; systemLocation: string; countedLocation: string }]
 }>()
+
+const { t } = useLocale()
 
 const PAGE_SIZE = 20
 
@@ -246,7 +255,6 @@ const putAwayCount = computed(() => rows.value.filter(r => r.destLocId).length)
 // state — except count mode's own Counted/Difference, which must track the live
 // blind-count tally (countedCount), since targetCount there is just the system's
 // prior on-hand figure passed through for the "On hand" stat, not a real count.
-const difference = computed(() => (isCountMode.value ? countedCount.value : props.targetCount) - onHandCount.value)
 const isInOut = computed(() =>
   props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
 )
@@ -424,6 +432,32 @@ function handleDrawerScan(rawValue: string) {
     // unit, so reject it (error beep) instead of the misleading "not found" fallback.
     if (isReceiving.value && resolved?.kind === 'serial' && resolved.sku === props.sku) {
       notifyScanError(`"${v}" already exists in the system`)
+      return
+    }
+    // Count: a serial the system already knows for this SKU. A blind count seeds
+    // no rows, so every one of them arrives here rather than matching `row`.
+    if (isCountMode.value && resolved?.kind === 'serial' && resolved.sku === props.sku) {
+      // Stocked in a different bin. One serial number is exactly one unit, so
+      // counting it here too would put the same unit in two bins at once — the
+      // stock has to be moved before it can be counted at this bin.
+      if (resolved.location && props.countLocation && !sameCode(resolved.location, props.countLocation)) {
+        notifyScanError(
+          `${v} ${t('is currently in')} ${resolved.location} — ${t('move it to')} ${props.countLocation} ${t('using warehouse transfer')}`,
+        )
+        // The operator saw this unit here, so the rejection is a finding, not just
+        // a bad scan — hand it up to be recorded on the count for manager review.
+        emit('misplaced-scan', {
+          serial: resolved.serial ?? v,
+          sku: props.sku,
+          systemLocation: resolved.location,
+          countedLocation: props.countLocation,
+        })
+        return
+      }
+      rows.value.push({ serial: resolved.serial ?? v, counted: true })
+      saveError.value = ''
+      playScanSuccessSound()
+      flashScanned(resolved.serial ?? v)
       return
     }
     if (acceptsNewSerials.value && !resolved) {
@@ -680,19 +714,13 @@ async function handleSave() {
                 <span class="msn-stat-value">{{ fmtSerial(putAwayCount) }}</span>
               </div>
             </template>
-            <!-- stock count stats -->
+            <!-- stock count stats — a cycle count is blind: the operator sees only
+                 what they've scanned. On hand (and the difference it implies) would
+                 tell them the answer, so both are withheld until manager review. -->
             <template v-else-if="!isInOut">
-              <div class="msn-stat">
-                <span class="msn-stat-label">On hand</span>
-                <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
-              </div>
               <div class="msn-stat">
                 <span class="msn-stat-label">Counted</span>
                 <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
-              </div>
-              <div class="msn-stat" :class="{ 'msn-stat--pos': difference > 0, 'msn-stat--neg': difference < 0 }">
-                <span class="msn-stat-label">Difference</span>
-                <span class="msn-stat-value">{{ fmtDiff(difference) }}</span>
               </div>
             </template>
             <!-- transfer stats -->

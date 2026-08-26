@@ -15,7 +15,7 @@ import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
-import { adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
+import { adjustmentLineItems, type AdjustmentLine, type MisplacedSerial } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { PRODUCTS } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
@@ -271,6 +271,8 @@ function resetCount() {
   serialLinesByKey.value = {}
   scannedKeys.value = new Set()
   showQtyErrors.value = false
+  // Drop findings from this session too; anything already saved stays on the record.
+  misplacedSerials.value = [...(adjustment.value?.misplacedSerials ?? [])]
 }
 
 // ── Serial drawer ────────────────────────────────────────────────────────────
@@ -294,6 +296,44 @@ const activeSerialSku = computed(() => {
 const activeSerialOnHand = computed(() => {
   if (!serialDrawerKey.value) return 0
   return mergedCountRows.value.find(r => r.key === serialDrawerKey.value)?.prevOnHand ?? 0
+})
+// ── Misplaced serials — notes for the manager's review ───────────────────────
+// Every wrong-bin serial scan the drawer rejects is kept here and saved onto the
+// count. The operator physically found the unit at the bin they were counting, so
+// the rejection is evidence the system's location is wrong — the manager decides
+// (and raises a warehouse transfer to reconcile it). Seeded from the record so
+// reopening a draft keeps what was already found; keyed by serial so rescanning
+// the same unit doesn't pile up duplicates.
+const misplacedSerials = ref<MisplacedSerial[]>([...(adjustment.value?.misplacedSerials ?? [])])
+function recordMisplacedScan(p: { serial: string; sku: string; systemLocation: string; countedLocation: string }) {
+  if (misplacedSerials.value.some(m => sameCode(m.serial, p.serial))) return
+  misplacedSerials.value = [...misplacedSerials.value, {
+    ...p,
+    productName: PRODUCTS.find(x => x.sku === p.sku)?.name ?? p.sku,
+    scannedAt: new Date().toISOString(),
+  }]
+}
+/** What to save: this session's findings merged over whatever the record already
+ *  holds. Merging (not replacing) means a note recorded in an earlier session can
+ *  never be dropped by a later save, whatever order the drafts are opened in. */
+function mergedMisplacedSerials(): MisplacedSerial[] {
+  const out = [...(adjustment.value?.misplacedSerials ?? [])]
+  for (const m of misplacedSerials.value) {
+    if (!out.some(x => sameCode(x.serial, m.serial))) out.push(m)
+  }
+  return out
+}
+
+// The bin this drawer is counting at — a serial stocked in a different bin can't
+// be counted here (one serial = one unit), so the drawer needs to know where
+// "here" is. Null in a warehouse without storage locations: nothing to compare.
+const activeSerialLocation = computed(() => {
+  if (!serialDrawerKey.value) return null
+  const row = mergedCountRows.value.find(r => r.key === serialDrawerKey.value)
+  if (row) return row.storageLocation === '—' ? null : row.storageLocation
+  const added = Object.entries(addedByLoc.value)
+    .find(([, rows]) => rows.some(r => r.id === serialDrawerKey.value))
+  return added?.[0] ?? null
 })
 function serialCount(key: string): number { return serialLinesByKey.value[key]?.length ?? 0 }
 function saveSerialLines(serials: CommittedSerial[]) {
@@ -587,7 +627,7 @@ function buildLines(): { sku: string; qty: number; location?: string }[] {
 
 // ── Footer: Save draft ────────────────────────────────────────────────────────
 function saveDraft() {
-  saveWmsCountDraft(props.orderId, buildLines())
+  saveWmsCountDraft(props.orderId, buildLines(), mergedMisplacedSerials())
   toast.notify({ variant: 'success', title: t('Draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/cycle-counts/${props.orderId}`)
@@ -605,7 +645,7 @@ function saveDraft() {
 const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => countedTotal.value > 0,
   saveDraft: () => {
-    saveWmsCountDraft(props.orderId, buildLines())
+    saveWmsCountDraft(props.orderId, buildLines(), mergedMisplacedSerials())
     toast.notify({ variant: 'success', title: t('Draft saved'), maxWidth: 'max-content' })
   },
 })
@@ -628,7 +668,7 @@ function commitFinish() {
   const lines = buildLines()
   // Status becomes 'counted' (Awaiting approval) — the linked ERP Stock counts
   // row is only mirrored once a manager approves it (see approveWmsAdjustment).
-  finishWmsCount(props.orderId, lines)
+  finishWmsCount(props.orderId, lines, mergedMisplacedSerials())
   toast.notify({ variant: 'success', title: t('Cycle count submitted for approval'), maxWidth: 'max-content' })
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
@@ -1083,6 +1123,8 @@ onUnmounted(() => {
     kind="count"
     :target-count="activeSerialOnHand"
     :location-on-hand="activeSerialOnHand"
+    :count-location="activeSerialLocation"
+    @misplaced-scan="recordMisplacedScan"
     :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s }))"
     :initial-scan="serialDrawerInitialScan"
     @update:open="serialDrawerOpen = $event"

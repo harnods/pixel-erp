@@ -12,11 +12,13 @@ import {
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
+import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo } from '~/data/warehouseTransfers'
+import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
+import { resolveMisplacedSerials } from '~/data/wmsStockAdjustments'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
@@ -24,6 +26,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 const isEdit = computed(() => props.orderId !== 'new')
@@ -54,6 +57,12 @@ const originError = ref(false)
 const destError = ref(false)
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
+
+// ── Transaction no. settings (auto-numbering) — shared global component ────────
+const noSettingsOpen = ref(false)
+const nextTxNo = computed(() => `Warehouse Transfer #${String(warehouseTransfers.reduce((m, tr) => Math.max(m, Number((tr.number.match(/(\d+)/) || [])[1] || 0)), 90) + 1).padStart(4, '0')}`)
+const txNoFormats = [{ label: t('Auto'), value: 'auto' }]
+function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = false }
 
 // ── Origin / destination stock (coherent with the warehouse detail pages) ──────────
 const originStock = computed(() => (originId.value ? getWarehouseDetail(originId.value)?.stock ?? [] : []))
@@ -307,7 +316,43 @@ function prefill() {
   const lines = transferLineItems(t)
   rows.value = lines.map(l => ({ id: rowSeq++, sku: l.sku, productName: l.product.name, desc: l.product.desc, img: l.product.img, unit: l.unit, qty: String(l.qty), qtyError: false }))
 }
-onMounted(() => { if (isEdit.value) prefill() })
+// ── Prefill from a misplaced-serial note (Cycle count review → "Create warehouse
+// transfer") ─────────────────────────────────────────────────────────────────────
+// Origin + one line per SKU with its exact serials attached come from the query
+// string (see StockAdjustmentDetailsPage's goCreateTransfer); there's no real
+// destination to prefill (a transfer moves stock between two WAREHOUSES, the
+// note is a same-warehouse bin mismatch), so the operator still picks one.
+// `fromAdjustmentId`/`fromSerials` are kept only to resolve the note(s) off the
+// originating count once this transfer actually saves — see handleSave().
+const fromAdjustmentId = ref<string | null>(null)
+const fromSerials = ref<string[]>([])
+function prefillFromMisplaced() {
+  const q = route.query
+  if (!q.lines || typeof q.lines !== 'string') return
+  let lines: { sku: string; serials: string[] }[]
+  try { lines = JSON.parse(q.lines) } catch { return }
+  if (!Array.isArray(lines) || !lines.length) return
+
+  if (typeof q.warehouseId === 'string') originId.value = q.warehouseId
+  const originBin = typeof q.originBin === 'string' ? q.originBin : ''
+  const destBin = typeof q.destBin === 'string' ? q.destBin : ''
+  if (originBin && destBin) {
+    memo.value = `${t('Reconcile misplaced units found at')} ${destBin} (${t('system shows')} ${originBin}).`
+  }
+  fromAdjustmentId.value = typeof q.fromAdjustmentId === 'string' ? q.fromAdjustmentId : null
+  fromSerials.value = lines.flatMap(l => l.serials)
+
+  rows.value = lines.map(l => {
+    const row = makeRow(l.sku)
+    row.qty = String(l.serials.length)
+    if (isSerialTrackedSku(l.sku)) row.serialLines = l.serials.map(serial => ({ serial }))
+    return row
+  })
+}
+onMounted(() => {
+  if (isEdit.value) prefill()
+  else prefillFromMisplaced()
+})
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
 function goBack() {
@@ -379,7 +424,16 @@ async function handleSave() {
   } else {
     addTransfer(input)
     toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
-    router.push('/warehouse-transfers')
+    // Came from a misplaced-serial note (Cycle count review) — resolve it off
+    // that record now that the transfer moving it actually exists, and land
+    // back on the count instead of the generic transfers list so the manager
+    // sees the note gone.
+    if (fromAdjustmentId.value) {
+      resolveMisplacedSerials(fromAdjustmentId.value, fromSerials.value)
+      router.push(`/cycle-counts/${fromAdjustmentId.value}`)
+    } else {
+      router.push('/warehouse-transfers')
+    }
   }
 }
 
@@ -442,7 +496,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="wtf-transno" class="wtf-f-transno">
             <div class="wtf-label-row">
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <span class="wtf-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
+              <button type="button" class="wtf-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
             </div>
             <MpInput id="wtf-transno-input" model-value="" :placeholder="t('[Auto]')" is-full-width is-disabled />
           </MpFormControl>
@@ -814,6 +868,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
+
+    <NumberFormatSettingsModal
+      v-model:open="noSettingsOpen"
+      :title="t('Transaction no. settings')"
+      :caption="t('Transaction numbers are auto-generated by the system.')"
+      :next-number="nextTxNo"
+      :existing-formats="txNoFormats"
+      @save="onNoFormatSave"
+    />
   </div>
 </template>
 

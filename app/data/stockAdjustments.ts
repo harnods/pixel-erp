@@ -81,6 +81,24 @@ export function accountOptions(): { id: string; name: string }[] {
   return out
 }
 
+/**
+ * One rejected wrong-bin serial scan during a cycle count. The operator saw the
+ * unit physically at `countedLocation`; the system says it lives at
+ * `systemLocation`. Which one is right isn't decided here — it's recorded so the
+ * manager reviewing the count can raise a warehouse transfer to reconcile it.
+ */
+export interface MisplacedSerial {
+  sku: string
+  productName: string
+  serial: string
+  /** Bin the system currently has this serial in. */
+  systemLocation: string
+  /** Bin the operator was counting when they scanned it. */
+  countedLocation: string
+  /** ISO timestamp of the scan, so the note reads as a log. */
+  scannedAt: string
+}
+
 export interface StockAdjustment {
   id: string
   kind: AdjustmentKind
@@ -107,6 +125,11 @@ export interface StockAdjustment {
   endDate?: string
   /** ERP Stock Count only — ID of the originating WMS Cycle Count task */
   linkedCycleCountId?: string
+  /** WMS Cycle count only — serials the operator physically found at the bin they
+   *  were counting, but which the system has stocked in a different bin. The scan
+   *  is rejected (one serial is one unit, it can't be counted in two bins), and
+   *  each rejection is kept here as a note for the manager's review. */
+  misplacedSerials?: MisplacedSerial[]
   canceledDate?: string
   canceledReason?: string
 }
