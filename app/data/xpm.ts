@@ -55,9 +55,9 @@ export interface XpmWallet {
   pendingPayouts: number              // real figure surfaced in the stats strip
 }
 export const xpmWallets: XpmWallet[] = [
-  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000, USD: 500 }, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.' },
-  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 },           pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
-  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000, SGD: 200 }, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.' },
+  { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.' },
+  { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 }, pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
+  { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.' },
 ]
 /** Currencies a wallet holds (primary first). */
 export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }
@@ -96,13 +96,6 @@ const SEED_WALLET_MOVEMENTS: XpmMovement[] = [
   { id: 'M022', walletId: 'w-card', date: '2026-07-19', description: 'Figma annual seats', category: 'Payment', direction: 'out', amount: 5100000, currency: 'IDR' },
   { id: 'M023', walletId: 'w-card', date: '2026-07-20', description: 'Adobe Creative Cloud renewal', category: 'Payment', direction: 'out', amount: 899000, currency: 'IDR' },
   { id: 'M024', walletId: 'w-card', date: '2026-07-21', description: 'Card float replenish', category: 'Transfer', direction: 'in',  amount: 2000000, currency: 'IDR' },
-  // Main account — USD ledger (opening 500 → 930)
-  { id: 'M030', walletId: 'w-main', date: '2026-07-17', description: 'Client refund (USD)', category: 'Payment', direction: 'in',  amount: 200, currency: 'USD' },
-  { id: 'M031', walletId: 'w-main', date: '2026-07-19', description: 'Vendor — SaaS (USD)', category: 'Payment', direction: 'out', amount: 120, currency: 'USD' },
-  { id: 'M032', walletId: 'w-main', date: '2026-07-20', description: 'Incoming payment (USD)', category: 'Payment', direction: 'in',  amount: 350, currency: 'USD' },
-  // Card float — SGD ledger (opening 200 → 120)
-  { id: 'M040', walletId: 'w-card', date: '2026-07-18', description: 'Vendor — tooling (SGD)', category: 'Payment', direction: 'out', amount: 100, currency: 'SGD' },
-  { id: 'M041', walletId: 'w-card', date: '2026-07-20', description: 'Refund (SGD)', category: 'Payment', direction: 'in',  amount: 20, currency: 'SGD' },
 ]
 
 /** Persisted movement ledger — snapshot wins over the seed; reset restores seed. */
