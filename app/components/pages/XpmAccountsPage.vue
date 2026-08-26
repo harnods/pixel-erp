@@ -22,6 +22,7 @@ import {
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
@@ -184,6 +185,46 @@ const peopleRows = computed(() => [
   { label: 'Expense card admin', people: xpmPeople(selectedWallet.value.cardAdmin) },
   { label: 'Assigned accountant', people: xpmPeople(selectedWallet.value.accountant) },
 ])
+
+// Activity log — opened from the "Last updated by …" link (ERP ActivityLogModal).
+const activityOpen = ref(false)
+const activityEntries = computed<ActivityEntry[]>(() => {
+  const w = selectedWallet.value
+  const cur = activeCurrency.value
+  const holderName = xpmPeople(w.holder)[0]?.name ?? w.updatedBy
+  const adminNames = xpmPeople(w.cardAdmin).map(p => p.name).join(', ')
+  const acctNames = xpmPeople(w.accountant).map(p => p.name).join(', ')
+  const lastTopUp = walletMovements(w.id, cur).find(m => m.category === 'Top up')
+  const entries: ActivityEntry[] = [{
+    date: w.updatedAt,
+    user: w.updatedBy,
+    activity: 'Updated',
+    details: [
+      { label: 'Assigned accountant', value: `Anita Wijaya → ${acctNames}` },
+      { label: 'Expense card admin', value: adminNames },
+      { label: 'Pending payouts', value: `${formatMoney(0, cur)} → ${formatMoney(w.pendingPayouts, cur)}` },
+    ],
+  }]
+  if (lastTopUp) entries.push({
+    date: lastTopUp.date,
+    user: holderName,
+    activity: 'Top up',
+    details: [
+      { label: 'Amount', value: formatMoney(lastTopUp.amount, cur) },
+      { label: 'Description', value: lastTopUp.description },
+    ],
+  })
+  entries.push({
+    date: '2026-06-01T09:00:00',
+    user: holderName,
+    activity: 'Created',
+    details: [
+      { label: 'Wallet name', value: w.name },
+      { label: 'Wallet holder', value: xpmPeople(w.holder).map(p => p.name).join(', ') },
+    ],
+  })
+  return entries
+})
 </script>
 
 <template>
@@ -253,11 +294,14 @@ const peopleRows = computed(() => [
             <span class="acct-stat__label">{{ s.label }}</span>
             <span class="acct-stat__cap">{{ s.caption }}</span>
             <span class="acct-stat__val">{{ s.value }}</span>
-            <!-- Empty wallet: a Top up prompt inside the Balance stat -->
-            <template v-if="s.label === 'Balance' && isZeroBalance">
-              <span class="acct-stat__hint">Wallet is empty. Top up to start spending.</span>
-              <button class="acct-stat__topup" type="button" @click="openTopUp">Top up</button>
-            </template>
+            <!-- Empty wallet: a danger banner inside the Balance stat -->
+            <div v-if="s.label === 'Balance' && isZeroBalance" class="acct-empty">
+              <MpIcon name="warning-triangle" size="sm" class="acct-empty__icon" />
+              <div class="acct-empty__body">
+                <span class="acct-empty__text">Wallet is empty. Top up to start spending.</span>
+                <button class="acct-empty__link" type="button" @click="openTopUp">Top up</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -370,7 +414,7 @@ const peopleRows = computed(() => [
                 <dl class="acct-dl">
                   <div class="acct-dl__row"><dt>Wallet name</dt><dd>{{ selectedWallet.name }}</dd></div>
                   <div class="acct-dl__row"><dt>Description</dt><dd>{{ selectedWallet.description }}</dd></div>
-                  <div v-for="r in peopleRows" :key="r.label" class="acct-dl__row">
+                  <div v-for="r in peopleRows" :key="r.label" class="acct-dl__row acct-dl__row--people">
                     <dt>{{ r.label }}</dt>
                     <dd>
                       <div class="user-chips">
@@ -385,7 +429,7 @@ const peopleRows = computed(() => [
                     </dd>
                   </div>
                 </dl>
-                <p class="acct-info__updated">Last updated {{ formatDateTimeLong(selectedWallet.updatedAt) }} by {{ selectedWallet.updatedBy }}</p>
+                <a class="acct-info__updated" @click.prevent="activityOpen = true">Last updated {{ formatDateTimeLong(selectedWallet.updatedAt) }} by {{ selectedWallet.updatedBy }}</a>
               </div>
             </MpTabPanel>
           </MpTabPanels>
@@ -393,6 +437,16 @@ const peopleRows = computed(() => [
       </div>
     </div>
   </div>
+
+  <!-- ── Activity log (Last updated) ── -->
+  <ActivityLogModal
+    :is-open="activityOpen"
+    :subject="selectedWallet.name"
+    :updated-at="selectedWallet.updatedAt"
+    :updated-by="selectedWallet.updatedBy"
+    :entries="activityEntries"
+    @close="activityOpen = false"
+  />
 
   <!-- ── Edit wallet drawer ── -->
   <MpDrawer id="xpm-edit-wallet-drawer" :is-open="showEdit" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeEdit">
@@ -623,9 +677,20 @@ const peopleRows = computed(() => [
 .acct-stat__label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default, #080d0e); }
 .acct-stat__cap { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 .acct-stat__val { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default, #080d0e); }
-.acct-stat__hint { margin-top: var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary, #3a4749); }
-.acct-stat__topup { align-self: flex-start; margin-top: 2px; padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #1f6bb8); }
-.acct-stat__topup:hover { text-decoration: underline; }
+/* Empty-wallet danger banner (inside the Balance stat) */
+.acct-empty {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px);
+  margin-top: var(--mp-spacing-3, 12px);
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  border: 1px solid var(--mp-border-danger, #f0c2bd);
+  border-radius: var(--mp-radii-md, 6px);
+  background: var(--mp-background-danger-subtle, #fdf0ef);
+}
+.acct-empty__icon { flex-shrink: 0; margin-top: 1px; color: var(--mp-icon-danger, #a8352d); }
+.acct-empty__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acct-empty__text { font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-danger, #a8352d); }
+.acct-empty__link { align-self: flex-start; padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-danger, #a8352d); }
+.acct-empty__link:hover { text-decoration: underline; }
 
 /* Tabs · active-state + tab-to-content gap overrides (matches ERP detail pages) */
 .acct-tabs { width: 100%; }
@@ -676,10 +741,13 @@ const peopleRows = computed(() => [
 /* Wallet info (plain details, no box, no row dividers — matches ERP ContentList) */
 .acct-info { max-width: 640px; }
 .acct-info__title { margin: 0 0 var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.acct-info__updated { margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
+.acct-info__updated { display: inline-block; align-self: flex-start; margin: var(--mp-spacing-4, 16px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1f6bb8); cursor: pointer; }
+.acct-info__updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 .acct-dl { margin: 0; display: flex; flex-direction: column; }
 .acct-dl__row { display: grid; grid-template-columns: 200px 1fr; gap: var(--mp-spacing-4); align-items: start; padding: var(--mp-spacing-2) 0; }
 /* Label + value share the same size/weight (14px regular); label is greyed. */
+/* People rows sit further apart so the avatar chips don't crowd each other. */
+.acct-dl__row--people + .acct-dl__row--people { margin-top: var(--mp-spacing-5, 20px); }
 .acct-dl__row dt { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
 .acct-dl__row dd { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 
