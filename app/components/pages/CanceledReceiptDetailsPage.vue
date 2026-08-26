@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpSpinner, css,
 } from '@mekari/pixel3'
@@ -79,29 +79,6 @@ watch(() => props.orderId, () => {
   })
 })
 
-// ── Footer divider only when stage overflows ───────────────────────────────────
-const stageEl = ref<HTMLElement | null>(null)
-const stageOverflowing = ref(false)
-function checkStageOverflow() {
-  const el = stageEl.value
-  if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
-}
-let stageObserver: ResizeObserver | null = null
-onMounted(() => {
-  nextTick(() => {
-    checkStageOverflow()
-    stageObserver = new ResizeObserver(checkStageOverflow)
-    if (stageEl.value) {
-      stageObserver.observe(stageEl.value)
-      stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
-    }
-  })
-})
-onUnmounted(() => {
-  stageObserver?.disconnect()
-  stageEl.value?.removeEventListener('scroll', checkStageOverflow)
-})
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 // ── Jump-to-transaction switcher ───────────────────────────────────────────────
 const jumpSearch = ref('')
@@ -199,7 +176,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
     </header>
 
     <!-- ── Scrollable stage ── -->
-    <div ref="stageEl" class="detail-stage">
+    <div class="detail-stage">
 
       <!-- ── Header summary (3 columns) ── -->
       <section class="rcd-summary">
@@ -430,26 +407,6 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
     </div><!-- /detail-stage -->
 
-    <!-- ── Footer — Print only ── -->
-    <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="cxd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            {{ t('Print') }}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
-    </div>
-
     <ActivityLogModal
       :is-open="activityOpen"
       :subject="detail.purchaseNo"
@@ -593,14 +550,6 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.detail-footer {
-  flex-shrink: 0;
-  display: flex; justify-content: flex-end; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage);
-  border-top: 1px solid transparent;
-}
-.detail-footer--floating { border-top-color: var(--mp-border-default); }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);
