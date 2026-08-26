@@ -163,6 +163,19 @@ export function walletStats(walletId: string, currency = 'IDR', period: XpmStats
   const pending = w && currency === w.currency ? w.pendingPayouts : 0
   return { balance, pending, monthIn, monthOut }
 }
+/** Human transaction number for a movement (derived from its id). */
+export function movementNumber(id: string): string {
+  return 'TRX-' + (90000 + (Number(id.replace(/\D/g, '')) || 0))
+}
+/** Look up a single movement (across all wallets) with its wallet + running balance. */
+export function findMovement(id: string) {
+  const m = xpmWalletMovements.find(x => x.id === id)
+  if (!m) return null
+  const wallet = xpmWallets.find(w => w.id === m.walletId)
+  const row = walletLedger(m.walletId, m.currency).rows.find(r => r.id === id)
+  return { movement: m, wallet, balance: row?.balance ?? 0, number: movementNumber(id) }
+}
+
 /** Display balances for the sidemenu — one derived balance per currency ledger. */
 export function walletDisplayBalances(wallet: XpmWallet): XpmWalletBalance[] {
   return walletCurrencies(wallet).map(cur => ({ currency: cur, amount: walletBalance(wallet.id, cur) }))

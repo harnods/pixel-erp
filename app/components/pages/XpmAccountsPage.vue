@@ -12,23 +12,25 @@
  * ledger (and persist), so the numbers stay accurate and survive a refresh.
  */
 import {
-  MpIcon, MpBadge, MpButton, MpButtonGroup, MpCheckbox, MpTooltip,
+  MpIcon, MpBadge, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpFormControl, MpFormLabel, MpInput, MpSelect, MpTextarea, MpToggle,
   css, toast,
 } from '@mekari/pixel3'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
-  topUpWallet, moveMoneyBetween,
+  topUpWallet, moveMoneyBetween, movementNumber, XPM_TODAY,
 } from '~/data/xpm'
 import { formatMoney } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
 import { infoToast } from '~/utils/toasts'
 
 const num = (s: string) => Number(String(s).replace(/[^\d]/g, '')) || 0
+const router = useRouter()
 
 // ── Selection state ──────────────────────────────────────────────────────────
 const wallets = computed<XpmWallet[]>(() => xpmWallets)
@@ -56,41 +58,46 @@ const stats = computed(() => {
 })
 
 // ── Movements + filters ──────────────────────────────────────────────────────
-const CAT_GROUP: Record<string, string> = { 'Top-up': 'Top-ups', 'Payment': 'Payments', 'Payout': 'Payments', 'Transfer': 'Transfers', 'FX': 'FX' }
-const typeOptions = ['Top-ups', 'Payments', 'Transfers']
-const periodOptions = ['This month', 'Last month', 'All time']
-
-const filterTypes = ref<string[]>([])
-const filterPeriod = ref('')
+// Filter by transaction type + period (This month / Last month / Custom range,
+// the custom range uses the shared AdvancedDateRangePicker). Plus a text search.
+const TYPE_OPTIONS = ['Top-up', 'Payment', 'Payout', 'Transfer']
+const PERIOD_OPTIONS = ['This month', 'Last month', 'Custom']
+const typeFilter = ref('')
+const periodMode = ref<'This month' | 'Last month' | 'Custom'>('This month')
+const customRange = ref<Date[] | null>(null)
 const search = ref('')
-// The inline Type/Period selects are single-select proxies over the filter state.
-const typeFilter = computed<string>({ get: () => filterTypes.value[0] ?? '', set: v => { filterTypes.value = v ? [v] : [] } })
+
+const [XT_Y, XT_M] = XPM_TODAY.split('-').map(Number) as [number, number, number]
+function monthMatch(dateISO: string, which: 'This month' | 'Last month'): boolean {
+  const [y, m] = dateISO.split('-').map(Number) as [number, number, number]
+  if (which === 'This month') return y === XT_Y && m === XT_M
+  const lm = XT_M === 1 ? 12 : XT_M - 1, ly = XT_M === 1 ? XT_Y - 1 : XT_Y
+  return y === ly && m === lm
+}
+function periodMatch(dateISO: string): boolean {
+  if (periodMode.value === 'Custom') {
+    if (!customRange.value || customRange.value.length < 2) return true
+    const d = new Date(dateISO).setHours(0, 0, 0, 0)
+    const s = new Date(customRange.value[0]!).setHours(0, 0, 0, 0)
+    const e = new Date(customRange.value[1]!).setHours(0, 0, 0, 0)
+    return d >= s && d <= e
+  }
+  return monthMatch(dateISO, periodMode.value)
+}
 
 const rawMovements = computed(() => walletMovements(selectedWallet.value.id, activeCurrency.value))
 const filteredMovements = computed(() => {
   const s = search.value.trim().toLowerCase()
   return rawMovements.value.filter(m => {
-    if (filterTypes.value.length && !filterTypes.value.includes(CAT_GROUP[m.category] ?? m.category)) return false
-    // Seed data all falls in the current month; "Last month" honestly yields none.
-    if (filterPeriod.value === 'Last month') return false
-    if (s && !m.description.toLowerCase().includes(s)) return false
+    if (typeFilter.value && m.category !== typeFilter.value) return false
+    if (!periodMatch(m.date)) return false
+    if (s && !(m.description.toLowerCase().includes(s) || movementNumber(m.id).toLowerCase().includes(s))) return false
     return true
   })
 })
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 const activeTabIndex = ref(0)
-
-// ── All filters drawer ───────────────────────────────────────────────────────
-const showFilters = ref(false)
-const draftTypes = ref<string[]>([])
-const draftPeriod = ref('')
-function openFilters() { draftTypes.value = [...filterTypes.value]; draftPeriod.value = filterPeriod.value; showFilters.value = true }
-function closeFilters() { showFilters.value = false }
-function toggleDraftType(t: string) { draftTypes.value = draftTypes.value.includes(t) ? draftTypes.value.filter(x => x !== t) : [...draftTypes.value, t] }
-function resetFilters() { draftTypes.value = []; draftPeriod.value = '' }
-function applyFilters() { filterTypes.value = [...draftTypes.value]; filterPeriod.value = draftPeriod.value; closeFilters() }
-const activeFilterCount = computed(() => (filterTypes.value.length ? 1 : 0) + (filterPeriod.value ? 1 : 0))
 
 // ── Drawers: Edit / Move / Top up ────────────────────────────────────────────
 const showEdit = ref(false)
@@ -253,21 +260,24 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                   <div class="filter-left">
                     <div class="filter-select-wrap">
                       <select class="filter-select" v-model="typeFilter">
-                        <option value="">Type</option>
-                        <option v-for="o in typeOptions" :key="o" :value="o">{{ o }}</option>
+                        <option value="">Transaction type</option>
+                        <option v-for="o in TYPE_OPTIONS" :key="o" :value="o">{{ o }}</option>
                       </select>
                       <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
                     <div class="filter-select-wrap">
-                      <select class="filter-select" v-model="filterPeriod">
-                        <option value="">Period</option>
-                        <option v-for="o in periodOptions" :key="o" :value="o">{{ o }}</option>
+                      <select class="filter-select" v-model="periodMode">
+                        <option v-for="o in PERIOD_OPTIONS" :key="o" :value="o">{{ o }}</option>
                       </select>
                       <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </div>
-                    <button class="filter-all-btn" @click="openFilters">
-                      <MpIcon name="filter" size="md" /> All filters<template v-if="activeFilterCount"> ({{ activeFilterCount }})</template>
-                    </button>
+                    <AdvancedDateRangePicker
+                      v-if="periodMode === 'Custom'"
+                      id="acct-date-range"
+                      v-model="customRange"
+                      hide-label
+                      placeholder="Select date range"
+                    />
                   </div>
                   <div class="filter-right">
                     <div class="filter-btn-group">
@@ -299,8 +309,9 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                   <table class="acct-table">
                     <thead>
                       <tr>
+                        <th class="acct-th">Number</th>
                         <th class="acct-th">Date</th>
-                        <th class="acct-th">Description</th>
+                        <th class="acct-th">Transaction type</th>
                         <th class="acct-th acct-th--right">Money in</th>
                         <th class="acct-th acct-th--right">Money out</th>
                         <th class="acct-th acct-th--right">Balance</th>
@@ -308,14 +319,18 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                     </thead>
                     <tbody>
                       <tr v-for="m in filteredMovements" :key="m.id" class="acct-tr">
+                        <td class="acct-td">
+                          <button class="cell-link" type="button" @click="router.push(`/accounts/txn/${m.id}`)">{{ movementNumber(m.id) }}</button>
+                          <span class="acct-td__sub">{{ m.description }}</span>
+                        </td>
                         <td class="acct-td">{{ formatDateLong(m.date) }}</td>
-                        <td class="acct-td">{{ m.description }}</td>
+                        <td class="acct-td">{{ m.category }}</td>
                         <td class="acct-td acct-td--right">{{ m.direction === 'in' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
                         <td class="acct-td acct-td--right">{{ m.direction === 'out' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
                         <td class="acct-td acct-td--right">{{ formatMoney(m.balance, activeCurrency) }}</td>
                       </tr>
                       <tr v-if="!filteredMovements.length" class="acct-tr">
-                        <td class="acct-td acct-td--empty" colspan="5">No movement matches your filters.</td>
+                        <td class="acct-td acct-td--empty" colspan="6">No movement matches your filters.</td>
                       </tr>
                     </tbody>
                   </table>
@@ -367,47 +382,6 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
       </div>
     </div>
   </div>
-
-  <!-- ── All filters drawer (ERP custom-overlay pattern) ── -->
-  <Teleport to="body">
-    <Transition name="acctf">
-      <div v-if="showFilters" class="acctf-overlay" @click.self="closeFilters">
-        <div class="acctf-panel" role="dialog" aria-label="All filters">
-          <header class="acctf-header">
-            <span class="acctf-title">All filters</span>
-            <button class="acctf-close" type="button" aria-label="Close" @click="closeFilters"><MpIcon name="close" size="md" /></button>
-          </header>
-          <div class="acctf-body">
-            <div class="acctf-field">
-              <span class="acctf-field-label">Type</span>
-              <ul class="acctf-checklist">
-                <li v-for="opt in typeOptions" :key="opt" class="acctf-check-item" @click="toggleDraftType(opt)">
-                  <span @click.stop><MpCheckbox :id="`acctf-type-${opt}`" :is-checked="draftTypes.includes(opt)" @change="() => toggleDraftType(opt)" /></span>
-                  <span class="acctf-check-label">{{ opt }}</span>
-                </li>
-              </ul>
-            </div>
-            <div class="acctf-field">
-              <span class="acctf-field-label">Period</span>
-              <ul class="acctf-checklist">
-                <li v-for="opt in periodOptions" :key="opt" class="acctf-check-item" @click="draftPeriod = draftPeriod === opt ? '' : opt">
-                  <span @click.stop><MpCheckbox :id="`acctf-period-${opt}`" :is-checked="draftPeriod === opt" @change="() => (draftPeriod = draftPeriod === opt ? '' : opt)" /></span>
-                  <span class="acctf-check-label">{{ opt }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <footer class="acctf-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">Reset filter</button>
-            <div class="acctf-footer-right">
-              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeFilters">Cancel</button>
-              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyFilters">Apply</button>
-            </div>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
 
   <!-- ── Edit wallet drawer ── -->
   <MpDrawer id="xpm-edit-wallet-drawer" :is-open="showEdit" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeEdit">
@@ -688,6 +662,9 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-td { padding: var(--mp-spacing-2) var(--mp-spacing-3); vertical-align: middle; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
 .acct-td--right { text-align: right; }
 .acct-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-5) var(--mp-spacing-3); }
+.acct-td__sub { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cell-link { padding: 0; border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #1f6bb8); }
+.cell-link:hover { text-decoration: underline; }
 
 /* Wallet info */
 .acct-card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-4); }
@@ -703,27 +680,6 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .acct-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .acct-rule { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; }
 .acct-rule__desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-
-/* ── All filters overlay ── */
-.acctf-enter-active, .acctf-leave-active { transition: background-color 250ms ease; }
-.acctf-enter-from, .acctf-leave-to { background-color: transparent; }
-.acctf-enter-active .acctf-panel { transition: transform 350ms ease-out; }
-.acctf-leave-active .acctf-panel { transition: transform 250ms ease-in; }
-.acctf-enter-from .acctf-panel, .acctf-leave-to .acctf-panel { transform: translateX(calc(100% + 12px)); }
-.acctf-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8,13,14,0.45)); display: flex; justify-content: flex-end; }
-.acctf-panel { margin: var(--mp-spacing-3); width: min(420px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.acctf-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
-.acctf-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.acctf-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.acctf-close:hover { background: var(--mp-background-neutral-hovered); }
-.acctf-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
-.acctf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.acctf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.acctf-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.acctf-check-item { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; }
-.acctf-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.acctf-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
-.acctf-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
 /* ── Drawers (floating card) ── */
 .dr-card { display: flex; flex-direction: column; height: 100%; }

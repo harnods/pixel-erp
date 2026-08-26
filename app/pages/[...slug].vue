@@ -326,6 +326,7 @@ const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDeta
 const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
 const XpmClaimDetailPage = asyncPage(() => import('~/components/pages/XpmClaimDetailPage.vue'))
 const XpmAccountsPage = asyncPage(() => import('~/components/pages/XpmAccountsPage.vue'))
+const XpmTransactionDetailPage = asyncPage(() => import('~/components/pages/XpmTransactionDetailPage.vue'))
 // Tabbed XPM index pages read the active tab from ?tab= themselves, so every tab
 // maps to the SAME component (identical ref → stays mounted, re-filters on change).
 const XpmTransactionsTabPage = asyncPage(() => import('~/components/pages/XpmTransactionsPage.vue'))
@@ -645,8 +646,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     return { component: EmployeeDetailsPage, id: segs[1]! }
   }
   // ── XPM (Mekari Expense) detail / form routes ────────────────────────────────
-  // /accounts → full-bleed wallets page (own sidemenu + title bar + stage).
+  // /accounts → full-bleed wallets page; /accounts/txn/:id → a movement detail.
   if (segs[0] === 'accounts') {
+    if (segs[1] === 'txn') return { component: XpmTransactionDetailPage, id: segs[2] ?? '' }
     return { component: XpmAccountsPage, id: segs[1] ?? '' }
   }
   // /xpm-trips/:code → trip detail (owns its title bar).
