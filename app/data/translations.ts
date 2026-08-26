@@ -1689,6 +1689,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Approval workflow turned on": "Alur persetujuan berhasil diaktifkan",
   "Delete approval workflow?": "Hapus alur persetujuan?",
   "Deleted approval workflow cannot be restored.": "Alur persetujuan yang dihapus tidak dapat dikembalikan.",
+  "Turn off approval workflow?": "Nonaktifkan alur persetujuan?",
+  "This workflow will no longer apply to new transactions. You can turn it on again anytime.": "Alur ini tidak akan lagi berlaku untuk transaksi baru. Anda dapat mengaktifkannya kembali kapan saja.",
   "No approval workflows": "Belum ada alur persetujuan",
   "Approval workflows will appear here once created.": "Alur persetujuan akan muncul di sini.",
   "Sales invoice": "Faktur penjualan",

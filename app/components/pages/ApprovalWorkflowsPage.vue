@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  MpBadge, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
   approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow,
   transactionTypeLabel, projectActionLabel, type ApprovalWorkflowRule,
@@ -19,13 +20,17 @@ const { projectAccountingEnabled, setProjectAccountingEnabled } = useApprovalWor
 function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 
 // ─── Column definitions ────────────────────────────────────────────────────
+// Widths are sized to fit each column's longest real content (see appliesToText /
+// amountText below) plus truncation on the cell itself, so a long value never
+// bleeds into the next column.
 const columns: TableColumn[] = [
-  { key: 'name',            label: 'Workflow name',     width: '220px', sortType: 'text' },
-  { key: 'appliesTo',       label: 'Applies to',        width: '170px', sortType: 'text' },
-  { key: 'minAmount',       label: 'Amount higher than', width: '150px', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels',   width: '120px' },
-  { key: 'createdBy',       label: 'Created by',        width: '120px' },
-  { key: 'status',          label: 'Status',            width: '90px', sortType: 'text' },
+  { key: 'name',            label: 'Workflow name',     width: '200px', sortType: 'text' },
+  { key: 'description',     label: 'Description',       width: '220px' },
+  { key: 'appliesTo',       label: 'Applies to',        width: '230px', sortType: 'text' },
+  { key: 'minAmount',       label: 'Amount higher than', width: '160px', align: 'right', sortType: 'number' },
+  { key: 'levels',          label: 'Approval levels',   width: '130px' },
+  { key: 'createdBy',       label: 'Transaction created by', width: '190px' },
+  { key: 'status',          label: 'Status',            width: '110px', sortType: 'text' },
   { key: 'lastUpdated',     label: 'Last updated',      width: '150px' },
 ]
 
@@ -51,12 +56,25 @@ function levelsText(row: ApprovalWorkflowRule) {
 const rows = computed<ApprovalWorkflowRule[]>(() => approvalWorkflows)
 
 const {
-  search, currentPage, paginated, total, perPage,
+  search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<ApprovalWorkflowRule>(rows, {
   perPage: 25,
-  filterFn: (row, s) => row.name.toLowerCase().includes(s) || appliesToText(row).toLowerCase().includes(s),
+  filterFn: (row, s, status) => {
+    const matchesSearch = row.name.toLowerCase().includes(s) || appliesToText(row).toLowerCase().includes(s)
+    const matchesStatus = !status || (row.isActive ? 'active' : 'inactive') === status
+    return matchesSearch && matchesStatus
+  },
 })
+
+// ─── Status filter ──────────────────────────────────────────────────────────
+const statusOptions = [
+  { label: t('Active'),   value: 'active'   },
+  { label: t('Inactive'), value: 'inactive' },
+]
+const statusLabel = computed(
+  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
+)
 
 function formatUpdatedAt(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -74,7 +92,9 @@ function confirmDelete() {
   closeDeleteModal()
 }
 
-// ─── Turn on/off — low-friction, reversible, no confirmation needed ─────────
+// ─── Turn on/off — turning on is low-friction (no confirmation); turning off
+// asks for confirmation since it stops the workflow applying to new
+// transactions, even though it stays reversible (can be turned on again). ──
 function toggleActive(row: ApprovalWorkflowRule) {
   const wasActive = row.isActive
   setApprovalWorkflowActive(row.id, !wasActive)
@@ -83,6 +103,19 @@ function toggleActive(row: ApprovalWorkflowRule) {
     title: wasActive ? t('Approval workflow turned off') : t('Approval workflow turned on'),
     maxWidth: 'max-content',
   })
+}
+
+const turnOffModalOpen = ref(false)
+const ruleToTurnOff = ref<ApprovalWorkflowRule | null>(null)
+function handleToggleActive(row: ApprovalWorkflowRule) {
+  if (row.isActive) { ruleToTurnOff.value = row; turnOffModalOpen.value = true; return }
+  toggleActive(row)
+}
+function closeTurnOffModal() { turnOffModalOpen.value = false; ruleToTurnOff.value = null }
+function confirmTurnOff() {
+  if (!ruleToTurnOff.value) return
+  toggleActive(ruleToTurnOff.value)
+  closeTurnOffModal()
 }
 
 // ─── Empty state ─────────────────────────────────────────────────────────────
@@ -99,6 +132,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :has-active-search="!!search"
+    :has-active-filter="!!statusFilter"
     filter-empty-label="approval workflow"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -106,9 +140,39 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @sort-change="setSort"
   >
 
-    <!-- ── Filter bar (search only) ── -->
+    <!-- ── Filter bar (Status select + search) ── -->
     <template #filters>
-      <div class="filter-left" />
+      <div class="filter-left">
+        <MpPopover id="awf-status-filter" is-close-on-select>
+          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
+               value is picked → @clear resets to show-all. -->
+          <MpPopoverTrigger>
+            <MpSelect
+              id="awf-status-select"
+              :placeholder="t('Status')"
+              :model-value="statusFilter"
+              is-clearable
+              :class="css({ width: '160px' })"
+              @mousedown.prevent
+              @clear="statusFilter = ''"
+            >
+              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+            <MpPopoverList>
+              <MpPopoverListItem
+                v-for="opt in statusOptions"
+                :key="opt.value"
+                :is-active="opt.value === statusFilter"
+                @click="statusFilter = opt.value"
+              >
+                {{ opt.label }}
+              </MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </div>
       <div class="filter-right">
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -119,19 +183,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Cell: Workflow name (+ description subtitle) ── -->
+    <!-- ── Cell: Workflow name ── -->
     <template #cell-name="{ value, row }">
-      <div class="cell-name-wrap">
-        <a class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</a>
-        <span v-if="(row as unknown as ApprovalWorkflowRule).description" class="cell-name-desc">
-          {{ (row as unknown as ApprovalWorkflowRule).description }}
-        </span>
-      </div>
+      <a class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</a>
+    </template>
+
+    <!-- ── Cell: Description ── -->
+    <template #cell-description="{ row }">
+      <span class="cell-truncate">{{ (row as unknown as ApprovalWorkflowRule).description || '—' }}</span>
     </template>
 
     <!-- ── Cell: Transaction type ── -->
     <template #cell-appliesTo="{ row }">
-      {{ appliesToText(row as unknown as ApprovalWorkflowRule) }}
+      <span class="cell-truncate">{{ appliesToText(row as unknown as ApprovalWorkflowRule) }}</span>
     </template>
 
     <!-- ── Cell: Amount higher than ── -->
@@ -151,9 +215,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Cell: Status ── -->
     <template #cell-status="{ row }">
-      <MpBadge for="tableStatus" :type="(row as unknown as ApprovalWorkflowRule).isActive ? 'success' : 'neutral'" size="sm">
-        {{ (row as unknown as ApprovalWorkflowRule).isActive ? t('Active') : t('Inactive') }}
-      </MpBadge>
+      <ErpStatusBadge :status="(row as unknown as ApprovalWorkflowRule).isActive ? 'active' : 'inactive'" />
     </template>
 
     <!-- ── Cell: Last updated ── -->
@@ -179,7 +241,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="toggleActive(row as unknown as ApprovalWorkflowRule)">
+            <MpPopoverListItem @click="handleToggleActive(row as unknown as ApprovalWorkflowRule)">
               {{ (row as unknown as ApprovalWorkflowRule).isActive ? t('Turn off') : t('Turn on') }}
             </MpPopoverListItem>
             <MpPopoverListItem
@@ -226,6 +288,35 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Turn off confirmation modal — reversible, so primary button is the
+       standard (non-danger) state, per the Archive-confirmation pattern. ── -->
+  <MpModal
+    id="awf-turn-off-modal"
+    :is-open="turnOffModalOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeTurnOffModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Turn off approval workflow?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ t('This workflow will no longer apply to new transactions. You can turn it on again anytime.') }}
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTurnOffModal">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOff">{{ t('Turn off') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -286,21 +377,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 
-.cell-name-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cell-link {
+  display: block;
   color: var(--mp-text-link);
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cell-name-desc {
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cell-truncate {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .cell-last-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
