@@ -20,6 +20,8 @@ import {
   css, toast,
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import {
   xpmWallets, type XpmWallet,
   walletMovements, walletStats, walletDisplayBalances,
@@ -57,15 +59,15 @@ const stats = computed(() => {
   ]
 })
 
-// ── Movements + filters ──────────────────────────────────────────────────────
+// ── Movements table (ErpTablePage) ───────────────────────────────────────────
 // Filter by transaction type + period (This month / Last month / Custom range,
-// the custom range uses the shared AdvancedDateRangePicker). Plus a text search.
+// the custom range uses the shared AdvancedDateRangePicker). Gray-header table,
+// pagination, column settings and the Airene toggle all come from ErpTablePage.
 const TYPE_OPTIONS = ['Top-up', 'Payment', 'Payout', 'Transfer']
-const PERIOD_OPTIONS = ['This month', 'Last month', 'Custom']
+const PERIOD_OPTIONS = ['This month', 'Last month', 'Custom'] as const
 const typeFilter = ref('')
 const periodMode = ref<'This month' | 'Last month' | 'Custom'>('This month')
 const customRange = ref<Date[] | null>(null)
-const search = ref('')
 
 const [XT_Y, XT_M] = XPM_TODAY.split('-').map(Number) as [number, number, number]
 function monthMatch(dateISO: string, which: 'This month' | 'Last month'): boolean {
@@ -85,16 +87,47 @@ function periodMatch(dateISO: string): boolean {
   return monthMatch(dateISO, periodMode.value)
 }
 
-const rawMovements = computed(() => walletMovements(selectedWallet.value.id, activeCurrency.value))
-const filteredMovements = computed(() => {
-  const s = search.value.trim().toLowerCase()
-  return rawMovements.value.filter(m => {
-    if (typeFilter.value && m.category !== typeFilter.value) return false
-    if (!periodMatch(m.date)) return false
-    if (s && !(m.description.toLowerCase().includes(s) || movementNumber(m.id).toLowerCase().includes(s))) return false
-    return true
+interface MovementRow { id: string; number: string; date: string; type: string; moneyIn: number | null; moneyOut: number | null; balance: number; description: string }
+const rows = computed<MovementRow[]>(() => walletMovements(selectedWallet.value.id, activeCurrency.value).map(m => ({
+  id: m.id,
+  number: movementNumber(m.id),
+  date: m.date,
+  type: m.category,
+  moneyIn: m.direction === 'in' ? m.amount : null,
+  moneyOut: m.direction === 'out' ? m.amount : null,
+  balance: m.balance,
+  description: m.description,
+})))
+
+const columns: TableColumn[] = [
+  { key: 'number',   label: 'Number',           width: '160px', sortable: true, sortType: 'text' },
+  { key: 'date',     label: 'Date',             width: '140px', sortType: 'date' },
+  { key: 'type',     label: 'Transaction type', width: '180px', sortType: 'text' },
+  { key: 'moneyIn',  label: 'Money in',         width: '160px', align: 'right', sortType: 'number' },
+  { key: 'moneyOut', label: 'Money out',        width: '160px', align: 'right', sortType: 'number' },
+  { key: 'balance',  label: 'Balance',          width: '160px', align: 'right' },
+]
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const visibleColumns = computed<TableColumn[]>(() => columns.filter(c => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
+
+const { search, currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir, toggleSort, setSort } =
+  useTableState(rows, {
+    filterFn: (row, s) => {
+      const m = row as unknown as MovementRow
+      if (typeFilter.value && m.type !== typeFilter.value) return false
+      if (!periodMatch(m.date)) return false
+      if (s && !(m.number.toLowerCase().includes(s) || m.description.toLowerCase().includes(s))) return false
+      return true
+    },
   })
-})
+watch([typeFilter, periodMode, customRange, () => selectedWallet.value.id], () => setPage(1))
+function clearFilters() { search.value = ''; typeFilter.value = ''; periodMode.value = 'This month'; customRange.value = null }
+const hasActiveFilter = computed(() => !!search.value || !!typeFilter.value || periodMode.value !== 'This month')
+
+const toggleAirene = inject<() => void>('toggleAirene')
+const filterMenuClass = css({ minWidth: '180px', width: 'max-content' })
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 const activeTabIndex = ref(0)
@@ -254,23 +287,56 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
           <MpTabPanels>
             <!-- Transactions -->
             <MpTabPanel value="transactions">
-              <div class="acct-panel">
-                <!-- Filter bar -->
-                <div class="filter-bar">
+              <ErpTablePage
+                :columns="visibleColumns"
+                :rows="(paginated as Record<string, unknown>[])"
+                :total="total"
+                :current-page="currentPage"
+                :per-page="perPage"
+                :sort-key="sortKey"
+                :sort-dir="sortDir"
+                :search="search"
+                :has-active-filter="hasActiveFilter"
+                filter-empty-label="transaction"
+                @page-change="setPage"
+                @per-page-change="setPerPage"
+                @sort="toggleSort"
+                @sort-change="setSort"
+                @hide-column="hideColumn"
+                @clear-filters="clearFilters"
+              >
+                <template #filters>
+                  <!-- Left: transaction-type + period MpPopover dropdowns -->
                   <div class="filter-left">
-                    <div class="filter-select-wrap">
-                      <select class="filter-select" v-model="typeFilter">
-                        <option value="">Transaction type</option>
-                        <option v-for="o in TYPE_OPTIONS" :key="o" :value="o">{{ o }}</option>
-                      </select>
-                      <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </div>
-                    <div class="filter-select-wrap">
-                      <select class="filter-select" v-model="periodMode">
-                        <option v-for="o in PERIOD_OPTIONS" :key="o" :value="o">{{ o }}</option>
-                      </select>
-                      <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </div>
+                    <MpPopover id="acct-type-filter" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                      <MpPopoverTrigger>
+                        <button type="button" class="filter-trigger">
+                          <span class="filter-trigger__label">{{ typeFilter || 'Transaction type' }}</span>
+                          <svg class="filter-trigger__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="filterMenuClass">
+                        <MpPopoverList>
+                          <MpPopoverListItem :is-active="!typeFilter" @click="typeFilter = ''">All types</MpPopoverListItem>
+                          <MpPopoverListItem v-for="o in TYPE_OPTIONS" :key="o" :is-active="typeFilter === o" @click="typeFilter = o">{{ o }}</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+
+                    <MpPopover id="acct-period-filter" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                      <MpPopoverTrigger>
+                        <button type="button" class="filter-trigger">
+                          <span class="filter-trigger__label">{{ periodMode }}</span>
+                          <svg class="filter-trigger__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="filterMenuClass">
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="o in PERIOD_OPTIONS" :key="o" :is-active="periodMode === o" @click="periodMode = o">{{ o }}</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+
                     <AdvancedDateRangePicker
                       v-if="periodMode === 'Custom'"
                       id="acct-date-range"
@@ -279,19 +345,19 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                       placeholder="Select date range"
                     />
                   </div>
+
+                  <!-- Right: Airene + column settings + export + search -->
                   <div class="filter-right">
                     <div class="filter-btn-group">
                       <MpTooltip id="acct-airene-tt" label="Ask Airene" placement="bottom" use-portal>
-                        <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="infoToast('Ask Airene — coming soon')">
+                        <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
                           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                             <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                             <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                           </svg>
                         </button>
                       </MpTooltip>
-                      <MpTooltip id="acct-columns-tt" label="Column settings" placement="bottom" use-portal>
-                        <button class="filter-icon-btn" aria-label="Column settings" @click="infoToast('Edit columns — coming soon')"><MpIcon name="table-view-column" size="md" /></button>
-                      </MpTooltip>
+                      <ColumnSettingsMenu id="acct-columns" :items="columnItems" :visibility="columnVisibility" />
                       <MpTooltip id="acct-export-tt" label="Export" placement="bottom" use-portal>
                         <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="upload" size="md" /></button>
                       </MpTooltip>
@@ -302,40 +368,16 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                       <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
                     </div>
                   </div>
-                </div>
+                </template>
 
-                <!-- Movement table -->
-                <div class="acct-table-wrap">
-                  <table class="acct-table">
-                    <thead>
-                      <tr>
-                        <th class="acct-th">Number</th>
-                        <th class="acct-th">Date</th>
-                        <th class="acct-th">Transaction type</th>
-                        <th class="acct-th acct-th--right">Money in</th>
-                        <th class="acct-th acct-th--right">Money out</th>
-                        <th class="acct-th acct-th--right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="m in filteredMovements" :key="m.id" class="acct-tr">
-                        <td class="acct-td">
-                          <button class="cell-link" type="button" @click="router.push(`/accounts/txn/${m.id}`)">{{ movementNumber(m.id) }}</button>
-                          <span class="acct-td__sub">{{ m.description }}</span>
-                        </td>
-                        <td class="acct-td">{{ formatDateLong(m.date) }}</td>
-                        <td class="acct-td">{{ m.category }}</td>
-                        <td class="acct-td acct-td--right">{{ m.direction === 'in' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
-                        <td class="acct-td acct-td--right">{{ m.direction === 'out' ? formatMoney(m.amount, activeCurrency) : '—' }}</td>
-                        <td class="acct-td acct-td--right">{{ formatMoney(m.balance, activeCurrency) }}</td>
-                      </tr>
-                      <tr v-if="!filteredMovements.length" class="acct-tr">
-                        <td class="acct-td acct-td--empty" colspan="6">No movement matches your filters.</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                <template #cell-number="{ row }">
+                  <button class="cell-link" type="button" @click="router.push(`/accounts/txn/${(row as Record<string, unknown>).id}`)">{{ (row as Record<string, unknown>).number }}</button>
+                </template>
+                <template #cell-date="{ value }">{{ formatDateLong(value as string) }}</template>
+                <template #cell-moneyIn="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '—' }}</template>
+                <template #cell-moneyOut="{ value }">{{ value != null ? formatMoney(value as number, activeCurrency) : '—' }}</template>
+                <template #cell-balance="{ value }">{{ formatMoney(value as number, activeCurrency) }}</template>
+              </ErpTablePage>
             </MpTabPanel>
 
             <!-- Wallet info -->
@@ -638,6 +680,11 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
 .filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* MpPopover filter dropdown trigger (styled like the ERP quick-filter select) */
+.filter-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); width: 180px; height: 36px; padding: 0 var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); cursor: pointer; }
+.filter-trigger:hover { background: var(--mp-background-neutral-hovered); }
+.filter-trigger__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-trigger__chev { flex-shrink: 0; width: 20px; height: 20px; color: var(--mp-text-default); }
 .filter-select-wrap { position: relative; display: inline-flex; align-items: center; width: 160px; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); }
 .filter-select { appearance: none; background: transparent; border: none; outline: none; width: 100%; padding: var(--mp-spacing-2) var(--mp-spacing-10) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: pointer; }
 .filter-select-chevron { position: absolute; right: var(--mp-spacing-2); pointer-events: none; color: var(--mp-text-default); width: 20px; height: 20px; }
