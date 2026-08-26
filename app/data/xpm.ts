@@ -58,6 +58,8 @@ export const xpmWallets: XpmWallet[] = [
   { id: 'w-main',  name: 'Main account',       tag: 'Primary wallet', isDefault: true, type: 'Primary',   currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 1000000, description: 'Company operating wallet — funds payouts and card floats.' },
   { id: 'w-reimb', name: 'Reimbursement pool', tag: 'Sub-wallet',                      type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 4000000 }, pendingPayouts: 1238823, description: 'Dedicated pool for approved employee reimbursements.' },
   { id: 'w-card',  name: 'Card float',          tag: 'Sub-wallet',                     type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 5000000 }, pendingPayouts: 0,       description: 'Balance that funds virtual and physical spending cards.' },
+  // Empty wallet — no movements → balance Rp0 (demonstrates the top-up banner).
+  { id: 'w-petty', name: 'Petty cash — Jakarta HQ', tag: 'Sub-wallet',                  type: 'Sub-wallet', currency: 'IDR', openings: { IDR: 0 }, pendingPayouts: 0,             description: 'Small cash float for the Jakarta HQ office.' },
 ]
 /** Currencies a wallet holds (primary first). */
 export function walletCurrencies(wallet: XpmWallet): string[] { return Object.keys(wallet.openings) }

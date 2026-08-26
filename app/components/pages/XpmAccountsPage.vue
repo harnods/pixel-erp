@@ -41,6 +41,9 @@ function selectWallet(i: number) { selectedIndex.value = i }
 // ── Stats strip — derived from the ledger ────────────────────────────────────
 // Balance & Pending payouts are point-in-time (current / as of today); Money in
 // and Money out are the current month's cash flows.
+const currentBalance = computed(() => walletStats(selectedWallet.value.id, activeCurrency.value).balance)
+const isZeroBalance = computed(() => currentBalance.value === 0)
+function viewLedger() { activeTabIndex.value = 0 }
 const stats = computed(() => {
   const cur = activeCurrency.value
   const s = walletStats(selectedWallet.value.id, cur)
@@ -161,7 +164,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
     <aside class="acct-side">
       <div class="acct-side__titlerow">
         <span class="acct-side__title">Accounts</span>
-        <MpTooltip id="acct-add-wallet-tt" label="New wallet" placement="top" use-portal>
+        <MpTooltip id="acct-add-wallet-tt" label="New wallet" placement="bottom" use-portal>
           <button class="acct-side__add" type="button" aria-label="New wallet" @click="infoToast('Add wallet — coming soon')">
             <MpIcon name="add" size="md" />
           </button>
@@ -206,7 +209,8 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
             <MpPopoverContent :class="popoverContentClass">
               <MpPopoverList>
                 <MpPopoverListItem @click="openEdit">Edit wallet</MpPopoverListItem>
-                <MpPopoverListItem @click="infoToast('Add wallet — coming soon')">Add wallet</MpPopoverListItem>
+                <MpPopoverListItem @click="viewLedger">View balance ledger</MpPopoverListItem>
+                <MpPopoverListItem @click="infoToast('Archive wallet — coming soon')">Archive wallet</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -222,6 +226,16 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
             <span class="acct-stat__cap">{{ s.caption }}</span>
             <span class="acct-stat__val">{{ s.value }}</span>
           </div>
+        </div>
+
+        <!-- Zero-balance top-up banner -->
+        <div v-if="isZeroBalance" class="acct-zero">
+          <MpIcon name="info" size="md" class="acct-zero__icon" />
+          <div class="acct-zero__text">
+            <p class="acct-zero__title">{{ selectedWallet.name }} has no balance yet</p>
+            <p class="acct-zero__sub">Top up this wallet to start funding payouts and card spend.</p>
+          </div>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="openTopUp">Top up</button>
         </div>
 
         <!-- Tabs -->
@@ -257,7 +271,7 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                   </div>
                   <div class="filter-right">
                     <div class="filter-btn-group">
-                      <MpTooltip id="acct-airene-tt" label="Ask Airene" placement="top" use-portal>
+                      <MpTooltip id="acct-airene-tt" label="Ask Airene" placement="bottom" use-portal>
                         <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="infoToast('Ask Airene — coming soon')">
                           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                             <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
@@ -265,10 +279,10 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
                           </svg>
                         </button>
                       </MpTooltip>
-                      <MpTooltip id="acct-columns-tt" label="Column settings" placement="top" use-portal>
+                      <MpTooltip id="acct-columns-tt" label="Column settings" placement="bottom" use-portal>
                         <button class="filter-icon-btn" aria-label="Column settings" @click="infoToast('Edit columns — coming soon')"><MpIcon name="table-view-column" size="md" /></button>
                       </MpTooltip>
-                      <MpTooltip id="acct-export-tt" label="Export" placement="top" use-portal>
+                      <MpTooltip id="acct-export-tt" label="Export" placement="bottom" use-portal>
                         <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export — coming soon')"><MpIcon name="upload" size="md" /></button>
                       </MpTooltip>
                     </div>
@@ -611,6 +625,19 @@ const popoverContentClass = css({ minWidth: '180px', width: 'max-content' })
   background: var(--mp-background-neutral, #fff);
   border-top-left-radius: var(--mp-radii-md, 6px);
 }
+
+/* Zero-balance top-up banner (below the stats) */
+.acct-zero {
+  display: flex; align-items: center; gap: var(--mp-spacing-3, 12px);
+  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
+  border: 1px solid var(--mp-border-information, #bcd7f5);
+  border-radius: var(--mp-radii-md, 6px);
+  background: var(--mp-background-information-subtle, #eef5fd);
+}
+.acct-zero__icon { flex-shrink: 0; color: var(--mp-icon-information, #2f6fd6); }
+.acct-zero__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acct-zero__title { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
+.acct-zero__sub { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #3a4749); }
 
 /* Stats strip — plain divided cells (no outer box) */
 .acct-stats { display: flex; gap: var(--mp-spacing-6, 24px); }
