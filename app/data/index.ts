@@ -89,6 +89,9 @@ export * from './reviewFiles'
 // ── HR (Employees) ──────────────────────────────────────────────────────────
 export * from './employees'
 
+// ── Settings ─────────────────────────────────────────────────────────────────
+export * from './approvalWorkflows'
+
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
 
