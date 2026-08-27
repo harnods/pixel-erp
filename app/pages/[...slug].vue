@@ -348,6 +348,7 @@ const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.
 const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
 const { activeScenario: xpmActiveScenario } = useScenario()
 const { trigger: triggerXpm } = useXpmActions()
+const { trigger: triggerBuzz } = useBuzzActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -1657,6 +1658,18 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cowork-agents/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             New agent
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('generateAsset')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Generate asset
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Buzz campaigns'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('newCampaign')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New campaign
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">

@@ -25,6 +25,13 @@ function generate() {
   soon('Generate concepts')
 }
 
+// Quick-create: "Generate image" opens the real generator on Photo stocks; the
+// rest are placeholders for now.
+function onCreateAction(key: string, label: string) {
+  if (key === 'generate') { router.push('/buzz-photo-stocks?generate=1'); return }
+  soon(label)
+}
+
 // Recent campaigns — newest first, top 6.
 const recent = computed<BuzzCampaign[]>(() =>
   [...buzzCampaigns].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6))
@@ -45,7 +52,7 @@ const recent = computed<BuzzCampaign[]>(() =>
         <button type="button" class="prompt__go" @click="generate">Generate concepts</button>
       </div>
       <div class="chips">
-        <button v-for="a in BUZZ_CREATE_ACTIONS" :key="a.key" class="chip" type="button" @click="soon(a.label)">
+        <button v-for="a in BUZZ_CREATE_ACTIONS" :key="a.key" class="chip" type="button" @click="onCreateAction(a.key, a.label)">
           <MpIcon :name="a.icon" size="sm" class="chip__icon" />
           {{ a.label }}
         </button>

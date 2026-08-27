@@ -7,12 +7,16 @@
  * standard filter bar (status dropdown + All filters left, Export + Search
  * right). Alphabetical default sort by name (project convention).
  */
-import { MpIcon } from '@mekari/pixel3'
+import {
+  MpIcon, MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpSelect, MpText, MpButton, toast,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { buzzCampaigns, buzzBrand, buzzBadgeType, type BuzzCampaign } from '~/data/buzz'
+import { buzzCampaigns, buzzBrands, buzzBrand, buzzBadgeType, persistCampaigns, type BuzzCampaign } from '~/data/buzz'
 import { formatDate } from '~/utils/date'
 import { infoToast } from '~/utils/toasts'
+import { useBuzzActions } from '~/composables/useBuzzActions'
 
 const rows = computed<BuzzCampaign[]>(() =>
   [...buzzCampaigns].sort((a, b) => a.name.localeCompare(b.name)))
@@ -28,6 +32,35 @@ const {
     (row.name.toLowerCase().includes(s) || row.owner.toLowerCase().includes(s) || (buzzBrand(row.brand)?.name ?? '').toLowerCase().includes(s)) &&
     (!st || row.status === st),
 })
+
+// ── New campaign drawer (title-bar action via the bus) ──
+const showCreate = ref(false)
+const { pending } = useBuzzActions()
+watch(() => pending.value, (p) => { if (p?.action === 'newCampaign') showCreate.value = true })
+
+const PURPOSES = ['Product launch', 'Feature announcement', 'Educational', 'Event', 'Promotion', 'Employer branding', 'Thought leadership']
+const form = reactive({ name: '', brand: buzzBrands[0]!.id, purpose: PURPOSES[0]!, audience: '' })
+const createError = ref('')
+watch(showCreate, (open) => { if (open) { form.name = ''; form.brand = buzzBrands[0]!.id; form.purpose = PURPOSES[0]!; form.audience = ''; createError.value = '' } })
+
+function createCampaign() {
+  if (!form.name.trim()) { createError.value = 'You must fill in a campaign name'; return }
+  const maxId = buzzCampaigns.reduce((m, c) => Math.max(m, Number(c.id.replace(/\D/g, '')) || 0), 2041)
+  buzzCampaigns.unshift({
+    id: `CMP-${maxId + 1}`,
+    name: form.name.trim(),
+    brand: form.brand,
+    purpose: form.purpose,
+    audience: form.audience.trim() || '—',
+    status: 'Draft',
+    creatives: 0,
+    owner: 'You',
+    updatedAt: new Date().toISOString().slice(0, 10),
+  })
+  persistCampaigns()
+  showCreate.value = false
+  toast.notify({ variant: 'success', title: 'Campaign created.', maxWidth: 'max-content' })
+}
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Campaign', width: '260px', sortable: true, sortType: 'string' },
@@ -94,11 +127,59 @@ const columns: TableColumn[] = [
     </template>
     <template #cell-updatedAt="{ value }">{{ formatDate(value as string) }}</template>
   </ErpTablePage>
+
+  <!-- ── New campaign drawer ── -->
+  <MpDrawer id="buzz-new-campaign-drawer" :is-open="showCreate" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="showCreate = false">
+    <MpDrawerContent>
+      <MpDrawerBody>
+        <div class="bd-card">
+          <div class="bd-header">
+            <MpText weight="semiBold">New campaign</MpText>
+            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="showCreate = false" />
+          </div>
+          <div class="bd-form">
+            <MpFormControl id="bc-name" is-required :is-invalid="!!createError">
+              <MpFormLabel>Campaign name</MpFormLabel>
+              <MpInput id="bc-name-input" v-model="form.name" is-full-width placeholder="e.g. Payroll automation launch" @input="createError = ''" />
+              <MpFormErrorMessage>{{ createError }}</MpFormErrorMessage>
+            </MpFormControl>
+            <MpFormControl id="bc-brand" is-required>
+              <MpFormLabel>Brand</MpFormLabel>
+              <MpSelect id="bc-brand-select" v-model="form.brand">
+                <option v-for="b in buzzBrands" :key="b.id" :value="b.id">{{ b.name }}</option>
+              </MpSelect>
+            </MpFormControl>
+            <MpFormControl id="bc-purpose" is-required>
+              <MpFormLabel>Purpose</MpFormLabel>
+              <MpSelect id="bc-purpose-select" v-model="form.purpose">
+                <option v-for="p in PURPOSES" :key="p" :value="p">{{ p }}</option>
+              </MpSelect>
+            </MpFormControl>
+            <MpFormControl id="bc-audience">
+              <MpFormLabel>Audience</MpFormLabel>
+              <MpInput id="bc-audience-input" v-model="form.audience" is-full-width placeholder="e.g. HR managers" />
+            </MpFormControl>
+          </div>
+          <div class="bd-footer">
+            <MpButton variant="ghost" is-rounded @click="showCreate = false">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded @click="createCampaign">Save</MpButton>
+          </div>
+        </div>
+      </MpDrawerBody>
+    </MpDrawerContent>
+    <MpDrawerOverlay />
+  </MpDrawer>
 </template>
 
 <style scoped>
 .brand-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
 .brand-cell__logo { width: 20px; height: 20px; flex-shrink: 0; border-radius: 4px; object-fit: contain; }
+
+/* ── Drawer (floating card) ── */
+.bd-card { display: flex; flex-direction: column; height: 100%; }
+.bd-header { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
+.bd-form { display: flex; flex-direction: column; gap: var(--mp-spacing-5); flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
+.bd-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 
 /* ── Filter bar (verbatim ERP block) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }

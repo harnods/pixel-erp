@@ -11,21 +11,48 @@
 import { MpIcon } from '@mekari/pixel3'
 import { buzzAssets, buzzBrands, buzzBrand, type BuzzAsset } from '~/data/buzz'
 import { infoToast } from '~/utils/toasts'
+import { getImage } from '~/utils/buzzImageStore'
+import { useBuzzActions } from '~/composables/useBuzzActions'
+import GenerateAssetDrawer from '~/components/patterns/GenerateAssetDrawer.vue'
 
+const route = useRoute()
 const search = ref('')
 const brandFilter = ref('')
 const orientationFilter = ref('')
 const orientations = ['Landscape', 'Portrait', 'Square']
 
+// AI-generated assets sort to the front (newest work first); seed assets after.
 const filtered = computed<BuzzAsset[]>(() => {
   const s = search.value.trim().toLowerCase()
   return [...buzzAssets]
-    .sort((a, b) => a.title.localeCompare(b.title))
+    .sort((a, b) => {
+      const ai = (b.source === 'ai' ? 1 : 0) - (a.source === 'ai' ? 1 : 0)
+      return ai !== 0 ? ai : a.title.localeCompare(b.title)
+    })
     .filter((a) =>
       (!s || a.title.toLowerCase().includes(s) || a.tags.some((t) => t.toLowerCase().includes(s))) &&
       (!brandFilter.value || a.brand === brandFilter.value) &&
       (!orientationFilter.value || a.orientation === orientationFilter.value))
 })
+
+// Generated images loaded lazily from IndexedDB (seed assets keep the gradient).
+const images = ref<Map<string, string>>(new Map())
+async function loadImages() {
+  for (const a of filtered.value) {
+    if (!a.hasImage || images.value.has(a.id)) continue
+    const rec = await getImage(a.id)
+    if (rec?.dataUrl) { const next = new Map(images.value); next.set(a.id, rec.dataUrl); images.value = next }
+  }
+}
+watch(filtered, loadImages, { deep: true, immediate: true })
+
+// ── Generate asset drawer ──
+const showGenerate = ref(false)
+const { pending } = useBuzzActions()
+watch(() => pending.value, (p) => { if (p?.action === 'generateAsset') showGenerate.value = true })
+// Opened from the Home "Generate image" chip via ?generate=1.
+onMounted(() => { if (route.query.generate) showGenerate.value = true })
+function onSaved() { loadImages() }
 </script>
 
 <template>
@@ -65,6 +92,8 @@ const filtered = computed<BuzzAsset[]>(() => {
     <div v-if="filtered.length" class="gallery">
       <button v-for="a in filtered" :key="a.id" type="button" class="asset" @click="infoToast('Asset preview · coming soon')">
         <span class="asset__thumb" :class="`asset__thumb--${a.orientation.toLowerCase()}`" :style="{ background: a.gradient }">
+          <img v-if="a.hasImage && images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="asset__photo" />
+          <span v-if="a.source === 'ai'" class="asset__ai"><MpIcon name="magic" size="sm" /> AI</span>
           <img :src="buzzBrand(a.brand)?.logo" :alt="buzzBrand(a.brand)?.name" class="asset__badge" />
         </span>
         <span class="asset__meta">
@@ -77,6 +106,8 @@ const filtered = computed<BuzzAsset[]>(() => {
       <MpIcon name="file-image" size="lg" />
       <p>No photos match your filters.</p>
     </div>
+
+    <GenerateAssetDrawer v-model:is-open="showGenerate" @saved="onSaved" />
   </div>
 </template>
 
@@ -89,7 +120,10 @@ const filtered = computed<BuzzAsset[]>(() => {
 .asset__thumb { position: relative; display: block; width: 100%; height: 150px; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; }
 .asset__thumb--portrait { height: 200px; }
 .asset__thumb--square { height: 180px; }
-.asset__badge { position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 5px; object-fit: contain; background: #fff; padding: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+.asset__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.asset__ai { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--mp-radii-full, 999px); background: rgba(8,13,14,0.72); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
+.asset__ai :deep(svg) { color: #fff; }
+.asset__badge { position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 5px; object-fit: contain; background: #fff; padding: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); z-index: 1; }
 .asset:hover .asset__thumb { border-color: var(--mp-border-bold, #8c9596); }
 .asset__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .asset__title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -106,6 +140,9 @@ const filtered = computed<BuzzAsset[]>(() => {
 .filter-select-chevron { position: absolute; right: var(--mp-spacing-2); pointer-events: none; color: var(--mp-text-default); width: 20px; height: 20px; }
 .filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.generate-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2) var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #029861); color: #fff; font-family: inherit; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; white-space: nowrap; }
+.generate-btn:hover { background: #027a4e; }
+.generate-btn :deep(svg) { color: #fff; }
 .filter-btn-group { display: flex; align-items: center; }
 .filter-icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }

@@ -114,10 +114,15 @@ export interface BuzzAsset {
   orientation: BuzzOrientation
   tags: string[]
   usage: string            // where it's approved for use
-  // A CSS gradient stands in for the real photo thumbnail (no network in the mock).
+  // A CSS gradient stands in for the seed photos (no network in the mock).
   gradient: string
   addedBy: string
   updatedAt: string
+  /** AI-generated assets carry a real image in IndexedDB (buzzImageStore) keyed
+   *  by the asset id; 'approved' seed assets fall back to the gradient. */
+  source?: 'approved' | 'ai'
+  hasImage?: boolean       // a generated image is stored in IndexedDB under `id`
+  prompt?: string          // the brief used to generate it
 }
 
 const ASSET_SEED: BuzzAsset[] = [
@@ -137,6 +142,36 @@ const ASSET_SEED: BuzzAsset[] = [
 
 export const buzzAssets = reactive<BuzzAsset[]>(loadSnapshot<BuzzAsset>('buzz-assets') ?? clone(ASSET_SEED))
 export function persistAssets() { saveSnapshot('buzz-assets', buzzAssets) }
+
+/** Next generated-asset id (monotonic; seed ids run to IMG-5012). */
+function nextAssetId(): string {
+  const max = buzzAssets.reduce((m, a) => Math.max(m, Number(a.id.replace(/\D/g, '')) || 0), 5012)
+  return `IMG-${max + 1}`
+}
+
+/** Add an AI-generated asset to the library (front of the list) and persist the
+ *  metadata. The image bytes live in IndexedDB (buzzImageStore) under the id. */
+export function addBuzzAsset(a: {
+  title: string; brand: string; orientation: BuzzOrientation; tags?: string[]; usage?: string; prompt?: string; updatedAt: string
+}): BuzzAsset {
+  const asset: BuzzAsset = {
+    id: nextAssetId(),
+    title: a.title,
+    brand: a.brand,
+    orientation: a.orientation,
+    tags: a.tags ?? [],
+    usage: a.usage ?? 'Generated',
+    gradient: 'linear-gradient(135deg,#7A3FF2,#C4A7FF)',
+    addedBy: 'AI',
+    updatedAt: a.updatedAt,
+    source: 'ai',
+    hasImage: true,
+    prompt: a.prompt,
+  }
+  buzzAssets.unshift(asset)
+  persistAssets()
+  return asset
+}
 
 // ── Quick-create actions on Home (PRD §3) ──────────────────────────────────────
 export interface BuzzCreateAction { key: string; label: string; icon: string }
