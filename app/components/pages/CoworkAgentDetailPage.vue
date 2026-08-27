@@ -192,7 +192,7 @@ function removeAgent() {
 .cad-panel { max-width: 640px; }
 .cad-sec { padding: var(--mp-spacing-5) 0; }
 .cad-panel > .cad-sec:first-child { padding-top: 0; }
-.cad-h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
+.cad-h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .cad-value { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .cad-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
 .cad-muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
