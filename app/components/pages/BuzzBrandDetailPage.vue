@@ -123,14 +123,16 @@ function hex(v: string) { return (v || '').toUpperCase() }
         </section>
 
         <!-- 3 · Typography -->
-        <section v-if="brand.typography" class="bd-sec">
+        <section v-if="brand.fontHeadline || brand.fontBody || brand.typography" class="bd-sec">
           <h3 class="bd-h3">Typography</h3>
           <div class="bd-type">
-            <p class="bd-type__caption">Headline · {{ brand.typography }}</p>
+            <p class="bd-type__caption">Headline</p>
+            <p class="bd-type__name">{{ brand.fontHeadline || brand.typography }}</p>
             <p class="bd-type__display">The quick brown fox</p>
           </div>
-          <div class="bd-type">
+          <div v-if="brand.fontBody" class="bd-type">
             <p class="bd-type__caption">Body</p>
+            <p class="bd-type__name">{{ brand.fontBody }}</p>
             <p class="bd-type__body">The quick brown fox jumps over the lazy dog. 0123456789</p>
           </div>
           <p v-if="brand.typographyHierarchy" class="bd-notes">{{ brand.typographyHierarchy }}</p>
@@ -244,7 +246,8 @@ function hex(v: string) { return (v || '').toUpperCase() }
 
 /* ── Typography specimen ── */
 .bd-type { margin-top: var(--mp-spacing-2, 8px); }
-.bd-type__caption { margin: 0 0 var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.bd-type__caption { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; letter-spacing: 0.4px; color: var(--mp-text-secondary); }
+.bd-type__name { margin: 2px 0 var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bd-type__display { margin: 0; font-size: 44px; line-height: 1.1; font-weight: var(--mp-font-weights-bold, 700); letter-spacing: -0.6px; color: var(--mp-text-default); }
 .bd-type__body { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 

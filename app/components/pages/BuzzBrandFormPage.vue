@@ -234,10 +234,10 @@ onMounted(async () => {
   theme.value = b.theme ?? ''
   palette.value = [...(b.palette ?? [])]
   colorCombos.value = [...(b.colorCombos ?? [])]
-  // Typography is stored as a single summary line; split it back for the two fields.
+  // Prefer the distinct font names; fall back to splitting the legacy summary line.
   const typ = parseTypography(b.typography)
-  headline.value = typ.headline
-  body.value = typ.body
+  headline.value = b.fontHeadline || typ.headline
+  body.value = b.fontBody || typ.body
   hierarchy.value = b.typographyHierarchy ?? ''
   toneSummary.value = b.tone ?? ''
   toneDo.value = [...(b.toneDo ?? [])]
@@ -306,6 +306,8 @@ function buildBasePatch(): Partial<BuzzBrand> {
     colorCombos: [...colorCombos.value],
     theme: theme.value.trim(),
     typography: composeTypography(),
+    fontHeadline: headline.value.trim(),
+    fontBody: body.value.trim(),
     typographyHierarchy: hierarchy.value.trim(),
     tone: toneSummary.value.trim(),
     toneDo: [...toneDo.value],

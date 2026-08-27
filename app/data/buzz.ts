@@ -27,7 +27,9 @@ export interface BuzzBrand {
   colorCombos?: string[]// approved colour combinations, described
   theme?: string        // overall theme (e.g. "Light, airy, high-contrast")
   // ── Typography ──
-  typography: string    // headline / body typeface summary
+  typography: string    // headline / body typeface summary (legacy summary line)
+  fontHeadline?: string // headline font family NAME (e.g. "Inter")
+  fontBody?: string     // body font family NAME
   typographyHierarchy?: string  // detailed hierarchy notes
   // ── Tone of voice ──
   tone: string          // tone of voice, one line
@@ -71,6 +73,8 @@ export function addBrand(b: Partial<BuzzBrand> & { name: string }): BuzzBrand {
     colorCombos: b.colorCombos ?? [],
     theme: b.theme ?? '',
     typography: b.typography ?? '',
+    fontHeadline: b.fontHeadline ?? '',
+    fontBody: b.fontBody ?? '',
     typographyHierarchy: b.typographyHierarchy ?? '',
     tone: b.tone ?? '',
     toneDo: b.toneDo ?? [],

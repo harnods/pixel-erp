@@ -33,7 +33,7 @@ const SCHEMA_KEYS = [
   'name (string)',
   'colors: { primary, secondary, neutral, palette (array of hex strings), combinations (array of short strings like "primary on neutral") }',
   'theme (one line describing the overall visual theme)',
-  'typography: { headline, body, hierarchy }',
+  'typography: { headline (the headline FONT FAMILY NAME only, e.g. "Inter" or "Airbnb Cereal" — not a description), body (the body FONT FAMILY NAME only), hierarchy (short notes on sizes/weights) }',
   'tone: { summary, do (array of strings), dont (array of strings) }',
   'logoUsage (array of strings — clear space, approved variants, do/don\'t; [] if the material does not cover logo usage)',
   'visualStyle (one line describing the imagery / illustration / iconography style; "" if not covered)',
@@ -48,6 +48,9 @@ const SYSTEM_INSTRUCTION =
   `The JSON MUST have exactly these keys: ${SCHEMA_KEYS}. ` +
   'Infer sensibly from whatever material is available. Use "" for unknown strings and [] for unknown arrays — never omit a key. ' +
   'All colours MUST be hex strings like "#0A6E4E" (uppercase, 6-digit). ' +
+  'PRIMARY COLOUR: the primary is the brand\'s core colour — almost always the dominant colour of the LOGO. ' +
+  'If a logo, favicon, or brand-board image is provided, set colors.primary to the main colour of that logo (ignore pure white/black backgrounds around it). Only fall back to the most prominent brand colour on the page if no logo colour is discernible. ' +
+  'TYPOGRAPHY: headline and body must be the actual FONT FAMILY NAMES (e.g. "Inter", "Söhne", "Airbnb Cereal"), never a description; put descriptions in hierarchy. ' +
   'Keep every field concise and directly usable as guidance for an AI generating on-brand marketing assets.'
 
 /** Empty, fully-shaped brand kit — the guaranteed skeleton we normalise onto. */
@@ -131,6 +134,46 @@ async function callGemini(apiKey: string, model: string, parts: any[]): Promise<
     timeout: 45000,
   })
   return res?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('') || ''
+}
+
+/** Find the best logo/icon URL declared in the page head, resolved to absolute. */
+function findLogoUrl(html: string, baseUrl: string): string | null {
+  const abs = (href: string) => { try { return new URL(href, baseUrl).href } catch { return null } }
+  const attr = (tag: string, name: string) => {
+    const m = tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i'))
+    return m?.[1] ?? null
+  }
+  // Prefer apple-touch-icon (usually a clean square logo), then og:image, then any rel=icon.
+  const links = html.match(/<link\b[^>]*>/gi) ?? []
+  const byRel = (rel: RegExp) => {
+    for (const l of links) { if (rel.test(attr(l, 'rel') || '')) { const h = attr(l, 'href'); if (h) return abs(h) } }
+    return null
+  }
+  const apple = byRel(/apple-touch-icon/i)
+  if (apple) return apple
+  const ogm = html.match(/<meta\b[^>]*property\s*=\s*["']og:image["'][^>]*>/i)?.[0]
+  if (ogm) { const c = attr(ogm, 'content'); if (c) { const u = abs(c); if (u) return u } }
+  const icon = byRel(/(^|\s)icon(\s|$)|shortcut icon/i)
+  if (icon) return icon
+  return abs('/favicon.ico')
+}
+
+/** Fetch an image URL and return it as a Gemini inlineData part, or null on failure. */
+async function fetchImagePart(url: string): Promise<any | null> {
+  try {
+    const buf = await $fetch<ArrayBuffer>(url, { responseType: 'arrayBuffer', headers: { 'user-agent': 'Mozilla/5.0' }, timeout: 15000 })
+    const bytes = Buffer.from(buf as ArrayBuffer)
+    if (!bytes.length || bytes.length > 4_000_000) return null
+    // Sniff a mime from the magic bytes; default png.
+    let mime = 'image/png'
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) mime = 'image/jpeg'
+    else if (bytes.slice(0, 4).toString('ascii') === 'RIFF') mime = 'image/webp'
+    else if (bytes.slice(0, 5).toString('ascii').includes('<svg') || bytes.slice(0, 5).toString('ascii').includes('<?xml')) mime = 'image/svg+xml'
+    if (mime === 'image/svg+xml') return null // Gemini vision can't use raw SVG reliably
+    return { inlineData: { mimeType: mime, data: bytes.toString('base64') } }
+  } catch {
+    return null
+  }
 }
 
 /** Strip an HTML document to readable text, capped. */
@@ -223,18 +266,28 @@ export default defineEventHandler(async (event) => {
       }
       const text = htmlToText(html)
       const candidateColors = harvestHexColors(html)
-      parts = [{
-        text: [
-          'Infer the brand system for this company from its website.',
-          candidateColors.length
-            ? `Candidate brand colours harvested from the page CSS (most frequent first): ${candidateColors.join(', ')}. Use these to determine the primary/secondary/neutral palette where they look like brand colours (ignore pure white/black/grey unless clearly the neutral).`
-            : '',
-          'Return the brand kit as JSON per the schema.',
-          '',
-          'PAGE TEXT:',
-          text,
-        ].filter(Boolean).join('\n'),
-      }]
+      // Fetch the logo/favicon so Gemini can read the true brand colour from it —
+      // the primary is usually the logo colour.
+      const logoUrl = findLogoUrl(html, url)
+      const logoPart = logoUrl ? await fetchImagePart(logoUrl) : null
+      parts = [
+        ...(logoPart ? [logoPart] : []),
+        {
+          text: [
+            'Infer the brand system for this company from its website.',
+            logoPart
+              ? 'The attached image is this brand\'s logo/favicon — set colors.primary to the DOMINANT brand colour of that logo (ignore any white/transparent background around it).'
+              : '',
+            candidateColors.length
+              ? `Candidate brand colours harvested from the page CSS (most frequent first): ${candidateColors.join(', ')}. Use these for secondary/neutral and the palette where they look like brand colours (ignore pure white/black/grey unless clearly the neutral).`
+              : '',
+            'Return the brand kit as JSON per the schema.',
+            '',
+            'PAGE TEXT:',
+            text,
+          ].filter(Boolean).join('\n'),
+        },
+      ]
     } else {
       setResponseStatus(event, 400)
       return { error: 'Invalid source — expected "file" or "url".' }
