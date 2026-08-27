@@ -363,7 +363,8 @@ function closeExportModal() { exportModalOpen.value = false }
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover id="prod-type-filter" is-close-on-select>
+        <!-- Nothing to filter by in WMS Standalone — every product there is single. -->
+        <MpPopover v-if="!isWms" id="prod-type-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
               id="prod-type-select"
