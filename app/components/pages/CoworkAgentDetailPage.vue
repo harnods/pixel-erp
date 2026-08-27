@@ -127,9 +127,6 @@ function removeAgent() {
                   <div v-for="s in skills" :key="s!.id" class="cad-skill">
                     <p class="cad-skill__name">{{ s!.name }}</p>
                     <p class="cad-skill__desc">{{ s!.description }}</p>
-                    <div class="cad-chips">
-                      <span v-for="a in s!.actions" :key="a.id" class="cad-chip">{{ a.label }}</span>
-                    </div>
                   </div>
                   <p v-if="!skills.length" class="cad-muted">No skills enabled.</p>
                 </section>
