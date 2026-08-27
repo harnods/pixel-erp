@@ -15,9 +15,20 @@ const ORIENTATION_HINT: Record<string, string> = {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ prompt?: string; brand?: BrandCtx; orientation?: string; style?: string }>(event)
+  const body = await readBody<{ prompt?: string; brand?: BrandCtx; orientation?: string; style?: string; references?: string[] }>(event)
   const prompt = (body?.prompt ?? '').trim()
   if (!prompt) { setResponseStatus(event, 400); return { error: 'Describe the image you want to generate.' } }
+  // Reference designs (the brand's uploaded/captured visual-style samples) — the
+  // model should match their look. Data URLs → inlineData parts (cap a few).
+  const refParts = (body?.references ?? [])
+    .slice(0, 4)
+    .map((d) => {
+      if (typeof d !== 'string' || !d.startsWith('data:')) return null
+      const m = d.match(/^data:([^;]+);base64,(.+)$/)
+      if (!m) return null
+      return { inlineData: { mimeType: m[1], data: m[2] } }
+    })
+    .filter(Boolean) as any[]
 
   const config = useRuntimeConfig()
   const apiKey = config.geminiApiKey as string
@@ -33,9 +44,13 @@ export default defineEventHandler(async (event) => {
     ? `Brand: ${b.name}.${b.accent ? ` Use ${b.accent} as the primary accent colour.` : ''}${b.photography ? ` Photography style: ${b.photography}.` : ''}${b.guardrails?.length ? ` Brand rules: ${b.guardrails.join('; ')}.` : ''}`
     : ''
   const styleLine = body?.style ? `Style: ${body.style}.` : ''
+  const refLine = refParts.length
+    ? `${refParts.length} reference design${refParts.length > 1 ? 's' : ''} from this brand are attached — MATCH their visual style closely (composition, colour treatment, mood, art direction). Do not copy their exact content; produce a new visual in the same style.`
+    : ''
   const full = [
     prompt,
     brandLine,
+    refLine,
     styleLine,
     `Composition: ${orient}. A polished, production-ready marketing visual. Photorealistic where people are shown; no text, watermarks or logos unless explicitly requested. Southeast Asian representation where people appear.`,
   ].filter(Boolean).join(' ')
@@ -48,9 +63,10 @@ export default defineEventHandler(async (event) => {
     return await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ role: 'user', parts: [{ text: full }] }],
+        contents: [{ role: 'user', parts: [...refParts, { text: full }] }],
         ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
       },
+      timeout: 90000,
     })
   }
 

@@ -15,8 +15,8 @@ import { computed, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
-import { buzzBrand, removeBrand, type BuzzBrand } from '~/data/buzz'
-import { getImage } from '~/utils/buzzImageStore'
+import { buzzBrand, removeBrand, updateBrand, addUploadedAsset, type BuzzBrand } from '~/data/buzz'
+import { getImage, putImage } from '~/utils/buzzImageStore'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 
 const props = defineProps<{ orderId?: string }>()
@@ -59,15 +59,18 @@ const images = ref<Map<string, string>>(new Map())
 async function loadImages() {
   const b = brand.value
   if (!b) return
-  const ids = [b.logo, ...(b.logos ?? [])].filter((l) => isAssetLogo(l))
+  // Logos may be a usable src or an asset id; visualRefs are always asset ids.
+  const logoIds = [b.logo, ...(b.logos ?? [])].filter((l) => isAssetLogo(l))
+  const ids = [...logoIds, ...(b.visualRefs ?? [])]
   for (const id of ids) {
-    if (images.value.has(id)) continue
+    if (!id || images.value.has(id)) continue
     const rec = await getImage(id)
     if (rec?.dataUrl) { const next = new Map(images.value); next.set(id, rec.dataUrl); images.value = next }
   }
 }
 watch(brand, loadImages, { deep: true, immediate: true })
 function assetSrc(id: string): string { return isAssetLogo(id) ? (images.value.get(id) ?? '') : id }
+function refSrc(id: string): string { return images.value.get(id) ?? '' }
 
 const heroLogo = computed(() => brand.value ? assetSrc(brand.value.logo) : '')
 const monogram = computed(() => (brand.value?.name || '?').slice(0, 1).toUpperCase())
@@ -76,8 +79,59 @@ const monogram = computed(() => (brand.value?.name || '?').slice(0, 1).toUpperCa
 const hasPalette = computed(() => (brand.value?.palette?.length ?? 0) > 0)
 const hasCombos = computed(() => (brand.value?.colorCombos?.length ?? 0) > 0)
 const hasTone = computed(() => !!brand.value?.tone || (brand.value?.toneDo?.length ?? 0) > 0 || (brand.value?.toneDont?.length ?? 0) > 0)
-const hasLogoSection = computed(() => (brand.value?.logoUsage?.length ?? 0) > 0 || (brand.value?.logos?.length ?? 0) > 0)
-const hasVisual = computed(() => !!brand.value?.visualStyle || !!brand.value?.photography)
+
+// ── Logo upload ───────────────────────────────────────────────────────────────
+const logoInput = ref<HTMLInputElement | null>(null)
+function pickLogo() { logoInput.value?.click() }
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+async function onLogoFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  for (const file of files) {
+    const dataUrl = await readAsDataUrl(file)
+    const title = file.name.replace(/\.[^.]+$/, '') || 'Logo'
+    const a = addUploadedAsset({ title, brand: props.orderId!, assetType: 'logo', orientation: 'Square', tags: ['logo'], usage: 'Brand logo' })
+    await putImage({ id: a.id, mime: file.type, dataUrl })
+    const b = brand.value
+    updateBrand(props.orderId!, { logos: [...(b?.logos ?? []), a.id], logo: b?.logo || a.id })
+  }
+  input.value = ''
+  if (files.length) toast.notify({ variant: 'success', title: 'Logo uploaded.', maxWidth: 'max-content' })
+}
+function removeLogo(id: string) {
+  const b = brand.value
+  if (!b) return
+  updateBrand(props.orderId!, { logos: (b.logos ?? []).filter((x) => x !== id) })
+}
+
+// ── Reference design upload ─────────────────────────────────────────────────────
+const designInput = ref<HTMLInputElement | null>(null)
+function pickDesign() { designInput.value?.click() }
+async function onDesignFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  for (const file of files) {
+    const dataUrl = await readAsDataUrl(file)
+    const id = `vref-${crypto.randomUUID?.() || String(Math.random()).slice(2)}`
+    await putImage({ id, mime: file.type, dataUrl })
+    const b = brand.value
+    updateBrand(props.orderId!, { visualRefs: [...(b?.visualRefs ?? []), id] })
+  }
+  input.value = ''
+  if (files.length) toast.notify({ variant: 'success', title: 'Design added.', maxWidth: 'max-content' })
+}
+function removeDesign(id: string) {
+  const b = brand.value
+  if (!b) return
+  updateBrand(props.orderId!, { visualRefs: (b.visualRefs ?? []).filter((x) => x !== id) })
+}
 
 function coreColors(b: BuzzBrand) {
   return [
@@ -203,12 +257,19 @@ function hex(v: string) { return (v || '').toUpperCase() }
         </section>
 
         <!-- 5 · Logo usage -->
-        <section v-if="hasLogoSection" class="bd-sec">
-          <h3 class="bd-h3">Logo usage</h3>
+        <section class="bd-sec">
+          <div class="bd-sec__head">
+            <h3 class="bd-h3">Logo usage</h3>
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickLogo">
+              <MpIcon name="add" size="sm" /> Upload logo
+            </button>
+            <input ref="logoInput" type="file" accept="image/*" multiple class="bd-file" @change="onLogoFiles" />
+          </div>
           <div v-if="brand.logos?.length" class="bd-logos">
             <div v-for="id in brand.logos" :key="id" class="bd-logos__tile">
               <img v-if="assetSrc(id)" :src="assetSrc(id)" :alt="brand.name" class="bd-logos__img" loading="lazy" />
               <MpIcon v-else name="file-image" size="md" />
+              <button class="bd-remove" type="button" aria-label="Remove logo" @click="removeLogo(id)"><MpIcon name="minus-circular" size="sm" /></button>
             </div>
           </div>
           <ul v-if="brand.logoUsage?.length" class="bd-checklist">
@@ -217,10 +278,28 @@ function hex(v: string) { return (v || '').toUpperCase() }
         </section>
 
         <!-- 6 · Visual style -->
-        <section v-if="hasVisual" class="bd-sec">
+        <section class="bd-sec">
           <h3 class="bd-h3">Visual style</h3>
           <p v-if="brand.visualStyle" class="bd-lead">{{ brand.visualStyle }}</p>
           <p v-if="brand.photography" class="bd-para">{{ brand.photography }}</p>
+
+          <div class="bd-sec__head bd-sec__head--sub">
+            <div>
+              <p class="bd-sublabel">Reference designs</p>
+              <p class="bd-notes">Upload sample designs Buzz should match when it generates.</p>
+            </div>
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickDesign">
+              <MpIcon name="add" size="sm" /> Upload design
+            </button>
+            <input ref="designInput" type="file" accept="image/*" multiple class="bd-file" @change="onDesignFiles" />
+          </div>
+          <div v-if="brand.visualRefs?.length" class="bd-refs">
+            <div v-for="id in brand.visualRefs" :key="id" class="bd-refs__tile">
+              <img v-if="refSrc(id)" :src="refSrc(id)" :alt="brand.name" class="bd-refs__img" loading="lazy" />
+              <MpIcon v-else name="file-image" size="md" />
+              <button class="bd-remove" type="button" aria-label="Remove design" @click="removeDesign(id)"><MpIcon name="minus-circular" size="sm" /></button>
+            </div>
+          </div>
         </section>
       </div>
     </div>
@@ -298,11 +377,27 @@ function hex(v: string) { return (v || '').toUpperCase() }
 .bd-dodont { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--mp-spacing-6, 24px); margin-top: var(--mp-spacing-2, 8px); }
 .bd-dodont__col { display: flex; flex-direction: column; }
 
+/* ── Section head with an inline upload action ── */
+.bd-sec__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4, 16px); }
+.bd-sec__head--sub { margin-top: var(--mp-spacing-4, 16px); padding-top: var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.bd-file { display: none; }
+
 /* ── Logo usage thumbnails ── */
 .bd-logos { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
-.bd-logos__tile { width: 120px; height: 88px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-neutral-subtle, #f0f1f3); padding: var(--mp-spacing-3, 12px); box-sizing: border-box; }
+.bd-logos__tile { position: relative; width: 120px; height: 88px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-neutral-subtle, #f0f1f3); padding: var(--mp-spacing-3, 12px); box-sizing: border-box; }
 .bd-logos__img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 .bd-logos__tile :deep(svg) { color: var(--mp-text-tertiary, #8a9296); }
+
+/* ── Reference design thumbnails ── */
+.bd-refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
+.bd-refs__tile { position: relative; height: 150px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-neutral-subtle, #f0f1f3); box-sizing: border-box; }
+.bd-refs__img { width: 100%; height: 100%; object-fit: cover; }
+.bd-refs__tile :deep(svg) { color: var(--mp-text-tertiary, #8a9296); }
+
+/* ── Remove control on a thumbnail ── */
+.bd-remove { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; border-radius: var(--mp-radii-full, 999px); background: rgba(255,255,255,0.92); color: var(--mp-icon-danger, #cb3a31); cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+.bd-remove:hover { background: #fff; }
+.bd-remove :deep(svg) { color: var(--mp-icon-danger, #cb3a31); }
 
 /* ── Missing state ── */
 .bd-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-20, 80px); color: var(--mp-text-secondary); }

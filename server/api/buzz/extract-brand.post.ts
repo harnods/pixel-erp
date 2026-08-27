@@ -163,6 +163,38 @@ function findLogoCandidates(html: string, baseUrl: string): string[] {
   return [...new Set(out)]
 }
 
+/** Harvest prominent image URLs from the page (og:image first, then large-looking
+ *  content images), resolved to absolute, deduped — for visual-style samples. */
+function harvestImageUrls(html: string, baseUrl: string, limit = 3): string[] {
+  const abs = (href: string) => { try { return new URL(href, baseUrl).href } catch { return null } }
+  const out: string[] = []
+  const push = (u: string | null) => { if (u && !out.includes(u) && !/\.svg(\?|$)/i.test(u)) out.push(u) }
+  // og:image / twitter:image
+  for (const m of html.matchAll(/<meta\b[^>]*(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["'][^>]*content\s*=\s*["']([^"']+)["']/gi)) push(abs(m[1]))
+  // content <img> (prefer ones that look like heroes / large assets)
+  for (const m of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    const src = m[1]
+    if (/sprite|icon|logo|pixel|1x1|blank|spacer|avatar/i.test(src)) continue
+    if (/\.(png|jpe?g|webp)(\?|$)/i.test(src)) push(abs(src))
+    if (out.length >= limit + 4) break
+  }
+  return out.slice(0, limit + 4)
+}
+
+/** Fetch an image URL and return it as a data: URL (validated), or null. */
+async function fetchImageDataUrl(url: string): Promise<string | null> {
+  try {
+    const buf = await $fetch<ArrayBuffer>(url, { responseType: 'arrayBuffer', headers: { 'user-agent': 'Mozilla/5.0' }, timeout: 12000 })
+    const bytes = Buffer.from(buf as ArrayBuffer)
+    if (bytes.length < 2000 || bytes.length > 2_500_000) return null // skip tiny icons / huge files
+    const mime = imageMime(bytes)
+    if (!mime) return null
+    return `data:${mime};base64,${bytes.toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
 /** Detect a real raster image from its magic bytes; '' if it isn't one (e.g. an
  *  HTML 404 page served with a 200, or an SVG which vision can't use reliably). */
 function imageMime(bytes: Buffer): string {
@@ -228,6 +260,7 @@ export default defineEventHandler(async (event) => {
     return { error: 'Brand extraction is not configured yet. Add NUXT_GEMINI_API_KEY to .env.local and restart.' }
   }
 
+  const visualCaptures: string[] = []
   try {
     let parts: any[] | null = null
 
@@ -304,6 +337,13 @@ export default defineEventHandler(async (event) => {
           ].filter(Boolean).join('\n'),
         },
       ]
+      // Capture a few of the site's prominent images as visual-style samples —
+      // a first-pass "what the brand's designs look like" reference for generation.
+      for (const imgUrl of harvestImageUrls(html, url)) {
+        if (visualCaptures.length >= 3) break
+        const d = await fetchImageDataUrl(imgUrl)
+        if (d) visualCaptures.push(d)
+      }
     } else {
       setResponseStatus(event, 400)
       return { error: 'Invalid source — expected "file" or "url".' }
@@ -318,7 +358,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const brand = normalise(parseJson(rawText))
-    return { brand }
+    return { brand, visualCaptures }
   } catch (err: any) {
     setResponseStatus(event, 500)
     return { error: `Brand extraction failed. ${String(err?.message ?? err)}` }

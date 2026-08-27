@@ -13,7 +13,7 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpSelect, MpTextarea, MpText, MpButton, MpSpinner, MpIcon, toast,
 } from '@mekari/pixel3'
 import { buzzBrands, buzzBrand, addBuzzAsset, type BuzzOrientation } from '~/data/buzz'
-import { putImage } from '~/utils/buzzImageStore'
+import { putImage, getImage } from '~/utils/buzzImageStore'
 
 const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void; (e: 'saved', id: string): void }>()
@@ -44,6 +44,12 @@ async function generate() {
   generating.value = true
   resultUrl.value = ''
   const b = buzzBrand(brandId.value)
+  // The brand's uploaded/captured design samples are the primary style reference.
+  const references: string[] = []
+  for (const id of (b?.visualRefs ?? []).slice(0, 4)) {
+    const rec = await getImage(id)
+    if (rec?.dataUrl) references.push(rec.dataUrl)
+  }
   try {
     const res = await $fetch<{ dataUrl?: string; mime?: string; error?: string }>('/api/buzz/generate-image', {
       method: 'POST',
@@ -52,6 +58,7 @@ async function generate() {
         brand: b ? { name: b.name, accent: b.accent, photography: b.photography, guardrails: b.guardrails } : undefined,
         orientation: orientation.value,
         style: style.value || undefined,
+        references,
       },
     })
     if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the image.'; return }

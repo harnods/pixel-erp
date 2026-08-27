@@ -41,6 +41,7 @@ export interface BuzzBrand {
   logos?: string[]      // logo asset ids (stored in buzzImageStore)
   // ── Visual style (imagery / illustration / iconography) ──
   visualStyle?: string  // overall visual/imagery style (shown if present in the guideline)
+  visualRefs?: string[] // uploaded/captured sample-design image ids (buzzImageStore) — the MAIN style reference for generation
   // ── existing ──
   photography: string   // photography style, one line
   guardrails: string[]  // do / don't rules applied to generation
@@ -84,6 +85,7 @@ export function addBrand(b: Partial<BuzzBrand> & { name: string }): BuzzBrand {
     logoUsage: b.logoUsage ?? [],
     logos: b.logos ?? [],
     visualStyle: b.visualStyle ?? '',
+    visualRefs: b.visualRefs ?? [],
     photography: b.photography ?? '',
     guardrails: b.guardrails ?? [],
     assetCount: 0,

@@ -9,7 +9,8 @@
  * structural CSS in this Pixel3 build (see ConfirmModal.vue).
  */
 import { MpIcon, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpSpinner } from '@mekari/pixel3'
-import { addBrand } from '~/data/buzz'
+import { addBrand, updateBrand } from '~/data/buzz'
+import { putImage } from '~/utils/buzzImageStore'
 
 const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void; (e: 'created', id: string): void }>()
@@ -68,7 +69,7 @@ async function create() {
     } else {
       body = { source: 'url', url: url.value.trim() }
     }
-    const res = await $fetch<{ brand?: any; error?: string }>('/api/buzz/extract-brand', { method: 'POST', body })
+    const res = await $fetch<{ brand?: any; visualCaptures?: string[]; error?: string }>('/api/buzz/extract-brand', { method: 'POST', body })
     if (res?.error || !res?.brand) { extractError.value = res?.error || 'Could not read the brand. Please try again.'; extracting.value = false; return }
     const b = res.brand
     const brand = addBrand({
@@ -92,6 +93,19 @@ async function create() {
       photography: b.photography || '',
       guardrails: Array.isArray(b.guardrails) ? b.guardrails : [],
     })
+    // Save any captured site images as the brand's visual-style references.
+    const caps: string[] = Array.isArray(res.visualCaptures) ? res.visualCaptures : []
+    if (caps.length) {
+      const ids: string[] = []
+      for (const dataUrl of caps.slice(0, 3)) {
+        const m = dataUrl.match(/^data:([^;]+);base64,/)
+        if (!m) continue
+        const id = `vref-${Math.random().toString(36).slice(2)}`
+        await putImage({ id, mime: m[1], dataUrl })
+        ids.push(id)
+      }
+      if (ids.length) updateBrand(brand.id, { visualRefs: ids })
+    }
     emit('created', brand.id)
     emit('update:isOpen', false)
   } catch (err: any) {
