@@ -743,14 +743,33 @@ const xpmNavGroups: NavItem[][] = [
   ],
 ]
 
+// Mekari Buzz (Marketing tool) nav — Campaigns + Assets. Assets carries a level-2
+// panel (same UI as ERP's Reports/Settings) with Branding + Photo stocks.
+const buzzNavGroups: NavItem[][] = [
+  [
+    { name: 'Home', icon: 'home' },
+    { name: 'Campaigns', icon: 'promo', to: 'Buzz campaigns' },
+  ],
+  [
+    {
+      name: 'Assets', icon: 'products',
+      panelSubmenu: [[
+        { label: 'Branding', to: 'Buzz branding' },
+        { label: 'Photo stocks', to: 'Buzz photo stocks' },
+      ]],
+    },
+  ],
+]
+
 // Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
-// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; ERP
-// uses the ERP nav.
+// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; Buzz
+// uses the Marketing nav; ERP uses the ERP nav.
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
   if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
   if (activeScenario.value === 'XPM') return xpmNavGroups
+  if (activeScenario.value === 'BUZZ') return buzzNavGroups
   return erpNavGroups
 })
 

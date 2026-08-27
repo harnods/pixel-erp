@@ -35,10 +35,14 @@ const products: Product[] = [
   { key: 'XPM',   label: 'Spend management',  icon: 'wallet',        to: '/', scenario: 'XPM' },
   { key: 'Sales', label: 'Sales channel',     icon: 'shop' },
   { key: 'POS',   label: 'POS',               icon: 'calculator' },
+  // Marketing tool = the Mekari Buzz scenario. Selecting it flips the scenario
+  // (sidebar swaps to the Buzz nav) and lands on its Home.
+  { key: 'BUZZ',  label: 'Marketing tool',    icon: 'promo',  to: '/', scenario: 'BUZZ' },
 ]
 
 const activeKey = computed(() =>
   activeScenario.value === 'XPM' ? 'XPM'
+    : activeScenario.value === 'BUZZ' ? 'BUZZ'
     : isHrPath(route.path) ? 'HR'
     : route.path.startsWith('/crm') ? 'CRM'
     : route.path.startsWith('/tax') ? 'Tax'

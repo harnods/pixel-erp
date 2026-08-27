@@ -6,7 +6,7 @@
  * A module-level ref makes it a shared singleton across components. Persisted to
  * localStorage so the choice survives a refresh (this is an SPA — ssr:false).
  */
-export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM";
+export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM" | "BUZZ";
 
 const STORAGE_KEY = "erp-active-scenario";
 
