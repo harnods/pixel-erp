@@ -144,6 +144,7 @@ const pageRegistry: Record<string, Component> = {
   // ── Mekari Buzz (Marketing tool) — 'Home' branches by scenario below. ──
   'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
   'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
+  'Buzz logos':         defineAsyncComponent(() => import('~/components/pages/BuzzLogosPage.vue')),
   'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 
@@ -160,6 +161,7 @@ const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTa
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
+const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFormPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
 const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
@@ -384,6 +386,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
     return { component: CoworkAgentDetailPage, id: segs[1]! }
+  }
+  // /buzz-brand/new or /buzz-brand/:id/edit → the brand-kit builder (full-bleed form).
+  if (segs.length >= 2 && segs[0] === 'buzz-brand') {
+    if (segs[1] === 'new') return { component: BuzzBrandFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: BuzzBrandFormPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -1664,6 +1671,12 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('generateAsset')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Generate asset
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Buzz branding'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/buzz-brand/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New brand kit
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Buzz campaigns'" class="page-title-actions">

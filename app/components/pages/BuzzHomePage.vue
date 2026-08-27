@@ -19,6 +19,10 @@ const firstName = 'Sarah'
 const greeting = 'Good morning'
 const todayLabel = 'Thu, 27 Aug 2026'
 
+// Custom brands store an IndexedDB asset id as their logo; only render <img> for
+// a real URL/path/data-URL, else fall back to a coloured monogram.
+function hasUrlLogo(logo: string) { return !!logo && (logo.startsWith('/') || logo.startsWith('data:') || logo.startsWith('http')) }
+
 const prompt = ref('')
 function generate() {
   if (!prompt.value.trim()) { infoToast('Describe your campaign or creative first'); return }
@@ -87,7 +91,8 @@ const recent = computed<BuzzCampaign[]>(() =>
         </div>
         <div class="brand-row">
           <button v-for="b in buzzBrands" :key="b.id" type="button" class="brand" @click="router.push('/buzz-branding')">
-            <img :src="b.logo" :alt="b.name" class="brand__logo" />
+            <img v-if="hasUrlLogo(b.logo)" :src="b.logo" :alt="b.name" class="brand__logo" />
+            <span v-else class="brand__logo brand__logo--mono" :style="{ background: b.accent }">{{ b.name.slice(0, 1) }}</span>
             <span class="brand__name">{{ b.name }}</span>
             <span class="brand__count">{{ b.assetCount }} assets</span>
           </button>
@@ -150,6 +155,7 @@ const recent = computed<BuzzCampaign[]>(() =>
 .brand { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-default, #fff); cursor: pointer; }
 .brand:hover { border-color: var(--mp-border-bold, #8c9596); }
 .brand__logo { width: 28px; height: 28px; border-radius: 6px; object-fit: contain; }
+.brand__logo--mono { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: var(--mp-font-weights-bold, 700); }
 .brand__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .brand__count { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 </style>

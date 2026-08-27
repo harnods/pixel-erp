@@ -755,6 +755,7 @@ const buzzNavGroups: NavItem[][] = [
       name: 'Assets', icon: 'products',
       panelSubmenu: [[
         { label: 'Branding', to: 'Buzz branding' },
+        { label: 'Logos', to: 'Buzz logos' },
         { label: 'Photo stocks', to: 'Buzz photo stocks' },
       ]],
     },
