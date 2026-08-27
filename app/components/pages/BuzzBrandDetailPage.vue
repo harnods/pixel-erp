@@ -12,14 +12,26 @@
  * Enterprise surface rule: cards = 1px border, no drop-shadow.
  */
 import { computed, ref, watch } from 'vue'
-import { MpButton, MpIcon } from '@mekari/pixel3'
-import { buzzBrand, type BuzzBrand } from '~/data/buzz'
+import {
+  MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+} from '@mekari/pixel3'
+import { buzzBrand, removeBrand, type BuzzBrand } from '~/data/buzz'
 import { getImage } from '~/utils/buzzImageStore'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 
 const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
 
 const brand = computed<BuzzBrand | undefined>(() => buzzBrand(props.orderId!))
+
+// ── Delete ──
+const menuClass = css({ minWidth: '180px' })
+const showDelete = ref(false)
+function confirmDelete() {
+  removeBrand(props.orderId!)
+  toast.notify({ variant: 'success', title: 'Brand kit deleted.', maxWidth: 'max-content' })
+  router.push('/buzz-branding')
+}
 
 // ── Lazy logo resolution ──────────────────────────────────────────────────────
 // A logo value that starts with '/', 'http' or 'data:' is a usable src; anything
@@ -72,8 +84,26 @@ function hex(v: string) { return (v || '').toUpperCase() }
         <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/buzz-brand/${orderId}/edit`)">
           <MpIcon name="edit" size="sm" /> Edit
         </button>
+        <MpPopover id="bd-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <button class="bd-kebab" type="button" aria-label="More actions"><MpIcon name="menu-kebab" size="md" /></button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="menuClass">
+            <MpPopoverList>
+              <MpPopoverListItem @click="showDelete = true">Delete brand kit</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </div>
     </header>
+
+    <ConfirmModal
+      v-model:is-open="showDelete"
+      :title="`Delete ${brand.name}?`"
+      description="This removes the brand kit and its guideline. This can't be undone."
+      confirm-label="Delete brand kit"
+      @confirm="confirmDelete"
+    />
 
     <div class="bd-stage">
       <div class="bd-inner">
@@ -199,7 +229,9 @@ function hex(v: string) { return (v || '').toUpperCase() }
 .bd-crumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
 .bd-crumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .bd-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
-.bd-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.bd-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.bd-kebab { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md, 6px); cursor: pointer; color: var(--mp-icon-default); }
+.bd-kebab:hover { background: var(--mp-background-neutral-hovered, #e6e8ec); }
 .bd-actions :deep(svg) { flex: 0 0 auto; }
 
 /* ── Stage ── */

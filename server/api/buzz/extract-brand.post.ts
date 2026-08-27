@@ -136,44 +136,54 @@ async function callGemini(apiKey: string, model: string, parts: any[]): Promise<
   return res?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('') || ''
 }
 
-/** Find the best logo/icon URL declared in the page head, resolved to absolute. */
-function findLogoUrl(html: string, baseUrl: string): string | null {
+/** Ordered list of logo/icon candidate URLs from the page head (absolute).
+ *  Prefers larger declared icons (a bigger favicon reads its colour better);
+ *  the OpenGraph cover image goes last since it is usually a wide banner, not
+ *  the single brand mark. */
+function findLogoCandidates(html: string, baseUrl: string): string[] {
   const abs = (href: string) => { try { return new URL(href, baseUrl).href } catch { return null } }
-  const attr = (tag: string, name: string) => {
-    const m = tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i'))
-    return m?.[1] ?? null
-  }
-  // Prefer apple-touch-icon (usually a clean square logo), then og:image, then any rel=icon.
-  const links = html.match(/<link\b[^>]*>/gi) ?? []
-  const byRel = (rel: RegExp) => {
-    for (const l of links) { if (rel.test(attr(l, 'rel') || '')) { const h = attr(l, 'href'); if (h) return abs(h) } }
-    return null
-  }
-  const apple = byRel(/apple-touch-icon/i)
-  if (apple) return apple
-  const ogm = html.match(/<meta\b[^>]*property\s*=\s*["']og:image["'][^>]*>/i)?.[0]
-  if (ogm) { const c = attr(ogm, 'content'); if (c) { const u = abs(c); if (u) return u } }
-  const icon = byRel(/(^|\s)icon(\s|$)|shortcut icon/i)
-  if (icon) return icon
-  return abs('/favicon.ico')
+  const attr = (tag: string, name: string) => tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1] ?? null
+  const out: string[] = []
+  const links = (html.match(/<link\b[^>]*>/gi) ?? []).filter((l) => /rel\s*=\s*["'][^"']*icon/i.test(l))
+  const icons = links
+    .map((l) => ({ href: attr(l, 'href'), size: parseInt((attr(l, 'sizes') || '0').split('x')[0], 10) || 0, apple: /apple-touch/i.test(attr(l, 'rel') || '') }))
+    .filter((x) => x.href) as { href: string; size: number; apple: boolean }[]
+  // Larger first; among equal sizes prefer apple-touch (usually a clean square mark).
+  icons.sort((a, b) => (b.size - a.size) || (Number(b.apple) - Number(a.apple)))
+  for (const x of icons) { const u = abs(x.href); if (u) out.push(u) }
+  const fav = abs('/favicon.ico'); if (fav) out.push(fav)
+  const og = html.match(/<meta\b[^>]*property\s*=\s*["']og:image["'][^>]*>/i)?.[0]
+  if (og) { const c = attr(og, 'content'); if (c) { const u = abs(c); if (u) out.push(u) } }
+  return [...new Set(out)]
 }
 
-/** Fetch an image URL and return it as a Gemini inlineData part, or null on failure. */
-async function fetchImagePart(url: string): Promise<any | null> {
-  try {
-    const buf = await $fetch<ArrayBuffer>(url, { responseType: 'arrayBuffer', headers: { 'user-agent': 'Mozilla/5.0' }, timeout: 15000 })
-    const bytes = Buffer.from(buf as ArrayBuffer)
-    if (!bytes.length || bytes.length > 4_000_000) return null
-    // Sniff a mime from the magic bytes; default png.
-    let mime = 'image/png'
-    if (bytes[0] === 0xff && bytes[1] === 0xd8) mime = 'image/jpeg'
-    else if (bytes.slice(0, 4).toString('ascii') === 'RIFF') mime = 'image/webp'
-    else if (bytes.slice(0, 5).toString('ascii').includes('<svg') || bytes.slice(0, 5).toString('ascii').includes('<?xml')) mime = 'image/svg+xml'
-    if (mime === 'image/svg+xml') return null // Gemini vision can't use raw SVG reliably
-    return { inlineData: { mimeType: mime, data: bytes.toString('base64') } }
-  } catch {
-    return null
+/** Detect a real raster image from its magic bytes; '' if it isn't one (e.g. an
+ *  HTML 404 page served with a 200, or an SVG which vision can't use reliably). */
+function imageMime(bytes: Buffer): string {
+  if (bytes.length < 12) return ''
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.slice(0, 4).toString('ascii') === 'RIFF' && bytes.slice(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  if (bytes.slice(0, 3).toString('ascii') === 'GIF') return 'image/gif'
+  return '' // includes '<!DOCTYPE…' error pages and '<svg…'
+}
+
+/** Try each candidate URL until one is a VALID raster image; return it as a
+ *  Gemini inlineData part (or null). Skips 404s / HTML error pages / SVGs. */
+async function fetchLogoPart(candidates: string[]): Promise<{ part: any; url: string } | null> {
+  for (const url of candidates.slice(0, 5)) {
+    try {
+      const buf = await $fetch<ArrayBuffer>(url, { responseType: 'arrayBuffer', headers: { 'user-agent': 'Mozilla/5.0' }, timeout: 12000 })
+      const bytes = Buffer.from(buf as ArrayBuffer)
+      if (!bytes.length || bytes.length > 4_000_000) continue
+      const mime = imageMime(bytes)
+      if (!mime) continue
+      return { part: { inlineData: { mimeType: mime, data: bytes.toString('base64') } }, url }
+    } catch {
+      // 404 / network error → try the next candidate.
+    }
   }
+  return null
 }
 
 /** Strip an HTML document to readable text, capped. */
@@ -266,20 +276,20 @@ export default defineEventHandler(async (event) => {
       }
       const text = htmlToText(html)
       const candidateColors = harvestHexColors(html)
-      // Fetch the logo/favicon so Gemini can read the true brand colour from it —
-      // the primary is usually the logo colour.
-      const logoUrl = findLogoUrl(html, url)
-      const logoPart = logoUrl ? await fetchImagePart(logoUrl) : null
+      // Fetch the logo/favicon (trying candidates until one is a real image) so
+      // Gemini reads the true brand colour from it — the primary is usually the
+      // logo colour, and CSS-harvested hexes often include stray accents.
+      const logo = await fetchLogoPart(findLogoCandidates(html, url))
       parts = [
-        ...(logoPart ? [logoPart] : []),
+        ...(logo ? [logo.part] : []),
         {
           text: [
             'Infer the brand system for this company from its website.',
-            logoPart
-              ? 'The attached image is this brand\'s logo/favicon — set colors.primary to the DOMINANT brand colour of that logo (ignore any white/transparent background around it).'
-              : '',
+            logo
+              ? 'The attached image is this brand\'s actual logo/favicon. colors.primary MUST be the DOMINANT colour of that logo (ignore any white/transparent background around it). Do NOT choose a colour that is not visibly in the logo.'
+              : 'No logo image was available, so infer colours ONLY from the candidate hexes below and the page — do NOT invent a colour that is not listed.',
             candidateColors.length
-              ? `Candidate brand colours harvested from the page CSS (most frequent first): ${candidateColors.join(', ')}. Use these for secondary/neutral and the palette where they look like brand colours (ignore pure white/black/grey unless clearly the neutral).`
+              ? `Candidate brand colours harvested from the page CSS (most frequent first): ${candidateColors.join(', ')}. Use these for secondary/neutral and the palette. Ignore pure white/black/grey unless clearly the neutral, and do NOT treat a rare accent as the primary.`
               : '',
             'Return the brand kit as JSON per the schema.',
             '',
