@@ -189,9 +189,8 @@ function removeAgent() {
 .detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
-.cad-panel { max-width: 640px; }
-.cad-sec { padding: var(--mp-spacing-5) 0; }
-.cad-panel > .cad-sec:first-child { padding-top: 0; }
+.cad-panel { max-width: 640px; display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); }
+.cad-sec { padding: 0; }
 .cad-h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .cad-value { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .cad-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
