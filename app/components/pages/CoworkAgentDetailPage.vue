@@ -4,8 +4,11 @@
  * create/edit form: persona (instruction), model, knowledge, skills, visibility,
  * plus the predefined tasks this agent owns.
  */
-import { computed } from 'vue'
-import { MpButton, MpIcon, MpAvatar, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { computed, ref } from 'vue'
+import {
+  MpButton, MpIcon, MpAvatar, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
+} from '@mekari/pixel3'
 import { getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, deleteAgentSafe, type CoworkAgent } from '~/data/cowork'
 import { employees } from '~/data/employees'
 
@@ -22,6 +25,8 @@ const knowledgeAreas = computed(() => agent.value?.allWorkspace ? ['All workspac
 const skills = computed(() => (agent.value?.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)).filter(Boolean))
 const visEmployees = computed(() => (agent.value?.visibilityEmployees ?? []).map((id) => employees.find((e) => e.id === id)).filter(Boolean))
 const ownedTasks = computed(() => COWORK_CATALOG.filter((c) => c.module === agent.value?.module))
+
+const activeTabIndex = ref(0)
 
 function edit() { router.push(`/cowork-agents/${props.orderId}/edit`) }
 function removeAgent() {
@@ -70,63 +75,86 @@ function removeAgent() {
           </div>
         </section>
 
-        <!-- Instruction -->
-        <section class="cad-sec">
-          <h3 class="cad-h3">Instruction</h3>
-          <p class="cad-value">{{ instruction }}</p>
-        </section>
+        <!-- Tabbed sections (mirror the create/edit form steps) -->
+        <MpTabs id="cad-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="cad-tabs detail-tabs">
+          <MpTabList>
+            <MpTab id="cad-tab-persona" value="persona">Persona</MpTab>
+            <MpTab id="cad-tab-knowledge" value="knowledge">Knowledge</MpTab>
+            <MpTab id="cad-tab-skills" value="skills">Skills</MpTab>
+            <MpTab id="cad-tab-visibility" value="visibility">Visibility</MpTab>
+          </MpTabList>
+          <MpTabPanels>
+            <!-- Persona -->
+            <MpTabPanel value="persona">
+              <div class="cad-panel">
+                <section class="cad-sec">
+                  <h3 class="cad-h3">Instruction</h3>
+                  <p class="cad-value">{{ instruction }}</p>
+                </section>
+                <section class="cad-sec">
+                  <h3 class="cad-h3">Model</h3>
+                  <p class="cad-value cad-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
+                </section>
+                <section v-if="ownedTasks.length" class="cad-sec">
+                  <h3 class="cad-h3">Tasks this agent runs</h3>
+                  <div v-for="t in ownedTasks" :key="t.title" class="cad-task">
+                    <span class="cad-task__name">{{ t.title }}</span>
+                    <span class="cad-task__desc">{{ t.desc }}</span>
+                  </div>
+                </section>
+              </div>
+            </MpTabPanel>
 
-        <!-- Model -->
-        <section class="cad-sec">
-          <h3 class="cad-h3">Model</h3>
-          <p class="cad-value cad-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
-        </section>
+            <!-- Knowledge -->
+            <MpTabPanel value="knowledge">
+              <div class="cad-panel">
+                <section class="cad-sec">
+                  <h3 class="cad-h3">Knowledge</h3>
+                  <div class="cad-chips">
+                    <span v-for="k in knowledgeAreas" :key="k" class="cad-chip">{{ k }}</span>
+                    <span v-if="!knowledgeAreas.length && !agent.knowledgeFiles?.length" class="cad-muted">No knowledge sources yet.</span>
+                  </div>
+                  <div v-for="f in agent.knowledgeFiles" :key="f.name" class="cad-file"><MpIcon name="doc" size="sm" /> {{ f.name }} <span class="cad-muted">· {{ f.size }}</span></div>
+                </section>
+              </div>
+            </MpTabPanel>
 
-        <!-- Knowledge -->
-        <section class="cad-sec">
-          <h3 class="cad-h3">Knowledge</h3>
-          <div class="cad-chips">
-            <span v-for="k in knowledgeAreas" :key="k" class="cad-chip">{{ k }}</span>
-            <span v-if="!knowledgeAreas.length && !agent.knowledgeFiles?.length" class="cad-muted">No knowledge sources yet.</span>
-          </div>
-          <div v-for="f in agent.knowledgeFiles" :key="f.name" class="cad-file"><MpIcon name="doc" size="sm" /> {{ f.name }} <span class="cad-muted">· {{ f.size }}</span></div>
-        </section>
+            <!-- Skills -->
+            <MpTabPanel value="skills">
+              <div class="cad-panel">
+                <section class="cad-sec">
+                  <h3 class="cad-h3">Skills</h3>
+                  <div v-for="s in skills" :key="s!.id" class="cad-skill">
+                    <p class="cad-skill__name">{{ s!.name }}</p>
+                    <p class="cad-skill__desc">{{ s!.description }}</p>
+                    <div class="cad-chips">
+                      <span v-for="a in s!.actions" :key="a.id" class="cad-chip">{{ a.label }}</span>
+                    </div>
+                  </div>
+                  <p v-if="!skills.length" class="cad-muted">No skills enabled.</p>
+                </section>
+              </div>
+            </MpTabPanel>
 
-        <!-- Skills -->
-        <section class="cad-sec">
-          <h3 class="cad-h3">Skills</h3>
-          <div v-for="s in skills" :key="s!.id" class="cad-skill">
-            <p class="cad-skill__name">{{ s!.name }}</p>
-            <p class="cad-skill__desc">{{ s!.description }}</p>
-            <div class="cad-chips">
-              <span v-for="a in s!.actions" :key="a.id" class="cad-chip">{{ a.label }}</span>
-            </div>
-          </div>
-          <p v-if="!skills.length" class="cad-muted">No skills enabled.</p>
-        </section>
-
-        <!-- Visibility -->
-        <section class="cad-sec">
-          <h3 class="cad-h3">Visibility</h3>
-          <p v-if="agent.visibilityEveryone" class="cad-value">Everyone at {{ COWORK_COMPANY }}</p>
-          <template v-else>
-            <p class="cad-muted">{{ visEmployees.length }} {{ visEmployees.length === 1 ? 'person' : 'people' }} with access</p>
-            <div v-for="e in visEmployees" :key="e!.id" class="cad-person">
-              <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
-              <span class="cad-person__name">{{ e!.fullName }}</span>
-              <span class="cad-person__role">{{ e!.jobPosition }}</span>
-            </div>
-          </template>
-        </section>
-
-        <!-- Tasks it runs -->
-        <section v-if="ownedTasks.length" class="cad-sec">
-          <h3 class="cad-h3">Tasks this agent runs</h3>
-          <div v-for="t in ownedTasks" :key="t.title" class="cad-task">
-            <span class="cad-task__name">{{ t.title }}</span>
-            <span class="cad-task__desc">{{ t.desc }}</span>
-          </div>
-        </section>
+            <!-- Visibility -->
+            <MpTabPanel value="visibility">
+              <div class="cad-panel">
+                <section class="cad-sec">
+                  <h3 class="cad-h3">Visibility</h3>
+                  <p v-if="agent.visibilityEveryone" class="cad-value">Everyone at {{ COWORK_COMPANY }}</p>
+                  <template v-else>
+                    <p class="cad-muted">{{ visEmployees.length }} {{ visEmployees.length === 1 ? 'person' : 'people' }} with access</p>
+                    <div v-for="e in visEmployees" :key="e!.id" class="cad-person">
+                      <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
+                      <span class="cad-person__name">{{ e!.fullName }}</span>
+                      <span class="cad-person__role">{{ e!.jobPosition }}</span>
+                    </div>
+                  </template>
+                </section>
+              </div>
+            </MpTabPanel>
+          </MpTabPanels>
+        </MpTabs>
       </div>
     </div>
   </template>
@@ -154,8 +182,16 @@ function removeAgent() {
 .cad-role { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cad-desc { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 
+/* Tabs · active-state + tab-to-content gap overrides (matches ERP detail pages) */
+.cad-tabs { width: 100%; margin-top: var(--mp-spacing-5, 20px); }
+.detail-tabs :deep(.mp-tab--isSelected_true),
+.detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+
 .cad-sec { padding: var(--mp-spacing-5) 0; border-bottom: 1px solid var(--mp-border-default); }
 .cad-sec:last-child { border-bottom: none; }
+.cad-panel > .cad-sec:first-child { padding-top: 0; }
 .cad-h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .cad-value { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .cad-model { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); }
