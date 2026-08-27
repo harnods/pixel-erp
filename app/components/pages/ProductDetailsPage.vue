@@ -325,7 +325,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
-            <ContentList label="Product type" :value="product.productType" />
+            <!-- Product type is an ERP concept — every WMS Standalone product is single. -->
+            <ContentList v-if="!isWms" label="Product type" :value="product.productType" />
             <ContentList label="Track stock by" :value="product.trackStockBy" />
             <ContentList v-if="!isWms" label="Default inventory account">
               <span v-if="isMigrationPending">—</span>
