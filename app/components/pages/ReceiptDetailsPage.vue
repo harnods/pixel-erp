@@ -489,8 +489,6 @@ function confirmDelete() {
 
     <!-- ── Footer action bar — always at the bottom; border only when content scrolls ── -->
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary">{{ t('Print PDF') }}</button>
-
       <!-- Create purchase receiving — split button; the chevron holds the order-level
            Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
       <template v-if="canCreateReceivingTask(orderId)">
