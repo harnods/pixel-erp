@@ -228,7 +228,7 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
     prompt: 'Identify the highest-value prospects with no recent activity and draft a short, personalised follow-up message for each.',
     instruction: "I will identify the highest-value prospects that have gone quiet and draft a short, personalised follow-up message for each, ready for you to send.",
     workflow: ["Find high-value prospects with no recent activity.", "Review each account's context and last touch.", "Draft a personalised follow-up per prospect.", "Prioritise who to contact first."],
-    outputs: ['Briefing summary', 'Email draft'] },
+    outputs: ['Briefing summary'] },
   { title: 'Sales orders needing fulfilment', module: 'Sales', desc: 'Open sales orders ready to pick, pack and ship.',
     prompt: 'List open sales orders that are ready to fulfil, cross-check stock availability in the warehouse, and flag any that are blocked.',
     instruction: "I will list the open sales orders ready to fulfil, cross-check each against warehouse stock, and flag any that are blocked so nothing slips.",
@@ -269,7 +269,7 @@ export const COWORK_CATALOG: CoworkCatalogItem[] = [
     prompt: 'Review overdue receivables. Identify the largest overdue invoices, draft payment reminders, and tell me who to chase first.',
     instruction: "I will review overdue receivables in Jurnal, rank the largest overdue invoices by value and risk, draft payment reminders, and tell you exactly who to chase first.",
     workflow: ["Pull overdue invoices and collection notes.", "Rank by value, risk and days overdue.", "Draft a reminder for the top accounts.", "Produce a prioritised chase list."],
-    outputs: ['Briefing summary', 'Action items', 'Email draft', 'Spreadsheet'], usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'], usedBy: ['EMP-0005','EMP-0002','EMP-0008'] },
   { title: 'Bank reconciliation review', module: 'Finance', desc: 'Match statement lines and surface unreconciled items.',
     prompt: 'Review bank reconciliation across cash accounts. Surface unmatched statement lines and suggest the likely matching transaction for each.',
     instruction: "I will review bank reconciliation across your cash accounts, surface the unmatched statement lines, and suggest the likely matching transaction for each.",
@@ -297,7 +297,6 @@ function receivablesPlan(rows: ReceivableCollection[] = receivablesCollections, 
   const dOver = (r: ReceivableCollection) => Math.max(1, r.daysOverdue + daysAdj)
   const total = rows.reduce((a, r) => a + r.amount, 0)
   const high = rows.filter((r) => r.riskLevel === 'High')
-  const top = rows[0]!
   return {
     taskTitle: 'Chase overdue receivables',
     intro: 'Reviewed every overdue invoice in Jurnal, cross-checked the collections notes, and prepared a chase list plus a reminder draft.',
@@ -339,10 +338,6 @@ function receivablesPlan(rows: ReceivableCollection[] = receivablesCollections, 
         title: `Chase ${r.customer}`, detail: `${r.invoiceNumber} (${money(r.amount)}) — ${r.reason}`,
         owner: r.owner, due: r.promiseToPay ?? 'This week', priority: 'High',
       })),
-      email: {
-        to: top.customer, subject: `Payment reminder — ${top.invoiceNumber} (${money(top.amount)})`,
-        body: `Dear ${top.customer} team,\n\nOur records show invoice ${top.invoiceNumber} for ${money(top.amount)}, due ${top.dueDate}, is now ${dOver(top)} days overdue.\n\nWe understand a credit note for the short-shipped items is pending — we are processing that now and will send it shortly. Once received, we would appreciate settlement by ${top.promiseToPay}.\n\nPlease let us know if anything else is blocking payment.\n\nBest regards,\nRizal Candra\nFinance, PT Central Perk Indonesia`,
-      },
       spreadsheet: {
         title: 'Overdue receivables',
         columns: ['Invoice', 'Customer', 'Amount', 'Days overdue', 'Risk', 'Reason', 'Owner'],
@@ -727,7 +722,7 @@ const TASKS_SEED: CoworkTask[] = [
   { id: 'CW-1039', title: 'Chase overdue receivables', module: 'Finance', modules: ['Finance', 'CRM'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Chase overdue receivables')!.prompt,
     createdAt: '2026-07-28T08:00:00', completedAt: '2026-08-18T08:00:00', metric: RECEIVABLES_PLAN.metric,
-    outputs: ['Briefing summary', 'Action items', 'Email draft', 'Spreadsheet'], sources: ['Finance', 'CRM'],
+    outputs: ['Briefing summary', 'Action items', 'Spreadsheet'], sources: ['Finance', 'CRM'],
     planJson: JSON.stringify(RECEIVABLES_PLAN), runs: scheduledRuns('CW-1039', RECEIVABLES_RUNS),
     schedule: { cadence: 'Weekly', time: '08:00', nextRun: 'Mon, 25 Aug · 08:00', enabled: true } },
   { id: 'CW-1038', title: 'Reorder low-stock SKUs', module: 'WMS', modules: ['WMS'], status: 'completed',

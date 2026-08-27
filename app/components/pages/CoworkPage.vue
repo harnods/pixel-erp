@@ -296,12 +296,6 @@ async function downloadPdf() {
   }
   doc.save(`${(p.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.pdf`)
 }
-function copyEmail() {
-  const e = plan.value?.artifacts?.email
-  if (!e) return
-  navigator.clipboard?.writeText(`To: ${e.to}\nSubject: ${e.subject}\n\n${e.body}`)
-  toast.notify({ variant: 'success', title: 'Email copied' })
-}
 
 // Open a task on its detail page (run history + result live there).
 function openTaskDetail(task: CoworkTask) {
@@ -365,7 +359,6 @@ const activeSourceNames = computed(() => sourceConnections.value.filter((s) => i
 const OUTPUTS = [
   { id: 'briefing', name: 'Briefing summary' },
   { id: 'action-items', name: 'Action items' },
-  { id: 'email', name: 'Email draft' },
   { id: 'spreadsheet', name: 'Spreadsheet' },
   { id: 'pdf', name: 'PDF report' },
   { id: 'slack', name: 'Slack message', disabled: true },
@@ -906,19 +899,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <ErpStatusBadge :status="a.priority.toLowerCase()" :label="a.priority" />
               </li>
             </ul>
-          </template>
-
-          <!-- Email draft -->
-          <template v-if="plan?.artifacts?.email">
-            <div class="cw-art-head cw-mt-24">
-              <p class="cw-eyebrow" style="margin:0">Email draft</p>
-              <MpButton is-rounded variant="tertiary" size="sm" @click="copyEmail"><MpIcon name="copy" size="sm" /> Copy</MpButton>
-            </div>
-            <div class="cw-email">
-              <p class="cw-email__row"><span class="cw-email__k">To</span> {{ plan.artifacts.email.to }}</p>
-              <p class="cw-email__row"><span class="cw-email__k">Subject</span> {{ plan.artifacts.email.subject }}</p>
-              <pre class="cw-email__body">{{ plan.artifacts.email.body }}</pre>
-            </div>
           </template>
 
           <!-- Spreadsheet -->

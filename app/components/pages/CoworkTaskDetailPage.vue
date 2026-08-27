@@ -238,7 +238,6 @@ function buildChatContext(): string {
     if (a.briefing.findings?.length) { lines.push('Key findings:'); for (const f of a.briefing.findings) lines.push(`- ${f.title}: ${f.detail}`) }
   }
   if (a?.actionItems?.length) { lines.push('Action items:'); for (const it of a.actionItems) lines.push(`- ${it.title} (owner ${it.owner}, due ${it.due}): ${it.detail}`) }
-  if (a?.email) lines.push(`Email draft — to ${a.email.to}, subject "${a.email.subject}": ${a.email.body}`)
   if (a?.spreadsheet) lines.push(`Spreadsheet "${a.spreadsheet.title}" columns: ${a.spreadsheet.columns.join(', ')}; ${a.spreadsheet.rows.length} rows.`)
   // Attach the underlying ERP data for the modules this task touches, so the user
   // can drill into details the result only summarised — e.g. an employee's profile
@@ -340,11 +339,11 @@ function openChat() { airene.openWithContext(buildChatContext(), task.value?.tit
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.
-const ARTIFACT_LABEL: Record<string, string> = { briefing: 'Briefing summary', actionItems: 'Action items', email: 'Email draft', spreadsheet: 'Spreadsheet', pdf: 'PDF report' }
+const ARTIFACT_LABEL: Record<string, string> = { briefing: 'Briefing summary', actionItems: 'Action items', spreadsheet: 'Spreadsheet', pdf: 'PDF report' }
 const outputLabels = computed(() => {
   const a = plan.value?.artifacts as Record<string, unknown> | undefined
   if (a) {
-    const keys = Object.keys(a).filter((k) => a[k])
+    const keys = Object.keys(a).filter((k) => a[k] && k !== 'email')
     if (keys.length) return keys.map((k) => ARTIFACT_LABEL[k] ?? k)
   }
   return task.value?.outputs?.length ? task.value.outputs : ['Briefing summary']
@@ -586,15 +585,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <p class="ctd-muted">{{ a.detail }}</p>
                 <p class="ctd-muted ctd-item__meta">{{ a.owner }} · {{ a.due }}</p>
                 <button class="btn-enterprise btn-enterprise--secondary ctd-actbtn" type="button" @click="doAction(a)">{{ actionButton(a) }}</button>
-              </div>
-            </template>
-
-            <template v-if="plan.artifacts?.email">
-              <p class="ctd-sec">Email draft</p>
-              <div class="ctd-email">
-                <p class="ctd-email__row"><span class="ctd-email__k">To</span> {{ plan.artifacts.email.to }}</p>
-                <p class="ctd-email__row"><span class="ctd-email__k">Subject</span> {{ plan.artifacts.email.subject }}</p>
-                <pre class="ctd-email__body">{{ plan.artifacts.email.body }}</pre>
               </div>
             </template>
 
