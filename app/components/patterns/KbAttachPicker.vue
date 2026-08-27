@@ -108,7 +108,10 @@ function cancel() { emit('update:isOpen', false) }
       <div v-if="isOpen" class="kap-overlay" @click.self="cancel">
         <div class="kap-panel" role="dialog" aria-modal="true" aria-label="Attach knowledge">
           <header class="kap-head">
-            <h2 class="kap-title">Attach knowledge</h2>
+            <div class="kap-head-top">
+              <h2 class="kap-title">Attach knowledge</h2>
+              <button class="kap-close" type="button" aria-label="Close" @click="cancel"><MpIcon name="close" size="md" /></button>
+            </div>
             <p class="kap-sub">Pick collections, folders or documents. A folder attaches everything inside it (live).</p>
           </header>
 
@@ -142,8 +145,8 @@ function cancel() { emit('update:isOpen', false) }
           <footer class="kap-foot">
             <span class="kap-count">{{ selectedCount }} attached</span>
             <div class="kap-actions">
-              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancel">Cancel</button>
-              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="done">Attach</button>
+              <MpButton variant="ghost" is-rounded @click="cancel">Cancel</MpButton>
+              <MpButton variant="primary" is-rounded @click="done">Attach</MpButton>
             </div>
           </footer>
         </div>
@@ -153,16 +156,22 @@ function cancel() { emit('update:isOpen', false) }
 </template>
 
 <style scoped>
-.kap-enter-active, .kap-leave-active { transition: opacity 200ms ease; }
-.kap-enter-from, .kap-leave-to { opacity: 0; }
-.kap-enter-active .kap-panel, .kap-leave-active .kap-panel { transition: transform 200ms ease, opacity 200ms ease; }
-.kap-enter-from .kap-panel, .kap-leave-to .kap-panel { transform: scale(0.96); opacity: 0; }
-.kap-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; align-items: flex-start; justify-content: center; }
-.kap-panel { width: min(520px, calc(100% - 32px)); margin-top: 72px; max-height: calc(100vh - 144px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); overflow: hidden; }
-.kap-head { padding: var(--mp-spacing-5, 20px) var(--mp-spacing-5) var(--mp-spacing-3); }
-.kap-title { margin: 0; font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+/* Right-side floating ERP drawer (matches SelectProductDrawer / SelectAccessDrawer):
+   slide-in from the right, 12px margin, rounded corners. */
+.kap-enter-active, .kap-leave-active { transition: background-color 250ms ease; }
+.kap-enter-from, .kap-leave-to { background-color: transparent; }
+.kap-enter-active .kap-panel { transition: transform 350ms ease-out; }
+.kap-leave-active .kap-panel { transition: transform 250ms ease-in; }
+.kap-enter-from .kap-panel, .kap-leave-to .kap-panel { transform: translateX(calc(100% + 12px)); }
+.kap-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
+.kap-panel { margin: var(--mp-spacing-3, 12px); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden; }
+.kap-head { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.kap-head-top { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.kap-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.kap-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.kap-close:hover { background: var(--mp-background-neutral-hovered); }
 .kap-sub { margin: 4px 0 0; font-size: 12px; color: var(--mp-text-secondary); }
-.kap-tree { flex: 1; min-height: 120px; overflow-y: auto; padding: var(--mp-spacing-2) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.kap-tree { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .kap-empty { padding: var(--mp-spacing-6); text-align: center; font-size: 13px; color: var(--mp-text-secondary); }
 .kap-row { display: flex; align-items: center; gap: 2px; min-height: 34px; }
 .kap-chev { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 28px; border: none; background: none; cursor: pointer; color: var(--mp-icon-default, #536062); border-radius: 4px; }
@@ -174,7 +183,7 @@ function cancel() { emit('update:isOpen', false) }
 .kap-name { font-size: 13px; color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kap-ext { flex: 0 0 auto; font-size: 10px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral, #eceef0); border-radius: 4px; padding: 1px 5px; }
 .kap-covered { flex: 0 0 auto; font-size: 10px; color: var(--mp-text-secondary); font-style: italic; }
-.kap-foot { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-5, 20px); }
+.kap-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-border-default); }
 .kap-count { font-size: 12px; color: var(--mp-text-secondary); }
 .kap-actions { display: flex; gap: var(--mp-spacing-2); }
 </style>
