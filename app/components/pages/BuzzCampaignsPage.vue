@@ -39,9 +39,9 @@ const { pending } = useBuzzActions()
 watch(() => pending.value, (p) => { if (p?.action === 'newCampaign') showCreate.value = true })
 
 const PURPOSES = ['Product launch', 'Feature announcement', 'Educational', 'Event', 'Promotion', 'Employer branding', 'Thought leadership']
-const form = reactive({ name: '', brand: buzzBrands[0]!.id, purpose: PURPOSES[0]!, audience: '' })
+const form = reactive({ name: '', brand: buzzBrands[0]?.id ?? '', purpose: PURPOSES[0]!, audience: '' })
 const createError = ref('')
-watch(showCreate, (open) => { if (open) { form.name = ''; form.brand = buzzBrands[0]!.id; form.purpose = PURPOSES[0]!; form.audience = ''; createError.value = '' } })
+watch(showCreate, (open) => { if (open) { form.name = ''; form.brand = buzzBrands[0]?.id ?? ''; form.purpose = PURPOSES[0]!; form.audience = ''; createError.value = '' } })
 
 function createCampaign() {
   if (!form.name.trim()) { createError.value = 'You must fill in a campaign name'; return }
@@ -51,7 +51,7 @@ function createCampaign() {
     name: form.name.trim(),
     brand: form.brand,
     purpose: form.purpose,
-    audience: form.audience.trim() || '—',
+    audience: form.audience.trim() || 'General',
     status: 'Draft',
     creatives: 0,
     owner: 'You',

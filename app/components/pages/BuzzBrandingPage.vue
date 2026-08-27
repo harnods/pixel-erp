@@ -10,8 +10,17 @@
 import { MpIcon } from '@mekari/pixel3'
 import { buzzBrands } from '~/data/buzz'
 import { getImage } from '~/utils/buzzImageStore'
+import { useBuzzActions } from '~/composables/useBuzzActions'
+import BuzzNewBrandModal from '~/components/patterns/BuzzNewBrandModal.vue'
 
 const router = useRouter()
+
+// New brand kit modal — opened from the title-bar "New brand kit" (bus) or the
+// empty-state button; on create it lands on the new brand's guideline page.
+const showNewBrand = ref(false)
+const { pending } = useBuzzActions()
+watch(() => pending.value, (p) => { if (p?.action === 'newBrand') showNewBrand.value = true })
+function onBrandCreated(id: string) { router.push(`/buzz-brand/${id}`) }
 
 // Seed brands carry a /connectors logo path; custom brands store a logo asset id
 // (image in IndexedDB) — resolve those lazily.
@@ -29,7 +38,8 @@ function logoSrc(logo: string): string { return isAssetLogo(logo) ? (logoUrls.va
 </script>
 
 <template>
-  <div class="brand-grid">
+  <div class="buzz-branding">
+    <div v-if="buzzBrands.length" class="brand-grid">
     <section v-for="b in buzzBrands" :key="b.id" class="brand-card">
       <header class="brand-card__head">
         <img v-if="logoSrc(b.logo)" :src="logoSrc(b.logo)" :alt="b.name" class="brand-card__logo" />
@@ -38,7 +48,7 @@ function logoSrc(logo: string): string { return isAssetLogo(logo) ? (logoUrls.va
           <h2 class="brand-card__name">{{ b.name }}<span v-if="b.source === 'custom'" class="brand-card__tag">Custom</span></h2>
           <p class="brand-card__count">{{ b.assetCount }} approved assets</p>
         </div>
-        <button type="button" class="brand-card__manage" @click="router.push(`/buzz-brand/${b.id}/edit`)">Manage</button>
+        <button type="button" class="brand-card__manage" @click="router.push(`/buzz-brand/${b.id}`)">Open</button>
       </header>
 
       <!-- Colours -->
@@ -86,11 +96,27 @@ function logoSrc(logo: string): string { return isAssetLogo(logo) ? (logoUrls.va
         </ul>
       </div>
     </section>
+    </div>
+
+    <div v-else class="empty-full">
+      <img src="/illustrations/empty-box.png" alt="" class="empty-illustration" width="288" height="240" />
+      <p class="empty-full-title">No brand kits yet</p>
+      <p class="empty-full-desc">Create your first brand kit so Buzz can generate on-brand creatives. Upload a brand guideline or paste your website and AI does the rest.</p>
+      <button type="button" class="btn-enterprise btn-enterprise--secondary empty-cta" @click="showNewBrand = true">New brand kit</button>
+    </div>
+
+    <BuzzNewBrandModal v-model:is-open="showNewBrand" @created="onBrandCreated" />
   </div>
 </template>
 
 <style scoped>
 .brand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--mp-spacing-4, 16px); }
+/* Empty state — 3D illustration + copy + secondary CTA (ERP pattern) */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-12, 48px) var(--mp-spacing-6); text-align: center; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); max-width: 420px; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.empty-cta { margin-top: var(--mp-spacing-3); }
 
 .brand-card { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); padding: var(--mp-spacing-5, 20px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-default, #fff); }
 .brand-card__head { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); }

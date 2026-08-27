@@ -19,7 +19,7 @@ const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void; (e: 'saved', id: string): void }>()
 
 const prompt = ref('')
-const brandId = ref(buzzBrands[0]!.id)
+const brandId = ref(buzzBrands[0]?.id ?? '')
 const orientation = ref<BuzzOrientation>('Landscape')
 const style = ref('')
 const orientations: BuzzOrientation[] = ['Landscape', 'Portrait', 'Square']
@@ -31,7 +31,7 @@ const resultUrl = ref('')   // data: URL of the generated image
 const resultMime = ref('image/png')
 
 function reset() {
-  prompt.value = ''; brandId.value = buzzBrands[0]!.id; orientation.value = 'Landscape'; style.value = ''
+  prompt.value = ''; brandId.value = buzzBrands[0]?.id ?? ''; orientation.value = 'Landscape'; style.value = ''
   generating.value = false; error.value = ''; resultUrl.value = ''
 }
 watch(() => props.isOpen, (open) => { if (open) reset() })

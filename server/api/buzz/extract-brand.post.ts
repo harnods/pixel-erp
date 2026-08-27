@@ -35,7 +35,8 @@ const SCHEMA_KEYS = [
   'theme (one line describing the overall visual theme)',
   'typography: { headline, body, hierarchy }',
   'tone: { summary, do (array of strings), dont (array of strings) }',
-  'logoUsage (array of strings — clear space, approved variants, do/don\'t)',
+  'logoUsage (array of strings — clear space, approved variants, do/don\'t; [] if the material does not cover logo usage)',
+  'visualStyle (one line describing the imagery / illustration / iconography style; "" if not covered)',
   'photography (one line describing photography / illustration style)',
   'guardrails (array of strings — general brand guardrails for AI generation)',
 ].join('; ')
@@ -58,6 +59,7 @@ function emptyBrand() {
     typography: { headline: '', body: '', hierarchy: '' },
     tone: { summary: '', do: [] as string[], dont: [] as string[] },
     logoUsage: [] as string[],
+    visualStyle: '',
     photography: '',
     guardrails: [] as string[],
   }
@@ -90,6 +92,7 @@ function normalise(raw: any) {
   b.tone.do = asArray(tone.do).map(String)
   b.tone.dont = asArray(tone.dont ?? tone.donts ?? tone['don\'t']).map(String)
   b.logoUsage = asArray(raw.logoUsage).map(String)
+  if (typeof raw.visualStyle === 'string') b.visualStyle = raw.visualStyle
   if (typeof raw.photography === 'string') b.photography = raw.photography
   b.guardrails = asArray(raw.guardrails).map(String)
   return b

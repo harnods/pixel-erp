@@ -102,9 +102,11 @@ function onSaved() { loadImages() }
         </span>
       </button>
     </div>
-    <div v-else class="empty">
-      <MpIcon name="file-image" size="lg" />
-      <p>No photos match your filters.</p>
+    <div v-else class="empty-full">
+      <img src="/illustrations/empty-box.png" alt="" class="empty-illustration" width="288" height="240" />
+      <p class="empty-full-title">No photos yet</p>
+      <p class="empty-full-desc">Generate an on-brand image or adjust your filters. Saved photos appear here to reuse across creatives.</p>
+      <button type="button" class="btn-enterprise btn-enterprise--secondary empty-cta" @click="showGenerate = true">Generate asset</button>
     </div>
 
     <GenerateAssetDrawer v-model:is-open="showGenerate" @saved="onSaved" />
@@ -129,7 +131,12 @@ function onSaved() { loadImages() }
 .asset__title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
-.empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-20, 80px); color: var(--mp-text-secondary); }
+/* Empty state — 3D illustration + copy + secondary CTA (ERP pattern) */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-12, 48px) var(--mp-spacing-6); text-align: center; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); max-width: 420px; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.empty-cta { margin-top: var(--mp-spacing-3); }
 
 /* ── Filter bar (verbatim ERP block) ── */
 .filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
