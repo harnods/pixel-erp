@@ -2249,7 +2249,7 @@ function startResize(e: MouseEvent) {
               <div class="airene-gem-icon" aria-hidden="true">
                 <!-- ref on wrapper so eyes rotate WITH the body -->
                 <div ref="mascotImgEl" class="mascot-wrapper">
-                  <img src="~/assets/airene-mascot-v2.png" width="60" height="63" alt="" class="airene-mascot-img" />
+                  <img src="~/assets/airene-mascot-v3.png" width="60" height="60" alt="" class="airene-mascot-img" />
                   <!-- Eyes drawn on the star body; they tilt with it -->
                   <div class="mascot-eye mascot-eye--left">
                     <div ref="pupilLeftEl" class="mascot-pupil" />
@@ -3198,15 +3198,15 @@ function startResize(e: MouseEvent) {
   position: relative;
   display: inline-block;
   width: 60px;             /* mascot artwork — fixed asset dimensions */
-  height: 63px;
+  height: 60px;
   will-change: transform;
   transform-origin: center bottom;  /* tilt from the base */
 }
 
 .airene-mascot-img {
   display: block;
-  width: 60px;             /* mascot artwork — fixed asset dimensions */
-  height: 63px;
+  width: 60px;             /* mascot artwork — square asset (v3) */
+  height: 60px;
   /* no transform here — wrapper handles it */
 }
 
