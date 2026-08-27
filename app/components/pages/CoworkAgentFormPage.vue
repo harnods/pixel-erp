@@ -261,9 +261,9 @@ function save() {
               <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description' }">
                 <textarea v-model="description" class="caf-ta__input" rows="2"></textarea>
                 <div class="caf-ta__foot">
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
+                  <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
                     <MpSpinner v-if="optimizing === 'description'" size="sm" />
-                    <MpIcon v-else name="magic" size="sm" /> Optimize
+                    <MpIcon v-else name="airene-brand" size="sm" /> Optimize
                   </button>
                 </div>
               </div>
@@ -275,9 +275,9 @@ function save() {
               <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction' }">
                 <textarea v-model="instruction" class="caf-ta__input" rows="5"></textarea>
                 <div class="caf-ta__foot">
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary caf-optimize" :disabled="optimizing === 'instruction'" @click="optimize('instruction')">
+                  <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction'" @click="optimize('instruction')">
                     <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
-                    <MpIcon v-else name="magic" size="sm" /> Optimize
+                    <MpIcon v-else name="airene-brand" size="sm" /> Optimize
                   </button>
                 </div>
               </div>
@@ -455,7 +455,7 @@ function save() {
 .caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 .caf-ta:focus-within { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47,111,235,0.12); }
 .caf-ta__input { display: block; width: 100%; box-sizing: border-box; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
-.caf-ta__foot { display: flex; justify-content: flex-end; padding: 0 var(--mp-spacing-2, 8px) var(--mp-spacing-2, 8px); }
+.caf-ta__foot { display: flex; justify-content: flex-end; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
 .caf-optimize:disabled { opacity: 0.7; cursor: default; }
 .caf-hint--tight { margin-top: 2px; max-width: 420px; }
