@@ -441,8 +441,8 @@ function save() {
 .caf-kb-file { display: none; }
 /* 32px before "Add all workspace content" (12px on top of the 20px grid row-gap). */
 .caf-field--gap32 { margin-top: var(--mp-spacing-3, 12px); }
-.caf-kb-list { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.caf-kb-chip { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: 8px 10px; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; background: var(--mp-background-default, #fff); }
+.caf-kb-list { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; }
+.caf-kb-chip { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-kb-chip :deep(svg) { flex: 0 0 auto; color: var(--mp-icon-default, #536062); }
 .caf-kb-chip__folder { color: var(--mp-icon-brand, #0a6e4e) !important; }
 .caf-kb-chip__name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
