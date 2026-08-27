@@ -499,10 +499,10 @@ function save() {
 
 /* Textarea with a docked "Optimize" button inside the box */
 .caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
-/* Enterprise (DT 2.4) focus: emerald border + subtle emerald ring — never blue. */
-.caf-ta:focus-within { border-color: var(--mp-border-selected, #029861); box-shadow: 0 0 0 3px rgba(2, 152, 97, 0.12); }
+/* Focus matches MpInput/MpSelect exactly: bold-gray border + 1px gray ring. */
+.caf-ta:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
-.caf-ta.is-error:focus-within { box-shadow: 0 0 0 3px rgba(209, 54, 47, 0.12); }
+.caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
 .caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
 .caf-ta__foot { display: flex; justify-content: flex-end; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
@@ -522,7 +522,7 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 /* MpPopover-backed select trigger — styled like a Pixel form input */
 .caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
 .caf-select:hover { border-color: var(--mp-border-bold, #8c9596); }
-.caf-select:focus-visible { outline: none; border-color: var(--mp-border-selected, #029861); box-shadow: 0 0 0 3px rgba(2, 152, 97, 0.12); }
+.caf-select:focus-visible { outline: none; border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .caf-select__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .caf-select__chev { flex: 0 0 auto; width: 20px; height: 20px; color: var(--mp-icon-default, #536062); }
 
