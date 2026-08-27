@@ -108,6 +108,7 @@ const pageRegistry: Record<string, Component> = {
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
@@ -208,6 +209,7 @@ const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDet
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
@@ -225,6 +227,7 @@ const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOut
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
+const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -455,6 +458,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
   }
+  // /work-orders/:id/material-record/new → new consume/return record (full page)
+  if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
+    return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
@@ -464,6 +471,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
+  }
+  // /approval-workflows/new → create form; /:id/edit → edit form (reuses the same
+  // page). The bare index falls through to the registry (ApprovalWorkflowsPage list).
+  if (segs.length >= 2 && segs[0] === 'approval-workflows') {
+    if (segs[1] === 'new') return { component: CreateApprovalWorkflowPage, id: 'new' }
+    if (segs.length >= 3 && segs[2] === 'edit') return { component: CreateApprovalWorkflowPage, id: segs[1]! }
   }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
@@ -813,6 +826,10 @@ const currentTabs = computed<string[]>(() => {
     }
     // WMS doesn't deal in the ERP-side product approval workflow.
     if (currentPageKey.value === 'Product list' && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
+    // Transfers and stock adjustments go through a manager sign-off in ERP only —
+    // in WMS these pages are a single flat list, so the tab bar disappears entirely.
+    if ((currentPageKey.value === 'Warehouse transfers' || currentPageKey.value === 'Stock adjustments')
+      && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
     return true
   })
 })
@@ -1765,6 +1782,14 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('New warehouse') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/approval-workflows/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New approval workflow') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">

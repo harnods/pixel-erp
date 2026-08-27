@@ -399,6 +399,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :has-active-filter="hasActiveFilter"
     :search="search"
     :actions-width="actionsWidth"
+    :sticky-actions="!isCycleAwaiting"
     :has-checkbox="showCheckbox"
     :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"
     @page-change="setPage"
@@ -605,15 +606,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <!-- Awaiting approval, AS MANAGER — Approve + icon actions + kebab -->
       <div v-if="isAnyAwaiting && viewAs === 'manager'" class="sa-approval-actions">
         <button
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+          class="btn-enterprise btn-enterprise--secondary"
+          :class="isCycleAwaiting ? 'btn-enterprise--xs' : 'btn-enterprise--sm'"
           @click.stop="approve(row as unknown as StockAdjustment)"
         >{{ t('Approve') }}</button>
-        <MpTooltip :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
+        <!-- Cycle counts ship without approval log / comments for now — Approve only. -->
+        <MpTooltip v-if="!isCycleAwaiting" :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
           <button class="row-icon-ghost" :aria-label="t('Approval log')" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
             <MpIcon name="task-todo" size="md" />
           </button>
         </MpTooltip>
-        <MpTooltip :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
+        <MpTooltip v-if="!isCycleAwaiting" :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
           <button class="row-icon-ghost" :aria-label="t('Comments')" @click.stop><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
         <MpPopover :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -653,12 +656,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <!-- Awaiting approval, AS USER — Approval log + Comments + View details -->
       <div v-else-if="isAnyAwaiting" class="sa-approval-actions">
-        <MpTooltip :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
+        <!-- Cycle counts ship without approval log / comments for now — View details only. -->
+        <MpTooltip v-if="!isCycleAwaiting" :id="`sa-tt-log-${row.id}`" :label="t('Approval log')" placement="top" use-portal>
           <button class="row-icon-ghost" :aria-label="t('Approval log')" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
             <MpIcon name="task-todo" size="md" />
           </button>
         </MpTooltip>
-        <MpTooltip :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
+        <MpTooltip v-if="!isCycleAwaiting" :id="`sa-tt-comment-${row.id}`" :label="t('Comments')" placement="top" use-portal>
           <button class="row-icon-ghost" :aria-label="t('Comments')" @click.stop><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
         <MpTooltip :id="`sa-tt-view-${row.id}`" :label="t('View details')" placement="top" use-portal>

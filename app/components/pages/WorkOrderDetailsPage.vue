@@ -8,18 +8,26 @@
  * Status-aware: the header primary action, the raw-material/routing status columns,
  * and the reserved/consumed/start/end values all reflect the work order's status.
  */
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, css,
+  MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
+import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
+import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
+import { warehouses } from '~/data/warehouses'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -30,6 +38,8 @@ const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === p
 const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 
 function goList() { router.push('/work-orders') }
+function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
+function goBom() { if (bom.value) router.push(`/bill-of-materials/${bom.value.id}`) }
 
 // ── Flow (Default vs From production request) ────────────────────────────────
 // From-PR adds the "Linked transactions" bottom tab. Preselected via ?source=pr.
@@ -46,6 +56,11 @@ const bottomTabs = computed(() =>
   fromProductionRequest.value ? ['Partial production', 'Linked transactions'] : ['Partial production'],
 )
 const activeBottomTab = ref('Partial production')
+
+// ── Top-level tabs (Overview / Material consume & return) ────────────────────
+const topTabs = ['Overview', 'Material consume & return'] as const
+type TopTab = typeof topTabs[number]
+const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const num = (n: number) => n.toLocaleString('id-ID')
@@ -90,34 +105,198 @@ const collapsed = reactive<Record<string, boolean>>({
 // ── Line-item status derivation (from the work order status) ─────────────────────
 const routingLineStatus = computed(() => STATUS_LABEL[wo.value?.status ?? 'not started'])
 
-// Adjusted qty = the (possibly adjusted) planned qty; consumed = actual used per
-// status; variance = adjusted − consumed.
-function adjustedFor(r: { needed: number; adjusted: number }) {
-  return wo.value?.status === 'canceled' ? 0 : r.adjusted
-}
-function varianceFor(r: { needed: number; adjusted: number }) {
-  return adjustedFor(r) - consumedFor(r.needed)
-}
-function consumedFor(needed: number) {
-  const s = wo.value?.status
-  if (s === 'partially produced' || s === 'partially completed') return Math.round(needed * 0.5)
-  if (s === 'completed') return needed
-  return 0
+// Consumed = the real total from this work order's Material consume & return
+// records (Consume qty net of any Return qty) — the same records the Material
+// consume & return tab lists.
+function consumedFor(productId: string): number {
+  if (!wo.value) return 0
+  return Math.max(0, recordsForWorkOrder(wo.value.id)
+    .filter(r => r.productId === productId)
+    .reduce((s, r) => s + r.qty, 0))
 }
 // Actual start/end shown only when the work order has reached that stage.
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 // ── Line-item data — sourced from the real BOM this work order was raised from ──
-// `adjusted` = needed qty after the "adjust work order" action; the BOM template
-// doesn't track an execution warehouse, so a representative default is used.
+// The BOM template doesn't track an execution warehouse, so a representative
+// default is used for display.
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, adjusted: r.needed, unit: r.unit }
+  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+// ── Complete work order — blocked by unconsumed raw material qty ────────────
+// Clicking "Complete work order" while any raw material still has qty left to
+// consume shows a confirmation (Figma: Work Order Details / Partial
+// Consumption / Auto-consume Remaining) instead of completing outright.
+const CURRENT_USER = 'Rizal Candra'
+const AUTO_CONSUME_WAREHOUSE_ID = warehouses.find(w => w.status === 'active')?.id ?? warehouses[0]?.id ?? ''
+function trackingLabelForMaterial(productId: string): string | undefined {
+  const category = catalogProduct(productId)?.category ?? ''
+  if (isSerialized(category)) return 'View serial number'
+  if (isBatchTracked(category)) return 'View batch'
+  return undefined
+}
+const remainingRawMaterials = computed<CompleteWorkOrderRow[]>(() =>
+  rawMaterials.value
+    .map(r => {
+      const consumed = consumedFor(r.productId)
+      const reserved = wo.value
+        ? remainingReservation(wo.value.id, r.productId, wo.value.materialReservations?.[r.productId])
+        : {}
+      return {
+        productId: r.productId, product: r.product, sku: r.sku,
+        needed: r.needed, consumed, remaining: Math.max(0, r.needed - consumed), unit: r.unit,
+        trackingLabel: trackingLabelForMaterial(r.productId),
+        warehouseId: reserved.warehouseId,
+        reservedBatch: reserved.batchSelection, reservedSerial: reserved.serialSelection,
+      }
+    })
+    .filter(r => r.remaining > 0),
+)
+const showCompleteModal = ref(false)
+
+// "View batch" / "View serial number" in the complete-work-order modal opens
+// the same pick drawer used elsewhere, pre-filled with what's still reserved
+// but unconsumed — read-only in effect, since there's nothing to save back to
+// mid-completion; closing (Cancel or Save) just dismisses it.
+const viewTrackingRow = ref<CompleteWorkOrderRow | null>(null)
+function onViewTracking(row: CompleteWorkOrderRow) { viewTrackingRow.value = row }
+function closeViewTracking() { viewTrackingRow.value = null }
+const viewTrackingWarehouseName = computed(() => warehouses.find(w => w.id === viewTrackingRow.value?.warehouseId)?.name ?? '')
+const viewTrackingType = computed<'serial' | 'batch' | undefined>(() => {
+  const category = viewTrackingRow.value ? catalogProduct(viewTrackingRow.value.productId)?.category ?? '' : ''
+  if (isSerialized(category)) return 'serial'
+  if (isBatchTracked(category)) return 'batch'
+  return undefined
+})
+function completeWorkOrder() {
+  if (!wo.value) return
+  wo.value.status = 'completed'
+  wo.value.endDate = new Date().toISOString().slice(0, 10)
+  persistWorkOrders()
+  toast.notify({ variant: 'success', title: 'Work order completed' })
+}
+function onAutoConsumeAndComplete() {
+  if (!wo.value) return
+  const isoDate = new Date().toISOString().slice(0, 10)
+  remainingRawMaterials.value.forEach((r) => {
+    addMaterialConsumeReturnRecord({
+      workOrderId: wo.value!.id,
+      type: 'Consume',
+      productId: r.productId,
+      date: isoDate,
+      qty: r.remaining,
+      unit: r.unit,
+      // The warehouse the material was actually reserved from at work order
+      // creation — same warehouse "View batch"/"View serial number" showed.
+      // Falls back to the default only for untracked materials with no
+      // reservation to read a warehouse from.
+      warehouseId: r.warehouseId ?? AUTO_CONSUME_WAREHOUSE_ID,
+      memo: 'Auto-consumed on work order completion',
+      recordedBy: CURRENT_USER,
+      // Whatever of the reservation was still unconsumed goes with it, so the
+      // reservation reads back as fully consumed afterward.
+      batchSelection: r.reservedBatch,
+      serialSelection: r.reservedSerial,
+    })
+  })
+  completeWorkOrder()
+}
+function handlePrimaryAction() {
+  if (primaryAction.value !== 'Complete work order') return
+  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  completeWorkOrder()
+}
+
+// ── Material consume & return — sourced from the persisted store ────────────
+// Seeded with one Consume record per raw material actually consumed (mirrors
+// the Raw materials "Consumed qty" column) plus excess-Return records for every
+// other material; new records the user saves via "New record" are appended
+// there too. "View serial number" / "View batch" tracking links follow the same
+// odd-index-material / last-material convention the seed uses.
+interface CrrRecord {
+  id: string
+  number: string
+  type: 'Consume' | 'Return'
+  product: string
+  sku: string
+  date: string
+  qty: number
+  unit: string
+  memo: string
+  recordedBy: string
+  trackingLabel?: string
+}
+function trackingLabelFor(materialIndex: number, type: 'Consume' | 'Return', totalMaterials: number): string | undefined {
+  if (materialIndex < 0) return undefined
+  if (type === 'Consume') return materialIndex % 2 === 1 ? 'View serial number' : undefined
+  return materialIndex === totalMaterials - 1 ? 'View batch' : undefined
+}
+const consumeReturnRecords = computed<CrrRecord[]>(() => {
+  if (!wo.value) return []
+  return recordsForWorkOrder(wo.value.id).map(r => {
+    const p = catalogProduct(r.productId)
+    const materialIndex = rawMaterials.value.findIndex(m => m.sku === p?.sku)
+    return {
+      id: r.id,
+      number: r.number,
+      type: r.type,
+      product: p?.name ?? '—',
+      sku: p?.sku ?? '—',
+      date: r.date,
+      qty: r.qty,
+      unit: r.unit,
+      memo: r.memo || '-',
+      recordedBy: r.recordedBy,
+      trackingLabel: trackingLabelFor(materialIndex, r.type, rawMaterials.value.length),
+    }
+  })
+})
+
+const crrColumns: TableColumn[] = [
+  { key: 'number',      label: 'Number',                    width: '200px' },
+  { key: 'product',     label: 'Product',                   width: '240px' },
+  { key: 'date',        label: 'Date',                       width: '120px' },
+  { key: 'qty',         label: 'Qty to consume / return',   width: '190px', align: 'right' },
+  { key: 'unit',        label: 'Unit',                       width: '80px'  },
+  { key: 'memo',        label: 'Memo',                       width: '160px' },
+  { key: 'recordedBy',  label: 'Recorded by',                width: '160px' },
+]
+const CRR_TYPE_OPTIONS: { label: string; value: 'Consume' | 'Return' }[] = [
+  { label: 'Consume', value: 'Consume' },
+  { label: 'Return', value: 'Return' },
+]
+const crrTypeFilter = ref<'Consume' | 'Return' | ''>('')
+const crrTypeLabel = computed(() => CRR_TYPE_OPTIONS.find(o => o.value === crrTypeFilter.value)?.label ?? '')
+const crrDateFilter = ref('') // DD/MM/YYYY
+
+const {
+  search: crrSearch, currentPage: crrCurrentPage, paginated: crrPaginated,
+  total: crrTotal, perPage: crrPerPage, setPage: crrSetPage, setPerPage: crrSetPerPage,
+} = useTableState<CrrRecord>(consumeReturnRecords, {
+  perPage: 25,
+  filterFn: (row, s) => {
+    const matchesSearch = !s || row.number.toLowerCase().includes(s) || row.product.toLowerCase().includes(s)
+    const matchesType = !crrTypeFilter.value || row.type === crrTypeFilter.value
+    const m = crrDateFilter.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    const filterDate = m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
+    const matchesDate = !filterDate || new Date(row.date).toDateString() === filterDate.toDateString()
+    return matchesSearch && matchesType && matchesDate
+  },
+})
+watch([crrTypeFilter, crrDateFilter], () => crrSetPage(1))
+const crrHasActiveFilter = computed(() => !!crrSearch.value || !!crrTypeFilter.value || !!crrDateFilter.value)
+
+const crrColumnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(crrColumns.map(c => [c.key, true])),
+)
+const crrColumnItems = crrColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const crrVisibleColumns = computed<TableColumn[]>(() => crrColumns.filter(c => crrColumnVisibility[c.key]))
 
 const PRODUCTION_COST_GROUPS = ['Labor', 'Overhead', 'Other'] as const
 const productionCost = computed(() => PRODUCTION_COST_GROUPS.map(g => {
@@ -160,6 +339,63 @@ const mainOutput = computed(() => {
 })
 const mainOutputSubtotal = computed(() => mainOutput.value.estCost)
 const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value + wasteSubtotal.value)
+
+// ── Demo flow FAB — draggable so it can be moved off whatever it's covering ──
+// Position is persisted (per browser) so it stays where it was last dropped.
+const FAB_POS_KEY = 'wod-flow-fab-pos'
+const fabPos = ref<{ left: number; top: number } | null>(null)
+const fabDragging = ref(false)
+let fabDidDrag = false
+onMounted(() => {
+  try {
+    const saved = localStorage.getItem(FAB_POS_KEY)
+    if (saved) fabPos.value = JSON.parse(saved)
+  } catch { /* ignore malformed/unavailable storage */ }
+})
+function onFabPointerDown(e: PointerEvent) {
+  if (e.button !== undefined && e.button !== 0) return
+  const btn = e.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  const startX = e.clientX
+  const startY = e.clientY
+  const startLeft = rect.left
+  const startTop = rect.top
+  fabDidDrag = false
+  function onMove(ev: PointerEvent) {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (!fabDidDrag && Math.hypot(dx, dy) > 4) { fabDidDrag = true; fabDragging.value = true }
+    if (!fabDidDrag) return
+    const maxLeft = window.innerWidth - rect.width
+    const maxTop = window.innerHeight - rect.height
+    fabPos.value = {
+      left: Math.min(Math.max(0, startLeft + dx), maxLeft),
+      top: Math.min(Math.max(0, startTop + dy), maxTop),
+    }
+  }
+  function onUp() {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    fabDragging.value = false
+    if (fabDidDrag) {
+      if (fabPos.value) {
+        try { localStorage.setItem(FAB_POS_KEY, JSON.stringify(fabPos.value)) } catch { /* ignore */ }
+      }
+      // The button followed the cursor, so it's still under it at release —
+      // the browser fires a native click there next, which would open the
+      // popover Pixel's own trigger listens for. A capture-phase listener on
+      // window runs before that (bubble-phase) listener ever sees the event,
+      // so swallow this one click and let normal clicks through afterward.
+      window.addEventListener('click', suppressFabClick, { capture: true, once: true })
+    }
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+function suppressFabClick(e: MouseEvent) {
+  e.preventDefault()
+  e.stopImmediatePropagation()
+}
 </script>
 
 <template>
@@ -199,25 +435,38 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="detail-btn detail-btn--secondary detail-btn--icon">
-          <MpIcon name="hierarchy" size="sm" />
-          {{ t('View work order hierarchy') }}
-        </button>
-
-        <button v-if="primaryAction" class="detail-btn detail-btn--primary">{{ primaryAction }}</button>
+        <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
     </header>
 
+    <!-- ── Top-level tabs ── -->
+    <div class="detail-toptabs" role="tablist">
+      <button
+        v-for="tab in topTabs" :key="tab"
+        class="detail-toptab" :class="{ 'detail-toptab--active': activeTopTab === tab }"
+        role="tab" :aria-selected="activeTopTab === tab"
+        @click="activeTopTab = tab"
+      >{{ tab }}</button>
+    </div>
+
     <!-- ── Scrollable stage ── -->
-    <div class="detail-stage">
+    <div v-if="activeTopTab === 'Overview'" class="detail-stage">
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
-        <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
+        <div class="wod-section-head-static">
+          <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
+          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
+            {{ t('View work order hierarchy') }}
+          </MpButton>
+        </div>
         <div class="wod-info-grid">
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="wo.bomName" />
-            <ContentList :label="t('BOM no.')" :value="bomNo" />
+            <ContentList :label="t('BOM no.')">
+              <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
+              <template v-else>{{ bomNo }}</template>
+            </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
           </div>
           <div class="content-list-col">
@@ -258,9 +507,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Adjusted qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Difference') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -273,9 +520,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(adjustedFor(r)) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.needed)) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(varianceFor(r)) }}</td>
+                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
@@ -506,10 +751,140 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 
     </div>
 
+    <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
+    <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr">
+      <div class="crr-full-empty">
+        <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
+        <p class="wod-empty-title">No material consume & return</p>
+        <p class="wod-empty-desc">Material consume & return will appear here.</p>
+        <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+      </div>
+    </div>
+
+    <!-- ── Material consume & return — with records ── -->
+    <div v-else class="detail-stage detail-stage--crr">
+      <ErpTablePage
+        :columns="crrVisibleColumns"
+        :rows="(crrPaginated as unknown as Record<string, unknown>[])"
+        :total="crrTotal"
+        :current-page="crrCurrentPage"
+        :per-page="crrPerPage"
+        :has-active-filter="crrHasActiveFilter"
+        actions-width="44px"
+        @page-change="crrSetPage"
+        @per-page-change="crrSetPerPage"
+        @clear-filters="crrTypeFilter = ''; crrDateFilter = ''; crrSearch = ''"
+      >
+        <!-- ── Filter bar ── -->
+        <template #filters>
+          <div class="filter-left">
+            <MpPopover id="crr-type-filter" is-close-on-select>
+              <MpPopoverTrigger>
+                <MpSelect
+                  id="crr-type-select"
+                  placeholder="Record type"
+                  :model-value="crrTypeFilter"
+                  is-clearable
+                  :class="css({ minWidth: '160px' })"
+                  @mousedown.prevent
+                  @clear="crrTypeFilter = ''"
+                >
+                  <option v-if="crrTypeFilter" :value="crrTypeFilter">{{ crrTypeLabel }}</option>
+                </MpSelect>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                <MpPopoverList>
+                  <MpPopoverListItem
+                    v-for="opt in CRR_TYPE_OPTIONS"
+                    :key="opt.value"
+                    :is-active="opt.value === crrTypeFilter"
+                    @click="crrTypeFilter = opt.value"
+                  >{{ opt.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+
+            <MpDatePicker
+              id="crr-date-filter" v-model="crrDateFilter"
+              placeholder="Date" format="DD/MM/YYYY" value-type="format"
+              is-clearable use-portal :class="css({ minWidth: '180px' })"
+            />
+          </div>
+
+          <div class="filter-right">
+            <div class="filter-btn-group">
+              <ColumnSettingsMenu id="crr-columns" :items="crrColumnItems" :visibility="crrColumnVisibility" />
+            </div>
+
+            <div class="filter-search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input v-model="crrSearch" class="filter-search-input" type="text" placeholder="Search..." />
+            </div>
+
+            <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+          </div>
+        </template>
+
+        <!-- ── Number — record type sub-label ── -->
+        <template #cell-number="{ value, row }">
+          <div class="crr-product">
+            <span>{{ value }}</span>
+            <span class="wod-product-sub">{{ (row as unknown as CrrRecord).type }}</span>
+          </div>
+        </template>
+
+        <!-- ── Product — SKU sub-label ── -->
+        <template #cell-product="{ row }">
+          <div class="crr-product">
+            <span>{{ (row as unknown as CrrRecord).product }}</span>
+            <span class="wod-product-sub">SKU {{ (row as unknown as CrrRecord).sku }}</span>
+          </div>
+        </template>
+
+        <!-- ── Date ── -->
+        <template #cell-date="{ value }">{{ formatDate(value as string) }}</template>
+
+        <!-- ── Qty — tracking link (serial/batch) below the value ── -->
+        <template #cell-qty="{ value, row }">
+          <div class="crr-qty">
+            <span>{{ num(value as number) }}</span>
+            <a v-if="(row as unknown as CrrRecord).trackingLabel" class="crr-tracking" @click.prevent>{{ (row as unknown as CrrRecord).trackingLabel }}</a>
+          </div>
+        </template>
+
+        <!-- ── Actions kebab ── -->
+        <template #actions="{ row }">
+          <MpPopover :id="`crr-actions-${(row as unknown as CrrRecord).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="row-kebab" aria-label="More actions">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem>View picking document</MpPopoverListItem>
+                <MpPopoverListItem>View journal entry</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
+
+      </ErpTablePage>
+    </div>
+
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wod-flow-fab" :aria-label="t('Change work order flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <button
+          class="wod-flow-fab" :class="{ 'wod-flow-fab--dragging': fabDragging }"
+          :style="fabPos ? { left: fabPos.left + 'px', top: fabPos.top + 'px', right: 'auto', bottom: 'auto' } : undefined"
+          :aria-label="t('Change work order flow')"
+          @pointerdown="onFabPointerDown"
+        ><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="wod-flow-fab-heading">{{ t('Work order flow') }}</p>
@@ -518,6 +893,46 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <CompleteWorkOrderModal
+      v-model:is-open="showCompleteModal"
+      :rows="remainingRawMaterials"
+      @complete="onAutoConsumeAndComplete"
+      @view-tracking="onViewTracking"
+    />
+
+    <!-- "View batch" / "View serial number" from the complete-work-order modal —
+         same pick drawer used elsewhere, just for looking at what's still
+         reserved but unconsumed; nothing here is persisted on close. -->
+    <PickSerialNumberDrawer
+      v-if="viewTrackingRow && viewTrackingType === 'serial'"
+      :open="!!viewTrackingRow"
+      is-read-only
+      :title="viewTrackingRow.trackingLabel"
+      :product-name="viewTrackingRow.product"
+      :product-img="catalogProduct(viewTrackingRow.productId)?.img"
+      :sku="viewTrackingRow.sku"
+      :warehouse-id="viewTrackingRow.warehouseId ?? ''"
+      :warehouse-name="viewTrackingWarehouseName"
+      :target-count="viewTrackingRow.reservedSerial?.length ?? 0"
+      :model-value="viewTrackingRow.reservedSerial ?? []"
+      @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
+    />
+    <PickBatchDrawer
+      v-if="viewTrackingRow && viewTrackingType === 'batch'"
+      :open="!!viewTrackingRow"
+      is-read-only
+      :title="viewTrackingRow.trackingLabel"
+      :product-name="viewTrackingRow.product"
+      :product-img="catalogProduct(viewTrackingRow.productId)?.img"
+      :sku="viewTrackingRow.sku"
+      :warehouse-id="viewTrackingRow.warehouseId ?? ''"
+      :warehouse-name="viewTrackingWarehouseName"
+      :unit="viewTrackingRow.unit"
+      :target-count="(viewTrackingRow.reservedBatch ?? []).reduce((s, b) => s + b.qty, 0)"
+      :model-value="viewTrackingRow.reservedBatch ?? []"
+      @update:open="(v: boolean) => { if (!v) closeViewTracking() }"
+    />
   </div>
 
   <!-- Not found -->
@@ -532,6 +947,10 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 </template>
 
 <style scoped>
+/* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
+   1400) — without this it'd render behind that modal instead of on top of it. */
+:deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
+
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
 .wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
@@ -551,11 +970,54 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse); cursor: grab; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+  touch-action: none; user-select: none;
 }
 .wod-flow-fab:hover { opacity: 0.9; }
+.wod-flow-fab--dragging { cursor: grabbing; opacity: 0.85; transition: none; }
 .wod-flow-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* ── Material consume & return ───────────────────────────────────────────── */
+.detail-stage--crr { display: flex; flex-direction: column; }
+
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+.filter-search-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default); min-width: 0;
+}
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+.crr-product { display: flex; flex-direction: column; white-space: normal; }
+.crr-qty { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.crr-tracking { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; white-space: nowrap; }
+.crr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.crr-full-empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-16, 96px) 0 0;
+}
+.crr-full-empty .detail-btn { margin-top: var(--mp-spacing-4); }
+.crr-empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+
+.row-kebab {
+  display: flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
+  margin: 0 auto; border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary);
+}
+.row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -571,6 +1033,19 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+
+/* ── Top-level tabs (Overview / Material consume & return) ──────────────────── */
+.detail-toptabs {
+  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5);
+  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.detail-toptab {
+  position: relative; background: none; border: none; padding: var(--mp-spacing-3) 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
+}
+.detail-toptab--active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
+.detail-toptab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-background-brand-bold, #029861); }
 .detail-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
@@ -614,6 +1089,12 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 .wod-chevron { flex-shrink: 0; color: var(--mp-icon-default); transition: transform 0.15s ease; }
 .wod-chevron--open { transform: rotate(180deg); }
 .wod-section > .wod-section-title { margin-bottom: var(--mp-spacing-5); }
+/* Non-collapsible section head — title left, action right, same row as the
+   collapsible sections' .wod-section-head but a plain div, not a toggle button. */
+.wod-section-head-static {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin-bottom: var(--mp-spacing-5);
+}
 .wod-subsection-title {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
@@ -622,6 +1103,9 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 /* ── Work order info grid — 4 columns ────────────────────────────────────── */
 .wod-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
+.wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
+.wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.wod-hierarchy-link { flex-shrink: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }
 .wod-attach-name { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); }
