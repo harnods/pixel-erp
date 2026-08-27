@@ -392,7 +392,7 @@ function save() {
         <!-- Footer actions -->
         <div class="caf-actions">
           <MpButton is-rounded variant="ghost" @click="currentIndex === 0 ? cancel() : back()">{{ currentIndex === 0 ? 'Cancel' : 'Back' }}</MpButton>
-          <MpButton v-if="!isLast" is-rounded variant="primary" @click="next">Next</MpButton>
+          <MpButton v-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
           <MpButton v-else is-rounded variant="primary" :is-loading="saving" @click="save">{{ isEdit ? 'Save changes' : 'Create agent' }}</MpButton>
         </div>
       </div>
