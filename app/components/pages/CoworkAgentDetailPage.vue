@@ -9,7 +9,7 @@ import {
   MpButton, MpIcon, MpAvatar, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
 } from '@mekari/pixel3'
-import { getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, deleteAgentSafe, type CoworkAgent } from '~/data/cowork'
+import { getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, coworkConnections, deleteAgentSafe, type CoworkAgent } from '~/data/cowork'
 import { employees } from '~/data/employees'
 
 const props = defineProps<{ orderId: string }>()
@@ -21,7 +21,13 @@ const MODEL_LABELS: Record<string, string> = {
 }
 const modelLabel = computed(() => MODEL_LABELS[agent.value?.model ?? ''] ?? 'Gemini Flash')
 const instruction = computed(() => agent.value?.instruction || agent.value?.persona || '')
-const knowledgeAreas = computed(() => agent.value?.allWorkspace ? ['All workspace content'] : (agent.value?.knowledgeAreas ?? []))
+const knowledgeAreas = computed(() => {
+  if (agent.value?.allWorkspace) return ['All workspace content']
+  const apps = (agent.value?.knowledgeApps ?? [])
+    .map((id) => coworkConnections.find((c) => c.id === id)?.name)
+    .filter(Boolean) as string[]
+  return apps.length ? apps : (agent.value?.knowledgeAreas ?? [])
+})
 const skills = computed(() => (agent.value?.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)).filter(Boolean))
 const visEmployees = computed(() => (agent.value?.visibilityEmployees ?? []).map((id) => employees.find((e) => e.id === id)).filter(Boolean))
 const ownedTasks = computed(() => COWORK_CATALOG.filter((c) => c.module === agent.value?.module))

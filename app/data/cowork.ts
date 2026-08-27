@@ -172,6 +172,14 @@ export const receivablesCollections: ReceivableCollection[] = [...salesInvoices]
 /** Modules Cowork can act on — used for the catalog and the module filter. */
 export const COWORK_MODULES: CoworkModule[] = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production']
 
+/** Which ERP modules each connected app backs — the agent's knowledge data sources
+ *  are the connected apps, and each app covers one or more modules. */
+export const APP_MODULES: Record<string, CoworkModule[]> = {
+  'mekari-talenta': ['HR'],
+  'mekari-qontak': ['Sales', 'CRM'],
+  'mekari-jurnal': ['WMS', 'Finance', 'Production'],
+}
+
 /** A cross-module catalog of things a real ERP co-worker should be able to do.
  *  Each becomes a "suggested task" card and a schedule template. */
 export interface CoworkCatalogItem {
@@ -829,8 +837,10 @@ export interface CoworkAgent {
   /** Attached Knowledge Base scopes (collections / folders / docs) — live references,
    *  not copies. Resolved + relevance-ranked into grounding at run time. */
   knowledge?: KbAttachment[]
-  /** Workspace areas the agent may draw knowledge from. */
+  /** Workspace areas the agent may draw knowledge from (derived from knowledgeApps). */
   knowledgeAreas?: CoworkModule[]
+  /** Connected apps (data sources) the agent may draw knowledge from — connection ids. */
+  knowledgeApps?: string[]
   /** Pull from ALL workspace content (overrides knowledgeAreas). */
   allWorkspace?: boolean
   /** Enabled skill ids (see COWORK_SKILLS) — the actions this agent can take. */

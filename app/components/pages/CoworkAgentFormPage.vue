@@ -8,10 +8,11 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import {
-  MpButton, MpInput, MpTextarea, MpSelect, MpToggle, MpUpload, MpUploadList, MpIcon, MpSpinner,
+  MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
   MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
@@ -19,8 +20,8 @@ import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
 import {
-  getAgent, addAgent, updateAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_MODULES,
-  type CoworkAgent, type CoworkModule,
+  getAgent, addAgent, updateAgent, COWORK_SKILLS, COWORK_COMPANY, APP_MODULES,
+  coworkConnections, type CoworkAgent, type CoworkModule,
 } from '~/data/cowork'
 import { coworkKb, addFolder, resolveAttachments, isFolder, getNode, getFolder, extLabel, type KbAttachment } from '~/data/coworkKb'
 import { useKbIngest } from '~/composables/useKbIngest'
@@ -55,9 +56,13 @@ const name = ref('')
 const description = ref('')
 const instruction = ref('')
 const model = ref(MODELS[0].id)
+const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? MODELS[0].label)
+const modelMenuClass = css({ minWidth: '220px', width: 'max-content' })
 const allWorkspace = ref(false)
-const areaOn = reactive<Record<string, boolean>>({})
-COWORK_MODULES.forEach((m) => { areaOn[m] = false })
+// Knowledge data sources = the connected apps (Mekari Talenta / Qontak / Jurnal +
+// anything else turned on in Connections). Each app covers one or more modules.
+const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
+const appOn = reactive<Record<string, boolean>>({})
 interface KFile { name: string; size: string; icon: string }
 const knowledgeFiles = ref<KFile[]>([])
 // ── Knowledge Base attachments (live scope references) ──
@@ -78,7 +83,7 @@ onMounted(() => {
   instruction.value = a.instruction || a.persona || ''
   model.value = a.model ?? MODELS[0].id
   allWorkspace.value = !!a.allWorkspace
-  ;(a.knowledgeAreas ?? []).forEach((m) => { areaOn[m] = true })
+  ;(a.knowledgeApps ?? []).forEach((id) => { appOn[id] = true })
   knowledgeFiles.value = (a.knowledgeFiles ?? []).map((f) => ({ name: f.name, size: f.size, icon: fileIcon(f.name.split('.').pop() || '') }))
   knowledge.value = [...(a.knowledge ?? [])]
   ;(a.skills ?? []).forEach((s) => { skillOn[s] = true })
@@ -191,8 +196,16 @@ function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pick
 
 // ── Navigation ──
 const nameError = ref('')
+const descError = ref('')
+const instrError = ref('')
+function validatePersona(): boolean {
+  nameError.value = name.value.trim() ? '' : 'You must fill in agent name'
+  descError.value = description.value.trim() ? '' : 'You must fill in a description'
+  instrError.value = instruction.value.trim() ? '' : 'You must fill in an instruction'
+  return !nameError.value && !descError.value && !instrError.value
+}
 function next() {
-  if (current.value === 'persona' && !name.value.trim()) { nameError.value = 'You must fill in agent name'; return }
+  if (current.value === 'persona' && !validatePersona()) return
   if (!done.value.includes(current.value)) done.value.push(current.value)
   if (!isLast.value) current.value = stepKeys[currentIndex.value + 1]!
 }
@@ -202,9 +215,10 @@ function cancel() { router.push('/cowork-agents') }
 
 const saving = ref(false)
 function save() {
-  if (!name.value.trim()) { current.value = 'persona'; nameError.value = 'You must fill in agent name'; return }
+  if (!validatePersona()) { current.value = 'persona'; return }
   saving.value = true
-  const areas = COWORK_MODULES.filter((m) => areaOn[m]) as CoworkModule[]
+  const apps = connectedApps.value.filter((c) => appOn[c.id]).map((c) => c.id)
+  const areas = [...new Set(apps.flatMap((id) => APP_MODULES[id] ?? []))] as CoworkModule[]
   const skills = COWORK_SKILLS.filter((s) => skillOn[s.id]).map((s) => s.id)
   const patch: Partial<CoworkAgent> = {
     name: name.value.trim(),
@@ -214,6 +228,7 @@ function save() {
     model: model.value,
     allWorkspace: allWorkspace.value,
     knowledgeAreas: areas,
+    knowledgeApps: apps,
     knowledgeFiles: knowledgeFiles.value.map((f) => ({ name: f.name, size: f.size })),
     knowledge: [...knowledge.value],
     skills,
@@ -258,16 +273,16 @@ function save() {
         <div class="caf-form">
           <!-- ── Persona ── -->
           <template v-if="current === 'persona'">
-            <MpFormControl id="caf-name" class="caf-field" is-required :is-error="!!nameError">
+            <MpFormControl id="caf-name" class="caf-field" is-required :is-invalid="!!nameError">
               <MpFormLabel>Agent name</MpFormLabel>
               <MpInput id="caf-name-input" v-model="name" is-full-width @input="nameError = ''" />
               <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
             </MpFormControl>
 
-            <MpFormControl id="caf-desc" class="caf-field">
+            <MpFormControl id="caf-desc" class="caf-field" is-required :is-invalid="!!descError">
               <MpFormLabel>Description</MpFormLabel>
-              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description' }">
-                <textarea v-model="description" class="caf-ta__input" rows="2"></textarea>
+              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description', 'is-error': !!descError }">
+                <textarea v-model="description" class="caf-ta__input" rows="2" @input="descError = ''"></textarea>
                 <div class="caf-ta__foot">
                   <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
                     <MpSpinner v-if="optimizing === 'description'" size="sm" />
@@ -275,13 +290,14 @@ function save() {
                   </button>
                 </div>
               </div>
-              <p class="caf-hint">Describe what this agent will help your team with.</p>
+              <MpFormErrorMessage>{{ descError }}</MpFormErrorMessage>
+              <p v-if="!descError" class="caf-hint">Describe what this agent will help your team with.</p>
             </MpFormControl>
 
-            <MpFormControl id="caf-instr" class="caf-field">
+            <MpFormControl id="caf-instr" class="caf-field" is-required :is-invalid="!!instrError">
               <MpFormLabel>Instruction</MpFormLabel>
-              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction' }">
-                <textarea v-model="instruction" class="caf-ta__input" rows="5"></textarea>
+              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction', 'is-error': !!instrError }">
+                <textarea v-model="instruction" class="caf-ta__input" rows="5" @input="instrError = ''"></textarea>
                 <div class="caf-ta__foot">
                   <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction'" @click="optimize('instruction')">
                     <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
@@ -289,14 +305,25 @@ function save() {
                   </button>
                 </div>
               </div>
-              <p class="caf-hint">Control your agent's behaviour by adding custom instructions.</p>
+              <MpFormErrorMessage>{{ instrError }}</MpFormErrorMessage>
+              <p v-if="!instrError" class="caf-hint">Control your agent's behaviour by adding custom instructions.</p>
             </MpFormControl>
 
             <MpFormControl id="caf-model" class="caf-field caf-field--half">
               <MpFormLabel>Model</MpFormLabel>
-              <MpSelect id="caf-model-input" v-model="model" is-full-width>
-                <option v-for="m in MODELS" :key="m.id" :value="m.id">{{ m.label }}</option>
-              </MpSelect>
+              <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                <MpPopoverTrigger>
+                  <button type="button" class="caf-select">
+                    <span class="caf-select__label">{{ modelLabel }}</span>
+                    <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="modelMenuClass">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="model === m.id" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
             </MpFormControl>
           </template>
 
@@ -304,7 +331,7 @@ function save() {
           <template v-else-if="current === 'knowledge'">
             <MpFormControl id="caf-kb" class="caf-field">
               <MpFormLabel>Knowledge base</MpFormLabel>
-              <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live — new files inside flow through automatically.</p>
+              <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live: new files inside flow through automatically.</p>
               <div class="caf-kb-actions">
                 <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
                 <button type="button" class="btn-enterprise btn-enterprise--secondary" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
@@ -320,7 +347,6 @@ function save() {
                   <button class="caf-kb-chip__x" type="button" aria-label="Remove" @click="removeAttachment(i)"><MpIcon name="close" size="sm" /></button>
                 </li>
               </ul>
-              <p v-else class="caf-kb-empty">No knowledge attached yet.</p>
               <p v-if="knowledge.length" class="caf-hint caf-hint--tight">{{ attachedDocs.length }} document{{ attachedDocs.length === 1 ? '' : 's' }} in scope.</p>
             </MpFormControl>
 
@@ -328,15 +354,15 @@ function save() {
               <div class="caf-ws-head">
                 <div>
                   <MpFormLabel>Add all workspace content</MpFormLabel>
-                  <p class="caf-hint caf-hint--tight">Let the agent draw on every connected module. Narrowing to the areas it needs keeps answers more accurate — too much data can dilute results.</p>
+                  <p class="caf-hint caf-hint--tight">Let the agent draw on every connected module. Narrowing to the areas it needs keeps answers more accurate; too much data can dilute results.</p>
                 </div>
                 <MpToggle :is-checked="allWorkspace" aria-label="Add all workspace content" @update:is-checked="(v: boolean) => allWorkspace = v" />
               </div>
               <div v-if="!allWorkspace" class="caf-areas">
-                <p class="caf-areas__label">Or pick the areas this agent should know:</p>
-                <div v-for="m in COWORK_MODULES" :key="m" class="caf-area-row">
-                  <span>{{ m }}</span>
-                  <MpToggle :is-checked="areaOn[m]" :aria-label="`Toggle ${m}`" @update:is-checked="(v: boolean) => areaOn[m] = v" />
+                <p class="caf-areas__label">Or pick the connected data sources this agent should use:</p>
+                <div v-for="app in connectedApps" :key="app.id" class="caf-area-row">
+                  <span>{{ app.name }}</span>
+                  <MpToggle :is-checked="appOn[app.id]" :aria-label="`Toggle ${app.name}`" @update:is-checked="(v: boolean) => appOn[app.id] = v" />
                 </div>
               </div>
             </MpFormControl>
@@ -464,7 +490,10 @@ function save() {
 
 /* Textarea with a docked "Optimize" button inside the box */
 .caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
-.caf-ta:focus-within { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47,111,235,0.12); }
+/* Enterprise (DT 2.4) focus: emerald border + subtle emerald ring — never blue. */
+.caf-ta:focus-within { border-color: var(--mp-border-selected, #029861); box-shadow: 0 0 0 3px rgba(2, 152, 97, 0.12); }
+.caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
+.caf-ta.is-error:focus-within { box-shadow: 0 0 0 3px rgba(209, 54, 47, 0.12); }
 .caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
 .caf-ta__foot { display: flex; justify-content: flex-end; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
@@ -475,7 +504,14 @@ function save() {
 .caf-ws-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
 .caf-areas { margin-top: var(--mp-spacing-3); }
 .caf-areas__label { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.caf-area-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-area-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* MpPopover-backed select trigger — styled like a Pixel form input */
+.caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
+.caf-select:hover { border-color: var(--mp-border-bold, #8c9596); }
+.caf-select:focus-visible { outline: none; border-color: var(--mp-border-selected, #029861); box-shadow: 0 0 0 3px rgba(2, 152, 97, 0.12); }
+.caf-select__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.caf-select__chev { flex: 0 0 auto; width: 20px; height: 20px; color: var(--mp-icon-default, #536062); }
 
 .caf-skills { display: flex; flex-direction: column; }
 .caf-skill { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4, 16px) 0; border-bottom: 1px solid var(--mp-border-default); }
