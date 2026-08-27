@@ -63,6 +63,11 @@ const allWorkspace = ref(false)
 // anything else turned on in Connections). Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
 const appOn = reactive<Record<string, boolean>>({})
+// App logo (mirrors the Connections list): favicon/asset with a coloured-monogram fallback.
+const connLogoFailed = reactive<Record<string, boolean>>({})
+function connMonogram(nm: string): string {
+  return nm.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2)
+}
 interface KFile { name: string; size: string; icon: string }
 const knowledgeFiles = ref<KFile[]>([])
 // ── Knowledge Base attachments (live scope references) ──
@@ -353,15 +358,19 @@ function save() {
             <MpFormControl id="caf-ws" class="caf-field caf-field--gap32">
               <div class="caf-ws-head">
                 <div>
-                  <MpFormLabel>Add all workspace content</MpFormLabel>
-                  <p class="caf-hint caf-hint--tight">Let the agent draw on every connected module. Narrowing to the areas it needs keeps answers more accurate; too much data can dilute results.</p>
+                  <MpFormLabel>Use all connected apps</MpFormLabel>
+                  <p class="caf-hint caf-hint--tight">Let the agent draw on every app you've connected in Connections. Narrowing to the ones it needs keeps answers more accurate; too much data can dilute results.</p>
                 </div>
-                <MpToggle :is-checked="allWorkspace" aria-label="Add all workspace content" @update:is-checked="(v: boolean) => allWorkspace = v" />
+                <MpToggle :is-checked="allWorkspace" aria-label="Use all connected apps" @update:is-checked="(v: boolean) => allWorkspace = v" />
               </div>
               <div v-if="!allWorkspace" class="caf-areas">
-                <p class="caf-areas__label">Or pick the connected data sources this agent should use:</p>
+                <p class="caf-areas__label">Or pick the connected apps this agent should use:</p>
                 <div v-for="app in connectedApps" :key="app.id" class="caf-area-row">
-                  <span>{{ app.name }}</span>
+                  <span class="caf-area-app">
+                    <img v-if="!connLogoFailed[app.id]" class="caf-area-logo caf-area-logo--img" :src="app.logo || `/connectors/${app.id}.png`" :alt="app.name" loading="lazy" @error="connLogoFailed[app.id] = true" />
+                    <span v-else class="caf-area-logo" :style="{ background: app.color || '#3a4749' }">{{ connMonogram(app.name) }}</span>
+                    {{ app.name }}
+                  </span>
                   <MpToggle :is-checked="appOn[app.id]" :aria-label="`Toggle ${app.name}`" @update:is-checked="(v: boolean) => appOn[app.id] = v" />
                 </div>
               </div>
@@ -505,6 +514,10 @@ function save() {
 .caf-areas { margin-top: var(--mp-spacing-3); }
 .caf-areas__label { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-area-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-area-app { display: inline-flex; align-items: center; gap: var(--mp-spacing-3, 12px); min-width: 0; }
+.caf-area-logo { width: 24px; height: 24px; flex-shrink: 0; border-radius: var(--mp-radii-md, 6px); }
+.caf-area-logo--img { object-fit: contain; }
+span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
 
 /* MpPopover-backed select trigger — styled like a Pixel form input */
 .caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
