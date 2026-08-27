@@ -175,8 +175,8 @@ function removeAgent() {
 .cad-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 .cad-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
-.cad-inner { max-width: 720px; }
-.cad-head { display: flex; gap: var(--mp-spacing-4, 16px); align-items: flex-start; padding-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
+.cad-inner { width: 100%; }
+.cad-head { display: flex; gap: var(--mp-spacing-4, 16px); align-items: flex-start; max-width: 640px; padding-bottom: var(--mp-spacing-5); }
 .cad-avatar { width: 72px; height: 72px; flex-shrink: 0; object-fit: contain; background: none; }
 .cad-name { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cad-role { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -189,8 +189,8 @@ function removeAgent() {
 .detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
-.cad-sec { padding: var(--mp-spacing-5) 0; border-bottom: 1px solid var(--mp-border-default); }
-.cad-sec:last-child { border-bottom: none; }
+.cad-panel { max-width: 640px; }
+.cad-sec { padding: var(--mp-spacing-5) 0; }
 .cad-panel > .cad-sec:first-child { padding-top: 0; }
 .cad-h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.4px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .cad-value { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
