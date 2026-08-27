@@ -9,6 +9,7 @@ function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
 import { coworkAgents, COWORK_SKILLS, type CoworkAgent } from '~/data/cowork'
+import { buildKnowledgeContext, knowledgeCorpus } from '~/data/coworkKb'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
@@ -73,6 +74,8 @@ const pageRegistry: Record<string, Component> = {
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
+  'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
@@ -113,6 +116,30 @@ const pageRegistry: Record<string, Component> = {
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
+
+  // ── XPM (Mekari Expense) scenario pages ──────────────────────────────────────
+  // Registered globally like every other scenario's pages; the XPM sidebar is the
+  // only thing that links here. Keys prefixed 'Xpm …' where the plain slug would
+  // collide with an ERP/WMS route (Reports, Transactions, Trips, Claims, Cards,
+  // Products, Warehouses, Users, Vendors, Policy, Integration). 'Home' branches by
+  // scenario below; Accounts/Budgeting/My claims/My trips have collision-free slugs.
+  'Xpm transactions':   defineAsyncComponent(() => import('~/components/pages/XpmTransactionsPage.vue')),
+  // 'Accounts' is a full-bleed page (own sidemenu + title bar) — resolved via detailMatch below.
+  'Budgeting':          defineAsyncComponent(() => import('~/components/pages/XpmBudgetingPage.vue')),
+  'Xpm purchases':      defineAsyncComponent(() => import('~/components/pages/XpmPurchasesPage.vue')),
+  'Xpm trips':          defineAsyncComponent(() => import('~/components/pages/XpmTripsPage.vue')),
+  'Xpm claims':         defineAsyncComponent(() => import('~/components/pages/XpmClaimsPage.vue')),
+  'Xpm cards':          defineAsyncComponent(() => import('~/components/pages/XpmCardsPage.vue')),
+  'My claims':          defineAsyncComponent(() => import('~/components/pages/XpmMyClaimsPage.vue')),
+  // Undesigned in the source app → faithful scaffold stand-ins.
+  'Xpm reports':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm products':       defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm warehouses':     defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'My trips':           defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm users':          defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -129,6 +156,8 @@ const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTask
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
+const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -298,6 +327,22 @@ const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCut
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
 const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendingSetupPage.vue'))
 
+// ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
+const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
+const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
+const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
+const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
+const XpmClaimDetailPage = asyncPage(() => import('~/components/pages/XpmClaimDetailPage.vue'))
+const XpmAccountsPage = asyncPage(() => import('~/components/pages/XpmAccountsPage.vue'))
+const XpmTransactionDetailPage = asyncPage(() => import('~/components/pages/XpmTransactionDetailPage.vue'))
+// Tabbed XPM index pages read the active tab from ?tab= themselves, so every tab
+// maps to the SAME component (identical ref → stays mounted, re-filters on change).
+const XpmTransactionsTabPage = asyncPage(() => import('~/components/pages/XpmTransactionsPage.vue'))
+const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.vue'))
+const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
+const { activeScenario: xpmActiveScenario } = useScenario()
+const { trigger: triggerXpm } = useXpmActions()
+
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
@@ -321,6 +366,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cowork-skills/:id → Cowork skill detail (actions + definition).
   if (segs.length >= 2 && segs[0] === 'cowork-skills') {
     return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
+  if (segs[0] === 'cowork-knowledge') {
+    if (segs[1] === 'doc' && segs[2]) return { component: CoworkKbDocDetailPage, id: segs[2] }
+    return { component: CoworkKbPage, id: segs[1] ?? '' }
   }
   // /cowork-agents/new → create form; /cowork-agents/:id/edit → edit; /cowork-agents/:id → detail.
   if (segs.length >= 2 && segs[0] === 'cowork-agents') {
@@ -618,12 +668,36 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
     return { component: EmployeeDetailsPage, id: segs[1]! }
   }
+  // ── XPM (Mekari Expense) detail / form routes ────────────────────────────────
+  // /accounts → full-bleed wallets page; /accounts/txn/:id → a movement detail.
+  if (segs[0] === 'accounts') {
+    if (segs[1] === 'txn') return { component: XpmTransactionDetailPage, id: segs[2] ?? '' }
+    return { component: XpmAccountsPage, id: segs[1] ?? '' }
+  }
+  // /xpm-trips/:code → trip detail (owns its title bar).
+  if (segs.length >= 2 && segs[0] === 'xpm-trips') {
+    return { component: XpmTripDetailPage, id: segs[1]! }
+  }
+  // /xpm-cards/:id → card detail.
+  if (segs.length >= 2 && segs[0] === 'xpm-cards') {
+    return { component: XpmCardDetailPage, id: segs[1]! }
+  }
+  // /my-claims/create → request claim form; /my-claims/:id → claim detail;
+  // /my-claims/:id/edit → edit claim (reuses the form in edit mode).
+  if (segs.length >= 2 && segs[0] === 'my-claims') {
+    if (segs[1] === 'create') return { component: XpmClaimFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: XpmClaimFormPage, id: segs[1]! }
+    return { component: XpmClaimDetailPage, id: segs[1]! }
+  }
   return null
 })
 
-const currentComponent = computed<Component>(
-  () => pageRegistry[currentPageKey.value] ?? PlaceholderPage,
-)
+const currentComponent = computed<Component>(() => {
+  // Home ('/') is shared across scenarios by URL; render the Expense home when the
+  // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
+  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
+  return pageRegistry[currentPageKey.value] ?? PlaceholderPage
+})
 
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
@@ -643,6 +717,10 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
+  'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
+  'Xpm cards':         ['Virtual cards', 'Physical cards'],
+  'Xpm purchases':     ['Invoice', 'Order', 'Quote', 'Request'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: Pending +
@@ -860,6 +938,17 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
+  'Xpm transactions': {
+    'All': XpmTransactionsTabPage, 'Card': XpmTransactionsTabPage, 'Reimbursement': XpmTransactionsTabPage,
+    'Cash advance': XpmTransactionsTabPage, 'Bill': XpmTransactionsTabPage, 'Travel': XpmTransactionsTabPage,
+  },
+  'Xpm cards': {
+    'Virtual cards': XpmCardsTabPage, 'Physical cards': XpmCardsTabPage,
+  },
+  'Xpm purchases': {
+    'Invoice': XpmPurchasesTabPage, 'Order': XpmPurchasesTabPage, 'Quote': XpmPurchasesTabPage, 'Request': XpmPurchasesTabPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -1308,6 +1397,17 @@ function activeAgentPayload() {
   const skills = (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean)
   return { name: a.name, role: a.role, module: a.module, persona: a.instruction || a.persona, skills }
 }
+// KB grounding for the active agent: relevance-injected snippets (ranked against
+// the user's message) plus a compact corpus so the model can also call
+// search_knowledge. Undefined when the agent has no knowledge attached.
+function activeKnowledgePayload(query: string) {
+  const att = activeAgent.value?.knowledge
+  if (!att?.length) return undefined
+  const snippets = buildKnowledgeContext(att, query)
+  const corpus = knowledgeCorpus(att)
+  if (!corpus.length) return undefined
+  return { snippets, corpus }
+}
 // When the chat is opened about a specific task result, the empty-state greeting
 // and suggestions become contextual to that result instead of the generic ones.
 const DEFAULT_CONTEXT_SUGGESTIONS = [
@@ -1410,6 +1510,7 @@ async function sendMessage(text: string, context?: string) {
         context: aireneGround.value || buildModuleGround(),
         agent: activeAgentPayload(),
         roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
+        knowledge: activeKnowledgePayload(trimmed),
       },
     })
     reply = res.reply
@@ -1940,6 +2041,41 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New purchase order
+          </button>
+        </div>
+        <!-- ── XPM (Mekari Expense) title-bar actions ── -->
+        <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('setBudget')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Set budget
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm purchases'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createPurchase')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create purchase
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm trips'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('travelPolicy')">Manage travel policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('claimPolicy')">Manage claim policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm cards'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createCard')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create card
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'My claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="triggerXpm('myLimits')">
+            <MpIcon name="protection" size="md" />
+            My limits
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/my-claims/create')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Request claim
           </button>
         </div>
           </div>

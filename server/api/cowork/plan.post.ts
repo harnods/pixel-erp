@@ -94,7 +94,16 @@ const ARTIFACT_INSTRUCTIONS: Record<string, string> = {
   pdf: '- artifacts.pdf: a formatted report ({title, sections:[{heading,body}]}) suitable for printing — an executive overview grounded in the data.',
 }
 
-function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[], agent?: { name?: string; persona?: string; actions?: string[] }): string {
+interface KbSnippet { name: string; folder?: string; snippet: string }
+function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sources?: string[], agent?: { name?: string; persona?: string; actions?: string[] }, knowledge?: KbSnippet[]): string {
+  const kbBlock = knowledge?.length
+    ? [
+        '',
+        'ATTACHED KNOWLEDGE BASE — relevant reference passages for this task. Follow the',
+        'policy/process they describe and cite the document name where you rely on one:',
+        ...knowledge.map((s) => `[${s.name}${s.folder ? ` · ${s.folder}` : ''}] ${s.snippet}`),
+      ]
+    : []
   return [
     agent?.name
       ? `You are "${agent.name}", a specialist AI agent inside the Mekari Cowork co-worker (Talenta HR, Qontak CRM, Mekari WMS, Jurnal finance, Production).`
@@ -112,6 +121,7 @@ function buildPrompt(task: string, ctx: CoworkContext, requested: string[], sour
     '',
     'ERP DATA SNAPSHOT (JSON):',
     JSON.stringify({ hr: ctx.hr, crm: ctx.crm, wms: ctx.wms, finance: ctx.finance, production: ctx.production }, null, 0),
+    ...kbBlock,
     '',
     `USER TASK: "${task}"`,
     '',
@@ -202,7 +212,7 @@ export default defineEventHandler(async (event) => {
   let requested: string[] = ['briefing']
   let task = ''
   try {
-    const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[]; agent?: { name?: string; persona?: string; actions?: string[] } }>(event)
+    const body = await readBody<{ task?: string; context?: CoworkContext; model?: string; sources?: string[]; outputs?: string[]; agent?: { name?: string; persona?: string; actions?: string[] }; knowledge?: KbSnippet[] }>(event)
     task = (body?.task ?? '').trim()
     ctx = body?.context ?? {}
     if (!task) { setResponseStatus(event, 400); return { error: 'Missing task' } }
@@ -219,7 +229,7 @@ export default defineEventHandler(async (event) => {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
     const payload = {
-      contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources, body?.agent) }] }],
+      contents: [{ parts: [{ text: buildPrompt(task, ctx, requested, body?.sources, body?.agent, body?.knowledge) }] }],
       generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema(requested), temperature: 0.6 },
     }
     // Retry transient Gemini errors (429 rate-limit / 5xx overload) with backoff.

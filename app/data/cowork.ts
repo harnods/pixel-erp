@@ -16,6 +16,7 @@ import { attendanceExceptionsForDate, attendanceName, LATEST_ATTENDANCE_DATE } f
 import type { AttendanceException } from './attendance'
 import { expiringContracts, type Contract } from './contracts'
 import { productIndexRows } from './productsIndex'
+import type { KbAttachment } from './coworkKb'
 
 export type CoworkModule = 'HR' | 'Sales' | 'CRM' | 'WMS' | 'Finance' | 'Production'
 export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed' | 'draft'
@@ -823,8 +824,11 @@ export interface CoworkAgent {
   /** Custom behaviour instruction the user writes (the editable "brain"). Falls
    *  back to `persona` for the seeded agents. */
   instruction?: string
-  /** Uploaded knowledge files (metadata only in the mock). */
+  /** Uploaded knowledge files (metadata only in the mock). @deprecated use `knowledge` */
   knowledgeFiles?: { name: string; size: string }[]
+  /** Attached Knowledge Base scopes (collections / folders / docs) — live references,
+   *  not copies. Resolved + relevance-ranked into grounding at run time. */
+  knowledge?: KbAttachment[]
   /** Workspace areas the agent may draw knowledge from. */
   knowledgeAreas?: CoworkModule[]
   /** Pull from ALL workspace content (overrides knowledgeAreas). */
@@ -858,6 +862,8 @@ export interface CoworkSkill {
   markdown?: string
   references?: { name: string; content?: string }[]
   scripts?: { name: string; content?: string }[]
+  /** Attached Knowledge Base scopes — a skill can pull live reference docs from the KB. */
+  knowledge?: KbAttachment[]
   createdAt?: string
 }
 const SKILL_SEED: CoworkSkill[] = [

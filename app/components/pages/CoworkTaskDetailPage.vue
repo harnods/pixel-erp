@@ -12,6 +12,7 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { infoToast } from '~/utils/toasts'
 import { useCoworkContext } from '~/composables/useCoworkContext'
+import { buildKnowledgeContext } from '~/data/coworkKb'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
@@ -116,6 +117,7 @@ async function runTask() {
       task: task.value.prompt, context: build(), model: task.value.model,
       sources: task.value.sources, outputs: task.value.outputs,
       agent: taskAgent.value ? { name: taskAgent.value.name, persona: taskAgent.value.persona, actions: agentActions.value } : undefined,
+      knowledge: taskAgent.value?.knowledge?.length ? buildKnowledgeContext(taskAgent.value.knowledge, task.value.prompt) : undefined,
     }
     // The plan endpoint always returns a usable plan; retry once on a network blip.
     let res: { plan: Plan }
