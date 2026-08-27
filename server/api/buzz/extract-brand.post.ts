@@ -33,7 +33,7 @@ const SCHEMA_KEYS = [
   'name (string)',
   'colors: { primary, secondary, neutral, palette (array of hex strings), combinations (array of short strings like "primary on neutral") }',
   'theme (one line describing the overall visual theme)',
-  'typography: { headline (the headline FONT FAMILY NAME only, e.g. "Inter" or "Airbnb Cereal" — not a description), body (the body FONT FAMILY NAME only), hierarchy (short notes on sizes/weights) }',
+  'typography: { fonts (array of EVERY distinct font family the brand uses, each { name: font family name only e.g. "Inter"; usage: what it is for e.g. "Headline", "Body", "Accent", "Display", "Monospace" } — list ALL of them, not just two), headline (the primary headline font family name), body (the primary body font family name), hierarchy (short notes on sizes/weights) }',
   'tone: { summary, do (array of strings), dont (array of strings) }',
   'logoUsage (array of strings — clear space, approved variants, do/don\'t; [] if the material does not cover logo usage)',
   'visualStyle (one line describing the imagery / illustration / iconography style; "" if not covered)',
@@ -59,7 +59,7 @@ function emptyBrand() {
     name: '',
     colors: { primary: '', secondary: '', neutral: '', palette: [] as string[], combinations: [] as string[] },
     theme: '',
-    typography: { headline: '', body: '', hierarchy: '' },
+    typography: { fonts: [] as { name: string; usage?: string }[], headline: '', body: '', hierarchy: '' },
     tone: { summary: '', do: [] as string[], dont: [] as string[] },
     logoUsage: [] as string[],
     visualStyle: '',
@@ -87,9 +87,15 @@ function normalise(raw: any) {
   b.colors.combinations = asArray(c.combinations).map(String)
   if (typeof raw.theme === 'string') b.theme = raw.theme
   const t = raw.typography && typeof raw.typography === 'object' ? raw.typography : {}
+  b.typography.fonts = asArray(t.fonts)
+    .map((f: any) => (typeof f === 'string' ? { name: f } : { name: String(f?.name ?? ''), usage: f?.usage ? String(f.usage) : undefined }))
+    .filter((f: any) => f.name)
   if (typeof t.headline === 'string') b.typography.headline = t.headline
   if (typeof t.body === 'string') b.typography.body = t.body
   if (typeof t.hierarchy === 'string') b.typography.hierarchy = t.hierarchy
+  // Backfill headline/body from the fonts list if the model only filled `fonts`.
+  if (!b.typography.headline && b.typography.fonts[0]) b.typography.headline = b.typography.fonts[0].name
+  if (!b.typography.body) { const bodyFont = b.typography.fonts.find((f) => /body|text|paragraph/i.test(f.usage ?? '')); if (bodyFont) b.typography.body = bodyFont.name }
   const tone = raw.tone && typeof raw.tone === 'object' ? raw.tone : {}
   if (typeof tone.summary === 'string') b.tone.summary = tone.summary
   b.tone.do = asArray(tone.do).map(String)

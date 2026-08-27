@@ -24,6 +24,22 @@ const router = useRouter()
 
 const brand = computed<BuzzBrand | undefined>(() => buzzBrand(props.orderId!))
 
+// Every font the brand uses. Prefer the full `fonts` list; else fall back to the
+// headline/body pair (or the legacy summary line). Deduped by name.
+const fontList = computed<{ name: string; usage?: string }[]>(() => {
+  const b = brand.value
+  if (!b) return []
+  let list: { name: string; usage?: string }[] = []
+  if (b.fonts?.length) list = b.fonts.filter((f) => f?.name)
+  else {
+    if (b.fontHeadline) list.push({ name: b.fontHeadline, usage: 'Headline' })
+    if (b.fontBody && b.fontBody !== b.fontHeadline) list.push({ name: b.fontBody, usage: 'Body' })
+    if (!list.length && b.typography) list.push({ name: b.typography, usage: 'Typeface' })
+  }
+  const seen = new Set<string>()
+  return list.filter((f) => { const k = f.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true })
+})
+
 // ── Delete ──
 const menuClass = css({ minWidth: '180px' })
 const showDelete = ref(false)
@@ -152,18 +168,13 @@ function hex(v: string) { return (v || '').toUpperCase() }
           </template>
         </section>
 
-        <!-- 3 · Typography -->
-        <section v-if="brand.fontHeadline || brand.fontBody || brand.typography" class="bd-sec">
+        <!-- 3 · Typography — every font family the brand uses -->
+        <section v-if="fontList.length || brand.typographyHierarchy" class="bd-sec">
           <h3 class="bd-h3">Typography</h3>
-          <div class="bd-type">
-            <p class="bd-type__caption">Headline</p>
-            <p class="bd-type__name">{{ brand.fontHeadline || brand.typography }}</p>
-            <p class="bd-type__display">The quick brown fox</p>
-          </div>
-          <div v-if="brand.fontBody" class="bd-type">
-            <p class="bd-type__caption">Body</p>
-            <p class="bd-type__name">{{ brand.fontBody }}</p>
-            <p class="bd-type__body">The quick brown fox jumps over the lazy dog. 0123456789</p>
+          <div v-for="(f, i) in fontList" :key="f.name + i" class="bd-type">
+            <p class="bd-type__caption">{{ f.usage || 'Typeface' }}</p>
+            <p class="bd-type__name">{{ f.name }}</p>
+            <p :class="i === 0 ? 'bd-type__display' : 'bd-type__body'">{{ i === 0 ? 'The quick brown fox' : 'The quick brown fox jumps over the lazy dog. 0123456789' }}</p>
           </div>
           <p v-if="brand.typographyHierarchy" class="bd-notes">{{ brand.typographyHierarchy }}</p>
         </section>

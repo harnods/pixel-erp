@@ -64,7 +64,7 @@ interface ExtractedBrand {
   name?: string
   colors?: { primary?: string; secondary?: string; neutral?: string; palette?: string[]; combinations?: string[] }
   theme?: string
-  typography?: { headline?: string; body?: string; hierarchy?: string }
+  typography?: { fonts?: { name?: string; usage?: string }[]; headline?: string; body?: string; hierarchy?: string }
   tone?: { summary?: string; do?: string[]; dont?: string[] }
   logoUsage?: string[]
   photography?: string
@@ -123,8 +123,12 @@ function applyExtracted(b: ExtractedBrand) {
   if (b.theme) theme.value = b.theme
   const t = b.typography
   if (t) {
-    if (t.headline) headline.value = t.headline
-    if (t.body) body.value = t.body
+    const list = Array.isArray(t.fonts) ? t.fonts.filter((f) => f?.name).map((f) => ({ name: String(f.name), usage: String(f.usage ?? '') })) : []
+    if (!list.length) {
+      if (t.headline) list.push({ name: t.headline, usage: 'Headline' })
+      if (t.body && t.body !== t.headline) list.push({ name: t.body, usage: 'Body' })
+    }
+    if (list.length) fonts.value = list
     if (t.hierarchy) hierarchy.value = t.hierarchy
   }
   const tone = b.tone
@@ -151,10 +155,11 @@ const palette = ref<string[]>([])
 const newPaletteHex = ref('')
 const colorCombos = ref<string[]>([])
 
-// Typography
-const headline = ref('')
-const body = ref('')
+// Typography — a list of every font the brand uses (name + usage).
+const fonts = ref<{ name: string; usage: string }[]>([])
 const hierarchy = ref('')
+function addFont() { fonts.value.push({ name: '', usage: '' }) }
+function removeFont(i: number) { fonts.value.splice(i, 1) }
 
 // Tone of voice
 const toneSummary = ref('')
@@ -234,10 +239,16 @@ onMounted(async () => {
   theme.value = b.theme ?? ''
   palette.value = [...(b.palette ?? [])]
   colorCombos.value = [...(b.colorCombos ?? [])]
-  // Prefer the distinct font names; fall back to splitting the legacy summary line.
-  const typ = parseTypography(b.typography)
-  headline.value = b.fontHeadline || typ.headline
-  body.value = b.fontBody || typ.body
+  // Prefer the full font list; else fall back to headline/body (or the legacy line).
+  if (b.fonts?.length) {
+    fonts.value = b.fonts.filter((f) => f?.name).map((f) => ({ name: f.name, usage: f.usage ?? '' }))
+  } else {
+    const typ = parseTypography(b.typography)
+    const list: { name: string; usage: string }[] = []
+    if (b.fontHeadline || typ.headline) list.push({ name: b.fontHeadline || typ.headline, usage: 'Headline' })
+    if ((b.fontBody || typ.body) && (b.fontBody || typ.body) !== (b.fontHeadline || typ.headline)) list.push({ name: b.fontBody || typ.body, usage: 'Body' })
+    fonts.value = list
+  }
   hierarchy.value = b.typographyHierarchy ?? ''
   toneSummary.value = b.tone ?? ''
   toneDo.value = [...(b.toneDo ?? [])]
@@ -260,13 +271,21 @@ function parseTypography(summary: string | undefined): { headline: string; body:
   return { headline: head || s, body: head || s }
 }
 
-/** Compose the one-line typography summary from headline + body (no dashes). */
+/** Clean font list (drops blank rows). */
+function cleanFonts(): { name: string; usage?: string }[] {
+  return fonts.value.map((f) => ({ name: f.name.trim(), usage: f.usage.trim() || undefined })).filter((f) => f.name)
+}
+/** The headline / body font from the list (first, and the one tagged body). */
+function headlineFont(): string { return cleanFonts()[0]?.name ?? '' }
+function bodyFont(): string { const list = cleanFonts(); return (list.find((f) => /body|text|paragraph/i.test(f.usage ?? ''))?.name) ?? list[1]?.name ?? headlineFont() }
+/** Compose the one-line typography summary from the font list (no dashes). */
 function composeTypography(): string {
-  const h = headline.value.trim()
-  const bd = body.value.trim()
-  if (h && bd) return `${h} · headlines, ${bd} · body`
-  if (h) return `${h} · headlines`
-  if (bd) return `${bd} · body`
+  const parts = cleanFonts().map((f) => f.usage ? `${f.name} · ${f.usage.toLowerCase()}` : f.name)
+  if (parts.length) return parts.join(', ')
+  const h = headlineFont()
+  const bd = bodyFont()
+  if (h && bd && h !== bd) return `${h} · headlines, ${bd} · body`
+  if (h) return h
   return ''
 }
 
@@ -306,8 +325,9 @@ function buildBasePatch(): Partial<BuzzBrand> {
     colorCombos: [...colorCombos.value],
     theme: theme.value.trim(),
     typography: composeTypography(),
-    fontHeadline: headline.value.trim(),
-    fontBody: body.value.trim(),
+    fonts: cleanFonts(),
+    fontHeadline: headlineFont(),
+    fontBody: bodyFont(),
     typographyHierarchy: hierarchy.value.trim(),
     tone: toneSummary.value.trim(),
     toneDo: [...toneDo.value],
@@ -462,18 +482,16 @@ function cancel() { router.push('/buzz-branding') }
           </div>
         </div>
 
-        <!-- ── 4 · Typography ── -->
+        <!-- ── 4 · Typography — list every font the brand uses ── -->
         <div class="bbf-field bbf-section">
           <p class="bbf-section__title">Typography</p>
-          <div class="bbf-two">
-            <MpFormControl id="bbf-headline" class="bbf-subfield">
-              <MpFormLabel>Headline typeface</MpFormLabel>
-              <MpInput id="bbf-headline-input" v-model="headline" is-full-width placeholder="e.g. Inter Semibold" />
-            </MpFormControl>
-            <MpFormControl id="bbf-body" class="bbf-subfield">
-              <MpFormLabel>Body typeface</MpFormLabel>
-              <MpInput id="bbf-body-input" v-model="body" is-full-width placeholder="e.g. Inter Regular" />
-            </MpFormControl>
+          <div v-for="(f, i) in fonts" :key="i" class="bbf-fontrow">
+            <MpInput :id="`bbf-font-name-${i}`" v-model="f.name" is-full-width placeholder="Font family, e.g. Inter" />
+            <MpInput :id="`bbf-font-usage-${i}`" v-model="f.usage" is-full-width placeholder="Usage, e.g. Headline" />
+            <button type="button" class="bbf-fontrow__x" aria-label="Remove font" @click="removeFont(i)"><MpIcon name="minus-circular" size="md" /></button>
+          </div>
+          <div class="bbf-addrow">
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="addFont"><MpIcon name="add" size="sm" /> Add font</button>
           </div>
           <MpFormControl id="bbf-hierarchy" class="bbf-subfield">
             <MpFormLabel>Hierarchy notes</MpFormLabel>
@@ -629,6 +647,9 @@ function cancel() { router.push('/buzz-branding') }
 .bbf-mini-label { margin: 0 0 var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .bbf-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4, 16px); align-items: start; }
 @media (max-width: 640px) { .bbf-two { grid-template-columns: 1fr; } }
+.bbf-fontrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--mp-spacing-2, 8px); align-items: center; margin-bottom: var(--mp-spacing-2, 8px); }
+.bbf-fontrow__x { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; cursor: pointer; color: var(--mp-icon-default); border-radius: var(--mp-radii-md, 6px); }
+.bbf-fontrow__x:hover { background: var(--mp-background-neutral-subtle); }
 
 /* Colours */
 .bbf-colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mp-spacing-4, 16px); }

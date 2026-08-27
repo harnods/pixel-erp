@@ -80,6 +80,7 @@ async function create() {
       colorCombos: Array.isArray(b.colors?.combinations) ? b.colors.combinations : [],
       theme: b.theme || '',
       typography: [b.typography?.headline, b.typography?.body].filter(Boolean).join(' · '),
+      fonts: Array.isArray(b.typography?.fonts) ? b.typography.fonts.filter((f: any) => f?.name).map((f: any) => ({ name: String(f.name), usage: f.usage ? String(f.usage) : undefined })) : [],
       fontHeadline: b.typography?.headline || '',
       fontBody: b.typography?.body || '',
       typographyHierarchy: b.typography?.hierarchy || '',
