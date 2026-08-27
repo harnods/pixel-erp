@@ -385,6 +385,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Connections', to: 'Cowork connections' },
           { label: 'Agents', to: 'Cowork agents' },
           { label: 'Skills', to: 'Cowork skills' },
+          { label: 'File manager', to: 'Cowork knowledge' },
         ],
       ],
     },

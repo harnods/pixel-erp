@@ -9,6 +9,7 @@ function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
 import { coworkAgents, COWORK_SKILLS, type CoworkAgent } from '~/data/cowork'
+import { buildKnowledgeContext, knowledgeCorpus } from '~/data/coworkKb'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
@@ -73,6 +74,8 @@ const pageRegistry: Record<string, Component> = {
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
+  'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
@@ -152,6 +155,8 @@ const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTask
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
+const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -358,6 +363,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cowork-skills/:id → Cowork skill detail (actions + definition).
   if (segs.length >= 2 && segs[0] === 'cowork-skills') {
     return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
+  if (segs[0] === 'cowork-knowledge') {
+    if (segs[1] === 'doc' && segs[2]) return { component: CoworkKbDocDetailPage, id: segs[2] }
+    return { component: CoworkKbPage, id: segs[1] ?? '' }
   }
   // /cowork-agents/new → create form; /cowork-agents/:id/edit → edit; /cowork-agents/:id → detail.
   if (segs.length >= 2 && segs[0] === 'cowork-agents') {
@@ -1370,6 +1380,17 @@ function activeAgentPayload() {
   const skills = (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean)
   return { name: a.name, role: a.role, module: a.module, persona: a.instruction || a.persona, skills }
 }
+// KB grounding for the active agent: relevance-injected snippets (ranked against
+// the user's message) plus a compact corpus so the model can also call
+// search_knowledge. Undefined when the agent has no knowledge attached.
+function activeKnowledgePayload(query: string) {
+  const att = activeAgent.value?.knowledge
+  if (!att?.length) return undefined
+  const snippets = buildKnowledgeContext(att, query)
+  const corpus = knowledgeCorpus(att)
+  if (!corpus.length) return undefined
+  return { snippets, corpus }
+}
 // When the chat is opened about a specific task result, the empty-state greeting
 // and suggestions become contextual to that result instead of the generic ones.
 const DEFAULT_CONTEXT_SUGGESTIONS = [
@@ -1472,6 +1493,7 @@ async function sendMessage(text: string, context?: string) {
         context: aireneGround.value || buildModuleGround(),
         agent: activeAgentPayload(),
         roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
+        knowledge: activeKnowledgePayload(trimmed),
       },
     })
     reply = res.reply

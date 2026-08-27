@@ -15,12 +15,15 @@ import {
   toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
+import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
 import {
   getAgent, addAgent, updateAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_MODULES,
   type CoworkAgent, type CoworkModule,
 } from '~/data/cowork'
+import { coworkKb, addFolder, resolveAttachments, isFolder, getNode, getFolder, extLabel, type KbAttachment } from '~/data/coworkKb'
+import { useKbIngest } from '~/composables/useKbIngest'
 
 const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
@@ -57,6 +60,11 @@ const areaOn = reactive<Record<string, boolean>>({})
 COWORK_MODULES.forEach((m) => { areaOn[m] = false })
 interface KFile { name: string; size: string; icon: string }
 const knowledgeFiles = ref<KFile[]>([])
+// ── Knowledge Base attachments (live scope references) ──
+const knowledge = ref<KbAttachment[]>([])
+const kbPickerOpen = ref(false)
+const kbUploading = ref(false)
+const { ingestFiles } = useKbIngest()
 const skillOn = reactive<Record<string, boolean>>({})
 COWORK_SKILLS.forEach((s) => { skillOn[s.id] = false })
 const visibilityEveryone = ref(true)
@@ -72,6 +80,7 @@ onMounted(() => {
   allWorkspace.value = !!a.allWorkspace
   ;(a.knowledgeAreas ?? []).forEach((m) => { areaOn[m] = true })
   knowledgeFiles.value = (a.knowledgeFiles ?? []).map((f) => ({ name: f.name, size: f.size, icon: fileIcon(f.name.split('.').pop() || '') }))
+  knowledge.value = [...(a.knowledge ?? [])]
   ;(a.skills ?? []).forEach((s) => { skillOn[s] = true })
   visibilityEveryone.value = a.visibilityEveryone ?? true
   selectedEmployeeIds.value = [...(a.visibilityEmployees ?? [])]
@@ -119,6 +128,44 @@ function onUploadChange(ev: Event) {
 }
 function removeFile(i: number) { knowledgeFiles.value.splice(i, 1) }
 
+// ── Knowledge Base attach ──
+/** Resolve attached scopes → distinct docs (for the count + chip labels). */
+const attachedDocs = computed(() => resolveAttachments(knowledge.value))
+function attachmentLabel(a: KbAttachment): string {
+  const n = getNode(a.id)
+  if (!n) return 'Removed item'
+  return n.name
+}
+function attachmentSub(a: KbAttachment): string {
+  if (a.scope === 'doc') { const n = getNode(a.id); return n && !isFolder(n) ? extLabel((n as any).ext) : 'Document' }
+  return `${resolveAttachments([a]).length} docs`
+}
+function removeAttachment(i: number) { knowledge.value.splice(i, 1) }
+
+// Quick-upload from the agent form → ingest into a shared "Agent uploads"
+// collection and attach each new doc directly.
+function ensureAgentUploadsFolder(): string {
+  const existingF = coworkKb.find((n) => isFolder(n) && n.parentId === null && n.name === 'Agent uploads')
+  if (existingF) return existingF.id
+  return addFolder(null, 'Agent uploads', { description: 'Files uploaded while configuring agents', icon: 'magic', color: '#7C3AED' }).id
+}
+async function onKbUpload(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  if (!files.length) return
+  kbUploading.value = true
+  try {
+    const folder = ensureAgentUploadsFolder()
+    const docs = await ingestFiles(folder, files)
+    for (const d of docs) if (!knowledge.value.some((a) => a.scope === 'doc' && a.id === d.id)) knowledge.value.push({ scope: 'doc', id: d.id })
+    toast.notify({ variant: 'success', title: 'Knowledge added', description: `${docs.length} document${docs.length > 1 ? 's' : ''} attached.` })
+  } finally {
+    kbUploading.value = false
+  }
+}
+const kbUploadInput = ref<HTMLInputElement | null>(null)
+
 // ── Employee picker drawer ──
 const pickerOpen = ref(false)
 const empSearch = ref('')
@@ -160,6 +207,7 @@ function save() {
     allWorkspace: allWorkspace.value,
     knowledgeAreas: areas,
     knowledgeFiles: knowledgeFiles.value.map((f) => ({ name: f.name, size: f.size })),
+    knowledge: [...knowledge.value],
     skills,
     visibilityEveryone: visibilityEveryone.value,
     visibilityEmployees: visibilityEveryone.value ? [] : [...selectedEmployeeIds.value],
@@ -246,15 +294,26 @@ function save() {
 
           <!-- ── Knowledge ── -->
           <template v-else-if="current === 'knowledge'">
-            <MpFormControl id="caf-upload" class="caf-field">
-              <MpFormLabel>Knowledge files</MpFormLabel>
-              <MpUpload id="caf-upload-input" is-multiple is-full-width
-                accept=".md,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx"
-                placeholder="or drag and drop here" button-text="Upload file" @change="onUploadChange" />
-              <p class="caf-hint">Supported: .md, PDF, Word, spreadsheets, PowerPoint.</p>
-              <MpUploadList v-for="(f, i) in knowledgeFiles" :key="i" :id="`caf-file-${i}`"
-                :title="f.name" status="success" :subtitle="f.size" :icon-name="f.icon"
-                is-show-remove-button @remove="removeFile(i)" />
+            <MpFormControl id="caf-kb" class="caf-field">
+              <MpFormLabel>Knowledge base</MpFormLabel>
+              <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live — new files inside flow through automatically.</p>
+              <div class="caf-kb-actions">
+                <MpButton is-rounded variant="secondary" size="sm" @click="kbPickerOpen = true"><MpIcon name="folder-close" size="sm" /> Attach from Knowledge Base</MpButton>
+                <MpButton is-rounded variant="tertiary" size="sm" :is-loading="kbUploading" @click="kbUploadInput?.click()"><MpIcon name="upload" size="sm" /> Upload new</MpButton>
+                <input ref="kbUploadInput" type="file" multiple class="caf-kb-file"
+                  accept=".md,.markdown,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
+                  @change="onKbUpload" />
+              </div>
+              <ul v-if="knowledge.length" class="caf-kb-list">
+                <li v-for="(a, i) in knowledge" :key="a.scope + a.id" class="caf-kb-chip">
+                  <MpIcon :name="a.scope === 'doc' ? 'doc' : 'folder-close'" size="sm" :class="a.scope === 'doc' ? '' : 'caf-kb-chip__folder'" />
+                  <span class="caf-kb-chip__name">{{ attachmentLabel(a) }}</span>
+                  <span class="caf-kb-chip__sub">{{ attachmentSub(a) }}</span>
+                  <button class="caf-kb-chip__x" type="button" aria-label="Remove" @click="removeAttachment(i)"><MpIcon name="close" size="sm" /></button>
+                </li>
+              </ul>
+              <p v-else class="caf-kb-empty">No knowledge attached yet.</p>
+              <p v-if="knowledge.length" class="caf-hint caf-hint--tight">{{ attachedDocs.length }} document{{ attachedDocs.length === 1 ? '' : 's' }} in scope.</p>
             </MpFormControl>
 
             <MpFormControl id="caf-ws" class="caf-field">
@@ -357,6 +416,8 @@ function save() {
       </MpDrawerContent>
       <MpDrawerOverlay />
     </MpDrawer>
+
+    <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
 </template>
 
 <style scoped>
@@ -374,6 +435,17 @@ function save() {
 .caf-field--half { grid-column: 1 / 4; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.caf-kb-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
+.caf-kb-file { display: none; }
+.caf-kb-list { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.caf-kb-chip { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: 8px 10px; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; background: var(--mp-background-default, #fff); }
+.caf-kb-chip :deep(svg) { flex: 0 0 auto; color: var(--mp-icon-default, #536062); }
+.caf-kb-chip__folder { color: var(--mp-icon-brand, #0a6e4e) !important; }
+.caf-kb-chip__name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.caf-kb-chip__sub { flex: 0 0 auto; font-size: 11px; color: var(--mp-text-secondary); }
+.caf-kb-chip__x { margin-left: auto; flex: 0 0 auto; display: inline-flex; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); padding: 2px; border-radius: 4px; }
+.caf-kb-chip__x:hover { background: var(--mp-background-neutral, #eceef0); color: var(--mp-icon-default, #536062); }
+.caf-kb-empty { margin: var(--mp-spacing-3) 0 0; font-size: 13px; color: var(--mp-text-secondary); }
 
 /* Textarea with a docked "Optimize" button inside the box */
 .caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
