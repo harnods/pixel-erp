@@ -486,9 +486,9 @@ function save() {
 .caf-skill__actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2); }
 .caf-skill__chip { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
 
-.caf-vis-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.caf-people { margin-top: var(--mp-spacing-4); }
-.caf-people__head { display: flex; align-items: center; justify-content: space-between; }
+.caf-vis-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-people { margin-top: var(--mp-spacing-5, 20px); }
+.caf-people__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--mp-spacing-3, 12px); }
 .caf-addpeople { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .caf-addpeople:hover { text-decoration: underline; text-underline-offset: 2px; }
 .caf-person { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); }

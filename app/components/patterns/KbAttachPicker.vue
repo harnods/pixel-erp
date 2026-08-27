@@ -11,6 +11,7 @@ import {
   coworkKb, childrenOf, isFolder, isDoc, descendantFolderIds, extLabel,
   type KbNode, type KbAttachment,
 } from '~/data/coworkKb'
+import { getBlob } from '~/utils/kbBlobStore'
 
 const props = defineProps<{ isOpen: boolean; modelValue: KbAttachment[] }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void; (e: 'update:modelValue', v: KbAttachment[]): void }>()
@@ -80,6 +81,19 @@ function toggleDoc(id: string) {
   s.has(id) ? s.delete(id) : s.add(id)
   docSel.value = s
 }
+// Thumbnails (image / rendered PDF page 1) loaded lazily from IndexedDB —
+// mirrors the KB file-manager (CoworkKbPage). Img/PDF show the real preview.
+const thumbs = ref<Map<string, string>>(new Map())
+async function loadThumbs() {
+  for (const r of rows.value) {
+    const n = r.node
+    if (!isDoc(n) || !(n as any).thumb || thumbs.value.has(n.id)) continue
+    const b = await getBlob(n.id)
+    if (b?.thumbUrl) { const next = new Map(thumbs.value); next.set(n.id, b.thumbUrl); thumbs.value = next }
+  }
+}
+watch(rows, loadThumbs, { deep: true, immediate: true })
+
 function docIcon(ext: string): string {
   if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'].includes(ext)) return 'file-image'
   if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel-document'
@@ -148,7 +162,8 @@ function cancel() { emit('update:isOpen', false) }
                   :is-checked="docSel.has(row.node.id) || row.coveredByFolder"
                   :is-disabled="row.coveredByFolder"
                   @change="toggleDoc(row.node.id)" />
-                <MpIcon :name="isFolder(row.node) ? 'folder-close' : docIcon((row.node as any).ext)" size="sm" class="kap-icon" :class="{ 'kap-icon--folder': isFolder(row.node) }" />
+                <img v-if="isDoc(row.node) && thumbs.get(row.node.id)" :src="thumbs.get(row.node.id)" :alt="row.node.name" class="kap-thumb" />
+                <MpIcon v-else :name="isFolder(row.node) ? 'folder-close' : docIcon((row.node as any).ext)" size="sm" class="kap-icon" :class="{ 'kap-icon--folder': isFolder(row.node) }" />
                 <span class="kap-name">{{ row.node.name }}</span>
                 <span v-if="isDoc(row.node)" class="kap-ext">{{ extLabel((row.node as any).ext) }}</span>
                 <span v-if="row.coveredByFolder" class="kap-covered">via folder</span>
@@ -198,6 +213,7 @@ function cancel() { emit('update:isOpen', false) }
 .kap-label { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); flex: 1; min-width: 0; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
 .kap-label:hover { background: var(--mp-background-neutral-subtle, #f0f1f3); }
 .kap-icon { flex: 0 0 auto; color: var(--mp-icon-default, #536062); }
+.kap-thumb { flex: 0 0 auto; width: 28px; height: 28px; object-fit: cover; border-radius: 4px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f6f7f9); }
 .kap-icon--folder { color: var(--mp-icon-brand, #0a6e4e); }
 .kap-name { font-size: 13px; color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kap-ext { flex: 0 0 auto; font-size: 10px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral, #eceef0); border-radius: 4px; padding: 1px 5px; }
