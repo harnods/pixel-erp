@@ -381,7 +381,7 @@ function save() {
                 <MpFormLabel>People with access</MpFormLabel>
                 <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
               </div>
-              <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet — only you will have access.</p>
+              <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet. Only you will have access.</p>
               <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
                 <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
                 <div class="caf-person__info">
@@ -486,7 +486,7 @@ function save() {
 .caf-skill__actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2); }
 .caf-skill__chip { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
 
-.caf-vis-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-vis-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .caf-people { margin-top: var(--mp-spacing-5, 20px); }
 .caf-people__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--mp-spacing-3, 12px); }
 .caf-addpeople { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
