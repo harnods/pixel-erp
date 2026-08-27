@@ -298,8 +298,8 @@ function save() {
               <MpFormLabel>Knowledge base</MpFormLabel>
               <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live — new files inside flow through automatically.</p>
               <div class="caf-kb-actions">
-                <MpButton is-rounded variant="secondary" size="sm" @click="kbPickerOpen = true"><MpIcon name="folder-close" size="sm" /> Attach from Knowledge Base</MpButton>
-                <MpButton is-rounded variant="tertiary" size="sm" :is-loading="kbUploading" @click="kbUploadInput?.click()"><MpIcon name="upload" size="sm" /> Upload new</MpButton>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
                 <input ref="kbUploadInput" type="file" multiple class="caf-kb-file"
                   accept=".md,.markdown,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
                   @change="onKbUpload" />
@@ -316,7 +316,7 @@ function save() {
               <p v-if="knowledge.length" class="caf-hint caf-hint--tight">{{ attachedDocs.length }} document{{ attachedDocs.length === 1 ? '' : 's' }} in scope.</p>
             </MpFormControl>
 
-            <MpFormControl id="caf-ws" class="caf-field">
+            <MpFormControl id="caf-ws" class="caf-field caf-field--gap32">
               <div class="caf-ws-head">
                 <div>
                   <MpFormLabel>Add all workspace content</MpFormLabel>
@@ -334,13 +334,15 @@ function save() {
             </MpFormControl>
 
             <div class="caf-field">
-              <MpBanner variant="information" is-full-width>
-                <MpBannerIcon />
-                <MpBannerTitle>Permissions stay as they are</MpBannerTitle>
-                <MpBannerDescription>
+              <MpBanner id="caf-perm-banner" variant="info">
+                <MpBannerIcon id="caf-perm-banner-icon" />
+                <MpBannerTitle id="caf-perm-banner-title">Permissions stay as they are</MpBannerTitle>
+                <MpBannerDescription id="caf-perm-banner-desc">
                   Files and integrations keep their original permissions. Only people with existing access will have access here. To share with more people, update permissions for each file or integration separately.
-                  <MpBannerLink href="#" @click.prevent="infoToast('Read more — coming soon')">Read more</MpBannerLink>
                 </MpBannerDescription>
+                <MpBannerLink id="caf-perm-banner-link">
+                  <a href="#" @click.prevent="infoToast('Read more — coming soon')">Read more</a>
+                </MpBannerLink>
               </MpBanner>
             </div>
           </template>
@@ -437,6 +439,8 @@ function save() {
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .caf-kb-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
 .caf-kb-file { display: none; }
+/* 32px before "Add all workspace content" (12px on top of the 20px grid row-gap). */
+.caf-field--gap32 { margin-top: var(--mp-spacing-3, 12px); }
 .caf-kb-list { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .caf-kb-chip { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: 8px 10px; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; background: var(--mp-background-default, #fff); }
 .caf-kb-chip :deep(svg) { flex: 0 0 auto; color: var(--mp-icon-default, #536062); }
