@@ -11,7 +11,7 @@ import {
   MpButton, MpInput, MpTextarea, MpSelect, MpToggle, MpUpload, MpUploadList, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
-  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerOverlay, MpModalCloseButton,
+  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
   toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
@@ -180,6 +180,14 @@ function toggleEmployee(id: string, on: boolean) {
   else selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id)
 }
 function removeEmployee(id: string) { selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id) }
+// Picker drawer edits a draft; Save commits, Cancel discards.
+const draftEmpIds = ref<string[]>([])
+watch(pickerOpen, (open) => { if (open) { draftEmpIds.value = [...selectedEmployeeIds.value]; empSearch.value = '' } })
+function toggleDraftEmp(id: string, on: boolean) {
+  if (on) { if (!draftEmpIds.value.includes(id)) draftEmpIds.value = [...draftEmpIds.value, id] }
+  else draftEmpIds.value = draftEmpIds.value.filter((x) => x !== id)
+}
+function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pickerOpen.value = false }
 
 // ── Navigation ──
 const nameError = ref('')
@@ -355,9 +363,6 @@ function save() {
                 <div class="caf-skill__main">
                   <p class="caf-skill__name">{{ s.name }}<span v-if="s.module" class="caf-skill__mod">{{ s.module }}</span></p>
                   <p class="caf-skill__desc">{{ s.description }}</p>
-                  <div class="caf-skill__actions">
-                    <span v-for="a in s.actions" :key="a.id" class="caf-skill__chip">{{ a.label }}</span>
-                  </div>
                 </div>
                 <MpToggle :is-checked="skillOn[s.id]" :aria-label="`Toggle ${s.name}`" @update:is-checked="(v: boolean) => skillOn[s.id] = v" />
               </div>
@@ -374,7 +379,7 @@ function save() {
             <div v-if="!visibilityEveryone" class="caf-people">
               <div class="caf-people__head">
                 <MpFormLabel>People with access</MpFormLabel>
-                <button type="button" class="caf-addpeople" @click="pickerOpen = true"><MpIcon name="add" size="sm" /> Add people</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
               </div>
               <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet — only you will have access.</p>
               <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
@@ -383,7 +388,7 @@ function save() {
                   <span class="caf-person__name">{{ e!.fullName }}</span>
                   <span class="caf-person__role">{{ e!.jobPosition }}</span>
                 </div>
-                <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="delete" size="sm" /></button>
+                <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
               </div>
             </div>
           </template>
@@ -406,8 +411,8 @@ function save() {
           <MpInput id="caf-emp-search" v-model="empSearch" is-full-width placeholder="Search employees" />
           <div class="caf-emplist">
             <label v-for="e in filteredEmployees" :key="e.id" class="caf-emp">
-              <MpCheckbox :is-checked="selectedEmployeeIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleEmployee(e.id, v)" />
-              <MpAvatar :src="e.photo" :name="e.fullName" size="sm" />
+              <MpCheckbox :is-checked="draftEmpIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleDraftEmp(e.id, v)" />
+              <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
               <span class="caf-emp__info">
                 <span class="caf-emp__name">{{ e.fullName }}</span>
                 <span class="caf-emp__role">{{ e.jobPosition }} · {{ e.department }}</span>
@@ -415,6 +420,12 @@ function save() {
             </label>
           </div>
         </MpDrawerBody>
+        <MpDrawerFooter>
+          <MpButtonGroup>
+            <MpButton variant="ghost" is-rounded @click="pickerOpen = false">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded @click="savePeople">Save</MpButton>
+          </MpButtonGroup>
+        </MpDrawerFooter>
       </MpDrawerContent>
       <MpDrawerOverlay />
     </MpDrawer>
@@ -432,7 +443,7 @@ function save() {
 .caf-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
 .caf-inner { max-width: 640px; }
 /* Mirror the edit-task form grid so MpFormControl fields get a definite width. */
-.caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 558px; align-items: start; }
+.caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 640px; align-items: start; }
 .caf-form > * { grid-column: 1 / 7; min-width: 0; }
 .caf-field--half { grid-column: 1 / 4; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
@@ -487,6 +498,9 @@ function save() {
 .caf-person__x { border: none; background: none; cursor: pointer; color: var(--mp-icon-default); display: inline-flex; }
 
 .caf-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6, 24px); max-width: 640px; }
+/* Ghost buttons: no border/ring on hover or focus (was showing a green outline). */
+:deep(.mp-button--variant_ghost:hover),
+:deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
 
 .caf-emplist { margin-top: var(--mp-spacing-3); }
 .caf-emp { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); cursor: pointer; }
