@@ -298,8 +298,8 @@ function save() {
               <MpFormLabel>Knowledge base</MpFormLabel>
               <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live — new files inside flow through automatically.</p>
               <div class="caf-kb-actions">
-                <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
                 <input ref="kbUploadInput" type="file" multiple class="caf-kb-file"
                   accept=".md,.markdown,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
                   @change="onKbUpload" />
