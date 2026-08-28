@@ -10,7 +10,6 @@
  */
 import { MpIcon, toast } from '@mekari/pixel3'
 import { buzzAssets, buzzBrands, buzzBrand, addUploadedAsset, type BuzzAsset } from '~/data/buzz'
-import { infoToast } from '~/utils/toasts'
 import { getImage, putImage } from '~/utils/buzzImageStore'
 import { useBuzzActions } from '~/composables/useBuzzActions'
 import GenerateAssetDrawer from '~/components/patterns/GenerateAssetDrawer.vue'
@@ -51,13 +50,21 @@ watch(filtered, loadImages, { deep: true, immediate: true })
 const showGenerate = ref(false)
 const presetSubject = ref<string[]>([])
 const { pending } = useBuzzActions()
-watch(() => pending.value, (p) => { if (p?.action === 'generateAsset') { presetSubject.value = []; showGenerate.value = true } })
+watch(() => pending.value, (p) => {
+  if (p?.action === 'generateAsset') { presetSubject.value = []; showGenerate.value = true }
+  if (p?.action === 'uploadAsset') triggerUpload()
+})
 // Opened from the Home "Generate image" chip via ?generate=1.
 onMounted(() => { if (route.query.generate) showGenerate.value = true })
 function onSaved() { loadImages() }
 
 // Generate new poses/scenes FROM an existing asset (uses it as the subject).
-function generateVariations(a: BuzzAsset) { presetSubject.value = [a.id]; showGenerate.value = true }
+function generateVariations(a: BuzzAsset) { preview.value = null; presetSubject.value = [a.id]; showGenerate.value = true }
+
+// ── Preview modal ──
+const preview = ref<BuzzAsset | null>(null)
+const previewUrl = computed(() => preview.value ? (images.value.get(preview.value.id) ?? '') : '')
+function openPreview(a: BuzzAsset) { preview.value = a }
 
 // ── Upload your own assets ──
 const uploadInput = ref<HTMLInputElement | null>(null)
@@ -108,36 +115,24 @@ async function onFiles(ev: Event) {
           </select>
           <svg class="filter-select-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <button class="filter-all-btn"><MpIcon name="filter" size="md" /> All filters</button>
       </div>
       <div class="filter-right">
-        <button type="button" class="upload-btn" @click="triggerUpload">Upload asset</button>
-        <input ref="uploadInput" class="upload-input" type="file" accept="image/*" multiple @change="onFiles" />
-        <div class="filter-btn-group">
-          <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
-        </div>
         <div class="filter-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search photos, e.g. HR manager at laptop…" />
+          <input v-model="search" class="filter-search-input" type="text" placeholder="Search" />
           <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
         </div>
       </div>
     </div>
+    <input ref="uploadInput" class="upload-input" type="file" accept="image/*" multiple @change="onFiles" />
 
-    <!-- ── Gallery grid ── -->
+    <!-- ── Gallery grid — photos only, click to preview ── -->
     <div v-if="filtered.length" class="gallery">
-      <div v-for="a in filtered" :key="a.id" class="asset">
+      <button v-for="a in filtered" :key="a.id" type="button" class="asset" @click="openPreview(a)">
         <span class="asset__thumb" :class="`asset__thumb--${a.orientation.toLowerCase()}`" :style="{ background: a.gradient }">
           <img v-if="a.hasImage && images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="asset__photo" />
-          <span v-if="a.source === 'ai'" class="asset__ai"><MpIcon name="magic" size="sm" /> AI</span>
-          <img v-if="/^(\/|https?:|data:)/.test(buzzBrand(a.brand)?.logo || '')" :src="buzzBrand(a.brand)?.logo" :alt="buzzBrand(a.brand)?.name" class="asset__badge" />
-          <button v-if="a.hasImage" type="button" class="asset__vary" @click="generateVariations(a)">Generate variations</button>
         </span>
-        <span class="asset__meta">
-          <span class="asset__title">{{ a.title }}</span>
-          <span class="asset__sub">{{ buzzBrand(a.brand)?.name }} · {{ a.orientation }}</span>
-        </span>
-      </div>
+      </button>
     </div>
     <div v-else class="empty-full">
       <img src="/illustrations/empty-box.png" alt="" class="empty-illustration" width="288" height="240" />
@@ -147,6 +142,24 @@ async function onFiles(ev: Event) {
     </div>
 
     <GenerateAssetDrawer v-model:is-open="showGenerate" :preset-subject-ids="presetSubject" @saved="onSaved" />
+
+    <!-- ── Photo preview modal ── -->
+    <Teleport to="body">
+      <Transition name="pv">
+        <div v-if="preview" class="pv-overlay" @click.self="preview = null">
+          <div class="pv-panel" role="dialog" aria-modal="true">
+            <button class="pv-close" type="button" aria-label="Close" @click="preview = null"><MpIcon name="close" size="md" /></button>
+            <div class="pv-imgwrap">
+              <img v-if="previewUrl" :src="previewUrl" :alt="preview.title" class="pv-img" />
+            </div>
+            <div class="pv-foot">
+              <span class="pv-brand">{{ buzzBrand(preview.brand)?.name }}</span>
+              <button v-if="preview.hasImage" type="button" class="btn-enterprise btn-enterprise--secondary" @click="generateVariations(preview)">Generate variations</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -155,25 +168,25 @@ async function onFiles(ev: Event) {
 
 /* ── Gallery ── */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--mp-spacing-4, 16px); }
-.asset { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); padding: 0; border: none; background: none; cursor: pointer; text-align: left; }
+.asset { display: block; padding: 0; border: none; background: none; cursor: pointer; }
 .asset__thumb { position: relative; display: block; width: 100%; height: 150px; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; }
 .asset__thumb--portrait { height: 200px; }
 .asset__thumb--square { height: 180px; }
 .asset__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.asset__ai { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--mp-radii-full, 999px); background: rgba(8,13,14,0.72); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
-.asset__ai :deep(svg) { color: #fff; }
-.asset__badge { position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 5px; object-fit: contain; background: #fff; padding: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); z-index: 1; }
-.asset { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
-.asset__vary { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 6px; border: none; background: rgba(8,13,14,0.5); color: #fff; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; opacity: 0; transition: opacity 120ms; }
-.asset__vary :deep(svg) { color: #fff; }
-.asset__thumb:hover .asset__vary { opacity: 1; }
-.upload-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); cursor: pointer; white-space: nowrap; }
-.upload-btn:hover { background: var(--mp-background-neutral-hovered); }
 .upload-input { display: none; }
 .asset:hover .asset__thumb { border-color: var(--mp-border-bold, #8c9596); }
-.asset__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.asset__title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.asset__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+
+/* Photo preview modal */
+.pv-enter-active, .pv-leave-active { transition: opacity 200ms ease; }
+.pv-enter-from, .pv-leave-to { opacity: 0; }
+.pv-overlay { position: fixed; inset: 0; z-index: 1500; background: rgba(8, 13, 14, 0.72); display: flex; align-items: center; justify-content: center; padding: var(--mp-spacing-8, 32px); }
+.pv-panel { position: relative; display: flex; flex-direction: column; max-width: min(720px, 92vw); max-height: 90vh; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); overflow: hidden; }
+.pv-close { position: absolute; top: 8px; right: 8px; z-index: 2; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: rgba(255,255,255,0.9); border-radius: 999px; cursor: pointer; color: var(--mp-icon-default); }
+.pv-close:hover { background: #fff; }
+.pv-imgwrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--mp-background-neutral-subtle, #f4f5f7); }
+.pv-img { max-width: 100%; max-height: 78vh; object-fit: contain; display: block; }
+.pv-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.pv-brand { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
 /* Empty state — 3D illustration + copy + secondary CTA (ERP pattern) */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-12, 48px) var(--mp-spacing-6); text-align: center; }
