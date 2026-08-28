@@ -17,6 +17,9 @@ import { buzzCampaigns, buzzBrands, buzzBrand, buzzBadgeType, persistCampaigns, 
 import { formatDate } from '~/utils/date'
 import { infoToast } from '~/utils/toasts'
 import { useBuzzActions } from '~/composables/useBuzzActions'
+import CreatePostDrawer from '~/components/patterns/CreatePostDrawer.vue'
+
+const route = useRoute()
 
 const rows = computed<BuzzCampaign[]>(() =>
   [...buzzCampaigns].sort((a, b) => a.name.localeCompare(b.name)))
@@ -35,8 +38,14 @@ const {
 
 // ── New campaign drawer (title-bar action via the bus) ──
 const showCreate = ref(false)
+// Create campaign → generate an IG post (the main flow).
+const showCreatePost = ref(false)
 const { pending } = useBuzzActions()
-watch(() => pending.value, (p) => { if (p?.action === 'newCampaign') showCreate.value = true })
+watch(() => pending.value, (p) => {
+  if (p?.action === 'newCampaign') showCreate.value = true
+  if (p?.action === 'createCampaign') showCreatePost.value = true
+})
+onMounted(() => { if (route.query.create) showCreatePost.value = true })
 
 const PURPOSES = ['Product launch', 'Feature announcement', 'Educational', 'Event', 'Promotion', 'Employer branding', 'Thought leadership']
 const form = reactive({ name: '', brand: buzzBrands[0]?.id ?? '', purpose: PURPOSES[0]!, audience: '' })
@@ -128,7 +137,10 @@ const columns: TableColumn[] = [
     <template #cell-updatedAt="{ value }">{{ formatDate(value as string) }}</template>
   </ErpTablePage>
 
-  <!-- ── New campaign drawer ── -->
+  <!-- ── Create campaign → generate IG post ── -->
+  <CreatePostDrawer v-model:is-open="showCreatePost" />
+
+  <!-- ── New campaign drawer (metadata only) ── -->
   <MpDrawer id="buzz-new-campaign-drawer" :is-open="showCreate" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="showCreate = false">
     <MpDrawerContent>
       <MpDrawerBody>

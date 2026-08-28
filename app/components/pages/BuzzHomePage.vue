@@ -33,7 +33,9 @@ function generate() {
 // rest are placeholders for now.
 function onCreateAction(key: string, label: string) {
   if (key === 'generate') { router.push('/buzz-photo-stocks?generate=1'); return }
-  soon(label)
+  // Instagram post / carousel / story / ad / campaign visual → the Create-campaign
+  // flow (pick a brand → generate an on-brand IG post with Gemini).
+  router.push('/buzz-campaigns?create=1')
 }
 
 // Recent campaigns — newest first, top 6.
