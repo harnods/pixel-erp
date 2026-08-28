@@ -23,8 +23,13 @@ const headline = ref('')
 const briefError = ref('')
 const error = ref('')
 const generating = ref(false)
-const resultUrl = ref('')
-const resultMime = ref('image/png')
+
+// Type: a single post (3 alternative designs) or a carousel series (N slides).
+const postType = ref<'single' | 'carousel'>('single')
+const slides = ref(5)
+const results = ref<{ dataUrl: string; mime: string }[]>([])
+const selected = ref(0) // chosen alternative (single post)
+const resultKind = ref<'single' | 'carousel'>('single')
 
 const hasBrands = computed(() => buzzBrands.length > 0)
 
@@ -46,7 +51,8 @@ watch(() => props.isOpen, (open) => {
   if (open) {
     brandId.value = buzzBrands[0]?.id ?? ''
     brief.value = ''; headline.value = ''; briefError.value = ''; error.value = ''
-    generating.value = false; resultUrl.value = ''; subjectIds.value = []
+    generating.value = false; results.value = []; selected.value = 0; subjectIds.value = []
+    postType.value = 'single'; slides.value = 5
   }
 })
 
@@ -57,7 +63,7 @@ async function generate() {
   if (briefError.value) return
   error.value = ''
   generating.value = true
-  resultUrl.value = ''
+  results.value = []; selected.value = 0
   const b = buzzBrand(brandId.value)
   const references: string[] = []
   for (const id of (b?.visualRefs ?? []).slice(0, 4)) {
@@ -70,11 +76,13 @@ async function generate() {
     if (rec?.dataUrl) subjects.push(rec.dataUrl)
   }
   try {
-    const res = await $fetch<{ dataUrl?: string; mime?: string; error?: string }>('/api/buzz/generate-ig-post', {
+    const res = await $fetch<{ images?: { dataUrl: string; mime: string }[]; kind?: 'single' | 'carousel'; error?: string }>('/api/buzz/generate-ig-post', {
       method: 'POST',
       body: {
         brief: brief.value.trim(),
         headline: headline.value.trim() || undefined,
+        count: postType.value === 'single' ? 3 : 1,
+        series: postType.value === 'carousel' ? slides.value : 0,
         brand: b ? {
           name: b.name, accent: b.accent, secondary: b.secondary, neutral: b.neutral, palette: b.palette,
           fonts: b.fonts, tone: b.tone, toneDo: b.toneDo, logoUsage: b.logoUsage,
@@ -84,11 +92,12 @@ async function generate() {
         subjects,
       },
     })
-    if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the post.'; return }
-    resultUrl.value = res.dataUrl
-    resultMime.value = res.mime || 'image/png'
+    if (res?.error || !res?.images?.length) { error.value = res?.error || 'Could not generate the design.'; return }
+    results.value = res.images
+    resultKind.value = res.kind || postType.value
+    selected.value = 0
   } catch (err: any) {
-    error.value = String(err?.data?.error ?? err?.message ?? 'Could not generate the post.')
+    error.value = String(err?.data?.error ?? err?.message ?? 'Could not generate the design.')
   } finally {
     generating.value = false
   }
@@ -96,21 +105,26 @@ async function generate() {
 
 const saving = ref(false)
 async function save() {
-  if (!resultUrl.value) return
+  if (!results.value.length) return
   saving.value = true
-  const b = buzzBrand(brandId.value)
   const name = headline.value.trim() || brief.value.trim().slice(0, 48)
-  // Save the post image as an asset.
-  const asset = addBuzzAsset({
-    title: name, brand: brandId.value, orientation: 'Portrait',
-    tags: ['ig-post', 'campaign'], usage: 'Instagram post', prompt: brief.value.trim(), updatedAt: BUZZ_TODAY,
-  })
-  await putImage({ id: asset.id, mime: resultMime.value, dataUrl: resultUrl.value })
-  // Create a campaign.
+  // Carousel → save every slide; single → save the selected alternative.
+  const toSave = resultKind.value === 'carousel' ? results.value : [results.value[selected.value]!]
+  for (let i = 0; i < toSave.length; i++) {
+    const img = toSave[i]!
+    const asset = addBuzzAsset({
+      title: toSave.length > 1 ? `${name} · ${i + 1}` : name,
+      brand: brandId.value, orientation: 'Portrait',
+      tags: ['ig-post', 'campaign', resultKind.value], usage: resultKind.value === 'carousel' ? 'Carousel slide' : 'Instagram post',
+      prompt: brief.value.trim(), updatedAt: BUZZ_TODAY,
+    })
+    await putImage({ id: asset.id, mime: img.mime, dataUrl: img.dataUrl })
+  }
+  // Create a campaign (creatives = number saved).
   const maxId = buzzCampaigns.reduce((m, c) => Math.max(m, Number(c.id.replace(/\D/g, '')) || 0), 2041)
   const campaign: BuzzCampaign = {
     id: `CMP-${maxId + 1}`, name, brand: brandId.value, purpose: 'Promotion',
-    audience: 'General', status: 'Draft', creatives: 1, owner: 'You', updatedAt: BUZZ_TODAY,
+    audience: 'General', status: 'Draft', creatives: toSave.length, owner: 'You', updatedAt: BUZZ_TODAY,
   }
   buzzCampaigns.unshift(campaign)
   persistCampaigns()
@@ -145,12 +159,21 @@ async function save() {
                 </MpSelect>
               </MpFormControl>
 
-              <MpFormControl id="cpd-format" is-required>
-                <MpFormLabel>Format</MpFormLabel>
-                <MpSelect id="cpd-format-select" model-value="ig-post" disabled>
-                  <option value="ig-post">Instagram post · 4:5</option>
-                </MpSelect>
-              </MpFormControl>
+              <div class="cpd__row">
+                <MpFormControl id="cpd-type" is-required>
+                  <MpFormLabel>Type</MpFormLabel>
+                  <MpSelect id="cpd-type-select" v-model="postType">
+                    <option value="single">Single post · 3 designs</option>
+                    <option value="carousel">Carousel series</option>
+                  </MpSelect>
+                </MpFormControl>
+                <MpFormControl v-if="postType === 'carousel'" id="cpd-slides">
+                  <MpFormLabel>Slides</MpFormLabel>
+                  <MpSelect id="cpd-slides-select" v-model.number="slides">
+                    <option v-for="n in [3,4,5,6,7]" :key="n" :value="n">{{ n }} slides</option>
+                  </MpSelect>
+                </MpFormControl>
+              </div>
 
               <MpFormControl id="cpd-brief" is-required :is-invalid="!!briefError">
                 <MpFormLabel>What is the post about?</MpFormLabel>
@@ -177,10 +200,29 @@ async function save() {
 
               <div v-if="generating" class="cpd__preview cpd__preview--loading">
                 <MpSpinner size="md" />
-                <p class="cpd__hint">Designing your post with Gemini…</p>
+                <p class="cpd__hint">{{ postType === 'carousel' ? `Designing your ${slides}-slide series with Gemini…` : 'Designing 3 on-brand options with Gemini…' }}</p>
               </div>
-              <div v-else-if="resultUrl" class="cpd__result">
-                <img :src="resultUrl" alt="Generated Instagram post" class="cpd__img" />
+              <div v-else-if="results.length" class="cpd__result">
+                <!-- Single post: 3 alternatives, pick one -->
+                <template v-if="resultKind === 'single'">
+                  <p class="cpd__resultlabel">Pick a design</p>
+                  <div class="cpd__alts">
+                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" @click="selected = i">
+                      <img :src="img.dataUrl" :alt="`Design ${i + 1}`" class="cpd__alt-img" />
+                      <span v-if="selected === i" class="cpd__alt-check"><MpIcon name="check" size="sm" /></span>
+                    </button>
+                  </div>
+                </template>
+                <!-- Carousel: slide strip -->
+                <template v-else>
+                  <p class="cpd__resultlabel">{{ results.length }}-slide series</p>
+                  <div class="cpd__slides">
+                    <div v-for="(img, i) in results" :key="i" class="cpd__slide">
+                      <img :src="img.dataUrl" :alt="`Slide ${i + 1}`" class="cpd__slide-img" />
+                      <span class="cpd__slide-n">{{ i + 1 }}</span>
+                    </div>
+                  </div>
+                </template>
                 <p v-if="error" class="cpd__error">{{ error }}</p>
               </div>
               <p v-else-if="error" class="cpd__error">{{ error }}</p>
@@ -188,10 +230,10 @@ async function save() {
           </div>
 
           <div v-if="hasBrands" class="cpd__footer">
-            <template v-if="!resultUrl">
+            <template v-if="!results.length">
               <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
               <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">
-                <MpIcon v-if="!generating" name="magic" size="sm" /> Generate post
+                <MpIcon v-if="!generating" name="magic" size="sm" /> {{ postType === 'carousel' ? 'Generate series' : 'Generate designs' }}
               </MpButton>
             </template>
             <template v-else>
@@ -217,8 +259,21 @@ async function save() {
 .cpd__nobrand-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cpd__preview--loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); min-height: 280px; border: 1px dashed var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-neutral-subtle); }
 .cpd__hint { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.cpd__result { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.cpd__img { width: 100%; max-width: 360px; margin: 0 auto; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); display: block; }
+.cpd__row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3, 12px); align-items: start; }
+.cpd__result { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.cpd__resultlabel { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+/* Single: 3 alternatives */
+.cpd__alts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mp-spacing-2, 8px); }
+.cpd__alt { position: relative; padding: 0; border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-md, 8px); overflow: hidden; box-shadow: 0 0 0 1px var(--mp-border-default, #e3e7e9); }
+.cpd__alt--on { box-shadow: 0 0 0 2px var(--mp-border-selected, #029861); }
+.cpd__alt-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.cpd__alt-check { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: var(--mp-background-brand-bold, #029861); color: #fff; }
+.cpd__alt-check :deep(svg) { color: #fff; }
+/* Carousel: slide strip */
+.cpd__slides { display: flex; gap: var(--mp-spacing-2, 8px); overflow-x: auto; padding-bottom: var(--mp-spacing-1); }
+.cpd__slide { position: relative; flex: 0 0 auto; width: 140px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); }
+.cpd__slide-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
 .cpd__error { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #d1362f); }
 .cpd__hintline { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .cpd__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }

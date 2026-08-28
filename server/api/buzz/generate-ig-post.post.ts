@@ -27,6 +27,18 @@ const IG_DESIGN_SKILL = [
   '10. Aspect ratio 4:5 vertical (1080 x 1350), the Instagram feed standard.',
 ].join('\n')
 
+// ── Hard-coded social-media CAROUSEL skill (used for series) ────────────────────
+// Adapted from github.com/inference-sh/skills social-media-carousel.
+const CAROUSEL_SKILL = [
+  'CAROUSEL DESIGN SKILL — for a multi-slide Instagram series:',
+  'Structure: Slide 1 = HOOK (curiosity gap / bold claim / question / numbered promise). Middle slides = ONE value point each, numbered. Final slide = CTA (follow, save, share, comment).',
+  'Consistency across ALL slides (critical): identical font family, the same background palette, the same text alignment, uniform margins/padding, a single accent colour for highlights, and one standardised number format (e.g. 01/02 …).',
+  'Typography (at 1080px): slide number 96–120px weight 900; heading 48–64px weight 700–800; body 24–28px weight 400; line height ~1.5.',
+  'Copy: MAX 30–40 words and ~4–5 lines per slide. ONE idea per slide. High contrast, legible on mobile.',
+  'Show a small progress indicator "n/N" on every slide. Put a clear "Swipe →" cue on slide 1. Reserve the strongest point for the last content slide (ascending value).',
+  'Avoid: weak hook, >40 words, inconsistent styling, mixed numbering, multiple ideas per slide, missing CTA.',
+].join('\n')
+
 function brandBlock(b?: BrandCtx): string {
   if (!b?.name) return ''
   const fonts = (b.fonts ?? []).filter((f) => f?.name).map((f) => `${f.name}${f.usage ? ` (${f.usage})` : ''}`).join(', ')
@@ -61,47 +73,85 @@ export default defineEventHandler(async (event) => {
   const refParts = toParts(body?.references)
   const subjectParts = toParts(body?.subjects)
 
-  const headlineLine = body?.headline?.trim() ? `Headline to feature on the post: "${body.headline.trim()}".` : 'Write a short, punchy headline for the post yourself, in the brand tone.'
   const refLine = refParts.length ? `${refParts.length} of this brand's reference designs are attached — match their art direction and visual style closely.` : ''
   const subjectLine = subjectParts.length
     ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — these are the SUBJECT (e.g. a product, person, or item) that MUST appear in the post. Keep each subject's identity, colours, shape and any branding accurate; you may re-pose, re-light, re-angle and place them into a new scene/composition, but do not invent a different product.`
     : ''
+  // Grounding is non-negotiable — always restate it.
+  const GROUNDING = 'NON-NEGOTIABLE: strictly follow the brand guideline above (colours, typography, tone, logo usage) AND match the attached reference designs\' visual style. Stay on-brand — do not use off-brand colours, fonts, or art direction.'
 
-  const full = [
-    IG_DESIGN_SKILL,
-    '',
-    brandBlock(body?.brand),
-    '',
-    `POST BRIEF: ${brief}`,
-    headlineLine,
-    subjectLine,
-    refLine,
-    'Now design the finished Instagram post as a single 4:5 image.',
-  ].filter(Boolean).join('\n')
+  // ── Series (carousel) vs single post, and how many alternatives ──
+  const series = Math.max(0, Math.min(8, Math.floor(Number(body?.series ?? 0)) || 0))
+  const count = Math.max(1, Math.min(3, Math.floor(Number(body?.count ?? 1)) || 1))
+  const isCarousel = series >= 2
+
+  function buildPrompt(directive: string, headlineDirective: string, extraSkill = ''): string {
+    return [
+      IG_DESIGN_SKILL,
+      extraSkill, '',
+      brandBlock(body?.brand), '',
+      `CAMPAIGN BRIEF: ${brief}`,
+      directive,
+      headlineDirective,
+      subjectLine,
+      refLine,
+      GROUNDING,
+      'Design the finished Instagram creative as a single 4:5 image.',
+    ].filter(Boolean).join('\n')
+  }
 
   const model = 'gemini-2.5-flash-image'
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-  async function call(withModalities: boolean) {
-    return await $fetch<any>(url, {
-      method: 'POST',
-      body: {
-        contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: full }] }],
-        ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
-      },
-      timeout: 90000,
-    })
+  async function genOne(promptText: string): Promise<{ dataUrl: string; mime: string } | null> {
+    async function call(withModalities: boolean) {
+      return await $fetch<any>(url, {
+        method: 'POST',
+        body: {
+          contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: promptText }] }],
+          ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
+        },
+        timeout: 90000,
+      })
+    }
+    try {
+      let res: any
+      try { res = await call(true) } catch { res = await call(false) }
+      const parts: any[] = res?.candidates?.[0]?.content?.parts ?? []
+      const img = parts.find((p) => p?.inlineData)?.inlineData
+      if (!img?.data) return null
+      return { dataUrl: `data:${img.mimeType || 'image/png'};base64,${img.data}`, mime: img.mimeType || 'image/png' }
+    } catch { return null }
   }
 
   try {
-    let res: any
-    try { res = await call(true) } catch { res = await call(false) }
-    const parts: any[] = res?.candidates?.[0]?.content?.parts ?? []
-    const img = parts.find((p) => p?.inlineData)?.inlineData
-    if (!img?.data) throw new Error('The model did not return an image.')
-    const mime = img.mimeType || 'image/png'
-    return { dataUrl: `data:${mime};base64,${img.data}`, mime, model }
+    let prompts: string[]
+    if (isCarousel) {
+      // A coherent carousel: slide 1 hook, middle slides content, last slide CTA.
+      prompts = Array.from({ length: series }, (_, i) => {
+        const n = i + 1
+        const role = n === 1
+          ? `This is SLIDE 1 of ${series} — the HOOK cover: a bold curiosity-gap headline that stops the scroll, plus a small "Swipe →" cue.`
+          : n === series
+            ? `This is SLIDE ${series} of ${series} — the CTA: a clear call to action (follow / save / share).`
+            : `This is SLIDE ${n} of ${series} — a numbered CONTENT slide covering ONE distinct point from the brief (save the strongest point for the last content slide).`
+        return buildPrompt(
+          `${role} Show a small "${n}/${series}" progress indicator. Keep the font, palette, alignment, margins and accent IDENTICAL to the other slides so they read as one cohesive series.`,
+          'Write short slide copy (max ~30 words) in the brand tone; one idea only.',
+          CAROUSEL_SKILL,
+        )
+      })
+    } else {
+      // `count` distinct alternative concepts for a single post.
+      const headlineDirective = body?.headline?.trim() ? `Feature this headline: "${body.headline.trim()}".` : 'Write a short, punchy headline yourself, in the brand tone.'
+      prompts = Array.from({ length: count }, (_, i) =>
+        buildPrompt(`Alternative concept #${i + 1} of ${count} — give this a DISTINCT creative direction / layout / composition from the others, while staying fully on-brand.`, headlineDirective))
+    }
+
+    const results = (await Promise.all(prompts.map(genOne))).filter(Boolean) as { dataUrl: string; mime: string }[]
+    if (!results.length) throw new Error('The model did not return any images.')
+    return { images: results, kind: isCarousel ? 'carousel' : 'single', model }
   } catch (err: any) {
     setResponseStatus(event, 502)
-    return { error: `Could not generate the post. ${String(err?.data?.error?.message ?? err?.message ?? err)}` }
+    return { error: `Could not generate the design. ${String(err?.data?.error?.message ?? err?.message ?? err)}` }
   }
 })
