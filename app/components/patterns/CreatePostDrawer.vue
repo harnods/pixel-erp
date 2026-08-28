@@ -194,7 +194,7 @@ async function save() {
                     <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="cpd__subject-img" />
                     <button type="button" class="cpd__subject-x" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></button>
                   </span>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true"><MpIcon name="add" size="sm" /> Add from your assets</button>
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true">Add from your assets</button>
                 </div>
               </MpFormControl>
 
@@ -232,9 +232,7 @@ async function save() {
           <div v-if="hasBrands" class="cpd__footer">
             <template v-if="!results.length">
               <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">
-                <MpIcon v-if="!generating" name="magic" size="sm" /> {{ postType === 'carousel' ? 'Generate series' : 'Generate designs' }}
-              </MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">{{ postType === 'carousel' ? 'Generate series' : 'Generate designs' }}</MpButton>
             </template>
             <template v-else>
               <MpButton variant="ghost" is-rounded :is-loading="generating" @click="generate">Regenerate</MpButton>

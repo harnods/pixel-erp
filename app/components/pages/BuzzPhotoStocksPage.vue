@@ -111,7 +111,7 @@ async function onFiles(ev: Event) {
         <button class="filter-all-btn"><MpIcon name="filter" size="md" /> All filters</button>
       </div>
       <div class="filter-right">
-        <button type="button" class="upload-btn" @click="triggerUpload"><MpIcon name="add" size="md" /> Upload asset</button>
+        <button type="button" class="upload-btn" @click="triggerUpload">Upload asset</button>
         <input ref="uploadInput" class="upload-input" type="file" accept="image/*" multiple @change="onFiles" />
         <div class="filter-btn-group">
           <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
@@ -131,7 +131,7 @@ async function onFiles(ev: Event) {
           <img v-if="a.hasImage && images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="asset__photo" />
           <span v-if="a.source === 'ai'" class="asset__ai"><MpIcon name="magic" size="sm" /> AI</span>
           <img v-if="/^(\/|https?:|data:)/.test(buzzBrand(a.brand)?.logo || '')" :src="buzzBrand(a.brand)?.logo" :alt="buzzBrand(a.brand)?.name" class="asset__badge" />
-          <button v-if="a.hasImage" type="button" class="asset__vary" @click="generateVariations(a)"><MpIcon name="magic" size="sm" /> Generate variations</button>
+          <button v-if="a.hasImage" type="button" class="asset__vary" @click="generateVariations(a)">Generate variations</button>
         </span>
         <span class="asset__meta">
           <span class="asset__title">{{ a.title }}</span>

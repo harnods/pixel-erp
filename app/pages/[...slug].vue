@@ -144,7 +144,6 @@ const pageRegistry: Record<string, Component> = {
   // ── Mekari Buzz (Marketing tool) — 'Home' branches by scenario below. ──
   'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
   'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
-  'Buzz logos':         defineAsyncComponent(() => import('~/components/pages/BuzzLogosPage.vue')),
   'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 

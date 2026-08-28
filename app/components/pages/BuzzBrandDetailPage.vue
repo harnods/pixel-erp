@@ -151,9 +151,7 @@ function hex(v: string) { return (v || '').toUpperCase() }
         <h1 class="bd-title">{{ brand.name }}</h1>
       </div>
       <div class="bd-actions">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/buzz-brand/${orderId}/edit`)">
-          <MpIcon name="edit" size="sm" /> Edit
-        </button>
+        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/buzz-brand/${orderId}/edit`)">Edit</button>
         <MpPopover id="bd-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <button class="bd-kebab" type="button" aria-label="More actions"><MpIcon name="menu-kebab" size="md" /></button>
@@ -260,8 +258,7 @@ function hex(v: string) { return (v || '').toUpperCase() }
         <section class="bd-sec">
           <div class="bd-sec__head">
             <h3 class="bd-h3">Logo usage</h3>
-            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickLogo">
-              <MpIcon name="add" size="sm" /> Upload logo
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickLogo">Upload logo
             </button>
             <input ref="logoInput" type="file" accept="image/*" multiple class="bd-file" @change="onLogoFiles" />
           </div>
@@ -288,8 +285,7 @@ function hex(v: string) { return (v || '').toUpperCase() }
               <p class="bd-sublabel">Reference designs</p>
               <p class="bd-notes">Upload sample designs Buzz should match when it generates.</p>
             </div>
-            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickDesign">
-              <MpIcon name="add" size="sm" /> Upload design
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="pickDesign">Upload design
             </button>
             <input ref="designInput" type="file" accept="image/*" multiple class="bd-file" @change="onDesignFiles" />
           </div>

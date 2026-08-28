@@ -161,7 +161,7 @@ async function saveToAssets() {
                   <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="gad__subject-img" />
                   <button type="button" class="gad__subject-x" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></button>
                 </span>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true"><MpIcon name="add" size="sm" /> Add from your assets</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true">Add from your assets</button>
               </div>
             </MpFormControl>
 
@@ -179,9 +179,7 @@ async function saveToAssets() {
           <div class="gad__footer">
             <template v-if="!resultUrl">
               <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">
-                <MpIcon v-if="!generating" name="magic" size="sm" /> Generate
-              </MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">Generate</MpButton>
             </template>
             <template v-else>
               <MpButton variant="ghost" is-rounded :is-loading="generating" @click="generate">Generate again</MpButton>

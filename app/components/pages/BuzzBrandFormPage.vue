@@ -394,9 +394,7 @@ function cancel() { router.push('/buzz-branding') }
             <div class="bbf-import__col">
               <p class="bbf-import__label">Upload a file</p>
               <p class="bbf-import__hint">PDF, PPT, DOCX or an image of your guideline.</p>
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="fileInput?.click()">
-                <MpIcon name="upload" size="sm" /> Upload brand guideline
-              </button>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="fileInput?.click()">Upload brand guideline</button>
               <input
                 ref="fileInput" type="file" class="bbf-file"
                 accept=".pdf,.ppt,.pptx,.doc,.docx,.png,.jpg,.jpeg,.webp"
@@ -417,9 +415,7 @@ function cancel() { router.push('/buzz-branding') }
           </div>
 
           <div class="bbf-import__actions">
-            <MpButton is-rounded variant="primary" :is-loading="extracting" @click="extractWithAi">
-              <MpIcon v-if="!extracting" name="magic" size="sm" /> Extract with AI
-            </MpButton>
+            <MpButton is-rounded variant="primary" :is-loading="extracting" @click="extractWithAi">Extract with AI</MpButton>
             <span v-if="extracting" class="bbf-import__status"><MpSpinner size="sm" /> Extracting your brand…</span>
             <span v-else-if="extractDone" class="bbf-import__ok"><MpIcon name="check" size="sm" /> Fields filled in from your guideline. Review and edit below.</span>
           </div>
@@ -557,9 +553,7 @@ function cancel() { router.push('/buzz-branding') }
 
           <div class="bbf-subfield">
             <p class="bbf-mini-label">Logo uploads</p>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="logoInput?.click()">
-              <MpIcon name="upload" size="sm" /> Upload logo
-            </button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="logoInput?.click()">Upload logo</button>
             <input ref="logoInput" type="file" class="bbf-file" accept="image/*" multiple @change="onLogoChange" />
             <div v-if="logos.length" class="bbf-logos">
               <div v-for="(l, i) in logos" :key="l.key" class="bbf-logochip">
