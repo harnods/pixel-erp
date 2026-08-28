@@ -124,6 +124,7 @@ async function save() {
   const name = headline.value.trim() || brief.value.trim().slice(0, 48)
   // Carousel → save every slide; single → save the selected alternative.
   const toSave = resultKind.value === 'carousel' ? results.value : [results.value[selected.value]!]
+  const assetIds: string[] = []
   for (let i = 0; i < toSave.length; i++) {
     const img = toSave[i]!
     const asset = addBuzzAsset({
@@ -133,12 +134,14 @@ async function save() {
       prompt: brief.value.trim(), updatedAt: BUZZ_TODAY,
     })
     await putImage({ id: asset.id, mime: img.mime, dataUrl: img.dataUrl })
+    assetIds.push(asset.id)
   }
   // Create a campaign (creatives = number saved).
   const maxId = buzzCampaigns.reduce((m, c) => Math.max(m, Number(c.id.replace(/\D/g, '')) || 0), 2041)
   const campaign: BuzzCampaign = {
     id: `CMP-${maxId + 1}`, name, brand: brandId.value, purpose: 'Promotion',
     audience: 'General', status: 'Draft', creatives: toSave.length, owner: 'You', updatedAt: BUZZ_TODAY,
+    kind: resultKind.value, brief: brief.value.trim(), assetIds,
   }
   buzzCampaigns.unshift(campaign)
   persistCampaigns()

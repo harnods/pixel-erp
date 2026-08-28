@@ -127,12 +127,20 @@ export interface BuzzCampaign {
   creatives: number        // number of creatives in the campaign
   owner: string            // marketer name
   updatedAt: string        // ISO date
+  kind?: 'single' | 'carousel'
+  brief?: string           // the brief used to generate the creatives
+  assetIds?: string[]      // the campaign's creative asset ids (images in IndexedDB)
 }
 
 const CAMPAIGN_SEED: BuzzCampaign[] = []
 
 export const buzzCampaigns = reactive<BuzzCampaign[]>(loadSnapshot<BuzzCampaign>('buzz-campaigns-v2') ?? clone(CAMPAIGN_SEED))
 export function persistCampaigns() { saveSnapshot('buzz-campaigns-v2', buzzCampaigns) }
+export function buzzCampaign(id: string): BuzzCampaign | undefined { return buzzCampaigns.find((c) => c.id === id) }
+export function removeCampaign(id: string): void {
+  const i = buzzCampaigns.findIndex((c) => c.id === id)
+  if (i >= 0) { buzzCampaigns.splice(i, 1); persistCampaigns() }
+}
 
 export function buzzBadgeType(status: BuzzCampaignStatus): 'completed' | 'warning' | 'announcement' {
   if (status === 'Approved') return 'completed'

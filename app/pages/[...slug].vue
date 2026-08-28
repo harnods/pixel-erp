@@ -162,6 +162,7 @@ const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkS
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
 const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFormPage.vue'))
 const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
+const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
 const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
@@ -386,6 +387,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
     return { component: CoworkAgentDetailPage, id: segs[1]! }
+  }
+  // /buzz-campaign/:id → campaign detail.
+  if (segs.length >= 2 && segs[0] === 'buzz-campaign') {
+    return { component: BuzzCampaignDetailPage, id: segs[1]! }
   }
   // /buzz-brand/:id → brand guideline detail (Frontify-style); /:id/edit → builder form.
   // (Creating a new brand kit is a modal on the Branding page, not a route.)

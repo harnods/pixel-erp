@@ -20,6 +20,7 @@ import { useBuzzActions } from '~/composables/useBuzzActions'
 import CreatePostDrawer from '~/components/patterns/CreatePostDrawer.vue'
 
 const route = useRoute()
+const router = useRouter()
 
 const rows = computed<BuzzCampaign[]>(() =>
   [...buzzCampaigns].sort((a, b) => a.name.localeCompare(b.name)))
@@ -123,7 +124,7 @@ const columns: TableColumn[] = [
     </template>
 
     <template #cell-name="{ row }">
-      <span class="cell-link" @click="infoToast('Campaign workspace · coming soon')">{{ (row as BuzzCampaign).name }}</span>
+      <span class="cell-link" @click="router.push(`/buzz-campaign/${(row as BuzzCampaign).id}`)">{{ (row as BuzzCampaign).name }}</span>
     </template>
     <template #cell-brand="{ row }">
       <span class="brand-cell">
