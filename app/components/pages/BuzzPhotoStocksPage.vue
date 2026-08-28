@@ -86,13 +86,19 @@ function orientationOf(w: number, h: number): 'Landscape' | 'Portrait' | 'Square
   if (h > w * 1.15) return 'Portrait'
   return 'Square'
 }
-async function onFiles(ev: Event) {
+function onFiles(ev: Event) {
   const input = ev.target as HTMLInputElement
-  const files = Array.from(input.files ?? [])
+  const files = input.files
   input.value = ''
+  if (files) processFiles(files)
+}
+/** Upload image files (assets are images only). Non-images are skipped. */
+async function processFiles(list: FileList | File[]) {
+  const all = Array.from(list)
+  const files = all.filter((f) => f.type.startsWith('image/'))
+  const skipped = all.length - files.length
   for (const f of files) {
     const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('read')); r.readAsDataURL(f) })
-    // Detect orientation from natural size.
     const dims = await new Promise<{ w: number; h: number }>((res) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res({ w: 1, h: 1 }); im.src = dataUrl })
     const asset = addUploadedAsset({
       title: f.name.replace(/\.[^.]+$/, ''),
@@ -105,11 +111,22 @@ async function onFiles(ev: Event) {
     await putImage({ id: asset.id, mime: f.type, dataUrl })
   }
   if (files.length) { loadImages(); toast.notify({ variant: 'success', title: files.length > 1 ? 'Assets uploaded.' : 'Asset uploaded.', maxWidth: 'max-content' }) }
+  if (skipped) toast.notify({ variant: 'info', title: skipped > 1 ? `${skipped} files skipped` : 'File skipped', description: 'Assets can only be images.', maxWidth: 'max-content' })
 }
+
+// ── Drag & drop upload (mirrors the Cowork KB file manager) ──
+const dragOver = ref(false)
+function dtHasFiles(e: DragEvent) { return Array.from(e.dataTransfer?.types ?? []).includes('Files') }
+function onDragOver(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault(); dragOver.value = true }
+function onDragLeaveMain(e: DragEvent) { if (e.currentTarget === e.target) dragOver.value = false }
+function onDropMain(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault(); dragOver.value = false; if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files) }
 </script>
 
 <template>
-  <div class="buzz-page">
+  <div class="buzz-page" :class="{ 'is-drop': dragOver }" @dragover="onDragOver" @dragleave="onDragLeaveMain" @drop="onDropMain">
+    <div v-if="dragOver" class="buzz-drop">
+      <div class="buzz-drop__inner"><MpIcon name="file-image" size="lg" /><p>Drop images to add them to your assets</p></div>
+    </div>
     <!-- ── Filter bar (verbatim ERP block) ── -->
     <div class="filter-bar">
       <div class="filter-left">
@@ -190,6 +207,13 @@ async function onFiles(ev: Event) {
 .buzz-page { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
 
 /* ── Gallery ── */
+.buzz-page { position: relative; min-height: 60vh; }
+/* Drag-drop overlay (mirrors the Cowork KB file manager) */
+.buzz-drop { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--mp-border-bold, #667085); border-radius: 12px; background: color-mix(in srgb, var(--mp-background-neutral-subtle, #f4f5f7) 92%, transparent); pointer-events: none; }
+.buzz-drop__inner { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--mp-text-secondary, #536062); font-size: 15px; font-weight: 600; text-align: center; }
+.buzz-drop__inner :deep(svg) { color: var(--mp-icon-default, #667085); }
+.buzz-drop__inner p { margin: 0; }
+
 /* Pinterest-style masonry — variable-height tiles packed into columns. */
 .gallery { column-width: 220px; column-gap: var(--mp-spacing-4, 16px); }
 .asset { display: inline-block; width: 100%; margin: 0 0 var(--mp-spacing-4, 16px); break-inside: avoid; padding: 0; border: none; background: none; cursor: pointer; vertical-align: top; }
