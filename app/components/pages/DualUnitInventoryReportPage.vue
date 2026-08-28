@@ -509,7 +509,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* table-layout: fixed + the colgroup above — auto layout re-measures column widths
    off whichever rows happen to be in the DOM, so the grid visibly resized between
    collapsed and expanded states. Fixed widths make the layout state-independent. */
-.dui-table { width: 2560px; min-width: 100%; table-layout: fixed; border-collapse: collapse; white-space: nowrap; }
+.dui-table { width: 2016px; min-width: 100%; table-layout: fixed; border-collapse: collapse; white-space: nowrap; }
 /* Column widths — Pixel's --mp-sizes-* scale has nothing between sizes-22 (88px)
    and sizes-56 (224px), so several columns round up further than their content
    strictly needs; sizes-20 (80px) is the nearest fit for the two Unit columns. */
@@ -517,11 +517,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .dui-table col:nth-child(2) { width: var(--mp-sizes-sm, 384px); }  /* Product name */
 .dui-table col:nth-child(3) { width: var(--mp-sizes-56, 224px); }  /* Transaction */
 .dui-table col:nth-child(4) { width: var(--mp-sizes-56, 224px); }  /* Date */
-.dui-table col:nth-child(5) { width: var(--mp-sizes-56, 224px); }  /* Base mutation */
-.dui-table col:nth-child(6) { width: var(--mp-sizes-56, 224px); }  /* Base stock */
+.dui-table col:nth-child(5) { width: var(--mp-sizes-22, 88px); }   /* Base mutation */
+.dui-table col:nth-child(6) { width: var(--mp-sizes-22, 88px); }   /* Base stock */
 .dui-table col:nth-child(7) { width: var(--mp-sizes-20, 80px); }   /* Base unit */
-.dui-table col:nth-child(8) { width: var(--mp-sizes-56, 224px); }  /* Secondary mutation */
-.dui-table col:nth-child(9) { width: var(--mp-sizes-56, 224px); }  /* Secondary stock */
+.dui-table col:nth-child(8) { width: var(--mp-sizes-22, 88px); }   /* Secondary mutation */
+.dui-table col:nth-child(9) { width: var(--mp-sizes-22, 88px); }   /* Secondary stock */
 .dui-table col:nth-child(10) { width: var(--mp-sizes-20, 80px); }  /* Secondary unit */
 .dui-table col:nth-child(11) { width: var(--mp-sizes-56, 224px); } /* Average cost */
 .dui-table col:nth-child(12) { width: var(--mp-sizes-56, 224px); } /* Value */
@@ -540,7 +540,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   text-align: center; vertical-align: middle;
   border-left: 1px solid var(--mp-border-default);
 }
-.dui-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-3) var(--mp-spacing-1) var(--mp-spacing-4); }
+.dui-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-3); }
 
 .dui-td {
   height: var(--mp-sizes-10, 40px);
@@ -550,7 +550,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
-.dui-td--right { text-align: right; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+.dui-td--right { text-align: right; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-2) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3); font-variant-numeric: tabular-nums; }
 /* Empty/not-found state — one cell spanning every column, so the header above it
    stays visible instead of the whole table being swapped for an illustration. */
 .dui-td--empty {
