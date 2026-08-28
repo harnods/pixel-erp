@@ -63,8 +63,8 @@ const viewMonth = ref(props.today.getMonth())
 const customStart = ref<string | null>(null)
 const customEnd = ref<string | null>(null)
 
-watch(isOpen, (open) => {
-  if (!open) return
+/** Point the sidebar + calendar at whatever the bound value currently says. */
+function syncFromValue() {
   const v = props.modelValue
   const anchorIso = v?.mode === 'custom' ? (v.rangeStart ?? undefined) : v?.date
   const anchor = anchorIso ? fromIso(anchorIso) : props.today
@@ -74,7 +74,14 @@ watch(isOpen, (open) => {
   viewMonth.value = anchor.getMonth()
   customStart.value = v?.mode === 'custom' ? (v.rangeStart ?? null) : null
   customEnd.value = v?.mode === 'custom' ? (v.rangeEnd ?? null) : null
-})
+}
+// Sync on the value itself (and once up front), not only when the popover opens:
+// MpPopover manages its own open state here, so `isOpen` never flips and a caller
+// that starts with a granularity value (e.g. the DUI report's default month) would
+// otherwise open on "Per day" with its range unhighlighted.
+syncFromValue()
+watch(() => props.modelValue, syncFromValue)
+watch(isOpen, (open) => { if (open) syncFromValue() })
 
 const label = computed(() => dateFilterLabel(props.modelValue, props.today))
 
@@ -142,9 +149,11 @@ function cellInRange(iso: string): boolean {
   return d >= r.start.getTime() && d <= r.end.getTime()
 }
 
+// Only prompts while something is genuinely unpicked — with a range already applied
+// and highlighted on the calendar, "you haven't chosen a date yet" would be untrue.
 const hint = computed(() => {
   if (activeMode.value === 'custom' && customStart.value && !customEnd.value) return 'Select the end date'
-  return "You haven't chosen a date yet!"
+  return highlightRange.value ? '' : "You haven't chosen a date yet!"
 })
 
 function onDayClick(cell: Cell) {
@@ -228,7 +237,7 @@ function onDayClick(cell: Cell) {
             >{{ cell.dayNum }}</button>
           </div>
 
-          <p class="adf-hint">{{ hint }}</p>
+          <p v-if="hint" class="adf-hint">{{ hint }}</p>
         </div>
       </div>
     </MpPopoverContent>

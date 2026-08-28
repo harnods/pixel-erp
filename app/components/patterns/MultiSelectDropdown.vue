@@ -17,12 +17,24 @@ const props = defineProps<{
   options: string[]
   placeholder?: string
   isFullWidth?: boolean
+  /** Label for a leading "select all" row; omit to leave the list plain (default). */
+  selectAllLabel?: string
+  /** Trigger text when every option is selected (e.g. "All warehouse") — omit to fall
+   *  back to the plain "N selected" count, same as every other consumer. */
+  allSelectedLabel?: string
+  /** Red border + (paired) MpFormErrorMessage below — for a required selection. */
+  isInvalid?: boolean
+  /** Hide the reset ("x") icon — for a field with no valid "cleared" state. */
+  hideClear?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [string[]] }>()
 
 const open = ref(false)
 
+const allSelected = computed(() => props.options.length > 0 && props.modelValue.length === props.options.length)
+
 const selectedLabel = computed(() => {
+  if (allSelected.value && props.allSelectedLabel) return props.allSelectedLabel
   if (props.modelValue.length === 0) return ''
   if (props.modelValue.length === 1) return props.modelValue[0]
   return `${props.modelValue.length} selected`
@@ -33,6 +45,10 @@ function toggle(opt: string) {
     ? props.modelValue.filter((v) => v !== opt)
     : [...props.modelValue, opt]
   emit('update:modelValue', next)
+}
+
+function toggleAll() {
+  emit('update:modelValue', allSelected.value ? [] : [...props.options])
 }
 
 function clear(e: MouseEvent) {
@@ -53,12 +69,15 @@ function clear(e: MouseEvent) {
     @close="open = false"
   >
     <MpPopoverTrigger>
-      <MpButton class="msd-field" :class="{ 'msd-field--full': isFullWidth }" type="button" @click.stop="open = !open">
+      <MpButton
+        class="msd-field" :class="{ 'msd-field--full': isFullWidth, 'msd-field--invalid': isInvalid }"
+        type="button" @click.stop="open = !open"
+      >
         <span class="msd-field__value" :class="{ 'msd-field__value--placeholder': !selectedLabel }">
           {{ selectedLabel || placeholder || 'Select' }}
         </span>
         <span class="msd-field__icons">
-          <MpIcon v-if="modelValue.length" name="reset" size="sm" class="msd-clear" @click.stop="clear" />
+          <MpIcon v-if="modelValue.length && !hideClear" name="reset" size="sm" class="msd-clear" @click.stop="clear" />
           <MpIcon name="chevrons-down" size="sm" />
         </span>
       </MpButton>
@@ -66,6 +85,15 @@ function clear(e: MouseEvent) {
 
     <MpPopoverContent :class="css({ padding: '4px', minWidth: '240px', maxHeight: '260px', overflowY: 'auto', borderRadius: '12px' })" @blur="open = false" @escape="open = false">
       <ul class="msd-list">
+        <template v-if="selectAllLabel">
+          <li class="msd-item" @click="toggleAll">
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-select-all`" :is-checked="allSelected" @change="toggleAll" />
+            </span>
+            <span class="msd-item-label">{{ selectAllLabel }}</span>
+          </li>
+          <li class="msd-divider" />
+        </template>
         <li v-for="opt in options" :key="opt" class="msd-item" @click="toggle(opt)">
           <span @click.stop>
             <MpCheckbox :id="`${id}-${opt}`" :is-checked="modelValue.includes(opt)" @change="() => toggle(opt)" />
@@ -80,9 +108,12 @@ function clear(e: MouseEvent) {
 <style scoped>
 /* Rendered via MpButton, not a raw HTML control — default look reset (see
    IconButton/.demo-fab precedent). */
+/* width is deliberately NOT !important (unlike its neighbours) — .msd-field--full
+   below needs to be able to win over it for isFullWidth consumers. */
 .msd-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .msd-field:hover { background: var(--mp-background-neutral-hovered) !important; }
 .msd-field--full { width: 100%; }
+.msd-field--invalid { border-color: var(--mp-border-danger, #dc2626) !important; }
 
 .msd-field__value {
   overflow: hidden;
@@ -112,4 +143,5 @@ function clear(e: MouseEvent) {
 }
 .msd-item:hover { background: var(--mp-background-neutral-hovered); }
 .msd-item-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+.msd-divider { height: 1px; margin: var(--mp-spacing-1) var(--mp-spacing-1); background: var(--mp-border-default); list-style: none; }
 </style>
