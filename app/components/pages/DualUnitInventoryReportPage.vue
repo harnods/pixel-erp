@@ -13,15 +13,16 @@
  * batch's stock is only readable off its last mutation row, whose position moves with
  * the number of mutations — the batch line puts the answer at the head of the block.
  *
- * Products and batches are EXPANDED on load (the template is always fully expanded) and
- * collapse independently; a collapsed row keeps its summary figures. Rows come from
- * `dualUnitReportGroups()` — this page only filters, formats and exports.
+ * Products and batches are COLLAPSED on load (unlike the export template, which is
+ * always fully expanded) and collapse independently; a collapsed row keeps its
+ * summary figures. Rows come from `dualUnitReportGroups()` — this page only
+ * filters, formats and exports.
  *
  * Full-bleed (rendered via detailMatch in [...slug].vue), so it draws its own 72px
  * title bar with the Reports breadcrumb and its own 24px stage padding.
  */
 import { ref, computed, watch } from 'vue'
-import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpTooltip, MpFormControl, MpFormErrorMessage } from '@mekari/pixel3'
 import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -43,8 +44,13 @@ const TITLE = 'Dual Unit Inventory Report'
 // timeline, not the real clock, which is why AdvanceDateFilter gets `:today`.
 const dateFilter = ref<DateFilterValue>({ mode: 'month', date: TODAY_ISO })
 // MultiSelectDropdown works in plain option strings, so the selection is held as
-// warehouse NAMES and mapped back to ids for the row builder. Empty = all warehouses.
-const warehouseNames = ref<string[]>([])
+// warehouse NAMES and mapped back to ids for the row builder. Unlike the pattern's
+// other consumers, an empty selection here is INVALID, not "all" — the field is
+// required and starts fully selected ("All warehouse"), not blank.
+const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
+const warehouseOptions = computed(() => activeWarehouses.value.map((w) => w.name))
+const warehouseNames = ref<string[]>([...warehouseOptions.value])
+const warehouseError = computed(() => warehouseNames.value.length === 0)
 const search = ref('')
 
 const range = computed(() => {
@@ -62,28 +68,32 @@ function captionDate(d: Date): string {
   const tag = locale.value === 'id' ? 'id-ID' : 'en-GB'
   return d.toLocaleDateString(tag, { day: 'numeric', month: 'long', year: 'numeric' })
 }
-const rangeCaption = computed(() => `${t('From')} ${captionDate(range.value.start)} - ${captionDate(range.value.end)}`)
+const rangeCaption = computed(() => `${t('Period:')} ${captionDate(range.value.start)} - ${captionDate(range.value.end)}`)
 
-const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
-const warehouseOptions = computed(() => activeWarehouses.value.map((w) => w.name))
 const warehouseIds = computed(() => {
-  if (!warehouseNames.value.length) return []
   const idByName = new Map(activeWarehouses.value.map((w) => [w.name, w.id]))
   return warehouseNames.value.map((n) => idByName.get(n)).filter((id): id is string => Boolean(id))
 })
 
 // ── Rows ────────────────────────────────────────────────────────────────────────
-const groups = computed<DuiReportGroup[]>(() => dualUnitReportGroups({
+// No warehouse selected is a validation error, not "show everything" — short-circuit
+// to no rows so the table lands on the same "No report data found" state as a search
+// or date filter that matches nothing, instead of dualUnitReportGroups()'s own
+// empty-array-means-unfiltered convention.
+const groups = computed<DuiReportGroup[]>(() => (warehouseError.value ? [] : dualUnitReportGroups({
   from: fromIso.value,
   to: toIsoDate.value,
   warehouseIds: warehouseIds.value,
   search: search.value,
-}))
+})))
 
 // ── Expand / collapse ───────────────────────────────────────────────────────────
-// Tracked as the COLLAPSED set so "expanded on load" needs no seeding and survives
-// filter changes that bring new products into view.
-const collapsed = ref<Set<string>>(new Set())
+// Tracked as the COLLAPSED set. Seeded from the initial rows so the table opens
+// fully collapsed (product AND batch level) — the opposite of the export template's
+// always-expanded sheet, since the web page's own affordance is being able to fold
+// the audit trail away until a product/batch is worth drilling into.
+function batchKey(sku: string, batchNo: string): string { return `${sku}::${batchNo}` }
+const collapsed = ref<Set<string>>(new Set(groups.value.map((g) => g.sku)))
 function isExpanded(sku: string): boolean { return !collapsed.value.has(sku) }
 function toggleGroup(sku: string) {
   const next = new Set(collapsed.value)
@@ -91,16 +101,12 @@ function toggleGroup(sku: string) {
   else next.add(sku)
   collapsed.value = next
 }
-const allCollapsed = computed(() => groups.value.length > 0 && groups.value.every((g) => collapsed.value.has(g.sku)))
-function toggleAll() {
-  collapsed.value = allCollapsed.value ? new Set() : new Set(groups.value.map((g) => g.sku))
-}
 
 // Each batch line can fold its own mutations away — the batch line already carries the
-// batch's stock, so folding loses no answer, only the audit trail behind it. Tracked as
-// the collapsed set for the same reason as products: open is the default.
-const collapsedBatches = ref<Set<string>>(new Set())
-function batchKey(sku: string, batchNo: string): string { return `${sku}::${batchNo}` }
+// batch's stock, so folding loses no answer, only the audit trail behind it.
+const collapsedBatches = ref<Set<string>>(
+  new Set(groups.value.flatMap((g) => g.batches.map((b) => batchKey(g.sku, b.batchNo)))),
+)
 function isBatchExpanded(sku: string, batchNo: string): boolean {
   return !collapsedBatches.value.has(batchKey(sku, batchNo))
 }
@@ -110,6 +116,19 @@ function toggleBatch(sku: string, batchNo: string) {
   if (next.has(key)) next.delete(key)
   else next.add(key)
   collapsedBatches.value = next
+}
+
+// "Expand all" / "Collapse all" drives BOTH levels — a batch left folded under an
+// otherwise-expanded product would read as a bug, not a deliberate state.
+const allCollapsed = computed(() => groups.value.length > 0 && groups.value.every((g) => collapsed.value.has(g.sku)))
+function toggleAll() {
+  if (allCollapsed.value) {
+    collapsed.value = new Set()
+    collapsedBatches.value = new Set()
+  } else {
+    collapsed.value = new Set(groups.value.map((g) => g.sku))
+    collapsedBatches.value = new Set(groups.value.flatMap((g) => g.batches.map((b) => batchKey(g.sku, b.batchNo))))
+  }
 }
 
 /** Rows the product's SKU cell has to span: the product line, each batch line plus its
@@ -134,9 +153,9 @@ watch([dateFilter, warehouseNames, search, perPage], () => { currentPage.value =
 
 // ── Cell formatting ─────────────────────────────────────────────────────────────
 const qtyFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
-/** A quantity always travels with its unit, as one right-aligned cell: "10.000 mm". */
-function fmtQty(value: number, unit: string): string {
-  return `${qtyFormat.format(value)} ${unit}`
+/** Mutation/Stock cells hold the bare number — the unit sits in its own column now. */
+function fmtNum(value: number): string {
+  return qtyFormat.format(value)
 }
 /** Batch caption line — expiry and tolerance, either of which may be unset. */
 function batchMeta(expiryDate: string, tolerancePct: number | null): string {
@@ -222,24 +241,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <!-- Filter bar: date range + warehouse on the left; Export + Search on the right. -->
       <div class="dui-filter-bar">
         <div class="dui-filter-left">
-          <AdvanceDateFilter
-            id="dui-date"
-            v-model="dateFilter"
-            :today="TODAY"
-            :clearable="false"
-            :placeholder="t('Select date')"
-          />
+          <!-- Both filters share one fixed width — the date field sized to its longest
+               possible label ("21/06/2026 - 27/06/2026") so it never reflows the bar. -->
+          <div class="dui-filter-field">
+            <AdvanceDateFilter
+              id="dui-date"
+              v-model="dateFilter"
+              :today="TODAY"
+              :clearable="false"
+              :placeholder="t('Select date')"
+            />
+          </div>
 
-          <MultiSelectDropdown
-            id="dui-wh"
-            v-model="warehouseNames"
-            :options="warehouseOptions"
-            :placeholder="t('All warehouses')"
-          />
-
-          <MpButton v-if="total" class="dui-toggle-all" variant="textLink" size="sm" @click="toggleAll">
-            {{ allCollapsed ? t('Expand all') : t('Collapse all') }}
-          </MpButton>
+          <div class="dui-filter-field">
+            <MpFormControl :is-invalid="warehouseError">
+              <MultiSelectDropdown
+                id="dui-wh"
+                v-model="warehouseNames"
+                :options="warehouseOptions"
+                :placeholder="t('Warehouse')"
+                :select-all-label="t('All warehouse')"
+                :all-selected-label="t('All warehouse')"
+                :is-invalid="warehouseError"
+                hide-clear
+                is-full-width
+              />
+              <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
+            </MpFormControl>
+          </div>
         </div>
 
         <div class="dui-filter-right">
@@ -253,32 +282,53 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product, SKU or batch')" />
             <MpIcon v-if="search" name="close" size="sm" class="search-clear" role="button" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
+          <MpButton v-if="total" class="dui-toggle-all" variant="textLink" size="sm" @click="toggleAll">
+            {{ allCollapsed ? t('Expand all') : t('Collapse all') }}
+          </MpButton>
         </div>
       </div>
 
-      <!-- Resolved range — the report's own period line, as in the export template. -->
-      <p class="dui-range-caption">{{ rangeCaption }}</p>
-
-      <!-- Table + pagination -->
-      <div v-if="total" class="dui-table-section">
+      <!-- Table + pagination — the header stays visible even with zero rows, so an
+           empty/not-found result still shows what the report would report on. -->
+      <div class="dui-table-section">
         <div class="dui-table-wrap">
           <table class="dui-table">
+            <!-- Fixed column widths — collapsing a product/batch removes rows (and the
+                 text that used to be the widest thing in a column), which under auto
+                 table layout re-measures and visibly resizes every column. Pinning
+                 widths here keeps the grid identical whether rows are collapsed or not. -->
+            <colgroup>
+              <col style="width: 130px" />
+              <col style="width: 320px" />
+              <col style="width: 180px" />
+              <col style="width: 110px" />
+              <col style="width: 100px" />
+              <col style="width: 100px" />
+              <col style="width: 70px" />
+              <col style="width: 100px" />
+              <col style="width: 100px" />
+              <col style="width: 70px" />
+              <col style="width: 200px" />
+              <col style="width: 200px" />
+            </colgroup>
             <thead>
               <tr>
                 <th class="dui-th" rowspan="2">{{ t('Product SKU') }}</th>
                 <th class="dui-th" rowspan="2">{{ t('Product name') }}</th>
                 <th class="dui-th" rowspan="2">{{ t('Transaction') }}</th>
                 <th class="dui-th" rowspan="2">{{ t('Date') }}</th>
-                <th class="dui-th dui-th--group" colspan="2">{{ t('Base unit') }}</th>
-                <th class="dui-th dui-th--group" colspan="2">{{ t('Secondary unit') }}</th>
+                <th class="dui-th dui-th--group" colspan="3">{{ t('Base unit') }}</th>
+                <th class="dui-th dui-th--group" colspan="3">{{ t('Secondary unit') }}</th>
                 <th class="dui-th dui-th--right" rowspan="2">{{ t('Average cost') }}</th>
                 <th class="dui-th dui-th--right" rowspan="2">{{ t('Value') }}</th>
               </tr>
               <tr>
                 <th class="dui-th dui-th--right">{{ t('Mutation') }}</th>
                 <th class="dui-th dui-th--right">{{ t('Stock') }}</th>
+                <th class="dui-th">{{ t('Unit') }}</th>
                 <th class="dui-th dui-th--right">{{ t('Mutation') }}</th>
                 <th class="dui-th dui-th--right">{{ t('Stock') }}</th>
+                <th class="dui-th">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody v-for="g in pagedGroups" :key="g.sku">
@@ -296,13 +346,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </td>
                 <td class="dui-td dui-td--product">{{ g.name }}</td>
                 <template v-if="isExpanded(g.sku)">
-                  <td class="dui-td" colspan="8" />
+                  <td class="dui-td" colspan="10" />
                 </template>
                 <template v-else>
                   <td class="dui-td" colspan="3" />
-                  <td class="dui-td dui-td--right">{{ fmtQty(g.endingBase, g.baseUnit) }}</td>
+                  <td class="dui-td dui-td--right">{{ fmtNum(g.endingBase) }}</td>
+                  <td class="dui-td">{{ g.baseUnit }}</td>
                   <td class="dui-td" />
-                  <td class="dui-td dui-td--right">{{ fmtQty(g.endingSecondary, g.secondaryUnit) }}</td>
+                  <td class="dui-td dui-td--right">{{ fmtNum(g.endingSecondary) }}</td>
+                  <td class="dui-td">{{ g.secondaryUnit }}</td>
                   <td class="dui-td dui-td--right">{{ formatIDR(g.averageCost) }}</td>
                   <td class="dui-td dui-td--right">{{ formatIDR(g.value) }}</td>
                 </template>
@@ -329,9 +381,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     </td>
                     <td class="dui-td" colspan="2" />
                     <td class="dui-td" />
-                    <td class="dui-td dui-td--right dui-td--closing">{{ fmtQty(b.endingBase, g.baseUnit) }}</td>
+                    <td class="dui-td dui-td--right dui-td--closing">{{ fmtNum(b.endingBase) }}</td>
+                    <td class="dui-td dui-td--closing">{{ g.baseUnit }}</td>
                     <td class="dui-td" />
-                    <td class="dui-td dui-td--right dui-td--closing">{{ fmtQty(b.endingSecondary, g.secondaryUnit) }}</td>
+                    <td class="dui-td dui-td--right dui-td--closing">{{ fmtNum(b.endingSecondary) }}</td>
+                    <td class="dui-td dui-td--closing">{{ g.secondaryUnit }}</td>
                     <td class="dui-td" colspan="2" />
                   </tr>
                   <!-- Its mutations — the audit trail behind that stock figure. -->
@@ -339,10 +393,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     <td class="dui-td dui-td--batch" />
                     <td class="dui-td">{{ t(row.transaction) }}</td>
                     <td class="dui-td">{{ formatDate(row.date) }}</td>
-                    <td class="dui-td dui-td--right">{{ fmtQty(row.baseDelta, g.baseUnit) }}</td>
-                    <td class="dui-td dui-td--right">{{ fmtQty(row.baseStock, g.baseUnit) }}</td>
-                    <td class="dui-td dui-td--right">{{ fmtQty(row.secondaryDelta, g.secondaryUnit) }}</td>
-                    <td class="dui-td dui-td--right">{{ fmtQty(row.secondaryStock, g.secondaryUnit) }}</td>
+                    <td class="dui-td dui-td--right">{{ fmtNum(row.baseDelta) }}</td>
+                    <td class="dui-td dui-td--right">{{ fmtNum(row.baseStock) }}</td>
+                    <td class="dui-td">{{ g.baseUnit }}</td>
+                    <td class="dui-td dui-td--right">{{ fmtNum(row.secondaryDelta) }}</td>
+                    <td class="dui-td dui-td--right">{{ fmtNum(row.secondaryStock) }}</td>
+                    <td class="dui-td">{{ g.secondaryUnit }}</td>
                     <td class="dui-td" colspan="2" />
                   </tr>
                 </template>
@@ -352,9 +408,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <td class="dui-td" />
                   <td class="dui-td dui-td--closing" colspan="2">{{ t('Total on-hand stock') }}</td>
                   <td class="dui-td" />
-                  <td class="dui-td dui-td--right dui-td--closing">{{ fmtQty(g.endingBase, g.baseUnit) }}</td>
+                  <td class="dui-td dui-td--right dui-td--closing">{{ fmtNum(g.endingBase) }}</td>
+                  <td class="dui-td dui-td--closing">{{ g.baseUnit }}</td>
                   <td class="dui-td" />
-                  <td class="dui-td dui-td--right dui-td--closing">{{ fmtQty(g.endingSecondary, g.secondaryUnit) }}</td>
+                  <td class="dui-td dui-td--right dui-td--closing">{{ fmtNum(g.endingSecondary) }}</td>
+                  <td class="dui-td dui-td--closing">{{ g.secondaryUnit }}</td>
                   <td class="dui-td dui-td--right dui-td--closing">{{ formatIDR(g.averageCost) }}</td>
                   <td class="dui-td dui-td--right dui-td--closing">{{ formatIDR(g.value) }}</td>
                 </tr>
@@ -362,24 +420,31 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </tbody>
           </table>
         </div>
+
+        <!-- Empty states: no DUI product at all vs nothing inside the current filters.
+             A sibling of dui-table-wrap, NOT inside it — dui-table-wrap scrolls
+             horizontally to the table's full 1620px, so content centered inside it
+             centers against that (often scrolled-off) width instead of the visible
+             viewport. Sitting outside it, this centers against dui-table-section's
+             actual on-screen width, while the table (and its header row) stays in
+             the DOM underneath, at its own fixed width. -->
+        <div v-if="!total" class="empty-full">
+          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+          <p class="empty-full-title">{{ hasDuiProducts ? t('No report data found') : t('No dual unit products') }}</p>
+          <p class="empty-full-desc">
+            {{ hasDuiProducts
+              ? t('Try adjusting your filters.')
+              : t('Products with a secondary inventory unit will appear here.') }}
+          </p>
+        </div>
         <ErpPagination
+          v-if="total"
           :current-page="currentPage"
           :per-page="perPage"
           :total="total"
           @page-change="currentPage = $event"
           @per-page-change="perPage = $event"
         />
-      </div>
-
-      <!-- Empty states: no DUI product at all vs nothing inside the current filters -->
-      <div v-else class="empty-full">
-        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">{{ hasDuiProducts ? t('No report data found') : t('No dual unit products') }}</p>
-        <p class="empty-full-desc">
-          {{ hasDuiProducts
-            ? t('Try adjusting your filters.')
-            : t('Products with a secondary inventory unit will appear here.') }}
-        </p>
       </div>
     </div>
   </div>
@@ -417,11 +482,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* ── Filter bar ── */
-.dui-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }
-.dui-filter-left { display: flex; gap: var(--mp-spacing-3); align-items: center; flex-wrap: wrap; }
+/* The bar itself and its left group are top-aligned: the warehouse field grows
+   taller when its inline error shows, and centering would visually shift its
+   trigger button up/down relative to the date field instead of just pushing
+   the row below (dui-filter-right) further down. dui-filter-right has no field
+   that grows, so its own items go back to center for a level Export/search/
+   Expand-all row. */
+.dui-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.dui-filter-left { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; flex-wrap: wrap; }
 .dui-filter-right { display: flex; gap: var(--mp-spacing-3); align-items: center; margin-left: auto; }
-/* Expand/collapse all — a text link, so it never competes with a real action. */
-.dui-toggle-all { padding: 0; }
+/* Both filters share this fixed width, sized to the date field's longest possible
+   label ("21/06/2026 - 27/06/2026") so picking a range never reflows the bar. */
+.dui-filter-field { width: 230px; flex-shrink: 0; }
+.dui-filter-field :deep(.adf-trigger) { width: 100%; }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3);
@@ -436,29 +509,29 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .search-clear { color: var(--mp-icon-default); cursor: pointer; flex: none; }
 .search-clear:hover { color: var(--mp-text-default); }
 
-/* Report period line — sits directly above the table, like the template's subtitle. */
-.dui-range-caption {
-  margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  line-height: var(--mp-line-heights-md);
-}
+.dui-toggle-all { padding: 0; }
 
 /* ── Table ── */
 .dui-table-section { display: flex; flex-direction: column; }
 .dui-table-wrap { overflow-x: auto; }
-.dui-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+/* table-layout: fixed + the colgroup above — auto layout re-measures column widths
+   off whichever rows happen to be in the DOM, so the grid visibly resized between
+   collapsed and expanded states. Fixed widths make the layout state-independent. */
+.dui-table { width: 1680px; min-width: 100%; table-layout: fixed; border-collapse: collapse; white-space: nowrap; }
 .dui-th {
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-3);
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
-  vertical-align: bottom;
+  vertical-align: bottom; overflow: hidden; text-overflow: ellipsis;
 }
-/* Unit group header spanning its Mutation + Stock pair. */
+/* Unit group header spanning its Mutation + Stock + Unit trio — only needs its own
+   left edge; the right edge is the shared column-separator every .dui-th already gets. */
 .dui-th--group {
   text-align: center; vertical-align: middle;
   border-left: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
 }
 .dui-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-3) var(--mp-spacing-1) var(--mp-spacing-4); }
 
@@ -466,14 +539,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
 .dui-td--right { text-align: right; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+/* Empty/not-found state — one cell spanning every column, so the header above it
+   stays visible instead of the whole table being swapped for an illustration. */
+.dui-td--empty {
+  height: auto; border-right: none; white-space: normal; text-align: center;
+  overflow: visible; text-overflow: clip; padding: 0;
+}
 
 /* Product line — the merged SKU cell + bold name, chevron toggles the block. */
 .dui-group-row { cursor: pointer; }
 .dui-group-row:hover > .dui-td { background: var(--mp-background-neutral-subtle); }
-.dui-td--sku { vertical-align: top; border-right: 1px solid var(--mp-border-default); }
+.dui-td--sku { vertical-align: top; }
 .dui-sku-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .dui-td--product { font-weight: var(--mp-font-weights-semi-bold); }
 /* Row expander — a ghost MpButton shrunk to the chevron itself, so it sits inside the
@@ -488,7 +569,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Batch line — a second-level group row: identity + unit conversion + expiry/tolerance
    on the left, the batch's own ending stock on the right. Sits on the frame tone so the
    weight ladder reads product (boldest) → batch → mutation rows. */
-.dui-td--batch { border-right: 1px solid var(--mp-border-default); }
 .dui-batch-row { cursor: pointer; }
 .dui-batch-row > .dui-td { background: var(--mp-background-neutral-subtle); }
 .dui-batch-row:hover > .dui-td { background: var(--mp-background-neutral-hovered); }
