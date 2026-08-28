@@ -23,11 +23,15 @@ const menuClass = css({ minWidth: '180px' })
 const campaign = computed<BuzzCampaign | undefined>(() => buzzCampaign(props.orderId!))
 const brand = computed(() => campaign.value ? buzzBrand(campaign.value.brand) : undefined)
 
-// Creatives: the campaign's asset ids, or any asset tagged with this campaign.
-const creativeIds = computed<string[]>(() => campaign.value?.assetIds ?? [])
-const creatives = computed(() => creativeIds.value
-  .map((id) => buzzAssets.find((a) => a.id === id))
-  .filter(Boolean) as { id: string; title: string }[])
+// Creatives: prefer the campaign's linked assetIds; fall back to assets whose
+// title matches the campaign name (recovers campaigns saved before the link).
+const creatives = computed<{ id: string; title: string }[]>(() => {
+  const c = campaign.value
+  if (!c) return []
+  if (c.assetIds?.length) return c.assetIds.map((id) => buzzAssets.find((a) => a.id === id)).filter(Boolean) as { id: string; title: string }[]
+  return buzzAssets.filter((a) => a.hasImage && (a.assetType ?? 'photo') !== 'logo' && (a.title === c.name || a.title.startsWith(`${c.name} · `)))
+})
+const creativeIds = computed<string[]>(() => creatives.value.map((c) => c.id))
 
 // Brand logo (may be an IndexedDB asset id for custom brands).
 function isAssetId(v: string) { return !!v && !v.startsWith('/') && !v.startsWith('data:') && !v.startsWith('http') }
@@ -41,7 +45,7 @@ async function loadImages() {
     if (rec?.dataUrl) { const n = new Map(imgs.value); n.set(id, rec.dataUrl); imgs.value = n }
   }
 }
-watch(campaign, loadImages, { deep: true, immediate: true })
+watch([campaign, creativeIds], loadImages, { deep: true, immediate: true })
 const brandLogo = computed(() => {
   const l = brand.value?.logo
   if (!l) return ''

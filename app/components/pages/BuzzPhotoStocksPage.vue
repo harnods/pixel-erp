@@ -68,13 +68,17 @@ const previewUrl = computed(() => preview.value ? (images.value.get(preview.valu
 function openPreview(a: BuzzAsset) { preview.value = a }
 
 // ── Delete ──
+// Close the preview modal before opening the confirm so it isn't hidden behind
+// the preview overlay; keep the target on `deleteTarget`.
 const showDelete = ref(false)
+const deleteTarget = ref<BuzzAsset | null>(null)
+function askDelete() { deleteTarget.value = preview.value; preview.value = null; showDelete.value = true }
 async function confirmDelete() {
-  const a = preview.value
+  const a = deleteTarget.value
   if (!a) return
   removeBuzzAsset(a.id)
   await deleteImage(a.id)
-  preview.value = null
+  deleteTarget.value = null
   toast.notify({ variant: 'success', title: 'Asset deleted.', maxWidth: 'max-content' })
 }
 
@@ -88,9 +92,9 @@ function orientationOf(w: number, h: number): 'Landscape' | 'Portrait' | 'Square
 }
 function onFiles(ev: Event) {
   const input = ev.target as HTMLInputElement
-  const files = input.files
+  const files = Array.from(input.files ?? []) // snapshot BEFORE clearing the input
   input.value = ''
-  if (files) processFiles(files)
+  if (files.length) processFiles(files)
 }
 /** Upload image files (assets are images only). Non-images are skipped. */
 async function processFiles(list: FileList | File[]) {
@@ -174,7 +178,7 @@ function onDropMain(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault
 
     <ConfirmModal
       v-model:is-open="showDelete"
-      :title="`Delete ${preview?.title ?? 'asset'}?`"
+      :title="`Delete ${deleteTarget?.title ?? 'asset'}?`"
       description="This removes the asset from your library. This can't be undone."
       confirm-label="Delete asset"
       @confirm="confirmDelete"
@@ -192,7 +196,7 @@ function onDropMain(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault
             <div class="pv-foot">
               <span class="pv-brand">{{ buzzBrand(preview.brand)?.name }}</span>
               <div class="pv-actions">
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showDelete = true">Delete</button>
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="askDelete">Delete</button>
                 <button v-if="preview.hasImage" type="button" class="btn-enterprise btn-enterprise--secondary" @click="generateVariations(preview)">Generate variations</button>
               </div>
             </div>
