@@ -293,23 +293,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="dui-table-section">
         <div class="dui-table-wrap">
           <table class="dui-table">
-            <!-- Fixed column widths — collapsing a product/batch removes rows (and the
-                 text that used to be the widest thing in a column), which under auto
-                 table layout re-measures and visibly resizes every column. Pinning
-                 widths here keeps the grid identical whether rows are collapsed or not. -->
+            <!-- Fixed column widths (sized via CSS below, not inline style — see
+                 .dui-table col:nth-child rules) — collapsing a product/batch removes
+                 rows (and the text that used to be the widest thing in a column),
+                 which under auto table layout re-measures and visibly resizes every
+                 column. Pinning widths here keeps the grid identical whether rows
+                 are collapsed or not. -->
             <colgroup>
-              <col style="width: 130px" />
-              <col style="width: 320px" />
-              <col style="width: 180px" />
-              <col style="width: 110px" />
-              <col style="width: 100px" />
-              <col style="width: 100px" />
-              <col style="width: 70px" />
-              <col style="width: 100px" />
-              <col style="width: 100px" />
-              <col style="width: 70px" />
-              <col style="width: 200px" />
-              <col style="width: 200px" />
+              <col /><col /><col /><col /><col /><col />
+              <col /><col /><col /><col /><col /><col />
             </colgroup>
             <thead>
               <tr>
@@ -517,7 +509,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* table-layout: fixed + the colgroup above — auto layout re-measures column widths
    off whichever rows happen to be in the DOM, so the grid visibly resized between
    collapsed and expanded states. Fixed widths make the layout state-independent. */
-.dui-table { width: 1680px; min-width: 100%; table-layout: fixed; border-collapse: collapse; white-space: nowrap; }
+.dui-table { width: 2560px; min-width: 100%; table-layout: fixed; border-collapse: collapse; white-space: nowrap; }
+/* Column widths — Pixel's --mp-sizes-* scale has nothing between sizes-22 (88px)
+   and sizes-56 (224px), so several columns round up further than their content
+   strictly needs; sizes-20 (80px) is the nearest fit for the two Unit columns. */
+.dui-table col:nth-child(1) { width: var(--mp-sizes-56, 224px); }  /* Product SKU */
+.dui-table col:nth-child(2) { width: var(--mp-sizes-sm, 384px); }  /* Product name */
+.dui-table col:nth-child(3) { width: var(--mp-sizes-56, 224px); }  /* Transaction */
+.dui-table col:nth-child(4) { width: var(--mp-sizes-56, 224px); }  /* Date */
+.dui-table col:nth-child(5) { width: var(--mp-sizes-56, 224px); }  /* Base mutation */
+.dui-table col:nth-child(6) { width: var(--mp-sizes-56, 224px); }  /* Base stock */
+.dui-table col:nth-child(7) { width: var(--mp-sizes-20, 80px); }   /* Base unit */
+.dui-table col:nth-child(8) { width: var(--mp-sizes-56, 224px); }  /* Secondary mutation */
+.dui-table col:nth-child(9) { width: var(--mp-sizes-56, 224px); }  /* Secondary stock */
+.dui-table col:nth-child(10) { width: var(--mp-sizes-20, 80px); }  /* Secondary unit */
+.dui-table col:nth-child(11) { width: var(--mp-sizes-56, 224px); } /* Average cost */
+.dui-table col:nth-child(12) { width: var(--mp-sizes-56, 224px); } /* Value */
 .dui-th {
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-3);
   background: var(--mp-background-neutral-subtle);
