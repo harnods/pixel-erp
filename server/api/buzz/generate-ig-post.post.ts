@@ -25,6 +25,10 @@ const IG_DESIGN_SKILL = [
   '8. Brand presence: place the logo tastefully (respect its clear space) OR leave a clean spot for it; never distort or recolour a logo.',
   '9. Output a COMPLETE, finished, production-ready post design (a real social graphic WITH the headline text rendered in the image), not a plain photo. Spell all text correctly.',
   '10. Aspect ratio 4:5 vertical (1080 x 1350), the Instagram feed standard.',
+  '',
+  'REALISM & ANATOMY (mandatory when people appear): render anatomically correct humans — exactly five fingers per hand, natural hand poses, correct limb/finger counts, realistic proportions and faces. NEVER show extra or missing fingers/limbs, fused digits, or warped faces. If a natural pose is hard, frame the shot to avoid awkward close-up hands. Photorealistic people must look like a real photograph.',
+  'LOGOS (mandatory): NEVER invent, draw, redraw, recreate, or approximate a logo. Use ONLY a brand logo image that is provided to you as an input. If a brand logo image is attached, place it faithfully and unaltered (respect its clear space, do not recolour or distort). If NO logo image is provided, leave clean, correctly-sized clear space for the logo and add NO logo mark or wordmark of your own.',
+  'PROVIDED ASSETS ARE REAL: if a product screenshot, app UI, dashboard, or photo is attached as a subject, you MUST composite that EXACT asset into the design (e.g. inside a realistic phone / laptop / browser frame), reproduced faithfully and legibly. NEVER invent, redraw, or fake a UI or product — use the real one provided.',
 ].join('\n')
 
 // ── Hard-coded social-media CAROUSEL skill (used for series) ────────────────────
@@ -56,7 +60,7 @@ function brandBlock(b?: BrandCtx): string {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ brief?: string; headline?: string; brand?: BrandCtx; references?: string[]; subjects?: string[] }>(event)
+  const body = await readBody<{ brief?: string; headline?: string; brand?: BrandCtx; references?: string[]; subjects?: string[]; logos?: string[] }>(event)
   const brief = (body?.brief ?? '').trim()
   if (!brief) { setResponseStatus(event, 400); return { error: 'Describe what the post is about.' } }
 
@@ -69,13 +73,17 @@ export default defineEventHandler(async (event) => {
     const m = d.match(/^data:([^;]+);base64,(.+)$/)
     return m ? { inlineData: { mimeType: m[1], data: m[2] } } : null
   }).filter(Boolean) as any[]
-  // Reference designs (style) vs subjects (the user's own assets to feature).
+  // Reference designs (style) vs subjects (the user's own assets) vs logos.
   const refParts = toParts(body?.references)
   const subjectParts = toParts(body?.subjects)
+  const logoParts = toParts(body?.logos)
 
+  const logoLine = logoParts.length
+    ? `The brand's official logo image${logoParts.length > 1 ? 's are' : ' is'} attached — use ONLY this logo, placed faithfully and unaltered (correct colours, no distortion, respect clear space). Do not draw any other logo.`
+    : 'No logo image is provided — do NOT invent or draw a logo; leave clean clear space for it instead.'
   const refLine = refParts.length ? `${refParts.length} of this brand's reference designs are attached — match their art direction and visual style closely.` : ''
   const subjectLine = subjectParts.length
-    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — these are the SUBJECT (e.g. a product, person, or item) that MUST appear in the post. Keep each subject's identity, colours, shape and any branding accurate; you may re-pose, re-light, re-angle and place them into a new scene/composition, but do not invent a different product.`
+    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — these are the SUBJECT (product, person, item, OR a product screenshot / app UI) that MUST appear in the post. Reproduce each subject EXACTLY (identity, colours, shape, any on-screen UI); you may re-pose / re-light / re-frame and place them into a new scene, but NEVER invent a different product or fake a UI.`
     : ''
   // Grounding is non-negotiable — always restate it.
   const GROUNDING = 'NON-NEGOTIABLE: strictly follow the brand guideline above (colours, typography, tone, logo usage) AND match the attached reference designs\' visual style. Stay on-brand — do not use off-brand colours, fonts, or art direction.'
@@ -93,6 +101,7 @@ export default defineEventHandler(async (event) => {
       `CAMPAIGN BRIEF: ${brief}`,
       directive,
       headlineDirective,
+      logoLine,
       subjectLine,
       refLine,
       GROUNDING,
@@ -100,27 +109,33 @@ export default defineEventHandler(async (event) => {
     ].filter(Boolean).join('\n')
   }
 
-  const model = 'gemini-2.5-flash-image'
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  // Prefer Gemini 3 Pro Image (best quality, fewest anatomy errors); fall back to
+  // 2.5 Flash Image if the Pro model is unavailable. Logos + subjects lead so the
+  // model conditions on the real assets.
+  const MODELS = ['gemini-3-pro-image', 'gemini-2.5-flash-image']
+  const parts = [...logoParts, ...subjectParts, ...refParts]
+  async function callModel(model: string, promptText: string, withModalities: boolean) {
+    return await $fetch<any>(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      body: {
+        contents: [{ role: 'user', parts: [...parts, { text: promptText }] }],
+        ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
+      },
+      timeout: 120000,
+    })
+  }
+  let usedModel = ''
   async function genOne(promptText: string): Promise<{ dataUrl: string; mime: string } | null> {
-    async function call(withModalities: boolean) {
-      return await $fetch<any>(url, {
-        method: 'POST',
-        body: {
-          contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: promptText }] }],
-          ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
-        },
-        timeout: 90000,
-      })
+    for (const model of MODELS) {
+      try {
+        let res: any
+        try { res = await callModel(model, promptText, true) } catch { res = await callModel(model, promptText, false) }
+        const rparts: any[] = res?.candidates?.[0]?.content?.parts ?? []
+        const img = rparts.find((p) => p?.inlineData)?.inlineData
+        if (img?.data) { usedModel = model; return { dataUrl: `data:${img.mimeType || 'image/png'};base64,${img.data}`, mime: img.mimeType || 'image/png' } }
+      } catch { /* try next model */ }
     }
-    try {
-      let res: any
-      try { res = await call(true) } catch { res = await call(false) }
-      const parts: any[] = res?.candidates?.[0]?.content?.parts ?? []
-      const img = parts.find((p) => p?.inlineData)?.inlineData
-      if (!img?.data) return null
-      return { dataUrl: `data:${img.mimeType || 'image/png'};base64,${img.data}`, mime: img.mimeType || 'image/png' }
-    } catch { return null }
+    return null
   }
 
   try {
@@ -149,7 +164,7 @@ export default defineEventHandler(async (event) => {
 
     const results = (await Promise.all(prompts.map(genOne))).filter(Boolean) as { dataUrl: string; mime: string }[]
     if (!results.length) throw new Error('The model did not return any images.')
-    return { images: results, kind: isCarousel ? 'carousel' : 'single', model }
+    return { images: results, kind: isCarousel ? 'carousel' : 'single', model: usedModel }
   } catch (err: any) {
     setResponseStatus(event, 502)
     return { error: `Could not generate the design. ${String(err?.data?.error?.message ?? err?.message ?? err)}` }

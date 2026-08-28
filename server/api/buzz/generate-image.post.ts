@@ -35,7 +35,6 @@ export default defineEventHandler(async (event) => {
     return { error: 'Image generation is not configured yet. Add NUXT_GEMINI_API_KEY to .env.local and restart.' }
   }
 
-  const model = 'gemini-2.5-flash-image'
   const orient = ORIENTATION_HINT[body?.orientation ?? 'Landscape'] ?? '16:9 landscape'
   const b = body?.brand
   const brandLine = b?.name
@@ -46,42 +45,41 @@ export default defineEventHandler(async (event) => {
     ? `${refParts.length} reference design${refParts.length > 1 ? 's' : ''} from this brand are attached — MATCH their visual style closely (composition, colour treatment, mood, art direction). Do not copy their exact content; produce a new visual in the same style.`
     : ''
   const subjectLine = subjectParts.length
-    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — this is the SUBJECT that MUST appear. Keep its identity, colours, shape and branding accurate; generate a NEW pose / angle / scene / composition of the same subject (do not invent a different product).`
+    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — this is the SUBJECT that MUST appear (product, person, item, OR a product screenshot / app UI). Reproduce it EXACTLY (identity, colours, shape, on-screen UI); generate a NEW pose / angle / scene of the SAME subject. NEVER invent a different product or fake a UI.`
     : ''
+  const ANATOMY = 'If people appear, render anatomically correct humans: exactly five fingers per hand, natural hand poses, correct proportions and faces, no extra or missing fingers/limbs, no warped faces. Photorealistic and believable.'
   const full = [
     prompt,
     brandLine,
     subjectLine,
     refLine,
     styleLine,
-    `Composition: ${orient}. A polished, production-ready marketing visual. Photorealistic where people are shown; no text, watermarks or logos unless explicitly requested. Southeast Asian representation where people appear.`,
+    `Composition: ${orient}. A polished, production-ready marketing visual. ${ANATOMY} No text, watermarks or logos unless explicitly requested; never invent a logo. Southeast Asian representation where people appear.`,
   ].filter(Boolean).join(' ')
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-
-  // Some API versions reject generationConfig.responseModalities for this model;
-  // try with it, then fall back to a bare request so we still get an image.
-  async function call(withModalities: boolean) {
-    return await $fetch<any>(url, {
+  // Prefer Gemini 3 Pro Image (best quality); fall back to 2.5 Flash Image.
+  const MODELS = ['gemini-3-pro-image', 'gemini-2.5-flash-image']
+  async function call(withModalities: boolean, model = MODELS[0]) {
+    return await $fetch<any>(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
       method: 'POST',
       body: {
         contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: full }] }],
         ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
       },
-      timeout: 90000,
+      timeout: 120000,
     })
   }
 
-  try {
-    let res: any
-    try { res = await call(true) } catch { res = await call(false) }
-    const parts: any[] = res?.candidates?.[0]?.content?.parts ?? []
-    const img = parts.find((p) => p?.inlineData)?.inlineData
-    if (!img?.data) throw new Error('The model did not return an image.')
-    const mime = img.mimeType || 'image/png'
-    return { dataUrl: `data:${mime};base64,${img.data}`, mime, model }
-  } catch (err: any) {
-    setResponseStatus(event, 502)
-    return { error: `Could not generate the image. ${String(err?.data?.error?.message ?? err?.message ?? err)}` }
+  let lastErr: any
+  for (const model of MODELS) {
+    try {
+      let res: any
+      try { res = await call(true, model) } catch { res = await call(false, model) }
+      const parts: any[] = res?.candidates?.[0]?.content?.parts ?? []
+      const img = parts.find((p) => p?.inlineData)?.inlineData
+      if (img?.data) { const mime = img.mimeType || 'image/png'; return { dataUrl: `data:${mime};base64,${img.data}`, mime, model } }
+    } catch (err: any) { lastErr = err /* try next model */ }
   }
+  setResponseStatus(event, 502)
+  return { error: `Could not generate the image. ${String(lastErr?.data?.error?.message ?? lastErr?.message ?? lastErr ?? 'no image returned')}` }
 })

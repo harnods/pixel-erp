@@ -89,6 +89,12 @@ async function generate() {
     const rec = await getImage(id)
     if (rec?.dataUrl) subjects.push(rec.dataUrl)
   }
+  // The brand's uploaded logo image(s) — the model must use these, never invent one.
+  const logos: string[] = []
+  for (const id of (b?.logos ?? []).slice(0, 2)) {
+    const rec = await getImage(id)
+    if (rec?.dataUrl) logos.push(rec.dataUrl)
+  }
   try {
     const res = await $fetch<{ images?: { dataUrl: string; mime: string }[]; kind?: 'single' | 'carousel'; error?: string }>('/api/buzz/generate-ig-post', {
       method: 'POST',
@@ -104,6 +110,7 @@ async function generate() {
         } : undefined,
         references,
         subjects,
+        logos,
       },
     })
     if (res?.error || !res?.images?.length) { error.value = res?.error || 'Could not generate the design.'; return }
