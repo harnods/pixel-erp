@@ -222,7 +222,7 @@ function goExpenses() {
       <MpBannerIcon id="bd-approval-banner-icon" />
       <MpBannerDescription id="bd-approval-banner-desc">
         {{ t('Transaction requires approval before it can be processed.') }}
-        <MpTextlink id="bd-approval-banner-link" as="a" @click.prevent>{{ t('View approval rule') }}</MpTextlink>
+        <MpTextlink id="bd-approval-banner-link" as="a" @click.prevent="router.push('/approval-workflows')">{{ t('View approval workflow') }}</MpTextlink>
       </MpBannerDescription>
     </MpBanner>
 

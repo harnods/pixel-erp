@@ -21,8 +21,8 @@
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
           <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
@@ -174,6 +174,10 @@ interface SubItem {
 interface NavItem {
   name: string
   icon: string
+  /** Explicit CDN icon filenames (without .svg) — use when the line/fill pair
+   *  doesn't follow the `${icon}-outline` / `${icon}-fill` convention. */
+  iconLine?: string
+  iconFill?: string
   /** Level-2 flyout (hover) */
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
@@ -291,8 +295,13 @@ if (import.meta.client) {
   mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
 }
 
-// Main nav collapses while a panel is open, or on narrow (tablet/mobile) viewports
-const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value)
+// Some full-bleed pages render their OWN level-2 sidemenu inside the content area
+// (e.g. XPM Accounts → the wallet list). Force the main nav to the icon rail there
+// so the two level-2 columns don't stack side by side.
+const hasOwnLevel2 = computed(() => route.path === '/accounts' || route.path.startsWith('/accounts/'))
+// Main nav collapses while a panel is open, on narrow viewports, or on a page that
+// owns its own level-2 sidemenu.
+const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value && !hasOwnLevel2.value)
 // Arrow points left when nav is expanded OR when a panel is visible
 const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value && isPanelVisible.value))
 
@@ -353,15 +362,34 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Billing' },
   ],
   [
+    // Storage locations is NOT here — it's a top-level nav item in WMS Standalone
+    // (right after Cycle counts), not a settings page.
     { label: 'Inventory', to: 'Inventory settings' },
     { label: 'Warehouse', to: 'Warehouse settings' },
-    { label: 'Storage locations' },
   ],
 ]
 
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
+    {
+      // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
+      // Connections), each its own /cowork* route rendered in the stage.
+      name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
+      panelSubmenu: [
+        [
+          { label: 'New task', to: 'Cowork' },
+          { label: 'Tasks', to: 'Cowork tasks' },
+          { label: 'Schedule', to: 'Cowork schedule' },
+        ],
+        [
+          { label: 'Connections', to: 'Cowork connections' },
+          { label: 'Agents', to: 'Cowork agents' },
+          { label: 'Skills', to: 'Cowork skills' },
+          { label: 'File manager', to: 'Cowork knowledge' },
+        ],
+      ],
+    },
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the
@@ -480,10 +508,10 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
+          { label: 'Cycle counts' },
         ],
         [
           { label: 'Storage locations' },
-          { label: 'Couriers' },
           { label: 'Warehouse reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'WMS' } },
           { label: 'Warehouse settings', iconType: 'settings' },
         ],
@@ -602,13 +630,16 @@ const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.
 // the page handle Receipts / Receiving / Put-away and Orders / Picking / etc.
 const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
-    { name: 'Home', icon: 'home' },
+    // No "Home" — WMS Standalone opens on Dashboard (see ErpUserMenu.selectScenario).
     { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
-      // WMS Standalone has no report index — the four reports (mirroring the ERP
-      // report pages) sit directly in the level-2 panel, led by Overview.
+      // WMS Standalone has no report index — the reports sit directly in the
+      // level-2 panel: the two warehouse-stock reports first, then the four
+      // inbound/outbound performance reports.
       panelSubmenu: [[
+        { label: 'Warehouse stock quantity', path: '/wms-report/warehouse-stock-quantity' },
+        { label: 'Warehouse item movement', path: '/wms-report/warehouse-item-movement' },
         { label: 'Inbound timeliness', path: '/wms-report/inbound-timeliness' },
         { label: 'Inbound accuracy', path: '/wms-report/inbound-accuracy' },
         { label: 'Outbound timeliness', path: '/wms-report/outbound-timeliness' },
@@ -618,7 +649,7 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   ],
   [
     // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
-    // "Inventory" menu instead of a flat "Products" leaf.
+    // "Inventory" menu minus Price rules, which is an ERP-only commercial concern.
     {
       name: 'Inventory', icon: 'products',
       panelSubmenu: [[
@@ -626,7 +657,6 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
         { label: 'Categories' },
         { label: 'Variant options' },
         { label: 'Units' },
-        { label: 'Price rules' },
       ]],
     },
     { name: 'Warehouses', icon: 'warehouse' },
@@ -638,13 +668,13 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     // Mirrors the ERP "Warehouse transfers" module — same page (/warehouse-transfers).
     { name: 'Warehouse transfers', icon: 'transfer' },
-    {
-      name: 'Stock adjustments', icon: 'table-view-list',
-      panelSubmenu: [[
-        { label: 'Cycle counts' },
-        { label: 'Stock counts' },
-      ]],
-    },
+    // Siblings, mirroring the ERP "WMS" group — "Stock adjustments" is the full
+    // ledger (same page/content as ERP's), "Cycle counts" is the WMS count-task flow.
+    { name: 'Stock adjustments', icon: 'table-view-list' },
+    { name: 'Cycle counts', icon: 'chart-of-account' },
+    // Promoted out of Settings — storage locations are day-to-day warehouse
+    // structure in WMS Standalone, not configuration.
+    { name: 'Storage locations', icon: 'location' },
   ],
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
@@ -667,12 +697,60 @@ const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   ]
 })
 
+// XPM (Mekari Expense) nav — mirrors the standalone Expense product's own sidebar
+// (Home / Reports · Accounts / Transactions / Budgeting · Purchasing / Trips /
+// Claims / Cards · My claims / My trips · Settings). Routes are global-by-URL like
+// every other scenario; only the tree swaps. Purchasing + Settings carry a level-2
+// panel (same UI as ERP's Reports/Settings). Icons reuse the CDN set 1:1 with the
+// source app.
+const xpmNavGroups: NavItem[][] = [
+  [
+    { name: 'Home', icon: 'home' },
+    { name: 'Reports', icon: 'reports', to: 'Xpm reports' },
+  ],
+  [
+    { name: 'Accounts', icon: 'wallet' },
+    { name: 'Transactions', icon: 'log', to: 'Xpm transactions' },
+    { name: 'Budgeting', icon: 'finance' },
+  ],
+  [
+    {
+      name: 'Purchasing', icon: 'expenses',
+      panelSubmenu: [[
+        { label: 'Purchases', to: 'Xpm purchases' },
+        { label: 'Products', to: 'Xpm products' },
+        { label: 'Warehouses', to: 'Xpm warehouses' },
+      ]],
+    },
+    { name: 'Trips', icon: 'voucher', to: 'Xpm trips' },
+    { name: 'Claims', icon: 'protection', to: 'Xpm claims' },
+    { name: 'Cards', icon: 'billing', to: 'Xpm cards' },
+  ],
+  [
+    { name: 'My claims', icon: 'reimbursement' },
+    { name: 'My trips', icon: 'business-trip' },
+  ],
+  [
+    {
+      name: 'Settings', icon: 'settings',
+      panelSubmenu: [[
+        { label: 'Users', to: 'Xpm users' },
+        { label: 'Vendors', to: 'Xpm vendors' },
+        { label: 'Policy', to: 'Xpm policy' },
+        { label: 'Integration', to: 'Xpm integration' },
+      ]],
+    },
+  ],
+]
+
 // Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
-// Ops menu; WMS Standalone uses the full WMS nav; ERP uses the ERP nav.
+// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; ERP
+// uses the ERP nav.
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
   if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
+  if (activeScenario.value === 'XPM') return xpmNavGroups
   return erpNavGroups
 })
 
@@ -726,7 +804,18 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
         const panel = item.panelSubmenu
           ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
           : null
-        return { nav: item.name, sub: null, panel }
+        // When a panel sub-item owns this exact route (e.g. Cowork › Overview lives
+        // at /cowork, the same route as the Cowork nav item), highlight that child
+        // instead of leaving the panel with no active item (which would fall back to
+        // the last-used sub from localStorage).
+        let sub: string | null = null
+        for (const g of item.panelSubmenu ?? []) {
+          for (const p of g) {
+            if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) { sub = p.label; break }
+          }
+          if (sub) break
+        }
+        return { nav: item.name, sub, panel }
       }
       // expandOnClick items: check their promoted-panel content BEFORE the plain
       // submenu loop below, so a page that's part of the promoted panel restores

@@ -1,15 +1,20 @@
 /**
- * WMS Reports — the row-level "raw data dump" behind the four WMS report tables
+ * WMS Reports — the row-level "raw data dump" behind the WMS report tables
  * (docs/prd/wms-reports-analytics-prd.md, Stories 11–14). Rendered by
  * WmsReportDetailPage.vue.
  *
+ * Six reports: two stock reports (warehouse stock quantity — a point-in-time
+ * on-hand snapshot; warehouse item movement — the in/out ledger behind it) and
+ * four inbound/outbound performance reports.
+ *
  * Everything here is DERIVED from the live operational datasets (receipts +
  * receiving/put-away tasks on the inbound side; outgoing orders + picking/packing/
- * delivery tasks on the outbound side) — nothing is faked. It mirrors the same
- * "closed" derivation the WMS Overview analytics uses (wmsAnalytics.ts): a receipt
- * closes when its receiving is fully concluded (put-away Start/End is out of scope
- * in the mock, so receipts rarely reach status='completed'); an order closes when
- * it is completed and shipped.
+ * delivery tasks on the outbound side; warehouse stock + transfers + adjustments
+ * for the stock reports) — nothing is faked. It mirrors the same "closed"
+ * derivation the WMS Overview analytics uses (wmsAnalytics.ts): a receipt closes
+ * when its receiving is fully concluded (put-away Start/End is out of scope in the
+ * mock, so receipts rarely reach status='completed'); an order closes when it is
+ * completed and shipped.
  *
  * Row values are stored RAW (dates as ISO strings, qtys as numbers, everything
  * else as text) so the page can sort/format/export them uniformly. Missing
@@ -22,7 +27,11 @@ import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from './outgoi
 import { pickingTasks, pickedQtyForOrderSku } from './pickingTasks'
 import { packingTasks } from './packingTasks'
 import { deliveryTasks, shippedQtyBySkuForOrder } from './deliveryTasks'
-import { orderSkuLines } from './inventory'
+import { orderSkuLines, productBySku } from './inventory'
+import { warehouses } from './warehouses'
+import { getWarehouseDetail } from './warehouseDetails'
+import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
+import { stockAdjustments, adjustmentLineItems } from './stockAdjustments'
 import { TODAY } from './master'
 
 // ── Filter shape ──────────────────────────────────────────────────────────────
@@ -61,10 +70,16 @@ export type ReportRow = Record<string, string | number | null | undefined>
 
 export interface ReportDef {
   title: string
-  /** which operator pool feeds the Operator filter dropdown */
-  direction: 'inbound' | 'outbound'
+  /** Which operator pool feeds the Operator filter dropdown. Omitted on the stock
+   *  reports, which have no operator dimension (see hideOperator). */
+  direction?: 'inbound' | 'outbound'
   /** initial date-range preset (days back from today); defaults to 30 */
   defaultPeriodDays?: number
+  /** Point-in-time snapshot (stock on hand) — no date dimension, so the page hides
+   *  the date-range filter entirely. */
+  hideDate?: boolean
+  /** No operator dimension (stock reports) — the page hides the Operator filter. */
+  hideOperator?: boolean
   columns: ReportColumn[]
   rows(filter: ReportFilter): ReportRow[]
 }
@@ -369,9 +384,176 @@ function outboundAccuracyRows(f: ReportFilter): ReportRow[] {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// STOCK — warehouse on-hand snapshot + the in/out ledger behind it
+// ══════════════════════════════════════════════════════════════════════════════
+/** Warehouses a stock report covers: real (non-default), active, and in filter scope. */
+function stockWarehouses(f: ReportFilter) {
+  return warehouses.filter((w) => !w.isDefault && w.status === 'active' && whOk(f, w.id))
+}
+
+// 5 ── Warehouse stock quantity — one row per warehouse × product ──────────────
+// A point-in-time snapshot: the SAME numbers the warehouse detail Products tab
+// shows (getWarehouseDetail owns on-hand / reserved / available / bin placement),
+// flattened across every warehouse in scope. No date dimension — stock on hand is
+// "as of now", not "over a period".
+function warehouseStockQuantityRows(f: ReportFilter): ReportRow[] {
+  const out: ReportRow[] = []
+  for (const w of stockWarehouses(f)) {
+    const detail = getWarehouseDetail(w.id)
+    for (const item of detail?.stock ?? []) {
+      out.push({
+        warehouseName: w.name,
+        productName: item.name,
+        sku: item.sku,
+        category: item.category,
+        // Multi-location items list every bin they occupy (primary first).
+        storageLocation: item.locations.join(', ') || undefined,
+        unit: item.unit,
+        onHand: item.onHand,
+        reserved: item.reserved,
+        available: item.available,
+        onTheWay: item.onTheWay,
+        minStock: item.minStock,
+      })
+    }
+  }
+  return out
+}
+
+// 6 ── Warehouse item movement — one row per item movement ─────────────────────
+// The in/out ledger behind the stock snapshot, unioned from the four things that
+// actually move stock in this mini-DB:
+//   • closed inbound receiving       → IN  (qty received)
+//   • closed outbound orders         → OUT (qty shipped, per SKU)
+//   • completed warehouse transfers  → OUT at the origin, IN at the destination
+//   • completed stock adjustments    → IN or OUT by the signed difference
+// Rows are newest-first so the table reads like a ledger before any sort is applied.
+const MOVEMENT_TYPES = {
+  inbound: 'Inbound delivery',
+  outbound: 'Outbound delivery',
+  transfer: 'Warehouse transfer',
+  count: 'Stock count',
+  inOut: 'Stock in/out',
+} as const
+
+function warehouseItemMovementRows(f: ReportFilter): ReportRow[] {
+  const out: ReportRow[] = []
+  const push = (
+    date: string | undefined,
+    warehouseName: string,
+    movementType: string,
+    referenceNo: string,
+    productName: string,
+    sku: string,
+    unit: string,
+    qty: number,
+  ) => {
+    if (!qty) return
+    out.push({
+      date,
+      warehouseName,
+      movementType,
+      referenceNo,
+      productName,
+      sku,
+      unit,
+      inQty: qty > 0 ? qty : null,
+      outQty: qty < 0 ? -qty : null,
+    })
+  }
+
+  // ── IN: closed inbound receiving ──
+  const byReceipt = recvTasksByReceipt()
+  for (const r of receipts) {
+    if (r.status === 'canceled' || !whOk(f, r.warehouseId)) continue
+    const tasks = byReceipt.get(r.id)
+    if (!isClosed(tasks)) continue
+    for (const t of tasks!) {
+      if (!inPeriod(f, t.endDate)) continue
+      for (const it of t.items) {
+        const p = productBySku(it.sku)
+        push(t.endDate, t.warehouseName, MOVEMENT_TYPES.inbound, r.number, it.productName, it.sku, p?.unit ?? '', it.receivedQty)
+      }
+    }
+  }
+
+  // ── OUT: closed outbound orders ──
+  for (const o of closedOrders(f)) {
+    const shippedBySku = shippedQtyBySkuForOrder(o.id)
+    for (const line of orderSkuLines(o)) {
+      push(o.shippedDate, o.warehouseName, MOVEMENT_TYPES.outbound, o.number, line.product.name, line.sku, line.product.unit, -(shippedBySku[line.sku] ?? 0))
+    }
+  }
+
+  // ── OUT/IN: completed warehouse transfers (one leg per end, each warehouse-scoped) ──
+  for (const tr of warehouseTransfers) {
+    if (tr.status !== 'completed' || !inPeriod(f, tr.date)) continue
+    const fromOk = whOk(f, tr.originId)
+    const toOk = whOk(f, tr.destinationId)
+    if (!fromOk && !toOk) continue
+    for (const line of transferLineItems(tr)) {
+      if (fromOk) push(tr.date, tr.originName, MOVEMENT_TYPES.transfer, tr.number, line.product.name, line.sku, line.unit, -line.qty)
+      if (toOk) push(tr.date, tr.destinationName, MOVEMENT_TYPES.transfer, tr.number, line.product.name, line.sku, line.unit, line.qty)
+    }
+  }
+
+  // ── IN/OUT: completed stock adjustments (signed difference per line) ──
+  for (const a of stockAdjustments) {
+    if (a.status !== 'completed' && a.status !== 'closed') continue
+    if (!whOk(f, a.warehouseId) || !inPeriod(f, a.date)) continue
+    const type = a.kind === 'count' ? MOVEMENT_TYPES.count : MOVEMENT_TYPES.inOut
+    for (const line of adjustmentLineItems(a)) {
+      push(a.date, a.warehouseName, type, a.number, line.product.name, line.sku, line.unit, line.difference)
+    }
+  }
+
+  // Newest first (ISO dates sort lexicographically).
+  return out.sort((x, y) => String(y.date ?? '').localeCompare(String(x.date ?? '')))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Registry
 // ══════════════════════════════════════════════════════════════════════════════
 export const WMS_REPORTS: Record<string, ReportDef> = {
+  'warehouse-stock-quantity': {
+    title: 'Warehouse stock quantity',
+    // Point-in-time snapshot: no date range, no operator.
+    hideDate: true,
+    hideOperator: true,
+    columns: [
+      { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
+      { key: 'productName', label: 'Product name', sortType: 'text' },
+      { key: 'sku', label: 'SKU', sortType: 'text' },
+      { key: 'category', label: 'Category', sortType: 'text' },
+      { key: 'storageLocation', label: 'Storage location', sortType: 'text' },
+      { key: 'unit', label: 'Unit', sortType: 'text' },
+      { key: 'onHand', label: 'On hand', sortType: 'number', align: 'right' },
+      { key: 'reserved', label: 'Reserved', sortType: 'number', align: 'right' },
+      { key: 'available', label: 'Available', sortType: 'number', align: 'right' },
+      { key: 'onTheWay', label: 'On the way', sortType: 'number', align: 'right' },
+      { key: 'minStock', label: 'Min stock', sortType: 'number', align: 'right' },
+    ],
+    rows: warehouseStockQuantityRows,
+  },
+  'warehouse-item-movement': {
+    title: 'Warehouse item movement',
+    defaultPeriodDays: 30,
+    // Movements come from four different document types, each with its own PIC
+    // (or none) — there's no single operator pool to filter by.
+    hideOperator: true,
+    columns: [
+      { key: 'date', label: 'Date', sortType: 'date', dateOnly: true },
+      { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
+      { key: 'movementType', label: 'Movement type', sortType: 'text' },
+      { key: 'referenceNo', label: 'Reference number', sortType: 'text' },
+      { key: 'productName', label: 'Product name', sortType: 'text' },
+      { key: 'sku', label: 'SKU', sortType: 'text' },
+      { key: 'unit', label: 'Unit', sortType: 'text' },
+      { key: 'inQty', label: 'In qty', sortType: 'number', align: 'right' },
+      { key: 'outQty', label: 'Out qty', sortType: 'number', align: 'right' },
+    ],
+    rows: warehouseItemMovementRows,
+  },
   'inbound-timeliness': {
     title: 'Inbound timeliness',
     direction: 'inbound',

@@ -112,7 +112,7 @@ function toggleWarehouse(id: string) {
 }
 
 // ── Operator (multi-select, scoped to the selected warehouses) ────────────────────
-const operatorList = computed(() => def.value ? operatorOptionsMulti(def.value.direction, warehouseFilter.value) : [])
+const operatorList = computed(() => def.value?.direction ? operatorOptionsMulti(def.value.direction, warehouseFilter.value) : [])
 const operatorLabel = computed(() => {
   const n = operatorFilter.value.length
   if (n === 0) return t('All operators')
@@ -247,11 +247,16 @@ const periodLabel = computed(() => {
   }
   return t(periodOptions.find((o) => o.value === periodPreset.value)?.label ?? '')
 })
+// Stock reports opt out of the date and/or operator dimension (see ReportDef).
+const showDate = computed(() => !def.value?.hideDate)
+const showOperator = computed(() => !def.value?.hideOperator)
 const filter = computed<ReportFilter>(() => ({
   warehouseIds: warehouseFilter.value,
   operators: operatorFilter.value,
-  periodDays: Number(periodPreset.value) || 30,
-  customRange: customRange.value,
+  // A snapshot report has no period — pass a window wide enough to be a no-op for
+  // any inPeriod() call its rows builder might still make.
+  periodDays: showDate.value ? (Number(periodPreset.value) || 30) : 36_500,
+  customRange: showDate.value ? customRange.value : null,
   // Drawer filters apply to the accuracy reports only; the timeliness reports ignore them.
   ...(isAccuracy.value
     ? { skus: skuFilter.value, sources: sourceFilter.value, receiveStates: receiveStateFilter.value as ('match' | 'short' | 'over')[] }
@@ -387,7 +392,7 @@ onMounted(() => {
 })
 onUnmounted(() => filterRo?.disconnect())
 
-const hasFilter = computed(() => warehouseFilter.value.length > 0 || operatorFilter.value.length > 0 || periodPreset.value !== defaultPreset() || drawerFilterCount.value > 0)
+const hasFilter = computed(() => warehouseFilter.value.length > 0 || operatorFilter.value.length > 0 || (showDate.value && periodPreset.value !== defaultPreset()) || drawerFilterCount.value > 0)
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -407,8 +412,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
            AI + Column-settings icons drop out in compact (narrow) mode. -->
       <div ref="filterBarEl" class="rpt-filter-bar">
         <div class="rpt-filter-left">
-        <!-- Date — Advance-date pattern: preset sidebar + calendar in one popover -->
-        <MpPopover :id="`rpt-period-${orderId}`" :is-close-on-select="false">
+        <!-- Date — Advance-date pattern: preset sidebar + calendar in one popover.
+             Hidden on snapshot reports (Warehouse stock quantity). -->
+        <MpPopover v-if="showDate" :id="`rpt-period-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '210px' }">
               <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -500,8 +506,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Operator — multi-select, scoped to the selected warehouses -->
-        <MpPopover :id="`rpt-op-${orderId}`" :is-close-on-select="false">
+        <!-- Operator — multi-select, scoped to the selected warehouses (reports
+             with an operator dimension only) -->
+        <MpPopover v-if="showOperator" :id="`rpt-op-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '190px' }">
               <span class="filter-trigger-label">{{ operatorLabel }}</span>

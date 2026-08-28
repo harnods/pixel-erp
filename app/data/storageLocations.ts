@@ -56,6 +56,11 @@ interface WhStorageProfile {
   /** Digits to zero-pad auto-generated Bin names to (default 3, e.g. "Bin 001").
    *  A flat, single-level (Bin-only) warehouse reads better with fewer digits. */
   binPad?: number
+  /** Extra empty bins appended AFTER the SKU partition, so they hold no stock by
+   *  default and adding one never re-tiles the existing bins. Gives a warehouse a
+   *  bin that no count plan covers — somewhere a stray unit can sit. Flat
+   *  (Bin-only) warehouses only; the 7-level tree ignores it. */
+  extraBins?: number
 }
 
 export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
@@ -104,8 +109,10 @@ export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
       { idx: 11, count: 2 },
     ],
   },
+  // Bin 03 is deliberately empty — it's where the misplaced serial-tracked unit
+  // in the cycle count demo sits (see DEMO_MISPLACED_SERIALS in warehouseDetails).
   'wh-010': {
-    levels: ['Bin'], binPad: 2,
+    levels: ['Bin'], binPad: 2, extraBins: 1,
     multiLoc: [
       { idx: 4, count: 2 },
     ],
@@ -121,7 +128,7 @@ export function getMultiLocConfig(warehouseId: string): MultiLocEntry[] {
 
 function seedFrom(id: string): number { return Number(id.replace(/\D/g, '')) || 1 }
 
-function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3): LocNode[] {
+function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3, extraBins = 0): LocNode[] {
   if (levels.length === 0) return []
   let s = (seed * 2654435761) >>> 0
   s ^= s >>> 15; s = (s * 2246822519) >>> 0; s ^= s >>> 13; s = s >>> 0
@@ -176,15 +183,29 @@ function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3)
     n.skuStart = n.children[0]!.skuStart
   }
   roots.forEach(roll)
+
+  // Empty demo bins, appended once the partition is settled: skuQty 0 keeps them
+  // out of the [skuStart, +skuQty) tiling, so the SKUs already placed above don't
+  // shift. Only meaningful for a flat (Bin-only) tree, where roots ARE the leaves.
+  if (extraBins > 0 && levels.length === 1) {
+    for (let k = 0; k < extraBins; k++) {
+      const seq = roots.length + 1
+      roots.push({
+        id: nid(), level: 'Bin', name: `Bin ${String(seq).padStart(binPad, '0')}`,
+        type: defaultTypeForLevel('Bin'), skuQty: 0, skuStart: cursor, children: [],
+      })
+    }
+  }
   return roots
 }
 
 // ── Snapshot store ───────────────────────────────────────────────────────────
 
 interface WhTree { warehouseId: string; tree: LocNode[] }
-// Bumped to v10 — every warehouse flattened to 1-level (Bin only) except
-// wh-004, the one deliberately kept at the full 7-level tree
-const KEY = 'storage-locations-v10'
+// Bumped to v11 — wh-010 gains an empty Bin 03 for the misplaced-serial cycle
+// count demo. (v10: every warehouse flattened to 1-level (Bin only) except
+// wh-004, the one deliberately kept at the full 7-level tree.)
+const KEY = 'storage-locations-v11'
 const store = reactive<Record<string, LocNode[]>>({})
 const snapshot = loadSnapshot<WhTree>(KEY)
 if (snapshot) for (const e of snapshot) store[e.warehouseId] = e.tree
@@ -219,7 +240,7 @@ export function getStorageTree(warehouseId: string): LocNode[] {
     } else {
       const profile = WH_STORAGE_PROFILES[warehouseId]
       const levels = profile?.levels ?? STORAGE_LEVELS  // fallback: full 7-level
-      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels, profile?.binPad)
+      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels, profile?.binPad, profile?.extraBins)
     }
   }
   return store[warehouseId]!

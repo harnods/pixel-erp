@@ -41,6 +41,23 @@ export interface WorkOrder {
   endDate?: string
   /** production request this WO was raised from, if any (Create work order from PR) */
   sourceProductionRequestNo?: string
+  /**
+   * Batch/serial units reserved for this work order's raw materials, picked at
+   * creation time (New work order → Raw materials → Manage batch/serial
+   * number). Keyed by productId; only tracked (batch- or serial-managed)
+   * materials get an entry. The Material consume & return flow pre-fills its
+   * own pick drawer from whatever of this reservation hasn't been consumed
+   * yet, and the "Complete work order" guard uses it to show what's still
+   * reserved but unconsumed.
+   */
+  materialReservations?: Record<string, WorkOrderMaterialReservation>
+}
+
+export interface WorkOrderMaterialReservation {
+  /** Warehouse the reservation was picked from — needed to look the units back up later. */
+  warehouseId?: string
+  batchSelection?: { batchNo: string; qty: number }[]
+  serialSelection?: string[]
 }
 
 export type WorkOrderStatus =

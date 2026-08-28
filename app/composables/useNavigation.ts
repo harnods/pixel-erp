@@ -31,6 +31,11 @@ export function labelToPath(label: string): string {
 export function pathToLabel(path: string): string {
   if (!path || path === "/") return "Home";
   const slug = path.replace(/^\/+/, "");
+  // /stock-counts is a retired route (its distinct "Stock counts" page has been
+  // folded into "Stock adjustments", now the same page/content in every scenario)
+  // — alias it so an old link/bookmark lands on the real page, sidebar highlight
+  // intact, instead of falling through to Home.
+  if (slug === "stock-counts") return "Stock adjustments";
   const words = slug.split("-");
   return words
     .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))

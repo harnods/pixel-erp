@@ -1,157 +1,158 @@
 <script setup lang="ts">
 /**
  * CRM (Qontak) product sidebar — shown while the CRM product is active (/crm*).
- * A 52px module icon rail + a 212px "DEALS" submenu panel (matches Figma 264px nav).
+ *
+ * CRM has NO level-2 menu: a single level-1 rail only (Home, Deals, Orders,
+ * Tasks, Customers, Products, then a divider before Settings). Visuals mirror
+ * ErpSidebar's level-1 rail (52px collapsed / 216px expanded, CDN outline/fill
+ * icons, hover → link blue, active → pressed bg + fill icon).
  */
-import { ref } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import { ref, computed } from 'vue'
+import { useLocale } from '~/composables/useLocale'
+import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 
 const router = useRouter()
+const route = useRoute()
+const { t } = useLocale()
 
-// Module icon rail (Qontak) — exact icons/order/grouping from Figma node 4214:11232.
-// Sales (Deals) is the active module.
-interface Rail { icon: string; label: string; active?: boolean }
-const railGroups: Rail[][] = [
+const expanded = ref(true)
+function handleToggle() { expanded.value = !expanded.value }
+// Below tablet width the expanded nav (216px) starves the content area, so we
+// force the collapsed icon rail there regardless of the saved preference
+// (mirrors ErpSidebar).
+const isNarrowViewport = ref(false)
+if (import.meta.client) {
+  const mq = window.matchMedia('(max-width: 1024px)')
+  isNarrowViewport.value = mq.matches
+  mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
+}
+const navExpanded = computed(() => expanded.value && !isNarrowViewport.value)
+
+interface Item { icon: string; name: string; to: string }
+// Two groups → the border-bottom between them is the divider before Settings.
+const navGroups: Item[][] = [
   [
-    { icon: 'home',      label: 'Home' },
-    { icon: 'inbox',     label: 'Inbox' },
-    { icon: 'phone',     label: 'Phone' },
-    { icon: 'broadcast', label: 'Broadcast' },
-    { icon: 'chatbot',   label: 'Chatbot' },
+    { icon: 'pipeline',     name: 'Deals',     to: '/crm/deals' },
+    { icon: 'cart',         name: 'Orders',    to: '/crm/orders' },
+    { icon: 'productivity', name: 'Tasks',     to: '/crm/tasks' },
+    { icon: 'contact',      name: 'Customers', to: '/crm/customers' },
+    { icon: 'products',     name: 'Products',  to: '/crm/products' },
   ],
   [
-    { icon: 'team',              label: 'Employees' },
-    { icon: 'talent-management', label: 'Talent management' },
-    { icon: 'reports',           label: 'Reports' },
-  ],
-  [
-    { icon: 'sales',        label: 'Sales', active: true },
-    { icon: 'voucher',      label: 'Voucher' },
-    { icon: 'competencies', label: 'Competencies' },
-  ],
-  [
-    { icon: 'shop',     label: 'Shop' },
-    { icon: 'book',     label: 'Knowledge base' },
-    { icon: 'doc',      label: 'Documents' },
-    { icon: 'products', label: 'Products' },
-    { icon: 'expenses', label: 'Expenses' },
-  ],
-  [
-    { icon: 'officeless', label: 'Officeless' },
-  ],
-  [
-    { icon: 'transfer', label: 'Subscription' },
-    { icon: 'settings', label: 'Settings' },
+    { icon: 'settings', name: 'Settings', to: '/crm/settings' },
   ],
 ]
 
-// "DEALS" submenu.
-interface Sub { label: string; count?: number; active?: boolean }
-const subItems: Sub[] = [
-  { label: 'All deals', active: true },
-  { label: 'Need my approval', count: 2 },
-  { label: 'Owned by me' },
-]
+const activeItem = computed<string>(() => {
+  // /crm (bare) lands on Deals, so treat it as Deals-active too.
+  if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
+  for (const g of navGroups) for (const it of g)
+    if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
+  return 'Deals'
+})
 
-function onRail(r: Rail) {
-  if (r.active) return
-  toast.notify({ variant: 'info', title: `${r.label} — coming soon`, maxWidth: 'max-content' })
-}
-function onSub(s: Sub) {
-  if (s.active) router.push('/crm')
-  else toast.notify({ variant: 'info', title: `${s.label} — coming soon`, maxWidth: 'max-content' })
-}
+function handleNavClick(item: Item) { router.push(item.to) }
 </script>
 
 <template>
-  <div class="crm-sidebar-wrapper">
-    <!-- Module icon rail -->
-    <nav class="crm-rail" aria-label="CRM navigation">
-      <div v-for="(group, gi) in railGroups" :key="gi" class="crm-rail__group">
+  <div class="sidebar-wrapper">
+    <nav class="sidebar" :class="{ 'is-expanded': navExpanded }" aria-label="CRM navigation">
+      <!-- Toggle -->
+      <div class="sidebar-header">
+        <button class="sidebar-toggle" type="button" title="Toggle sidebar" @click="handleToggle">
+          <img :src="toggleIcon" alt="Toggle sidebar">
+        </button>
+      </div>
+
+      <!-- Nav groups (level-1 only; group boundary = divider) -->
+      <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
         <button
-          v-for="r in group"
-          :key="r.label"
-          class="crm-rail__item"
-          :class="{ active: r.active }"
-          :title="r.label"
-          @click="onRail(r)"
+          v-for="item in group"
+          :key="item.name"
+          class="nav-item"
+          :class="{ active: activeItem === item.name }"
+          :title="t(item.name)"
+          type="button"
+          @click="handleNavClick(item)"
         >
-          <MpIcon :name="r.icon" size="md" />
+          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="">
+          <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
     </nav>
-
-    <!-- DEALS submenu panel -->
-    <div class="crm-panel">
-      <div class="crm-panel__header">DEALS</div>
-      <div class="crm-panel__list">
-        <button
-          v-for="s in subItems"
-          :key="s.label"
-          class="crm-panel__item"
-          :class="{ active: s.active }"
-          @click="onSub(s)"
-        >
-          <span class="crm-panel__label">{{ s.label }}</span>
-          <span v-if="s.count" class="crm-panel__count">{{ s.count }}</span>
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.crm-sidebar-wrapper { display: flex; height: 100%; flex-shrink: 0; }
+.sidebar-wrapper { display: flex; height: 100%; flex-shrink: 0; }
 
-/* ── Module icon rail ── */
-.crm-rail {
-  width: 52px; flex-shrink: 0; background: var(--mp-background-crm-nav, #e7edf5);
-  border-right: 1px solid var(--mp-border-default, #dcdfe4);
-  display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
-  padding: var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-6);
-  border-top-left-radius: 12px;
+.sidebar {
+  width: 52px;
+  background: var(--mp-background-neutral-subtle);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
+  padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
 }
-.crm-rail__group {
+.sidebar.is-expanded { width: 216px; }
+
+.sidebar-header { display: flex; align-items: center; height: 72px; flex-shrink: 0; }
+.sidebar-toggle {
+  width: var(--mp-sizes-9); height: var(--mp-sizes-9);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--mp-radii-md); cursor: pointer;
+  background: transparent; border: none;
+  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-1);
+  flex-shrink: 0; transition: background-color 100ms;
+}
+.sidebar-toggle:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
+.sidebar-toggle img {
+  width: var(--mp-sizes-6); height: var(--mp-sizes-6); display: block; flex-shrink: 0;
+  filter: brightness(0) opacity(0.6); transform: scaleX(-1);
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar.is-expanded .sidebar-toggle img { transform: scaleX(1); }
+
+.nav-group {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
   padding-bottom: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-1);
-  border-bottom: 1px solid var(--mp-border-default, #dcdfe4);
+  border-bottom: 1px solid var(--mp-border-default);
 }
-.crm-rail__group:last-child { border-bottom: none; }
-.crm-rail__item {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border-radius: var(--mp-radii-md, 6px); border: none; background: transparent;
-  color: var(--mp-text-default, #272b32); cursor: pointer; transition: background-color 100ms;
-}
-.crm-rail__item:hover { background: var(--mp-background-neutral-subtle-hovered, #ebf0f1); }
-.crm-rail__item.active { background: var(--mp-background-brand, #eef0fc); color: var(--mp-text-link, #4b61dc); }
-.crm-rail__item :deep(svg) { color: var(--mp-icon-nav, #758195); }
-.crm-rail__item.active :deep(svg) { color: var(--mp-text-link, #4b61dc); }
+.nav-group:last-child { border-bottom: none; }
 
-/* ── DEALS submenu panel ── */
-.crm-panel {
-  width: 212px; flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-left: 1px solid var(--mp-border-default, #dcdfe4);
-  display: flex; flex-direction: column; padding: var(--mp-spacing-3);
+.nav-item {
+  display: flex; align-items: center; justify-content: flex-start;
+  gap: var(--mp-spacing-2);
+  width: var(--mp-sizes-9); height: var(--mp-sizes-9);
+  border-radius: var(--mp-radii-md); border: none; background: transparent;
+  cursor: pointer; padding: var(--mp-spacing-2); overflow: hidden;
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), background-color 100ms;
 }
-.crm-panel__header {
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  letter-spacing: 0.6px; color: var(--mp-text-secondary, #656f80);
+.sidebar.is-expanded .nav-item { width: 100%; }
+.nav-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
+.nav-item:hover img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
+.nav-item:hover .nav-label { color: var(--mp-text-link, #165082); }
+
+.nav-item.active { background-color: var(--mp-background-neutral-pressed); }
+.nav-item.active .nav-icon-line { display: none; }
+.nav-item .nav-icon-fill { display: none; }
+.nav-item.active .nav-icon-fill {
+  display: block;
+  filter: brightness(0) saturate(100%) invert(35%) sepia(55%) saturate(700%) hue-rotate(120deg) brightness(90%) contrast(100%);
 }
-.crm-panel__list { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.crm-panel__item {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md, 6px);
-  border: none; background: transparent; cursor: pointer; text-align: left; width: 100%;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default, #272b32);
+.nav-item.active .nav-label { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
+
+.nav-item img { width: var(--mp-sizes-5); height: var(--mp-sizes-5); display: block; flex-shrink: 0; pointer-events: none; }
+
+.nav-label {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
+  opacity: 0; overflow: hidden; white-space: nowrap; pointer-events: none;
+  transition: opacity 140ms ease;
 }
-.crm-panel__item:hover { background: var(--mp-background-neutral-subtle-hovered, #ebf0f1); }
-.crm-panel__item.active { background: var(--mp-background-brand, #eef0fc); color: var(--mp-text-link, #4b61dc); font-weight: var(--mp-font-weights-semi-bold); }
-.crm-panel__count {
-  flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--mp-background-neutral-pressed, #ebf0f1); color: var(--mp-text-secondary, #656f80);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-}
+.sidebar.is-expanded .nav-label { opacity: 1; }
 </style>

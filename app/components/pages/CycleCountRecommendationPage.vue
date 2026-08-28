@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
-  toast, MpBadge,
+  toast, MpBadge, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -21,9 +21,14 @@ const { t } = useLocale()
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
-// ── Warehouses in scope — all active, non-default (no warehouse filter anymore) ──
+// ── Warehouses in scope — all active, non-default ────────────────────────────
 const wmsWarehouses = computed(() => warehouses.filter(w => w.status === 'active' && !w.isDefault))
 const anyRecEnabled = computed(() => wmsWarehouses.value.some(w => getWarehouseConfig(w.id).cycleCountRec))
+
+// ── Warehouse filter — single-select by design (MVP) ─────────────────────────
+// One warehouse is always selected; there is no "all". Shared with the tab badge
+// via the composable, so the two never disagree.
+const { options: recWarehouses, warehouseId: selectedWarehouseId, setWarehouse } = useRecommendationWarehouse()
 
 // ── Columns ─────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -79,6 +84,7 @@ const baseRows = computed<Recommendation[]>(() => {
   const results: Recommendation[] = []
 
   for (const wh of wmsWarehouses.value) {
+    if (wh.id !== selectedWarehouseId.value) continue
     const cfg = getWarehouseConfig(wh.id)
     if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
@@ -146,6 +152,10 @@ const {
 sortKey.value = 'score'
 sortDir.value = 'desc'
 
+watch(selectedWarehouseId, () => setPage(1))
+
+// The warehouse isn't part of "active filters" — one is always selected, so
+// clearing it isn't a thing; only the keyword search can be cleared.
 const hasActiveFilter = computed(() => !!search.value)
 function clearFilters() { search.value = '' }
 
@@ -153,8 +163,9 @@ function clearFilters() { search.value = '' }
 function createCycleCount(sel: Set<number>, deselectAll: () => void) {
   const rows = [...sel].map(i => paginated.value[i]).filter(Boolean) as Recommendation[]
   if (!rows.length) return
-  // A cycle count task is scoped to one warehouse — guard mixed selections instead
-  // of silently picking one (buttons stay clickable; show an error toast per convention).
+  // A cycle count task is scoped to one warehouse. The single-select warehouse
+  // filter already makes a mixed selection impossible — this stays as a backstop
+  // in case the list ever spans warehouses again.
   const warehouseIds = new Set(rows.map(r => r.warehouseId))
   if (warehouseIds.size > 1) {
     toast.notify({ variant: 'error', title: t('Select SKUs from a single warehouse to create a cycle count'), maxWidth: 'max-content' })
@@ -192,8 +203,20 @@ function createCountTaskForRow(row: Recommendation) {
     @sort-change="setSort"
     @clear-filters="clearFilters"
   >
-    <!-- ── Filter bar (search only) ── -->
+    <!-- ── Filter bar (warehouse + search) ── -->
     <template #filters>
+      <div class="filter-left">
+        <!-- Warehouse — single-select: the list always shows exactly one warehouse -->
+        <MpSelect
+          id="ccr-warehouse-select"
+          :model-value="selectedWarehouseId"
+          :placeholder="t('Warehouse')"
+          :class="css({ width: '220px' })"
+          @update:model-value="(v: string) => setWarehouse(v)"
+        >
+          <option v-for="wh in recWarehouses" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
+        </MpSelect>
+      </div>
       <div class="filter-right">
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -300,6 +323,7 @@ function createCountTaskForRow(row: Recommendation) {
 
 <style scoped>
 /* ── Filter bar (mirrored from StockAdjustmentsPage — these classes are scoped there) ── */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
+import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
+import { coworkAgents, COWORK_SKILLS, type CoworkAgent } from '~/data/cowork'
+import { buildKnowledgeContext, knowledgeCorpus } from '~/data/coworkKb'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
@@ -21,21 +24,38 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
+import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
+import { employees } from '~/data/employees'
+import { loadSnapshot, saveSnapshot } from '~/data/persist'
+import { useCoworkContext } from '~/composables/useCoworkContext'
 
 const { pageTitle, currentPageKey } = useNavigation()
+const { build: buildCoworkContext } = useCoworkContext()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
+
+// Mobile: multiple title-bar actions collapse into a single "Actions" dropdown.
+// The desktop buttons are reused verbatim (CSS relocates them into the panel), so
+// there's no duplicate markup; the toggle only appears when there are ≥2 actions.
+const titleActionsOpen = ref(false)
+watch(() => route.path, () => { titleActionsOpen.value = false })
+function onTitleActionsDocClick(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.page-actions')) titleActionsOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onTitleActionsDocClick))
+onUnmounted(() => document.removeEventListener('click', onTitleActionsDocClick))
 
 // Unsaved-changes confirmation modal — lives here (not in each form page) since
 // this is the one component that survives every virtual page swap.
@@ -48,7 +68,16 @@ useHead({
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Cowork':            defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork tasks':      defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork schedule':   defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
+  'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
+  'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
@@ -71,14 +100,15 @@ const pageRegistry: Record<string, Component> = {
   'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
+  'Purchase requests': defineAsyncComponent(() => import('~/components/pages/PurchaseRequestsPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
@@ -89,6 +119,30 @@ const pageRegistry: Record<string, Component> = {
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
+
+  // ── XPM (Mekari Expense) scenario pages ──────────────────────────────────────
+  // Registered globally like every other scenario's pages; the XPM sidebar is the
+  // only thing that links here. Keys prefixed 'Xpm …' where the plain slug would
+  // collide with an ERP/WMS route (Reports, Transactions, Trips, Claims, Cards,
+  // Products, Warehouses, Users, Vendors, Policy, Integration). 'Home' branches by
+  // scenario below; Accounts/Budgeting/My claims/My trips have collision-free slugs.
+  'Xpm transactions':   defineAsyncComponent(() => import('~/components/pages/XpmTransactionsPage.vue')),
+  // 'Accounts' is a full-bleed page (own sidemenu + title bar) — resolved via detailMatch below.
+  'Budgeting':          defineAsyncComponent(() => import('~/components/pages/XpmBudgetingPage.vue')),
+  'Xpm purchases':      defineAsyncComponent(() => import('~/components/pages/XpmPurchasesPage.vue')),
+  'Xpm trips':          defineAsyncComponent(() => import('~/components/pages/XpmTripsPage.vue')),
+  'Xpm claims':         defineAsyncComponent(() => import('~/components/pages/XpmClaimsPage.vue')),
+  'Xpm cards':          defineAsyncComponent(() => import('~/components/pages/XpmCardsPage.vue')),
+  'My claims':          defineAsyncComponent(() => import('~/components/pages/XpmMyClaimsPage.vue')),
+  // Undesigned in the source app → faithful scaffold stand-ins.
+  'Xpm reports':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm products':       defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm warehouses':     defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'My trips':           defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm users':          defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
+  'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -100,6 +154,13 @@ const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/Config
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
+const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
+const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
+const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
+const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
+const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
+const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
@@ -109,6 +170,8 @@ const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
+const PurchaseRequestsPage = asyncPage(() => import('~/components/pages/PurchaseRequestsPage.vue'))
+const PurchaseRequestsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseRequestsAwaitingApprovalPage.vue'))
 const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
@@ -149,6 +212,7 @@ const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDet
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
@@ -166,6 +230,7 @@ const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOut
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
+const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -178,6 +243,7 @@ const poDetailOrderId = ref<string | null>(null)
 const poFormOpen = ref(false)
 const poFormDuplicateId = ref<string | null>(null)
 const poFormRejectionBanner = ref<{ user: string; date: string; reason?: string } | null>(null)
+const poFormPrIds = ref<string[]>([])
 const showPurchaseOrderDetail = computed(() => currentPageKey.value === 'Purchase orders' && !!poDetailOrderId.value && !poFormOpen.value)
 const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchase orders' && poFormOpen.value)
 provide('openPurchaseOrder',  (id: string) => { poDetailOrderId.value = id })
@@ -201,16 +267,54 @@ function openNewPurchaseOrderForm() {
   poFormOpen.value = true
   poFormDuplicateId.value = null
   poFormRejectionBanner.value = null
+  poFormPrIds.value = []
 }
+// Create a PO from one or more purchase requests — jump to Purchase orders and
+// open the form pre-loaded with those requests (carried via ?fromPr so it
+// survives the page-key change that would otherwise reset the form state).
+provide('createPurchaseOrderFromRequests', (ids: string[]) => {
+  router.push({ path: '/purchase-orders', query: { fromPr: ids.join(',') } })
+})
 provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: string; reason?: string } | null) => {
   poFormOpen.value = true
   poFormDuplicateId.value = id
   poFormRejectionBanner.value = banner ?? null
 })
-provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
-watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
+provide('closePurchaseOrderForm', () => {
+  poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = []
+  if (route.query.fromPr) router.replace({ query: { ...route.query, fromPr: undefined } })
+})
+watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = [] })
+// Open the PO form pre-loaded from purchase requests when arriving with ?fromPr
+// (runs after the reset watch above, so it wins on the same navigation).
+watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr]) => {
+  if (key === 'Purchase orders' && fromPr) {
+    poFormPrIds.value = String(fromPr).split(',').filter(Boolean)
+    poFormOpen.value = true
+    poFormDuplicateId.value = null
+    poFormRejectionBanner.value = null
+  }
+}, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
+const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
+const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
+const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
+const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
+const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
+// CRM (Qontak) level-1 pages — all full-bleed, own their title bar/stage.
+// There's no CRM home: the bare /crm lands directly on Deals.
+const CRM_PAGES: Record<string, Component> = {
+  '':          CrmDealsPage,
+  'deals':     CrmDealsPage,
+  'orders':    CrmOrdersPage,
+  'tasks':     CrmTasksPage,
+  'customers': CrmCustomersPage,
+  'products':  CrmProductsPage,
+  'settings':  CrmSettingsPage,
+}
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
@@ -220,20 +324,63 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
+const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
 const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendingSetupPage.vue'))
 
+// ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
+const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
+const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
+const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
+const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
+const XpmClaimDetailPage = asyncPage(() => import('~/components/pages/XpmClaimDetailPage.vue'))
+const XpmAccountsPage = asyncPage(() => import('~/components/pages/XpmAccountsPage.vue'))
+const XpmTransactionDetailPage = asyncPage(() => import('~/components/pages/XpmTransactionDetailPage.vue'))
+// Tabbed XPM index pages read the active tab from ?tab= themselves, so every tab
+// maps to the SAME component (identical ref → stays mounted, re-filters on change).
+const XpmTransactionsTabPage = asyncPage(() => import('~/components/pages/XpmTransactionsPage.vue'))
+const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.vue'))
+const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
+const { activeScenario: xpmActiveScenario } = useScenario()
+const { trigger: triggerXpm } = useXpmActions()
+
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
-  // /crm → CRM (Qontak) Deals kanban — a full-bleed page that owns its own title
-  // bar + filter bar + board, so it renders outside the padded stage.
+  // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
+  // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
-    return { component: CrmDealsPage, id: '' }
+    const sub = segs[1] ?? ''
+    const id = segs[2]
+    // /crm/orders/:id and /crm/products/:id → CRM detail pages.
+    if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
+    if (id && sub === 'products') return { component: CrmProductDetailPage, id }
+    return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
+  }
+  // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
+  // /cowork-tasks/:id/edit → Cowork task edit form.
+  if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
+    if (segs[2] === 'edit') return { component: CoworkTaskEditPage, id: segs[1]! }
+    return { component: CoworkTaskDetailPage, id: segs[1]! }
+  }
+  // /cowork-skills/:id → Cowork skill detail (actions + definition).
+  if (segs.length >= 2 && segs[0] === 'cowork-skills') {
+    return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
+  if (segs[0] === 'cowork-knowledge') {
+    if (segs[1] === 'doc' && segs[2]) return { component: CoworkKbDocDetailPage, id: segs[2] }
+    return { component: CoworkKbPage, id: segs[1] ?? '' }
+  }
+  // /cowork-agents/new → create form; /cowork-agents/:id/edit → edit; /cowork-agents/:id → detail.
+  if (segs.length >= 2 && segs[0] === 'cowork-agents') {
+    if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
+    return { component: CoworkAgentDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -321,6 +468,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
   }
+  // /work-orders/:id/material-record/new → new consume/return record (full page)
+  if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
+    return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
@@ -330,6 +481,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
+  }
+  // /approval-workflows/new → create form; /:id/edit → edit form (reuses the same
+  // page). The bare index falls through to the registry (ApprovalWorkflowsPage list).
+  if (segs.length >= 2 && segs[0] === 'approval-workflows') {
+    if (segs[1] === 'new') return { component: CreateApprovalWorkflowPage, id: 'new' }
+    if (segs.length >= 3 && segs[2] === 'edit') return { component: CreateApprovalWorkflowPage, id: segs[1]! }
   }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
@@ -514,12 +671,43 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'warehouses' && !['new', 'import'].includes(segs[1])) {
     return { component: WarehouseDetailsPage, id: segs[1] }
   }
+  // /employee-directory/:id → employee profile; /new & /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'employee-directory') {
+    if (segs[1] === 'new') return { component: PlaceholderPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: EmployeeDetailsPage, id: segs[1]! }
+  }
+  // ── XPM (Mekari Expense) detail / form routes ────────────────────────────────
+  // /accounts → full-bleed wallets page; /accounts/txn/:id → a movement detail.
+  if (segs[0] === 'accounts') {
+    if (segs[1] === 'txn') return { component: XpmTransactionDetailPage, id: segs[2] ?? '' }
+    return { component: XpmAccountsPage, id: segs[1] ?? '' }
+  }
+  // /xpm-trips/:code → trip detail (owns its title bar).
+  if (segs.length >= 2 && segs[0] === 'xpm-trips') {
+    return { component: XpmTripDetailPage, id: segs[1]! }
+  }
+  // /xpm-cards/:id → card detail.
+  if (segs.length >= 2 && segs[0] === 'xpm-cards') {
+    return { component: XpmCardDetailPage, id: segs[1]! }
+  }
+  // /my-claims/create → request claim form; /my-claims/:id → claim detail;
+  // /my-claims/:id/edit → edit claim (reuses the form in edit mode).
+  if (segs.length >= 2 && segs[0] === 'my-claims') {
+    if (segs[1] === 'create') return { component: XpmClaimFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: XpmClaimFormPage, id: segs[1]! }
+    return { component: XpmClaimDetailPage, id: segs[1]! }
+  }
   return null
 })
 
-const currentComponent = computed<Component>(
-  () => pageRegistry[currentPageKey.value] ?? PlaceholderPage,
-)
+const currentComponent = computed<Component>(() => {
+  // Home ('/') is shared across scenarios by URL; render the Expense home when the
+  // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
+  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
+  return pageRegistry[currentPageKey.value] ?? PlaceholderPage
+})
 
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
@@ -534,10 +722,15 @@ const pageTabs: Record<string, string[]> = {
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
+  'Purchase requests': ['All requests', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
+  'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
+  'Xpm cards':         ['Virtual cards', 'Physical cards'],
+  'Xpm purchases':     ['Invoice', 'Order', 'Quote', 'Request'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: Pending +
@@ -549,6 +742,8 @@ const pageTabs: Record<string, string[]> = {
 // every sibling badge in the same section follows it too, since only one tab's
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
+// Cycle counts' Recommendations tab has its own single-warehouse selector.
+const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
@@ -595,6 +790,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
     return out
   }
+  if (currentPageKey.value === 'Purchase requests') {
+    const awaiting = awaitingPurchaseRequestCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
@@ -609,7 +808,8 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (openTasks) out['Count task'] = openTasks
     const awaiting = awaitingWmsCountApprovalCount()
     if (awaiting) out['Awaiting approval'] = awaiting
-    const recommendations = recommendationCount()
+    // Scoped to the one warehouse the Recommendations tab is showing.
+    const recommendations = recommendationCount(recommendationWarehouseId.value)
     if (recommendations) out['Recommendations'] = recommendations
     return out
   }
@@ -636,6 +836,10 @@ const currentTabs = computed<string[]>(() => {
     }
     // WMS doesn't deal in the ERP-side product approval workflow.
     if (currentPageKey.value === 'Product list' && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
+    // Transfers and stock adjustments go through a manager sign-off in ERP only —
+    // in WMS these pages are a single flat list, so the tab bar disappears entirely.
+    if ((currentPageKey.value === 'Warehouse transfers' || currentPageKey.value === 'Stock adjustments')
+      && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
     return true
   })
 })
@@ -720,6 +924,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
+  // Awaiting approval reuses the Expenses approval-queue table (Approve button +
+  // task/comment icons), context-adapted to purchase requests.
+  'Purchase requests': {
+    'All requests': PurchaseRequestsPage,
+    'Awaiting approval': PurchaseRequestsAwaitingApprovalPage,
+  },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
@@ -738,6 +948,17 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
+  'Xpm transactions': {
+    'All': XpmTransactionsTabPage, 'Card': XpmTransactionsTabPage, 'Reimbursement': XpmTransactionsTabPage,
+    'Cash advance': XpmTransactionsTabPage, 'Bill': XpmTransactionsTabPage, 'Travel': XpmTransactionsTabPage,
+  },
+  'Xpm cards': {
+    'Virtual cards': XpmCardsTabPage, 'Physical cards': XpmCardsTabPage,
+  },
+  'Xpm purchases': {
+    'Invoice': XpmPurchasesTabPage, 'Order': XpmPurchasesTabPage, 'Quote': XpmPurchasesTabPage, 'Request': XpmPurchasesTabPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -763,9 +984,17 @@ const showNewWarehouseTransfer = computed(() =>
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
 function newSalesInvoice() { router.push('/sales-invoices/new') }
+function newEmployee() { router.push('/employee-directory/new') }
+// Import dropdown: add new employees from a file, or bulk-update existing records.
+function importEmployees(mode: 'add' | 'update') {
+  infoToast(`${mode === 'update' ? 'Update employee data' : 'Import employees'} — coming soon`)
+}
 
 // ── Airene panel open/close ───────────────────────────────────────────────
-const aireneOpen = ref(false)
+// State lives in the module-level bridge singleton so the panel stays open and
+// the conversation is preserved when the user navigates between modules.
+const aireneBridge = useAireneBridge()
+const aireneOpen = aireneBridge.isOpen
 function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
@@ -827,11 +1056,16 @@ interface ChatSession {
   title: string
   messages: ChatMessage[]
   createdAt: number   // timestamp ms
+  module?: string     // which ERP module the chat started in (for the history label)
 }
+// The chat currently shown; upserted into the persisted history on every reply so
+// it can be reopened from any module. null = a brand-new, not-yet-saved chat.
+// Hoisted to the bridge singleton so it survives navigation.
+const activeSessionId = aireneBridge.activeSessionId
 
-// Dummy historical sessions (relative to real Date.now())
+// Seed historical sessions (relative to real Date.now())
 const DAY = 86_400_000
-const chatSessions = ref<ChatSession[]>([
+const CHAT_SEED: ChatSession[] = [
   {
     id: 'h1',
     title: 'Draft a WhatsApp reminder for Daily Grind',
@@ -875,10 +1109,17 @@ const chatSessions = ref<ChatSession[]>([
     ],
     createdAt: Date.now() - DAY * 21,
   },
-])
+]
+// Persisted chat history (mini-DB) — survives reload/new-chat.
+const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
+function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
+// Materialise the seed history to the mini-DB on first load, so other surfaces
+// (e.g. the header search "Recent chats") can read it too.
+if (!loadSnapshot<ChatSession>('airene-chats-v1')) persistChats()
 
 // ── Active session ────────────────────────────────────────────────────────
-const messages = ref<ChatMessage[]>([])
+// Hoisted to the bridge singleton so the conversation survives navigation.
+const messages = aireneBridge.messages
 const chatBodyEl = ref<HTMLElement | null>(null)
 const inputText = ref('')
 const isTyping = ref(false)
@@ -903,6 +1144,9 @@ function toggleHistory(e: MouseEvent) {
 function onOutsideClick(e: MouseEvent) {
   if (!historyWrapperEl.value?.contains(e.target as Node)) {
     historyOpen.value = false
+  }
+  if (!kebabWrapperEl.value?.contains(e.target as Node)) {
+    kebabOpen.value = false
   }
 }
 
@@ -1018,29 +1262,78 @@ const groupedHistory = computed(() => {
   return { yesterday, thisWeek, older }
 })
 
-function startNewChat() {
-  // save current session to history if it has messages
-  if (messages.value.length > 0) {
-    const first = messages.value.find(m => m.role === 'user')
-    const title = first
-      ? (first.text.length > 32 ? first.text.slice(0, 32) + '…' : first.text)
-      : 'Chat'
+// Upsert the currently-shown conversation into the persisted history, so it's
+// available from any module without an explicit "save" step.
+function persistActiveSession() {
+  if (messages.value.length === 0) return
+  const first = messages.value.find(m => m.role === 'user')
+  const title = first
+    ? (first.text.length > 32 ? first.text.slice(0, 32) + '…' : first.text)
+    : 'Chat'
+  const existing = activeSessionId.value
+    ? chatSessions.value.find(s => s.id === activeSessionId.value)
+    : null
+  if (existing) {
+    existing.title = title
+    existing.messages = [...messages.value]
+  } else {
+    const id = Date.now().toString()
+    activeSessionId.value = id
     chatSessions.value.unshift({
-      id: Date.now().toString(),
-      title,
-      messages: [...messages.value],
-      createdAt: Date.now(),
+      id, title, messages: [...messages.value], createdAt: Date.now(),
+      module: chatContext.value ? undefined : moduleInfo.value.label,
     })
   }
+  persistChats()
+}
+
+function startNewChat() {
+  // Current chat is already persisted (upserted on each reply); just reset the view.
   messages.value = []
+  activeSessionId.value = null
   chatContext.value = ''
+  aireneGround.value = ''
+  contextSuggestions.value = [...DEFAULT_CONTEXT_SUGGESTIONS]
   historyOpen.value = false
+  kebabOpen.value = false
+  // A fresh chat is general (any agent), back to the default assistant.
+  restrictAgents.value = []
+  activeAgentId.value = 'airene'
 }
 
 function loadSession(session: ChatSession) {
   messages.value = [...session.messages]
+  activeSessionId.value = session.id
   chatContext.value = ''
+  aireneGround.value = ''
   historyOpen.value = false
+}
+
+// Kebab menu: clear the current conversation, or delete it from history.
+const kebabOpen = ref(false)
+const kebabWrapperEl = ref<HTMLElement | null>(null)
+function removeActiveSession() {
+  if (!activeSessionId.value) return
+  const i = chatSessions.value.findIndex(s => s.id === activeSessionId.value)
+  if (i >= 0) { chatSessions.value.splice(i, 1); persistChats() }
+}
+function clearChat() {
+  removeActiveSession()
+  messages.value = []
+  activeSessionId.value = null
+  chatContext.value = ''
+  aireneGround.value = ''
+  kebabOpen.value = false
+  infoToast('Chat cleared')
+}
+function deleteChat() {
+  removeActiveSession()
+  messages.value = []
+  activeSessionId.value = null
+  chatContext.value = ''
+  aireneGround.value = ''
+  kebabOpen.value = false
+  toast.notify({ variant: 'success', title: 'Chat deleted' })
 }
 
 // Dummy AI response for the WhatsApp draft scenario
@@ -1052,8 +1345,151 @@ function getAiResponse(userMsg: string): string {
   return `I've reviewed the invoice details. Here's what I found:\n\nInvoice #40030 is currently overdue by 2 days (due 01/05/2025). The outstanding balance is Rp4,500,000.\n\nWould you like me to send a payment reminder or draft a follow-up message?`
 }
 
+// ── Module-aware greeting + suggestions (general chat, not a task) ────────────
+// The Airene drawer lives on every ERP page; when opened without a task context
+// its greeting, preset prompts and grounding adapt to the module you're in.
+interface ModuleChat { label: string; greeting: string; suggestions: string[]; ground: string[] }
+const MODULE_CHAT: Record<string, ModuleChat> = {
+  HR: { label: 'HR', greeting: 'I can help with employees, attendance, payroll and contracts.',
+    suggestions: ['Who was late this week and why?', 'Which contracts expire in the next 60 days?', 'Summarise headcount by department', 'Which employees are resigning?'], ground: ['hr'] },
+  Finance: { label: 'Finance', greeting: 'I can help with invoices, bills, cash flow and collections.',
+    suggestions: ['Which customers are overdue and why?', 'How much am I owed right now?', 'What needs clearing before month-end close?', 'Draft a payment reminder for the biggest overdue'], ground: ['finance', 'crm'] },
+  CRM: { label: 'CRM', greeting: 'I can help with your pipeline, customers and deals.',
+    suggestions: ['Which deals should I prioritise?', 'Which deals are stalled?', 'Who are my top customers?', 'Draft a follow-up for a stalled deal'], ground: ['crm', 'finance'] },
+  WMS: { label: 'Warehouse', greeting: 'I can help with stock, warehouses and fulfilment.',
+    suggestions: ['Which SKUs are below reorder point?', "What's out of stock?", 'What outbound orders are at risk today?', 'Plan today’s cycle counts'], ground: ['wms'] },
+  Production: { label: 'Production', greeting: 'I can help with work orders, BOMs and production.',
+    suggestions: ['Which work orders are at risk?', 'Check components vs BOM for open work orders', 'What is blocking production today?', 'Summarise open work orders'], ground: ['production', 'wms'] },
+  Sales: { label: 'Sales', greeting: 'I can help with orders, quotes and deliveries.',
+    suggestions: ['Which sales orders are ready to fulfil?', 'Which orders are blocked on stock?', 'Summarise open sales orders', 'How much am I owed right now?'], ground: ['crm', 'wms', 'finance'] },
+  General: { label: 'Mekari ERP', greeting: 'I can help across HR, sales, CRM, warehouse, finance and production.',
+    suggestions: ['How much am I owed right now?', 'Which customers are overdue and why?', 'Which SKUs are below reorder point?', 'Who was late this week?'], ground: ['hr', 'crm', 'wms', 'finance', 'production'] },
+}
+function moduleKeyFromPath(path: string): keyof typeof MODULE_CHAT {
+  const p = path.toLowerCase()
+  if (/(^\/hr|employee|attendance|payroll|leave|recruit)/.test(p)) return 'HR'
+  if (/(crm|deal|pipeline|prospect|contact)/.test(p)) return 'CRM'
+  if (/(work-order|bill-of-material|production|bom)/.test(p)) return 'Production'
+  if (/(sales-order|sales-quote|sales-deliver|quote)/.test(p)) return 'Sales'
+  if (/(warehouse|storage|receiv|picking|packing|deliver|stock|inbound|outbound|cycle|put-away|transfer|courier|shipment|product)/.test(p)) return 'WMS'
+  if (/(invoice|bill|cash|expense|bank|purchase|payment|journal|finance|jurnal|tax)/.test(p)) return 'Finance'
+  return 'General'
+}
+const moduleInfo = computed<ModuleChat>(() => MODULE_CHAT[moduleKeyFromPath(route.path)] ?? MODULE_CHAT.General!)
+
 // Context chip — set when entry point is from the AI popover
 const chatContext = ref('')
+// Grounding context fed to the model (e.g. a Cowork task result). Not shown.
+const aireneGround = ref('')
+
+// ── Agent switcher ────────────────────────────────────────────────────────────
+// You chat WITH an agent. In a general ERP-module chat you can pick any agent; in
+// a Cowork-task chat the choice is limited to the agent(s) that own the task (one
+// agent → locked, several → switchable). The model then answers in-character and
+// declines anything outside that agent's area/skills.
+const activeAgentId = aireneBridge.activeAgentId
+const restrictAgents = aireneBridge.restrictAgents
+const availableAgents = computed<CoworkAgent[]>(() =>
+  restrictAgents.value.length
+    ? coworkAgents.filter((a) => restrictAgents.value.includes(a.id))
+    : coworkAgents)
+const activeAgent = computed<CoworkAgent | undefined>(() =>
+  availableAgents.value.find((a) => a.id === activeAgentId.value)
+  ?? availableAgents.value[0]
+  ?? coworkAgents.find((a) => a.id === 'airene'))
+const canSwitchAgent = computed(() => availableAgents.value.length > 1)
+const agentMenuOpen = ref(false)
+function pickAgent(a: CoworkAgent) { activeAgentId.value = a.id; agentMenuOpen.value = false }
+// Payload sent to the chat API so the model role-plays the agent and gates answers.
+function activeAgentPayload() {
+  const a = activeAgent.value
+  if (!a) return undefined
+  const skills = (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean)
+  return { name: a.name, role: a.role, module: a.module, persona: a.instruction || a.persona, skills }
+}
+// KB grounding for the active agent: relevance-injected snippets (ranked against
+// the user's message) plus a compact corpus so the model can also call
+// search_knowledge. Undefined when the agent has no knowledge attached.
+function activeKnowledgePayload(query: string) {
+  const att = activeAgent.value?.knowledge
+  if (!att?.length) return undefined
+  const snippets = buildKnowledgeContext(att, query)
+  const corpus = knowledgeCorpus(att)
+  if (!corpus.length) return undefined
+  return { snippets, corpus }
+}
+// When the chat is opened about a specific task result, the empty-state greeting
+// and suggestions become contextual to that result instead of the generic ones.
+const DEFAULT_CONTEXT_SUGGESTIONS = [
+  'What should I do first?',
+  'Draft a follow-up message I can send',
+  'Summarise this in 3 bullet points',
+  'What are the risks or blockers here?',
+]
+// Populated per opened task via the bridge (falls back to the generic set).
+const contextSuggestions = ref<string[]>([...DEFAULT_CONTEXT_SUGGESTIONS])
+
+// ── Rich chat rendering: light markdown + employee mention chips ──────────────
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+function escapeReg(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+function initialsOf(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+}
+// Minimal inline markdown → HTML (bold, italic, line breaks, bullets).
+function mdToHtml(text: string): string {
+  const lines = escapeHtml(text).split('\n')
+  const out: string[] = []
+  let inList = false
+  for (let raw of lines) {
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(raw)
+    if (heading) {
+      if (inList) { out.push('</ul>'); inList = false }
+      out.push(`<p class="chat-md-h">${heading[1]}</p>`)
+      continue
+    }
+    const bullet = /^\s*[-*•]\s+(.*)$/.exec(raw)
+    if (bullet) {
+      if (!inList) { out.push('<ul class="chat-md-ul">'); inList = true }
+      out.push(`<li>${bullet[1]}</li>`)
+      continue
+    }
+    if (inList) { out.push('</ul>'); inList = false }
+    out.push(raw.length ? `<p class="chat-md-p">${raw}</p>` : '')
+  }
+  if (inList) out.push('</ul>')
+  return out.join('')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*(?!\*)(.+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+// Wrap any known employee full name in an avatar chip with a hover coachmark.
+function withEmployeeChips(html: string): string {
+  const names = employees.map((e) => e.fullName).filter(Boolean).sort((a, b) => b.length - a.length)
+  if (!names.length) return html
+  const re = new RegExp('(' + names.map(escapeReg).join('|') + ')', 'g')
+  return html.replace(re, (m) => {
+    const e = employees.find((x) => x.fullName === m)
+    if (!e) return m
+    const ini = initialsOf(e.fullName)
+    const av = e.photo
+      ? `<span class="emp-chip-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-chip-av emp-chip-av--ini">${ini}</span>`
+    const cav = e.photo
+      ? `<span class="emp-coach-av" style="background-image:url('${e.photo}')"></span>`
+      : `<span class="emp-coach-av emp-chip-av--ini">${ini}</span>`
+    return `<span class="emp-chip" tabindex="0">${av}<span class="emp-chip-name">${m}</span>` +
+      `<span class="emp-coach">${cav}<span class="emp-coach-body">` +
+      `<span class="emp-coach-name">${e.fullName}</span>` +
+      `<span class="emp-coach-meta">${e.employeeId ?? ''}</span>` +
+      `<span class="emp-coach-meta">${[e.jobPosition, e.department].filter(Boolean).join(' · ')}</span>` +
+      `</span></span></span>`
+  })
+}
+function renderMessage(text: string): string {
+  return withEmployeeChips(mdToHtml(text))
+}
 
 async function sendMessage(text: string, context?: string) {
   const trimmed = text.trim()
@@ -1069,19 +1505,48 @@ async function sendMessage(text: string, context?: string) {
   messages.value.push({ role: 'user', text: trimmed })
   inputText.value = ''
 
-  // Scroll to bottom
   await nextTick()
   scrollChatToBottom()
 
-  // Simulate AI typing delay
+  // Real Gemini reply. Grounded on the task result if the chat was opened about
+  // one; otherwise on a snapshot of the module the user is currently in.
   isTyping.value = true
-  await new Promise(r => setTimeout(r, 1200))
+  let reply = ''
+  try {
+    const res = await $fetch<{ reply: string }>('/api/cowork/chat', {
+      method: 'POST',
+      body: {
+        messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
+        context: aireneGround.value || buildModuleGround(),
+        agent: activeAgentPayload(),
+        roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
+        knowledge: activeKnowledgePayload(trimmed),
+      },
+    })
+    reply = res.reply
+  } catch {
+    reply = 'Sorry — I hit an error reaching the model. Please try again.'
+  }
   isTyping.value = false
-
-  messages.value.push({ role: 'assistant', text: getAiResponse(trimmed) })
+  messages.value.push({ role: 'assistant', text: reply })
+  persistActiveSession()
 
   await nextTick()
   scrollChatToBottom()
+}
+
+// Grounding snapshot for a general (non-task) chat — just the modules relevant to
+// the page the user opened the drawer from, so answers stay accurate.
+function buildModuleGround(): string {
+  try {
+    const snap = buildCoworkContext() as Record<string, any>
+    const info = moduleInfo.value
+    const slice: Record<string, any> = {}
+    for (const k of info.ground) if (snap[k]) slice[k] = snap[k]
+    return `You are Airene helping the user inside the ${info.label} area of the Mekari ERP. `
+      + `Today is ${snap.today}. Answer from this real ERP data; if asked about something outside it, say so briefly.\n`
+      + JSON.stringify(slice)
+  } catch { return '' }
 }
 
 function scrollChatToBottom() {
@@ -1094,13 +1559,34 @@ function scrollChatToBottom() {
 provide('sendAireneMessage', sendMessage)
 
 // Bridge: let components above the page (e.g. the header search) drive the panel.
-const aireneBridge = useAireneBridge()
+// (aireneBridge is declared near the top, alongside the hoisted panel state.)
 watch(aireneBridge.toggleSignal, () => toggleAirene())
-watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+watch(aireneBridge.sendSignal, () => {
+  if (!aireneBridge.pendingText.value) return
+  if (aireneBridge.pendingFresh.value) startNewChat()
+  sendMessage(aireneBridge.pendingText.value)
+})
+// Open a saved chat session (e.g. a "recent chat" chosen from the header search).
+watch(aireneBridge.openSessionSignal, () => {
+  const s = chatSessions.value.find(x => x.id === aireneBridge.pendingSessionId.value)
+  if (s) loadSession(s)
+  else startNewChat()
+  aireneOpen.value = true
+})
+// Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
+watch(aireneBridge.openContextSignal, () => {
+  startNewChat()
+  aireneGround.value = aireneBridge.pendingGround.value
+  chatContext.value = aireneBridge.pendingLabel.value
+  contextSuggestions.value = aireneBridge.pendingSuggestions.value?.length
+    ? [...aireneBridge.pendingSuggestions.value]
+    : [...DEFAULT_CONTEXT_SUGGESTIONS]
+  aireneOpen.value = true
+})
 
 // ── Resize panel ──────────────────────────────────────────────────────────
-const PANEL_MIN = 320
-const PANEL_MAX = 640
+const PANEL_MIN = 384
+const PANEL_MAX = 680
 const panelWidth = ref(PANEL_MIN)
 
 function startResize(e: MouseEvent) {
@@ -1138,12 +1624,18 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <!-- Purchase Orders detail/form overlay — own layout, bypasses the title bar below -->
-      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" />
+      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" :purchase-request-ids="poFormPrIds" />
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
 
       <template v-else>
       <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
+        <div class="page-actions">
+          <button class="page-actions-toggle btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button" @click.stop="titleActionsOpen = !titleActionsOpen">
+            {{ t('Actions') }}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
             {{ t('Import') }}
@@ -1158,6 +1650,62 @@ function startResize(e: MouseEvent) {
             New sales invoice
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Cowork tasks'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New task
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork agents'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cowork-agents/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New agent
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Schedule a task
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork connections'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-connections', query: { add: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Custom connection
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork skills'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-skills', query: { new: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Create skill
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
+          <div class="page-import-btn">
+          <MpPopover id="emp-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="importEmployees('add')">{{ t('Import employees') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="importEmployees('update')">{{ t('Update employee data') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          </div>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newEmployee">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New employee') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Sales orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
@@ -1167,6 +1715,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            {{ t('Import') }}
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New purchase request') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Sales quotes'" class="page-title-actions">
@@ -1233,6 +1792,14 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('New warehouse') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/approval-workflows/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New approval workflow') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
@@ -1436,28 +2003,6 @@ function startResize(e: MouseEvent) {
             {{ t('New count task') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
-          <div ref="stockActionsWrapEl" class="import-wrap">
-            <button
-              class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after"
-              @click.stop="stockActionsOpen = !stockActionsOpen"
-            >
-              Actions
-              <svg
-                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                class="import-chevron" :class="{ 'import-chevron--open': stockActionsOpen }"
-              >
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <div v-if="stockActionsOpen" class="import-dropdown" @click.stop>
-              <div class="import-group">
-                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'count', from: 'stock-counts' } }); stockActionsOpen = false">Stock count</button>
-                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'in-out', from: 'stock-counts' } }); stockActionsOpen = false">Stock in/out</button>
-              </div>
-            </div>
-          </div>
-        </div>
         <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />
@@ -1495,11 +2040,11 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase orders'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="infoToast('Import purchase orders — coming soon')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 15V3M12 3L8 7M12 3l4 4M4 15v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
+            Import
           </button>
           <button class="btn-enterprise btn-enterprise--primary" @click="openNewPurchaseOrderForm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1507,6 +2052,43 @@ function startResize(e: MouseEvent) {
             </svg>
             New purchase order
           </button>
+        </div>
+        <!-- ── XPM (Mekari Expense) title-bar actions ── -->
+        <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('setBudget')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Set budget
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm purchases'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createPurchase')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create purchase
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm trips'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('travelPolicy')">Manage travel policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary" @click="triggerXpm('claimPolicy')">Manage claim policy</button>
+        </div>
+        <div v-else-if="currentPageKey === 'Xpm cards'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerXpm('createCard')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Create card
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'My claims'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="triggerXpm('myLimits')">
+            <MpIcon name="protection" size="md" />
+            My limits
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/my-claims/create')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            Request claim
+          </button>
+        </div>
+          </div>
         </div>
       </div>
 
@@ -1555,7 +2137,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1642,18 +2224,24 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
             <div class="airene-header-icons">
-              <!-- Chat bubble icon -->
-              <button class="airene-icon-btn" aria-label="Chat history">
+              <!-- New chat -->
+              <button class="airene-icon-btn" aria-label="New chat" title="New chat" @click="startNewChat">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path fill-rule="evenodd" clip-rule="evenodd" d="M5.86533 3.46533C5.42991 3.90075 5.15 4.55044 5.15 5.4V6.85H10.152C11.1384 6.85 12.0188 7.18209 12.6543 7.81768C13.2899 8.45327 13.622 9.33358 13.622 10.32V13.576C13.622 13.7282 13.6145 13.881 13.5977 14.0329L13.85 14.1994V12.88C13.85 12.4658 14.1858 12.13 14.6 12.13C15.4492 12.13 16.1012 11.852 16.5301 11.4172L16.5372 11.4101L16.5372 11.4101C16.972 10.9812 17.25 10.3292 17.25 9.47998V5.4C17.25 4.55044 16.9701 3.90075 16.5347 3.46533C16.0993 3.02991 15.4496 2.75 14.6 2.75H7.8C6.95044 2.75 6.30075 3.02991 5.86533 3.46533ZM13.1053 15.5051L13.1275 15.5197C14.0847 16.1642 15.35 15.4577 15.35 14.328V13.5747C16.2263 13.442 17.0034 13.0716 17.5943 12.4743C18.3573 11.7195 18.75 10.6609 18.75 9.47998V5.4C18.75 4.20956 18.3499 3.15925 17.5953 2.40467C16.8407 1.65009 15.7904 1.25 14.6 1.25H7.8C6.60956 1.25 5.55925 1.65009 4.80467 2.40467C4.05009 3.15925 3.65 4.20956 3.65 5.4V6.9941C3.03903 7.1655 2.50536 7.48857 2.0941 7.95C1.53737 8.57466 1.25 9.40203 1.25 10.32V13.576C1.25 14.5633 1.58266 15.4433 2.22167 16.0823C2.68831 16.549 3.29034 16.8518 3.97 16.9784V17.456C3.97 18.4665 5.10358 19.1227 5.97955 18.5257L8.20277 17.046H10.152C11.4362 17.046 12.5087 16.4804 13.1053 15.5051ZM4.464 8.36331C3.9064 8.41663 3.4912 8.6369 3.2139 8.94803C2.93463 9.26138 2.75 9.718 2.75 10.32V13.576C2.75 14.2206 2.96134 14.7007 3.28233 15.0217C3.59416 15.3335 4.0735 15.546 4.71999 15.546C5.13421 15.546 5.46999 15.8818 5.46999 16.296V17.063L7.56045 15.6716C7.68355 15.5897 7.82813 15.546 7.976 15.546H10.152C11.1869 15.546 11.8368 15.0112 12.0407 14.2009C12.0429 14.1922 12.0452 14.1835 12.0477 14.1749C12.0958 14.0095 12.122 13.8103 12.122 13.576V10.32C12.122 9.67445 11.9101 9.19476 11.5937 8.87834C11.2772 8.56192 10.7976 8.35 10.152 8.35H4.71999C4.6427 8.35 4.56798 8.35532 4.464 8.36331Z" fill="currentColor"/>
                 </svg>
               </button>
               <!-- Kebab / more -->
-              <button class="airene-icon-btn" aria-label="More options">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C11.1 6 12 5.1 12 4C12 2.9 11.1 2 10 2C8.9 2 8 2.9 8 4C8 5.1 8.9 6 10 6ZM10 8C8.9 8 8 8.9 8 10C8 11.1 8.9 12 10 12C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8ZM8 16C8 14.9 8.9 14 10 14C11.1 14 12 14.9 12 16C12 17.1 11.1 18 10 18C8.9 18 8 17.1 8 16Z" fill="currentColor"/>
-                </svg>
-              </button>
+              <div ref="kebabWrapperEl" class="airene-kebab-wrapper">
+                <button class="airene-icon-btn" aria-label="More options" @click.stop="kebabOpen = !kebabOpen">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C11.1 6 12 5.1 12 4C12 2.9 11.1 2 10 2C8.9 2 8 2.9 8 4C8 5.1 8.9 6 10 6ZM10 8C8.9 8 8 8.9 8 10C8 11.1 8.9 12 10 12C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8ZM8 16C8 14.9 8.9 14 10 14C11.1 14 12 14.9 12 16C12 17.1 11.1 18 10 18C8.9 18 8 17.1 8 16Z" fill="currentColor"/>
+                  </svg>
+                </button>
+                <div v-if="kebabOpen" class="airene-kebab-menu" @click.stop>
+                  <button class="airene-kebab-item" @click="clearChat">Clear chat</button>
+                  <button class="airene-kebab-item airene-kebab-item--danger" @click="deleteChat">Delete chat</button>
+                </div>
+              </div>
               <!-- Hide / close panel -->
               <button class="airene-icon-btn" aria-label="Close panel" @click="aireneOpen = false">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1671,7 +2259,7 @@ function startResize(e: MouseEvent) {
               <div class="airene-gem-icon" aria-hidden="true">
                 <!-- ref on wrapper so eyes rotate WITH the body -->
                 <div ref="mascotImgEl" class="mascot-wrapper">
-                  <img src="~/assets/airene-mascot.png" width="60" height="63" alt="" class="airene-mascot-img" />
+                  <img src="~/assets/airene-mascot-v2.png" width="60" height="63" alt="" class="airene-mascot-img" />
                   <!-- Eyes drawn on the star body; they tilt with it -->
                   <div class="mascot-eye mascot-eye--left">
                     <div ref="pupilLeftEl" class="mascot-pupil" />
@@ -1682,9 +2270,55 @@ function startResize(e: MouseEvent) {
                 </div>
               </div>
               <p class="airene-greeting-title">Hi, I'm here.</p>
-              <p class="airene-greeting-msg">I can help you manage invoices, payments, and approvals.</p>
 
-              <div class="airene-suggestion-list">
+              <!-- Agent switcher: which agent you're chatting with -->
+              <div class="airene-agent-wrap">
+                <button v-if="canSwitchAgent" type="button" class="airene-agent-btn" @click="agentMenuOpen = !agentMenuOpen">
+                  <img :src="activeAgent!.avatar" :alt="activeAgent!.name" class="airene-agent-av">
+                  <span class="airene-agent-name">{{ activeAgent!.name }}</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span v-else class="airene-agent-static">
+                  <img :src="activeAgent!.avatar" :alt="activeAgent!.name" class="airene-agent-av">
+                  <span class="airene-agent-name">{{ activeAgent!.name }}</span>
+                </span>
+
+                <template v-if="agentMenuOpen">
+                  <div class="airene-agent-backdrop" @click="agentMenuOpen = false" />
+                  <div class="airene-agent-menu">
+                    <button v-for="a in availableAgents" :key="a.id" type="button" class="airene-agent-item" :class="{ 'is-active': a.id === activeAgent!.id }" @click="pickAgent(a)">
+                      <img :src="a.avatar" :alt="a.name" class="airene-agent-av">
+                      <span class="airene-agent-meta">
+                        <span class="airene-agent-name">{{ a.name }}</span>
+                        <span class="airene-agent-role">{{ a.role }}</span>
+                      </span>
+                      <MpIcon v-if="a.id === activeAgent!.id" name="check" size="sm" class="airene-agent-check" />
+                    </button>
+                  </div>
+                </template>
+              </div>
+
+              <p v-if="chatContext" class="airene-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
+              <p v-else class="airene-greeting-msg">{{ moduleInfo.greeting }}</p>
+
+              <!-- Contextual suggestions (chat opened about a task result) -->
+              <div v-if="chatContext" class="airene-suggestion-list">
+                <button v-for="s in contextSuggestions" :key="s" class="airene-suggestion-item" @click="sendMessage(s)">
+                  <MpIcon name="airene-brand" size="sm" class="airene-sug-icon" />
+                  {{ s }}
+                </button>
+              </div>
+
+              <!-- Module-aware suggestions (general chat) -->
+              <div v-else class="airene-suggestion-list">
+                <button v-for="s in moduleInfo.suggestions" :key="s" class="airene-suggestion-item" @click="sendMessage(s)">
+                  <MpIcon name="airene-brand" size="sm" class="airene-sug-icon" />
+                  {{ s }}
+                </button>
+              </div>
+
+              <!-- (legacy hardcoded finance suggestions kept out of render) -->
+              <div v-if="false" class="airene-suggestion-list">
                 <button class="airene-suggestion-item" @click="sendMessage('Import sales invoices')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M8.45 15H2.05C1.60818 15 1.25 14.6418 1.25 14.2V7.8C1.25 7.35818 1.60818 7 2.05 7H8.45C8.89182 7 9.25 7.35818 9.25 7.8V14.2C9.25 14.6418 8.89182 15 8.45 15ZM4.6168 10.9933L3.03984 13.4H4.18184L5.11992 11.7129C5.17422 11.6216 5.20938 11.549 5.2252 11.4954H5.23868C5.27266 11.5825 5.30898 11.6573 5.34746 11.7197L6.2582 13.4H7.39336L5.87422 10.98L7.35586 8.6H6.28886L5.4461 10.1164C5.38946 10.2257 5.33516 10.3384 5.28282 10.4544H5.27266C5.2455 10.3831 5.1957 10.2748 5.12324 10.1297L4.33476 8.6H3.17246L4.6168 10.9933Z" fill="#1FB088"/>
@@ -1719,7 +2353,9 @@ function startResize(e: MouseEvent) {
                 <!-- Assistant avatar -->
                 <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <span class="chat-bubble__text">{{ msg.text }}</span>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                  <span v-else class="chat-bubble__text">{{ msg.text }}</span>
                 </div>
               </div>
               <!-- Typing indicator -->
@@ -1769,13 +2405,17 @@ function startResize(e: MouseEvent) {
                 </button>
                 <!-- Right side: model label + send button -->
                 <div class="airene-input-right">
-                  <!-- Sonnet 4.6 textlink -->
+                  <!-- Gemini model label (chat is Gemini-backed) -->
                   <div class="airene-model-label">
-                    <!-- Claude logo -->
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 1.5a1.5 1.5 0 0 1 1.5 1.5v3.879l2.742-2.742a1.5 1.5 0 1 1 2.121 2.121L15.621 9H19.5a1.5 1.5 0 0 1 0 3h-3.879l2.742 2.742a1.5 1.5 0 1 1-2.121 2.121L13.5 14.121V18a1.5 1.5 0 0 1-3 0v-3.879l-2.742 2.742a1.5 1.5 0 1 1-2.121-2.121L8.379 12H4.5a1.5 1.5 0 0 1 0-3h3.879L5.637 6.258a1.5 1.5 0 0 1 2.121-2.121L10.5 6.879V3A1.5 1.5 0 0 1 12 1.5z" fill="#D97757"/>
+                      <defs>
+                        <linearGradient id="airene-gemini" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#1BA1E3"/><stop offset="0.3" stop-color="#5489D6"/><stop offset="0.55" stop-color="#9B72CB"/><stop offset="0.8" stop-color="#D96570"/><stop offset="1" stop-color="#F49C46"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M12 2c.3 4.9 4.8 9.4 9.7 9.7v.6C16.8 12.6 12.3 17.1 12 22h-.6c-.3-4.9-4.8-9.4-9.7-9.7v-.6C6.6 11.4 11.1 6.9 11.4 2H12z" fill="url(#airene-gemini)"/>
                     </svg>
-                    Sonnet 4.6
+                    Gemini Flash
                   </div>
                   <!-- Send button -->
                   <button class="airene-send-btn" aria-label="Send" @click="sendMessage(inputText)">
@@ -1844,9 +2484,43 @@ function startResize(e: MouseEvent) {
   gap: var(--mp-spacing-3);
 }
 
+/* Title-bar actions wrapper — desktop is transparent (actions lay out inline);
+   mobile collapses ≥2 actions into a single "Actions" dropdown. */
+.page-actions { display: flex; align-items: center; position: relative; }
+.page-actions-toggle { display: none; }
+.page-actions-inner { display: contents; }
+
+@media (max-width: 600px) {
+  /* Only collapse when there are ≥2 action controls (single button stays inline). */
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-toggle { display: inline-flex; }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner {
+    display: none;
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+    min-width: 220px; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2);
+    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default);
+    border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-2);
+    box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0,0,0,0.12));
+  }
+  .page-actions:has(.page-title-actions > :nth-child(2)) > .page-actions-inner.page-actions-inner--open { display: flex; }
+  /* Inside the dropdown, actions stack full width. */
+  .page-actions-inner--open .page-title-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2); }
+  .page-actions-inner--open .page-title-actions > * { width: 100%; }
+  .page-actions-inner--open .btn-enterprise { width: 100%; justify-content: center; }
+  .page-actions-inner--open .import-wrap { width: 100%; }
+}
+
 /* Import is a secondary action — hide it on mobile to keep the title bar clean. */
 @media (max-width: 600px) {
   .page-import-btn { display: none; }
+  .page-title-bar { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-4); gap: var(--mp-spacing-2); }
+  .page-title-text {
+    font-size: var(--mp-font-sizes-xl, 20px);
+    line-height: 26px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .page-title-text {
@@ -2029,11 +2703,16 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
-  /* side/bottom padding scrolls with content; the top 24px is a fixed border
+  /* side/bottom padding scrolls with content; the top gap is a fixed border
      (borders don't scroll) so content keeps a 24px gap from the stage's top edge.
+     The gap is 23px border + 1px padding (still 24px total): the 1px padding lands
+     the first child JUST inside the overflow clip boundary, so a top-border element
+     flush at the top (e.g. the rounded filter-bar search) isn't shaved by the clip.
      Bottom is 80px so the last row of content clears the fold with breathing room. */
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-20, 80px);
-  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+  padding: 1px var(--mp-spacing-6) var(--mp-spacing-20, 80px);
+  border-top: calc(var(--mp-spacing-6) - 1px) solid var(--mp-background-stage);
+  /* Keep focus scroll-into-view clear of the fixed top border too. */
+  scroll-padding-top: var(--mp-spacing-6);
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
@@ -2193,9 +2872,12 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
 }
 
-/* History wrapper — anchor for the dropdown */
+/* History wrapper — anchor for the dropdown. min-width:0 lets the title
+   truncate so the header icons on the right never get clipped. */
 .airene-history-wrapper {
   position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .airene-new-chat {
@@ -2211,11 +2893,14 @@ function startResize(e: MouseEvent) {
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   border-radius: var(--mp-radii-md);
   line-height: var(--mp-line-heights-md);
-  max-width: 200px;
+  min-width: 0;
+  max-width: 100%;
 }
 .airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
 
 .airene-chat-title {
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2301,6 +2986,7 @@ function startResize(e: MouseEvent) {
 .airene-header-icons {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .airene-icon-btn {
@@ -2317,6 +3003,36 @@ function startResize(e: MouseEvent) {
   padding: var(--mp-spacing-2);
 }
 .airene-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Kebab (…) menu — clear / delete chat */
+.airene-kebab-wrapper { position: relative; display: inline-flex; }
+.airene-kebab-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 160px;
+  padding: var(--mp-spacing-1, 4px);
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default, #e0e2e6);
+  border-radius: var(--mp-radii-lg, 12px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.airene-kebab-item {
+  display: block;
+  width: 100%;
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-md, 8px);
+}
+.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-kebab-item--danger { color: var(--mp-text-critical, #d3382e); }
 
 /* ── Chat body ───────────────────────────────────────────────────────────── */
 
@@ -2379,6 +3095,75 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
 }
+
+/* Rich (markdown-rendered) assistant text — v-html content needs :deep() to be
+   reached by scoped styles. */
+.chat-bubble__rich { white-space: normal; }
+.chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
+.chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }
+.chat-bubble__rich :deep(.chat-md-h) { margin: var(--mp-spacing-3, 12px) 0 var(--mp-spacing-1, 4px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.chat-md-h:first-child) { margin-top: 0; }
+.chat-bubble__rich :deep(.chat-md-ul) { margin: var(--mp-spacing-1, 4px) 0; padding-inline-start: var(--mp-spacing-4, 16px); }
+.chat-bubble__rich :deep(.chat-md-ul li) { margin: 2px 0; }
+.chat-bubble__rich :deep(strong) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(code) { font-family: var(--mp-fonts-mono, monospace); font-size: 0.9em; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 4px; }
+
+/* Employee mention chip */
+.chat-bubble__rich :deep(.emp-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1, 4px);
+  position: relative;
+  padding: 1px var(--mp-spacing-1\.5, 6px) 1px 2px;
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-bold, #eceef0);
+  cursor: default;
+  outline: none;
+  vertical-align: baseline;
+  line-height: 1.4;
+}
+.chat-bubble__rich :deep(.emp-chip-name) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.chat-bubble__rich :deep(.emp-chip-av) {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.chat-bubble__rich :deep(.emp-chip-av--ini) { font-size: 9px; font-weight: 700; color: var(--mp-text-brand, #1d55d4); }
+
+/* Hover / focus coachmark */
+.chat-bubble__rich :deep(.emp-coach) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  gap: var(--mp-spacing-2, 8px);
+  min-width: 200px;
+  padding: var(--mp-spacing-3, 12px);
+  border-radius: var(--mp-radii-lg, 12px);
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default, #e0e2e6);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  white-space: normal;
+  cursor: default;
+}
+.chat-bubble__rich :deep(.emp-chip:hover .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus .emp-coach),
+.chat-bubble__rich :deep(.emp-chip:focus-within .emp-coach) { display: flex; }
+.chat-bubble__rich :deep(.emp-coach-av) {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--mp-radii-full, 50%);
+  background-size: cover; background-position: center;
+  background-color: var(--mp-background-brand-subtle, #d8e6ff);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.chat-bubble__rich :deep(.emp-coach-body) { display: flex; flex-direction: column; gap: 1px; }
+.chat-bubble__rich :deep(.emp-coach-name) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); font-size: var(--mp-font-sizes-sm, 14px); }
+.chat-bubble__rich :deep(.emp-coach-meta) { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); }
 
 /* Typing indicator dots */
 .chat-typing {
@@ -2455,8 +3240,8 @@ function startResize(e: MouseEvent) {
  * Eye centers: left=(20, 32)  right=(34, 32)  — symmetric around x=27
  * CSS left/top = center − half eye-div width (9px / 2 = 4.5)
  */
-.mascot-eye--left  { left: 15.5px; top: 27.5px; }
-.mascot-eye--right { left: 29.5px; top: 27.5px; }
+.mascot-eye--left  { left: 18px; top: 33px; }
+.mascot-eye--right { left: 33px; top: 33px; }
 
 .mascot-pupil {
   width: 5px;              /* mascot pupil — fixed pixel size */
@@ -2474,6 +3259,23 @@ function startResize(e: MouseEvent) {
   line-height: var(--mp-line-heights-lg, 24px);
   color: var(--mp-text-default);
 }
+
+/* Agent switcher */
+.airene-agent-wrap { position: relative; margin-top: var(--mp-spacing-2, 8px); }
+.airene-agent-btn, .airene-agent-static { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
+.airene-agent-btn { cursor: pointer; }
+.airene-agent-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+.airene-agent-av { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: var(--mp-background-neutral-subtle, #f8f9f9); flex: 0 0 auto; }
+.airene-agent-name { font-weight: var(--mp-font-weights-medium, 500); }
+.airene-agent-btn svg { color: var(--mp-text-secondary); }
+.airene-agent-backdrop { position: fixed; inset: 0; z-index: 40; }
+.airene-agent-menu { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 50; min-width: 240px; max-height: 320px; overflow-y: auto; background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); box-shadow: var(--mp-shadows-md); padding: var(--mp-spacing-1, 4px); text-align: left; }
+.airene-agent-item { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); width: 100%; padding: var(--mp-spacing-2, 8px); border: none; background: none; border-radius: var(--mp-radii-md, 6px); cursor: pointer; font-family: inherit; text-align: left; }
+.airene-agent-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.airene-agent-item.is-active { background: var(--mp-background-neutral-subtle, #f0f1f3); }
+.airene-agent-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.airene-agent-role { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.airene-agent-check { color: var(--mp-icon-brand, #029861); flex: 0 0 auto; }
 
 .airene-greeting-msg {
   margin: 0;

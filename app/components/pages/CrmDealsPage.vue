@@ -5,16 +5,49 @@
  * of deal cards. Constant deal fields (size/dates) match the design; per-card
  * code/company/priority/status/owner/aging vary per column.
  */
-import { h, ref } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import { h, ref, reactive, watch } from 'vue'
+import { infoToast } from '~/utils/toasts'
+import { MpButton, MpIcon, MpSelect, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { employees } from '~/data'
+import { formatIDR } from '~/utils/currency'
+import CrmDealPreviewDrawer, { type DealPreviewCtx } from '~/components/CrmDealPreviewDrawer.vue'
 
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
+}
+
+// Deal owners are real Central Perk sales/marketing staff — resolve their photo
+// (and initials fallback) from the HR employee directory so the avatar matches.
+function ownerPhoto(name: string): string | undefined {
+  return employees.find((e) => e.fullName === name)?.photo
+}
+function ownerInitials(name: string): string {
+  return name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+}
+
+// Per-deal size / dates / times — derived deterministically from the deal code so
+// each card varies (no more identical size & timestamps) yet stays stable.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr']
+const pad = (x: number) => String(x).padStart(2, '0')
+function dealMeta(code: string) {
+  const n = parseInt(code.replace(/\D/g, ''), 10) || 0
+  const size = (7 + (n * 7) % 55) * 1_000_000            // ~Rp7jt–62jt
+  const cMon = (n * 3) % 2                                // created Jan/Feb 2026
+  const cDay = 1 + (n * 3) % 26, cH = 8 + (n % 9), cMin = (n * 13) % 60
+  const eMon = 1 + (n % 3), eDay = 1 + (n * 5) % 26       // expected close Feb–Apr
+  const uDay = 12 + (n * 2) % 16, uH = 9 + (n % 8), uMin = (n * 17) % 60
+  return {
+    size: formatIDR(size),
+    sizeValue: size,
+    created: `${pad(cDay)} ${MONTHS[cMon]} 2026, ${pad(cH)}:${pad(cMin)}`,
+    close: `${pad(eDay)} ${MONTHS[eMon]} 2026`,
+    updated: `${pad(uDay)} Feb 2026, ${pad(uH)}:${pad(uMin)}`,
+  }
 }
 
 // ── Priority pip (icon + label) ──────────────────────────────────────────────
 const PRIO = {
-  low:      { label: 'Low',      color: 'var(--mp-text-link, #4b61dc)',      d: 'M6 10l6 6 6-6' },
+  low:      { label: 'Low',      color: 'var(--mp-text-link, #165082)',      d: 'M6 10l6 6 6-6' },
   medium:   { label: 'Medium',   color: 'var(--mp-text-secondary, #656f80)', d: 'M5 10h14M5 15h14' },
   high:     { label: 'High',     color: 'var(--mp-icon-warning, #e46910)',   d: 'M6 14l6-6 6 6' },
   critical: { label: 'Critical', color: 'var(--mp-icon-danger, #e2483d)',    d: 'M13 2c.5 3-1.5 4.5-2.7 6C9 9.7 8 11 8 13.2a4.2 4.2 0 108.4 0c0-1.6-.6-2.8-1.7-3.8.4 1.6-.7 2.5-1.3 2.5 1.2-3.2-.4-6.4-.4-9.9z' },
@@ -42,35 +75,79 @@ interface Column { name: string; count: number; total: string; cards: Deal[] }
 
 const A = { l: 'Approved', t: 'success' as const }
 const F = { l: 'Frozen', t: 'info' as const }
-const columns: Column[] = [
-  { name: 'New', count: 14, total: 'Rp144.449.000', cards: [
-    { code: '017ARIEL', company: 'RiverStone Insurance Limited',      priority: 'low',    statuses: [{ l: 'In progress', t: 'neutral' }], owner: 'R', ownerColor: 'teal',   aging: '0d 1h',  badge: { l: '2d 23h', t: 'warning' } },
-    { code: '122EARTH', company: 'European Commission',               priority: 'medium', statuses: [{ l: 'Rejected', t: 'danger' }],      owner: 'R', ownerColor: 'purple', aging: '0d 20h', badge: { l: '2d 23h', t: 'warning' } },
-    { code: '138VENUS', company: 'Credit Suisse (Hong Kong) Limited', statuses: [A],                                  owner: 'W', ownerColor: 'green',  aging: '1d 7h',  badge: { l: '2d 23h', t: 'warning' } },
-    { code: '201MARS',  company: 'Goldman Sachs Group',               priority: 'high',   statuses: [A],              owner: 'S', ownerColor: 'blue',   aging: '0d 3h' },
-    { code: '233NEPTUNE', company: 'HSBC Holdings',                   priority: 'critical', statuses: [A],            owner: 'A', ownerColor: 'orange', aging: '0d 5h',  badge: { l: '2d 23h', t: 'warning' } },
+// Central Perk's coffee wholesale pipeline — companies mirror the ERP customer
+// master, owners are Central Perk sales staff (D = Dewi Lestari, F = Fajar
+// Nugroho, R = Rizal Candra). Stage names/counts/totals match crm.ts so the Home
+// "Pipeline overview" and this board agree.
+const columns = reactive<Column[]>([
+  { name: 'New', count: 8, total: 'Rp186.000.000', cards: [
+    { code: 'DEAL-1042', company: 'Distributor Sentra Boga',   priority: 'high',   statuses: [{ l: 'In progress', t: 'neutral' }], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '0d 3h',  badge: { l: '2d 23h', t: 'warning' } },
+    { code: 'DEAL-1043', company: 'Kopi Kenangan Pusat',       priority: 'medium', statuses: [{ l: 'In progress', t: 'neutral' }], owner: 'Dewi Lestari', ownerColor: 'green', aging: '0d 20h' },
+    { code: 'DEAL-1044', company: 'GoWork Office Tower',       priority: 'low',    statuses: [A],                                  owner: 'Dewi Lestari', ownerColor: 'green', aging: '1d 7h',  badge: { l: '2d 23h', t: 'warning' } },
   ] },
-  { name: 'Qualified', count: 1, total: 'Rp12.000.000', cards: [
-    { code: '014MERCURY', company: 'Credit Suisse (Hong Kong) Limited', priority: 'high', statuses: [A, F], owner: 'R', ownerColor: 'red', aging: '3d 19h', badge: { l: 'Rotten', t: 'danger' }, progress: '2/4' },
+  { name: 'Qualified', count: 5, total: 'Rp142.000.000', cards: [
+    { code: 'DEAL-1051', company: 'Excelso Grand Indonesia',   priority: 'high',   statuses: [A], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '1d 2h', badge: { l: '2d 23h', t: 'warning' } },
+    { code: 'DEAL-1052', company: 'Maxx Coffee Lippo Mall',    priority: 'medium', statuses: [A], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '2d 5h' },
   ] },
-  { name: 'Advanced', count: 2, total: 'Rp24.000.000', cards: [
-    { code: '088URANUS',  company: 'Ecopetrol',          priority: 'critical', statuses: [A], owner: 'R', ownerColor: 'purple', aging: '2d 15h', badge: { l: '2d 23h', t: 'warning' } },
-    { code: '029JUPITER', company: 'Berkshire Hathaway',  priority: 'critical', statuses: [A], owner: 'R', ownerColor: 'teal',   aging: '5d 16h', badge: { l: 'Rotten', t: 'danger' } },
+  { name: 'Proposal sent', count: 4, total: 'Rp98.000.000', cards: [
+    { code: 'DEAL-1061', company: 'Hotel Mulia Senayan',       priority: 'high',   statuses: [A],    owner: 'Dewi Lestari', ownerColor: 'green', aging: '0d 9h', badge: { l: '2d 23h', t: 'warning' } },
+    { code: 'DEAL-1062', company: 'Tanamera Coffee Roastery',  priority: 'medium', statuses: [A, F], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '3d 4h', progress: '2/4' },
   ] },
-  { name: 'Payment in process', count: 4, total: 'Rp65.700.000', cards: [
-    { code: '362PLUTO', company: 'Blue Heron Group',                     priority: 'critical', statuses: [A],    owner: 'R', ownerColor: 'purple', aging: '0d 1h', badge: { l: '2d 23h', t: 'warning' } },
-    { code: '180ARIEL', company: 'Orsus Investments Pty Ltmited',        priority: 'critical', statuses: [A],    owner: 'R', ownerColor: 'blue',   aging: '0d 1h' },
-    { code: '009PLUTO', company: 'Partner Reinsurance Europe SE, Dubl...', priority: 'critical', statuses: [A, F], owner: 'R', ownerColor: 'red', aging: '0d 1h', badge: { l: '2d 23h', t: 'warning' } },
-    { code: '321EARTH', company: 'Blue Heron Bundles',                   priority: 'critical', statuses: [A],    owner: 'R', ownerColor: 'green',  aging: '0d 1h' },
+  { name: 'Negotiation', count: 3, total: 'Rp76.000.000', cards: [
+    { code: 'DEAL-1071', company: 'Santika Premiere Hotel',    priority: 'high',     statuses: [A], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '1d 12h', badge: { l: '2d 23h', t: 'warning' } },
+    { code: 'DEAL-1072', company: 'Anomali Coffee',            priority: 'critical', statuses: [A], owner: 'Dewi Lestari', ownerColor: 'green', aging: '5d 6h',  badge: { l: 'Rotten', t: 'danger' } },
   ] },
-  { name: 'Won', count: 2, total: 'Rp12.000.000', cards: [
-    { code: '112VENUS', company: 'Parallax Company',                     priority: 'critical', statuses: [A, F], owner: 'R', ownerColor: 'purple', aging: '0d 1h', badge: { l: '2d 23h', t: 'warning' } },
-    { code: '009PLUTO', company: 'Partner Reinsurance Europe SE, Dubl...', priority: 'critical', statuses: [A, F], owner: 'R', ownerColor: 'blue', aging: '0d 1h' },
+  { name: 'Won', count: 6, total: 'Rp214.000.000', cards: [
+    { code: 'DEAL-1081', company: 'Distributor Sentra Boga',   statuses: [A], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '0d 2h' },
+    { code: 'DEAL-1082', company: 'Kopi Kenangan Pusat',       statuses: [A], owner: 'Dewi Lestari', ownerColor: 'green', aging: '0d 8h' },
   ] },
-  { name: 'Lost', count: 0, total: 'Rp 0', cards: [] },
-]
+  { name: 'Lost', count: 2, total: 'Rp31.000.000', cards: [
+    { code: 'DEAL-1091', company: 'Coffee Cult Bali',          statuses: [{ l: 'Lost', t: 'danger' }], owner: 'Fajar Nugroho', ownerColor: 'green', aging: '12d 4h' },
+  ] },
+])
 
-const pipelineOpen = ref(false)
+const pipeline = ref('Sales pipeline')
+const dealSearch = ref('')
+
+// First-load skeleton (ERP guideline: solid, ~1.2s).
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+
+// Deal quick-preview drawer (opens on card click).
+const previewOpen = ref(false)
+const previewCtx = ref<DealPreviewCtx | null>(null)
+function openPreview(d: Deal, stage: string) {
+  const m = dealMeta(d.code)
+  previewCtx.value = { code: d.code, company: d.company, owner: d.owner, priority: d.priority, stage, amount: m.size, amountValue: m.sizeValue, closeDate: m.close }
+  previewOpen.value = true
+}
+
+// ── Drag & drop: move a deal card between stage columns ───────────────────────
+const draggingCode = ref<string | null>(null)
+const dragOverCol = ref<string | null>(null)
+function onDealDragStart(code: string) { draggingCode.value = code }
+function onDealDrop(target: Column) {
+  const code = draggingCode.value
+  draggingCode.value = null; dragOverCol.value = null
+  if (!code) return
+  const from = columns.find((c) => c.cards.some((d) => d.code === code))
+  if (!from || from === target) return
+  const idx = from.cards.findIndex((d) => d.code === code)
+  const [card] = from.cards.splice(idx, 1)
+  target.cards.push(card!)
+  from.count = Math.max(0, from.count - 1)
+  target.count += 1
+}
+
+// View switch (pipeline board / table). Table view isn't built yet → revert + toast.
+const view = ref('board')
+const viewOptions = [
+  { id: 'sc-board', value: 'board', icon: 'table-view-column' },
+  { id: 'sc-table', value: 'table', icon: 'table-view-list' },
+]
+watch(view, (v) => {
+  if (v === 'table') { soon('Table view'); view.value = 'board' }
+})
 </script>
 
 <template>
@@ -79,83 +156,126 @@ const pipelineOpen = ref(false)
     <header class="crm-titlebar">
       <div class="crm-titlebar__left">
         <h1 class="crm-title">Deals</h1>
-        <span class="crm-subtitle">242 of 1.280 deals</span>
       </div>
       <div class="crm-titlebar__right">
-        <button class="crm-btn crm-btn--secondary" type="button" @click="soon('More actions')">
-          More actions
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <!-- Primary action: New deal only (no split) -->
+        <button class="crm-btn crm-btn--primary" type="button" @click="soon('New deal')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          New deal
         </button>
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('Create deal')">
-          Create deal
-          <span class="crm-btn__divider" />
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+
+        <!-- More actions → icon button (Import / Bulk edit / Edit properties) -->
+        <MpPopover id="deal-more-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <button class="crm-iconbtn" type="button" aria-label="More actions">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="soon('Import deals')">Import deals</MpPopoverListItem>
+              <MpPopoverListItem @click="soon('Bulk edit deals')">Bulk edit deals</MpPopoverListItem>
+              <MpPopoverListItem @click="soon('Edit deals property')">Edit deals property</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </div>
     </header>
 
     <!-- ── Filter bar ── -->
     <div class="crm-filter">
       <div class="crm-filter__left">
-        <button class="crm-select" type="button" @click="pipelineOpen = !pipelineOpen">
-          Sales pipeline
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button class="crm-link" type="button" @click="soon('All filters')">All filters</button>
+        <MpSelect
+          id="deal-pipeline-select"
+          :model-value="pipeline"
+          :class="css({ width: '176px' })"
+          @update:model-value="(v: string) => (pipeline = v)"
+        >
+          <option value="Sales pipeline">Sales pipeline</option>
+          <option value="Wholesale pipeline">Wholesale pipeline</option>
+          <option value="Retail pipeline">Retail pipeline</option>
+        </MpSelect>
+        <MpButton class="filter-all-btn" variant="tertiary" @click="soon('All filters')">
+          <MpIcon name="filter" size="sm" />
+          All filters
+        </MpButton>
       </div>
       <div class="crm-filter__right">
-        <div class="crm-viewtoggle">
-          <button class="crm-viewtoggle__btn crm-viewtoggle__btn--active" type="button" :aria-label="'Board view'">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5" fill="currentColor"/><rect x="14" y="4" width="7" height="10" rx="1.5" fill="currentColor"/></svg>
-          </button>
-          <button class="crm-viewtoggle__btn" type="button" :aria-label="'List view'" @click="soon('List view')">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <!-- Segmented control (Pixel MpSegmentedControl) — left of the search -->
+        <MpSegmentedControl id="deal-view-switch" name="deal-view-switch" v-model="view" :data="viewOptions" />
+        <!-- Canonical pill search (matches HR/ERP index tables) -->
+        <div class="filter-search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input v-model="dealSearch" class="filter-search-input" type="text" placeholder="Search...">
+          <button v-if="dealSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="dealSearch = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
           </button>
         </div>
-        <div class="crm-search">
-          <MpIcon name="search" size="sm" class="crm-search__ic" />
-          <input class="crm-search__input" type="text" placeholder="Search deals name...">
+      </div>
+    </div>
+
+    <!-- ── First-load skeleton board ── -->
+    <div v-if="loading" class="kanban">
+      <div class="kanban__board">
+        <div v-for="col in columns" :key="`sk-${col.name}`" class="kcol">
+          <div class="kcol__head"><MpSkeleton class="crm-skeleton" width="88px" height="14px" rounded="sm" duration="0s" /></div>
+          <div class="kcol__cards">
+            <div v-for="n in 3" :key="n" class="deal deal--skeleton">
+              <MpSkeleton class="crm-skeleton" width="70%" height="12px" rounded="sm" duration="0s" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- ── Kanban ── -->
-    <div class="kanban">
+    <div v-else class="kanban">
       <div class="kanban__board">
-        <div v-for="col in columns" :key="col.name" class="kcol">
+        <div
+          v-for="col in columns"
+          :key="col.name"
+          class="kcol"
+          :class="{ 'kcol--over': dragOverCol === col.name }"
+          @dragover.prevent="dragOverCol = col.name"
+          @dragleave="dragOverCol === col.name && (dragOverCol = null)"
+          @drop="onDealDrop(col)"
+        >
           <div class="kcol__head">
             <span class="kcol__name">{{ col.name }}</span>
             <span class="kcol__count">{{ col.count }}</span>
           </div>
           <div class="kcol__cards">
-            <article v-for="(d, i) in col.cards" :key="col.name + i" class="deal" @click="soon('Deal detail')">
+            <article
+              v-for="(d, i) in col.cards"
+              :key="col.name + i"
+              class="deal"
+              draggable="true"
+              @dragstart="onDealDragStart(d.code)"
+              @dragend="draggingCode = null"
+              @click="openPreview(d, col.name)"
+            >
               <div class="deal__head">
                 <p class="deal__code">{{ d.code }}</p>
                 <p class="deal__company">{{ d.company }}</p>
-                <div class="deal__badges">
-                  <PriorityPip v-if="d.priority" :p="d.priority" />
-                  <span v-for="s in d.statuses" :key="s.l" class="badge" :class="`badge--${s.t}`">{{ s.l }}</span>
+                <div v-if="d.priority" class="deal__badges">
+                  <PriorityPip :p="d.priority" />
                 </div>
               </div>
               <div class="deal__rows">
-                <div class="deal__row"><span class="deal__k">Deal size</span><span class="deal__v">IDR 12.000.000</span></div>
-                <div class="deal__row"><span class="deal__k">Created date</span><span class="deal__v">12 Sep 2025, 11:24</span></div>
-                <div class="deal__row"><span class="deal__k">Expected close</span><span class="deal__v">17 Sep 2025, 11:24</span></div>
-                <div class="deal__row"><span class="deal__k">Last updated</span><span class="deal__v">13 Sep 2025, 14:09</span></div>
+                <div class="deal__row"><span class="deal__k">Deal size</span><span class="deal__v">{{ dealMeta(d.code).size }}</span></div>
+                <div class="deal__row"><span class="deal__k">Created date</span><span class="deal__v">{{ dealMeta(d.code).created }}</span></div>
+                <div class="deal__row"><span class="deal__k">Expected close</span><span class="deal__v">{{ dealMeta(d.code).close }}</span></div>
+                <div class="deal__row"><span class="deal__k">Last updated</span><span class="deal__v">{{ dealMeta(d.code).updated }}</span></div>
               </div>
               <div class="deal__foot">
-                <span class="avatar" :class="`avatar--${d.ownerColor}`">{{ d.owner }}</span>
-                <div class="deal__sla">
-                  <span class="deal__aging">{{ d.aging }}</span>
-                  <span v-if="d.badge" class="badge" :class="`badge--${d.badge.t}`">{{ d.badge.l }}</span>
-                  <span v-if="d.progress" class="deal__progress"><MpIcon name="checkbox-checklist" size="sm" /> {{ d.progress }}</span>
-                </div>
-                <div class="assoc">
-                  <span class="assoc__chip assoc__chip--icon"><MpIcon name="company" size="sm" /></span>
-                  <span class="assoc__chip avatar--red">E</span>
-                  <span class="assoc__chip assoc__chip--icon"><MpIcon name="products" size="sm" /></span>
-                  <span class="assoc__chip assoc__chip--more">+9</span>
-                </div>
+                <span class="avatar" :title="`Deal owner: ${d.owner}`">
+                  <img v-if="ownerPhoto(d.owner)" :src="ownerPhoto(d.owner)" :alt="d.owner">
+                  <template v-else>{{ ownerInitials(d.owner) }}</template>
+                </span>
+                <span class="deal__aging" title="Time in current stage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {{ d.aging }} in stage
+                </span>
               </div>
             </article>
           </div>
@@ -166,6 +286,8 @@ const pipelineOpen = ref(false)
         </div>
       </div>
     </div>
+
+    <CrmDealPreviewDrawer :open="previewOpen" :ctx="previewCtx" @close="previewOpen = false" />
   </div>
 </template>
 
@@ -192,9 +314,17 @@ const pipelineOpen = ref(false)
 }
 .crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default, #272b32); }
 .crm-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.crm-btn--primary { background: var(--mp-background-crm-bold, #2563eb); color: #fff; padding-right: var(--mp-spacing-3); }
-.crm-btn--primary:hover { background: var(--mp-background-crm-bold-hovered, #1d4ed8); }
-.crm-btn__divider { width: 1px; height: 20px; background: rgba(255, 255, 255, 0.4); margin-left: var(--mp-spacing-1); }
+.crm-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse, #fff); }
+.crm-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
+
+/* Kebab icon button (More actions), sits to the right of the primary. */
+.crm-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--mp-radii-full, 999px);
+  border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #fff);
+  color: var(--mp-text-default, #272b32); cursor: pointer;
+}
+.crm-iconbtn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Filter bar ── */
 .crm-filter {
@@ -202,22 +332,35 @@ const pipelineOpen = ref(false)
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
   background: var(--mp-background-stage, #fff);
 }
-.crm-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.crm-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .crm-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.crm-select {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: 36px; padding: 0 var(--mp-spacing-3); border-radius: var(--mp-radii-md, 6px);
-  border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #fff);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default, #272b32); cursor: pointer;
+
+/* "All filters" — secondary pill button (identical to HR directory filter bar). */
+.filter-all-btn {
+  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary) !important; cursor: pointer; white-space: nowrap;
 }
-.crm-link { background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #4b61dc); }
-.crm-viewtoggle { display: inline-flex; border: 1px solid var(--mp-border-default, #dcdfe4); border-radius: var(--mp-radii-md, 6px); overflow: hidden; }
-.crm-viewtoggle__btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: var(--mp-background-neutral, #fff); color: var(--mp-text-secondary, #656f80); cursor: pointer; }
-.crm-viewtoggle__btn--active { background: var(--mp-background-brand, #eef0fc); color: var(--mp-text-link, #4b61dc); }
-.crm-search { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #fff); width: 240px; }
-.crm-search__ic { color: var(--mp-text-secondary, #656f80); flex-shrink: 0; }
-.crm-search__input { border: none; outline: none; background: none; flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.crm-search__input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+
+/* Canonical pill search — identical to HR/ERP index tables. */
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+.filter-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0; }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer;
+  color: var(--mp-text-secondary); border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Kanban ── */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); background: var(--mp-background-stage, #fff); }
@@ -237,13 +380,19 @@ const pipelineOpen = ref(false)
 .kcol__total-v { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #272b32); }
 
 /* ── Deal card ── */
+.kcol--over { outline: 2px solid var(--mp-text-selected, #0f6d4d); outline-offset: -2px; background: var(--mp-background-nav-stack-hovered, #d6f4e9); }
 .deal {
   flex-shrink: 0;
   background: var(--mp-background-stage, #fff); border: 1px solid var(--mp-border-default, #dcdfe4);
-  border-radius: var(--mp-radii-md, 6px); overflow: hidden; cursor: pointer;
+  border-radius: var(--mp-radii-md, 6px); overflow: hidden; cursor: grab;
   display: flex; flex-direction: column;
 }
+.deal:active { cursor: grabbing; }
 .deal:hover { border-color: var(--mp-border-bold, #8c9596); }
+/* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
+.crm-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+.deal--skeleton { cursor: default; padding: var(--mp-spacing-4); min-height: 96px; }
+.deal--skeleton:hover { border-color: var(--mp-border-default, #dcdfe4); }
 .deal__head { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default-subtle, #f0f1f3); }
 .deal__code { margin: 0; font-size: 12px; color: var(--mp-text-secondary, #656f80); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__company { margin: 0; font-size: 14px; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #272b32); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -266,29 +415,15 @@ const pipelineOpen = ref(false)
 .deal__k { font-size: 12px; color: var(--mp-text-secondary, #656f80); white-space: nowrap; }
 .deal__v { flex: 1; min-width: 0; font-size: 12px; color: var(--mp-text-default, #272b32); text-align: right; }
 
+/* Foot: deal owner avatar (left) + a single time-in-stage timestamp. */
 .deal__foot { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-2); }
 .avatar {
-  flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px;
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; overflow: hidden;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: var(--mp-font-weights-semi-bold); color: #fff;
+  font-size: 12px; font-weight: var(--mp-font-weights-semi-bold);
+  background: var(--mp-background-nav-stack-hovered, #d6f4e9); color: var(--mp-text-selected, #0f6d4d);
 }
-.avatar--teal   { background: var(--mp-chart-cat01, #12a3a3); }
-.avatar--purple { background: var(--mp-chart-cat03, #8270db); }
-.avatar--red    { background: var(--mp-chart-cat06, #e2483d); }
-.avatar--green  { background: var(--mp-chart-cat02, #12a150); }
-.avatar--blue   { background: var(--mp-chart-cat04, #3d6fd6); }
-.avatar--orange { background: var(--mp-chart-cat05, #e46910); }
-.deal__sla { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--mp-spacing-1); }
-.deal__aging { font-size: 12px; color: var(--mp-text-secondary, #656f80); white-space: nowrap; }
-.deal__progress { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--mp-text-secondary, #656f80); }
-.assoc { display: inline-flex; align-items: center; flex-shrink: 0; }
-.assoc__chip {
-  width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--mp-border-inverse, #fff);
-  display: inline-flex; align-items: center; justify-content: center; margin-left: -4px;
-  font-size: 12px; font-weight: var(--mp-font-weights-semi-bold); color: #fff;
-}
-.assoc__chip:first-child { margin-left: 0; }
-.assoc__chip--icon { background: var(--mp-background-neutral-subtle, #f0f1f3); color: var(--mp-text-secondary, #656f80); }
-.assoc__chip--more { background: var(--mp-background-brand, #eef0fc); color: var(--mp-text-link, #4b61dc); }
-.assoc__chip.avatar--red { background: var(--mp-chart-cat06, #e2483d); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.deal__aging { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: 12px; color: var(--mp-text-secondary, #656f80); white-space: nowrap; }
+.deal__aging svg { flex-shrink: 0; }
 </style>

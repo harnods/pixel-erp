@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from
 import { useRouter, useRoute } from 'vue-router'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpDatePicker, MpSelect, MpButton, MpBadge, toast, css,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
@@ -590,6 +590,25 @@ function printAllPlainBarcodes() {
     'products',
   )
 }
+// Bulk "Print barcode" from the Products table's row checkboxes — indices are
+// into `pagedStock` (the table's current page), same as ErpTablePage's own
+// selection. Serial-tracked products print one label per serial (available +
+// reserved, matching the Serial numbers tab's own "print all"); anything else
+// prints its own SKU barcode.
+function printSelectedPlainBarcodes(selectedRows: Set<number>) {
+  const rows = pagedStock.value.filter((_, i) => selectedRows.has(i))
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of rows) {
+    if (s.serials) {
+      for (const u of [...s.serials.available, ...s.serials.reserved]) {
+        labels.push({ barcode: u.serial, batchNo: u.serial, productName: s.name, sku: s.sku })
+      }
+    } else {
+      labels.push({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'selected products')
+}
 // Batch products — one label per batch (each batch's own barcode, generated on first use).
 function printAllBatchBarcodes() {
   const labels: BarcodeLabelInfo[] = []
@@ -601,6 +620,20 @@ function printAllBatchBarcodes() {
     }
   }
   openPrintAll(labels, 'batches')
+}
+// Batch products — one label per batch (each batch's own barcode, generated on
+// first use), scoped to the checked product groups.
+function printSelectedBatchBarcodes(selectedIds: Set<string>) {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredBatchProducts.value) {
+    if (!selectedIds.has(s.id)) continue
+    for (const b of s.batches ?? []) {
+      let barcode = getBatchBarcode(s.sku, b.batchNo)
+      if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(s.sku, b.batchNo, barcode) }
+      labels.push({ barcode, batchNo: b.batchNo, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'selected batches')
 }
 // Serial products — one label per serial (available + reserved); the SN is its barcode.
 function printAllSerialBarcodes() {
@@ -650,6 +683,33 @@ const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0
 const batchChildRowEndsAtEdge = computed(() =>
   batchColVisibility.lastUpdated || (!batchColVisibility.minStock && !batchColVisibility.unit)
 )
+
+// ── Batches tab — bulk select (per product group) + Print barcode ──────────────
+const selectedBatchProducts = ref<Set<string>>(new Set())
+function toggleBatchProduct(id: string): void {
+  const next = new Set(selectedBatchProducts.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedBatchProducts.value = next
+}
+function clearBatchSelection(): void { selectedBatchProducts.value = new Set() }
+const batchAllSelected = computed(() =>
+  filteredBatchProducts.value.length > 0 && filteredBatchProducts.value.every(p => selectedBatchProducts.value.has(p.id)))
+const batchSomeSelected = computed(() => !batchAllSelected.value && selectedBatchProducts.value.size > 0)
+function toggleAllBatchProducts(): void {
+  selectedBatchProducts.value = batchAllSelected.value ? new Set() : new Set(filteredBatchProducts.value.map(p => p.id))
+}
+const batchSelectedLabel = computed(() => {
+  const n = selectedBatchProducts.value.size
+  return `${n} ${n === 1 ? t('product') : t('products')} selected`
+})
+// Total header/bulk-bar colspan — Product is always visible; the rest follow column visibility.
+const batchTotalCols = computed(() => batchColItems.filter(c => c.key === 'product' || batchColVisibility[c.key]).length)
+watch(filteredBatchProducts, (rows) => {
+  const live = new Set(rows.map(p => p.id))
+  const next = new Set([...selectedBatchProducts.value].filter(id => live.has(id)))
+  if (next.size !== selectedBatchProducts.value.size) selectedBatchProducts.value = next
+})
 const hasMultiLocProduct = computed(() => filteredStock.value.some((s: any) => (s.locations?.length ?? 0) > 1))
 const hasBatchTab  = computed(() => batchProducts.value.length > 0)
 const hasSerialTab = computed(() => serialProducts.value.length > 0)
@@ -923,6 +983,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               :sort-key="stockSortKey"
               :sort-dir="stockSortDir"
               :has-active-filter="!!search"
+              has-checkbox
+              bulk-label="product"
               @page-change="onProductsPageChange"
               @per-page-change="onProductsPerPageChange"
               @sort-change="setStockSort"
@@ -1041,6 +1103,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </MpPopover>
               </template>
 
+              <!-- bulk selection actions -->
+              <template #bulk-actions="{ selectedRows, deselectAll }">
+                <button
+                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  type="button"
+                  @click="printSelectedPlainBarcodes(selectedRows as Set<number>); deselectAll()"
+                >{{ t('Print barcode') }}</button>
+              </template>
+
               <!-- full empty state -->
               <template #empty>
                 <div class="empty-full">
@@ -1129,8 +1200,35 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <col v-if="batchColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
                 <thead>
-                  <tr>
-                    <th class="wh-bth">{{ t('Product') }}</th>
+                  <!-- Bulk bar — replaces the column headers while anything's selected,
+                       same pattern as the Serial numbers drawer / misplaced-serials table. -->
+                  <tr v-if="selectedBatchProducts.size" class="wh-tr-bulk">
+                    <th :colspan="batchTotalCols" class="wh-bth wh-bth--bulk">
+                      <div class="wh-bulkbar">
+                        <MpCheckbox
+                          id="wh-batch-select-all"
+                          :is-checked="batchAllSelected"
+                          :is-indeterminate="batchSomeSelected"
+                          @change="toggleAllBatchProducts"
+                        />
+                        <span class="wh-bulkbar__count">{{ batchSelectedLabel }}</span>
+                        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="printSelectedBatchBarcodes(selectedBatchProducts); clearBatchSelection()">{{ t('Print barcode') }}</button>
+                        <a class="wh-bulkbar__clear" @click="clearBatchSelection">{{ t('Clear') }}</a>
+                      </div>
+                    </th>
+                  </tr>
+                  <tr v-else>
+                    <th class="wh-bth">
+                      <span class="wh-batch-th-check">
+                        <MpCheckbox
+                          id="wh-batch-select-all"
+                          :is-checked="batchAllSelected"
+                          :is-indeterminate="batchSomeSelected"
+                          @change="toggleAllBatchProducts"
+                        />
+                      </span>
+                      {{ t('Product') }}
+                    </th>
                     <th v-if="batchColVisibility.sku" class="wh-bth">{{ t('SKU') }}</th>
                     <th v-if="batchColVisibility.batch" class="wh-bth">{{ t('Batch') }}</th>
                     <th v-if="batchColVisibility.location" class="wh-bth">{{ t('Location') }}</th>
@@ -1153,17 +1251,25 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1"
                       >
                         <div class="wh-batch-product">
-                          <button
-                            class="wh-expand-btn"
-                            :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
-                          >
-                            <svg
-                              width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                              class="wh-expand-chevron" :class="{ 'wh-expand-chevron--open': isBatchExpanded(p.id) }"
+                          <span class="wh-batch-lead" @click.stop>
+                            <MpCheckbox
+                              :id="`wh-batch-select-${p.id}`"
+                              :is-checked="selectedBatchProducts.has(p.id)"
+                              @change="toggleBatchProduct(p.id)"
+                            />
+                            <button
+                              class="wh-expand-btn"
+                              :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
+                              @click="toggleBatch(p.id)"
                             >
-                              <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                          </button>
+                              <svg
+                                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                                class="wh-expand-chevron" :class="{ 'wh-expand-chevron--open': isBatchExpanded(p.id) }"
+                              >
+                                <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                              </svg>
+                            </button>
+                          </span>
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
@@ -2178,6 +2284,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   color: var(--mp-text-subtle);
   margin-top: var(--mp-spacing-0\.5);
 }
+/* Row-select checkbox (ErpTablePage's own .erp-cell-check) centers itself
+   against the WHOLE Name cell, which grows taller when the subtitle wraps to
+   2 lines — so it drifts above the thumbnail's own center. Pin the row to
+   top-align (like every other checkbox+content pairing in this file) and
+   nudge the checkbox down to the thumb's own vertical center instead. */
+:deep(.erp-products .erp-cell-check) { align-items: flex-start; }
+:deep(.erp-products .erp-cell-check > [data-pixel-component="MpCheckbox"]) {
+  margin-top: calc((var(--mp-sizes-8, 32px) - var(--mp-sizes-4, 16px)) / 2);
+}
 /* Strip td padding on the 4 wrapper columns so .wh-col-row fills the full cell */
 :deep(.erp-products td[data-col="locations"]),
 :deep(.erp-products td[data-col="onHand"]),
@@ -2229,6 +2344,17 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* ── Batch table cells ── */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
+/* Checkbox + expand chevron sit in their own row, centered against each other AND
+   against the thumb: this pair's box is the same height as .wh-thumb (var(--mp-sizes-8)),
+   so with the outer .wh-batch-product still top-aligned (for the 2-line subtitle case),
+   the pair's own vertical center lands on the thumb's vertical center. */
+.wh-batch-lead {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  height: var(--mp-sizes-8, 32px);
+}
+/* Header select-all checkbox — inline with "Product", no fixed height needed. */
+.wh-batch-th-check { display: inline-flex; align-items: center; vertical-align: middle; margin-right: var(--mp-spacing-1); }
+.wh-batch-th-check :deep(.mp-checkbox__root) { vertical-align: middle; }
 .wh-expand-btn {
   flex-shrink: 0;
   display: inline-flex;
@@ -2236,7 +2362,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   justify-content: center;
   width: var(--mp-sizes-6, 24px);
   height: var(--mp-sizes-6, 24px);
-  margin-top: var(--mp-spacing-1);
   border: none;
   background: none;
   cursor: pointer;
@@ -2318,6 +2443,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   white-space: nowrap;
 }
 .wh-bth--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+
+/* Bulk-actions bar — replaces the column headers while anything's selected
+   (Batches tab's per-product-group checkboxes), same pattern as the Serial
+   numbers drawer / misplaced-serials table. */
+.wh-bth--bulk { padding: 0; text-transform: none; font-weight: normal; }
+.wh-bulkbar {
+  display: flex; align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-1) var(--mp-spacing-3) var(--mp-spacing-1) var(--mp-spacing-2);
+}
+.wh-bulkbar__count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.wh-bulkbar__clear {
+  margin-left: auto; cursor: pointer; text-decoration: none;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+}
+.wh-bulkbar__clear:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* rows — 10px vertical padding; dividers between every row (right columns) */
 .wh-btd {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);

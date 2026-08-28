@@ -90,6 +90,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'awaiting approval':{ type: 'announcement', label: 'Draft' },
   closed:     { type: 'announcement', label: 'Closed'     },
   voided:     { type: 'announcement', label: 'Voided'     },
+  'awaiting invoice': { type: 'warning', label: 'Awaiting invoice' },
   inactive:   { type: 'announcement', label: 'Inactive'   },
   archived:   { type: 'announcement', label: 'Archived'   },
   archived:   { type: 'announcement', label: 'Archived'   },
@@ -108,6 +109,7 @@ const statusConfig: Record<string, StatusConfig> = {
   // ── information — blue ────────────────────────────
   invoice:    { type: 'information',  label: 'Invoice'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
+  'partially-processed': { type: 'information', label: 'Partially processed' },
   'partially produced': { type: 'warning', label: 'Partially produced' },
   'partially completed': { type: 'information', label: 'Partially completed' },
   'partially received': { type: 'information', label: 'Partially received' },

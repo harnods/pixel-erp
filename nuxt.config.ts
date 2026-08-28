@@ -6,6 +6,20 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4321 },
 
+  // Server-only secret for the Cowork (AI) feature. Value comes from
+  // NUXT_GEMINI_API_KEY in .env.local (gitignored) — never hardcoded/committed.
+  // It's exposed ONLY to server routes (server/api/*), not the client bundle.
+  runtimeConfig: {
+    geminiApiKey: "",
+    geminiModel: "gemini-flash-latest",
+    public: {
+      // Google OAuth (client-side, Google Identity Services) for the real Cowork
+      // connections (Calendar / Gmail / Contacts). Public client ID — safe to
+      // expose; set NUXT_PUBLIC_GOOGLE_CLIENT_ID in .env. Empty = not configured.
+      googleClientId: "",
+    },
+  },
+
   app: {
     head: {
       title: "Mekari ERP",
@@ -23,6 +37,8 @@ export default defineNuxtConfig({
     // override (unlayered and @layer pixel_reset) lands after the Panda rules.
     "@/assets/css/pixel.css",
     "@/assets/css/erp.css",
+    // Shared chrome for the full-bleed CRM list pages (title bar/filter/table/tags).
+    "@/assets/css/crm-page.css",
   ],
   postcss: {
     plugins: {

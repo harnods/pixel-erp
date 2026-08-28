@@ -41,6 +41,9 @@ const unit = ref('Pcs')
 const description = ref('')
 const photoDataUrl = ref('')
 
+// A WMS Standalone product is always stock-tracked — the only choice is HOW
+// (quantity, batch or serial number), never whether, so the opt-out checkbox
+// isn't rendered there and this stays true.
 const trackStock = ref(true)
 const minStock = ref('')
 const trackStockBy = ref('Quantity')
@@ -420,8 +423,9 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
             <div class="nw-fields">
 
-              <!-- Product type -->
-              <MpFormControl id="np-type" is-required>
+              <!-- Product type — ERP only; a WMS Standalone product is always single,
+                   so there is nothing to choose. -->
+              <MpFormControl v-if="!isWms" id="np-type" is-required>
                 <MpFormLabel>{{ t('Product type') }}</MpFormLabel>
                 <div class="np-radio-group">
                   <label class="np-radio-item">
@@ -544,11 +548,13 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
             <!-- I track stock for this product -->
             <div class="np-toggle-block">
-              <label class="np-checkbox-row">
+              <!-- WMS Standalone tracks every product, so there is nothing to opt out
+                   of — only "Track stock by" (quantity, batch, serial) is a choice. -->
+              <label v-if="!isWms" class="np-checkbox-row">
                 <MpCheckbox id="np-track-stock" :is-checked="trackStock" @change="trackStock = !trackStock" />
                 <span>{{ t('I track stock for this product') }}</span>
               </label>
-              <div v-if="trackStock" class="nw-row np-toggle-fields">
+              <div v-if="isWms || trackStock" class="nw-row np-toggle-fields">
                 <MpFormControl id="np-min-stock" class="np-field-270">
                   <MpFormLabel>{{ t('Min. stock') }}</MpFormLabel>
                   <div class="np-suffix-wrap">
@@ -648,8 +654,8 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
       </div>
 
-      <!-- ── Tax info ── -->
-      <div class="nw-form-group np-full">
+      <!-- ── Tax info — ERP only; the WMS Standalone package has no tax module ── -->
+      <div v-if="!isWms" class="nw-form-group np-full">
         <div class="nw-section">
           <h2 class="nw-section-title">{{ t('Tax info') }}</h2>
           <div class="nw-section-spacer" />
@@ -729,8 +735,8 @@ onUnmounted(() => { footerObserver?.disconnect() })
       <button class="nw-btn-save" :disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</button>
     </div>
 
-    <!-- ── Demo scenario FAB — Tax info preview states ── -->
-    <MpPopover id="np-demo-fab" is-close-on-select use-portal placement="top-end">
+    <!-- ── Demo scenario FAB — Tax info preview states; nothing to preview in WMS ── -->
+    <MpPopover v-if="!isWms" id="np-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
         <MpButton class="demo-fab" :style="{ bottom: fabBottom + 'px' }" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>

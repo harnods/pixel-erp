@@ -286,9 +286,10 @@ const currentUser = computed(() =>
 
 function selectScenario(scenario: Scenario, closePopover: () => void) {
   setScenario(scenario);
-  // Land on Home so the sidebar (now showing the scenario's nav) and the active
-  // highlight stay consistent — the previous page may not exist in the new nav.
-  navigate("Home");
+  // Land on the scenario's first nav item so the sidebar (now showing the new nav)
+  // and the active highlight stay consistent — the previous page may not exist in
+  // the new nav. WMS Standalone has no Home item, so it opens on Dashboard.
+  navigate(scenario === "WMS Standalone" ? "Dashboard" : "Home");
   closePopover();
 }
 

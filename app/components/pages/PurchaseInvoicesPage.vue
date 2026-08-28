@@ -81,6 +81,12 @@ function formatDate(iso: string) {
     day: '2-digit', month: '2-digit', year: 'numeric',
   }).format(new Date(iso))
 }
+// Number column matches Expenses/Sales: "{label} #{5-digit}".
+function seqNo(num: string) {
+  const last = String(num).split('-').pop() ?? num
+  const n = parseInt(String(last).replace(/\D/g, ''), 10)
+  return Number.isNaN(n) ? last : String(n).padStart(5, '0')
+}
 
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
@@ -89,6 +95,13 @@ const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(al
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── First-load skeleton (pagination skeleton is handled by ErpTablePage) ─────
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+
+const emptyIllustration = '/illustrations/empty-folder.png'
+function clearFilters() { search.value = ''; statusFilter.value = '' }
 </script>
 
 <template>
@@ -101,14 +114,16 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    has-ai-chat
+    :loading="loading"
     :search="search"
-    :context-label="(row) => `${t('Purchase invoice')} #${row.number}`"
+    :has-active-filter="!!search || !!statusFilter"
+    filter-empty-label="invoice"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
+    @clear-filters="clearFilters"
   >
 
     <!-- ── Stats section ── -->
@@ -121,13 +136,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <div class="stat-period">{{ t('As of today') }}</div>
           <div class="stat-amount stat-amount--danger">Rp73.200.000,00</div>
           <a class="stat-link">{{ t('4 invoices') }}</a>
-          <div class="stat-ai-banner">
-            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="stat-ai-icon">
-              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-            </svg>
-            <span>{{ t('PT Teknindo Nusantara is 13 days overdue. Schedule a payment now?') }}</span>
-          </div>
         </div>
 
         <!-- Card 2: Unpaid -->
@@ -136,13 +144,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <div class="stat-period">{{ t('As of today') }}</div>
           <div class="stat-amount">Rp602.150.000,00</div>
           <a class="stat-link">{{ t('12 invoices') }}</a>
-          <div class="stat-ai-banner">
-            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="stat-ai-icon">
-              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-            </svg>
-            <span>{{ t('12 vendors are awaiting payment. The oldest is 18 days past due. Review now?') }}</span>
-          </div>
         </div>
 
         <!-- Card 3: Payment made -->
@@ -151,13 +152,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <div class="stat-period">{{ t('Last 30 days') }}</div>
           <div class="stat-amount">Rp72.050.000,00</div>
           <a class="stat-link">{{ t('7 invoices') }}</a>
-          <div class="stat-ai-banner">
-            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="stat-ai-icon">
-              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-            </svg>
-            <span>{{ t('Payment to') }} <strong>PT Dinamika Usaha Bersama</strong> {{ t('processed. Reconcile now?') }}</span>
-          </div>
         </div>
 
         <!-- Card 4: Upcoming due — hidden when Airene panel is open -->
@@ -166,13 +160,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <div class="stat-period">{{ t('Next 7 days') }}</div>
           <div class="stat-amount">Rp245.000.000,00</div>
           <a class="stat-link">{{ t('5 invoices') }}</a>
-          <div class="stat-ai-banner">
-            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="stat-ai-icon">
-              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-            </svg>
-            <span>{{ t('Rp145M due to') }} <strong>PT Karya Cipta Mandiri</strong> {{ t('on 18/05. Approve payment?') }}</span>
-          </div>
         </div>
 
       </div>
@@ -195,9 +182,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         </div>
 
         <button class="filter-all-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
         </button>
       </div>
@@ -245,9 +230,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       {{ formatDate(value as string) }}
     </template>
 
-    <!-- ── Cell: Number ── -->
+    <!-- ── Cell: Number (matches Expenses/Sales: "{label} #{5-digit}") ── -->
     <template #cell-number="{ value }">
-      <a class="cell-link cell-text" @click.stop>{{ value }}</a>
+      <a class="cell-link cell-text cell-number" @click.stop>Purchase invoice #{{ seqNo(value as string) }}</a>
     </template>
 
     <!-- ── Cell: Attachment icon ── -->
@@ -301,6 +286,15 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <template #cell-lastUpdated="{ row }">
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
+    </template>
+
+    <!-- ── Full empty state (no purchase invoices yet) ── -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">{{ t('No purchase invoices') }}</p>
+        <p class="empty-full-desc">{{ t('Purchase invoices will appear here.') }}</p>
+      </div>
     </template>
   </ErpTablePage>
 </template>
@@ -367,31 +361,16 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   padding: 0 var(--mp-spacing-0\.5);
 }
 
-.stat-ai-banner {
-  display: flex;
-  gap: var(--mp-spacing-3);
-  align-items: flex-start;
-  background: var(--mp-airene-banner-bg);
-  border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
+/* ── Full empty state (mirrors the Expenses index) ──────────────────────── */
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title {
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
 }
-
-.stat-ai-icon {
-  flex-shrink: 0;
+.empty-full-desc {
   margin-top: var(--mp-spacing-0\.5);
-  color: var(--mp-airene-default);
-}
-
-.stat-ai-banner span {
-  font-size: var(--mp-font-sizes-sm);
-  line-height: var(--mp-line-heights-sm, 16px);
-  color: var(--mp-airene-banner-text);
-  flex: 1;
-  min-width: 0;
-}
-
-.stat-ai-banner strong {
-  font-weight: var(--mp-font-weights-regular);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
 .cell-text {
@@ -400,6 +379,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
   min-width: 0;
 }
+.cell-number { color: var(--mp-text-default); }
 
 /* Attachment icon */
 .attachment-icon {
@@ -577,4 +557,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   border-radius: var(--mp-radii-full, 999px);
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── Responsive stats (audit): keep the row horizontal on small screens and let
+   it scroll/swipe instead of stacking (home stacks; index pages scroll). ── */
+@media (max-width: 640px) {
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .stat-card { flex: 0 0 auto; }
+}
 </style>
