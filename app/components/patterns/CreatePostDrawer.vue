@@ -11,6 +11,7 @@ import {
 } from '@mekari/pixel3'
 import { buzzBrands, buzzBrand, buzzCampaigns, persistCampaigns, addBuzzAsset, BUZZ_TODAY, type BuzzCampaign } from '~/data/buzz'
 import { getImage, putImage } from '~/utils/buzzImageStore'
+import AssetPickerDrawer from '~/components/patterns/AssetPickerDrawer.vue'
 
 const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void; (e: 'created', id: string): void }>()
@@ -27,11 +28,25 @@ const resultMime = ref('image/png')
 
 const hasBrands = computed(() => buzzBrands.length > 0)
 
+// Subjects — the user's own assets to feature in the post.
+const subjectIds = ref<string[]>([])
+const showAssetPicker = ref(false)
+const subjectThumbs = ref<Map<string, string>>(new Map())
+async function loadSubjectThumbs() {
+  for (const id of subjectIds.value) {
+    if (subjectThumbs.value.has(id)) continue
+    const r = await getImage(id)
+    if (r?.dataUrl) { const n = new Map(subjectThumbs.value); n.set(id, r.dataUrl); subjectThumbs.value = n }
+  }
+}
+watch(subjectIds, loadSubjectThumbs, { deep: true })
+function removeSubject(id: string) { subjectIds.value = subjectIds.value.filter((x) => x !== id) }
+
 watch(() => props.isOpen, (open) => {
   if (open) {
     brandId.value = buzzBrands[0]?.id ?? ''
     brief.value = ''; headline.value = ''; briefError.value = ''; error.value = ''
-    generating.value = false; resultUrl.value = ''
+    generating.value = false; resultUrl.value = ''; subjectIds.value = []
   }
 })
 
@@ -49,6 +64,11 @@ async function generate() {
     const rec = await getImage(id)
     if (rec?.dataUrl) references.push(rec.dataUrl)
   }
+  const subjects: string[] = []
+  for (const id of subjectIds.value.slice(0, 4)) {
+    const rec = await getImage(id)
+    if (rec?.dataUrl) subjects.push(rec.dataUrl)
+  }
   try {
     const res = await $fetch<{ dataUrl?: string; mime?: string; error?: string }>('/api/buzz/generate-ig-post', {
       method: 'POST',
@@ -61,6 +81,7 @@ async function generate() {
           visualStyle: b.visualStyle, photography: b.photography, guardrails: b.guardrails,
         } : undefined,
         references,
+        subjects,
       },
     })
     if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the post.'; return }
@@ -142,6 +163,18 @@ async function save() {
                 <MpInput id="cpd-headline-input" v-model="headline" is-full-width placeholder="Leave blank and AI writes one in your tone" />
               </MpFormControl>
 
+              <MpFormControl id="cpd-assets">
+                <MpFormLabel>Your assets (optional)</MpFormLabel>
+                <p class="cpd__hintline">Pick a product or photo from your library — Buzz features it in the post and can re-pose it into the scene.</p>
+                <div class="cpd__subjects">
+                  <span v-for="id in subjectIds" :key="id" class="cpd__subject">
+                    <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="cpd__subject-img" />
+                    <button type="button" class="cpd__subject-x" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></button>
+                  </span>
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true"><MpIcon name="add" size="sm" /> Add from your assets</button>
+                </div>
+              </MpFormControl>
+
               <div v-if="generating" class="cpd__preview cpd__preview--loading">
                 <MpSpinner size="md" />
                 <p class="cpd__hint">Designing your post with Gemini…</p>
@@ -171,6 +204,8 @@ async function save() {
     </MpDrawerContent>
     <MpDrawerOverlay />
   </MpDrawer>
+
+  <AssetPickerDrawer v-model:is-open="showAssetPicker" v-model="subjectIds" />
 </template>
 
 <style scoped>
@@ -185,4 +220,10 @@ async function save() {
 .cpd__result { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cpd__img { width: 100%; max-width: 360px; margin: 0 auto; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); display: block; }
 .cpd__error { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #d1362f); }
+.cpd__hintline { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.cpd__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }
+.cpd__subject { position: relative; width: 56px; height: 56px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); flex-shrink: 0; }
+.cpd__subject-img { width: 100%; height: 100%; object-fit: cover; }
+.cpd__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; cursor: pointer; padding: 0; }
+.cpd__subject-x :deep(svg) { color: #fff; width: 12px; height: 12px; }
 </style>

@@ -44,7 +44,7 @@ function brandBlock(b?: BrandCtx): string {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ brief?: string; headline?: string; brand?: BrandCtx; references?: string[] }>(event)
+  const body = await readBody<{ brief?: string; headline?: string; brand?: BrandCtx; references?: string[]; subjects?: string[] }>(event)
   const brief = (body?.brief ?? '').trim()
   if (!brief) { setResponseStatus(event, 400); return { error: 'Describe what the post is about.' } }
 
@@ -52,15 +52,20 @@ export default defineEventHandler(async (event) => {
   const apiKey = config.geminiApiKey as string
   if (!apiKey) { setResponseStatus(event, 503); return { error: 'Image generation is not configured yet. Add NUXT_GEMINI_API_KEY to .env.local and restart.' } }
 
-  // Reference designs (the brand's uploaded/captured visual-style samples).
-  const refParts = (body?.references ?? []).slice(0, 4).map((d) => {
+  const toParts = (arr?: string[]) => (arr ?? []).slice(0, 4).map((d) => {
     if (typeof d !== 'string' || !d.startsWith('data:')) return null
     const m = d.match(/^data:([^;]+);base64,(.+)$/)
     return m ? { inlineData: { mimeType: m[1], data: m[2] } } : null
   }).filter(Boolean) as any[]
+  // Reference designs (style) vs subjects (the user's own assets to feature).
+  const refParts = toParts(body?.references)
+  const subjectParts = toParts(body?.subjects)
 
   const headlineLine = body?.headline?.trim() ? `Headline to feature on the post: "${body.headline.trim()}".` : 'Write a short, punchy headline for the post yourself, in the brand tone.'
   const refLine = refParts.length ? `${refParts.length} of this brand's reference designs are attached — match their art direction and visual style closely.` : ''
+  const subjectLine = subjectParts.length
+    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — these are the SUBJECT (e.g. a product, person, or item) that MUST appear in the post. Keep each subject's identity, colours, shape and any branding accurate; you may re-pose, re-light, re-angle and place them into a new scene/composition, but do not invent a different product.`
+    : ''
 
   const full = [
     IG_DESIGN_SKILL,
@@ -69,6 +74,7 @@ export default defineEventHandler(async (event) => {
     '',
     `POST BRIEF: ${brief}`,
     headlineLine,
+    subjectLine,
     refLine,
     'Now design the finished Instagram post as a single 4:5 image.',
   ].filter(Boolean).join('\n')
@@ -79,7 +85,7 @@ export default defineEventHandler(async (event) => {
     return await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ role: 'user', parts: [...refParts, { text: full }] }],
+        contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: full }] }],
         ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
       },
       timeout: 90000,

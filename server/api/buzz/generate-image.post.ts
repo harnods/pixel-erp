@@ -15,20 +15,18 @@ const ORIENTATION_HINT: Record<string, string> = {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ prompt?: string; brand?: BrandCtx; orientation?: string; style?: string; references?: string[] }>(event)
+  const body = await readBody<{ prompt?: string; brand?: BrandCtx; orientation?: string; style?: string; references?: string[]; subjects?: string[] }>(event)
   const prompt = (body?.prompt ?? '').trim()
   if (!prompt) { setResponseStatus(event, 400); return { error: 'Describe the image you want to generate.' } }
-  // Reference designs (the brand's uploaded/captured visual-style samples) — the
-  // model should match their look. Data URLs → inlineData parts (cap a few).
-  const refParts = (body?.references ?? [])
-    .slice(0, 4)
-    .map((d) => {
-      if (typeof d !== 'string' || !d.startsWith('data:')) return null
-      const m = d.match(/^data:([^;]+);base64,(.+)$/)
-      if (!m) return null
-      return { inlineData: { mimeType: m[1], data: m[2] } }
-    })
-    .filter(Boolean) as any[]
+  const toParts = (arr?: string[]) => (arr ?? []).slice(0, 4).map((d) => {
+    if (typeof d !== 'string' || !d.startsWith('data:')) return null
+    const m = d.match(/^data:([^;]+);base64,(.+)$/)
+    return m ? { inlineData: { mimeType: m[1], data: m[2] } } : null
+  }).filter(Boolean) as any[]
+  // References = the brand's visual-style samples (match the look).
+  const refParts = toParts(body?.references)
+  // Subjects = the user's own assets to feature (keep identity, new pose/scene).
+  const subjectParts = toParts(body?.subjects)
 
   const config = useRuntimeConfig()
   const apiKey = config.geminiApiKey as string
@@ -47,9 +45,13 @@ export default defineEventHandler(async (event) => {
   const refLine = refParts.length
     ? `${refParts.length} reference design${refParts.length > 1 ? 's' : ''} from this brand are attached — MATCH their visual style closely (composition, colour treatment, mood, art direction). Do not copy their exact content; produce a new visual in the same style.`
     : ''
+  const subjectLine = subjectParts.length
+    ? `${subjectParts.length} of the user's own asset image${subjectParts.length > 1 ? 's are' : ' is'} attached — this is the SUBJECT that MUST appear. Keep its identity, colours, shape and branding accurate; generate a NEW pose / angle / scene / composition of the same subject (do not invent a different product).`
+    : ''
   const full = [
     prompt,
     brandLine,
+    subjectLine,
     refLine,
     styleLine,
     `Composition: ${orient}. A polished, production-ready marketing visual. Photorealistic where people are shown; no text, watermarks or logos unless explicitly requested. Southeast Asian representation where people appear.`,
@@ -63,7 +65,7 @@ export default defineEventHandler(async (event) => {
     return await $fetch<any>(url, {
       method: 'POST',
       body: {
-        contents: [{ role: 'user', parts: [...refParts, { text: full }] }],
+        contents: [{ role: 'user', parts: [...subjectParts, ...refParts, { text: full }] }],
         ...(withModalities ? { generationConfig: { responseModalities: ['IMAGE'] } } : {}),
       },
       timeout: 90000,

@@ -8,10 +8,10 @@
  * (brand + orientation dropdowns left, Export + Search right). Thumbnails use a
  * CSS gradient stand-in (no network in the mock).
  */
-import { MpIcon } from '@mekari/pixel3'
-import { buzzAssets, buzzBrands, buzzBrand, type BuzzAsset } from '~/data/buzz'
+import { MpIcon, toast } from '@mekari/pixel3'
+import { buzzAssets, buzzBrands, buzzBrand, addUploadedAsset, type BuzzAsset } from '~/data/buzz'
 import { infoToast } from '~/utils/toasts'
-import { getImage } from '~/utils/buzzImageStore'
+import { getImage, putImage } from '~/utils/buzzImageStore'
 import { useBuzzActions } from '~/composables/useBuzzActions'
 import GenerateAssetDrawer from '~/components/patterns/GenerateAssetDrawer.vue'
 
@@ -30,6 +30,7 @@ const filtered = computed<BuzzAsset[]>(() => {
       return ai !== 0 ? ai : a.title.localeCompare(b.title)
     })
     .filter((a) =>
+      (a.assetType ?? 'photo') !== 'logo' &&
       (!s || a.title.toLowerCase().includes(s) || a.tags.some((t) => t.toLowerCase().includes(s))) &&
       (!brandFilter.value || a.brand === brandFilter.value) &&
       (!orientationFilter.value || a.orientation === orientationFilter.value))
@@ -48,11 +49,44 @@ watch(filtered, loadImages, { deep: true, immediate: true })
 
 // ── Generate asset drawer ──
 const showGenerate = ref(false)
+const presetSubject = ref<string[]>([])
 const { pending } = useBuzzActions()
-watch(() => pending.value, (p) => { if (p?.action === 'generateAsset') showGenerate.value = true })
+watch(() => pending.value, (p) => { if (p?.action === 'generateAsset') { presetSubject.value = []; showGenerate.value = true } })
 // Opened from the Home "Generate image" chip via ?generate=1.
 onMounted(() => { if (route.query.generate) showGenerate.value = true })
 function onSaved() { loadImages() }
+
+// Generate new poses/scenes FROM an existing asset (uses it as the subject).
+function generateVariations(a: BuzzAsset) { presetSubject.value = [a.id]; showGenerate.value = true }
+
+// ── Upload your own assets ──
+const uploadInput = ref<HTMLInputElement | null>(null)
+function triggerUpload() { uploadInput.value?.click() }
+function orientationOf(w: number, h: number): 'Landscape' | 'Portrait' | 'Square' {
+  if (w > h * 1.15) return 'Landscape'
+  if (h > w * 1.15) return 'Portrait'
+  return 'Square'
+}
+async function onFiles(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  for (const f of files) {
+    const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('read')); r.readAsDataURL(f) })
+    // Detect orientation from natural size.
+    const dims = await new Promise<{ w: number; h: number }>((res) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res({ w: 1, h: 1 }); im.src = dataUrl })
+    const asset = addUploadedAsset({
+      title: f.name.replace(/\.[^.]+$/, ''),
+      brand: brandFilter.value || buzzBrands[0]?.id || '',
+      assetType: 'photo',
+      orientation: orientationOf(dims.w, dims.h),
+      tags: ['upload'],
+      usage: 'Uploaded asset',
+    })
+    await putImage({ id: asset.id, mime: f.type, dataUrl })
+  }
+  if (files.length) { loadImages(); toast.notify({ variant: 'success', title: files.length > 1 ? 'Assets uploaded.' : 'Asset uploaded.', maxWidth: 'max-content' }) }
+}
 </script>
 
 <template>
@@ -77,6 +111,8 @@ function onSaved() { loadImages() }
         <button class="filter-all-btn"><MpIcon name="filter" size="md" /> All filters</button>
       </div>
       <div class="filter-right">
+        <button type="button" class="upload-btn" @click="triggerUpload"><MpIcon name="add" size="md" /> Upload asset</button>
+        <input ref="uploadInput" class="upload-input" type="file" accept="image/*" multiple @change="onFiles" />
         <div class="filter-btn-group">
           <button class="filter-icon-btn" aria-label="Export" @click="infoToast('Export · coming soon')"><MpIcon name="download" size="md" /></button>
         </div>
@@ -90,17 +126,18 @@ function onSaved() { loadImages() }
 
     <!-- ── Gallery grid ── -->
     <div v-if="filtered.length" class="gallery">
-      <button v-for="a in filtered" :key="a.id" type="button" class="asset" @click="infoToast('Asset preview · coming soon')">
+      <div v-for="a in filtered" :key="a.id" class="asset">
         <span class="asset__thumb" :class="`asset__thumb--${a.orientation.toLowerCase()}`" :style="{ background: a.gradient }">
           <img v-if="a.hasImage && images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="asset__photo" />
           <span v-if="a.source === 'ai'" class="asset__ai"><MpIcon name="magic" size="sm" /> AI</span>
-          <img :src="buzzBrand(a.brand)?.logo" :alt="buzzBrand(a.brand)?.name" class="asset__badge" />
+          <img v-if="/^(\/|https?:|data:)/.test(buzzBrand(a.brand)?.logo || '')" :src="buzzBrand(a.brand)?.logo" :alt="buzzBrand(a.brand)?.name" class="asset__badge" />
+          <button v-if="a.hasImage" type="button" class="asset__vary" @click="generateVariations(a)"><MpIcon name="magic" size="sm" /> Generate variations</button>
         </span>
         <span class="asset__meta">
           <span class="asset__title">{{ a.title }}</span>
           <span class="asset__sub">{{ buzzBrand(a.brand)?.name }} · {{ a.orientation }}</span>
         </span>
-      </button>
+      </div>
     </div>
     <div v-else class="empty-full">
       <img src="/illustrations/empty-box.png" alt="" class="empty-illustration" width="288" height="240" />
@@ -109,7 +146,7 @@ function onSaved() { loadImages() }
       <button type="button" class="btn-enterprise btn-enterprise--secondary empty-cta" @click="showGenerate = true">Generate asset</button>
     </div>
 
-    <GenerateAssetDrawer v-model:is-open="showGenerate" @saved="onSaved" />
+    <GenerateAssetDrawer v-model:is-open="showGenerate" :preset-subject-ids="presetSubject" @saved="onSaved" />
   </div>
 </template>
 
@@ -126,6 +163,13 @@ function onSaved() { loadImages() }
 .asset__ai { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--mp-radii-full, 999px); background: rgba(8,13,14,0.72); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
 .asset__ai :deep(svg) { color: #fff; }
 .asset__badge { position: absolute; left: 8px; bottom: 8px; width: 24px; height: 24px; border-radius: 5px; object-fit: contain; background: #fff; padding: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); z-index: 1; }
+.asset { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
+.asset__vary { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 6px; border: none; background: rgba(8,13,14,0.5); color: #fff; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; opacity: 0; transition: opacity 120ms; }
+.asset__vary :deep(svg) { color: #fff; }
+.asset__thumb:hover .asset__vary { opacity: 1; }
+.upload-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); cursor: pointer; white-space: nowrap; }
+.upload-btn:hover { background: var(--mp-background-neutral-hovered); }
+.upload-input { display: none; }
 .asset:hover .asset__thumb { border-color: var(--mp-border-bold, #8c9596); }
 .asset__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .asset__title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
