@@ -228,6 +228,13 @@ export function brandLogos(brandId?: string): BuzzAsset[] {
   return buzzAssets.filter((a) => a.assetType === 'logo' && (!brandId || a.brand === brandId))
 }
 
+/** Remove an asset from the library (its image should also be deleted from
+ *  IndexedDB by the caller via deleteImage). */
+export function removeBuzzAsset(id: string): void {
+  const i = buzzAssets.findIndex((a) => a.id === id)
+  if (i >= 0) { buzzAssets.splice(i, 1); persistAssets() }
+}
+
 // ── Quick-create actions on Home (PRD §3) ──────────────────────────────────────
 export interface BuzzCreateAction { key: string; label: string; icon: string }
 export const BUZZ_CREATE_ACTIONS: BuzzCreateAction[] = [

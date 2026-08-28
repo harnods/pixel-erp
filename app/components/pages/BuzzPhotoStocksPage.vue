@@ -9,10 +9,11 @@
  * CSS gradient stand-in (no network in the mock).
  */
 import { MpIcon, toast } from '@mekari/pixel3'
-import { buzzAssets, buzzBrands, buzzBrand, addUploadedAsset, type BuzzAsset } from '~/data/buzz'
-import { getImage, putImage } from '~/utils/buzzImageStore'
+import { buzzAssets, buzzBrands, buzzBrand, addUploadedAsset, removeBuzzAsset, type BuzzAsset } from '~/data/buzz'
+import { getImage, putImage, deleteImage } from '~/utils/buzzImageStore'
 import { useBuzzActions } from '~/composables/useBuzzActions'
 import GenerateAssetDrawer from '~/components/patterns/GenerateAssetDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 
 const route = useRoute()
 const search = ref('')
@@ -65,6 +66,17 @@ function generateVariations(a: BuzzAsset) { preview.value = null; presetSubject.
 const preview = ref<BuzzAsset | null>(null)
 const previewUrl = computed(() => preview.value ? (images.value.get(preview.value.id) ?? '') : '')
 function openPreview(a: BuzzAsset) { preview.value = a }
+
+// ── Delete ──
+const showDelete = ref(false)
+async function confirmDelete() {
+  const a = preview.value
+  if (!a) return
+  removeBuzzAsset(a.id)
+  await deleteImage(a.id)
+  preview.value = null
+  toast.notify({ variant: 'success', title: 'Asset deleted.', maxWidth: 'max-content' })
+}
 
 // ── Upload your own assets ──
 const uploadInput = ref<HTMLInputElement | null>(null)
@@ -143,6 +155,14 @@ async function onFiles(ev: Event) {
 
     <GenerateAssetDrawer v-model:is-open="showGenerate" :preset-subject-ids="presetSubject" @saved="onSaved" />
 
+    <ConfirmModal
+      v-model:is-open="showDelete"
+      :title="`Delete ${preview?.title ?? 'asset'}?`"
+      description="This removes the asset from your library. This can't be undone."
+      confirm-label="Delete asset"
+      @confirm="confirmDelete"
+    />
+
     <!-- ── Photo preview modal ── -->
     <Teleport to="body">
       <Transition name="pv">
@@ -154,7 +174,10 @@ async function onFiles(ev: Event) {
             </div>
             <div class="pv-foot">
               <span class="pv-brand">{{ buzzBrand(preview.brand)?.name }}</span>
-              <button v-if="preview.hasImage" type="button" class="btn-enterprise btn-enterprise--secondary" @click="generateVariations(preview)">Generate variations</button>
+              <div class="pv-actions">
+                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showDelete = true">Delete</button>
+                <button v-if="preview.hasImage" type="button" class="btn-enterprise btn-enterprise--secondary" @click="generateVariations(preview)">Generate variations</button>
+              </div>
             </div>
           </div>
         </div>
@@ -167,12 +190,11 @@ async function onFiles(ev: Event) {
 .buzz-page { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
 
 /* ── Gallery ── */
-.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--mp-spacing-4, 16px); }
-.asset { display: block; padding: 0; border: none; background: none; cursor: pointer; }
-.asset__thumb { position: relative; display: block; width: 100%; height: 150px; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; }
-.asset__thumb--portrait { height: 200px; }
-.asset__thumb--square { height: 180px; }
-.asset__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Pinterest-style masonry — variable-height tiles packed into columns. */
+.gallery { column-width: 220px; column-gap: var(--mp-spacing-4, 16px); }
+.asset { display: inline-block; width: 100%; margin: 0 0 var(--mp-spacing-4, 16px); break-inside: avoid; padding: 0; border: none; background: none; cursor: pointer; vertical-align: top; }
+.asset__thumb { position: relative; display: block; width: 100%; min-height: 120px; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; }
+.asset__photo { display: block; width: 100%; height: auto; }
 .upload-input { display: none; }
 .asset:hover .asset__thumb { border-color: var(--mp-border-bold, #8c9596); }
 
@@ -187,6 +209,7 @@ async function onFiles(ev: Event) {
 .pv-img { max-width: 100%; max-height: 78vh; object-fit: contain; display: block; }
 .pv-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .pv-brand { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pv-actions { display: flex; gap: var(--mp-spacing-2, 8px); }
 
 /* Empty state — 3D illustration + copy + secondary CTA (ERP pattern) */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-12, 48px) var(--mp-spacing-6); text-align: center; }

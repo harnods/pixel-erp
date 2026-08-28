@@ -31,6 +31,20 @@ const results = ref<{ dataUrl: string; mime: string }[]>([])
 const selected = ref(0) // chosen alternative (single post)
 const resultKind = ref<'single' | 'carousel'>('single')
 
+// Zoom lightbox over the generated designs.
+const zoomIndex = ref<number | null>(null)
+function openZoom(i: number) { zoomIndex.value = i }
+function zoomNext() { if (zoomIndex.value !== null) zoomIndex.value = (zoomIndex.value + 1) % results.value.length }
+function zoomPrev() { if (zoomIndex.value !== null) zoomIndex.value = (zoomIndex.value - 1 + results.value.length) % results.value.length }
+function onZoomKey(e: KeyboardEvent) {
+  if (zoomIndex.value === null) return
+  if (e.key === 'ArrowRight') zoomNext()
+  else if (e.key === 'ArrowLeft') zoomPrev()
+  else if (e.key === 'Escape') zoomIndex.value = null
+}
+onMounted(() => window.addEventListener('keydown', onZoomKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onZoomKey))
+
 const hasBrands = computed(() => buzzBrands.length > 0)
 
 // Subjects — the user's own assets to feature in the post.
@@ -51,7 +65,7 @@ watch(() => props.isOpen, (open) => {
   if (open) {
     brandId.value = buzzBrands[0]?.id ?? ''
     brief.value = ''; headline.value = ''; briefError.value = ''; error.value = ''
-    generating.value = false; results.value = []; selected.value = 0; subjectIds.value = []
+    generating.value = false; results.value = []; selected.value = 0; subjectIds.value = []; zoomIndex.value = null
     postType.value = 'single'; slides.value = 5
   }
 })
@@ -63,7 +77,7 @@ async function generate() {
   if (briefError.value) return
   error.value = ''
   generating.value = true
-  results.value = []; selected.value = 0
+  results.value = []; selected.value = 0; zoomIndex.value = null
   const b = buzzBrand(brandId.value)
   const references: string[] = []
   for (const id of (b?.visualRefs ?? []).slice(0, 4)) {
@@ -136,7 +150,7 @@ async function save() {
 </script>
 
 <template>
-  <MpDrawer id="buzz-create-post-drawer" :is-open="isOpen" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="close">
+  <MpDrawer id="buzz-create-post-drawer" :is-open="isOpen" placement="right" size="lg" variant="floating" :is-keep-alive="false" @close="close">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="cpd">
@@ -205,9 +219,9 @@ async function save() {
               <div v-else-if="results.length" class="cpd__result">
                 <!-- Single post: 3 alternatives, pick one -->
                 <template v-if="resultKind === 'single'">
-                  <p class="cpd__resultlabel">Pick a design</p>
+                  <p class="cpd__resultlabel">Pick a design · click to zoom</p>
                   <div class="cpd__alts">
-                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" @click="selected = i">
+                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" @click="selected = i; openZoom(i)">
                       <img :src="img.dataUrl" :alt="`Design ${i + 1}`" class="cpd__alt-img" />
                       <span v-if="selected === i" class="cpd__alt-check"><MpIcon name="check" size="sm" /></span>
                     </button>
@@ -215,12 +229,12 @@ async function save() {
                 </template>
                 <!-- Carousel: slide strip -->
                 <template v-else>
-                  <p class="cpd__resultlabel">{{ results.length }}-slide series</p>
+                  <p class="cpd__resultlabel">{{ results.length }}-slide series · click to zoom</p>
                   <div class="cpd__slides">
-                    <div v-for="(img, i) in results" :key="i" class="cpd__slide">
+                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__slide" @click="openZoom(i)">
                       <img :src="img.dataUrl" :alt="`Slide ${i + 1}`" class="cpd__slide-img" />
                       <span class="cpd__slide-n">{{ i + 1 }}</span>
-                    </div>
+                    </button>
                   </div>
                 </template>
                 <p v-if="error" class="cpd__error">{{ error }}</p>
@@ -246,6 +260,19 @@ async function save() {
   </MpDrawer>
 
   <AssetPickerDrawer v-model:is-open="showAssetPicker" v-model="subjectIds" />
+
+  <!-- ── Zoom lightbox over the generated designs ── -->
+  <Teleport to="body">
+    <Transition name="zm">
+      <div v-if="zoomIndex !== null && results[zoomIndex]" class="zm-overlay" @click.self="zoomIndex = null">
+        <button class="zm-close" type="button" aria-label="Close" @click="zoomIndex = null"><MpIcon name="close" size="md" /></button>
+        <button v-if="results.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
+        <img :src="results[zoomIndex].dataUrl" alt="Design preview" class="zm-img" />
+        <button v-if="results.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></button>
+        <span v-if="results.length > 1" class="zm-count">{{ zoomIndex + 1 }} / {{ results.length }}</span>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -269,7 +296,23 @@ async function save() {
 .cpd__alt-check :deep(svg) { color: #fff; }
 /* Carousel: slide strip */
 .cpd__slides { display: flex; gap: var(--mp-spacing-2, 8px); overflow-x: auto; padding-bottom: var(--mp-spacing-1); }
-.cpd__slide { position: relative; flex: 0 0 auto; width: 140px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); }
+.cpd__slide { position: relative; flex: 0 0 auto; width: 140px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); padding: 0; background: none; cursor: pointer; }
+.cpd__alt { cursor: pointer; }
+
+/* Zoom lightbox */
+.zm-enter-active, .zm-leave-active { transition: opacity 180ms ease; }
+.zm-enter-from, .zm-leave-to { opacity: 0; }
+.zm-overlay { position: fixed; inset: 0; z-index: 1600; background: rgba(8, 13, 14, 0.82); display: flex; align-items: center; justify-content: center; padding: var(--mp-spacing-8, 32px); }
+.zm-img { max-width: min(680px, 86vw); max-height: 88vh; object-fit: contain; border-radius: var(--mp-radii-md, 8px); display: block; }
+.zm-close { position: fixed; top: 16px; right: 16px; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: #fff; }
+.zm-close:hover { background: rgba(255,255,255,0.24); }
+.zm-close :deep(svg) { color: #fff; }
+.zm-nav { position: fixed; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: #fff; }
+.zm-nav:hover { background: rgba(255,255,255,0.24); }
+.zm-nav :deep(svg) { color: #fff; }
+.zm-nav--prev { left: 16px; }
+.zm-nav--next { right: 16px; }
+.zm-count { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.16); color: #fff; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); }
 .cpd__slide-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
 .cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
 .cpd__error { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #d1362f); }
