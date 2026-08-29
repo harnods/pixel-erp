@@ -760,7 +760,7 @@ onMounted(() => {
                         <th class="scf-th">{{ t('Counted qty') }}</th>
                         <th class="scf-th scf-th--num">{{ t('Difference') }}</th>
                         <th class="scf-th">{{ t('Unit') }}</th>
-                        <th class="scf-th">{{ t('Average cost') }}</th>
+                        <th v-if="!isWms" class="scf-th">{{ t('Average cost') }}</th>
                         <th class="scf-th scf-th--del" />
                       </tr>
                     </thead>
@@ -822,7 +822,7 @@ onMounted(() => {
                         </td>
                         <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (locDiff(row) ?? 0) > 0, 'scf-diff--neg': (locDiff(row) ?? 0) < 0, 'scf-diff--uncounted': locDiff(row) === null }">{{ locDiffLabel(row) }}</td>
                         <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
-                        <td class="scf-td scf-td--avg scf-td--input">
+                        <td v-if="!isWms" class="scf-td scf-td--avg scf-td--input">
                           <div class="scf-avg-wrap" :class="{ 'scf-avg-wrap--auto': row.avgMode !== 'custom' }">
                             <span class="scf-avg-prefix">Rp</span>
                             <input
@@ -889,7 +889,7 @@ onMounted(() => {
                   <th class="scf-th">{{ t('Counted qty') }}</th>
                   <th class="scf-th scf-th--num">{{ t('Difference') }}</th>
                   <th class="scf-th">{{ t('Unit') }}</th>
-                  <th class="scf-th">{{ t('Average cost') }}</th>
+                  <th v-if="!isWms" class="scf-th">{{ t('Average cost') }}</th>
                   <th class="scf-th scf-th--del" />
                 </tr>
               </thead>
@@ -951,7 +951,7 @@ onMounted(() => {
                   </td>
                   <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (differenceOf(row) ?? 0) > 0, 'scf-diff--neg': (differenceOf(row) ?? 0) < 0, 'scf-diff--uncounted': differenceOf(row) === null }">{{ diffLabel(row) }}</td>
                   <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
-                  <td class="scf-td scf-td--avg scf-td--input">
+                  <td v-if="!isWms" class="scf-td scf-td--avg scf-td--input">
                     <div class="scf-avg-wrap" :class="{ 'scf-avg-wrap--auto': row.avgMode !== 'custom' }">
                       <span class="scf-avg-prefix">Rp</span>
                       <input

@@ -145,10 +145,30 @@ function generate(count = 24): StockAdjustment[] {
       { sku: '2101', productName: 'Coffee Grinder On-Demand 64mm', serial: '210101201', systemLocation: 'Bin 03', countedLocation: 'Bin 02', scannedAt: isoOffsetTs(-1, 12, 15) },
     ]
   }
+
+  // Demo scenario — an OPEN count task holding ONE SKU across three bins, which
+  // the generated data can't produce on its own (the storage model tiles SKUs so
+  // each one belongs to a single bin). Coffee Scale 2kg / 0.1g sits in Bin 01,
+  // Bin 02 and Bin 03; Knock Box Drawer sits in Bin 01 only, so the contrast
+  // between a multi-bin product and a single-bin one is visible side by side.
+  // Left "not_started" (Open) because removing a product is a drafting decision.
+  const multiBinDemo = out.find(r => r.kind === 'count' && r.warehouseId === 'wh-010' && r.id !== 'cc-006')
+  if (multiBinDemo) {
+    multiBinDemo.status = 'not_started'
+    multiBinDemo.startDate = undefined
+    multiBinDemo.endDate = undefined
+    multiBinDemo.lines = [
+      { sku: '3004', qty: 0, prevQty: 6, location: 'Bin 01' },
+      { sku: '3004', qty: 0, prevQty: 4, location: 'Bin 02' },
+      { sku: '3004', qty: 0, prevQty: 3, location: 'Bin 03' },
+      { sku: '3006', qty: 0, prevQty: 14, location: 'Bin 01' },
+    ]
+  }
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v7'
+// Bumped to v8 — adds the multi-bin Open count task demo above.
+const KEY = 'wms-stock-adjustments-v8'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -428,6 +448,9 @@ export function updateWmsAdjustment(id: string, input: AdjustmentInput): StockAd
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
+    // A count task's assignee is editable too — without this, reassigning on the
+    // edit form would look saved and silently revert on the next read.
+    ...(input.assignee !== undefined ? { assignee: input.assignee } : {}),
   })
   persist()
   return a
