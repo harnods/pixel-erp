@@ -15,6 +15,9 @@ import { lineItemsForReceipt } from '~/data/receiptLineItems'
 import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
+import NewProductModal from '~/components/patterns/NewProductModal.vue'
+import { customProducts } from '~/data/customProducts'
+import type { Product } from '~/data/inventory'
 import { scrollToFirstError } from '~/utils/form'
 import AcknowledgeReceivingReductionModal, { type ReceivingReductionGroup } from '~/components/AcknowledgeReceivingReductionModal.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -126,21 +129,44 @@ function qtyErrorMsg(row: LineRow): string {
 const rows = ref<LineRow[]>([makeRow()])
 const hasAnyProduct = computed(() => rows.value.some((r) => r.productId))
 
-const ALL_PRODUCT_OPTIONS = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku }))
+// Inline-created products come first so one just added is the top hit.
+const ALL_PRODUCT_OPTIONS = computed(() =>
+  [...customProducts, ...CATALOG].map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku })),
+)
 const productFilter = ref('')
 const productOptions = computed(() => {
   const q = productFilter.value.trim().toLowerCase()
-  if (!q) return ALL_PRODUCT_OPTIONS
-  return ALL_PRODUCT_OPTIONS.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+  if (!q) return ALL_PRODUCT_OPTIONS.value
+  return ALL_PRODUCT_OPTIONS.value.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
 })
 function onProductSearch(e: Event) {
   productFilter.value = (e.target as HTMLInputElement).value
 }
 
+// ── Inline "Add new product" from the product combobox ───────────────────────
+// What's being received isn't always in the catalogue yet, so the operator can
+// create it without leaving the receipt. The row that opened the modal takes
+// the new product straight away.
+const newProductOpen = ref(false)
+const newProductRow = ref<LineRow | null>(null)
+const newProductName = ref('')
+function openNewProduct(row: LineRow) {
+  newProductRow.value = row
+  newProductName.value = productFilter.value.trim()
+  newProductOpen.value = true
+}
+function onProductCreated(product: Product) {
+  const row = newProductRow.value
+  newProductRow.value = null
+  if (!row) return
+  row.productId = product.id
+  onProductSelect(row, product.id)
+}
+
 function onProductSelect(row: LineRow, id: string) {
   row.productError = false
   productFilter.value = ''
-  const p = CATALOG.find((c) => c.id === id)
+  const p = [...customProducts, ...CATALOG].find((c) => c.id === id)
   if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
   row.productName = p.name
   row.productSku = p.sku
@@ -629,9 +655,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         label-prop="name"
                         value-prop="id"
                         is-searchable is-clearable use-portal is-full-width is-manual-filter
+                        is-show-button-action
                         @update:model-value="(v: string) => onProductSelect(row, v)"
                         @input="onProductSearch"
+                        @button-action="openNewProduct(row)"
                       >
+                        <template #buttonAction>{{ t('Add new product') }}</template>
                         <template #leftAddon>
                           <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
                           <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
@@ -656,9 +685,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name"
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width is-manual-filter
+                      is-show-button-action
                       @update:model-value="(v: string) => onProductSelect(row, v)"
                       @input="onProductSearch"
+                      @button-action="openNewProduct(row)"
                     >
+                      <template #buttonAction>{{ t('Add new product') }}</template>
                       <template #leftAddon>
                         <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
                         <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
@@ -764,6 +796,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+
+    <!-- Inline product creation from the product combobox (WMS fields only). -->
+    <NewProductModal
+      v-model:open="newProductOpen"
+      :initial-name="newProductName"
+      @created="onProductCreated"
     />
   </div>
 </template>
