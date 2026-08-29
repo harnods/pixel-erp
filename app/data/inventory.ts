@@ -35,6 +35,11 @@ export interface Product {
    *  product form (per the configured barcode format); seed CATALOG products fall
    *  back to a deterministic value derived in productsIndex.ts. */
   barcode?: string
+  /** WMS inline-create only — the warehouse's own stocking fields. Kept optional
+   *  because the ERP catalogue carries neither: min. stock lives per-warehouse,
+   *  and batch/serial tracking is otherwise derived from the product category. */
+  minStock?: number
+  trackStockBy?: string
 }
 
 /**

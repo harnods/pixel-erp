@@ -504,7 +504,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // and breadcrumb reflect where they actually belong.
   if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] !== 'new') {
     if (segs.length >= 3 && segs[2] === 'count') return { component: StockCountingPage, id: segs[1]! }
-    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    // Editing an Open count task reuses the create form in edit mode.
+    if (segs[2] === 'edit') return { component: NewCountTaskPage, id: segs[1]! }
     return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }
   // /stock-adjustments/:id → detail; /new & /:id/edit → create/edit form (TBD → placeholder)
