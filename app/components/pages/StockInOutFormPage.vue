@@ -445,7 +445,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="sio-product-id">{{ row.sku }}</span>
                   </div>
                 </div>
-                <div class="sio-product-avg">
+                <!-- Costing is ERP-only — a WMS Standalone user has no access to it. -->
+                <div v-if="!isWms" class="sio-product-avg">
                   <span class="sio-avg-label">Average cost</span>
                   <div class="sio-avg-value-wrap">
                     <template v-if="row.avgMode === 'custom'">

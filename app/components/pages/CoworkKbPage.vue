@@ -13,6 +13,7 @@
  */
 import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
 import { MpButton, MpIcon, MpInput, MpSpinner, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import {
   coworkKb, childrenOf, breadcrumbOf, getFolder, getNode, addFolder, renameNode, moveNode, deleteNode,
   descendantDocs, descendantFolderIds, isFolder, isDoc, extLabel,
@@ -230,7 +231,7 @@ function triggerUpload() {
   if (currentFolderId.value) { pendingTarget.value = currentFolderId.value; uploadInput.value?.click(); return }
   // At the root — pick a folder first (or make one if there are none).
   if (!folderOptions.value.length) {
-    toast.notify({ variant: 'info', title: 'Create a folder first', description: 'Add a folder from the sidebar, then upload into it.' })
+    infoToast('Create a folder first — add one from the sidebar, then upload into it.')
     openNewFolder(null)
     return
   }
@@ -302,7 +303,7 @@ function onDropMain(e: DragEvent) {
   const files = e.dataTransfer?.files
   if (!files?.length) return
   if (currentFolderId.value) runUpload(currentFolderId.value, files)
-  else toast.notify({ variant: 'info', title: 'Open a folder first', description: 'Drop files onto a folder, or open one and drop them here.' })
+  else infoToast('Open a folder first — drop files onto a folder, or open one and drop them here.')
 }
 
 // ── New folder / rename / add sub-folder / move / delete ──────────────────────

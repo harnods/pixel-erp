@@ -38,6 +38,11 @@ const route = useRoute()
 const { t } = useLocale()
 
 const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.orderId.startsWith('cc-'))
+// Costing is ERP-only. `isWmsRecord` covers a WMS record; the scenario check also
+// covers an ERP record opened by a WMS Standalone user, who has no costing access
+// whatever they are looking at.
+const { activeScenario } = useScenario()
+const hideCosting = computed(() => isWmsRecord.value || activeScenario.value.startsWith('WMS'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
@@ -958,7 +963,7 @@ onUnmounted(() => {
                 </template>
                 <th v-else class="detail-th detail-th--num">{{ t('Qty in/out') }}</th>
                 <th class="detail-th">{{ t('Unit') }}</th>
-                <th v-if="!isWmsRecord" class="detail-th detail-th--num">{{ t('Average cost') }}</th>
+                <th v-if="!hideCosting" class="detail-th detail-th--num">{{ t('Average cost') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1001,7 +1006,7 @@ onUnmounted(() => {
                   <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 </template>
                 <td class="detail-td">{{ item.unit }}</td>
-                <td v-if="!isWmsRecord" class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
+                <td v-if="!hideCosting" class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
             </tbody>
           </table>
