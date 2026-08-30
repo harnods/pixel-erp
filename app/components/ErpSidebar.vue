@@ -396,6 +396,7 @@ const erpNavGroups: NavItem[][] = [
             { label: 'Depreciation schedule' },
           ] },
           { label: 'Bank rules' },
+          { label: 'Project accounting' },
         ],
         [{ label: 'Accounting settings', iconType: 'settings' }],
       ],
