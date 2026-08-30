@@ -57,6 +57,14 @@ export interface CoworkTask {
   /** Execution history — each manual/scheduled run. The task's status/metric mirror
    *  the latest run. Older tasks may have none (synthesised from the task itself). */
   runs?: CoworkRun[]
+  // ── Goal linkage (see `coworkGoals.ts`) ──────────────────────────────────────
+  /** Set when the task came out of a goal's plan; absent = an ad-hoc task. */
+  goalId?: string
+  /** The agent that owns this task — assigned by the goal's lead agent, which may
+   *  be an agent the user never picked. */
+  agentId?: string
+  /** Task ids that must finish first (a workstream handed off between agents). */
+  dependsOn?: string[]
 }
 
 export interface CoworkRun {
@@ -791,6 +799,9 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
   { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
   { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
+  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C' },
+  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF' },
+  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111' },
   { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
   // ── Finance ──
   { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },

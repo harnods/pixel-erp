@@ -1,8 +1,13 @@
 import { ref } from 'vue'
+import type { ChatCard } from '~/data/coworkGoals'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
+  /** Structured half of an agent's reply — a plan, a pushback, a list of tools
+   *  to connect. The prose lives in `text`; anything the user must act on
+   *  renders as a card beneath it. See `ChatCard` in `data/coworkGoals.ts`. */
+  card?: ChatCard
 }
 
 /**

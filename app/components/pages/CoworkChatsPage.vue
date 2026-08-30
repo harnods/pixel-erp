@@ -20,7 +20,10 @@ import { MpButton, MpIcon } from '@mekari/pixel3'
 import { useAireneChat } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
-import { getTask, type CoworkAgent } from '~/data/cowork'
+import { coworkAgents, getTask, type CoworkAgent } from '~/data/cowork'
+import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
+import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
+import type { GoalDraft } from '~/data/coworkGoals'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,15 +57,48 @@ function scrollToBottom() {
 }
 watch(chat.scrollSignal, async () => { await nextTick(); scrollToBottom() })
 
+// ── Goal mode ────────────────────────────────────────────────────────────────
+// The same composer, in a different register: instead of asking a question you
+// state an outcome, and the assigned agents judge it, plan it, and schedule it.
+const goals = useCoworkGoalChat()
+const { goalMode, assignedAgentIds, assignedAgents } = goals
+
 function send(text: string) {
   const t = (text ?? '').trim()
   if (!t) return
   inputText.value = ''
-  chat.sendMessage(t)
+  if (goalMode.value) goals.sendGoalTurn(t)
+  else chat.sendMessage(t)
 }
+
+// Card actions — the agent asked for something, the user answers it in place.
+function onConnect(id: string) { goals.connect(id) }
+function onProceed(text: string) { inputText.value = ''; goals.proceed(text) }
+function onAcceptCounter(draft: GoalDraft) { goals.acceptCounter(draft) }
+async function onApprove(draft: GoalDraft) { await goals.approvePlan(draft) }
+function onOpenGoal(goalId: string) { router.push(`/cowork-goals/${goalId}`) }
+
+/** Starting a goal always starts a fresh room — a goal conversation is its own
+ *  thread, not a turn inside whatever was being discussed. */
+function startGoal() {
+  chat.startNewChat()
+  goals.resetGoalMode()
+  goalMode.value = true
+  historyOpen.value = false
+  kebabOpen.value = false
+  inputText.value = ''
+}
+function leaveGoalMode() { goals.resetGoalMode() }
+
+const GOAL_EXAMPLES = [
+  'Turunkan piutang jatuh tempo 30% sebelum tutup kuartal',
+  'Follower Instagram naik 10% by end of month',
+  'Jangan ada stockout di 20 SKU terlaris bulan ini',
+]
 
 function newChat() {
   chat.startNewChat()
+  goals.resetGoalMode()
   historyOpen.value = false
   kebabOpen.value = false
   inputText.value = ''
@@ -116,7 +152,8 @@ onBeforeUnmount(() => {
       <h1 class="cwc-title">Chats</h1>
     </div>
     <div class="cwc-actions">
-      <MpButton is-rounded variant="primary" @click="newChat">+ Chat</MpButton>
+      <MpButton is-rounded variant="secondary" @click="newChat">+ Chat</MpButton>
+      <MpButton is-rounded variant="primary" @click="startGoal">+ Goal</MpButton>
     </div>
   </header>
 
@@ -126,8 +163,44 @@ onBeforeUnmount(() => {
 
       <!-- Column header: agent switcher (left) · rooms + actions (right) -->
       <div class="cwc-head">
+        <!-- Goal mode: assign one or more agents to the outcome. Otherwise the
+             usual single-agent switcher. -->
+        <div v-if="goalMode" class="cwc-agent-wrap">
+          <button type="button" class="cwc-agent-btn" @click.stop="agentMenuOpen = !agentMenuOpen">
+            <span v-if="!assignedAgents.length" class="cwc-agent-text">
+              <span class="cwc-agent-name">Assign agents</span>
+              <span class="cwc-agent-role">Or let the lead pick</span>
+            </span>
+            <span v-else class="cwc-assigned">
+              <img v-for="a in assignedAgents.slice(0, 4)" :key="a.id" :src="a.avatar" :alt="a.name" class="cwc-agent-av cwc-assigned__av">
+              <span class="cwc-agent-name">{{ assignedAgents.length }} assigned</span>
+            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <template v-if="agentMenuOpen">
+            <div class="cwc-backdrop" @click="agentMenuOpen = false" />
+            <div class="cwc-agent-menu" @click.stop>
+              <p class="cwc-agent-menu__hint">Pick who owns this goal. The lead can bring in others itself.</p>
+              <button
+                v-for="a in coworkAgents"
+                :key="a.id"
+                type="button"
+                class="cwc-agent-item"
+                :class="{ 'is-active': assignedAgentIds.includes(a.id) }"
+                @click="goals.toggleAgent(a.id)"
+              >
+                <img :src="a.avatar" :alt="a.name" class="cwc-agent-av">
+                <span class="cwc-agent-meta">
+                  <span class="cwc-agent-name">{{ a.name }}</span>
+                  <span class="cwc-agent-role">{{ a.role }}</span>
+                </span>
+                <MpIcon v-if="assignedAgentIds.includes(a.id)" name="check" size="sm" class="cwc-agent-check" />
+              </button>
+            </div>
+          </template>
+        </div>
         <!-- Agent switcher — change who you're chatting with at any time -->
-        <div class="cwc-agent-wrap">
+        <div v-else class="cwc-agent-wrap">
           <button type="button" class="cwc-agent-btn" @click.stop="agentMenuOpen = !agentMenuOpen">
             <img :src="activeAgent!.avatar" :alt="activeAgent!.name" class="cwc-agent-av">
             <span class="cwc-agent-text">
@@ -226,31 +299,66 @@ onBeforeUnmount(() => {
         <!-- Empty state: greeting + suggestions (same format as the drawer) -->
         <div v-if="messages.length === 0" class="cwc-greetings">
           <img src="~/assets/airene-mascot-v2.png" width="60" height="63" alt="" class="cwc-mascot">
-          <p class="cwc-greeting-title">Hi, I'm here.</p>
-          <p v-if="chatContext" class="cwc-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
-          <p v-else class="cwc-greeting-msg">{{ moduleInfo.greeting }}</p>
 
-          <div class="cwc-suggestions">
-            <button
-              v-for="s in (chatContext ? contextSuggestions : moduleInfo.suggestions)"
-              :key="s"
-              class="cwc-suggestion"
-              @click="send(s)"
-            >
-              <MpIcon name="airene-brand" size="sm" class="cwc-sug-icon" />
-              {{ s }}
-            </button>
-          </div>
+          <!-- Goal mode -->
+          <template v-if="goalMode">
+            <p class="cwc-greeting-title">What outcome do you want?</p>
+            <p class="cwc-greeting-msg">
+              Tell me the result, not the task — with a number and a deadline if you have them. I'll check whether it's
+              achievable, say so if it isn't, then plan it and schedule the work.
+            </p>
+            <div class="cwc-suggestions">
+              <button v-for="g in GOAL_EXAMPLES" :key="g" class="cwc-suggestion" @click="send(g)">
+                <MpIcon name="magic" size="sm" class="cwc-sug-icon" />
+                {{ g }}
+              </button>
+            </div>
+          </template>
+
+          <!-- Normal chat -->
+          <template v-else>
+            <p class="cwc-greeting-title">Hi, I'm here.</p>
+            <p v-if="chatContext" class="cwc-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
+            <p v-else class="cwc-greeting-msg">{{ moduleInfo.greeting }}</p>
+
+            <div class="cwc-suggestions">
+              <button
+                v-for="s in (chatContext ? contextSuggestions : moduleInfo.suggestions)"
+                :key="s"
+                class="cwc-suggestion"
+                @click="send(s)"
+              >
+                <MpIcon name="airene-brand" size="sm" class="cwc-sug-icon" />
+                {{ s }}
+              </button>
+              <button class="cwc-suggestion cwc-suggestion--goal" @click="startGoal">
+                <MpIcon name="magic" size="sm" class="cwc-sug-icon" />
+                Set a goal instead — I'll plan it and schedule the work
+              </button>
+            </div>
+          </template>
         </div>
 
         <!-- Messages -->
         <template v-if="messages.length > 0">
           <div v-for="(msg, i) in messages" :key="i" class="chat-message" :class="'chat-message--' + msg.role">
             <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar">
-            <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
-              <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+            <div class="cwc-msg-col">
+              <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+              </div>
+              <!-- Plan / pushback / connect-these-tools / receipt -->
+              <CoworkGoalCard
+                v-if="msg.card"
+                :card="msg.card"
+                @connect="onConnect"
+                @proceed="onProceed"
+                @accept-counter="onAcceptCounter"
+                @approve="onApprove"
+                @open="onOpenGoal"
+              />
             </div>
           </div>
           <div v-if="isTyping" class="chat-message chat-message--assistant">
@@ -273,11 +381,22 @@ onBeforeUnmount(() => {
               <button v-if="sourceTask" class="cwc-context-link" type="button" @click="router.push(`/cowork-tasks/${sourceTask.id}`)">View task</button>
             </span>
           </div>
+          <!-- Goal mode banner — says which register the composer is in, and how
+               to get out of it. -->
+          <div v-if="goalMode" class="cwc-goalbar">
+            <span class="cwc-goalbar__tag">Goal</span>
+            <span class="cwc-goalbar__text">
+              {{ assignedAgents.length
+                ? assignedAgents.map((a) => a.name).join(', ') + ' will own this'
+                : 'The lead agent will pick the team' }}
+            </span>
+            <button type="button" class="cwc-goalbar__exit" @click="leaveGoalMode">Back to chat</button>
+          </div>
           <div class="cwc-input-row">
             <input
               v-model="inputText"
               class="cwc-input"
-              placeholder="Ask Airene..."
+              :placeholder="goalMode ? 'Describe the outcome you want…' : 'Ask Airene...'"
               @keydown.enter.prevent="send(inputText)"
             >
           </div>
@@ -446,6 +565,22 @@ onBeforeUnmount(() => {
 .cwc-model-label { display: flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cwc-send-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border: none; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); cursor: pointer; flex-shrink: 0; color: var(--mp-text-default); }
 .cwc-send-btn:hover { background: var(--mp-background-neutral-hovered); }
+.cwc-msg-col { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.cwc-suggestion--goal { color: var(--mp-text-link); }
+
+/* Goal-mode assignment chip in the header */
+.cwc-assigned { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
+.cwc-assigned__av { width: 20px; height: 20px; margin-right: -8px; border: 1.5px solid var(--mp-background-neutral, #fff); }
+.cwc-assigned__av:last-of-type { margin-right: var(--mp-spacing-1, 4px); }
+.cwc-agent-menu__hint { margin: var(--mp-spacing-2, 8px) var(--mp-spacing-2, 8px) var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+
+/* Goal-mode banner above the input */
+.cwc-goalbar { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.cwc-goalbar__tag { font-size: 10px; font-weight: var(--mp-font-weights-semi-bold, 600); text-transform: uppercase; letter-spacing: 0.04em; color: var(--mp-text-brand, #165082); background: var(--mp-background-info-subtle, #eaf2fb); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; flex: 0 0 auto; }
+.cwc-goalbar__text { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwc-goalbar__exit { flex: 0 0 auto; border: none; background: none; padding: 0; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link); }
+.cwc-goalbar__exit:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 .cwc-disclaimer { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
 .cwc-disclaimer-link { color: var(--mp-text-link); cursor: pointer; }
 .cwc-disclaimer-link:hover { text-decoration: underline; text-underline-offset: 2px; }

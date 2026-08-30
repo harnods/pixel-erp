@@ -68,8 +68,10 @@ const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
   'Cowork':            defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork tasks':      defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
-  // Chats renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
+  // Chats and Goals render full-bleed via detailMatch; these entries keep the
+  // registry/title resolvable.
   'Cowork chats':      defineAsyncComponent(() => import('~/components/pages/CoworkChatsPage.vue')),
+  'Cowork goals':      defineAsyncComponent(() => import('~/components/pages/CoworkGoalsPage.vue')),
   'Cowork schedule':   defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
@@ -155,6 +157,8 @@ const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/St
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
 const CoworkChatsPage = asyncPage(() => import('~/components/pages/CoworkChatsPage.vue'))
+const CoworkGoalsPage = asyncPage(() => import('~/components/pages/CoworkGoalsPage.vue'))
+const CoworkGoalDetailPage = asyncPage(() => import('~/components/pages/CoworkGoalDetailPage.vue'))
 const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
@@ -364,6 +368,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
   if (segs[0] === 'cowork-chats') return { component: CoworkChatsPage, id: '' }
+  // /cowork-goals → goals index; /cowork-goals/:id → goal detail.
+  if (segs[0] === 'cowork-goals') {
+    return segs[1]
+      ? { component: CoworkGoalDetailPage, id: segs[1] }
+      : { component: CoworkGoalsPage, id: '' }
+  }
   // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
   // /cowork-tasks/:id/edit → Cowork task edit form.
   if (segs.length >= 2 && segs[0] === 'cowork-tasks') {

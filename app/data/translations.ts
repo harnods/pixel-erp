@@ -116,6 +116,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Export & import': 'Ekspor & impor',
   'File manager': 'Manajemen file',
   'Chats': 'Chat',
+  'Goals': 'Goal',
   'Activity log': 'Log aktivitas',
   'Warehouse settings ': 'Pengaturan gudang',
   // Integrations flyout
