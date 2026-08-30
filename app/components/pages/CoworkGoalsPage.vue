@@ -22,6 +22,8 @@ import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 const router = useRouter()
 const goalChat = useCoworkGoalChat()
 
+const emptyIllustration = '/illustrations/empty-folder.png'
+
 const isConnected = (id: string) => coworkConnections.find((c) => c.id === id)?.connected === true
 const agent = (id: string) => coworkAgents.find((a) => a.id === id)
 
@@ -79,13 +81,18 @@ function open(g: CoworkGoal) { router.push(`/cowork-goals/${g.id}`) }
   </header>
 
   <div class="cwg-stage">
-    <div v-if="!rows.length" class="cwg-empty">
-      <MpIcon name="magic" size="lg" />
-      <p class="cwg-empty__title">No goals yet</p>
-      <p class="cwg-empty__desc">
+    <div v-if="!rows.length" class="empty-full">
+      <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+      <p class="empty-full-title">No goals yet</p>
+      <p class="empty-full-desc">
         Tell your agents the outcome you want — they'll check whether it's achievable, plan it, and schedule the work.
       </p>
-      <MpButton is-rounded variant="primary" @click="newGoal">Set a goal</MpButton>
+      <button class="empty-full-btn" @click="newGoal">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Goal
+      </button>
     </div>
 
     <div v-else class="cwg-list">
@@ -173,7 +180,20 @@ function open(g: CoworkGoal) { router.push(`/cowork-goals/${g.id}`) }
 .cwg-foot__meta { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cwg-foot__meta--new { color: var(--mp-text-success, #056f4e); }
 
-.cwg-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-20, 80px) var(--mp-spacing-6); max-width: 480px; margin: 0 auto; color: var(--mp-text-secondary); }
-.cwg-empty__title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
-.cwg-empty__desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); }
+/* Empty state — the ERP's standard illustrated blank slate (see ErpTablePage
+   and the module index pages), not a lone icon. */
+.empty-full { display: flex; flex-direction: column; align-items: center; text-align: center; padding: var(--mp-spacing-10, 40px) var(--mp-spacing-6); max-width: 480px; margin: 0 auto; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.empty-full-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-full, 999px); font-family: inherit;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); cursor: pointer;
+}
+.empty-full-btn:hover { background: var(--mp-background-neutral-subtle); }
 </style>

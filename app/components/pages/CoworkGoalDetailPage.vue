@@ -51,6 +51,10 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
 
 const activeTabIndex = ref(0)
 
+const emptyIllustration = '/illustrations/empty-folder.png'
+const emptyTasksIllustration = '/illustrations/empty-box.png'
+const emptyChatIllustration = '/illustrations/start-chat.png'
+
 function fmtMetric(n: number, unit?: string): string {
   if (unit === 'Rp') {
     return 'Rp' + (n >= 1_000_000_000 ? (n / 1_000_000_000).toFixed(2) + 'B'
@@ -206,6 +210,14 @@ function openChat() {
             <!-- ── Plan ─────────────────────────────────────────────────── -->
             <MpTabPanel value="plan">
               <div class="cgd-panel">
+                <!-- A goal that was never approved has no plan to show yet -->
+                <div v-if="!goal.plan?.approach && !goal.plan?.workstreams.length" class="cgd-empty">
+                  <img :src="emptyIllustration" alt="" class="cgd-empty__img" width="240" height="200">
+                  <p class="cgd-empty__title">No plan yet</p>
+                  <p class="cgd-empty__desc">Set this goal in chat and the lead agent will write the plan here.</p>
+                  <MpButton is-rounded variant="secondary" :class="css({ marginTop: '12px' })" @click="openChat">Open the chat</MpButton>
+                </div>
+
                 <section v-if="goal.plan?.approach">
                   <h3 class="cgd-h3">Approach</h3>
                   <p class="cgd-p">{{ goal.plan.approach }}</p>
@@ -248,7 +260,11 @@ function openChat() {
             <!-- ── Tasks ────────────────────────────────────────────────── -->
             <MpTabPanel value="tasks">
               <div class="cgd-panel">
-                <p v-if="!tasks.length" class="cgd-muted">No tasks yet — approving the plan creates them.</p>
+                <div v-if="!tasks.length" class="cgd-empty">
+                  <img :src="emptyTasksIllustration" alt="" class="cgd-empty__img" width="240" height="200">
+                  <p class="cgd-empty__title">No tasks yet</p>
+                  <p class="cgd-empty__desc">Approving the plan creates the scheduled tasks for this goal.</p>
+                </div>
                 <button v-for="t in tasks" :key="t.id" type="button" class="cgd-task" @click="openTask(t.id)">
                   <span class="cgd-task__main">
                     <span class="cgd-task__title">{{ t.title }}</span>
@@ -270,7 +286,11 @@ function openChat() {
                   What the agents say to each other while they work this goal. You can join in.
                 </p>
 
-                <div v-if="!goal.thread.length" class="cgd-muted">Nothing yet — the agents post here as they work.</div>
+                <div v-if="!goal.thread.length" class="cgd-empty">
+                  <img :src="emptyChatIllustration" alt="" class="cgd-empty__img" width="240" height="200">
+                  <p class="cgd-empty__title">No messages yet</p>
+                  <p class="cgd-empty__desc">The agents post here as they work — handovers, results and anything they need from you.</p>
+                </div>
 
                 <div v-for="m in goal.thread" :key="m.id" class="cgd-msg" :class="{ 'cgd-msg--user': m.from === 'user' }">
                   <img v-if="m.from !== 'user' && agent(m.from)?.avatar" :src="agent(m.from)!.avatar" :alt="agent(m.from)!.name" class="cgd-msg__av">
@@ -307,7 +327,11 @@ function openChat() {
             <!-- ── Connections ──────────────────────────────────────────── -->
             <MpTabPanel value="conns">
               <div class="cgd-panel">
-                <p v-if="!goal.connections.length" class="cgd-muted">This goal doesn't depend on any external tool.</p>
+                <div v-if="!goal.connections.length" class="cgd-empty">
+                  <img :src="emptyIllustration" alt="" class="cgd-empty__img" width="240" height="200">
+                  <p class="cgd-empty__title">No tools needed</p>
+                  <p class="cgd-empty__desc">This goal runs entirely on data the ERP already holds.</p>
+                </div>
                 <div v-for="c in goal.connections" :key="c.connectionId" class="cgd-conn">
                   <span class="cgd-conn__dot" :style="{ background: connection(c.connectionId)?.color ?? '#8c9596' }" />
                   <span class="cgd-conn__body">
@@ -329,9 +353,10 @@ function openChat() {
   </template>
 
   <div v-else class="cgd-missing">
-    <MpIcon name="magic" size="lg" />
-    <p>Goal not found.</p>
-    <MpButton is-rounded variant="secondary" @click="router.push('/cowork-goals')">Back to Goals</MpButton>
+    <img :src="emptyIllustration" alt="" class="cgd-empty__img" width="288" height="240">
+    <p class="cgd-empty__title">Goal not found</p>
+    <p class="cgd-empty__desc">It may have been deleted, or the link is out of date.</p>
+    <MpButton is-rounded variant="secondary" :class="css({ marginTop: '12px' })" @click="router.push('/cowork-goals')">Back to Goals</MpButton>
   </div>
 </template>
 
@@ -426,5 +451,12 @@ function openChat() {
 .cgd-conn__done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-success, #029861); flex: 0 0 auto; }
 .cgd-req { font-size: 10px; font-weight: var(--mp-font-weights-semi-bold, 600); text-transform: uppercase; letter-spacing: 0.04em; color: var(--mp-text-warning, #b54708); background: var(--mp-background-warning-subtle, #fef6e7); border-radius: var(--mp-radii-full, 999px); padding: 1px 6px; }
 
-.cgd-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-20, 80px); color: var(--mp-text-secondary); }
+/* Empty states — the ERP's illustrated blank slates (see ErpTablePage and the
+   module index pages), sized down for a tab panel. */
+.cgd-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: var(--mp-spacing-10, 40px) 0; }
+.cgd-empty__img { width: 240px; height: 200px; object-fit: contain; }
+.cgd-empty__title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.cgd-empty__desc { margin: var(--mp-spacing-0\.5, 2px) 0 0; max-width: 380px; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.cgd-missing { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-20, 80px); }
+.cgd-missing .cgd-empty__img { width: 288px; height: 240px; }
 </style>
