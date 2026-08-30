@@ -12,7 +12,7 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpIcon, toast,
+  MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpIcon, toast, MpTextlink,
 } from '@mekari/pixel3'
 import {
   createEngagement, draftWeightSum, formatIdr,
@@ -122,7 +122,7 @@ function cancel() { router.push('/project-accounting') }
     <!-- ── Title bar (form variant: breadcrumb + New [entity]) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button type="button" class="detail-breadcrumb" @click="cancel">{{ t('Project accounting') }}</button>
+        <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New engagement') }}</h1>
       </div>
     </header>

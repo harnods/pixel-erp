@@ -17,7 +17,7 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker, MpIcon, toast,
+  MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker, MpIcon, toast, MpTextlink,
 } from '@mekari/pixel3'
 import ProjectStatCards, { type ProjectStat } from '~/components/patterns/ProjectStatCards.vue'
 import {
@@ -162,7 +162,7 @@ async function save() {
     <!-- ── Title bar (form variant) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button type="button" class="detail-breadcrumb" @click="back">{{ t('Project accounting') }}</button>
+        <MpTextlink id="pi-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Project accounting') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New invoice') }}</h1>
         <p class="detail-subtitle">{{ sourceNote }}</p>
       </div>

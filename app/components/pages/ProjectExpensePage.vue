@@ -15,7 +15,7 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker, MpIcon, toast,
+  MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker, MpIcon, toast, MpTextlink,
 } from '@mekari/pixel3'
 import ProjectStatCards, { type ProjectStat } from '~/components/patterns/ProjectStatCards.vue'
 import {
@@ -129,7 +129,7 @@ function cancel() {
     <!-- ── Title bar (form variant) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button type="button" class="detail-breadcrumb" @click="cancel">{{ t('Project accounting') }}</button>
+        <MpTextlink id="px-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New expense') }}</h1>
         <p class="detail-subtitle">{{ t('Project is tagged per line item') }}</p>
       </div>

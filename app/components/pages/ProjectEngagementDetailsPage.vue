@@ -15,7 +15,7 @@
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpCheckbox, MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
-  MpFormControl, MpFormLabel, MpBadge, toast,
+  MpFormControl, MpFormLabel, MpBadge, toast, MpTextlink,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -602,7 +602,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button type="button" class="detail-breadcrumb" @click="goList">{{ t('Project accounting') }}</button>
+        <MpTextlink id="pa-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Project accounting') }}</MpTextlink>
         <div class="detail-titlerow">
           <h1 class="detail-title">{{ engagement.name }}</h1>
           <ErpStatusBadge
@@ -1402,11 +1402,11 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 .pa-th--sortable { cursor: pointer; }
 .pa-th--sortable:hover { color: var(--mp-text-default); }
 .pa-td {
-  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
 .pa-td--muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pa-td--strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pa-td--adverse { color: var(--mp-text-danger, #a8352d); }
