@@ -378,6 +378,7 @@ const erpNavGroups: NavItem[][] = [
       name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
       panelSubmenu: [
         [
+          { label: 'Chats', to: 'Cowork chats' },
           { label: 'New task', to: 'Cowork' },
           { label: 'Tasks', to: 'Cowork tasks' },
           { label: 'Schedule', to: 'Cowork schedule' },

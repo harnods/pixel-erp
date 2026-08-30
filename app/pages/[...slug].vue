@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
-import { coworkAgents, COWORK_SKILLS, type CoworkAgent } from '~/data/cowork'
-import { buildKnowledgeContext, knowledgeCorpus } from '~/data/coworkKb'
+import { type CoworkAgent } from '~/data/cowork'
+import { type CoworkChatSession } from '~/composables/useCoworkChats'
+import { useAireneChat, DEFAULT_CONTEXT_SUGGESTIONS } from '~/composables/useAireneChat'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
@@ -36,12 +37,9 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
-import { employees } from '~/data/employees'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
-import { useCoworkContext } from '~/composables/useCoworkContext'
 
 const { pageTitle, currentPageKey } = useNavigation()
-const { build: buildCoworkContext } = useCoworkContext()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
@@ -70,6 +68,8 @@ const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
   'Cowork':            defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork tasks':      defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  // Chats renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
+  'Cowork chats':      defineAsyncComponent(() => import('~/components/pages/CoworkChatsPage.vue')),
   'Cowork schedule':   defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
@@ -154,6 +154,7 @@ const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/Config
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
+const CoworkChatsPage = asyncPage(() => import('~/components/pages/CoworkChatsPage.vue'))
 const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTaskDetailPage.vue'))
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
@@ -361,6 +362,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
+  // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
+  if (segs[0] === 'cowork-chats') return { component: CoworkChatsPage, id: '' }
   // /cowork-tasks/:id → Cowork task detail page (owns its title bar + stage).
   // /cowork-tasks/:id/edit → Cowork task edit form.
   if (segs.length >= 2 && segs[0] === 'cowork-tasks') {
@@ -1046,92 +1049,29 @@ function newStockAdjustment(kind: 'count' | 'in-out') {
 }
 function newStockInOut()  { router.push({ path: '/stock-adjustments/new', query: { type: 'in-out' } }) }
 
-// ── Chat sessions + history ───────────────────────────────────────────────
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  text: string
-}
-
-interface ChatSession {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  createdAt: number   // timestamp ms
-  module?: string     // which ERP module the chat started in (for the history label)
-}
-// The chat currently shown; upserted into the persisted history on every reply so
-// it can be reopened from any module. null = a brand-new, not-yet-saved chat.
-// Hoisted to the bridge singleton so it survives navigation.
-const activeSessionId = aireneBridge.activeSessionId
-
-// Seed historical sessions (relative to real Date.now())
-const DAY = 86_400_000
-const CHAT_SEED: ChatSession[] = [
-  {
-    id: 'h1',
-    title: 'Draft a WhatsApp reminder for Daily Grind',
-    messages: [
-      { role: 'user',      text: 'Draft a WhatsApp reminder in a friendly tone.' },
-      { role: 'assistant', text: 'Sure! Here\'s a friendly draft:\n\n"Hi The Daily Grind team! 👋 Invoice #40030 for Rp4,500,000 was due 2 days ago. No worries — pay here: [link]. Thanks! 😊"\n\n---\nShall I send this to Jenny now?' },
-    ],
-    createdAt: Date.now() - DAY * 1,
-  },
-  {
-    id: 'h2',
-    title: 'How much am I owed?',
-    messages: [
-      { role: 'user',      text: 'How much am I owed?' },
-      { role: 'assistant', text: 'Based on your open invoices, you are currently owed Rp 640,200,000 across 12 unpaid invoices.' },
-    ],
-    createdAt: Date.now() - DAY * 2,
-  },
-  {
-    id: 'h3',
-    title: 'Compare revenue this month vs last month',
-    messages: [
-      { role: 'user',      text: 'Compare revenue this month vs last month' },
-      { role: 'assistant', text: 'This month: Rp 310,500,000\nLast month: Rp 275,200,000\n\nThat\'s a +12.8% increase. Great momentum! 🚀' },
-    ],
-    createdAt: Date.now() - DAY * 5,
-  },
-  {
-    id: 'h4',
-    title: 'How do I set up Mekari Pay?',
-    messages: [
-      { role: 'user',      text: 'How do I set up Mekari Pay?' },
-    ],
-    createdAt: Date.now() - DAY * 14,
-  },
-  {
-    id: 'h5',
-    title: 'Import sales invoices from CSV',
-    messages: [
-      { role: 'user',      text: 'Import sales invoices' },
-    ],
-    createdAt: Date.now() - DAY * 21,
-  },
-]
-// Persisted chat history (mini-DB) — survives reload/new-chat.
-const chatSessions = ref<ChatSession[]>(loadSnapshot<ChatSession>('airene-chats-v1') ?? CHAT_SEED)
-function persistChats() { saveSnapshot('airene-chats-v1', chatSessions.value) }
-// Materialise the seed history to the mini-DB on first load, so other surfaces
-// (e.g. the header search "Recent chats") can read it too.
-if (!loadSnapshot<ChatSession>('airene-chats-v1')) persistChats()
-
-// ── Active session ────────────────────────────────────────────────────────
-// Hoisted to the bridge singleton so the conversation survives navigation.
-const messages = aireneBridge.messages
+// ── Chat (drawer surface) ─────────────────────────────────────────────────
+// The conversation itself — messages, agent, grounding, saved rooms — lives in
+// useAireneChat, shared with the full-stage Cowork › Chats page. This page owns
+// only the drawer's own DOM concerns: the input box, the scroll element and
+// which menus are open.
+const chat = useAireneChat()
+const {
+  messages, isTyping, chatContext, contextSuggestions,
+  chatTitle, groupedHistory, moduleInfo,
+  availableAgents, activeAgent, canSwitchAgent,
+  sendMessage: sendChat, renderMessage,
+} = chat
 const chatBodyEl = ref<HTMLElement | null>(null)
 const inputText = ref('')
-const isTyping = ref(false)
 
-// Title: derived from first user message, or "New chat"
-const chatTitle = computed(() => {
-  const first = messages.value.find(m => m.role === 'user')
-  if (!first) return 'New chat'
-  const t = first.text.trim()
-  return t.length > 32 ? t.slice(0, 32) + '…' : t
-})
+// Sending from the drawer clears its own input box; everything else is the
+// shared engine's job.
+function sendMessage(text: string, context?: string) {
+  const t = (text ?? '').trim()
+  if (!t) return
+  inputText.value = ''
+  sendChat(t, context)
+}
 
 // ── History dropdown ──────────────────────────────────────────────────────
 const historyOpen = ref(false)
@@ -1237,324 +1177,38 @@ onUnmounted(() => {
   if (_mascotRaf !== null) cancelAnimationFrame(_mascotRaf)
 })
 
-// Group sessions: yesterday / this week / older
-const groupedHistory = computed(() => {
-  const now = Date.now()
-  // start-of-day boundaries
-  const todayMidnight = new Date()
-  todayMidnight.setHours(0, 0, 0, 0)
-  const todayStart    = todayMidnight.getTime()
-  const yesterdayStart = todayStart - DAY
-  const weekStart      = todayStart - DAY * 6
-
-  const yesterday: ChatSession[] = []
-  const thisWeek: ChatSession[]  = []
-  const older: ChatSession[]     = []
-
-  for (const s of chatSessions.value) {
-    if (s.createdAt >= yesterdayStart) {
-      yesterday.push(s)
-    } else if (s.createdAt >= weekStart) {
-      thisWeek.push(s)
-    } else {
-      older.push(s)
-    }
-  }
-  return { yesterday, thisWeek, older }
-})
-
-// Upsert the currently-shown conversation into the persisted history, so it's
-// available from any module without an explicit "save" step.
-function persistActiveSession() {
-  if (messages.value.length === 0) return
-  const first = messages.value.find(m => m.role === 'user')
-  const title = first
-    ? (first.text.length > 32 ? first.text.slice(0, 32) + '…' : first.text)
-    : 'Chat'
-  const existing = activeSessionId.value
-    ? chatSessions.value.find(s => s.id === activeSessionId.value)
-    : null
-  if (existing) {
-    existing.title = title
-    existing.messages = [...messages.value]
-  } else {
-    const id = Date.now().toString()
-    activeSessionId.value = id
-    chatSessions.value.unshift({
-      id, title, messages: [...messages.value], createdAt: Date.now(),
-      module: chatContext.value ? undefined : moduleInfo.value.label,
-    })
-  }
-  persistChats()
+// Hand the live conversation over to the full-stage Cowork › Chats page. The
+// room is saved first so the page opens on this exact chat (a task chat included),
+// then the drawer steps out of the way.
+function openInChats() {
+  chat.persistActiveSession()
+  const id = chat.activeSessionId.value
+  aireneOpen.value = false
+  router.push({ path: '/cowork-chats', query: id ? { chat: id } : {} })
 }
 
-function startNewChat() {
-  // Current chat is already persisted (upserted on each reply); just reset the view.
-  messages.value = []
-  activeSessionId.value = null
-  chatContext.value = ''
-  aireneGround.value = ''
-  contextSuggestions.value = [...DEFAULT_CONTEXT_SUGGESTIONS]
-  historyOpen.value = false
-  kebabOpen.value = false
-  // A fresh chat is general (any agent), back to the default assistant.
-  restrictAgents.value = []
-  activeAgentId.value = 'airene'
-}
-
-function loadSession(session: ChatSession) {
-  messages.value = [...session.messages]
-  activeSessionId.value = session.id
-  chatContext.value = ''
-  aireneGround.value = ''
-  historyOpen.value = false
-}
-
-// Kebab menu: clear the current conversation, or delete it from history.
+// Kebab menu state (drawer-local). The chat actions themselves come from the
+// shared engine; these wrappers just close the drawer's menus around them.
 const kebabOpen = ref(false)
 const kebabWrapperEl = ref<HTMLElement | null>(null)
-function removeActiveSession() {
-  if (!activeSessionId.value) return
-  const i = chatSessions.value.findIndex(s => s.id === activeSessionId.value)
-  if (i >= 0) { chatSessions.value.splice(i, 1); persistChats() }
-}
-function clearChat() {
-  removeActiveSession()
-  messages.value = []
-  activeSessionId.value = null
-  chatContext.value = ''
-  aireneGround.value = ''
-  kebabOpen.value = false
-  infoToast('Chat cleared')
-}
-function deleteChat() {
-  removeActiveSession()
-  messages.value = []
-  activeSessionId.value = null
-  chatContext.value = ''
-  aireneGround.value = ''
-  kebabOpen.value = false
-  toast.notify({ variant: 'success', title: 'Chat deleted' })
-}
+function startNewChat() { chat.startNewChat(); historyOpen.value = false; kebabOpen.value = false }
+function loadSession(session: CoworkChatSession) { chat.loadSession(session); historyOpen.value = false }
+function clearChat() { chat.clearChat(); kebabOpen.value = false }
+function deleteChat() { chat.deleteChat(); kebabOpen.value = false }
 
-// Dummy AI response for the WhatsApp draft scenario
-function getAiResponse(userMsg: string): string {
-  const q = userMsg.toLowerCase()
-  if (q.includes('whatsapp') || q.includes('reminder') || q.includes('draft')) {
-    return `Sure! Here's a friendly WhatsApp reminder draft:\n\n"Hi The Daily Grind team! 👋 Just a quick reminder that invoice #40030 for Rp4,500,000 was due 2 days ago. No worries if it slipped through — you can view and pay it here: [payment link]\n\nThanks so much and have a great day! 😊"\n\n---\nDo you want me to send this to Jenny from The Daily Grind now?`
-  }
-  return `I've reviewed the invoice details. Here's what I found:\n\nInvoice #40030 is currently overdue by 2 days (due 01/05/2025). The outstanding balance is Rp4,500,000.\n\nWould you like me to send a payment reminder or draft a follow-up message?`
-}
-
-// ── Module-aware greeting + suggestions (general chat, not a task) ────────────
-// The Airene drawer lives on every ERP page; when opened without a task context
-// its greeting, preset prompts and grounding adapt to the module you're in.
-interface ModuleChat { label: string; greeting: string; suggestions: string[]; ground: string[] }
-const MODULE_CHAT: Record<string, ModuleChat> = {
-  HR: { label: 'HR', greeting: 'I can help with employees, attendance, payroll and contracts.',
-    suggestions: ['Who was late this week and why?', 'Which contracts expire in the next 60 days?', 'Summarise headcount by department', 'Which employees are resigning?'], ground: ['hr'] },
-  Finance: { label: 'Finance', greeting: 'I can help with invoices, bills, cash flow and collections.',
-    suggestions: ['Which customers are overdue and why?', 'How much am I owed right now?', 'What needs clearing before month-end close?', 'Draft a payment reminder for the biggest overdue'], ground: ['finance', 'crm'] },
-  CRM: { label: 'CRM', greeting: 'I can help with your pipeline, customers and deals.',
-    suggestions: ['Which deals should I prioritise?', 'Which deals are stalled?', 'Who are my top customers?', 'Draft a follow-up for a stalled deal'], ground: ['crm', 'finance'] },
-  WMS: { label: 'Warehouse', greeting: 'I can help with stock, warehouses and fulfilment.',
-    suggestions: ['Which SKUs are below reorder point?', "What's out of stock?", 'What outbound orders are at risk today?', 'Plan today’s cycle counts'], ground: ['wms'] },
-  Production: { label: 'Production', greeting: 'I can help with work orders, BOMs and production.',
-    suggestions: ['Which work orders are at risk?', 'Check components vs BOM for open work orders', 'What is blocking production today?', 'Summarise open work orders'], ground: ['production', 'wms'] },
-  Sales: { label: 'Sales', greeting: 'I can help with orders, quotes and deliveries.',
-    suggestions: ['Which sales orders are ready to fulfil?', 'Which orders are blocked on stock?', 'Summarise open sales orders', 'How much am I owed right now?'], ground: ['crm', 'wms', 'finance'] },
-  General: { label: 'Mekari ERP', greeting: 'I can help across HR, sales, CRM, warehouse, finance and production.',
-    suggestions: ['How much am I owed right now?', 'Which customers are overdue and why?', 'Which SKUs are below reorder point?', 'Who was late this week?'], ground: ['hr', 'crm', 'wms', 'finance', 'production'] },
-}
-function moduleKeyFromPath(path: string): keyof typeof MODULE_CHAT {
-  const p = path.toLowerCase()
-  if (/(^\/hr|employee|attendance|payroll|leave|recruit)/.test(p)) return 'HR'
-  if (/(crm|deal|pipeline|prospect|contact)/.test(p)) return 'CRM'
-  if (/(work-order|bill-of-material|production|bom)/.test(p)) return 'Production'
-  if (/(sales-order|sales-quote|sales-deliver|quote)/.test(p)) return 'Sales'
-  if (/(warehouse|storage|receiv|picking|packing|deliver|stock|inbound|outbound|cycle|put-away|transfer|courier|shipment|product)/.test(p)) return 'WMS'
-  if (/(invoice|bill|cash|expense|bank|purchase|payment|journal|finance|jurnal|tax)/.test(p)) return 'Finance'
-  return 'General'
-}
-const moduleInfo = computed<ModuleChat>(() => MODULE_CHAT[moduleKeyFromPath(route.path)] ?? MODULE_CHAT.General!)
-
-// Context chip — set when entry point is from the AI popover
-const chatContext = ref('')
-// Grounding context fed to the model (e.g. a Cowork task result). Not shown.
-const aireneGround = ref('')
-
-// ── Agent switcher ────────────────────────────────────────────────────────────
-// You chat WITH an agent. In a general ERP-module chat you can pick any agent; in
-// a Cowork-task chat the choice is limited to the agent(s) that own the task (one
-// agent → locked, several → switchable). The model then answers in-character and
-// declines anything outside that agent's area/skills.
-const activeAgentId = aireneBridge.activeAgentId
-const restrictAgents = aireneBridge.restrictAgents
-const availableAgents = computed<CoworkAgent[]>(() =>
-  restrictAgents.value.length
-    ? coworkAgents.filter((a) => restrictAgents.value.includes(a.id))
-    : coworkAgents)
-const activeAgent = computed<CoworkAgent | undefined>(() =>
-  availableAgents.value.find((a) => a.id === activeAgentId.value)
-  ?? availableAgents.value[0]
-  ?? coworkAgents.find((a) => a.id === 'airene'))
-const canSwitchAgent = computed(() => availableAgents.value.length > 1)
+// Agent switcher menu (drawer-local UI state — the roster + active agent come
+// from the shared chat engine).
 const agentMenuOpen = ref(false)
-function pickAgent(a: CoworkAgent) { activeAgentId.value = a.id; agentMenuOpen.value = false }
-// Payload sent to the chat API so the model role-plays the agent and gates answers.
-function activeAgentPayload() {
-  const a = activeAgent.value
-  if (!a) return undefined
-  const skills = (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean)
-  return { name: a.name, role: a.role, module: a.module, persona: a.instruction || a.persona, skills }
-}
-// KB grounding for the active agent: relevance-injected snippets (ranked against
-// the user's message) plus a compact corpus so the model can also call
-// search_knowledge. Undefined when the agent has no knowledge attached.
-function activeKnowledgePayload(query: string) {
-  const att = activeAgent.value?.knowledge
-  if (!att?.length) return undefined
-  const snippets = buildKnowledgeContext(att, query)
-  const corpus = knowledgeCorpus(att)
-  if (!corpus.length) return undefined
-  return { snippets, corpus }
-}
-// When the chat is opened about a specific task result, the empty-state greeting
-// and suggestions become contextual to that result instead of the generic ones.
-const DEFAULT_CONTEXT_SUGGESTIONS = [
-  'What should I do first?',
-  'Draft a follow-up message I can send',
-  'Summarise this in 3 bullet points',
-  'What are the risks or blockers here?',
-]
-// Populated per opened task via the bridge (falls back to the generic set).
-const contextSuggestions = ref<string[]>([...DEFAULT_CONTEXT_SUGGESTIONS])
+function pickAgent(a: CoworkAgent) { chat.pickAgent(a); agentMenuOpen.value = false }
 
-// ── Rich chat rendering: light markdown + employee mention chips ──────────────
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-function escapeReg(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
-function initialsOf(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
-}
-// Minimal inline markdown → HTML (bold, italic, line breaks, bullets).
-function mdToHtml(text: string): string {
-  const lines = escapeHtml(text).split('\n')
-  const out: string[] = []
-  let inList = false
-  for (let raw of lines) {
-    const heading = /^\s*#{1,6}\s+(.*)$/.exec(raw)
-    if (heading) {
-      if (inList) { out.push('</ul>'); inList = false }
-      out.push(`<p class="chat-md-h">${heading[1]}</p>`)
-      continue
-    }
-    const bullet = /^\s*[-*•]\s+(.*)$/.exec(raw)
-    if (bullet) {
-      if (!inList) { out.push('<ul class="chat-md-ul">'); inList = true }
-      out.push(`<li>${bullet[1]}</li>`)
-      continue
-    }
-    if (inList) { out.push('</ul>'); inList = false }
-    out.push(raw.length ? `<p class="chat-md-p">${raw}</p>` : '')
-  }
-  if (inList) out.push('</ul>')
-  return out.join('')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*(?!\*)(.+?)\*(?!\*)/g, '$1<em>$2</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-}
-// Wrap any known employee full name in an avatar chip with a hover coachmark.
-function withEmployeeChips(html: string): string {
-  const names = employees.map((e) => e.fullName).filter(Boolean).sort((a, b) => b.length - a.length)
-  if (!names.length) return html
-  const re = new RegExp('(' + names.map(escapeReg).join('|') + ')', 'g')
-  return html.replace(re, (m) => {
-    const e = employees.find((x) => x.fullName === m)
-    if (!e) return m
-    const ini = initialsOf(e.fullName)
-    const av = e.photo
-      ? `<span class="emp-chip-av" style="background-image:url('${e.photo}')"></span>`
-      : `<span class="emp-chip-av emp-chip-av--ini">${ini}</span>`
-    const cav = e.photo
-      ? `<span class="emp-coach-av" style="background-image:url('${e.photo}')"></span>`
-      : `<span class="emp-coach-av emp-chip-av--ini">${ini}</span>`
-    return `<span class="emp-chip" tabindex="0">${av}<span class="emp-chip-name">${m}</span>` +
-      `<span class="emp-coach">${cav}<span class="emp-coach-body">` +
-      `<span class="emp-coach-name">${e.fullName}</span>` +
-      `<span class="emp-coach-meta">${e.employeeId ?? ''}</span>` +
-      `<span class="emp-coach-meta">${[e.jobPosition, e.department].filter(Boolean).join(' · ')}</span>` +
-      `</span></span></span>`
-  })
-}
-function renderMessage(text: string): string {
-  return withEmployeeChips(mdToHtml(text))
-}
-
-async function sendMessage(text: string, context?: string) {
-  const trimmed = text.trim()
-  if (!trimmed) return
-
-  // Set context chip (only from AI popover)
-  if (context) chatContext.value = context
-
-  // Open panel if not already open
-  aireneOpen.value = true
-
-  // Add user message
-  messages.value.push({ role: 'user', text: trimmed })
-  inputText.value = ''
-
-  await nextTick()
-  scrollChatToBottom()
-
-  // Real Gemini reply. Grounded on the task result if the chat was opened about
-  // one; otherwise on a snapshot of the module the user is currently in.
-  isTyping.value = true
-  let reply = ''
-  try {
-    const res = await $fetch<{ reply: string }>('/api/cowork/chat', {
-      method: 'POST',
-      body: {
-        messages: messages.value.map((m: { role: string; text: string }) => ({ role: m.role, text: m.text })),
-        context: aireneGround.value || buildModuleGround(),
-        agent: activeAgentPayload(),
-        roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
-        knowledge: activeKnowledgePayload(trimmed),
-      },
-    })
-    reply = res.reply
-  } catch {
-    reply = 'Sorry — I hit an error reaching the model. Please try again.'
-  }
-  isTyping.value = false
-  messages.value.push({ role: 'assistant', text: reply })
-  persistActiveSession()
-
-  await nextTick()
-  scrollChatToBottom()
-}
-
-// Grounding snapshot for a general (non-task) chat — just the modules relevant to
-// the page the user opened the drawer from, so answers stay accurate.
-function buildModuleGround(): string {
-  try {
-    const snap = buildCoworkContext() as Record<string, any>
-    const info = moduleInfo.value
-    const slice: Record<string, any> = {}
-    for (const k of info.ground) if (snap[k]) slice[k] = snap[k]
-    return `You are Airene helping the user inside the ${info.label} area of the Mekari ERP. `
-      + `Today is ${snap.today}. Answer from this real ERP data; if asked about something outside it, say so briefly.\n`
-      + JSON.stringify(slice)
-  } catch { return '' }
-}
-
+// The engine bumps a signal after every message; each surface scrolls its own
+// body element in response.
 function scrollChatToBottom() {
   if (chatBodyEl.value) {
     chatBodyEl.value.scrollTop = chatBodyEl.value.scrollHeight
   }
 }
+watch(chat.scrollSignal, async () => { await nextTick(); scrollChatToBottom() })
 
 // Expose sendMessage so popover can call it
 provide('sendAireneMessage', sendMessage)
@@ -1569,7 +1223,7 @@ watch(aireneBridge.sendSignal, () => {
 })
 // Open a saved chat session (e.g. a "recent chat" chosen from the header search).
 watch(aireneBridge.openSessionSignal, () => {
-  const s = chatSessions.value.find(x => x.id === aireneBridge.pendingSessionId.value)
+  const s = chat.sessions.value.find(x => x.id === aireneBridge.pendingSessionId.value)
   if (s) loadSession(s)
   else startNewChat()
   aireneOpen.value = true
@@ -1577,11 +1231,12 @@ watch(aireneBridge.openSessionSignal, () => {
 // Open the chat grounded on a context (e.g. a Cowork task result) — fresh chat.
 watch(aireneBridge.openContextSignal, () => {
   startNewChat()
-  aireneGround.value = aireneBridge.pendingGround.value
+  chat.aireneGround.value = aireneBridge.pendingGround.value
   chatContext.value = aireneBridge.pendingLabel.value
   contextSuggestions.value = aireneBridge.pendingSuggestions.value?.length
     ? [...aireneBridge.pendingSuggestions.value]
     : [...DEFAULT_CONTEXT_SUGGESTIONS]
+  chat.chatTaskId.value = aireneBridge.pendingTaskId.value
   aireneOpen.value = true
 })
 
@@ -2225,6 +1880,12 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
             <div class="airene-header-icons">
+              <!-- Continue this conversation full-size on Cowork › Chats -->
+              <button class="airene-icon-btn" aria-label="Open in Chats" title="Open in Chats" @click="openInChats">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M14 4h6v6M20 4l-8 8M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
               <!-- New chat -->
               <button class="airene-icon-btn" aria-label="New chat" title="New chat" @click="startNewChat">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">

@@ -37,6 +37,9 @@ const pendingLabel = ref('')
 // Suggested follow-up prompts tailored to the opened context (e.g. referencing
 // the actual overdue customer or late employee in a task result).
 const pendingSuggestions = ref<string[]>([])
+// The Cowork task the context came from (when opened from a task result), so the
+// saved chat room can be labelled and picked back up on the Cowork › Chats page.
+const pendingTaskId = ref('')
 // When true, the next send starts a fresh chat first (e.g. a prompt from search).
 const pendingFresh = ref(false)
 // Open a specific persisted chat session by id (e.g. a "recent chat" from search).
@@ -60,6 +63,7 @@ export function useAireneBridge() {
     pendingGround,
     pendingLabel,
     pendingSuggestions,
+    pendingTaskId,
     openSessionSignal,
     pendingSessionId,
     // Actions any component can call
@@ -74,11 +78,13 @@ export function useAireneBridge() {
     },
     /** Open the chat with a grounding context but no message sent yet. `agents`
      *  restricts (and defaults) the agent switcher — e.g. the agents that own the
-     *  task this chat is about. One agent → locked; multiple → switchable. */
-    openWithContext(ground: string, label: string, suggestions: string[] = [], agents: string[] = []) {
+     *  task this chat is about. One agent → locked; multiple → switchable.
+     *  `taskId` tags the saved room with the Cowork task it came from. */
+    openWithContext(ground: string, label: string, suggestions: string[] = [], agents: string[] = [], taskId = '') {
       pendingGround.value = ground
       pendingLabel.value = label
       pendingSuggestions.value = suggestions
+      pendingTaskId.value = taskId
       restrictAgents.value = agents
       if (agents.length) activeAgentId.value = agents[0]!
       openContextSignal.value++

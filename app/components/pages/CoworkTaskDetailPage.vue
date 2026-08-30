@@ -335,7 +335,7 @@ function taskAgentIds(): string[] {
   const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
   return [...new Set(mods.map((m) => agentForModule(m)?.id).filter(Boolean))] as string[]
 }
-function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds()) }
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds(), task.value?.id) }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.

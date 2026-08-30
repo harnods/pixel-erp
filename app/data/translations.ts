@@ -115,6 +115,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Voided orders': 'Pesanan dibatalkan',
   'Export & import': 'Ekspor & impor',
   'File manager': 'Manajemen file',
+  'Chats': 'Chat',
   'Activity log': 'Log aktivitas',
   'Warehouse settings ': 'Pengaturan gudang',
   // Integrations flyout
