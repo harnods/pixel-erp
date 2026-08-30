@@ -19,7 +19,7 @@ import NewEngagementPage from '~/components/pages/NewEngagementPage.vue'
 import ProjectExpensePage from '~/components/pages/ProjectExpensePage.vue'
 import ProjectInvoicePage from '~/components/pages/ProjectInvoicePage.vue'
 import { useTableState } from '~/composables/useTableState'
-import { engagements, findEngagement, revenue } from '~/data/projectAccounting'
+import { engagements, findEngagement, revenue, openEntries, daysAgo } from '~/data/projectAccounting'
 
 // ── Nuxt auto-imports that vitest has no layer for ───────────────────────────
 const push = vi.fn()
@@ -255,6 +255,74 @@ describe('NewEngagementPage', () => {
 
     expect(engagements.length).toBe(before)
     expect(push).not.toHaveBeenCalled()
+    w.unmount()
+  })
+})
+
+describe('Control wiring — regressions found by driving the real browser', () => {
+  /**
+   * MpCheckbox takes `is-checked` + `@change`, NOT `model-value` +
+   * `@update:model-value`. Bound the wrong way it renders fine and toggles its own
+   * box, so it looks correct — but the handler never fires and nothing is selected.
+   * That silently disabled the entire cost-plus review queue.
+   */
+  it('the select-all checkbox actually selects every open line', async () => {
+    routeQuery.tab = 'recognition'
+    const w = await mountPage(ProjectEngagementDetailsPage, { orderId: 'e1' })
+
+    const open = openEntries(findEngagement('e1')!).length
+    expect(open).toBeGreaterThan(1)
+    expect(w.text()).not.toContain('selected ·')
+
+    const selectAll = w.find('#pa-review-all')
+    expect(selectAll.exists()).toBe(true)
+    await selectAll.trigger('change')
+    await flushPromises()
+
+    // The bulk bar only appears when the handler really ran.
+    expect(w.text()).toContain(`${open} selected`)
+    w.unmount()
+  })
+
+  it('an individual row checkbox toggles just that line', async () => {
+    routeQuery.tab = 'recognition'
+    const w = await mountPage(ProjectEngagementDetailsPage, { orderId: 'e1' })
+
+    const first = w.findAll('.pa-td--check input').at(0)!
+    await first.trigger('change')
+    await flushPromises()
+    expect(w.text()).toContain('1 selected')
+
+    await first.trigger('change')
+    await flushPromises()
+    expect(w.text()).not.toContain('1 selected')
+    w.unmount()
+  })
+
+  /**
+   * MpDatePicker is driven in the display format (`DD/MM/YYYY`) per the repo's
+   * date convention, while the data layer stores ISO. Saving must convert back, or
+   * every posted cost line carries an unparseable date and the ageing buckets break.
+   */
+  it('a saved expense stores an ISO date, not the display format', async () => {
+    routeQuery.project = 'e2'
+    const w = await mountPage(ProjectExpensePage)
+    const before = findEngagement('e2')!.entries.length
+
+    await w.find('#px-beneficiary').setValue('PT Date Check')
+    const amount = w.findAll('input[id^="px-amt-"]').at(0)!
+    await amount.setValue('1500000')
+    await flushPromises()
+
+    const save = w.findAll('button').find(b => b.text() === 'Save')!
+    await save.trigger('click')
+    await new Promise(r => setTimeout(r, 400))
+    await flushPromises()
+
+    const entries = findEngagement('e2')!.entries
+    expect(entries.length).toBe(before + 1)
+    expect(entries.at(-1)!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(daysAgo(entries.at(-1)!.date)).not.toBeNaN()
     w.unmount()
   })
 })

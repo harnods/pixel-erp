@@ -33,9 +33,14 @@ const nextId = () => `l${(seq += 1)}`
 
 const presetProject = String(route.query.project ?? '')
 
+// MpDatePicker works in the display format (DESIGN.md → dd/mm/yyyy); the data
+// layer stores ISO. Convert at the boundary, both ways.
+function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
+function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
+
 // ── Draft ─────────────────────────────────────────────────────────────────────
 const beneficiary = ref('')
-const date = ref(TODAY)
+const date = ref(toDisplayDate(TODAY))
 const reference = ref('')
 const memo = ref('')
 const lines = reactive<ExpenseDraftLine[]>([
@@ -106,7 +111,7 @@ async function save() {
   }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 300))
-  const res = saveExpense({ beneficiary: beneficiary.value, date: date.value, lines: [...lines] })
+  const res = saveExpense({ beneficiary: beneficiary.value, date: toISODate(date.value), lines: [...lines] })
   isSaving.value = false
 
   toast.notify({
@@ -171,7 +176,7 @@ function cancel() {
 
             <MpFormControl id="px-date">
               <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-              <MpDatePicker id="px-date-input" v-model="date" is-full-width />
+              <MpDatePicker id="px-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal />
             </MpFormControl>
 
             <MpFormControl id="px-no">
