@@ -95,6 +95,28 @@ describe('ProjectAccountingPage — the portfolio', () => {
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project-accounting/'))
     w.unmount()
   })
+
+  it('opens the engagement from anywhere in the row, not just the title', async () => {
+    const w = await mountPage(ProjectAccountingPage)
+    const row = w.find('.erp-tr')
+    expect(row.classes()).toContain('erp-tr--clickable')
+
+    // A click on a plain figure cell — nowhere near the name link — still opens it.
+    const amountCell = row.findAll('td').find(td => td.text().includes('Rp'))!
+    await amountCell.trigger('click')
+
+    expect(push).toHaveBeenCalledWith(expect.stringContaining('/project-accounting/'))
+    w.unmount()
+  })
+
+  it('a click on a control inside the row does not double-navigate', async () => {
+    const w = await mountPage(ProjectAccountingPage)
+    // The name link handles its own click; the row handler must stand down so the
+    // navigation happens once, from the link.
+    await w.find('.cell-link').trigger('click')
+    expect(push).toHaveBeenCalledTimes(1)
+    w.unmount()
+  })
 })
 
 describe('ProjectEngagementDetailsPage — one tree per recognition method', () => {

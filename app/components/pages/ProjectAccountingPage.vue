@@ -80,14 +80,16 @@ const rows = computed<Row[]>(() => engagements.map((e: Engagement) => {
   }
 }))
 
+// Widths are tuned to fit a laptop viewport without horizontal scroll — scrolling
+// the identity column off-screen loses which row you are reading.
 const allCols: TableColumn[] = [
-  { key: 'name', label: t('Project'), width: '260px', sortable: true, sortType: 'text' },
-  { key: 'method', label: t('Revenue recognition'), width: '220px' },
-  { key: 'revenueValue', label: t('Revenue recognised'), width: '180px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'spendPct', label: t('Budgeted / spent'), width: '200px', align: 'right' },
-  { key: 'billedValue', label: t('Billed'), width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'wip', label: t('Billing progress'), width: '170px', align: 'right' },
-  { key: 'statusLabel', label: t('Project status'), width: '140px', sortable: true, sortType: 'text' },
+  { key: 'name', label: t('Project'), width: '250px', sortable: true, sortType: 'text' },
+  { key: 'method', label: t('Revenue recognition'), width: '165px' },
+  { key: 'revenueValue', label: t('Revenue recognised'), width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'spendPct', label: t('Budgeted / spent'), width: '185px', align: 'right' },
+  { key: 'billedValue', label: t('Billed'), width: '135px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'wip', label: t('Billing progress'), width: '145px', align: 'right' },
+  { key: 'statusLabel', label: t('Project status'), width: '120px', sortable: true, sortType: 'text' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, true])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
@@ -148,6 +150,8 @@ function spendTone(pct: number | null): string {
       :search="search"
       bulk-label="project"
       filter-empty-label="project"
+      is-row-clickable
+      @row-click="openEngagement((($event as unknown) as Row).id)"
       @page-change="setPage"
       @per-page-change="setPerPage"
       @sort-change="setSort"
@@ -254,16 +258,22 @@ function spendTone(pct: number | null): string {
         <span class="pa-num">{{ formatIdr((row as unknown as Row).billedValue) }}</span>
       </template>
 
-      <!-- ── Billing progress: unbilled (asset) vs overbilled (liability) ── -->
+      <!-- ── Billing progress: unbilled (asset) vs overbilled (liability) ──
+           Label over amount, so a long figure never clips at this width. -->
       <template #cell-wip="{ row }">
-        <span
-          class="pa-num pa-wip"
+        <div
+          class="pa-wip"
           :data-tone="Math.abs((row as unknown as Row).wip) < 1000 ? 'ok' : (row as unknown as Row).wip > 0 ? 'over' : 'near'"
         >
-          {{ Math.abs((row as unknown as Row).wip) < 1000
-            ? t('Billing matched')
-            : `${(row as unknown as Row).wip > 0 ? t('Unbilled') : t('Overbilled')} ${formatIdr(Math.abs((row as unknown as Row).wip))}` }}
-        </span>
+          <span class="pa-wip-label">
+            {{ Math.abs((row as unknown as Row).wip) < 1000
+              ? t('Billing matched')
+              : (row as unknown as Row).wip > 0 ? t('Unbilled') : t('Overbilled') }}
+          </span>
+          <span v-if="Math.abs((row as unknown as Row).wip) >= 1000" class="pa-num pa-wip-amount">
+            {{ formatIdr(Math.abs((row as unknown as Row).wip)) }}
+          </span>
+        </div>
       </template>
 
       <!-- ── Project status ── -->
@@ -317,7 +327,7 @@ function spendTone(pct: number | null): string {
 .pa-stat-sub { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); margin-top: 2px; }
 
 /* ── Cells ─────────────────────────────────────────────────────────────────── */
-.pa-name { text-align: left; font-weight: var(--mp-font-weights-semi-bold); }
+.pa-name { text-align: left; font-weight: var(--mp-font-weights-semi-bold); white-space: normal; }
 .pa-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: 2px; }
 .pa-num { font-variant-numeric: tabular-nums; }
 
@@ -336,8 +346,31 @@ function spendTone(pct: number | null): string {
 .pa-bar-fill[data-tone='over'] { background: var(--mp-colors-red-700, #a8352d); }
 .pa-bar-fill[data-tone='none'] { background: var(--mp-border-bold); }
 
-.pa-wip { font-weight: var(--mp-font-weights-semi-bold); font-size: var(--mp-font-sizes-sm); }
+.pa-wip { display: flex; flex-direction: column; align-items: flex-end; font-size: var(--mp-font-sizes-sm); }
+.pa-wip-label { font-weight: var(--mp-font-weights-semi-bold); }
+.pa-wip-amount { font-weight: var(--mp-font-weights-semi-bold); }
 .pa-wip[data-tone='ok'] { color: var(--mp-text-success, #028454); }
 .pa-wip[data-tone='near'] { color: var(--mp-text-warning, #e46910); }
 .pa-wip[data-tone='over'] { color: var(--mp-text-danger, #a8352d); }
+
+/* ── Filter bar — each index page defines these itself (they are page-scoped,
+      not global), so omitting them leaves the bar with no layout at all. ─────── */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.filter-all-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary) !important;
+  cursor: pointer;
+}
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 </style>

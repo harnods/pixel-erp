@@ -86,6 +86,11 @@ const props = withDefaults(defineProps<{
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
    *  your filters". Defaults to the generic "No results match your filters". */
   filterEmptyLabel?: string
+  /** Make the whole row open the record (emits `rowClick`). Opt-in: pages that don't
+   *  set it keep the default non-clickable row. Clicks that land on a control inside
+   *  the row — link, button, checkbox, the actions kebab — are ignored, so the
+   *  existing per-cell affordances still win. */
+  isRowClickable?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -102,6 +107,7 @@ const props = withDefaults(defineProps<{
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
   filterEmptyLabel: undefined,
+  isRowClickable: false,
 })
 
 const emit = defineEmits<{
@@ -114,7 +120,21 @@ const emit = defineEmits<{
   clearSearch: []
   clearAll: []
   selectionChange: [count: number]
+  rowClick: [row: Record<string, unknown>, index: number]
 }>()
+
+/**
+ * Row click → open the record. Ignored when the click landed on something that
+ * already has its own behaviour (the name link, a kebab, a checkbox, the Airene
+ * icon), so row-click never steals a more specific action.
+ */
+function onRowClick(row: Record<string, unknown>, index: number, ev: MouseEvent) {
+  if (!props.isRowClickable) return
+  const el = ev.target as HTMLElement | null
+  if (el?.closest('a, button, input, select, textarea, label, [role="button"], .erp-td--ai, .erp-td--actions')) return
+  if (window.getSelection()?.toString()) return   // don't navigate mid text-selection
+  emit('rowClick', row, index)
+}
 
 // ERP column sort: picking the already-active direction clears the sort (back to
 // default order); otherwise apply the chosen direction. Empty key = unsorted.
@@ -515,9 +535,10 @@ const bulkCountLabel = computed(() => {
               v-for="(row, ri) in displayRows"
               :key="ri"
               class="erp-tr"
-              :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
+              :class="{ 'erp-tr--align-top': tallRows?.has(ri), 'erp-tr--clickable': isRowClickable }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
+              @click="onRowClick(row, ri, $event)"
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
               <td
@@ -933,6 +954,8 @@ const bulkCountLabel = computed(() => {
 .erp-tr:hover .erp-td {
   background: var(--mp-background-neutral-hovered);
 }
+/* Opt-in row navigation (isRowClickable) — the whole row reads as the target. */
+.erp-tr--clickable { cursor: pointer; }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 
