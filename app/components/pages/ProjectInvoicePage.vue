@@ -31,6 +31,11 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
 
+// MpDatePicker works in the display format (DESIGN.md → dd/mm/yyyy); the data
+// layer stores ISO. Convert at the boundary, both ways.
+function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
+function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
+
 const engId = String(route.query.project ?? '')
 const kind = (String(route.query.kind ?? 'adhoc') || 'adhoc') as InvoiceKind
 const label = String(route.query.label ?? t('Invoice'))
@@ -68,8 +73,8 @@ function buildLines(): InvoiceDraftLine[] {
 const customer = ref(engagement.value?.client ?? '')
 const email = ref('')
 const address = ref('')
-const date = ref(TODAY)
-const dueDate = ref('2026-09-02')
+const date = ref(toDisplayDate(TODAY))
+const dueDate = ref(toDisplayDate('2026-09-02'))
 const terms = ref(PAYMENT_TERMS_OPTIONS[0]!)
 const reference = ref('')
 const message = ref('')
@@ -144,7 +149,7 @@ async function save() {
     label,
     milestoneId,
     entryIds: kind === 'tm' ? sourceEntryIds.value : null,
-    date: date.value,
+    date: toISODate(date.value),
     amount: grandTotal.value,
   })
   isSaving.value = false
@@ -199,11 +204,11 @@ async function save() {
             </MpFormControl>
             <MpFormControl id="pi-date">
               <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-              <MpDatePicker id="pi-date-input" v-model="date" is-full-width />
+              <MpDatePicker id="pi-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal />
             </MpFormControl>
             <MpFormControl id="pi-due">
               <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
-              <MpDatePicker id="pi-due-input" v-model="dueDate" is-full-width />
+              <MpDatePicker id="pi-due-input" v-model="dueDate" format="DD/MM/YYYY" value-type="format" use-portal />
             </MpFormControl>
           </div>
 

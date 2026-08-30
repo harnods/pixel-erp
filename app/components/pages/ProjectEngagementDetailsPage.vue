@@ -954,7 +954,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   <thead>
                     <tr>
                       <th class="pa-th pa-th--check">
-                        <MpCheckbox id="pa-review-all" :model-value="allSelected" @update:model-value="toggleAll" />
+                        <MpCheckbox id="pa-review-all" :is-checked="allSelected" @change="toggleAll" @click.stop />
                       </th>
                       <th class="pa-th">{{ t('Item') }}</th>
                       <th class="pa-th">{{ t('Date') }}</th>
@@ -965,7 +965,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   <tbody>
                     <tr v-for="x in openLines" :key="x.id">
                       <td class="pa-td pa-td--check">
-                        <MpCheckbox :id="`pa-review-${x.id}`" :model-value="selected.includes(x.id)" @update:model-value="toggleOne(x.id)" />
+                        <MpCheckbox :id="`pa-review-${x.id}`" :is-checked="selected.includes(x.id)" @change="toggleOne(x.id)" @click.stop />
                       </td>
                       <td class="pa-td">{{ entryLabel(x) }}</td>
                       <td class="pa-td pa-td--muted">{{ formatDate(x.date) }}</td>
