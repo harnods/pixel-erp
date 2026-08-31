@@ -21,6 +21,14 @@ snapshot of the last build, not live. Do this proactively at the end of a work
 turn, without being asked. Anyone contributing to this repo (incl. PMs) should
 follow the same two-port setup.
 
+**⚠️ Preview must load `.env`.** `npm run preview` loads `.env` automatically, so
+the Gemini-backed features (Cowork chat/plan/agents, Buzz) work. If you instead
+start the built server directly with `node .output/server/index.mjs`, it does
+**NOT** read `.env` — `runtimeConfig.geminiApiKey` stays empty and every Gemini
+route silently falls back (`source: "fallback"`, no real model). When starting
+that way, load the env first:
+`set -a; . ./.env; set +a; PORT=4322 node .output/server/index.mjs`.
+
 ## UI copy
 
 - Indonesian copy follows the **uxw-mekari** guideline (tone, grammar, term

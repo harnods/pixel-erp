@@ -8,6 +8,9 @@ export interface ChatMessage {
    *  to connect. The prose lives in `text`; anything the user must act on
    *  renders as a card beneath it. See `ChatCard` in `data/coworkGoals.ts`. */
   card?: ChatCard
+  /** Short "what I did" line for an assistant reply — shown as the collapsible
+   *  "Done ›" reasoning header above the answer. */
+  reasoning?: string
 }
 
 /**

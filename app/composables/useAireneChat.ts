@@ -89,15 +89,47 @@ function escapeReg(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, 
 function initialsOf(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
 }
-/** Minimal inline markdown → HTML (bold, italic, line breaks, bullets). */
+/** Minimal inline markdown → HTML (bold, italic, bullets, GFM tables). */
 export function mdToHtml(text: string): string {
   const lines = escapeHtml(text).split('\n')
   const out: string[] = []
   let inList = false
-  for (const raw of lines) {
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false } }
+  // A table row is `| … | … |`; the separator is that made of only |, -, : and space.
+  const isRow = (s: string) => /^\s*\|.*\|\s*$/.test(s)
+  const isSep = (s: string) => isRow(s) && /^[\s|:-]+$/.test(s.trim()) && s.includes('-')
+  const cells = (s: string) => s.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+  const alignOf = (c: string) => (c.startsWith(':') && c.endsWith(':')) ? 'center' : c.endsWith(':') ? 'right' : ''
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!
+
+    // ── GFM table: header row directly followed by a |---|---| separator ──
+    if (isRow(raw) && i + 1 < lines.length && isSep(lines[i + 1]!)) {
+      closeList()
+      const header = cells(raw)
+      const aligns = cells(lines[i + 1]!).map(alignOf)
+      i += 2
+      const body: string[][] = []
+      while (i < lines.length && isRow(lines[i]!) && !isSep(lines[i]!)) { body.push(cells(lines[i]!)); i++ }
+      i-- // the for-loop will re-increment
+      const cellStyle = (ci: number) => (aligns[ci] ? ` style="text-align:${aligns[ci]}"` : '')
+      let t = '<div class="chat-md-tablewrap"><table class="chat-md-table"><thead><tr>'
+      header.forEach((h, ci) => { t += `<th${cellStyle(ci)}>${h}</th>` })
+      t += '</tr></thead><tbody>'
+      for (const r of body) {
+        t += '<tr>'
+        header.forEach((_, ci) => { t += `<td${cellStyle(ci)}>${r[ci] ?? ''}</td>` })
+        t += '</tr>'
+      }
+      t += '</tbody></table></div>'
+      out.push(t)
+      continue
+    }
+
     const heading = /^\s*#{1,6}\s+(.*)$/.exec(raw)
     if (heading) {
-      if (inList) { out.push('</ul>'); inList = false }
+      closeList()
       out.push(`<p class="chat-md-h">${heading[1]}</p>`)
       continue
     }
@@ -107,7 +139,7 @@ export function mdToHtml(text: string): string {
       out.push(`<li>${bullet[1]}</li>`)
       continue
     }
-    if (inList) { out.push('</ul>'); inList = false }
+    closeList()
     out.push(raw.length ? `<p class="chat-md-p">${raw}</p>` : '')
   }
   if (inList) out.push('</ul>')
@@ -243,8 +275,10 @@ export function useAireneChat() {
     // one; otherwise on a snapshot of the module the user is currently in.
     isTyping.value = true
     let reply = ''
+    let ok = false
+    let citeCount = 0
     try {
-      const res = await $fetch<{ reply: string }>('/api/cowork/chat', {
+      const res = await $fetch<{ reply: string; source?: string; citations?: unknown[] }>('/api/cowork/chat', {
         method: 'POST',
         body: {
           messages: messages.value.map((m: ChatMessage) => ({ role: m.role, text: m.text })),
@@ -255,11 +289,22 @@ export function useAireneChat() {
         },
       })
       reply = res.reply
+      ok = res.source === 'gemini'
+      citeCount = Array.isArray(res.citations) ? res.citations.length : 0
     } catch {
       reply = 'Sorry — I hit an error reaching the model. Please try again.'
     }
     isTyping.value = false
-    messages.value.push({ role: 'assistant', text: reply })
+    // "What I did" line for the collapsible reasoning header (only on a real answer).
+    const ground = chatContext.value
+      ? `the result “${chatContext.value}”`
+      : (activeAgent.value && activeAgent.value.id !== 'airene'
+          ? `your live ${activeAgent.value.role ?? activeAgent.value.name} data`
+          : `your live ${moduleInfo.value.label} data`)
+    const reasoning = ok
+      ? `Read your request, pulled ${ground}, and grounded the answer in it${citeCount ? ` (${citeCount} source${citeCount === 1 ? '' : 's'})` : ''}.`
+      : undefined
+    messages.value.push({ role: 'assistant', text: reply, reasoning })
     persistActiveSession()
     scrollSignal.value++
   }

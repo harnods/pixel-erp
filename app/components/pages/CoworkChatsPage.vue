@@ -16,8 +16,8 @@
  * Full-bleed page — owns its own title bar + stage.
  */
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
-import { useAireneChat } from '~/composables/useAireneChat'
+import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
+import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { coworkAgents, coworkConnections, getTask, addTask, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
@@ -53,6 +53,14 @@ const {
 // ── Page-local UI state (the conversation itself is shared) ──────────────────
 const inputText = ref('')
 const bodyEl = ref<HTMLElement | null>(null)
+
+// Empty-state suggestions follow the active agent: a specialist shows prompts from
+// its own domain; only the all-round Airene keeps the page-aware module prompts.
+const agentSuggestions = computed(() => {
+  const a = activeAgent.value
+  if (!a || a.id === 'airene') return moduleInfo.value.suggestions
+  return MODULE_CHAT[a.module as keyof typeof MODULE_CHAT]?.suggestions ?? moduleInfo.value.suggestions
+})
 
 // ── Eye-tracking mascot (empty-state greeting) — pupils follow the cursor ───────
 const mascotImgEl  = ref<HTMLElement | null>(null)
@@ -215,6 +223,9 @@ function createTask(promptText: string, schedule: { cadence: CoworkCadence; time
 
 // "Save as task" CTA on an assistant turn — asks whether to schedule first.
 const saveMenuFor = ref<number | null>(null)
+// Which assistant messages have their "Done ›" reasoning expanded.
+const reasonOpen = ref<Set<number>>(new Set())
+function toggleReason(i: number) { const s = new Set(reasonOpen.value); s.has(i) ? s.delete(i) : s.add(i); reasonOpen.value = s }
 const saveCadence = ref<CoworkCadence>('Weekly')
 const saveTime = ref('09:00')
 function openSaveMenu(i: number) { saveMenuFor.value = saveMenuFor.value === i ? null : i }
@@ -342,7 +353,8 @@ onBeforeUnmount(() => {
       <h1 class="cwc-title">Chats</h1>
     </div>
     <div class="cwc-actions">
-      <MpButton is-rounded variant="primary" @click="newChat">+ New chat</MpButton>
+      <!-- Only offer "New chat" while a conversation is open; the empty state IS a new chat. -->
+      <MpButton v-if="messages.length" is-rounded variant="primary" @click="newChat">+ New chat</MpButton>
     </div>
   </header>
 
@@ -482,15 +494,27 @@ onBeforeUnmount(() => {
           <template v-else>
             <p class="cwc-greeting-title">Hi, I'm {{ activeAgent!.name }}.</p>
             <p v-if="chatContext" class="cwc-greeting-msg">I've reviewed “{{ chatContext }}”. Ask me anything about the result.</p>
-            <p v-else class="cwc-greeting-msg">{{ moduleInfo.greeting }}</p>
+            <!-- Caption follows the agent: a specialist shows its own description;
+                 only the all-round Airene keeps the page-aware module greeting. -->
+            <p v-else class="cwc-greeting-msg">{{ activeAgent!.id === 'airene' ? moduleInfo.greeting : activeAgent!.description }}</p>
           </template>
         </div>
 
         <!-- Active chat: scrolling messages above the composer -->
         <div v-else ref="bodyEl" class="cwc-messages">
           <div v-for="(msg, i) in messages" :key="i" class="chat-message" :class="'chat-message--' + msg.role">
-            <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar">
+            <!-- User messages carry a 36px avatar on the right; the AI answer has none. -->
+            <MpAvatar v-if="msg.role === 'user'" name="Rizal Candra" size="lg" class="chat-user-av" />
             <div class="cwc-msg-col">
+              <!-- Collapsible "Done ›" reasoning, above the AI answer -->
+              <div v-if="msg.role === 'assistant' && msg.reasoning" class="cwc-reason" :class="{ 'is-open': reasonOpen.has(i) }">
+                <button type="button" class="cwc-reason-head" @click="toggleReason(i)">
+                  <MpIcon name="check" size="sm" class="cwc-reason-check" />
+                  <span class="cwc-reason-label">Done</span>
+                  <MpIcon :name="reasonOpen.has(i) ? 'caret-down' : 'caret-right'" size="sm" class="cwc-reason-chev" />
+                </button>
+                <p v-if="reasonOpen.has(i)" class="cwc-reason-body">{{ msg.reasoning }}</p>
+              </div>
               <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
@@ -533,7 +557,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div v-if="isTyping" class="chat-message chat-message--assistant">
-            <img src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar">
             <div class="chat-bubble chat-bubble--assistant chat-typing">
               <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
             </div>
@@ -635,7 +658,7 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>
             <button
-              v-for="s in (chatContext ? contextSuggestions : moduleInfo.suggestions)"
+              v-for="s in (chatContext ? contextSuggestions : agentSuggestions)"
               :key="s"
               class="cwc-suggestion"
               @click="send(s)"
@@ -770,16 +793,38 @@ onBeforeUnmount(() => {
 .chat-avatar { flex-shrink: 0; border-radius: var(--mp-radii-full, 50%); }
 .chat-bubble { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); max-width: 85%; word-break: break-word; }
 .chat-bubble__text { white-space: pre-wrap; }
-.chat-bubble--user { background: var(--mp-airene-default); color: var(--mp-text-inverse); border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px); }
-.chat-bubble--assistant { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px); }
+/* User bubble — subtle gray (not brand), with a 36px avatar to its right. */
+.chat-bubble--user { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-default); border-radius: var(--mp-radii-lg, 12px); }
+.chat-user-av { flex-shrink: 0; width: 36px !important; height: 36px !important; }
+.chat-user-av :deep(> *) { width: 36px !important; height: 36px !important; }
+/* AI answer — no avatar, no bubble: plain text spanning the column. */
+.chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* …but the typing loader keeps a subtle pill so the dots have a surface. */
+.chat-typing.chat-bubble--assistant { background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
+
+/* Collapsible "Done ›" reasoning above an AI answer. */
+.cwc-reason { margin-bottom: var(--mp-spacing-2); }
+.cwc-reason-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: 2px 4px; margin-left: -4px; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); font-family: inherit; }
+.cwc-reason-head:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+.cwc-reason-check { color: var(--mp-icon-success, #12b76a); }
+.cwc-reason-label { font-weight: var(--mp-font-weights-medium, 500); }
+.cwc-reason-chev { color: var(--mp-icon-subtle, #97a0af); }
+.cwc-reason-body { margin: var(--mp-spacing-1) 0 0; padding-left: var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); border-left: 2px solid var(--mp-border-default); }
 .chat-bubble__rich { white-space: normal; }
 .chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
 .chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }
 .chat-bubble__rich :deep(.chat-md-h) { margin: var(--mp-spacing-3, 12px) 0 var(--mp-spacing-1, 4px); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .chat-bubble__rich :deep(.chat-md-h:first-child) { margin-top: 0; }
-.chat-bubble__rich :deep(.chat-md-ul) { margin: var(--mp-spacing-1, 4px) 0; padding-inline-start: var(--mp-spacing-4, 16px); }
-.chat-bubble__rich :deep(.chat-md-ul li) { margin: 2px 0; }
+.chat-bubble__rich :deep(.chat-md-ul) { margin: var(--mp-spacing-1, 4px) 0; padding-inline-start: var(--mp-spacing-5, 20px); list-style: disc outside; }
+.chat-bubble__rich :deep(.chat-md-ul li) { margin: 2px 0; display: list-item; list-style: disc outside; }
 .chat-bubble__rich :deep(strong) { font-weight: var(--mp-font-weights-semi-bold, 600); }
+/* GFM tables */
+.chat-bubble__rich :deep(.chat-md-tablewrap) { margin: var(--mp-spacing-2, 8px) 0; overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); }
+.chat-bubble__rich :deep(.chat-md-table) { width: 100%; border-collapse: collapse; font-size: var(--mp-font-sizes-md); white-space: nowrap; }
+.chat-bubble__rich :deep(.chat-md-table th) { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f4f5f7); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
+.chat-bubble__rich :deep(.chat-md-table td) { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-subtle, #f0f1f3); color: var(--mp-text-default); }
+.chat-bubble__rich :deep(.chat-md-table tr:last-child td) { border-bottom: none; }
+.chat-bubble__rich :deep(.chat-md-table tbody tr:hover td) { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .chat-bubble__rich :deep(code) { font-family: var(--mp-fonts-mono, monospace); font-size: 0.9em; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 4px; }
 /* Employee mention chips (v-html content needs :deep()) */
 .chat-bubble__rich :deep(.emp-chip) { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px 1px 2px; margin: 0 1px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); cursor: default; }
