@@ -23,7 +23,7 @@ import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { coworkAgents, coworkConnections, getTask, addTask, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
-import type { GoalDraft } from '~/data/coworkGoals'
+import { addGoal, type GoalDraft } from '~/data/coworkGoals'
 
 // Gemini mark — 4-point star with Google's multi-hue gradient (model picker).
 const GeminiMark = (props: { size?: number }) =>
@@ -229,6 +229,66 @@ function toggleReason(i: number) { const s = new Set(reasonOpen.value); s.has(i)
 const saveCadence = ref<CoworkCadence>('Weekly')
 const saveTime = ref('09:00')
 function openSaveMenu(i: number) { saveMenuFor.value = saveMenuFor.value === i ? null : i }
+
+// ── Per-answer action toolbar (copy · rate · audio · edit-as-doc · retry) ──
+const feedback = ref<Record<number, 'up' | 'down' | undefined>>({})
+const editingDoc = ref<Set<number>>(new Set())
+const docDraft = ref<Record<number, string>>({})
+const speakingIdx = ref<number | null>(null)
+const msgSourcesOpen = ref<Set<number>>(new Set())
+
+function toggleMsgSources(i: number) { const s = new Set(msgSourcesOpen.value); s.has(i) ? s.delete(i) : s.add(i); msgSourcesOpen.value = s }
+async function copyAnswer(i: number) {
+  try { await navigator.clipboard.writeText(messages.value[i]?.text ?? ''); toast.notify({ variant: 'success', title: 'Answer copied' }) }
+  catch { toast.notify({ variant: 'error', title: 'Copy failed' }) }
+}
+function rate(i: number, v: 'up' | 'down') {
+  const cur = feedback.value[i]
+  feedback.value = { ...feedback.value, [i]: cur === v ? undefined : v }
+  if (feedback.value[i]) toast.notify({ variant: 'info', title: v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving" })
+}
+function speak(i: number) {
+  const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
+  if (!synth) { toast.notify({ variant: 'error', title: 'Audio not supported here' }); return }
+  if (speakingIdx.value === i) { synth.cancel(); speakingIdx.value = null; return }
+  synth.cancel()
+  const clean = (messages.value[i]?.text ?? '').replace(/[#*`_>|]/g, ' ').replace(/\s+/g, ' ').trim()
+  const u = new SpeechSynthesisUtterance(clean)
+  u.onend = () => { if (speakingIdx.value === i) speakingIdx.value = null }
+  speakingIdx.value = i
+  synth.speak(u)
+}
+function toggleDoc(i: number) {
+  const s = new Set(editingDoc.value)
+  if (s.has(i)) s.delete(i)
+  else { s.add(i); docDraft.value = { ...docDraft.value, [i]: messages.value[i]?.text ?? '' } }
+  editingDoc.value = s
+}
+function saveDoc(i: number) {
+  const m = messages.value[i]
+  if (m) m.text = docDraft.value[i] ?? m.text
+  const s = new Set(editingDoc.value); s.delete(i); editingDoc.value = s
+  toast.notify({ variant: 'success', title: 'Answer updated' })
+}
+function downloadDoc(i: number) {
+  const blob = new Blob([messages.value[i]?.text ?? ''], { type: 'text/markdown' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'answer.md'; a.click(); URL.revokeObjectURL(a.href)
+}
+function retry(i: number) { if (i === messages.value.length - 1) chat.regenerate() }
+function saveTurnAsGoal(i: number) {
+  const p = promptForMessage(i)
+  const primary = inferModule(p)
+  const g = addGoal({
+    title: p.length > 40 ? p.slice(0, 40) + '…' : p,
+    outcome: p, status: 'draft', createdAt: new Date().toISOString(),
+    leadAgentId: activeAgent.value?.id ?? 'airene',
+    agentIds: [activeAgent.value?.id ?? 'airene'], recruitedAgentIds: [],
+    connections: [], taskIds: [], thread: [], modules: [primary],
+  })
+  saveMenuFor.value = null
+  toast.notify({ variant: 'success', title: 'Goal created' })
+  router.push(`/cowork-goals/${g.id}`)
+}
 /** The prompt behind a task saved from a message = the user turn that preceded it. */
 function promptForMessage(i: number): string {
   for (let j = i; j >= 0; j--) { if (messages.value[j]?.role === 'user') return messages.value[j].text }
@@ -515,7 +575,18 @@ onBeforeUnmount(() => {
                 </button>
                 <p v-if="reasonOpen.has(i)" class="cwc-reason-body">{{ msg.reasoning }}</p>
               </div>
-              <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
+              <!-- Edit-as-doc: an inline .md editor replaces the rendered answer. -->
+              <div v-if="msg.role === 'assistant' && editingDoc.has(i)" class="cwc-doc">
+                <div class="cwc-doc-head"><MpIcon name="document" size="sm" /> Editing as Markdown</div>
+                <textarea v-model="docDraft[i]" class="cwc-doc-input" rows="12" spellcheck="false" />
+                <div class="cwc-doc-actions">
+                  <button type="button" class="cwc-doc-btn" @click="downloadDoc(i)"><MpIcon name="document" size="sm" /> Download .md</button>
+                  <span class="cwc-doc-spacer" />
+                  <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="toggleDoc(i)">Cancel</button>
+                  <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDoc(i)">Save</button>
+                </div>
+              </div>
+              <div v-else class="chat-bubble" :class="'chat-bubble--' + msg.role">
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
                 <span v-else class="chat-bubble__text">{{ msg.text }}</span>
@@ -530,29 +601,56 @@ onBeforeUnmount(() => {
                 @approve="onApprove"
                 @open="onOpenGoal"
               />
-              <!-- Save-as-task CTA — turn this answer into a task, run now or scheduled -->
-              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && isTaskLike(promptForMessage(i))" class="cwc-save-wrap">
-                <MpPopover :id="`cwc-save-${i}`" is-manual :is-open="saveMenuFor === i" placement="bottom-start" use-portal :is-keep-alive="false" @close="saveMenuFor = null">
-                  <MpPopoverTrigger>
-                    <button type="button" class="cwc-save-btn" @click="openSaveMenu(i)"><MpIcon name="add" size="sm" /> Save as task</button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '280px' })">
-                    <div class="cw-src">
-                      <p class="cw-src__head">Save as task</p>
-                      <p class="cw-src__hint">Run it once now, or schedule it to run automatically.</p>
-                      <p class="cw-sched-label">Cadence</p>
-                      <div class="cw-seg">
-                        <button v-for="c in ['Daily','Weekly','Monthly']" :key="c" type="button" class="cw-seg__btn" :class="{ 'is-active': saveCadence === c }" @click="saveCadence = c as CoworkCadence">{{ c }}</button>
+              <!-- Per-answer action toolbar (Sana-style): sources · copy · rate ·
+                   audio · edit-as-doc · retry · save (task/goal). -->
+              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && !editingDoc.has(i)" class="cwc-msg-actions">
+                <button v-if="activeSourceNames.length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
+                  <MpIcon name="book" size="sm" />
+                  <span>Sources</span>
+                  <span class="cwc-src-count">{{ activeSourceNames.length }}</span>
+                  <MpIcon :name="msgSourcesOpen.has(i) ? 'caret-down' : 'caret-right'" size="sm" class="cwc-src-chev" />
+                </button>
+
+                <div class="cwc-act-group">
+                  <button type="button" class="cwc-act" title="Copy" aria-label="Copy answer" @click="copyAnswer(i)"><MpIcon name="copy" size="sm" /></button>
+                  <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'up' }" title="Good answer" aria-label="Thumbs up" @click="rate(i, 'up')"><MpIcon name="like" size="sm" /></button>
+                  <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'down' }" title="Bad answer" aria-label="Thumbs down" @click="rate(i, 'down')"><MpIcon name="dislike" size="sm" /></button>
+                  <button type="button" class="cwc-act" :class="{ 'is-on': speakingIdx === i }" :title="speakingIdx === i ? 'Stop' : 'Read aloud'" aria-label="Read aloud" @click="speak(i)"><MpIcon name="headphone" size="sm" /></button>
+                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="toggleDoc(i)"><MpIcon name="document" size="sm" /></button>
+                  <button v-if="i === messages.length - 1" type="button" class="cwc-act" title="Retry" aria-label="Retry" @click="retry(i)"><MpIcon name="refresh" size="sm" /></button>
+
+                  <MpPopover :id="`cwc-save-${i}`" is-manual :is-open="saveMenuFor === i" placement="bottom-end" use-portal :is-keep-alive="false" @close="saveMenuFor = null">
+                    <MpPopoverTrigger>
+                      <button type="button" class="cwc-act cwc-act--save" :class="{ 'is-on': saveMenuFor === i }" title="Save as task or goal" aria-label="Save" @click="openSaveMenu(i)"><MpIcon name="add" size="sm" /></button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '288px' })">
+                      <div class="cw-src">
+                        <button type="button" class="cwc-save-goal" @click="saveTurnAsGoal(i)">
+                          <span class="cwc-save-goal__icon"><MpIcon name="magic" size="sm" /></span>
+                          <span class="cwc-save-goal__body"><span class="cwc-save-goal__title">Save as goal</span><span class="cwc-save-goal__hint">Set an outcome; agents plan &amp; schedule it.</span></span>
+                        </button>
+                        <div class="cwc-save-div" />
+                        <p class="cw-src__head">Save as task</p>
+                        <p class="cw-src__hint">Run it once now, or schedule it to run automatically.</p>
+                        <p class="cw-sched-label">Cadence</p>
+                        <div class="cw-seg">
+                          <button v-for="c in ['Daily','Weekly','Monthly']" :key="c" type="button" class="cw-seg__btn" :class="{ 'is-active': saveCadence === c }" @click="saveCadence = c as CoworkCadence">{{ c }}</button>
+                        </div>
+                        <p class="cw-sched-label">Time</p>
+                        <div class="cw-seg">
+                          <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': saveTime === t }" @click="saveTime = t">{{ t }}</button>
+                        </div>
+                        <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="saveTurnAsTask(i, true)">Schedule {{ saveCadence.toLowerCase() }} at {{ saveTime }}</MpButton>
+                        <MpButton is-rounded variant="secondary" is-full-width :class="css({ marginTop: '8px' })" @click="saveTurnAsTask(i, false)">Run once now</MpButton>
                       </div>
-                      <p class="cw-sched-label">Time</p>
-                      <div class="cw-seg">
-                        <button v-for="t in ['07:00','08:00','09:00','18:00']" :key="t" type="button" class="cw-seg__btn" :class="{ 'is-active': saveTime === t }" @click="saveTime = t">{{ t }}</button>
-                      </div>
-                      <MpButton is-rounded variant="primary" is-full-width :class="css({ marginTop: '16px' })" @click="saveTurnAsTask(i, true)">Schedule {{ saveCadence.toLowerCase() }} at {{ saveTime }}</MpButton>
-                      <MpButton is-rounded variant="secondary" is-full-width :class="css({ marginTop: '8px' })" @click="saveTurnAsTask(i, false)">Run once now</MpButton>
-                    </div>
-                  </MpPopoverContent>
-                </MpPopover>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </div>
+
+                <!-- Inline sources list (the connected data the answer drew on). -->
+                <ul v-if="msgSourcesOpen.has(i)" class="cwc-src-list">
+                  <li v-for="s in activeSourceNames" :key="s"><MpIcon name="check" size="sm" /> {{ s }}</li>
+                </ul>
               </div>
             </div>
           </div>
@@ -810,6 +908,41 @@ onBeforeUnmount(() => {
 .cwc-reason-label { font-weight: var(--mp-font-weights-medium, 500); }
 .cwc-reason-chev { color: var(--mp-icon-subtle, #97a0af); }
 .cwc-reason-body { margin: var(--mp-spacing-1) 0 0; padding-left: var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); border-left: 2px solid var(--mp-border-default); }
+
+/* ── Per-answer action toolbar ── */
+.cwc-msg-actions { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.cwc-act-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.cwc-act { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: none; background: transparent; border-radius: var(--mp-radii-md, 8px); cursor: pointer; color: var(--mp-icon-subtle, #6e7a7c); }
+.cwc-act:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-default); }
+.cwc-act.is-on { color: var(--mp-text-brand, #0a6e4e); background: var(--mp-background-brand-subtle, #e8f5f0); }
+.cwc-act--save { color: var(--mp-text-default); }
+/* Sources chip */
+.cwc-src-chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; height: 28px; padding: 0 var(--mp-spacing-2); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.cwc-src-chip:hover { background: var(--mp-background-neutral-subtle); }
+.cwc-src-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #eceef0); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.cwc-src-chev { color: var(--mp-icon-subtle, #97a0af); }
+.cwc-src-list { list-style: none; margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); display: flex; flex-direction: column; gap: var(--mp-spacing-1); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); max-width: 320px; }
+.cwc-src-list li { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cwc-src-list li :deep(svg) { color: var(--mp-icon-success, #12b76a); }
+/* Save popover — goal item */
+.cwc-save-goal { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md, 8px); cursor: pointer; text-align: left; }
+.cwc-save-goal:hover { background: var(--mp-background-neutral-subtle); }
+.cwc-save-goal__icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); flex-shrink: 0; }
+.cwc-save-goal__body { display: flex; flex-direction: column; }
+.cwc-save-goal__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
+.cwc-save-goal__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cwc-save-div { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default); }
+/* Edit-as-doc inline Markdown editor */
+.cwc-doc { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 10px); overflow: hidden; }
+.cwc-doc-head { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); }
+.cwc-doc-input { width: 100%; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3); font-family: var(--mp-fonts-mono, ui-monospace, monospace); font-size: var(--mp-font-sizes-sm); line-height: 1.6; color: var(--mp-text-default); background: var(--mp-background-neutral); }
+.cwc-doc-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); }
+.cwc-doc-spacer { flex: 1; }
+.cwc-doc-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cwc-doc-btn:hover { background: var(--mp-background-neutral-subtle); }
+.cwc-doc-btn--ghost { border-color: transparent; }
+.cwc-doc-btn--primary { border-color: transparent; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; }
+.cwc-doc-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 .chat-bubble__rich { white-space: normal; }
 .chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
 .chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }

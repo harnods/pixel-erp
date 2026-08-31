@@ -270,9 +270,13 @@ export function useAireneChat() {
 
     messages.value.push({ role: 'user', text: trimmed })
     scrollSignal.value++
+    await runAssistantTurn(trimmed)
+  }
 
-    // Real Gemini reply. Grounded on the task result if the chat was opened about
-    // one; otherwise on a snapshot of the module the user is currently in.
+  // Fetch + append one assistant reply for the conversation as it currently stands
+  // (the last message must be the user turn being answered). Shared by sendMessage
+  // and regenerate. `prompt` is the user text driving this turn (for grounding).
+  async function runAssistantTurn(prompt: string) {
     isTyping.value = true
     let reply = ''
     let ok = false
@@ -285,7 +289,7 @@ export function useAireneChat() {
           context: aireneGround.value || buildModuleGround(),
           agent: activeAgentPayload(),
           roster: coworkAgents.map((a) => ({ name: a.name, role: a.role, module: a.module })),
-          knowledge: activeKnowledgePayload(trimmed),
+          knowledge: activeKnowledgePayload(prompt),
         },
       })
       reply = res.reply
@@ -307,6 +311,15 @@ export function useAireneChat() {
     messages.value.push({ role: 'assistant', text: reply, reasoning })
     persistActiveSession()
     scrollSignal.value++
+  }
+
+  // Retry: drop the trailing assistant reply (back to the last user turn) and
+  // ask the model again for the same prompt.
+  async function regenerate() {
+    while (messages.value.length && messages.value[messages.value.length - 1]!.role === 'assistant') messages.value.pop()
+    const last = messages.value[messages.value.length - 1]
+    if (!last || last.role !== 'user') return
+    await runAssistantTurn(last.text)
   }
 
   function startNewChat() {
@@ -382,6 +395,7 @@ export function useAireneChat() {
     pickAgent,
     // Actions
     sendMessage,
+    regenerate,
     persistActiveSession,
     startNewChat,
     loadSession,
