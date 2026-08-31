@@ -603,7 +603,6 @@ onBeforeUnmount(() => {
                    audio · edit-as-doc · retry · save (task/goal). -->
               <div v-if="msg.role === 'assistant' && !msg.card && !goalMode" class="cwc-msg-actions">
                 <button v-if="msgSources(i).length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
-                  <MpIcon name="book" size="sm" />
                   <span>Sources</span>
                   <span class="cwc-src-count">{{ msgSources(i).length }}</span>
                   <MpIcon :name="msgSourcesOpen.has(i) ? 'caret-down' : 'caret-right'" size="sm" class="cwc-src-chev" />
@@ -614,7 +613,7 @@ onBeforeUnmount(() => {
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'up' }" title="Good answer" aria-label="Thumbs up" @click="rate(i, 'up')"><MpIcon name="like" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'down' }" title="Bad answer" aria-label="Thumbs down" @click="rate(i, 'down')"><MpIcon name="dislike" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': speakingIdx === i }" :title="speakingIdx === i ? 'Stop' : 'Read aloud'" aria-label="Read aloud" @click="speak(i)"><MpIcon name="headphone" size="sm" /></button>
-                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="editAsDoc(i)"><MpIcon name="document" size="sm" /></button>
+                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="editAsDoc(i)"><MpIcon name="edit" size="sm" /></button>
                   <button v-if="i === messages.length - 1" type="button" class="cwc-act" title="Retry" aria-label="Retry" @click="retry(i)"><MpIcon name="refresh" size="sm" /></button>
 
                   <MpPopover :id="`cwc-save-${i}`" is-manual :is-open="saveMenuFor === i" placement="bottom-end" use-portal :is-keep-alive="false" @close="saveMenuFor = null">
@@ -774,12 +773,12 @@ onBeforeUnmount(() => {
     <!-- Right: inline Markdown editor panel (editor only — no meta panels). -->
     <section v-if="docEditor.open" class="cwc-docpanel">
       <header class="cwc-docpanel__head">
-        <span class="cwc-docpanel__title"><MpIcon name="document" size="sm" /> {{ docEditor.title || 'Answer' }}.md</span>
+        <span class="cwc-docpanel__title"><MpIcon name="edit" size="sm" /> {{ docEditor.title || 'Answer' }}.md</span>
         <button type="button" class="cwc-docpanel__close" aria-label="Close editor" @click="closeDocEditor"><MpIcon name="close" size="md" /></button>
       </header>
       <textarea v-model="docEditor.draft" class="cwc-docpanel__editor" spellcheck="false" placeholder="Markdown…"></textarea>
       <footer class="cwc-docpanel__foot">
-        <button type="button" class="cwc-doc-btn" @click="downloadDocEditor"><MpIcon name="document" size="sm" /> Download .md</button>
+        <button type="button" class="cwc-doc-btn" @click="downloadDocEditor"><MpIcon name="download" size="sm" /> Download .md</button>
         <span class="cwc-doc-spacer" />
         <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="closeDocEditor">Cancel</button>
         <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDocEditor">Save</button>
