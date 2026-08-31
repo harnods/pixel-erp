@@ -21,7 +21,6 @@ import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { coworkAgents, coworkConnections, getTask, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
-import { addFolder, addDoc, childrenOf, isFolder } from '~/data/coworkKb'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -266,23 +265,23 @@ function speak(i: number) {
   speakingIdx.value = i
   synth.speak(u)
 }
-// Edit as doc — save the answer as a real Markdown file in the File Manager
-// (KB), then open it there in the same editor (panel on the right), in edit mode.
-const CHAT_DOCS_FOLDER = 'Chat answers'
+// Edit as doc — open a Markdown editor panel docked to the RIGHT of the chat
+// (editor only, no meta panels). Save writes the edited Markdown back into the
+// answer; the chat re-renders it.
+const docEditor = ref<{ open: boolean; index: number; draft: string; title: string }>({ open: false, index: -1, draft: '', title: '' })
 function editAsDoc(i: number) {
-  const text = messages.value[i]?.text ?? ''
-  if (!text.trim()) return
-  // Find-or-create the "Chat answers" folder at the KB root.
-  let folder = childrenOf(null).find((n) => isFolder(n) && n.name === CHAT_DOCS_FOLDER)
-  if (!folder) folder = addFolder(null, CHAT_DOCS_FOLDER)
-  const base = promptForMessage(i).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 48) || 'Chat answer'
-  const doc = addDoc(folder.id, {
-    name: base, fileName: `${base}.md`, ext: 'md', mime: 'text/markdown',
-    sizeBytes: new Blob([text]).size, status: 'ready', source: 'ai',
-    text, summary: text.split('\n').find((l) => l.trim())?.slice(0, 160) ?? '',
-  })
-  toast.notify({ variant: 'success', title: 'Saved to File manager' })
-  router.push(`/cowork-knowledge/doc/${doc.id}?edit=1`)
+  docEditor.value = { open: true, index: i, draft: messages.value[i]?.text ?? '', title: (promptForMessage(i) || 'Answer').slice(0, 40) }
+}
+function closeDocEditor() { docEditor.value.open = false }
+function saveDocEditor() {
+  const m = messages.value[docEditor.value.index]
+  if (m) m.text = docEditor.value.draft
+  docEditor.value.open = false
+  toast.notify({ variant: 'success', title: 'Answer updated' })
+}
+function downloadDocEditor() {
+  const blob = new Blob([docEditor.value.draft], { type: 'text/markdown' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${docEditor.value.title || 'answer'}.md`; a.click(); URL.revokeObjectURL(a.href)
 }
 function retry(i: number) { if (i === messages.value.length - 1) chat.regenerate() }
 function saveTurnAsGoal(i: number) {
@@ -771,6 +770,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
     </div>
+
+    <!-- Right: inline Markdown editor panel (editor only — no meta panels). -->
+    <section v-if="docEditor.open" class="cwc-docpanel">
+      <header class="cwc-docpanel__head">
+        <span class="cwc-docpanel__title"><MpIcon name="document" size="sm" /> {{ docEditor.title || 'Answer' }}.md</span>
+        <button type="button" class="cwc-docpanel__close" aria-label="Close editor" @click="closeDocEditor"><MpIcon name="close" size="md" /></button>
+      </header>
+      <textarea v-model="docEditor.draft" class="cwc-docpanel__editor" spellcheck="false" placeholder="Markdown…"></textarea>
+      <footer class="cwc-docpanel__foot">
+        <button type="button" class="cwc-doc-btn" @click="downloadDocEditor"><MpIcon name="document" size="sm" /> Download .md</button>
+        <span class="cwc-doc-spacer" />
+        <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="closeDocEditor">Cancel</button>
+        <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDocEditor">Save</button>
+      </footer>
+    </section>
   </div>
 </template>
 
@@ -931,11 +945,14 @@ onBeforeUnmount(() => {
 .cwc-save-goal__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .cwc-save-goal__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cwc-save-div { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default); }
-/* Edit-as-doc inline Markdown editor */
-.cwc-doc { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 10px); overflow: hidden; }
-.cwc-doc-head { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); }
-.cwc-doc-input { width: 100%; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3); font-family: var(--mp-fonts-mono, ui-monospace, monospace); font-size: var(--mp-font-sizes-sm); line-height: 1.6; color: var(--mp-text-default); background: var(--mp-background-neutral); }
-.cwc-doc-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); }
+/* Edit-as-doc — right-hand Markdown editor panel (editor only) */
+.cwc-docpanel { flex-shrink: 0; width: 460px; max-width: 46%; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-stage, #fff); }
+.cwc-docpanel__head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.cwc-docpanel__title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cwc-docpanel__close { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
+.cwc-docpanel__close:hover { background: var(--mp-background-neutral-subtle); }
+.cwc-docpanel__editor { flex: 1; min-height: 0; width: 100%; border: none; outline: none; resize: none; padding: var(--mp-spacing-4); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 13px; line-height: 20px; color: var(--mp-text-default); background: var(--mp-background-neutral, #fff); }
+.cwc-docpanel__foot { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cwc-doc-spacer { flex: 1; }
 .cwc-doc-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cwc-doc-btn:hover { background: var(--mp-background-neutral-subtle); }
