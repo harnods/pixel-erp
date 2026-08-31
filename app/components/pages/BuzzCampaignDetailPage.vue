@@ -25,11 +25,11 @@ const brand = computed(() => campaign.value ? buzzBrand(campaign.value.brand) : 
 
 // Creatives: prefer the campaign's linked assetIds; fall back to assets whose
 // title matches the campaign name (recovers campaigns saved before the link).
-const creatives = computed<{ id: string; title: string }[]>(() => {
+const creatives = computed(() => {
   const c = campaign.value
   if (!c) return []
-  if (c.assetIds?.length) return c.assetIds.map((id) => buzzAssets.find((a) => a.id === id)).filter(Boolean) as { id: string; title: string }[]
-  return buzzAssets.filter((a) => a.hasImage && (a.assetType ?? 'photo') !== 'logo' && (a.title === c.name || a.title.startsWith(`${c.name} · `)))
+  if (c.assetIds?.length) return c.assetIds.map((id) => buzzAssets.find((a) => a.id === id)).filter(Boolean) as { id: string; title: string; media?: string }[]
+  return buzzAssets.filter((a) => a.hasImage && (a.assetType ?? 'photo') !== 'logo' && (a.title === c.name || a.title.startsWith(`${c.name} · `))) as { id: string; title: string; media?: string }[]
 })
 const creativeIds = computed<string[]>(() => creatives.value.map((c) => c.id))
 
@@ -125,8 +125,10 @@ function confirmDelete() {
           <h3 class="cd-h3">Creatives</h3>
           <div v-if="creatives.length" class="cd-grid">
             <button v-for="(c, i) in creatives" :key="c.id" type="button" class="cd-tile" @click="openZoom(i)">
-              <img v-if="imgs.get(c.id)" :src="imgs.get(c.id)" :alt="c.title" class="cd-tile__img" />
-              <span v-if="campaign.kind === 'carousel'" class="cd-tile__n">{{ i + 1 }}</span>
+              <video v-if="c.media === 'video' && imgs.get(c.id)" :src="imgs.get(c.id)" class="cd-tile__img" muted playsinline preload="metadata" />
+              <img v-else-if="imgs.get(c.id)" :src="imgs.get(c.id)" :alt="c.title" class="cd-tile__img" />
+              <span v-if="c.media === 'video'" class="cd-tile__play"><MpIcon name="caret-right" size="lg" /></span>
+              <span v-else-if="campaign.kind === 'carousel'" class="cd-tile__n">{{ i + 1 }}</span>
             </button>
           </div>
           <p v-else class="cd-empty">No creatives saved for this campaign yet.</p>
@@ -140,7 +142,8 @@ function confirmDelete() {
         <div v-if="zoom !== null && creatives[zoom]" class="zm-overlay" @click.self="zoom = null">
           <button class="zm-close" type="button" aria-label="Close" @click="zoom = null"><MpIcon name="close" size="md" /></button>
           <button v-if="creatives.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
-          <img :src="imgs.get(creatives[zoom].id)" alt="Creative" class="zm-img" />
+          <video v-if="creatives[zoom].media === 'video'" :src="imgs.get(creatives[zoom].id)" class="zm-img" autoplay loop controls playsinline />
+          <img v-else :src="imgs.get(creatives[zoom].id)" alt="Creative" class="zm-img" />
           <button v-if="creatives.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></button>
           <span v-if="creatives.length > 1" class="zm-count">{{ zoom + 1 }} / {{ creatives.length }}</span>
         </div>
@@ -184,6 +187,8 @@ function confirmDelete() {
 .cd-tile { position: relative; padding: 0; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); overflow: hidden; background: var(--mp-background-neutral-subtle); cursor: pointer; }
 .cd-tile:hover { border-color: var(--mp-border-bold, #8c9596); }
 .cd-tile__img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.cd-tile__play { position: absolute; inset: 0; margin: auto; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: rgba(8,13,14,0.55); color: #fff; }
+.cd-tile__play :deep(svg) { color: #fff; }
 .cd-tile__n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
 .cd-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 

@@ -40,24 +40,38 @@ export interface CrmCustomer {
   email: string
   phone: string
   segment: string             // Roastery | Café chain | Hotel | Distributor | Retail | Office
+  segments: string[]          // editable tags (segment + VIP, At risk, …) — Segments column
   city: string
   owner: string
   openDeals: number
-  lifetimeValue: number
+  lifetimeValue: number       // total billed to date (used as the "Billed" column)
+  inFlight: number            // contract value of open deals still in play (the pipeline)
+  outstanding: number         // invoiced but not yet paid
   status: CustomerStatus
   lastActivity: string        // ISO date
 }
+
+// Lifecycle stages (mirrors Venom's Customers). Derived from status + openDeals so
+// existing consumers of `status` keep working.
+export type LifecycleStage = 'Lead' | 'Opportunity' | 'Customer' | 'Former customer'
+export const LIFECYCLE_STAGES: LifecycleStage[] = ['Lead', 'Opportunity', 'Customer', 'Former customer']
+export function lifecycleOf(c: CrmCustomer): LifecycleStage {
+  if (c.status === 'churned') return 'Former customer'
+  if (c.status === 'active') return 'Customer'
+  return c.openDeals > 0 ? 'Opportunity' : 'Lead'
+}
+
 const CUSTOMERS_SEED: CrmCustomer[] = [
-  { id: 'C015', company: 'Distributor Sentra Boga',  contact: 'Hendra Wijaya',   email: 'po@sentraboga.co.id',           phone: '021-5550015', segment: 'Distributor', city: 'Bekasi',    owner: 'Fajar Nugroho', openDeals: 3, lifetimeValue: 230_000_000, status: 'active',   lastActivity: '2026-02-27' },
-  { id: 'C006', company: 'Kopi Kenangan Pusat',      contact: 'Ratna Sari',      email: 'buyer@kopikenangan.com',        phone: '021-5550006', segment: 'Café chain',  city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 2, lifetimeValue: 120_000_000, status: 'active',   lastActivity: '2026-02-26' },
-  { id: 'C013', company: 'Excelso Grand Indonesia',  contact: 'Bambang Sutrisno',email: 'purchasing@excelso.com',        phone: '021-5550013', segment: 'Café chain',  city: 'Jakarta',   owner: 'Fajar Nugroho', openDeals: 2, lifetimeValue: 98_000_000,  status: 'active',   lastActivity: '2026-02-25' },
-  { id: 'C003', company: 'Hotel Mulia Senayan',      contact: 'Sinta Dewanti',   email: 'fnb@hotelmulia.com',            phone: '021-5550003', segment: 'Hotel',       city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 1, lifetimeValue: 78_000_000,  status: 'active',   lastActivity: '2026-02-24' },
-  { id: 'C002', company: 'Tanamera Coffee Roastery', contact: 'Agus Priyanto',   email: 'order@tanameracoffee.com',      phone: '021-5550002', segment: 'Roastery',    city: 'Jakarta',   owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 62_500_000,  status: 'active',   lastActivity: '2026-02-23' },
-  { id: 'C009', company: 'Maxx Coffee Lippo Mall',   contact: 'Yuliana Tan',     email: 'purchasing@maxxcoffee.com',     phone: '021-5550009', segment: 'Café chain',  city: 'Tangerang', owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 55_000_000,  status: 'active',   lastActivity: '2026-02-22' },
-  { id: 'C001', company: 'Anomali Coffee',           contact: 'Rudi Hartono',    email: 'purchasing@anomalicoffee.com',  phone: '021-5550001', segment: 'Roastery',    city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 1, lifetimeValue: 45_000_000,  status: 'active',   lastActivity: '2026-02-21' },
-  { id: 'C017', company: 'Santika Premiere Hotel',   contact: 'Wawan Setiawan',  email: 'fnb@santika.com',               phone: '024-5550017', segment: 'Hotel',       city: 'Semarang',  owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 44_000_000,  status: 'prospect', lastActivity: '2026-02-18' },
-  { id: 'C014', company: 'GoWork Office Tower',      contact: 'Nadia Pramesti',  email: 'pantry@gowork.co',              phone: '021-5550014', segment: 'Office',      city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 0, lifetimeValue: 6_400_000,   status: 'prospect', lastActivity: '2026-02-12' },
-  { id: 'C012', company: 'Coffee Cult Bali',         contact: 'Made Sudarsana',  email: 'buyer@coffeecult.id',           phone: '0361-555012', segment: 'Café chain',  city: 'Bali',      owner: 'Fajar Nugroho', openDeals: 0, lifetimeValue: 14_800_000,  status: 'churned',  lastActivity: '2025-12-09' },
+  { id: 'C015', company: 'Distributor Sentra Boga',  contact: 'Hendra Wijaya',   email: 'po@sentraboga.co.id',           phone: '021-5550015', segment: 'Distributor', segments: ['Distributor', 'VIP', 'Key account'], city: 'Bekasi',    owner: 'Fajar Nugroho', openDeals: 3, lifetimeValue: 230_000_000, inFlight: 85_000_000, outstanding: 32_000_000, status: 'active',   lastActivity: '2026-02-27' },
+  { id: 'C006', company: 'Kopi Kenangan Pusat',      contact: 'Ratna Sari',      email: 'buyer@kopikenangan.com',        phone: '021-5550006', segment: 'Café chain',  segments: ['Café chain', 'VIP'],                city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 2, lifetimeValue: 120_000_000, inFlight: 48_000_000, outstanding: 18_000_000, status: 'active',   lastActivity: '2026-02-26' },
+  { id: 'C013', company: 'Excelso Grand Indonesia',  contact: 'Bambang Sutrisno',email: 'purchasing@excelso.com',        phone: '021-5550013', segment: 'Café chain',  segments: ['Café chain', 'Key account'],        city: 'Jakarta',   owner: 'Fajar Nugroho', openDeals: 2, lifetimeValue: 98_000_000,  inFlight: 40_000_000, outstanding: 12_000_000, status: 'active',   lastActivity: '2026-02-25' },
+  { id: 'C003', company: 'Hotel Mulia Senayan',      contact: 'Sinta Dewanti',   email: 'fnb@hotelmulia.com',            phone: '021-5550003', segment: 'Hotel',       segments: ['Hotel'],                            city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 1, lifetimeValue: 78_000_000,  inFlight: 22_000_000, outstanding: 0,          status: 'active',   lastActivity: '2026-02-24' },
+  { id: 'C002', company: 'Tanamera Coffee Roastery', contact: 'Agus Priyanto',   email: 'order@tanameracoffee.com',      phone: '021-5550002', segment: 'Roastery',    segments: ['Roastery'],                         city: 'Jakarta',   owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 62_500_000,  inFlight: 18_000_000, outstanding: 9_000_000,  status: 'active',   lastActivity: '2026-02-23' },
+  { id: 'C009', company: 'Maxx Coffee Lippo Mall',   contact: 'Yuliana Tan',     email: 'purchasing@maxxcoffee.com',     phone: '021-5550009', segment: 'Café chain',  segments: ['Café chain'],                       city: 'Tangerang', owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 55_000_000,  inFlight: 15_000_000, outstanding: 0,          status: 'active',   lastActivity: '2026-02-22' },
+  { id: 'C001', company: 'Anomali Coffee',           contact: 'Rudi Hartono',    email: 'purchasing@anomalicoffee.com',  phone: '021-5550001', segment: 'Roastery',    segments: ['Roastery'],                         city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 1, lifetimeValue: 45_000_000,  inFlight: 12_000_000, outstanding: 6_000_000,  status: 'active',   lastActivity: '2026-02-21' },
+  { id: 'C017', company: 'Santika Premiere Hotel',   contact: 'Wawan Setiawan',  email: 'fnb@santika.com',               phone: '024-5550017', segment: 'Hotel',       segments: ['Hotel', 'New business'],            city: 'Semarang',  owner: 'Fajar Nugroho', openDeals: 1, lifetimeValue: 44_000_000,  inFlight: 28_000_000, outstanding: 0,          status: 'prospect', lastActivity: '2026-02-18' },
+  { id: 'C014', company: 'GoWork Office Tower',      contact: 'Nadia Pramesti',  email: 'pantry@gowork.co',              phone: '021-5550014', segment: 'Office',      segments: ['Office', 'New business'],           city: 'Jakarta',   owner: 'Dewi Lestari',  openDeals: 0, lifetimeValue: 6_400_000,   inFlight: 0,          outstanding: 0,          status: 'prospect', lastActivity: '2026-02-12' },
+  { id: 'C012', company: 'Coffee Cult Bali',         contact: 'Made Sudarsana',  email: 'buyer@coffeecult.id',           phone: '0361-555012', segment: 'Café chain',  segments: ['Café chain', 'At risk'],            city: 'Bali',      owner: 'Fajar Nugroho', openDeals: 0, lifetimeValue: 14_800_000,  inFlight: 0,          outstanding: 0,          status: 'churned',  lastActivity: '2025-12-09' },
 ]
 
 // ── Products (Central Perk's coffee catalog — mirrors products.ts / catalog) ───
@@ -139,6 +153,8 @@ function load<T>(key: string, seed: T[]): T[] {
   return (loadSnapshot<T>(key) ?? seed.map((x) => ({ ...x })))
 }
 export const crmCustomers = reactive<CrmCustomer[]>(load('crm-customers-v1', CUSTOMERS_SEED))
+// Back-fill `segments` for snapshots that predate the field.
+for (const c of crmCustomers) { if (!Array.isArray(c.segments)) c.segments = c.segment ? [c.segment] : [] }
 export const crmProducts  = reactive<CrmProduct[]>(load('crm-products-v1', PRODUCTS_SEED))
 export const crmOrders    = reactive<CrmOrder[]>(load('crm-orders-v1', ORDERS_SEED))
 export const crmTasks     = reactive<CrmTask[]>(load('crm-tasks-v1', TASKS_SEED))
@@ -174,4 +190,105 @@ export const ordersThisMonthValue = computed(() =>
 export function deleteCrmCustomer(id: string): void {
   const i = crmCustomers.findIndex((c) => c.id === id)
   if (i !== -1) { crmCustomers.splice(i, 1); saveSnapshot('crm-customers-v1', crmCustomers) }
+}
+export function getCrmCustomer(id: string): CrmCustomer | undefined { return crmCustomers.find((c) => c.id === id) }
+
+// ── Per-customer deals (open pipeline) — synthetic & deterministic so the count
+// matches `openDeals` and the total value ≈ `inFlight`. Powers the customer
+// detail Deals tab. ───────────────────────────────────────────────────────────
+export interface CrmDeal { id: string; name: string; stage: string; value: number; closeDate: string; owner: string }
+const OPEN_STAGES = ['New', 'Qualified', 'Proposal sent', 'Negotiation']
+export function customerDeals(c: CrmCustomer): CrmDeal[] {
+  const n = c.openDeals
+  if (n <= 0) return []
+  const each = Math.max(1_000_000, Math.round(c.inFlight / n / 1_000_000) * 1_000_000)
+  const deals: CrmDeal[] = []
+  for (let i = 0; i < n; i++) {
+    const stage = OPEN_STAGES[i % OPEN_STAGES.length]!
+    const value = i === n - 1 ? Math.max(0, c.inFlight - each * (n - 1)) : each
+    const day = String(Math.min(28, 5 + i * 7)).padStart(2, '0')
+    deals.push({ id: `${c.id}-D${i + 1}`, name: `${c.company} — ${stage} deal`, stage, value, closeDate: `2026-03-${day}`, owner: c.owner })
+  }
+  return deals
+}
+
+// ── Segments (tags) ────────────────────────────────────────────────────────────
+/** Every distinct segment tag currently in use, alphabetical — for filter/board. */
+export function allSegmentTags(): string[] {
+  const set = new Set<string>()
+  for (const c of crmCustomers) for (const s of c.segments) set.add(s)
+  return [...set].sort((a, b) => a.localeCompare(b))
+}
+/** Replace a customer's segment tags (Segments column / detail editor). */
+export function setCustomerSegments(id: string, tags: string[]): void {
+  const c = crmCustomers.find((x) => x.id === id)
+  if (!c) return
+  c.segments = [...tags]
+  saveSnapshot('crm-customers-v1', crmCustomers)
+}
+
+// ── Board drag & drop moves — persist the change behind the derived lifecycle. ──
+/** Drop onto a lifecycle column: adjust status (and openDeals for Lead/Opportunity)
+ *  so lifecycleOf() lands back on the target stage. */
+export function setCustomerLifecycle(id: string, stage: LifecycleStage): void {
+  const c = crmCustomers.find((x) => x.id === id)
+  if (!c) return
+  if (stage === 'Customer') c.status = 'active'
+  else if (stage === 'Former customer') c.status = 'churned'
+  else {
+    c.status = 'prospect'
+    if (stage === 'Lead') { c.openDeals = 0; c.inFlight = 0 }
+    else if (c.openDeals < 1) c.openDeals = 1   // Opportunity needs an open deal
+  }
+  saveSnapshot('crm-customers-v1', crmCustomers)
+}
+/** Drop onto a contact-owner column. */
+export function setCustomerOwner(id: string, owner: string): void {
+  const c = crmCustomers.find((x) => x.id === id)
+  if (!c) return
+  c.owner = owner
+  saveSnapshot('crm-customers-v1', crmCustomers)
+}
+/** Drop across segment columns: drop the source tag, add the target tag. */
+export function moveCustomerSegment(id: string, from: string, to: string): void {
+  const c = crmCustomers.find((x) => x.id === id)
+  if (!c) return
+  const next = c.segments.filter((s) => s !== from && s !== to)
+  if (to !== '—') next.push(to)
+  c.segments = next
+  saveSnapshot('crm-customers-v1', crmCustomers)
+}
+
+// ── Saved views (Customers list: table/board + saved filters) ───────────────────
+// The default "All customers" view is implicit (id 'all', never stored); these are
+// the user-created views shown as tabs after it.
+export type CrmViewType = 'table' | 'board'
+export type CrmGroupBy = 'lifecycle' | 'segment' | 'owner'
+export const CRM_GROUP_BY: { value: CrmGroupBy; label: string }[] = [
+  { value: 'lifecycle', label: 'Lifecycle stage' },
+  { value: 'segment', label: 'Segment' },
+  { value: 'owner', label: 'Contact owner' },
+]
+export interface CrmViewFilters { lifecycle: string[]; owners: string[]; segments: string[] }
+export function emptyViewFilters(): CrmViewFilters { return { lifecycle: [], owners: [], segments: [] } }
+export interface CrmSavedView { id: string; name: string; type: CrmViewType; groupBy: CrmGroupBy; filters: CrmViewFilters }
+
+export const crmCustomerViews = reactive<CrmSavedView[]>(loadSnapshot<CrmSavedView>('crm-customer-views-v1') ?? [])
+function persistCustomerViews() { saveSnapshot('crm-customer-views-v1', crmCustomerViews) }
+let viewSeq = crmCustomerViews.length + 1
+export function addCrmView(v: Omit<CrmSavedView, 'id'>): CrmSavedView {
+  const view: CrmSavedView = { ...v, id: `view-${Date.now()}-${viewSeq++}` }
+  crmCustomerViews.push(view)
+  persistCustomerViews()
+  return view
+}
+export function updateCrmView(id: string, patch: Partial<Omit<CrmSavedView, 'id'>>): void {
+  const v = crmCustomerViews.find((x) => x.id === id)
+  if (!v) return
+  Object.assign(v, patch)
+  persistCustomerViews()
+}
+export function deleteCrmView(id: string): void {
+  const i = crmCustomerViews.findIndex((x) => x.id === id)
+  if (i !== -1) { crmCustomerViews.splice(i, 1); persistCustomerViews() }
 }

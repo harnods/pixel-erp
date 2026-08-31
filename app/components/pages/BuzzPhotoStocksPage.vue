@@ -30,7 +30,7 @@ const filtered = computed<BuzzAsset[]>(() => {
       return ai !== 0 ? ai : a.title.localeCompare(b.title)
     })
     .filter((a) =>
-      (a.assetType ?? 'photo') !== 'logo' &&
+      (a.assetType ?? 'photo') !== 'logo' && (a.media ?? 'image') !== 'video' &&
       (!s || a.title.toLowerCase().includes(s) || a.tags.some((t) => t.toLowerCase().includes(s))) &&
       (!brandFilter.value || a.brand === brandFilter.value) &&
       (!orientationFilter.value || a.orientation === orientationFilter.value))

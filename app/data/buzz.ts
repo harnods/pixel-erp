@@ -127,9 +127,9 @@ export interface BuzzCampaign {
   creatives: number        // number of creatives in the campaign
   owner: string            // marketer name
   updatedAt: string        // ISO date
-  kind?: 'single' | 'carousel'
+  kind?: 'single' | 'carousel' | 'story'
   brief?: string           // the brief used to generate the creatives
-  assetIds?: string[]      // the campaign's creative asset ids (images in IndexedDB)
+  assetIds?: string[]      // the campaign's creative asset ids (images/videos in IndexedDB)
 }
 
 const CAMPAIGN_SEED: BuzzCampaign[] = []
@@ -167,7 +167,8 @@ export interface BuzzAsset {
   /** AI-generated assets carry a real image in IndexedDB (buzzImageStore) keyed
    *  by the asset id; 'approved' seed assets fall back to the gradient. */
   source?: 'approved' | 'ai'
-  hasImage?: boolean       // a generated image is stored in IndexedDB under `id`
+  hasImage?: boolean       // a generated image/video is stored in IndexedDB under `id`
+  media?: 'image' | 'video' // defaults to image
   prompt?: string          // the brief used to generate it
 }
 
@@ -185,9 +186,10 @@ function nextAssetId(): string {
 /** Add an AI-generated asset to the library (front of the list) and persist the
  *  metadata. The image bytes live in IndexedDB (buzzImageStore) under the id. */
 export function addBuzzAsset(a: {
-  title: string; brand: string; orientation: BuzzOrientation; tags?: string[]; usage?: string; prompt?: string; updatedAt: string
+  title: string; brand: string; orientation: BuzzOrientation; tags?: string[]; usage?: string; prompt?: string; updatedAt: string; media?: 'image' | 'video'
 }): BuzzAsset {
   const asset: BuzzAsset = {
+    media: a.media ?? 'image',
     id: nextAssetId(),
     title: a.title,
     brand: a.brand,

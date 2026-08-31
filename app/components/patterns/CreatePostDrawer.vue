@@ -24,12 +24,13 @@ const briefError = ref('')
 const error = ref('')
 const generating = ref(false)
 
-// Type: a single post (3 alternative designs) or a carousel series (N slides).
-const postType = ref<'single' | 'carousel'>('single')
+// Type: single post (3 designs), carousel series (N slides), or a Story video.
+const postType = ref<'single' | 'carousel' | 'story'>('single')
 const slides = ref(5)
 const results = ref<{ dataUrl: string; mime: string }[]>([])
 const selected = ref(0) // chosen alternative (single post)
-const resultKind = ref<'single' | 'carousel'>('single')
+const resultKind = ref<'single' | 'carousel' | 'story'>('single')
+const isVideo = computed(() => resultKind.value === 'story')
 
 // Zoom lightbox over the generated designs.
 const zoomIndex = ref<number | null>(null)
@@ -95,6 +96,27 @@ async function generate() {
     const rec = await getImage(id)
     if (rec?.dataUrl) logos.push(rec.dataUrl)
   }
+
+  // ── Story video (Veo) ──
+  if (postType.value === 'story') {
+    try {
+      const res = await $fetch<{ dataUrl?: string; mime?: string; error?: string }>('/api/buzz/generate-story-video', {
+        method: 'POST', timeout: 300000,
+        body: {
+          brief: brief.value.trim(),
+          brand: b ? { name: b.name, accent: b.accent, tone: b.tone, visualStyle: b.visualStyle, photography: b.photography, guardrails: b.guardrails } : undefined,
+          subject: subjects[0],
+        },
+      })
+      if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the Story video.'; return }
+      results.value = [{ dataUrl: res.dataUrl, mime: res.mime || 'video/mp4' }]
+      resultKind.value = 'story'; selected.value = 0
+    } catch (err: any) {
+      error.value = String(err?.data?.error ?? err?.message ?? 'Could not generate the Story video.')
+    } finally { generating.value = false }
+    return
+  }
+
   try {
     const res = await $fetch<{ images?: { dataUrl: string; mime: string }[]; kind?: 'single' | 'carousel'; error?: string }>('/api/buzz/generate-ig-post', {
       method: 'POST',
@@ -137,7 +159,8 @@ async function save() {
     const asset = addBuzzAsset({
       title: toSave.length > 1 ? `${name} · ${i + 1}` : name,
       brand: brandId.value, orientation: 'Portrait',
-      tags: ['ig-post', 'campaign', resultKind.value], usage: resultKind.value === 'carousel' ? 'Carousel slide' : 'Instagram post',
+      tags: ['campaign', resultKind.value], media: isVideo.value ? 'video' : 'image',
+      usage: resultKind.value === 'carousel' ? 'Carousel slide' : resultKind.value === 'story' ? 'Instagram Story' : 'Instagram post',
       prompt: brief.value.trim(), updatedAt: BUZZ_TODAY,
     })
     await putImage({ id: asset.id, mime: img.mime, dataUrl: img.dataUrl })
@@ -189,6 +212,7 @@ async function save() {
                   <MpSelect id="cpd-type-select" v-model="postType">
                     <option value="single">Single post · 3 designs</option>
                     <option value="carousel">Carousel series</option>
+                    <option value="story">Story · video</option>
                   </MpSelect>
                 </MpFormControl>
                 <MpFormControl v-if="postType === 'carousel'" id="cpd-slides">
@@ -200,7 +224,7 @@ async function save() {
               </div>
 
               <MpFormControl id="cpd-brief" is-required :is-invalid="!!briefError">
-                <MpFormLabel>What is the post about?</MpFormLabel>
+                <MpFormLabel>{{ postType === 'story' ? 'What is the Story about?' : postType === 'carousel' ? 'What is the series about?' : 'What is the post about?' }}</MpFormLabel>
                 <MpTextarea id="cpd-brief-input" v-model="brief" :rows="3" is-full-width placeholder="e.g. Announce our new summer promotion, 20% off for young professionals" @input="briefError = ''" />
                 <MpFormErrorMessage>{{ briefError }}</MpFormErrorMessage>
               </MpFormControl>
@@ -224,11 +248,16 @@ async function save() {
 
               <div v-if="generating" class="cpd__preview cpd__preview--loading">
                 <MpSpinner size="md" />
-                <p class="cpd__hint">{{ postType === 'carousel' ? `Designing your ${slides}-slide series with Gemini…` : 'Designing 3 on-brand options with Gemini…' }}</p>
+                <p class="cpd__hint">{{ postType === 'story' ? 'Generating your Story video with Veo… this takes about 1–2 minutes.' : postType === 'carousel' ? `Designing your ${slides}-slide series with Gemini…` : 'Designing 3 on-brand options with Gemini…' }}</p>
               </div>
               <div v-else-if="results.length" class="cpd__result">
+                <!-- Story: a single vertical video -->
+                <template v-if="resultKind === 'story'">
+                  <p class="cpd__resultlabel">Story video · 9:16</p>
+                  <video :src="results[0].dataUrl" class="cpd__video" autoplay loop muted playsinline controls />
+                </template>
                 <!-- Single post: 3 alternatives, pick one -->
-                <template v-if="resultKind === 'single'">
+                <template v-else-if="resultKind === 'single'">
                   <p class="cpd__resultlabel">Pick a design · click to zoom</p>
                   <div class="cpd__alts">
                     <button v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" @click="selected = i; openZoom(i)">
@@ -256,7 +285,7 @@ async function save() {
           <div v-if="hasBrands" class="cpd__footer">
             <template v-if="!results.length">
               <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">{{ postType === 'carousel' ? 'Generate series' : 'Generate designs' }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">{{ postType === 'story' ? 'Generate Story' : postType === 'carousel' ? 'Generate series' : 'Generate designs' }}</MpButton>
             </template>
             <template v-else>
               <MpButton variant="ghost" is-rounded :is-loading="generating" @click="generate">Regenerate</MpButton>
@@ -297,6 +326,7 @@ async function save() {
 .cpd__row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3, 12px); align-items: start; }
 .cpd__result { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cpd__resultlabel { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.cpd__video { width: 100%; max-width: 300px; margin: 0 auto; aspect-ratio: 9 / 16; border-radius: var(--mp-radii-lg, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); display: block; background: #000; }
 /* Single: 3 alternatives */
 .cpd__alts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mp-spacing-2, 8px); }
 .cpd__alt { position: relative; padding: 0; border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-md, 8px); overflow: hidden; box-shadow: 0 0 0 1px var(--mp-border-default, #e3e7e9); }

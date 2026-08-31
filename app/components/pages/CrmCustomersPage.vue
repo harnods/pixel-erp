@@ -1,53 +1,200 @@
 <script setup lang="ts">
 /**
- * CRM (Qontak) — Customers list (/crm/customers). Full-bleed page (own title bar
- * + filter bar + table), reads from the CRM mini-DB (crm.ts).
+ * CRM (Qontak) — Customers list (/crm/customers). Full-bleed page: own title bar
+ * then a saved-views tab bar (All customers + user views + [+]), a shared stats +
+ * filter bar, and either the table (ErpTablePage) or the board (CrmBoardView)
+ * depending on the active view's type. Table format mirrors Venom's Customers
+ * (minus Location), plus a Segments (tags) column.
  */
-import { ref, computed, onMounted } from 'vue'
-import { infoToast } from '~/utils/toasts'
+import { ref, computed, reactive, inject, onMounted } from 'vue'
 import {
-  MpIcon, MpSkeleton, MpTooltip, MpSelect,
+  MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import CrmBoardView from './CrmBoardView.vue'
+import CrmCustomerViewDrawer, { type ViewDraft } from '~/components/patterns/CrmCustomerViewDrawer.vue'
+import { useTableState } from '~/composables/useTableState'
 import { formatIDR } from '~/utils/currency'
-import { crmCustomers, deleteCrmCustomer, type CustomerStatus } from '~/data/crm'
+import { infoToast } from '~/utils/toasts'
+import {
+  crmCustomers, deleteCrmCustomer, lifecycleOf, CRM_OWNERS, allSegmentTags,
+  crmCustomerViews, addCrmView, updateCrmView, deleteCrmView, emptyViewFilters,
+  setCustomerLifecycle, setCustomerOwner, moveCustomerSegment,
+  type CrmCustomer, type LifecycleStage, type CrmSavedView, type CrmGroupBy, type CrmViewType,
+} from '~/data/crm'
 
+const router = useRouter()
 function soon(what: string) { infoToast(`${what} — coming soon`) }
-
-// Row actions
-function deleteCustomer(id: string, name: string) {
-  deleteCrmCustomer(id)
-  toast.notify({ variant: 'success', title: `${name} deleted` })
-}
+function goDetail(id: string, tab?: 'deals') { router.push(`/crm/customers/${id}${tab ? '?tab=' + tab : ''}`) }
 
 // First-load skeleton (ERP guideline: 3 solid rows, ~1.2s).
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
-// Quick filter: Status (mirrors the ERP index filter-bar pattern, e.g. Bills).
-const statusOptions = [
-  { label: 'Active',   value: 'active' },
-  { label: 'Prospect', value: 'prospect' },
-  { label: 'Churned',  value: 'churned' },
-]
-const statusFilter = ref('')
-const statusFilterLabel = computed(() => statusOptions.find((o) => o.value === statusFilter.value)?.label ?? '')
+// ── Rows: customers + derived lifecycle + Billed (= lifetime value) ──
+type Row = CrmCustomer & { lifecycleStage: LifecycleStage; billed: number }
+const allRows = computed<Row[]>(() =>
+  crmCustomers.map((c) => ({ ...c, lifecycleStage: lifecycleOf(c), billed: c.lifetimeValue })),
+)
 
-const search = ref('')
-const rows = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  return crmCustomers.filter((c) =>
-    (!q || c.company.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
-    && (!statusFilter.value || c.status === statusFilter.value))
+// ── Saved views (tabs) ──
+const ALL_VIEW: CrmSavedView = { id: 'all', name: 'All customers', type: 'table', groupBy: 'lifecycle', filters: emptyViewFilters() }
+const activeViewId = ref('all')
+const activeView = computed<CrmSavedView>(() => crmCustomerViews.find((v) => v.id === activeViewId.value) ?? ALL_VIEW)
+function selectView(id: string) { activeViewId.value = id }
+
+const ownerOptions = [...CRM_OWNERS]
+const segmentOptions = computed(() => allSegmentTags())
+
+// Rows after the active view's saved filters (before search) — feeds both table + board.
+const viewFiltered = computed<Row[]>(() => {
+  const f = activeView.value.filters
+  return allRows.value.filter((r) =>
+    (!f.lifecycle.length || f.lifecycle.includes(r.lifecycleStage)) &&
+    (!f.owners.length || f.owners.includes(r.owner)) &&
+    (!f.segments.length || r.segments.some((s) => f.segments.includes(s))))
+})
+function searchMatch(row: Row, s: string) {
+  return !s || [row.company, row.contact, row.owner, row.email, row.segments.join(' ')].join(' ').toLowerCase().includes(s)
+}
+
+// ── Columns (Venom format, minus Location, plus Segments) ──
+const columns: TableColumn[] = [
+  { key: 'company',        label: 'Company',         width: '240px', sortable: true, sortType: 'text'   },
+  { key: 'lifecycleStage', label: 'Lifecycle',       width: '150px'                                     },
+  { key: 'segments',       label: 'Segments',        width: '220px'                                     },
+  { key: 'owner',          label: 'Contact owner',   width: '160px', sortable: true, sortType: 'text'   },
+  { key: 'contact',        label: 'Primary contact', width: '220px'                                     },
+  { key: 'openDeals',      label: 'Deals',           width: '100px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'inFlight',       label: 'In flight',       width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'outstanding',    label: 'Outstanding',     width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'billed',         label: 'Billed',          width: '150px', align: 'right', sortable: true, sortType: 'number' },
+]
+
+// ── Table state (search + sort + pagination over the view-filtered rows) ──
+const {
+  search, currentPage, perPage, sortKey, sortDir, total, paginated,
+  setPage, setPerPage, toggleSort, setSort,
+} = useTableState<Row>(viewFiltered, {
+  perPage: 25,
+  filterFn: (row, s) => searchMatch(row, s),
 })
 
-// Same ErpStatusBadge (and size) as the other modules — active reads as green,
-// prospect as blue, churned as gray.
-function statusBadge(s: CustomerStatus): { type?: 'information' | 'announcement'; label: string } {
-  if (s === 'prospect') return { type: 'information', label: 'Prospect' }
-  if (s === 'churned') return { type: 'announcement', label: 'Churned' }
-  return { label: 'Active' }
+// Board rows respect the search box too.
+const boardRows = computed<Row[]>(() => {
+  const s = search.value.trim().toLowerCase()
+  return viewFiltered.value.filter((r) => searchMatch(r, s))
+})
+
+const activeFilterCount = computed(() => {
+  const f = activeView.value.filters
+  return f.lifecycle.length + f.owners.length + f.segments.length
+})
+const hasActiveFilter = computed(() => !!search.value || activeFilterCount.value > 0)
+function clearFilters() { search.value = ''; activeViewId.value = 'all' }
+
+// ── View drawer (create / edit) ──
+const drawerOpen = ref(false)
+const drawerMode = ref<'create' | 'edit'>('create')
+const drawerDraft = ref<ViewDraft>({ name: '', type: 'table', groupBy: 'lifecycle', filters: emptyViewFilters() })
+function openCreate(type: CrmViewType) {
+  drawerMode.value = 'create'
+  drawerDraft.value = { name: '', type, groupBy: 'lifecycle', filters: emptyViewFilters() }
+  drawerOpen.value = true
+}
+function openEdit() {
+  const v = activeView.value
+  drawerMode.value = 'edit'
+  drawerDraft.value = { name: v.name, type: v.type, groupBy: v.groupBy, filters: { lifecycle: [...v.filters.lifecycle], owners: [...v.filters.owners], segments: [...v.filters.segments] } }
+  drawerOpen.value = true
+}
+// The filter-bar button: edit the active saved view, or start a new one from All customers.
+function openFilters() { activeViewId.value === 'all' ? openCreate('table') : openEdit() }
+function onSaveView(draft: ViewDraft) {
+  if (drawerMode.value === 'create') {
+    const v = addCrmView(draft)
+    activeViewId.value = v.id
+    toast.notify({ variant: 'success', title: `View “${v.name}” saved` })
+  } else {
+    updateCrmView(activeView.value.id, draft)
+    toast.notify({ variant: 'success', title: 'View updated' })
+  }
+}
+function onDeleteView() {
+  const v = activeView.value
+  if (v.id === 'all') return
+  deleteCrmView(v.id)
+  activeViewId.value = 'all'
+  drawerOpen.value = false
+  toast.notify({ variant: 'success', title: `View “${v.name}” deleted` })
+}
+function setGroupBy(g: CrmGroupBy) { if (activeView.value.id !== 'all') updateCrmView(activeView.value.id, { groupBy: g }) }
+
+// Board drag & drop — move a customer to the dropped column, coherently per grouping.
+function onCardMove({ id, from, to }: { id: string; from: string; to: string }) {
+  const g = activeView.value.groupBy
+  const c = crmCustomers.find((x) => x.id === id)
+  if (g === 'lifecycle') setCustomerLifecycle(id, to as LifecycleStage)
+  else if (g === 'owner') setCustomerOwner(id, to)
+  else moveCustomerSegment(id, from, to)
+  if (c) toast.notify({ variant: 'success', title: `${c.company} moved to “${to}”` })
+}
+
+// ── Filter-bar right group: Airene · column settings · export (ERP convention) ──
+const toggleAirene = inject<() => void>('toggleAirene')
+
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
+
+// Export the currently-visible customers (view filters + search) to CSV.
+function exportCsv() {
+  const s = search.value.trim().toLowerCase()
+  const rows = viewFiltered.value.filter((r) => searchMatch(r, s))
+  const headers = ['Company', 'Lifecycle', 'Segments', 'Owner', 'Primary contact', 'Email', 'Deals', 'In flight', 'Outstanding', 'Billed']
+  const esc = (v: unknown) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
+  const lines = [headers.join(',')]
+  for (const r of rows) lines.push([r.company, r.lifecycleStage, r.segments.join('; '), r.owner, r.contact, r.email, r.openDeals, r.inFlight, r.outstanding, r.billed].map(esc).join(','))
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'customers.csv'; a.click()
+  URL.revokeObjectURL(a.href)
+  toast.notify({ variant: 'success', title: `Exported ${rows.length} customer${rows.length === 1 ? '' : 's'}` })
+}
+
+// ── Stats — follow the active view (saved filters + search), so the numbers
+// always describe exactly what's on screen (Venom-style cards). `statBase` is the
+// same set the table/board renders. ──
+const statBase = boardRows
+const activeCustomers = computed(() => statBase.value.filter((r) => r.lifecycleStage === 'Customer'))
+const pipeline = computed(() => statBase.value.filter((r) => r.lifecycleStage === 'Opportunity' || r.lifecycleStage === 'Lead'))
+const inFlightTotal = computed(() => statBase.value.reduce((s, c) => s + c.inFlight, 0))
+const liveDeals = computed(() => statBase.value.reduce((s, c) => s + c.openDeals, 0))
+const outstandingTotal = computed(() => statBase.value.reduce((s, c) => s + c.outstanding, 0))
+const owingCustomers = computed(() => statBase.value.filter((c) => c.outstanding > 0))
+
+// ── Lifecycle badge colours ──
+function lifecycleBadge(lc: LifecycleStage) {
+  if (lc === 'Customer') return { status: 'active', label: 'Customer' }
+  if (lc === 'Opportunity') return { status: 'prospect', type: 'information' as const, label: 'Opportunity' }
+  if (lc === 'Lead') return { status: 'prospect', type: 'announcement' as const, label: 'Lead' }
+  return { status: 'churned', type: 'announcement' as const, label: 'Former customer' }
+}
+
+// ── Delete customer ──
+const delOpen = ref(false)
+const delTarget = ref<Row | null>(null)
+function openDelete(row: Row) { delTarget.value = row; delOpen.value = true }
+function confirmDelete() {
+  if (!delTarget.value) return
+  deleteCrmCustomer(delTarget.value.id)
+  toast.notify({ variant: 'success', title: `${delTarget.value.company} deleted` })
+  delTarget.value = null
 }
 </script>
 
@@ -65,131 +212,255 @@ function statusBadge(s: CustomerStatus): { type?: 'information' | 'announcement'
       </div>
     </header>
 
-    <div class="crm-filter">
-      <!-- Left: quick Status filter + All filters (secondary) -->
-      <div class="crm-filter__left">
-        <MpPopover id="crm-cust-status" is-close-on-select>
-          <MpPopoverTrigger>
-            <MpSelect
-              id="crm-cust-status-sel"
-              placeholder="Status"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '150px' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusFilterLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="o in statusOptions" :key="o.value" :is-active="o.value === statusFilter" @click="statusFilter = o.value">{{ o.label }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+    <!-- ── View tabs (saved views) ── -->
+    <nav class="cc-viewtabs">
+      <button class="cc-viewtab" :class="{ 'is-active': activeViewId === 'all' }" type="button" @click="selectView('all')">All customers</button>
+      <button
+        v-for="v in crmCustomerViews" :key="v.id"
+        class="cc-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)"
+      >
+        <MpIcon :name="v.type === 'board' ? 'table-view-column' : 'table-view-list'" size="sm" />
+        {{ v.name }}
+      </button>
+      <MpPopover id="cc-add-view" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+        <MpPopoverTrigger>
+          <button class="cc-addview-btn" type="button" aria-label="Add view"><MpIcon name="add" size="sm" /></button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click="openCreate('table')"><span class="cc-add-opt"><MpIcon name="table-view-list" size="sm" /> Table view</span></MpPopoverListItem>
+            <MpPopoverListItem @click="openCreate('board')"><span class="cc-add-opt"><MpIcon name="table-view-column" size="sm" /> Board view</span></MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </nav>
 
-        <button class="crm-btn crm-btn--secondary" type="button" @click="soon('All filters')">
-          <MpIcon name="filter" size="sm" /> All filters
-        </button>
-      </div>
-
-      <!-- Right: Export icon button (left of search) + search -->
-      <div class="crm-filter__right">
-        <MpTooltip id="crm-cust-export" label="Export" placement="bottom" use-portal>
-          <button class="crm-icon-btn" type="button" aria-label="Export" @click="soon('Export')">
-            <MpIcon name="download" size="md" />
-          </button>
-        </MpTooltip>
-        <div class="crm-search">
-          <MpIcon name="search" size="sm" class="crm-search__ic" />
-          <input v-model="search" class="crm-search__input" type="text" placeholder="Search customers…">
+    <div class="cc-stage">
+      <!-- ── Stats (shared across table + board) ── -->
+      <div class="cc-stats">
+        <div class="stats-section">
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">Active customers</div>
+            <div class="stat-period">Currently engaged</div>
+            <div class="stat-amount">{{ activeCustomers.length }}</div>
+            <a class="stat-link">{{ statBase.length }} in total</a>
+          </div>
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">In the pipeline</div>
+            <div class="stat-period">Leads and opportunities</div>
+            <div class="stat-amount">{{ pipeline.length }}</div>
+            <a class="stat-link">Not yet won</a>
+          </div>
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">Contract value in flight</div>
+            <div class="stat-period">Open deals</div>
+            <div class="stat-amount">{{ formatIDR(inFlightTotal) }}</div>
+            <a class="stat-link">{{ liveDeals }} {{ liveDeals !== 1 ? 'deals' : 'deal' }}</a>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Outstanding</div>
+            <div class="stat-period">Invoiced, not yet paid</div>
+            <div class="stat-amount">{{ formatIDR(outstandingTotal) }}</div>
+            <a class="stat-link">{{ owingCustomers.length }} {{ owingCustomers.length !== 1 ? 'customers owe you' : 'customer owes you' }}</a>
+          </div>
         </div>
       </div>
+
+      <!-- ── Filter bar (shared) ── -->
+      <div class="cc-filterbar">
+        <div class="filter-left">
+          <button class="cc-allfilters" type="button" @click="openFilters">
+            <MpIcon name="filter" size="sm" />
+            <span>{{ activeViewId === 'all' ? 'All filters' : 'Edit view' }}</span>
+            <span v-if="activeFilterCount" class="cc-allfilters-count">{{ activeFilterCount }}</span>
+          </button>
+        </div>
+
+        <div class="filter-right">
+          <div class="filter-btn-group">
+            <MpTooltip id="cus-airene" label="Ask Airene" placement="bottom" use-portal>
+              <button class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+            </MpTooltip>
+            <ColumnSettingsMenu v-if="activeView.type === 'table'" id="cus-columns" :items="columnItems" :visibility="columnVisibility" />
+            <MpTooltip id="cus-export" label="Export" placement="bottom" use-portal>
+              <button class="filter-icon-btn" type="button" aria-label="Export" @click="exportCsv"><MpIcon name="download" size="md" /></button>
+            </MpTooltip>
+          </div>
+          <div class="filter-search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input v-model="search" class="filter-search-input" type="text" placeholder="Search customers…" />
+            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Board view ── -->
+      <CrmBoardView
+        v-if="activeView.type === 'board'"
+        :rows="boardRows"
+        :group-by="activeView.groupBy"
+        @update:group-by="setGroupBy"
+        @open="goDetail"
+        @move="onCardMove"
+      />
+
+      <!-- ── Table view ── -->
+      <ErpTablePage
+        v-else
+        :columns="visibleColumns"
+        :rows="(paginated as Record<string, unknown>[])"
+        :total="total"
+        :current-page="currentPage"
+        :per-page="perPage"
+        :sort-key="sortKey"
+        :sort-dir="sortDir"
+        :loading="loading"
+        :search="search"
+        :has-active-filter="hasActiveFilter"
+        filter-empty-label="customer"
+        @page-change="setPage"
+        @per-page-change="setPerPage"
+        @sort="toggleSort"
+        @sort-change="setSort"
+        @hide-column="hideColumn"
+        @clear-filters="clearFilters"
+      >
+        <template #cell-company="{ row }">
+          <a class="cell-link cell-text cc-name-main" @click.stop="goDetail((row as Row).id)">{{ (row as Row).company }}</a>
+        </template>
+
+        <template #cell-lifecycleStage="{ row }">
+          <ErpStatusBadge v-bind="lifecycleBadge((row as Row).lifecycleStage)" />
+        </template>
+
+        <template #cell-segments="{ row }">
+          <ErpTagList v-if="(row as Row).segments.length" :tags="(row as Row).segments" />
+          <span v-else class="cc-muted">—</span>
+        </template>
+
+        <template #cell-owner="{ value }">{{ value || '—' }}</template>
+
+        <template #cell-openDeals="{ row, value }">
+          <a v-if="value" class="cell-link" @click.stop="goDetail((row as Row).id, 'deals')">{{ value }} {{ value === 1 ? 'record' : 'records' }}</a>
+          <span v-else class="cc-muted">—</span>
+        </template>
+
+        <template #cell-contact="{ row }">
+          <span class="cell-text">{{ (row as Row).contact }}</span>
+          <span v-if="(row as Row).email" class="cc-sub cell-text">{{ (row as Row).email }}</span>
+        </template>
+
+        <template #cell-inFlight="{ value }">
+          <span v-if="value">{{ formatIDR(value as number) }}</span><span v-else class="cc-muted">—</span>
+        </template>
+        <template #cell-outstanding="{ value }">
+          <span v-if="value" class="cc-owed">{{ formatIDR(value as number) }}</span><span v-else class="cc-muted">—</span>
+        </template>
+        <template #cell-billed="{ value }">
+          <span v-if="value">{{ formatIDR(value as number) }}</span><span v-else class="cc-muted">—</span>
+        </template>
+
+        <template #actions="{ row }">
+          <MpPopover :id="`cus-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="goDetail((row as Row).id)">View details</MpPopoverListItem>
+                <MpPopoverListItem @click="soon('Edit customer')">Edit</MpPopoverListItem>
+                <MpPopoverListItem @click="openDelete(row as Row)">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
+
+        <template #empty>
+          <div class="cc-empty">
+            <img :src="'/illustrations/empty-folder.png'" alt="" class="cc-empty-illustration" width="288" height="240" />
+            <p class="cc-empty-title">No customers</p>
+            <p class="cc-empty-desc">Customers will appear here.</p>
+          </div>
+        </template>
+      </ErpTablePage>
     </div>
 
-    <div class="crm-stage">
-      <div class="crm-table-scroll">
-        <table class="crm-table">
-          <thead>
-            <tr>
-              <th>Company</th><th>Contact</th><th>Segment</th><th>City</th><th>Owner</th>
-              <th class="num">Open deals</th><th class="num">Lifetime value</th><th>Status</th>
-              <th class="actions" />
-            </tr>
-          </thead>
-          <tbody v-if="loading">
-            <tr v-for="n in 3" :key="`sk-${n}`" class="sk-row">
-              <td><MpSkeleton class="crm-skeleton" width="160px" height="14px" rounded="sm" duration="0s" /></td>
-              <td><MpSkeleton class="crm-skeleton" width="96px" height="14px" rounded="sm" duration="0s" /></td>
-              <td><MpSkeleton class="crm-skeleton" width="80px" height="14px" rounded="sm" duration="0s" /></td>
-              <td><MpSkeleton class="crm-skeleton" width="72px" height="14px" rounded="sm" duration="0s" /></td>
-              <td><MpSkeleton class="crm-skeleton" width="96px" height="14px" rounded="sm" duration="0s" /></td>
-              <td class="num"><MpSkeleton class="crm-skeleton" width="32px" height="14px" rounded="sm" duration="0s" /></td>
-              <td class="num"><MpSkeleton class="crm-skeleton" width="96px" height="14px" rounded="sm" duration="0s" /></td>
-              <td><MpSkeleton class="crm-skeleton" width="64px" height="18px" rounded="sm" duration="0s" /></td>
-              <td class="actions" />
-            </tr>
-          </tbody>
-          <tbody v-else>
-            <tr v-for="c in rows" :key="c.id" @click="soon('Customer detail')">
-              <td>
-                <div class="cell-company">
-                  <p class="cell-title">{{ c.company }}</p><p class="cell-sub">{{ c.email }}</p>
-                </div>
-              </td>
-              <td>{{ c.contact }}</td>
-              <td>{{ c.segment }}</td>
-              <td>{{ c.city }}</td>
-              <td>{{ c.owner }}</td>
-              <td class="num">{{ c.openDeals }}</td>
-              <td class="num">{{ formatIDR(c.lifetimeValue) }}</td>
-              <td><ErpStatusBadge :status="c.status" v-bind="statusBadge(c.status)" /></td>
-              <td class="actions" @click.stop>
-                <MpPopover :id="`crm-cust-actions-${c.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <button class="crm-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem @click="soon('Customer detail')">View details</MpPopoverListItem>
-                      <MpPopoverListItem @click="soon('Edit customer')">Edit</MpPopoverListItem>
-                      <MpPopoverListItem @click="soon('Archive customer')">Archive</MpPopoverListItem>
-                      <MpPopoverListItem @click="deleteCustomer(c.id, c.company)">Delete</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <ConfirmModal v-model:is-open="delOpen" title="Delete customer" :description="`“${delTarget?.company}” will be permanently deleted.`" confirm-label="Delete" @confirm="confirmDelete" />
+
+    <CrmCustomerViewDrawer
+      id="cc-view-drawer"
+      v-model:is-open="drawerOpen"
+      :mode="drawerMode"
+      :model-value="drawerDraft"
+      :owner-options="ownerOptions"
+      :segment-options="segmentOptions"
+      @save="onSaveView"
+      @delete="onDeleteView"
+    />
   </div>
 </template>
 
 <style scoped>
-.cell-company { display: flex; flex-direction: column; }
-.crm-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
-.sk-row { cursor: default; }
-.cell-title { margin: 0; color: var(--mp-text-default); }
-.cell-sub { margin: 1px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.crm { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
-/* Export icon button — sits left of the search pill (ERP filter-bar convention) */
-.crm-icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+/* ── View tabs ── */
+.cc-viewtabs { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); }
+.cc-viewtab { position: relative; display: inline-flex; align-items: center; gap: 6px; border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-3) 0; }
+.cc-viewtab:not(.is-active):hover { color: var(--mp-text-default); }
+.cc-viewtab.is-active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
+.cc-viewtab.is-active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-text-selected); border-radius: var(--mp-radii-sm, 2px) var(--mp-radii-sm, 2px) 0 0; }
+.cc-addview-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary); }
+.cc-addview-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.cc-add-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Shared toolbar spacing (mirrors ErpTablePage internal .erp-stats-bar / .erp-filter-bar) */
+.cc-stats { margin-bottom: var(--mp-spacing-10); }
+.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+@media (max-width: 640px) {
+  .cc-filterbar { flex-wrap: wrap; }
+  .cc-filterbar > :last-child { flex: 1 1 100%; }
 }
-.crm-icon-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-/* Row actions kebab */
-.crm-table th.actions, .crm-table td.actions { width: 52px; text-align: right; }
-.crm-kebab {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-subtle, #6e7a7c);
-}
-.crm-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
-/* Primary button ("New customer") — force the + icon white. */
+
+.cc-allfilters { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cc-allfilters:hover { background: var(--mp-background-neutral-hovered); }
+.cc-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; border-radius: 999px; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
+
+/* Name cell + subtext */
+.cc-name-main { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
+.cc-sub { display: block; margin-top: 1px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cc-muted { color: var(--mp-text-subtle, #97a0af); }
+.cc-owed { color: var(--mp-text-warning, #b54708); }
+.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-subtle, #6e7a7c); }
+.row-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 .crm-btn--primary-icon :deep(svg) { color: var(--mp-text-inverse, #fff); }
+
+/* ── Stats (Bills pattern) ── */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-link { display: inline-flex; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); cursor: pointer; padding: 0 var(--mp-spacing-0\.5); }
+
+/* ── Filter bar (Bills pattern) ── */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-icon-btn { display: flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.filter-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
+.search-clear-btn { display: inline-flex; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); padding: 0; }
+.search-clear-btn:hover { color: var(--mp-icon-default, #536062); }
+
+/* ── Empty state ── */
+.cc-empty { display: flex; flex-direction: column; align-items: center; }
+.cc-empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.cc-empty-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cc-empty-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
