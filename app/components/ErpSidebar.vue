@@ -347,6 +347,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Payment terms' },
     { label: 'Payment methods' },
     { label: 'Tags' },
+    { label: 'Dimensions' },
   ],
   [
     // Data migration sits on its own with a divider above it.

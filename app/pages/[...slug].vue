@@ -114,6 +114,7 @@ const pageRegistry: Record<string, Component> = {
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
+  'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPaywallPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
