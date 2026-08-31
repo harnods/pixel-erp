@@ -20,7 +20,8 @@ import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverConte
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
-import { coworkAgents, coworkConnections, getTask, addTask, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { coworkAgents, coworkConnections, getTask, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { addFolder, addDoc, childrenOf, isFolder } from '~/data/coworkKb'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -191,7 +192,7 @@ function inferModule(text: string): CoworkModule {
   const t = text.toLowerCase()
   if (/(payroll|attendance|employee|contract|resign|leave|hr\b)/.test(t)) return 'HR'
   if (/(stock|warehouse|sku|inbound|outbound|fulfil|pick|pack|cycle count)/.test(t)) return 'WMS'
-  if (/(invoice|receivable|payable|bill|reconcil|cash|payment|close)/.test(t)) return 'Finance'
+  if (/(invoice|receivable|payable|bill|reconcil|cash|payment|close|revenue|profit|margin|income|expense|owed|overdue|budget|financ)/.test(t)) return 'Finance'
   if (/(work order|production|bom|manufactur)/.test(t)) return 'Production'
   if (/(order|deliver|ship)/.test(t)) return 'Sales'
   return 'CRM'
@@ -232,10 +233,17 @@ function openSaveMenu(i: number) { saveMenuFor.value = saveMenuFor.value === i ?
 
 // ── Per-answer action toolbar (copy · rate · audio · edit-as-doc · retry) ──
 const feedback = ref<Record<number, 'up' | 'down' | undefined>>({})
-const editingDoc = ref<Set<number>>(new Set())
-const docDraft = ref<Record<number, string>>({})
 const speakingIdx = ref<number | null>(null)
 const msgSourcesOpen = ref<Set<number>>(new Set())
+
+// The data sources an answer actually drew on = connected apps whose modules
+// cover the answer's topic (inferred from the question), not every enabled app.
+function msgSources(i: number): string[] {
+  const mod = inferModule(promptForMessage(i))
+  return sourceConnections.value
+    .filter((c) => (APP_MODULES[c.id] ?? []).includes(mod))
+    .map((c) => c.name)
+}
 
 function toggleMsgSources(i: number) { const s = new Set(msgSourcesOpen.value); s.has(i) ? s.delete(i) : s.add(i); msgSourcesOpen.value = s }
 async function copyAnswer(i: number) {
@@ -258,21 +266,23 @@ function speak(i: number) {
   speakingIdx.value = i
   synth.speak(u)
 }
-function toggleDoc(i: number) {
-  const s = new Set(editingDoc.value)
-  if (s.has(i)) s.delete(i)
-  else { s.add(i); docDraft.value = { ...docDraft.value, [i]: messages.value[i]?.text ?? '' } }
-  editingDoc.value = s
-}
-function saveDoc(i: number) {
-  const m = messages.value[i]
-  if (m) m.text = docDraft.value[i] ?? m.text
-  const s = new Set(editingDoc.value); s.delete(i); editingDoc.value = s
-  toast.notify({ variant: 'success', title: 'Answer updated' })
-}
-function downloadDoc(i: number) {
-  const blob = new Blob([messages.value[i]?.text ?? ''], { type: 'text/markdown' })
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'answer.md'; a.click(); URL.revokeObjectURL(a.href)
+// Edit as doc — save the answer as a real Markdown file in the File Manager
+// (KB), then open it there in the same editor (panel on the right), in edit mode.
+const CHAT_DOCS_FOLDER = 'Chat answers'
+function editAsDoc(i: number) {
+  const text = messages.value[i]?.text ?? ''
+  if (!text.trim()) return
+  // Find-or-create the "Chat answers" folder at the KB root.
+  let folder = childrenOf(null).find((n) => isFolder(n) && n.name === CHAT_DOCS_FOLDER)
+  if (!folder) folder = addFolder(null, CHAT_DOCS_FOLDER)
+  const base = promptForMessage(i).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 48) || 'Chat answer'
+  const doc = addDoc(folder.id, {
+    name: base, fileName: `${base}.md`, ext: 'md', mime: 'text/markdown',
+    sizeBytes: new Blob([text]).size, status: 'ready', source: 'ai',
+    text, summary: text.split('\n').find((l) => l.trim())?.slice(0, 160) ?? '',
+  })
+  toast.notify({ variant: 'success', title: 'Saved to File manager' })
+  router.push(`/cowork-knowledge/doc/${doc.id}?edit=1`)
 }
 function retry(i: number) { if (i === messages.value.length - 1) chat.regenerate() }
 function saveTurnAsGoal(i: number) {
@@ -575,18 +585,7 @@ onBeforeUnmount(() => {
                 </button>
                 <p v-if="reasonOpen.has(i)" class="cwc-reason-body">{{ msg.reasoning }}</p>
               </div>
-              <!-- Edit-as-doc: an inline .md editor replaces the rendered answer. -->
-              <div v-if="msg.role === 'assistant' && editingDoc.has(i)" class="cwc-doc">
-                <div class="cwc-doc-head"><MpIcon name="document" size="sm" /> Editing as Markdown</div>
-                <textarea v-model="docDraft[i]" class="cwc-doc-input" rows="12" spellcheck="false" />
-                <div class="cwc-doc-actions">
-                  <button type="button" class="cwc-doc-btn" @click="downloadDoc(i)"><MpIcon name="document" size="sm" /> Download .md</button>
-                  <span class="cwc-doc-spacer" />
-                  <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="toggleDoc(i)">Cancel</button>
-                  <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDoc(i)">Save</button>
-                </div>
-              </div>
-              <div v-else class="chat-bubble" :class="'chat-bubble--' + msg.role">
+              <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
                 <span v-else class="chat-bubble__text">{{ msg.text }}</span>
@@ -603,11 +602,11 @@ onBeforeUnmount(() => {
               />
               <!-- Per-answer action toolbar (Sana-style): sources · copy · rate ·
                    audio · edit-as-doc · retry · save (task/goal). -->
-              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && !editingDoc.has(i)" class="cwc-msg-actions">
-                <button v-if="activeSourceNames.length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
+              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode" class="cwc-msg-actions">
+                <button v-if="msgSources(i).length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
                   <MpIcon name="book" size="sm" />
                   <span>Sources</span>
-                  <span class="cwc-src-count">{{ activeSourceNames.length }}</span>
+                  <span class="cwc-src-count">{{ msgSources(i).length }}</span>
                   <MpIcon :name="msgSourcesOpen.has(i) ? 'caret-down' : 'caret-right'" size="sm" class="cwc-src-chev" />
                 </button>
 
@@ -616,7 +615,7 @@ onBeforeUnmount(() => {
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'up' }" title="Good answer" aria-label="Thumbs up" @click="rate(i, 'up')"><MpIcon name="like" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'down' }" title="Bad answer" aria-label="Thumbs down" @click="rate(i, 'down')"><MpIcon name="dislike" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': speakingIdx === i }" :title="speakingIdx === i ? 'Stop' : 'Read aloud'" aria-label="Read aloud" @click="speak(i)"><MpIcon name="headphone" size="sm" /></button>
-                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="toggleDoc(i)"><MpIcon name="document" size="sm" /></button>
+                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="editAsDoc(i)"><MpIcon name="document" size="sm" /></button>
                   <button v-if="i === messages.length - 1" type="button" class="cwc-act" title="Retry" aria-label="Retry" @click="retry(i)"><MpIcon name="refresh" size="sm" /></button>
 
                   <MpPopover :id="`cwc-save-${i}`" is-manual :is-open="saveMenuFor === i" placement="bottom-end" use-portal :is-keep-alive="false" @close="saveMenuFor = null">
@@ -649,7 +648,7 @@ onBeforeUnmount(() => {
 
                 <!-- Inline sources list (the connected data the answer drew on). -->
                 <ul v-if="msgSourcesOpen.has(i)" class="cwc-src-list">
-                  <li v-for="s in activeSourceNames" :key="s"><MpIcon name="check" size="sm" /> {{ s }}</li>
+                  <li v-for="s in msgSources(i)" :key="s"><MpIcon name="check" size="sm" /> {{ s }}</li>
                 </ul>
               </div>
             </div>
