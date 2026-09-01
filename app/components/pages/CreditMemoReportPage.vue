@@ -83,7 +83,7 @@ const drawerOpen = ref(false)
 function onApplyFilters(v: CmDrawerValue) { filters.customers = [...v.customers]; filters.txnTypes = [...v.txnTypes]; generate() }
 function toggleZero() { filters.showZero = !filters.showZero }
 const activeFilterCount = computed(() => filters.customers.length + filters.txnTypes.length)
-const TXN_LABELS: Record<CmMutationType, string> = { Issued: 'CM Issued', Applied: 'CM Applied', Refund: 'CM Refund', Reversal: 'CM Reversal' }
+const TXN_LABELS: Record<CmMutationType, string> = { Issued: 'Credit memo issued', Applied: 'Credit memo applied', Refund: 'Credit memo refund', Reversal: 'Credit memo reversal' }
 function removeCustomer(name: string) { filters.customers = filters.customers.filter((c) => c !== name) }
 function removeTxnType(t: CmMutationType) { filters.txnTypes = filters.txnTypes.filter((x) => x !== t) }
 function resetFilters() { filters.customers = []; filters.txnTypes = [] }  // preserves date range
@@ -155,8 +155,8 @@ onBeforeUnmount(() => { isReportFullscreen.value = false })
 // ── Airene — open the panel already grounded on THIS report's data ────────────
 const aireneBridge = useAireneBridge()
 const AIRENE_SUGGESTIONS = [
-  'Which customer has the most usable CM credit?',
-  'What is the total outstanding CM balance?',
+  'Which customer has the most usable credit memo balance?',
+  'What is the total outstanding credit memo balance?',
   'Which credit memos are fully used?',
   'Summarise this report in 3 bullets',
 ]
@@ -167,12 +167,12 @@ function buildReportGround(): string {
   if (filters.showZero) filt.push('including fully-used (zero-balance) CMs')
   const lines = groups.value.map((g) => {
     const cms = g.cms.map((cm) => `${cm.cmNumber} remaining ${formatIDR(remainingOf(cm))} (${statusOf(cm)})`).join('; ')
-    return `- ${g.name}: total usable ${formatIDR(g.total)}, ${g.activeCount} active CM — ${cms}`
+    return `- ${g.name}: total usable ${formatIDR(g.total)}, ${g.activeCount} active credit memo — ${cms}`
   })
   return `Credit Memo Detail Report (Reports › Sales › Credit Memo), IDR, read-only. `
     + `Period ${rangeCaption.value}.${filt.length ? ' Filters — ' + filt.join('; ') + '.' : ''}\n`
-    + `Customers ranked by usable CM credit (descending):\n${lines.join('\n')}\n`
-    + `"Usable/remaining" is CM credit still available; "Habis" = fully used; Movement negatives are applications/refunds.`
+    + `Customers ranked by usable credit memo balance (descending):\n${lines.join('\n')}\n`
+    + `"Usable/remaining" is credit memo balance still available; "Habis" = fully used; Movement negatives are applications/refunds.`
 }
 function openAirene() {
   aireneBridge.openWithContext(buildReportGround(), 'Credit Memo report', AIRENE_SUGGESTIONS)
@@ -189,10 +189,10 @@ function exportExcel() {
     exporting.value = false
     const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
     // Sheet 1 — Customer Summary
-    const lines = ['Customer Summary', ['Customer', 'Active CM', 'Total Remaining Balance', 'Currency'].join(',')]
+    const lines = ['Customer summary', ['Customer', 'Active credit memo', 'Total Remaining Balance', 'Currency'].join(',')]
     for (const g of groups.value) lines.push([g.name, g.activeCount, g.total, 'IDR'].map(esc).join(','))
     // Sheet 2 — CM Detail
-    lines.push('', 'CM Detail', ['Customer', 'CM Number', 'Date', 'Type', 'Transaction No.', 'Description', 'Movement', 'Balance', 'Currency'].join(','))
+    lines.push('', 'Credit memo detail', ['Customer', 'Credit memo number', 'Date', 'Type', 'Transaction No.', 'Description', 'Movement', 'Balance', 'Currency'].join(','))
     for (const g of groups.value) for (const cm of g.cms) for (const r of historyRows(cm)) {
       lines.push([g.name, cm.cmNumber, r.date, r.type, r.transactionNo ?? '', r.description ?? '', r.movement ?? '', r.balance, 'IDR'].map(esc).join(','))
     }
@@ -249,7 +249,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
       <div v-if="!fullscreen" class="cmr-presetbar">
         <label class="cmr-zerotoggle">
           <MpToggle id="cmr-zero" :is-checked="filters.showZero" @change="toggleZero" />
-          <span>Show fully-used CMs</span>
+          <span>Show fully-used credit memos</span>
         </label>
       </div>
       <p v-if="!fullscreen && rangeError" class="cmr-range-error">{{ rangeError }}</p>
@@ -343,7 +343,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
                   <span class="cmr-lead cmr-lead--l1">
                     <MpIcon :name="isCustomerOpen(g.id) ? 'caret-down' : 'caret-right'" size="sm" class="cmr-chev" />
                     <span class="cmr-customer">{{ g.name }}</span>
-                    <span class="cmr-cmcount">{{ g.activeCount }} active CM</span>
+                    <span class="cmr-cmcount">{{ g.activeCount }} active credit memo</span>
                   </span>
                 </td>
                 <td v-if="show('balance')" class="cmr-td cmr-td--right cmr-td--group cmr-strong">{{ formatIDR(g.total) }}</td>
@@ -391,7 +391,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
                 <!-- End balance -->
                 <tr class="cmr-row cmr-row--end">
-                  <td class="cmr-td cmr-strong" :colspan="visibleLeadSpan">End balance</td>
+                  <td class="cmr-td cmr-strong cmr-end-label" :colspan="visibleLeadSpan">End balance</td>
                   <td v-if="show('balance')" class="cmr-td cmr-td--right cmr-strong">{{ formatIDR(g.total) }}</td>
                 </tr>
               </template>
@@ -408,7 +408,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             </template>
             <template v-else-if="emptyReason === 'all-zero'">
               <p class="cmr-empty-title">All credit memos in this period are fully used.</p>
-              <p class="cmr-empty-desc">Turn on "Show fully-used CMs" to see them.</p>
+              <p class="cmr-empty-desc">Turn on "Show fully-used credit memos" to see them.</p>
             </template>
             <template v-else>
               <p class="cmr-empty-title">No active credit memo in this period.</p>
@@ -436,7 +436,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <header class="cmr-vd-head"><span class="cmr-vd-title">Save view</span><button class="cmr-vd-close" type="button" aria-label="Close" @click="viewDrawerOpen = false"><MpIcon name="close" size="md" /></button></header>
             <div class="cmr-vd-body">
               <label class="cmr-vd-label">View name</label>
-              <input v-model="viewName" class="cmr-vd-input" type="text" placeholder="e.g. Big customers with active CM" @keydown.enter.prevent="saveView" />
+              <input v-model="viewName" class="cmr-vd-input" type="text" placeholder="e.g. Big customers with active credit memo" @keydown.enter.prevent="saveView" />
               <p class="cmr-vd-hint">Saves the current filters as a view. It stays available next time.</p>
             </div>
             <footer class="cmr-vd-foot"><button class="cmr-vd-btn cmr-vd-btn--ghost" type="button" @click="viewDrawerOpen = false">Cancel</button><button class="cmr-vd-btn cmr-vd-btn--primary" type="button" @click="saveView">Save view</button></footer>
@@ -558,6 +558,9 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-txn-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .cmr-row--end .cmr-td { border-top: 1px solid var(--mp-border-default); }
+/* Align "End balance" with the credit-memo accordion icon in the Date column
+   (matches the memo row's lead indent: td padding + lead--l2 padding). */
+.cmr-end-label { padding-left: calc(var(--mp-spacing-3, 12px) + var(--mp-spacing-4, 16px)); }
 
 /* Status badges */
 .cmr-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-medium, 500); }

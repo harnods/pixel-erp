@@ -30,7 +30,7 @@ const emit = defineEmits<{
 }>()
 
 const TXN_LABELS: Record<CmMutationType, string> = {
-  Issued: 'CM Issued', Applied: 'CM Applied', Refund: 'CM Refund', Reversal: 'CM Reversal',
+  Issued: 'Credit memo issued', Applied: 'Credit memo applied', Refund: 'Credit memo refund', Reversal: 'Credit memo reversal',
 }
 
 const draft = reactive<CmDrawerValue>(clone(props.modelValue))
