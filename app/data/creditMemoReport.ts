@@ -105,86 +105,89 @@ function isCaseC(cm: CreditMemo): boolean {
   return !cm.hasPriorData && cm.mutations.length === 0
 }
 
-// ── Seed (a coherent, auditable Dec 2025 ledger covering every case) ───────────
+// ── Seed — a coherent, auditable Feb 2026 ledger over REAL sales customers
+// (customers.ts) and REAL sales-invoice numbers (salesInvoices.ts uses #40001+).
+// Covers every case: Case A (issued before period) / Case B (issued in period),
+// Active / Partial / Used-up, and all four mutation types.
 const SEED: CmCustomer[] = [
   {
-    id: 'hungry-birds', name: 'Hungry birds',
+    id: 'C005', name: 'Djournal Coffee',
     cms: [
       {
-        id: 'cm-12333', customerId: 'hungry-birds', cmNumber: 'Credit Memo #12333',
-        issueDate: '2025-12-05', originalAmount: 30_000_000, beginningBalance: 0, hasPriorData: false,
+        id: 'cm-2451', customerId: 'C005', cmNumber: 'Credit Memo #CM-2451',
+        issueDate: '2026-02-05', originalAmount: 30_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-12333-m1', date: '2025-12-05', type: 'Issued', transactionNo: 'Credit Memo #12333', transactionHref: '#', description: 'Return goods', amount: 30_000_000 },
-          { id: 'cm-12333-m2', date: '2025-12-20', type: 'Applied', transactionNo: 'Sales Invoice #10222', transactionHref: '#', description: 'Applied to invoice', amount: -15_000_000 },
+          { id: 'cm-2451-m1', date: '2026-02-05', type: 'Issued', transactionNo: 'Credit Memo #CM-2451', transactionHref: '#', description: 'Return goods', amount: 30_000_000 },
+          { id: 'cm-2451-m2', date: '2026-02-20', type: 'Applied', transactionNo: 'Sales Invoice #40025', transactionHref: '#', description: 'Applied to invoice', amount: -15_000_000 },
         ],
       },
       {
-        id: 'cm-12334', customerId: 'hungry-birds', cmNumber: 'Credit Memo #12334',
-        issueDate: '2025-12-28', originalAmount: 5_000_000, beginningBalance: 0, hasPriorData: false,
+        id: 'cm-2467', customerId: 'C005', cmNumber: 'Credit Memo #CM-2467',
+        issueDate: '2026-02-24', originalAmount: 5_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-12334-m1', date: '2025-12-28', type: 'Issued', transactionNo: 'Credit Memo #12334', transactionHref: '#', description: 'Goodwill credit', amount: 5_000_000 },
+          { id: 'cm-2467-m1', date: '2026-02-24', type: 'Issued', transactionNo: 'Credit Memo #CM-2467', transactionHref: '#', description: 'Goodwill credit', amount: 5_000_000 },
         ],
       },
     ],
   },
   {
-    id: 'kopi-kenangan', name: 'Kopi Kenangan Pusat',
+    id: 'C001', name: 'Anomali Coffee',
     cms: [
       {
-        id: 'cm-40100', customerId: 'kopi-kenangan', cmNumber: 'Credit Memo #40100',
-        issueDate: '2025-12-03', originalAmount: 12_000_000, beginningBalance: 0, hasPriorData: false,
+        id: 'cm-2390', customerId: 'C001', cmNumber: 'Credit Memo #CM-2390',
+        issueDate: '2026-01-16', originalAmount: 22_000_000, beginningBalance: 22_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-40100-m1', date: '2025-12-03', type: 'Issued', transactionNo: 'Credit Memo #40100', transactionHref: '#', description: 'Return goods', amount: 12_000_000 },
-          { id: 'cm-40100-m2', date: '2025-12-10', type: 'Applied', transactionNo: 'Sales Invoice #10701', transactionHref: '#', description: 'Applied to invoice', amount: -8_000_000 },
-          { id: 'cm-40100-m3', date: '2025-12-15', type: 'Reversal', transactionNo: 'Sales Invoice #10701', transactionHref: '#', description: 'Reversed application', amount: 8_000_000 },
-          { id: 'cm-40100-m4', date: '2025-12-20', type: 'Applied', transactionNo: 'Sales Invoice #10702', transactionHref: '#', description: 'Applied to invoice', amount: -4_000_000 },
+          { id: 'cm-2390-m1', date: '2026-02-12', type: 'Applied', transactionNo: 'Sales Invoice #40031', transactionHref: '#', description: 'Applied to invoice', amount: -2_550_000 },
+        ],
+      },
+      {
+        id: 'cm-2395', customerId: 'C001', cmNumber: 'Credit Memo #CM-2395',
+        issueDate: '2026-02-15', originalAmount: 10_000_000, beginningBalance: 0, hasPriorData: false,
+        mutations: [
+          { id: 'cm-2395-m1', date: '2026-02-15', type: 'Issued', transactionNo: 'Credit Memo #CM-2395', transactionHref: '#', description: 'Overpayment', amount: 10_000_000 },
+          { id: 'cm-2395-m2', date: '2026-02-18', type: 'Refund', transactionNo: 'Cash Refund #CR-2201', transactionHref: '#', description: 'Cash refund to customer', amount: -10_000_000 },
         ],
       },
     ],
   },
   {
-    id: 'greenfields', name: 'Greenfields Dairy Farm',
+    id: 'C006', name: 'Kopi Kenangan Pusat',
     cms: [
       {
-        id: 'cm-30777', customerId: 'greenfields', cmNumber: 'Credit Memo #30777',
-        issueDate: '2025-11-18', originalAmount: 22_000_000, beginningBalance: 22_000_000, hasPriorData: true,
+        id: 'cm-2405', customerId: 'C006', cmNumber: 'Credit Memo #CM-2405',
+        issueDate: '2026-02-03', originalAmount: 12_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-30777-m1', date: '2025-12-12', type: 'Applied', transactionNo: 'Sales Invoice #10620', transactionHref: '#', description: 'Applied to invoice', amount: -2_550_000 },
-        ],
-      },
-      {
-        id: 'cm-30778', customerId: 'greenfields', cmNumber: 'Credit Memo #30778',
-        issueDate: '2025-12-15', originalAmount: 10_000_000, beginningBalance: 0, hasPriorData: false,
-        mutations: [
-          { id: 'cm-30778-m1', date: '2025-12-15', type: 'Issued', transactionNo: 'Credit Memo #30778', transactionHref: '#', description: 'Overpayment', amount: 10_000_000 },
-          { id: 'cm-30778-m2', date: '2025-12-18', type: 'Refund', transactionNo: 'Cash Refund #CR-2201', transactionHref: '#', description: 'Cash refund to customer', amount: -10_000_000 },
+          { id: 'cm-2405-m1', date: '2026-02-03', type: 'Issued', transactionNo: 'Credit Memo #CM-2405', transactionHref: '#', description: 'Return goods', amount: 12_000_000 },
+          { id: 'cm-2405-m2', date: '2026-02-10', type: 'Applied', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Applied to invoice', amount: -8_000_000 },
+          { id: 'cm-2405-m3', date: '2026-02-14', type: 'Reversal', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Reversed application', amount: 8_000_000 },
+          { id: 'cm-2405-m4', date: '2026-02-20', type: 'Applied', transactionNo: 'Sales Invoice #40052', transactionHref: '#', description: 'Applied to invoice', amount: -4_000_000 },
         ],
       },
     ],
   },
   {
-    id: 'expat-roasters', name: 'EXPAT Roasters',
+    id: 'C002', name: 'Tanamera Coffee Roastery',
     cms: [
       {
-        id: 'cm-20911', customerId: 'expat-roasters', cmNumber: 'Credit Memo #20911',
-        issueDate: '2025-11-20', originalAmount: 8_000_000, beginningBalance: 8_000_000, hasPriorData: true,
+        id: 'cm-2377', customerId: 'C002', cmNumber: 'Credit Memo #CM-2377',
+        issueDate: '2026-01-20', originalAmount: 8_000_000, beginningBalance: 8_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-20911-m1', date: '2025-12-10', type: 'Applied', transactionNo: 'Sales Invoice #10501', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2377-m1', date: '2026-02-10', type: 'Applied', transactionNo: 'Sales Invoice #40018', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
         ],
       },
     ],
   },
   {
-    id: 'braud', name: 'BRAUD.',
+    id: 'C013', name: 'Excelso Grand Indonesia',
     cms: [
       {
-        id: 'cm-10855', customerId: 'braud', cmNumber: 'Credit Memo #10855',
-        issueDate: '2025-11-29', originalAmount: 10_000_000, beginningBalance: 10_000_000, hasPriorData: true,
+        id: 'cm-2340', customerId: 'C013', cmNumber: 'Credit Memo #CM-2340',
+        issueDate: '2026-01-29', originalAmount: 10_000_000, beginningBalance: 10_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-10855-m1', date: '2025-12-07', type: 'Applied', transactionNo: 'Sales Invoice #10222', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-10855-m2', date: '2025-12-12', type: 'Applied', transactionNo: 'Sales Invoice #10332', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-10855-m3', date: '2025-12-18', type: 'Applied', transactionNo: 'Sales Invoice #10419', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-10855-m4', date: '2025-12-22', type: 'Applied', transactionNo: 'Sales Invoice #10502', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m1', date: '2026-02-07', type: 'Applied', transactionNo: 'Sales Invoice #40012', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m2', date: '2026-02-12', type: 'Applied', transactionNo: 'Sales Invoice #40033', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m3', date: '2026-02-18', type: 'Applied', transactionNo: 'Sales Invoice #40041', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m4', date: '2026-02-22', type: 'Applied', transactionNo: 'Sales Invoice #40055', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
         ],
       },
     ],
@@ -192,7 +195,7 @@ const SEED: CmCustomer[] = [
 ]
 
 export const creditMemoCustomers = reactive<CmCustomer[]>(
-  loadSnapshot<CmCustomer>('credit-memo-report-v2') ?? SEED.map((c) => ({ ...c })),
+  loadSnapshot<CmCustomer>('credit-memo-report-v3') ?? SEED.map((c) => ({ ...c })),
 )
 
 // ── Report query — filters + zero-balance toggle + Case C + voided exclusion ──

@@ -36,8 +36,8 @@ const router = useRouter()
 
 // ── Date range + presets + validation ────────────────────────────────────────
 function d(y: number, m: number, day: number) { return new Date(y, m, day) }
-const pendingRange = ref<Date[]>([d(2025, 11, 1), d(2025, 11, 31)])
-const appliedRange = ref<Date[]>([d(2025, 11, 1), d(2025, 11, 31)])
+const pendingRange = ref<Date[]>([d(2026, 1, 1), d(2026, 1, 28)])
+const appliedRange = ref<Date[]>([d(2026, 1, 1), d(2026, 1, 28)])
 const rangeError = ref('')
 
 // Presets (This month / This quarter / Per month / Per year / Custom) live inside
@@ -119,7 +119,7 @@ const visibleLeadSpan = computed(() => COLUMNS.filter((c) => show(c.key)).length
 // ── Rows (report query + date-window gate) ────────────────────────────────────
 // Seed activity lives in Dec 2025; the report is empty for periods that don't
 // overlap it (a believable "no activity" result for other ranges).
-function overlapsSeed() { const [s, e] = appliedRange.value; return !!s && !!e && s <= d(2025, 11, 31) && e >= d(2025, 11, 1) }
+function overlapsSeed() { const [s, e] = appliedRange.value; return !!s && !!e && s <= d(2026, 1, 28) && e >= d(2026, 1, 1) }
 const groups = computed(() => (overlapsSeed() ? creditMemoReport(filters) : []))
 // Would there be rows if the zero-balance toggle were ON? (drives the empty-state hint)
 const groupsWithZero = computed(() => (overlapsSeed() ? creditMemoReport({ ...filters, showZero: true }) : []))
