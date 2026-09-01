@@ -272,18 +272,10 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
           </button>
         </div>
         <div class="cmr-controls-right">
-          <div class="cmr-btn-group">
-            <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
-              <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
-            </MpTooltip>
-            <MpTooltip id="cmr-ai" label="Ask Airene" placement="bottom" use-portal>
-              <button class="cmr-icon-btn cmr-icon-btn--airene" type="button" aria-label="Ask Airene" @click="openAirene"><MpIcon name="airene-brand" size="md" /></button>
-            </MpTooltip>
-            <ColumnSettingsMenu id="cmr-cols" :items="columnItems" :visibility="colVis" />
-            <MpTooltip id="cmr-export" label="Export to Excel" placement="bottom" use-portal>
-              <button class="cmr-icon-btn" type="button" aria-label="Export to Excel" @click="exportExcel"><MpIcon name="download" size="md" /></button>
-            </MpTooltip>
-          </div>
+          <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
+            <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
+          </MpTooltip>
+          <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="exportExcel">Export to Excel</button>
         </div>
       </div>
 
@@ -528,7 +520,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
 .cmr-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .cmr-controls-left { display: flex; align-items: flex-end; gap: var(--mp-spacing-3); }
-.cmr-controls-right { display: flex; align-items: center; }
+.cmr-controls-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 /* Flush icon-button group — mirrors the table filter bar's .filter-btn-group. */
 .cmr-btn-group { display: flex; align-items: center; }
 .cmr-datefield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 220px; }
