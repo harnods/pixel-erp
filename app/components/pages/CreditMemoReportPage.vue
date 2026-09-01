@@ -166,7 +166,7 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
             <AdvancedDateRangePicker id="cmr-date" :model-value="pendingRange" is-full-width hide-label :placeholder="t('Select date')" @update:model-value="pendingRange = $event" />
           </div>
           <button class="cmr-apply" type="button" @click="applyDate">{{ t('Apply') }}</button>
-          <button class="cmr-allfilters" type="button" @click="drawerOpen = true">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before cmr-allfilters" type="button" @click="drawerOpen = true">
             <MpIcon name="filter" size="sm" /> {{ t('All filters') }}
             <span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
           </button>
@@ -178,7 +178,7 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
           <ColumnSettingsMenu id="cmr-cols" :items="columnItems" :visibility="colVis" />
           <MpPopover id="cmr-export" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="cmr-export" type="button">{{ t('Export') }} <MpIcon name="caret-down" size="sm" /></button>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after" type="button">{{ t('Export') }} <MpIcon name="caret-down" size="sm" /></button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px' })">
               <MpPopoverList>
@@ -203,8 +203,11 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
 
       <!-- ── Report table ── -->
       <div class="cmr-report">
-        <!-- Full-screen exit control -->
-        <button v-if="fullscreen" class="cmr-fs-exit" type="button" @click="fullscreen = false"><MpIcon name="fullscreen-exit" size="sm" /> {{ t('Exit full screen') }}</button>
+        <!-- Full-screen exit — an icon in the same top-right spot as the enter control,
+             so its position never shifts between windowed and full-screen. -->
+        <div v-if="fullscreen" class="cmr-fs-topbar">
+          <button class="cmr-fs-btn" type="button" :aria-label="t('Exit full screen')" @click="fullscreen = false"><MpIcon name="fullscreen-exit" size="md" /></button>
+        </div>
 
         <div class="cmr-report-head">
           <span class="cmr-report-range">{{ rangeCaption }}</span>
@@ -263,12 +266,7 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
                   <!-- Applied (L3) -->
                   <template v-if="isMemoOpen(m.id)">
                     <tr v-for="a in m.applied" :key="a.id" class="cmr-row cmr-row--applied">
-                      <td v-if="show('date')" class="cmr-td">
-                        <span class="cmr-lead cmr-lead--l3">
-                          <span class="cmr-connector" />
-                          <span>{{ formatDate(a.date) }}</span>
-                        </span>
-                      </td>
+                      <td v-if="show('date')" class="cmr-td cmr-applied-date">{{ formatDate(a.date) }}</td>
                       <td v-if="show('number')" class="cmr-td cmr-td--l3">
                         <span class="cmr-applied-no">{{ a.number }}</span>
                         <span class="cmr-applied-ref">{{ a.reference }}</span>
@@ -375,15 +373,11 @@ export default { name: 'CreditMemoReportPage' }
 .cmr-date-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 .cmr-apply { height: 36px; padding: 0 var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: pointer; }
 .cmr-apply:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
-.cmr-allfilters { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cmr-allfilters:hover { background: var(--mp-background-neutral-subtle); }
-.cmr-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
+.cmr-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 999px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
 
 .cmr-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
 .cmr-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 .cmr-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
-.cmr-export { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral, #fff); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
-.cmr-export:hover { background: var(--mp-background-neutral-subtle); }
 
 /* View tabs */
 .cmr-viewbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--mp-border-default); }
@@ -401,9 +395,9 @@ export default { name: 'CreditMemoReportPage' }
 /* Report */
 .cmr-report { display: flex; flex-direction: column; }
 .cmr-report-head { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-2) 0; }
-.cmr-report-range { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
+.cmr-report-range { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cmr-report-updated { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.cmr-fs-exit { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-bottom: var(--mp-spacing-3); height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmr-fs-topbar { display: flex; justify-content: flex-end; }
 
 .cmr-table-wrap { overflow-x: auto; }
 .cmr-table { width: 100%; min-width: 860px; border-collapse: collapse; table-layout: fixed; }
@@ -432,10 +426,9 @@ export default { name: 'CreditMemoReportPage' }
 .cmr-lead { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .cmr-lead--l1 { padding-left: 0; }
 .cmr-lead--l2 { padding-left: var(--mp-spacing-4, 16px); }
-.cmr-lead--l3 { padding-left: var(--mp-spacing-8, 32px); }
 .cmr-chev { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
-.cmr-connector { width: 1px; height: 40px; background: var(--mp-border-default); margin-left: 8px; margin-right: 8px; flex-shrink: 0; }
-.cmr-td--l2 { }
+/* Applied date sits under the memo date (no chevron) — indent = l2 pad + chevron + gap. */
+.cmr-applied-date { padding-left: 52px; }
 .cmr-td--l3 { padding-left: var(--mp-spacing-3); }
 .cmr-applied-no { display: block; }
 .cmr-applied-ref { display: block; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
