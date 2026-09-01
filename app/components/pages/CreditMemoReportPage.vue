@@ -552,9 +552,11 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-lead--l2 { padding-left: var(--mp-spacing-4, 16px); }
 .cmr-chev { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
 .cmr-applied-date { padding-left: 52px; }
-.cmr-td--l3 { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+/* Keep the number cell a normal table-cell (NOT flex) so its bottom border
+   stays flush with the other columns; the chip + link sit inline instead. */
+.cmr-td--l3 { white-space: nowrap; }
 .cmr-saldo-awal { padding-left: 4px; color: var(--mp-text-secondary); }
-.cmr-txn-link { color: var(--mp-text-link); cursor: pointer; }
+.cmr-txn-link { color: var(--mp-text-link); cursor: pointer; vertical-align: middle; }
 .cmr-txn-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .cmr-row--end .cmr-td { border-top: 1px solid var(--mp-border-default); }
@@ -568,7 +570,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-badge--partial { background: var(--mp-background-warning-subtle, #fdf1dd); color: var(--mp-text-warning, #b54708); }
 .cmr-badge--used { background: var(--mp-background-danger-subtle, #fdecec); color: var(--mp-text-danger, #c62828); }
 /* Mutation type chip */
-.cmr-type { display: inline-flex; align-items: center; padding: 0 6px; border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-medium, 500); }
+.cmr-type { display: inline-flex; align-items: center; padding: 0 6px; margin-right: var(--mp-spacing-2, 8px); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-medium, 500); vertical-align: middle; }
 .cmr-type--pos { background: var(--mp-background-success-subtle, #e6f4ea); color: var(--mp-text-success, #12805c); }
 .cmr-type--neg { background: var(--mp-background-neutral-subtle, #eceef0); color: var(--mp-text-secondary); }
 
