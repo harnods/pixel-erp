@@ -17,7 +17,7 @@ export interface CmDrawerValue {
 </script>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, computed, watch } from 'vue'
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import { CM_MUTATION_TYPES } from '~/data/creditMemoReport'
 
@@ -56,15 +56,32 @@ const keywordColLabel = () => KEYWORD_COLUMNS.find((c) => c.key === draft.keywor
 const comparatorOpen = ref(false)
 const comparatorLabel = () => COMPARATORS.find((c) => c.key === draft.customerComparator)?.label ?? 'Is any of'
 
-// Customer tags — type a name + Enter → chip. Backspace on empty removes the last.
+// Customer tags — type a name → a filtered suggestion popover appears (only while
+// typing). Enter adds the first match (or free text) as a chip; backspace on the
+// empty input removes the last chip.
 const custDraft = ref('')
+const custFocused = ref(false)
+// Suggestions matching what the user typed, minus what's already chosen.
+const filteredCustomers = computed(() => {
+  const q = custDraft.value.trim().toLowerCase()
+  if (!q) return []
+  return props.customerOptions.filter((c) => c.toLowerCase().includes(q) && !draft.customers.includes(c)).slice(0, 8)
+})
+// The popover is shown only while the field is focused AND the typing matches.
+const custSuggestOpen = computed(() => custFocused.value && filteredCustomers.value.length > 0)
 function addCust() {
-  const v = custDraft.value.trim()
+  const v = filteredCustomers.value[0] ?? custDraft.value.trim()
   if (v && !draft.customers.includes(v)) draft.customers = [...draft.customers, v]
+  custDraft.value = ''
+}
+function pickCust(name: string) {
+  if (!draft.customers.includes(name)) draft.customers = [...draft.customers, name]
   custDraft.value = ''
 }
 function removeCust(i: number) { draft.customers = draft.customers.filter((_, idx) => idx !== i) }
 function onCustBackspace() { if (!custDraft.value && draft.customers.length) draft.customers = draft.customers.slice(0, -1) }
+// Delay blur so a suggestion click (which briefly blurs the input) still registers.
+function onCustBlur() { setTimeout(() => { custFocused.value = false }, 120) }
 
 function close() { emit('update:isOpen', false) }
 function clearAll() { draft.keyword = ''; draft.keywordColumn = 'all'; draft.customerComparator = 'isAnyOf'; draft.customers = []; draft.txnTypes = [] }
@@ -114,14 +131,22 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
                   </MpPopoverList>
                 </MpPopoverContent>
               </MpPopover>
-              <div class="cmfd-tags-field">
-                <span v-for="(tag, i) in draft.customers" :key="`${i}-${tag}`" class="cmfd-tag-chip">
-                  {{ tag }}
-                  <button type="button" class="cmfd-tag-remove" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></button>
-                </span>
-                <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" list="cmfd-cust-list" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
-                <datalist id="cmfd-cust-list"><option v-for="c in customerOptions" :key="c" :value="c" /></datalist>
-              </div>
+              <MpPopover :id="`${id}-cust-sug`" class="cmfd-cust-pop" is-manual :is-open="custSuggestOpen" use-portal :is-keep-alive="false" is-adaptive-width placement="bottom-start">
+                <MpPopoverTrigger>
+                  <div class="cmfd-tags-field">
+                    <span v-for="(tag, i) in draft.customers" :key="`${i}-${tag}`" class="cmfd-tag-chip">
+                      {{ tag }}
+                      <button type="button" class="cmfd-tag-remove" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></button>
+                    </span>
+                    <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" autocomplete="off" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @focus="custFocused = true" @blur="onCustBlur" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
+                  </div>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ maxHeight: '240px', overflowY: 'auto' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="c in filteredCustomers" :key="c" @mousedown.prevent @click="pickCust(c)">{{ c }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
             </div>
           </div>
 
@@ -179,6 +204,10 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
 .cmfd-tags:focus-within { border-color: var(--mp-border-brand, #0a6e4e); }
 .cmfd-tags-prefix { flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1); min-width: 0 !important; padding: var(--mp-spacing-2, 6px) !important; background: var(--mp-background-neutral-subtle, #f0f1f3) !important; border: none !important; border-radius: var(--mp-radii-sm, 4px) 0 0 var(--mp-radii-sm, 4px) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); cursor: pointer; white-space: nowrap; }
 .cmfd-tags-prefix:hover { background: var(--mp-background-neutral-hovered) !important; }
+/* The suggestion popover wraps the tag field — keep it filling the row so the
+   input still grows to the remaining width. */
+.cmfd-cust-pop { flex: 1; min-width: 0; display: flex; }
+.cmfd-cust-pop > :deep(*) { flex: 1; min-width: 0; display: flex; }
 .cmfd-tags-field { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1); padding: 2px 0; }
 .cmfd-tag-chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-1) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
 .cmfd-tag-remove { display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--mp-text-subtle); }
