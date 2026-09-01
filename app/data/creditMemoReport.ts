@@ -199,10 +199,14 @@ export const creditMemoCustomers = reactive<CmCustomer[]>(
 )
 
 // ── Report query — filters + zero-balance toggle + Case C + voided exclusion ──
+export type CmComparator = 'isAnyOf' | 'isNoneOf'
 export interface CmReportFilters {
-  customers: string[]         // customer names — empty = all
+  keyword: string             // free-text over the chosen column(s)
+  keywordColumn: string       // 'all' | 'number' | 'description'
+  customerComparator: CmComparator
+  customers: string[]         // customer name fragments (tags) — empty = all
   txnTypes: CmMutationType[]  // empty = all
-  showZero: boolean           // "Tampilkan CM habis"
+  showZero: boolean           // "Show fully-used credit memos"
 }
 export interface CmReportCustomer {
   id: string
@@ -212,20 +216,37 @@ export interface CmReportCustomer {
   cms: CreditMemo[]           // visible CMs (respecting toggle)
 }
 
-/** A CM is visible in the current report given the toggle + txn-type filter. */
+/** A CM is visible given the toggle, txn-type filter, and keyword search. */
 function cmVisible(cm: CreditMemo, f: CmReportFilters): boolean {
   if (cm.voided || cm.deleted) return false
   if (isCaseC(cm)) return false
-  if (f.txnTypes.length && !cm.mutations.some((m) => f.txnTypes.includes(m.type))) return false
+  const tt = f.txnTypes ?? []
+  if (tt.length && !cm.mutations.some((m) => tt.includes(m.type))) return false
   if (!f.showZero && isZeroForPeriod(cm)) return false
+  if (!keywordMatch(cm, f.keyword, f.keywordColumn)) return false
   return true
+}
+function keywordMatch(cm: CreditMemo, keyword: string | undefined, column: string | undefined): boolean {
+  const q = (keyword ?? '').trim().toLowerCase()
+  if (!q) return true
+  const col = column ?? 'all'
+  const hay: string[] = []
+  if (col === 'all' || col === 'number') hay.push(cm.cmNumber, ...cm.mutations.map((m) => m.transactionNo))
+  if (col === 'all' || col === 'description') hay.push(...cm.mutations.map((m) => m.description))
+  return hay.some((h) => h.toLowerCase().includes(q))
+}
+/** Customer name matches the tag list under the chosen comparator (contains, CI). */
+function customerMatch(name: string, f: CmReportFilters): boolean {
+  const list = f.customers ?? []
+  if (!list.length) return true
+  const hit = list.some((t) => name.toLowerCase().includes((t ?? '').trim().toLowerCase()))
+  return (f.customerComparator ?? 'isAnyOf') === 'isNoneOf' ? !hit : hit
 }
 
 export function creditMemoReport(f: CmReportFilters): CmReportCustomer[] {
-  const nameSet = new Set(f.customers)
   const groups: CmReportCustomer[] = []
   for (const c of creditMemoCustomers) {
-    if (nameSet.size && !nameSet.has(c.name)) continue
+    if (!customerMatch(c.name, f)) continue
     const cms = c.cms.filter((cm) => cmVisible(cm, f))
     if (!cms.length) continue
     const total = cms.reduce((s, cm) => { const r = remainingOf(cm); return s + (r > 0 ? r : 0) }, 0)
@@ -241,7 +262,7 @@ export function cmCustomerNames(): string[] { return creditMemoCustomers.map((c)
 
 // ── Saved views (Default + user views) — same concept as CRM Customers. ────────
 export interface CmSavedView { id: string; name: string; filters: CmReportFilters }
-export function emptyCmReportFilters(): CmReportFilters { return { customers: [], txnTypes: [], showZero: false } }
+export function emptyCmReportFilters(): CmReportFilters { return { keyword: '', keywordColumn: 'all', customerComparator: 'isAnyOf', customers: [], txnTypes: [], showZero: false } }
 export const creditMemoViews = reactive<CmSavedView[]>(loadSnapshot<CmSavedView>('credit-memo-views-v2') ?? [])
 function persistViews() { saveSnapshot('credit-memo-views-v2', creditMemoViews) }
 let viewSeq = creditMemoViews.length + 1

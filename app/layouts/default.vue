@@ -145,10 +145,10 @@ body {
   background: var(--mp-background-surface-bold);
 }
 /* Report full-screen — frame the white stage with an even 2px base-colour
-   border on all four sides (no rounded corners). */
+   border on all four sides, keeping the 12px rounded corners. */
 .main-container--fullscreen {
   border: 2px solid var(--mp-background-surface-bold);
-  border-radius: 0;
+  border-radius: 12px;
 }
 .main-container--rail .sidebar {
   border-top-left-radius: 12px;

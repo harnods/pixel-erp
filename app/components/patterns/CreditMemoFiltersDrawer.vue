@@ -1,21 +1,24 @@
 <script lang="ts">
 /**
- * Credit Memo report — "All filters" drawer (PRD OD-05). Filters by Customer
- * (searchable / server-autocomplete analogue) AND Transaction Type (CM Issued /
- * Applied / Refund / Reversal). Both combine as AND. Reset clears the filters
- * only — the date range is owned by the page and preserved. Same right-hand
- * overlay pattern as the other ERP filter drawers.
+ * Credit Memo report — "All filters" drawer. Mirrors the Bills/Expenses filter
+ * pattern: a Keywords field (free text + column scope) and a Customer field
+ * styled as tags with an "Is any of / Is none of" comparator (type + Enter →
+ * chip), plus a Transaction-type checklist. Same right-hand overlay pattern as
+ * the other ERP filter drawers; edits a local draft, commits on Apply.
  */
-import type { CmMutationType } from '~/data/creditMemoReport'
+import type { CmMutationType, CmComparator } from '~/data/creditMemoReport'
 export interface CmDrawerValue {
+  keyword: string
+  keywordColumn: string
+  customerComparator: CmComparator
   customers: string[]
   txnTypes: CmMutationType[]
 }
 </script>
 
 <script setup lang="ts">
-import { reactive, ref, computed, watch } from 'vue'
-import { MpIcon, MpButton, MpCheckbox } from '@mekari/pixel3'
+import { reactive, ref, watch } from 'vue'
+import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import { CM_MUTATION_TYPES } from '~/data/creditMemoReport'
 
 const props = defineProps<{
@@ -29,22 +32,42 @@ const emit = defineEmits<{
   (e: 'apply', v: CmDrawerValue): void
 }>()
 
+const KEYWORD_COLUMNS = [
+  { key: 'all', label: 'All columns' },
+  { key: 'number', label: 'Number' },
+  { key: 'description', label: 'Description' },
+]
+const COMPARATORS: { key: CmComparator; label: string }[] = [
+  { key: 'isAnyOf', label: 'Is any of' },
+  { key: 'isNoneOf', label: 'Is none of' },
+]
 const TXN_LABELS: Record<CmMutationType, string> = {
   Issued: 'Credit memo issued', Applied: 'Credit memo applied', Refund: 'Credit memo refund', Reversal: 'Credit memo reversal',
 }
 
 const draft = reactive<CmDrawerValue>(clone(props.modelValue))
-function clone(v: CmDrawerValue): CmDrawerValue { return { customers: [...v.customers], txnTypes: [...v.txnTypes] } }
-watch(() => props.isOpen, (open) => { if (open) { Object.assign(draft, clone(props.modelValue)); custSearch.value = '' } })
+function clone(v: CmDrawerValue): CmDrawerValue {
+  return { keyword: v.keyword, keywordColumn: v.keywordColumn, customerComparator: v.customerComparator, customers: [...v.customers], txnTypes: [...v.txnTypes] }
+}
+watch(() => props.isOpen, (open) => { if (open) { Object.assign(draft, clone(props.modelValue)); custDraft.value = '' } })
 
-const custSearch = ref('')
-const filteredCustomers = computed(() => {
-  const q = custSearch.value.trim().toLowerCase()
-  return q ? props.customerOptions.filter((c) => c.toLowerCase().includes(q)) : props.customerOptions
-})
+const keywordColOpen = ref(false)
+const keywordColLabel = () => KEYWORD_COLUMNS.find((c) => c.key === draft.keywordColumn)?.label ?? 'All columns'
+const comparatorOpen = ref(false)
+const comparatorLabel = () => COMPARATORS.find((c) => c.key === draft.customerComparator)?.label ?? 'Is any of'
+
+// Customer tags — type a name + Enter → chip. Backspace on empty removes the last.
+const custDraft = ref('')
+function addCust() {
+  const v = custDraft.value.trim()
+  if (v && !draft.customers.includes(v)) draft.customers = [...draft.customers, v]
+  custDraft.value = ''
+}
+function removeCust(i: number) { draft.customers = draft.customers.filter((_, idx) => idx !== i) }
+function onCustBackspace() { if (!custDraft.value && draft.customers.length) draft.customers = draft.customers.slice(0, -1) }
 
 function close() { emit('update:isOpen', false) }
-function clearAll() { draft.customers = []; draft.txnTypes = [] }
+function clearAll() { draft.keyword = ''; draft.keywordColumn = 'all'; draft.customerComparator = 'isAnyOf'; draft.customers = []; draft.txnTypes = [] }
 function apply() { emit('apply', clone(draft)); close() }
 function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); if (i === -1) list.push(v); else list.splice(i, 1) }
 </script>
@@ -59,21 +82,47 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
         </header>
 
         <div class="cmfd-body">
-          <!-- Customer (searchable autocomplete analogue) -->
+          <!-- Keywords — text + column scope -->
+          <MpFormControl :id="`${id}-kw`">
+            <MpFormLabel>Keywords</MpFormLabel>
+            <div class="cmfd-keyword">
+              <input v-model="draft.keyword" class="cmfd-keyword-input" type="text" placeholder="Search keywords..." @keydown.enter.prevent="apply" />
+              <MpPopover :id="`${id}-kwcol`" is-manual :is-open="keywordColOpen" use-portal :is-keep-alive="false" @open="keywordColOpen = true" @close="keywordColOpen = false">
+                <MpPopoverTrigger>
+                  <MpButton class="cmfd-keyword-scope" @click.stop="keywordColOpen = !keywordColOpen"><span>{{ keywordColLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="keywordColOpen = false" @escape="keywordColOpen = false">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="c in KEYWORD_COLUMNS" :key="c.key" :is-active="draft.keywordColumn === c.key" @click="draft.keywordColumn = c.key">{{ c.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+          </MpFormControl>
+
+          <!-- Customer — tags with Is any of / Is none of -->
           <div class="cmfd-field">
             <span class="cmfd-field-label">Customer</span>
-            <div class="cmfd-search">
-              <MpIcon name="search" size="sm" />
-              <input v-model="custSearch" class="cmfd-search-input" type="text" placeholder="Search customer…" />
-              <MpIcon v-if="custSearch" name="close" size="sm" class="cmfd-search-clear" role="button" @click="custSearch = ''" />
+            <div class="cmfd-tags">
+              <MpPopover :id="`${id}-cmp`" is-manual :is-open="comparatorOpen" use-portal :is-keep-alive="false" placement="bottom-start" @open="comparatorOpen = true" @close="comparatorOpen = false">
+                <MpPopoverTrigger>
+                  <MpButton class="cmfd-tags-prefix" @click.stop="comparatorOpen = !comparatorOpen"><span>{{ comparatorLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="comparatorOpen = false" @escape="comparatorOpen = false">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="c in COMPARATORS" :key="c.key" :is-active="draft.customerComparator === c.key" @click="draft.customerComparator = c.key; comparatorOpen = false">{{ c.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+              <div class="cmfd-tags-field">
+                <span v-for="(tag, i) in draft.customers" :key="`${i}-${tag}`" class="cmfd-tag-chip">
+                  {{ tag }}
+                  <button type="button" class="cmfd-tag-remove" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></button>
+                </span>
+                <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" list="cmfd-cust-list" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
+                <datalist id="cmfd-cust-list"><option v-for="c in customerOptions" :key="c" :value="c" /></datalist>
+              </div>
             </div>
-            <ul class="cmfd-checklist cmfd-checklist--scroll">
-              <li v-for="c in filteredCustomers" :key="c" class="cmfd-check-item" @click="toggle(draft.customers, c)">
-                <span @click.stop><MpCheckbox :id="`${id}-cu-${c}`" :is-checked="draft.customers.includes(c)" @change="() => toggle(draft.customers, c)" /></span>
-                <span class="cmfd-check-label">{{ c }}</span>
-              </li>
-              <li v-if="!filteredCustomers.length" class="cmfd-empty">No customer found</li>
-            </ul>
           </div>
 
           <!-- Transaction type -->
@@ -116,15 +165,30 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
 .cmfd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
 .cmfd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cmfd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cmfd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); color: var(--mp-text-secondary); }
-.cmfd-search:focus-within { border-color: var(--mp-border-brand, #0a6e4e); }
-.cmfd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cmfd-search-clear { cursor: pointer; }
+
+/* Keywords — input + column-scope dropdown suffix (one merged box). */
+.cmfd-keyword { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 2px 2px 2px var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); }
+.cmfd-keyword:focus-within { border-color: var(--mp-border-brand, #0a6e4e); }
+.cmfd-keyword-input { flex: 1 0 0; min-width: 0; height: 20px; border: none; outline: none; background: transparent; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmfd-keyword-input::placeholder { color: var(--mp-text-placeholder); }
+.cmfd-keyword-scope { flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1); min-width: 0 !important; padding: var(--mp-spacing-2) !important; border: none !important; cursor: pointer; background: var(--mp-background-neutral-subtle, #f0f1f3) !important; border-radius: 0 var(--mp-radii-sm, 4px) var(--mp-radii-sm, 4px) 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); white-space: nowrap; }
+.cmfd-keyword-scope:hover { background: var(--mp-background-neutral-hovered, #e6e8eb) !important; }
+
+/* Customer tags — comparator prefix + typeable chips (one merged box). */
+.cmfd-tags { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); width: 100%; padding: 2px var(--mp-spacing-3, 12px) 2px 2px; background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); }
+.cmfd-tags:focus-within { border-color: var(--mp-border-brand, #0a6e4e); }
+.cmfd-tags-prefix { flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1); min-width: 0 !important; padding: var(--mp-spacing-2, 6px) !important; background: var(--mp-background-neutral-subtle, #f0f1f3) !important; border: none !important; border-radius: var(--mp-radii-sm, 4px) 0 0 var(--mp-radii-sm, 4px) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); cursor: pointer; white-space: nowrap; }
+.cmfd-tags-prefix:hover { background: var(--mp-background-neutral-hovered) !important; }
+.cmfd-tags-field { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1); padding: 2px 0; }
+.cmfd-tag-chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-1) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.cmfd-tag-remove { display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--mp-text-subtle); }
+.cmfd-tag-remove:hover { color: var(--mp-text-default); }
+.cmfd-tag-input { flex: 1; min-width: 80px; height: 20px; border: none; outline: none; background: transparent; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmfd-tag-input::placeholder { color: var(--mp-text-placeholder); }
+
 .cmfd-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.cmfd-checklist--scroll { max-height: 240px; overflow-y: auto; }
 .cmfd-check-item { display: flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; user-select: none; }
 .cmfd-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cmfd-empty { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); padding: var(--mp-spacing-1) 0; }
 
 .cmfd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cmfd-foot-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }

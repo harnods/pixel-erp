@@ -81,21 +81,24 @@ const futureCapped = computed(() => { const e = appliedRange.value[1]; return !!
 // ── Filters (customer + transaction type) + zero-balance toggle ───────────────
 const filters = reactive<CmReportFilters>(emptyCmReportFilters())
 const drawerOpen = ref(false)
-function onApplyFilters(v: CmDrawerValue) { filters.customers = [...v.customers]; filters.txnTypes = [...v.txnTypes]; generate() }
+function onApplyFilters(v: CmDrawerValue) { filters.keyword = v.keyword; filters.keywordColumn = v.keywordColumn; filters.customerComparator = v.customerComparator; filters.customers = [...v.customers]; filters.txnTypes = [...v.txnTypes]; generate() }
 function toggleZero() { filters.showZero = !filters.showZero }
-const activeFilterCount = computed(() => filters.customers.length + filters.txnTypes.length)
+const activeFilterCount = computed(() => filters.customers.length + filters.txnTypes.length + (filters.keyword ? 1 : 0))
 const TXN_LABELS: Record<CmMutationType, string> = { Issued: 'Credit memo issued', Applied: 'Credit memo applied', Refund: 'Credit memo refund', Reversal: 'Credit memo reversal' }
 function removeCustomer(name: string) { filters.customers = filters.customers.filter((c) => c !== name) }
 function removeTxnType(t: CmMutationType) { filters.txnTypes = filters.txnTypes.filter((x) => x !== t) }
-function resetFilters() { filters.customers = []; filters.txnTypes = [] }  // preserves date range
+function resetFilters() { filters.keyword = ''; filters.keywordColumn = 'all'; filters.customerComparator = 'isAnyOf'; filters.customers = []; filters.txnTypes = [] }  // preserves date range
 
 // ── Saved views (Default + user views) ────────────────────────────────────────
 const activeViewId = ref('default')
 function selectView(id: string) {
   activeViewId.value = id
   const v = creditMemoViews.find((x) => x.id === id)
-  if (v) { filters.customers = [...v.filters.customers]; filters.txnTypes = [...v.filters.txnTypes]; filters.showZero = v.filters.showZero }
-  else { resetFilters(); filters.showZero = false }
+  if (v) {
+    const f = { ...emptyCmReportFilters(), ...v.filters }
+    filters.keyword = f.keyword; filters.keywordColumn = f.keywordColumn; filters.customerComparator = f.customerComparator
+    filters.customers = [...f.customers]; filters.txnTypes = [...f.txnTypes]; filters.showZero = f.showZero
+  } else { resetFilters(); filters.showZero = false }
 }
 // Add view — the new tab becomes an inline text field you type the name into.
 const addingView = ref(false)
@@ -107,7 +110,7 @@ function commitAddView() {
   const name = newViewName.value.trim()
   addingView.value = false
   if (!name) return
-  const v = addCmView({ name, filters: { customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
+  const v = addCmView({ name, filters: { keyword: filters.keyword, keywordColumn: filters.keywordColumn, customerComparator: filters.customerComparator, customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
   activeViewId.value = v.id
   toast.notify({ variant: 'success', title: 'View saved' })
 }
@@ -168,7 +171,7 @@ const emptyReason = computed<'none' | 'no-activity' | 'all-zero' | 'filter'>(() 
 })
 
 // ── Expand / collapse — customers open; transaction history collapsed (Case 2) ─
-const openCustomers = ref<Set<string>>(new Set(creditMemoReport({ customers: [], txnTypes: [], showZero: true }).map((c) => c.id)))
+const openCustomers = ref<Set<string>>(new Set(creditMemoReport({ ...emptyCmReportFilters(), showZero: true }).map((c) => c.id)))
 const openMemos = ref<Set<string>>(new Set())
 const isCustomerOpen = (id: string) => openCustomers.value.has(id)
 const isMemoOpen = (id: string) => openMemos.value.has(id)
@@ -290,6 +293,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
       <!-- Active-filter badges (customer + transaction type only) -->
       <div v-if="!fullscreen && activeFilterCount" class="cmr-badges">
+        <span v-if="filters.keyword" class="cmr-fbadge cmr-fbadge--dismiss">“{{ filters.keyword }}”<button type="button" aria-label="Remove" @click="filters.keyword = ''"><MpIcon name="close" size="sm" /></button></span>
         <span v-for="c in filters.customers" :key="`c-${c}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ c }}<button type="button" aria-label="Remove" @click="removeCustomer(c)"><MpIcon name="close" size="sm" /></button></span>
         <span v-for="tt in filters.txnTypes" :key="`t-${tt}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ TXN_LABELS[tt] }}<button type="button" aria-label="Remove" @click="removeTxnType(tt)"><MpIcon name="close" size="sm" /></button></span>
         <button v-if="activeFilterCount" class="cmr-reset" type="button" @click="resetFilters">Reset Filter</button>
@@ -339,6 +343,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
       <!-- ── Report ── -->
       <div class="cmr-report">
         <div v-if="fullscreen" class="cmr-fs-topbar">
+          <span class="cmr-fs-title">Credit Memo <span class="cmr-title-cur">(IDR)</span></span>
           <MpTooltip id="cmr-fs-exit" label="Exit full screen" placement="bottom-end" use-portal>
             <button class="cmr-fs-btn" type="button" aria-label="Exit full screen" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
           </MpTooltip>
@@ -486,7 +491,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
     <CreditMemoFiltersDrawer
       id="cmr-filters"
       v-model:is-open="drawerOpen"
-      :model-value="{ customers: filters.customers, txnTypes: filters.txnTypes }"
+      :model-value="{ keyword: filters.keyword, keywordColumn: filters.keywordColumn, customerComparator: filters.customerComparator, customers: filters.customers, txnTypes: filters.txnTypes }"
       :customer-options="cmCustomerNames()"
       @apply="onApplyFilters"
     />
@@ -571,7 +576,8 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
 /* Report */
 .cmr-report { display: flex; flex-direction: column; }
-.cmr-fs-topbar { display: flex; justify-content: flex-end; }
+.cmr-fs-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--mp-spacing-2); }
+.cmr-fs-title { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cmr-report-head { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-2) 0; }
 .cmr-report-range { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cmr-report-updated { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
