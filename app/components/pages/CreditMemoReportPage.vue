@@ -551,7 +551,11 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 /* Saved view tab + its [...] menu */
 .cmr-viewtab-wrap { display: inline-flex; align-items: center; gap: 2px; }
 .cmr-viewtab-wrap .cmr-viewtab { padding-right: 0; }
-.cmr-view-kebab { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-sm, 4px); }
+/* Kebab reserves its width always (tab never reflows); only its visibility
+   toggles — shown on hover, or while its menu is open (focus-within). */
+.cmr-view-kebab { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-sm, 4px); visibility: hidden; }
+.cmr-viewtab-wrap:hover .cmr-view-kebab,
+.cmr-viewtab-wrap:focus-within .cmr-view-kebab { visibility: visible; }
 .cmr-view-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
 /* Inline view-name field (Add view / rename) */
 .cmr-viewtab--editing { display: inline-flex; align-items: center; padding: var(--mp-spacing-2) 0; }
