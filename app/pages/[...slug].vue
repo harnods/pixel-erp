@@ -116,6 +116,8 @@ const pageRegistry: Record<string, Component> = {
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
+  // Reports → Sales index (flush report-card grid, same format as WMS).
+  'Sales report':       defineAsyncComponent(() => import('~/components/pages/SalesReportsIndexPage.vue')),
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
@@ -1845,7 +1847,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
