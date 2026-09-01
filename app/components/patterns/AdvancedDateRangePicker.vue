@@ -42,7 +42,7 @@ const props = withDefaults(defineProps<{
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
-type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter'
+type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear'
 
 const open = ref(false)
 const mode = ref<Mode>(props.direction === 'future' ? 'next30' : 'last30')
@@ -82,6 +82,7 @@ function presetBounds(key: Mode): [Date, Date] {
     case 'next30': return [today, addDays(today, 29)]
     case 'thisMonth':   return [startOfMonth(today), endOfMonth(today)]
     case 'thisQuarter': return [startOfQuarter(today), endOfQuarter(today)]
+    case 'thisYear':    return [new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)]
     default:       return [today, today]
   }
 }
@@ -127,6 +128,7 @@ const labelText = computed(() => {
     case 'custom': return 'Custom'
     case 'thisMonth': return 'This month'
     case 'thisQuarter': return 'This quarter'
+    case 'thisYear': return 'This year'
     default: return fieldText.value
   }
 })
@@ -134,7 +136,11 @@ const labelText = computed(() => {
 // ─── Sidebar selection ──────────────────────────────────────────────────────────
 
 const topPresets = computed<{ key: Mode; label: string }[]>(() => props.periodMode
-  ? []
+  ? [
+      { key: 'thisMonth', label: 'This month' },
+      { key: 'thisQuarter', label: 'This quarter' },
+      { key: 'thisYear', label: 'This year' },
+    ]
   : props.direction === 'future'
     ? [
         { key: 'next7', label: 'Next 7 days' },
@@ -151,8 +157,6 @@ const topPresets = computed<{ key: Mode; label: string }[]>(() => props.periodMo
 // calendar granularity view.
 const granularityPresets = computed<{ key: Mode; label: string; instant?: boolean }[]>(() => props.periodMode
   ? [
-      { key: 'thisMonth', label: 'This month', instant: true },
-      { key: 'thisQuarter', label: 'This quarter', instant: true },
       { key: 'month', label: 'Per month' },
       { key: 'year', label: 'Per year' },
       { key: 'custom', label: 'Custom' },
