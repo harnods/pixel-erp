@@ -198,7 +198,7 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
           <button class="cmr-addview" type="button" @click="openAddView"><MpIcon name="add" size="sm" /> {{ t('Add view') }}</button>
           <button class="cmr-allviews" type="button" @click="allViewsOpen = true">{{ t('All views') }}</button>
         </div>
-        <button class="cmr-fs-btn" type="button" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="fullscreen" size="md" /></button>
+        <button class="cmr-fs-btn" type="button" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
       </div>
 
       <!-- ── Report table ── -->
@@ -206,7 +206,7 @@ function statusBadge(s: CmStatus) { return s === 'Open' ? 'cmr-badge cmr-badge--
         <!-- Full-screen exit — an icon in the same top-right spot as the enter control,
              so its position never shifts between windowed and full-screen. -->
         <div v-if="fullscreen" class="cmr-fs-topbar">
-          <button class="cmr-fs-btn" type="button" :aria-label="t('Exit full screen')" @click="fullscreen = false"><MpIcon name="fullscreen-exit" size="md" /></button>
+          <button class="cmr-fs-btn" type="button" :aria-label="t('Exit full screen')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
         </div>
 
         <div class="cmr-report-head">
