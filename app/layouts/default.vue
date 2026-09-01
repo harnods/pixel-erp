@@ -19,7 +19,7 @@ const { isReportFullscreen } = useReportFullscreen()
 <template>
   <div class="app-shell">
     <ErpHeader v-if="!isReportFullscreen" />
-    <div class="main-container" :class="{ 'main-container--rail': showProductMenu && !isReportFullscreen }">
+    <div class="main-container" :class="{ 'main-container--rail': showProductMenu && !isReportFullscreen, 'main-container--fullscreen': isReportFullscreen }">
       <template v-if="!isReportFullscreen">
         <ErpNavbarGroup v-if="showProductMenu" />
         <HrSidebar v-if="isHr" />
@@ -143,6 +143,13 @@ body {
    ever visible through the rounded-corner cutouts (children tile the rest). */
 .main-container--rail {
   background: var(--mp-background-surface-bold);
+}
+/* Report full-screen — drop the dark side borders + rounded top so the white
+   stage fills the whole window (no dark frame on any side). */
+.main-container--fullscreen {
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
 }
 .main-container--rail .sidebar {
   border-top-left-radius: 12px;

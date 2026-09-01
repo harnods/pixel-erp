@@ -233,13 +233,15 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
           </button>
         </div>
         <div class="cmr-controls-right">
-          <MpTooltip id="cmr-ai" label="Ask Airene" placement="bottom" use-portal>
-            <button class="cmr-icon-btn cmr-icon-btn--airene" type="button" aria-label="Ask Airene" @click="openAirene"><MpIcon name="airene-brand" size="md" /></button>
-          </MpTooltip>
-          <ColumnSettingsMenu id="cmr-cols" :items="columnItems" :visibility="colVis" />
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" :disabled="exporting" @click="exportExcel">
-            <MpIcon name="download" size="sm" /> Export to Excel
-          </button>
+          <div class="cmr-btn-group">
+            <MpTooltip id="cmr-ai" label="Ask Airene" placement="bottom" use-portal>
+              <button class="cmr-icon-btn cmr-icon-btn--airene" type="button" aria-label="Ask Airene" @click="openAirene"><MpIcon name="airene-brand" size="md" /></button>
+            </MpTooltip>
+            <ColumnSettingsMenu id="cmr-cols" :items="columnItems" :visibility="colVis" />
+            <MpTooltip id="cmr-export" label="Export to Excel" placement="bottom" use-portal>
+              <button class="cmr-icon-btn" type="button" aria-label="Export to Excel" @click="exportExcel"><MpIcon name="download" size="md" /></button>
+            </MpTooltip>
+          </div>
         </div>
       </div>
 
@@ -478,7 +480,9 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
 .cmr-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .cmr-controls-left { display: flex; align-items: flex-end; gap: var(--mp-spacing-3); }
-.cmr-controls-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.cmr-controls-right { display: flex; align-items: center; }
+/* Flush icon-button group — mirrors the table filter bar's .filter-btn-group. */
+.cmr-btn-group { display: flex; align-items: center; }
 .cmr-datefield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 220px; }
 .cmr-date-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 .cmr-apply { height: 36px; padding: 0 var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: pointer; }
@@ -602,6 +606,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-view-del { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-subtle, #97a0af); }
 .cmr-view-del:hover { background: var(--mp-background-danger-subtle, #fdecec); color: var(--mp-text-danger, #c62828); }
 
-.cmr--full { padding: var(--mp-spacing-3); box-sizing: border-box; background: var(--mp-background-neutral-subtle); }
-.cmr--full .cmr-stage { border: 1px solid var(--mp-border-default); border-radius: 12px; padding-top: var(--mp-spacing-4); }
+/* Full-screen — the white stage fills the whole window edge-to-edge (the layout
+   drops its dark side borders via main-container--fullscreen). */
+.cmr--full .cmr-stage { border-radius: 0; padding-top: var(--mp-spacing-4); }
 </style>
