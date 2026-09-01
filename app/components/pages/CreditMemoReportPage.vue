@@ -14,9 +14,10 @@
  * filter drawer, saved views, always-async Excel export, and a table-only
  * full-screen mode.
  */
-import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
   MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
@@ -29,7 +30,7 @@ import { infoToast } from '~/utils/toasts'
 import {
   creditMemoReport, historyRows, remainingOf, statusOf, cmCustomerNames,
   creditMemoViews, addCmView, updateCmView, deleteCmView, emptyCmReportFilters,
-  type CreditMemo, type CmReportFilters, type CmMutationType, type CmStatus,
+  type CreditMemo, type CmReportFilters, type CmMutationType, type CmStatus, type CmSavedView,
 } from '~/data/creditMemoReport'
 
 const router = useRouter()
@@ -96,16 +97,49 @@ function selectView(id: string) {
   if (v) { filters.customers = [...v.filters.customers]; filters.txnTypes = [...v.filters.txnTypes]; filters.showZero = v.filters.showZero }
   else { resetFilters(); filters.showZero = false }
 }
-const viewDrawerOpen = ref(false)
-const viewName = ref('')
-function openAddView() { viewName.value = ''; viewDrawerOpen.value = true }
-function saveView() {
-  const name = viewName.value.trim(); if (!name) return
+// Add view — the new tab becomes an inline text field you type the name into.
+const addingView = ref(false)
+const newViewName = ref('')
+const newViewInput = ref<HTMLInputElement | null>(null)
+function startAddView() { addingView.value = true; newViewName.value = ''; nextTick(() => newViewInput.value?.focus()) }
+function commitAddView() {
+  if (!addingView.value) return
+  const name = newViewName.value.trim()
+  addingView.value = false
+  if (!name) return
   const v = addCmView({ name, filters: { customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
-  activeViewId.value = v.id; viewDrawerOpen.value = false
+  activeViewId.value = v.id
   toast.notify({ variant: 'success', title: 'View saved' })
 }
-const allViewsOpen = ref(false)
+function cancelAddView() { addingView.value = false }
+
+// Edit a saved view's name inline (via its [...] menu).
+const editingViewId = ref('')
+const editViewName = ref('')
+function startEditView(v: CmSavedView) {
+  editingViewId.value = v.id; editViewName.value = v.name
+  nextTick(() => { const el = document.querySelector('.cmr-view-edit') as HTMLInputElement | null; el?.focus(); el?.select() })
+}
+function commitEditView() {
+  if (!editingViewId.value) return
+  const name = editViewName.value.trim()
+  const id = editingViewId.value
+  editingViewId.value = ''
+  if (name) { updateCmView(id, { name }); toast.notify({ variant: 'success', title: 'View renamed' }) }
+}
+function cancelEditView() { editingViewId.value = '' }
+
+// Delete a saved view — with a confirmation alert.
+const delViewOpen = ref(false)
+const delViewTarget = ref<CmSavedView | null>(null)
+function askDeleteView(v: CmSavedView) { delViewTarget.value = v; delViewOpen.value = true }
+function confirmDeleteView() {
+  const v = delViewTarget.value; if (!v) return
+  deleteCmView(v.id)
+  if (activeViewId.value === v.id) activeViewId.value = 'default'
+  delViewTarget.value = null
+  toast.notify({ variant: 'success', title: 'View deleted' })
+}
 
 // ── Columns ───────────────────────────────────────────────────────────────────
 const COLUMNS = [
@@ -265,9 +299,34 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
       <div v-if="!fullscreen" class="cmr-viewbar">
         <div class="cmr-views">
           <button class="cmr-viewtab" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">Default view</button>
-          <button v-for="v in creditMemoViews" :key="v.id" class="cmr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</button>
-          <button class="cmr-addview" type="button" @click="openAddView"><MpIcon name="add" size="sm" /> Add view</button>
-          <button class="cmr-allviews" type="button" @click="allViewsOpen = true">All views</button>
+
+          <template v-for="v in creditMemoViews" :key="v.id">
+            <!-- Renaming this view inline -->
+            <span v-if="editingViewId === v.id" class="cmr-viewtab cmr-viewtab--editing">
+              <input v-model="editViewName" class="cmr-viewtab-input cmr-view-edit" @keydown.enter.prevent="commitEditView" @keydown.esc="cancelEditView" @blur="commitEditView" />
+            </span>
+            <!-- Saved view tab + [...] menu (Edit name / Delete) -->
+            <span v-else class="cmr-viewtab-wrap">
+              <button class="cmr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</button>
+              <MpPopover :id="`cmr-view-${v.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                <MpPopoverTrigger>
+                  <button class="cmr-view-kebab" type="button" aria-label="View options"><MpIcon name="menu-kebab" size="sm" /></button>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem @click="startEditView(v)">Edit view name</MpPopoverListItem>
+                    <MpPopoverListItem @click="askDeleteView(v)">Delete</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </span>
+          </template>
+
+          <!-- Add view — the new tab is an inline name field -->
+          <span v-if="addingView" class="cmr-viewtab cmr-viewtab--editing">
+            <input ref="newViewInput" v-model="newViewName" class="cmr-viewtab-input" placeholder="View name" @keydown.enter.prevent="commitAddView" @keydown.esc="cancelAddView" @blur="commitAddView" />
+          </span>
+          <button v-else class="cmr-addview" type="button" @click="startAddView"><MpIcon name="add" size="sm" /> Add view</button>
         </div>
         <div class="cmr-viewbar-right">
           <button v-if="reportState === 'ready' && groups.length" class="cmr-collapse-all" type="button" @click="toggleAll">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</button>
@@ -428,41 +487,16 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
       @apply="onApplyFilters"
     />
 
-    <!-- ── Save view drawer ── -->
-    <Teleport to="body">
-      <Transition name="cmr-vd">
-        <div v-if="viewDrawerOpen" class="cmr-vd-overlay" @click.self="viewDrawerOpen = false">
-          <div class="cmr-vd-panel" role="dialog" aria-label="Save view">
-            <header class="cmr-vd-head"><span class="cmr-vd-title">Save view</span><button class="cmr-vd-close" type="button" aria-label="Close" @click="viewDrawerOpen = false"><MpIcon name="close" size="md" /></button></header>
-            <div class="cmr-vd-body">
-              <label class="cmr-vd-label">View name</label>
-              <input v-model="viewName" class="cmr-vd-input" type="text" placeholder="e.g. Big customers with active credit memo" @keydown.enter.prevent="saveView" />
-              <p class="cmr-vd-hint">Saves the current filters as a view. It stays available next time.</p>
-            </div>
-            <footer class="cmr-vd-foot"><button class="cmr-vd-btn cmr-vd-btn--ghost" type="button" @click="viewDrawerOpen = false">Cancel</button><button class="cmr-vd-btn cmr-vd-btn--primary" type="button" @click="saveView">Save view</button></footer>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- ── All views ── -->
-    <Teleport to="body">
-      <Transition name="cmr-vd">
-        <div v-if="allViewsOpen" class="cmr-vd-overlay" @click.self="allViewsOpen = false">
-          <div class="cmr-vd-panel" role="dialog" aria-label="All views">
-            <header class="cmr-vd-head"><span class="cmr-vd-title">All views</span><button class="cmr-vd-close" type="button" aria-label="Close" @click="allViewsOpen = false"><MpIcon name="close" size="md" /></button></header>
-            <div class="cmr-vd-body">
-              <button class="cmr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">Default view</button>
-              <div v-for="v in creditMemoViews" :key="v.id" class="cmr-view-item-row">
-                <button class="cmr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</button>
-                <button class="cmr-view-del" type="button" aria-label="Delete view" @click="deleteCmView(v.id); activeViewId = 'default'"><MpIcon name="delete" size="sm" /></button>
-              </div>
-              <p v-if="!creditMemoViews.length" class="cmr-vd-hint">No saved views yet. Filter, then Add view to save one.</p>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- ── Delete view confirmation ── -->
+    <ConfirmModal
+      v-model:is-open="delViewOpen"
+      title="Delete view"
+      :description="`“${delViewTarget?.name}” will be permanently deleted.`"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      is-danger
+      @confirm="confirmDeleteView"
+    />
   </div>
 </template>
 
@@ -514,6 +548,14 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-addview { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) 0; }
 .cmr-addview:hover { color: var(--mp-text-link); }
 .cmr-allviews { border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); padding: var(--mp-spacing-3) 0; text-decoration: underline; text-underline-offset: 2px; }
+/* Saved view tab + its [...] menu */
+.cmr-viewtab-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.cmr-viewtab-wrap .cmr-viewtab { padding-right: 0; }
+.cmr-view-kebab { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-sm, 4px); }
+.cmr-view-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+/* Inline view-name field (Add view / rename) */
+.cmr-viewtab--editing { display: inline-flex; align-items: center; padding: var(--mp-spacing-2) 0; }
+.cmr-viewtab-input { width: 140px; height: 28px; padding: 0 8px; border: 1px solid var(--mp-border-brand, #0a6e4e); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; font-family: inherit; }
 .cmr-viewbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cmr-collapse-all { border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .cmr-fs-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, #536062); }
