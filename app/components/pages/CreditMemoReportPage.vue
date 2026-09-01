@@ -99,6 +99,8 @@ function selectView(id: string) {
     filters.keyword = f.keyword; filters.keywordColumn = f.keywordColumn; filters.customerComparator = f.customerComparator
     filters.customers = [...f.customers]; filters.txnTypes = [...f.txnTypes]; filters.showZero = f.showZero
   } else { resetFilters(); filters.showZero = false }
+  // Opening a view applies its saved filters and immediately shows its report.
+  generate()
 }
 // Add view — the new tab becomes an inline text field you type the name into.
 const addingView = ref(false)
@@ -271,6 +273,9 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
         </div>
         <div class="cmr-controls-right">
           <div class="cmr-btn-group">
+            <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
+              <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
+            </MpTooltip>
             <MpTooltip id="cmr-ai" label="Ask Airene" placement="bottom" use-portal>
               <button class="cmr-icon-btn cmr-icon-btn--airene" type="button" aria-label="Ask Airene" @click="openAirene"><MpIcon name="airene-brand" size="md" /></button>
             </MpTooltip>
