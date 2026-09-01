@@ -105,7 +105,7 @@ function isCaseC(cm: CreditMemo): boolean {
   return !cm.hasPriorData && cm.mutations.length === 0
 }
 
-// ── Seed — a coherent, auditable Feb 2026 ledger over REAL sales customers
+// ── Seed — a coherent, auditable Aug 2026 ledger over REAL sales customers
 // (customers.ts) and REAL sales-invoice numbers (salesInvoices.ts uses #40001+).
 // Covers every case: Case A (issued before period) / Case B (issued in period),
 // Active / Partial / Used-up, and all four mutation types.
@@ -115,17 +115,17 @@ const SEED: CmCustomer[] = [
     cms: [
       {
         id: 'cm-2451', customerId: 'C005', cmNumber: 'Credit Memo #CM-2451',
-        issueDate: '2026-02-05', originalAmount: 30_000_000, beginningBalance: 0, hasPriorData: false,
+        issueDate: '2026-08-05', originalAmount: 30_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-2451-m1', date: '2026-02-05', type: 'Issued', transactionNo: 'Credit Memo #CM-2451', transactionHref: '#', description: 'Return goods', amount: 30_000_000 },
-          { id: 'cm-2451-m2', date: '2026-02-20', type: 'Applied', transactionNo: 'Sales Invoice #40025', transactionHref: '#', description: 'Applied to invoice', amount: -15_000_000 },
+          { id: 'cm-2451-m1', date: '2026-08-05', type: 'Issued', transactionNo: 'Credit Memo #CM-2451', transactionHref: '#', description: 'Return goods', amount: 30_000_000 },
+          { id: 'cm-2451-m2', date: '2026-08-20', type: 'Applied', transactionNo: 'Sales Invoice #40025', transactionHref: '#', description: 'Applied to invoice', amount: -15_000_000 },
         ],
       },
       {
         id: 'cm-2467', customerId: 'C005', cmNumber: 'Credit Memo #CM-2467',
-        issueDate: '2026-02-24', originalAmount: 5_000_000, beginningBalance: 0, hasPriorData: false,
+        issueDate: '2026-08-24', originalAmount: 5_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-2467-m1', date: '2026-02-24', type: 'Issued', transactionNo: 'Credit Memo #CM-2467', transactionHref: '#', description: 'Goodwill credit', amount: 5_000_000 },
+          { id: 'cm-2467-m1', date: '2026-08-24', type: 'Issued', transactionNo: 'Credit Memo #CM-2467', transactionHref: '#', description: 'Goodwill credit', amount: 5_000_000 },
         ],
       },
     ],
@@ -135,17 +135,17 @@ const SEED: CmCustomer[] = [
     cms: [
       {
         id: 'cm-2390', customerId: 'C001', cmNumber: 'Credit Memo #CM-2390',
-        issueDate: '2026-01-16', originalAmount: 22_000_000, beginningBalance: 22_000_000, hasPriorData: true,
+        issueDate: '2026-07-16', originalAmount: 22_000_000, beginningBalance: 22_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-2390-m1', date: '2026-02-12', type: 'Applied', transactionNo: 'Sales Invoice #40031', transactionHref: '#', description: 'Applied to invoice', amount: -2_550_000 },
+          { id: 'cm-2390-m1', date: '2026-08-12', type: 'Applied', transactionNo: 'Sales Invoice #40031', transactionHref: '#', description: 'Applied to invoice', amount: -2_550_000 },
         ],
       },
       {
         id: 'cm-2395', customerId: 'C001', cmNumber: 'Credit Memo #CM-2395',
-        issueDate: '2026-02-15', originalAmount: 10_000_000, beginningBalance: 0, hasPriorData: false,
+        issueDate: '2026-08-15', originalAmount: 10_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-2395-m1', date: '2026-02-15', type: 'Issued', transactionNo: 'Credit Memo #CM-2395', transactionHref: '#', description: 'Overpayment', amount: 10_000_000 },
-          { id: 'cm-2395-m2', date: '2026-02-18', type: 'Refund', transactionNo: 'Cash Refund #CR-2201', transactionHref: '#', description: 'Cash refund to customer', amount: -10_000_000 },
+          { id: 'cm-2395-m1', date: '2026-08-15', type: 'Issued', transactionNo: 'Credit Memo #CM-2395', transactionHref: '#', description: 'Overpayment', amount: 10_000_000 },
+          { id: 'cm-2395-m2', date: '2026-08-18', type: 'Refund', transactionNo: 'Cash Refund #CR-2201', transactionHref: '#', description: 'Cash refund to customer', amount: -10_000_000 },
         ],
       },
     ],
@@ -155,12 +155,12 @@ const SEED: CmCustomer[] = [
     cms: [
       {
         id: 'cm-2405', customerId: 'C006', cmNumber: 'Credit Memo #CM-2405',
-        issueDate: '2026-02-03', originalAmount: 12_000_000, beginningBalance: 0, hasPriorData: false,
+        issueDate: '2026-08-03', originalAmount: 12_000_000, beginningBalance: 0, hasPriorData: false,
         mutations: [
-          { id: 'cm-2405-m1', date: '2026-02-03', type: 'Issued', transactionNo: 'Credit Memo #CM-2405', transactionHref: '#', description: 'Return goods', amount: 12_000_000 },
-          { id: 'cm-2405-m2', date: '2026-02-10', type: 'Applied', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Applied to invoice', amount: -8_000_000 },
-          { id: 'cm-2405-m3', date: '2026-02-14', type: 'Reversal', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Reversed application', amount: 8_000_000 },
-          { id: 'cm-2405-m4', date: '2026-02-20', type: 'Applied', transactionNo: 'Sales Invoice #40052', transactionHref: '#', description: 'Applied to invoice', amount: -4_000_000 },
+          { id: 'cm-2405-m1', date: '2026-08-03', type: 'Issued', transactionNo: 'Credit Memo #CM-2405', transactionHref: '#', description: 'Return goods', amount: 12_000_000 },
+          { id: 'cm-2405-m2', date: '2026-08-10', type: 'Applied', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Applied to invoice', amount: -8_000_000 },
+          { id: 'cm-2405-m3', date: '2026-08-14', type: 'Reversal', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Reversed application', amount: 8_000_000 },
+          { id: 'cm-2405-m4', date: '2026-08-20', type: 'Applied', transactionNo: 'Sales Invoice #40052', transactionHref: '#', description: 'Applied to invoice', amount: -4_000_000 },
         ],
       },
     ],
@@ -170,9 +170,9 @@ const SEED: CmCustomer[] = [
     cms: [
       {
         id: 'cm-2377', customerId: 'C002', cmNumber: 'Credit Memo #CM-2377',
-        issueDate: '2026-01-20', originalAmount: 8_000_000, beginningBalance: 8_000_000, hasPriorData: true,
+        issueDate: '2026-07-20', originalAmount: 8_000_000, beginningBalance: 8_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-2377-m1', date: '2026-02-10', type: 'Applied', transactionNo: 'Sales Invoice #40018', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2377-m1', date: '2026-08-10', type: 'Applied', transactionNo: 'Sales Invoice #40018', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
         ],
       },
     ],
@@ -182,12 +182,12 @@ const SEED: CmCustomer[] = [
     cms: [
       {
         id: 'cm-2340', customerId: 'C013', cmNumber: 'Credit Memo #CM-2340',
-        issueDate: '2026-01-29', originalAmount: 10_000_000, beginningBalance: 10_000_000, hasPriorData: true,
+        issueDate: '2026-07-29', originalAmount: 10_000_000, beginningBalance: 10_000_000, hasPriorData: true,
         mutations: [
-          { id: 'cm-2340-m1', date: '2026-02-07', type: 'Applied', transactionNo: 'Sales Invoice #40012', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m2', date: '2026-02-12', type: 'Applied', transactionNo: 'Sales Invoice #40033', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m3', date: '2026-02-18', type: 'Applied', transactionNo: 'Sales Invoice #40041', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m4', date: '2026-02-22', type: 'Applied', transactionNo: 'Sales Invoice #40055', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m1', date: '2026-08-07', type: 'Applied', transactionNo: 'Sales Invoice #40012', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m2', date: '2026-08-12', type: 'Applied', transactionNo: 'Sales Invoice #40033', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m3', date: '2026-08-18', type: 'Applied', transactionNo: 'Sales Invoice #40041', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
+          { id: 'cm-2340-m4', date: '2026-08-22', type: 'Applied', transactionNo: 'Sales Invoice #40055', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
         ],
       },
     ],
@@ -195,7 +195,7 @@ const SEED: CmCustomer[] = [
 ]
 
 export const creditMemoCustomers = reactive<CmCustomer[]>(
-  loadSnapshot<CmCustomer>('credit-memo-report-v3') ?? SEED.map((c) => ({ ...c })),
+  loadSnapshot<CmCustomer>('credit-memo-report-v4') ?? SEED.map((c) => ({ ...c })),
 )
 
 // ── Report query — filters + zero-balance toggle + Case C + voided exclusion ──

@@ -36,8 +36,8 @@ const router = useRouter()
 
 // ── Date range + presets + validation ────────────────────────────────────────
 function d(y: number, m: number, day: number) { return new Date(y, m, day) }
-const pendingRange = ref<Date[]>([d(2026, 1, 1), d(2026, 1, 28)])
-const appliedRange = ref<Date[]>([d(2026, 1, 1), d(2026, 1, 28)])
+const pendingRange = ref<Date[]>([d(2026, 7, 1), d(2026, 7, 31)])
+const appliedRange = ref<Date[]>([d(2026, 7, 1), d(2026, 7, 31)])
 const rangeError = ref('')
 
 // Presets (This month / This quarter / Per month / Per year / Custom) live inside
@@ -71,7 +71,7 @@ const STATUS_LABELS: Record<CmStatus, string> = { Active: 'Active', Sebagian: 'P
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function fmtRangeDay(x: Date) { return `${x.getDate()} ${MONTHS[x.getMonth()]} ${x.getFullYear()}` }
 const rangeCaption = computed(() => { const [s, e] = appliedRange.value; return s && e ? `${fmtRangeDay(s)} - ${fmtRangeDay(e)}` : '' })
-const lastUpdated = 'Last updated on 5 Jan 2025, 15:30 (GMT+7)'
+const lastUpdated = 'Last updated on 1 Sep 2026, 09:00 (GMT+7)'
 // Future end-date is capped at today; show an informational banner.
 const futureCapped = computed(() => { const e = appliedRange.value[1]; return !!e && e > new Date() })
 
@@ -119,7 +119,7 @@ const visibleLeadSpan = computed(() => COLUMNS.filter((c) => show(c.key)).length
 // ── Rows (report query + date-window gate) ────────────────────────────────────
 // Seed activity lives in Dec 2025; the report is empty for periods that don't
 // overlap it (a believable "no activity" result for other ranges).
-function overlapsSeed() { const [s, e] = appliedRange.value; return !!s && !!e && s <= d(2026, 1, 28) && e >= d(2026, 1, 1) }
+function overlapsSeed() { const [s, e] = appliedRange.value; return !!s && !!e && s <= d(2026, 7, 31) && e >= d(2026, 7, 1) }
 const groups = computed(() => (overlapsSeed() ? creditMemoReport(filters) : []))
 // Would there be rows if the zero-balance toggle were ON? (drives the empty-state hint)
 const groupsWithZero = computed(() => (overlapsSeed() ? creditMemoReport({ ...filters, showZero: true }) : []))
@@ -250,9 +250,8 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
       </div>
       <p v-if="!fullscreen && rangeError" class="cmr-range-error">{{ rangeError }}</p>
 
-      <!-- Active-filter badges -->
-      <div v-if="!fullscreen && (activeFilterCount || futureCapped)" class="cmr-badges">
-        <span class="cmr-fbadge">{{ rangeCaption }}</span>
+      <!-- Active-filter badges (customer + transaction type only) -->
+      <div v-if="!fullscreen && activeFilterCount" class="cmr-badges">
         <span v-for="c in filters.customers" :key="`c-${c}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ c }}<button type="button" aria-label="Remove" @click="removeCustomer(c)"><MpIcon name="close" size="sm" /></button></span>
         <span v-for="tt in filters.txnTypes" :key="`t-${tt}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ TXN_LABELS[tt] }}<button type="button" aria-label="Remove" @click="removeTxnType(tt)"><MpIcon name="close" size="sm" /></button></span>
         <button v-if="activeFilterCount" class="cmr-reset" type="button" @click="resetFilters">Reset Filter</button>
