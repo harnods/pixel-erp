@@ -1,43 +1,52 @@
 <script lang="ts">
 /**
- * Credit Memo report — "All filters" drawer. Same custom right-hand overlay
- * pattern as BillsFiltersDrawer / SalesInvoiceFiltersDrawer (MpDrawer has no
- * structural CSS in this Pixel3 build). Edits a local draft; commits to the
- * parent only on Apply.
+ * Credit Memo report — "All filters" drawer (PRD OD-05). Filters by Customer
+ * (searchable / server-autocomplete analogue) AND Transaction Type (CM Issued /
+ * Applied / Refund / Reversal). Both combine as AND. Reset clears the filters
+ * only — the date range is owned by the page and preserved. Same right-hand
+ * overlay pattern as the other ERP filter drawers.
  */
-export interface CmFiltersValue {
-  status: string[]        // Open | Closed — empty = all
-  customers: string[]     // customer names — empty = all
-  keyword: string
+import type { CmMutationType } from '~/data/creditMemoReport'
+export interface CmDrawerValue {
+  customers: string[]
+  txnTypes: CmMutationType[]
 }
-export function emptyCmFiltersValue(): CmFiltersValue { return { status: [], customers: [], keyword: '' } }
 </script>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
-import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
+import { reactive, ref, computed, watch } from 'vue'
+import { MpIcon, MpButton, MpCheckbox } from '@mekari/pixel3'
+import { CM_MUTATION_TYPES } from '~/data/creditMemoReport'
 
 const props = defineProps<{
   id: string
   isOpen: boolean
-  modelValue: CmFiltersValue
+  modelValue: CmDrawerValue
   customerOptions: string[]
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
-  (e: 'apply', v: CmFiltersValue): void
+  (e: 'apply', v: CmDrawerValue): void
 }>()
 
-const STATUSES = ['Open', 'Closed']
+const TXN_LABELS: Record<CmMutationType, string> = {
+  Issued: 'CM Issued', Applied: 'CM Applied', Refund: 'CM Refund', Reversal: 'CM Reversal',
+}
 
-const draft = reactive<CmFiltersValue>(clone(props.modelValue))
-function clone(v: CmFiltersValue): CmFiltersValue { return { status: [...v.status], customers: [...v.customers], keyword: v.keyword } }
-watch(() => props.isOpen, (open) => { if (open) Object.assign(draft, clone(props.modelValue)) })
+const draft = reactive<CmDrawerValue>(clone(props.modelValue))
+function clone(v: CmDrawerValue): CmDrawerValue { return { customers: [...v.customers], txnTypes: [...v.txnTypes] } }
+watch(() => props.isOpen, (open) => { if (open) { Object.assign(draft, clone(props.modelValue)); custSearch.value = '' } })
+
+const custSearch = ref('')
+const filteredCustomers = computed(() => {
+  const q = custSearch.value.trim().toLowerCase()
+  return q ? props.customerOptions.filter((c) => c.toLowerCase().includes(q)) : props.customerOptions
+})
 
 function close() { emit('update:isOpen', false) }
-function clearAll() { draft.status = []; draft.customers = []; draft.keyword = '' }
+function clearAll() { draft.customers = []; draft.txnTypes = [] }
 function apply() { emit('apply', clone(draft)); close() }
-function toggle(list: string[], v: string) { const i = list.indexOf(v); if (i === -1) list.push(v); else list.splice(i, 1) }
+function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); if (i === -1) list.push(v); else list.splice(i, 1) }
 </script>
 
 <template>
@@ -50,30 +59,30 @@ function toggle(list: string[], v: string) { const i = list.indexOf(v); if (i ==
         </header>
 
         <div class="cmfd-body">
-          <!-- Keyword -->
-          <MpFormControl :id="`${id}-kw`">
-            <MpFormLabel>Keywords</MpFormLabel>
-            <input v-model="draft.keyword" class="cmfd-input" type="text" placeholder="Search number or description…" @keydown.enter.prevent="apply" />
-          </MpFormControl>
-
-          <!-- Status -->
+          <!-- Customer (searchable autocomplete analogue) -->
           <div class="cmfd-field">
-            <span class="cmfd-field-label">Status</span>
-            <ul class="cmfd-checklist">
-              <li v-for="s in STATUSES" :key="s" class="cmfd-check-item" @click="toggle(draft.status, s)">
-                <span @click.stop><MpCheckbox :id="`${id}-st-${s}`" :is-checked="draft.status.includes(s)" @change="() => toggle(draft.status, s)" /></span>
-                <span class="cmfd-check-label">{{ s }}</span>
+            <span class="cmfd-field-label">Customer</span>
+            <div class="cmfd-search">
+              <MpIcon name="search" size="sm" />
+              <input v-model="custSearch" class="cmfd-search-input" type="text" placeholder="Search customer…" />
+              <MpIcon v-if="custSearch" name="close" size="sm" class="cmfd-search-clear" role="button" @click="custSearch = ''" />
+            </div>
+            <ul class="cmfd-checklist cmfd-checklist--scroll">
+              <li v-for="c in filteredCustomers" :key="c" class="cmfd-check-item" @click="toggle(draft.customers, c)">
+                <span @click.stop><MpCheckbox :id="`${id}-cu-${c}`" :is-checked="draft.customers.includes(c)" @change="() => toggle(draft.customers, c)" /></span>
+                <span class="cmfd-check-label">{{ c }}</span>
               </li>
+              <li v-if="!filteredCustomers.length" class="cmfd-empty">No customer found</li>
             </ul>
           </div>
 
-          <!-- Customer -->
-          <div v-if="customerOptions.length" class="cmfd-field">
-            <span class="cmfd-field-label">Customer</span>
+          <!-- Transaction type -->
+          <div class="cmfd-field">
+            <span class="cmfd-field-label">Transaction type</span>
             <ul class="cmfd-checklist">
-              <li v-for="c in customerOptions" :key="c" class="cmfd-check-item" @click="toggle(draft.customers, c)">
-                <span @click.stop><MpCheckbox :id="`${id}-cu-${c}`" :is-checked="draft.customers.includes(c)" @change="() => toggle(draft.customers, c)" /></span>
-                <span class="cmfd-check-label">{{ c }}</span>
+              <li v-for="tt in CM_MUTATION_TYPES" :key="tt" class="cmfd-check-item" @click="toggle(draft.txnTypes, tt)">
+                <span @click.stop><MpCheckbox :id="`${id}-tt-${tt}`" :is-checked="draft.txnTypes.includes(tt)" @change="() => toggle(draft.txnTypes, tt)" /></span>
+                <span class="cmfd-check-label">{{ TXN_LABELS[tt] }}</span>
               </li>
             </ul>
           </div>
@@ -105,13 +114,17 @@ function toggle(list: string[], v: string) { const i = list.indexOf(v); if (i ==
 .cmfd-close:hover { background: var(--mp-background-neutral-hovered); }
 
 .cmfd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
-.cmfd-input { width: 100%; height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
-.cmfd-input:focus { border-color: var(--mp-border-brand, #0a6e4e); }
 .cmfd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cmfd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cmfd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); color: var(--mp-text-secondary); }
+.cmfd-search:focus-within { border-color: var(--mp-border-brand, #0a6e4e); }
+.cmfd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmfd-search-clear { cursor: pointer; }
 .cmfd-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.cmfd-checklist--scroll { max-height: 240px; overflow-y: auto; }
 .cmfd-check-item { display: flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; user-select: none; }
 .cmfd-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmfd-empty { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); padding: var(--mp-spacing-1) 0; }
 
 .cmfd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cmfd-foot-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
