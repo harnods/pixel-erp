@@ -52,7 +52,9 @@ function applyReport() {
   appliedRange.value = [...pendingRange.value]
   generate()
 }
-function onPendingChange(v: Date[]) { pendingRange.value = v; rangeError.value = ''; applyReport() }
+// Picking a date/preset only updates the pending range — the report is generated
+// only when the user clicks Apply.
+function onPendingChange(v: Date[]) { pendingRange.value = v; rangeError.value = '' }
 
 // ── Report generation state — idle (empty prompt) → loading (skeleton) → ready ─
 // The page starts empty; the report is only generated after the user applies a
