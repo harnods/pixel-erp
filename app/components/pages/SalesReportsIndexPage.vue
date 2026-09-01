@@ -11,6 +11,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 // rightmost column never shows a border.
 import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
+const router = useRouter()
 
 interface ReportCard {
   slug: string
@@ -56,8 +57,12 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
+// Built report detail pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = { 'credit-memo': '/sales-report/credit-memo' }
 function viewReport(r: ReportCard) {
-  infoToast(`${t(r.title)} report — coming soon`)
+  const to = BUILT[r.slug]
+  if (to) router.push(to)
+  else infoToast(`${t(r.title)} report — coming soon`)
 }
 </script>
 

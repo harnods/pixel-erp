@@ -339,6 +339,7 @@ const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/Unclas
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
+const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -422,6 +423,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
     return { component: WmsReportDetailPage, id: segs[1]! }
+  }
+  // /sales-report/credit-memo → Credit Memo report (Reports → Sales → View report).
+  if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
+    return { component: CreditMemoReportPage, id: segs[1]! }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
