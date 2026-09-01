@@ -287,8 +287,60 @@ export function useAireneChat() {
   // Fetch + append one assistant reply for the conversation as it currently stands
   // (the last message must be the user turn being answered). Shared by sendMessage
   // and regenerate. `prompt` is the user text driving this turn (for grounding).
+  // Per-agent grounding for a room: each colleague sees only the ERP modules that
+  // belong to its own area, so it answers from its own data (not the whole ERP).
+  function groundForModule(snap: Record<string, unknown>, moduleLabel?: string): string {
+    const info = MODULE_CHAT[(moduleLabel as keyof typeof MODULE_CHAT)] ?? MODULE_CHAT.General!
+    const slice: Record<string, unknown> = {}
+    for (const k of info.ground) if (snap[k]) slice[k] = snap[k]
+    return `Today is ${snap.today}. This is your own area data:\n${JSON.stringify(slice)}`
+  }
+
+  // A multi-agent room turn: the lead agent answers and may consult colleagues.
+  // The server returns an ordered list of turns (lead narration, each colleague's
+  // grounded answer, the final synthesis); each is appended tagged with its agent.
+  async function runRoomTurn(): Promise<boolean> {
+    let snap: Record<string, unknown> = {}
+    try { snap = buildCoworkContext() as Record<string, unknown> } catch { /* keep empty */ }
+    const roomAgents = availableAgents.value
+    const grounds: Record<string, string> = {}
+    for (const a of roomAgents) grounds[a.id] = groundForModule(snap, a.module)
+    const toPayload = (a: CoworkAgent) => ({
+      id: a.id, name: a.name, role: a.role, module: a.module,
+      persona: a.instruction || a.persona,
+      skills: (a.skills ?? []).map((id) => COWORK_SKILLS.find((s) => s.id === id)?.name).filter(Boolean) as string[],
+    })
+    const lead = activeAgent.value
+    if (!lead) return false
+    try {
+      const res = await $fetch<{ turns?: { agentId: string; text: string }[]; source?: string }>('/api/cowork/room', {
+        method: 'POST',
+        body: {
+          messages: messages.value.map((m: ChatMessage) => ({ role: m.role, text: m.text })),
+          lead: toPayload(lead),
+          agents: roomAgents.map(toPayload),
+          grounds,
+        },
+      })
+      const turns = res.turns ?? []
+      if (!turns.length) return false
+      for (const t of turns) messages.value.push({ role: 'assistant', text: t.text, agentId: t.agentId })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function runAssistantTurn(prompt: string) {
     isTyping.value = true
+    // Multi-agent room (an explicit set of ≥2 agents): the lead answers and can
+    // pull in colleagues. Falls through to the single-agent path on any failure.
+    if (restrictAgents.value.length > 1) {
+      const ok = await runRoomTurn()
+      isTyping.value = false
+      if (ok) { persistActiveSession(); scrollSignal.value++; return }
+      isTyping.value = true
+    }
     let reply = ''
     let ok = false
     let citeCount = 0
