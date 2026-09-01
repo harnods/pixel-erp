@@ -144,11 +144,10 @@ body {
 .main-container--rail {
   background: var(--mp-background-surface-bold);
 }
-/* Report full-screen — drop the dark side borders + rounded top so the white
-   stage fills the whole window (no dark frame on any side). */
+/* Report full-screen — frame the white stage with an even 2px base-colour
+   border on all four sides (no rounded corners). */
 .main-container--fullscreen {
-  border-left: none;
-  border-right: none;
+  border: 2px solid var(--mp-background-surface-bold);
   border-radius: 0;
 }
 .main-container--rail .sidebar {

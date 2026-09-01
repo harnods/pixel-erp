@@ -330,14 +330,18 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
         </div>
         <div class="cmr-viewbar-right">
           <button v-if="reportState === 'ready' && groups.length" class="cmr-collapse-all" type="button" @click="toggleAll">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</button>
-          <button class="cmr-fs-btn" type="button" aria-label="Full screen" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+          <MpTooltip id="cmr-fs-enter" label="Full screen" placement="bottom" use-portal>
+            <button class="cmr-fs-btn" type="button" aria-label="Full screen" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+          </MpTooltip>
         </div>
       </div>
 
       <!-- ── Report ── -->
       <div class="cmr-report">
         <div v-if="fullscreen" class="cmr-fs-topbar">
-          <button class="cmr-fs-btn" type="button" aria-label="Exit full screen" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+          <MpTooltip id="cmr-fs-exit" label="Exit full screen" placement="bottom-end" use-portal>
+            <button class="cmr-fs-btn" type="button" aria-label="Exit full screen" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+          </MpTooltip>
         </div>
 
         <!-- Idle — no report generated yet -->
