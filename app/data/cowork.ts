@@ -754,7 +754,9 @@ const TASKS_SEED: CoworkTask[] = [
   { id: 'CW-2050', title: 'Monthly payroll cost review', module: 'HR', modules: ['HR', 'Production', 'Sales'], status: 'completed',
     prompt: 'At the end of each month, review payroll cost against headcount and output, explain any change, and flag anything that needs attention.',
     createdAt: '2026-09-01T09:00:00', completedAt: '2026-09-01T09:04:00', metric: PAYROLL_PLAN.metric,
-    agentId: 'hr', agentIds: ['hr', 'sales', 'production'],
+    // Owned by HR alone — HR pulls in Production/Sales only in the chat room, not
+    // as co-owners of the task.
+    agentId: 'hr',
     outputs: ['Briefing summary', 'Action items'], sources: ['Mekari Talenta', 'Production', 'CRM'],
     planJson: JSON.stringify(PAYROLL_PLAN), runs: scheduledRuns('CW-2050', [{ ranAt: '2026-09-01T09:00:00', plan: PAYROLL_PLAN }]),
     schedule: { cadence: 'Monthly', time: '18:00', nextRun: 'End of month · 18:00', enabled: true } },
