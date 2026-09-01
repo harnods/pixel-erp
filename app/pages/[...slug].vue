@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
-import { type CoworkAgent } from '~/data/cowork'
+import { getAgent, type CoworkAgent } from '~/data/cowork'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { useAireneChat, DEFAULT_CONTEXT_SUGGESTIONS } from '~/composables/useAireneChat'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
@@ -1043,6 +1043,12 @@ function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
 
+/** Multi-agent rooms: the agent that authored an assistant turn (name+avatar
+ *  header above its message). Null for single-agent chats. */
+function msgAgent(msg: { role: string; agentId?: string }) {
+  return msg.role === 'assistant' && msg.agentId ? getAgent(msg.agentId) ?? null : null
+}
+
 // ── Couriers: "Add courier" lives here in the title bar, but its modal state
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
@@ -1601,25 +1607,25 @@ function startResize(e: MouseEvent) {
             <!-- Dropdown -->
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
 
-              <!-- Group 1: spreadsheet + upload bills -->
+              <!-- Group 1: spreadsheet + upload vendor invoices (OCR) -->
               <div class="import-group import-group--bordered">
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--start import-item--ai">
-                  <span>Upload bills</span>
+                  <span>Upload vendor invoices</span>
                   <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
-              <!-- Group 2: Forward bills to -->
+              <!-- Group 2: Forward invoices to -->
               <div class="import-group">
                 <div class="import-forward">
                   <div class="import-forward__labels">
-                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__title">Forward invoices to</span>
                     <span class="import-forward__email">dropbox.680128@jurnal.id</span>
                   </div>
                   <a class="import-forward__copy" @click.prevent>Copy address</a>
                   <p class="import-forward__desc">
-                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                    Any invoice forwarded to this email will be automatically recorded as a draft.
                   </p>
                 </div>
               </div>
@@ -2071,17 +2077,38 @@ function startResize(e: MouseEvent) {
             <!-- Active chat messages -->
             <template v-if="messages.length > 0">
               <div v-for="(msg, i) in messages" :key="i" class="chat-message" :class="'chat-message--' + msg.role">
-                <!-- Assistant avatar -->
-                <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
-                <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <!-- eslint-disable-next-line vue/no-v-html -->
-                  <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
-                  <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+                <!-- User avatar (right); the AI answer has no avatar. -->
+                <MpAvatar v-if="msg.role === 'user'" name="Rizal Candra" size="lg" class="chat-user-av" />
+                <div class="chat-msg-col">
+                  <!-- Multi-agent room: which agent is speaking (avatar + name) -->
+                  <div v-if="msgAgent(msg)" class="chat-agent-head">
+                    <MpAvatar :name="msgAgent(msg)!.name" :src="msgAgent(msg)!.avatar" size="lg" class="chat-agent-head__av" />
+                    <span class="chat-agent-head__name" :style="{ color: msgAgent(msg)!.color }">{{ msgAgent(msg)!.name }}</span>
+                  </div>
+                  <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                    <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+                  </div>
+                  <!-- Linked records (work order, sales order, …) -->
+                  <div v-if="msg.attachments?.length" class="chat-attach">
+                    <button v-for="(at, k) in msg.attachments" :key="k" type="button" class="chat-attach__chip" @click="router.push(at.to)">
+                      <MpIcon :name="at.icon || 'attachment'" size="sm" class="chat-attach__icon" />
+                      <span class="chat-attach__meta">
+                        <span class="chat-attach__label">{{ at.label }}</span>
+                        <span v-if="at.sublabel" class="chat-attach__sub">{{ at.sublabel }}</span>
+                      </span>
+                      <MpIcon name="caret-right" size="sm" class="chat-attach__go" />
+                    </button>
+                  </div>
+                  <!-- Agent suggestions -->
+                  <div v-if="msg.suggestions?.length" class="chat-msg-suggest">
+                    <button v-for="(sg, k) in msg.suggestions" :key="k" type="button" class="chat-suggest-chip" @click="sendMessage(sg)">{{ sg }}</button>
+                  </div>
                 </div>
               </div>
               <!-- Typing indicator -->
               <div v-if="isTyping" class="chat-message chat-message--assistant">
-                <img src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble chat-bubble--assistant chat-typing">
                   <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
                 </div>
@@ -2779,7 +2806,7 @@ function startResize(e: MouseEvent) {
   display: flex;
   align-items: flex-start;
   gap: var(--mp-spacing-2);
-  margin-bottom: var(--mp-spacing-3);
+  margin-bottom: 28px;
   flex-shrink: 0;
 }
 
@@ -2791,6 +2818,35 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
   border-radius: var(--mp-radii-full, 50%);
 }
+/* User avatar — matches the Cowork › Chats page (36px, to the right). */
+.chat-user-av { flex-shrink: 0; width: 36px !important; height: 36px !important; }
+.chat-user-av :deep(> *) { width: 36px !important; height: 36px !important; }
+.chat-msg-col { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+/* Multi-agent room: agent name + avatar above its message. */
+.chat-agent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); margin-bottom: var(--mp-spacing-1, 4px); }
+.chat-agent-head__av { flex-shrink: 0; width: 36px !important; height: 36px !important; background: transparent !important; }
+/* Transparent avatar (no coloured disc) — the agent artwork sits on its own. */
+.chat-agent-head__av :deep(*) { background-color: transparent !important; box-shadow: none !important; }
+.chat-agent-head__av :deep(> *) { width: 36px !important; height: 36px !important; }
+.chat-agent-head__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+
+/* @agent mention chip inside a message */
+.chat-bubble__rich :deep(.agent-mention) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #1d55d4); }
+
+/* Linked-record chips under a message */
+.chat-attach { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
+.chat-attach__chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); max-width: 100%; padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; text-align: left; }
+.chat-attach__chip:hover .chat-attach__label { text-decoration: underline; text-underline-offset: 2px; }
+.chat-attach__icon { flex-shrink: 0; color: var(--mp-icon-default, #536062); }
+.chat-attach__meta { display: flex; flex-direction: column; min-width: 0; }
+.chat-attach__label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-link, #1d55d4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-attach__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-attach__go { flex-shrink: 0; color: var(--mp-text-link, #1d55d4); }
+
+/* Suggestion chips under an agent message */
+.chat-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
+.chat-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
+.chat-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
 
 .chat-bubble {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
@@ -2805,16 +2861,27 @@ function startResize(e: MouseEvent) {
   white-space: pre-wrap;
 }
 
+/* User bubble — subtle gray (not brand), avatar to its right. */
 .chat-bubble--user {
-  background: var(--mp-airene-default);
-  color: var(--mp-text-inverse);
-  border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
+  background: var(--mp-background-neutral-subtle, #f1f3f4);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-lg, 12px);
 }
 
+/* AI answer — no avatar, no bubble: plain text spanning the column. */
 .chat-bubble--assistant {
-  background: var(--mp-background-neutral-subtle);
+  background: transparent;
   color: var(--mp-text-default);
-  border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
+  border-radius: 0;
+  padding: 0;
+  max-width: 100%;
+}
+/* …but the typing loader keeps a subtle pill so the dots have a surface. */
+.chat-typing.chat-bubble--assistant {
+  background: var(--mp-background-neutral-subtle, #f1f3f4);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-lg, 12px);
+  width: fit-content;
 }
 
 /* Rich (markdown-rendered) assistant text — v-html content needs :deep() to be

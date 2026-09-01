@@ -63,6 +63,9 @@ export interface CoworkTask {
   /** The agent that owns this task — assigned by the goal's lead agent, which may
    *  be an agent the user never picked. */
   agentId?: string
+  /** Several agents collaborate on this task (multi-agent room) — shown together
+   *  in the task's "Agent" section. Absent = just `agentId`. */
+  agentIds?: string[]
   /** Task ids that must finish first (a workstream handed off between agents). */
   dependsOn?: string[]
 }
@@ -656,6 +659,43 @@ const PIPELINE_PLAN = pipelinePlan()
 const MONTHEND_PLAN = monthEndPlan()
 const CONTRACTS_PLAN = contractsPlan()
 
+// Multi-agent scenario (HR-led): why payroll rose this month. HR investigates,
+// Production + Sales explain the driver (a big new order). See the linked chat
+// room `room-prod-scale` in useCoworkChats.
+const PAYROLL_PLAN = {
+  taskTitle: 'Monthly payroll cost review',
+  intro: 'Compared this month\'s payroll against headcount and overtime, traced the driver with the Production and Sales agents, then drafted a summary and a monitor.',
+  metric: 'Payroll +18% (Rp 109M) · demand-driven',
+  sources: [
+    { name: 'Mekari Talenta — payroll & attendance', detail: 'Base pay, overtime hours, new hires' },
+    { name: 'Production — line output', detail: 'Packing-line overtime & capacity' },
+    { name: 'CRM — sales orders', detail: 'PO #SO-4821 · Anomali Coffee' },
+  ],
+  steps: [
+    { title: 'Compare payroll vs headcount', detail: 'Base pay barely moved; ~85% of the rise is overtime plus 3 new temporary operators.' },
+    { title: 'Trace the overtime', detail: 'Production ran ~120 overtime hrs/week on the packing line for a big new order.' },
+    { title: 'Confirm the driver', detail: 'Sales confirmed PO #SO-4821 (Anomali Coffee, +56% volume, first delivery 20 Sep).' },
+    { title: 'Draft summary & monitor', detail: 'Wrote a management summary and scheduled a weekly payroll-vs-output monitor.' },
+  ],
+  artifacts: {
+    briefing: {
+      summary: [
+        { title: 'Payroll up +18% (Rp 109M)', detail: 'Base pay flat vs last month; the increase is overtime (~85%) plus 3 temporary line operators.', priority: 'High' as const },
+        { title: 'Driver: Anomali Coffee order', detail: 'PO #SO-4821, +56% volume, first delivery 20 Sep — required ~120 overtime hrs/week on packing.', priority: 'Medium' as const },
+        { title: 'Verdict: demand-driven, not a leak', detail: 'The extra cost maps 1:1 to extra output for a signed order; unit economics stay intact.', priority: 'Low' as const },
+      ],
+      findings: [
+        { title: 'Not a cost leak', detail: 'The rise is fully explained by overtime + temps for the new order — no unexplained payroll drift.' },
+        { title: 'Watch cost-per-unit', detail: 'A weekly payroll-vs-output monitor now runs each Friday until the order winds down in November.' },
+      ],
+    },
+    actionItems: [
+      { title: 'Share management summary', detail: 'Send the payroll-increase summary to Finance & Ops leadership.', owner: 'HR Business Partner', due: 'Today', priority: 'Medium' as const },
+      { title: 'Review the weekly monitor', detail: 'Check cost-per-unit each Friday as the Anomali Coffee order runs.', owner: 'HR Ops', due: 'Weekly', priority: 'Low' as const },
+    ],
+  },
+}
+
 // Per-run plans (most recent first) for each scheduled task — distinct content.
 const RECEIVABLES_RUNS = [
   { ranAt: '2026-08-18T08:00:00', plan: RECEIVABLES_PLAN },
@@ -709,6 +749,15 @@ const CONTRACTS_RUNS = [
 
 // ── Seeds ────────────────────────────────────────────────────────────────────
 const TASKS_SEED: CoworkTask[] = [
+  // Multi-agent scenario — HR agent leads, with Production + Sales in the room.
+  // Recurring at month-end; a chat room (room-prod-scale) holds the working thread.
+  { id: 'CW-2050', title: 'Monthly payroll cost review', module: 'HR', modules: ['HR', 'Production', 'Sales'], status: 'completed',
+    prompt: 'At the end of each month, review payroll cost against headcount and output, explain any change, and flag anything that needs attention.',
+    createdAt: '2026-09-01T09:00:00', completedAt: '2026-09-01T09:04:00', metric: PAYROLL_PLAN.metric,
+    agentId: 'hr', agentIds: ['hr', 'sales', 'production'],
+    outputs: ['Briefing summary', 'Action items'], sources: ['Mekari Talenta', 'Production', 'CRM'],
+    planJson: JSON.stringify(PAYROLL_PLAN), runs: scheduledRuns('CW-2050', [{ ranAt: '2026-09-01T09:00:00', plan: PAYROLL_PLAN }]),
+    schedule: { cadence: 'Monthly', time: '18:00', nextRun: 'End of month · 18:00', enabled: true } },
   { id: 'CW-1042', title: 'Month-end close checklist', module: 'Finance', modules: ['Finance', 'Sales', 'WMS'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Month-end close checklist')!.prompt,
     createdAt: '2026-07-18T09:00:00', completedAt: '2026-08-18T09:00:00', metric: MONTHEND_PLAN.metric,
@@ -1017,6 +1066,17 @@ function load<T>(key: string, seed: T[]): T[] {
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
+// Ensure the multi-agent scenario task exists / stays fresh for users with an
+// older saved snapshot (it's a scripted demo, so overwriting is intentional).
+{
+  const seedTask = TASKS_SEED.find((t) => t.id === 'CW-2050')
+  if (seedTask) {
+    const idx = coworkTasks.findIndex((t) => t.id === 'CW-2050')
+    const fresh = JSON.parse(JSON.stringify(seedTask)) as CoworkTask
+    if (idx >= 0) coworkTasks.splice(idx, 1, fresh); else coworkTasks.unshift(fresh)
+    saveSnapshot('cowork-tasks-v2', coworkTasks)
+  }
+}
 export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
 export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v3', AGENT_SEED))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and

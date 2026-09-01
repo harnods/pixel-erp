@@ -171,8 +171,19 @@ function withEmployeeChips(html: string): string {
       `</span></span></span>`
   })
 }
+/** Turn `@Agent Name` into a styled mention chip (longest names first so
+ *  "@Production agent" wins over a shorter partial). */
+function withAgentMentions(html: string): string {
+  const names = coworkAgents.map((a) => a.name).sort((a, b) => b.length - a.length)
+  for (const n of names) {
+    const re = new RegExp('@' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+    html = html.replace(re, `<span class="agent-mention">@${n}</span>`)
+  }
+  return html
+}
+
 export function renderMessage(text: string): string {
-  return withEmployeeChips(mdToHtml(text))
+  return withAgentMentions(withEmployeeChips(mdToHtml(text)))
 }
 
 export function useAireneChat() {

@@ -42,6 +42,42 @@ const KEY = 'airene-chats-v1'
 
 /** Seed history (relative to real Date.now()) so the list is never empty. */
 const CHAT_SEED: CoworkChatSession[] = [
+  // ── Multi-agent room: scaling production for a big new sales order ──────────
+  // HR agent leads the people side (headcount · overtime · payroll) while the
+  // Sales and Production agents feed it context. The human steers in the room.
+  {
+    id: 'room-prod-scale',
+    title: 'Why did payroll increase this month?',
+    module: 'HR',
+    agentId: 'hr',
+    taskId: 'CW-2050',
+    restrictAgents: ['hr', 'production', 'sales'],
+    createdAt: Date.now() - 3_600_000, // ~1h ago → top of Recent
+    // Kept short on purpose: the whole room fits one screen (no scrolling).
+    messages: [
+      { role: 'user', text: 'Why did payroll increase this month?' },
+      {
+        role: 'assistant', agentId: 'hr',
+        text: 'Payroll is up **+18% (Rp 109M)**. Base pay is flat — **~85% is overtime**, plus **3 temporary operators**. Let me check with @Production agent on the OT.',
+        attachments: [{ label: 'Overtime · Sep 2026', icon: 'doc', to: '/hr' }],
+      },
+      {
+        role: 'assistant', agentId: 'production',
+        text: 'That\'s us — **~120 overtime hrs/week** on packing for a big new order, plus **3 extra operators** to hit the volume.',
+        attachments: [{ label: 'Work order · WO-2026-0005', icon: 'doc', to: '/work-orders/WO-2026-0005' }],
+      },
+      {
+        role: 'assistant', agentId: 'sales',
+        text: 'Confirmed — the new **Anomali Coffee** order, **+56% volume**, first delivery 20 Sep. That\'s what\'s driving it.',
+        attachments: [{ label: 'Sales order · SO-5001', icon: 'shop', to: '/crm/orders/SO-5001' }],
+      },
+      {
+        role: 'assistant', agentId: 'hr',
+        text: 'So it\'s **demand-driven, not a leak**. Want me to prepare an executive summary?',
+        suggestions: ['Prepare an executive summary', 'Set up a monthly payroll monitor'],
+      },
+    ],
+  },
   {
     id: 'h1',
     title: 'Draft WhatsApp reminder',
@@ -90,9 +126,21 @@ const sessions = ref<CoworkChatSession[]>(loadSnapshot<CoworkChatSession>(KEY) ?
 
 function persist() { saveSnapshot(KEY, sessions.value) }
 
+// Keep the scripted multi-agent demo room in sync with the seed for every user —
+// inject it if missing, or refresh its contents if an older version is saved. (It
+// is a demo, not a user chat, so overwriting is intentional.)
+const DEMO_ROOM_ID = 'room-prod-scale'
+const seedRoom = CHAT_SEED.find((s) => s.id === DEMO_ROOM_ID)
+if (seedRoom) {
+  const idx = sessions.value.findIndex((s) => s.id === DEMO_ROOM_ID)
+  const fresh = JSON.parse(JSON.stringify(seedRoom))
+  if (idx >= 0) sessions.value.splice(idx, 1, fresh)
+  else sessions.value.unshift(fresh)
+}
+
 // Materialise the seed to the mini-DB on first load, so every surface reads the
 // same list (the header search reads the snapshot directly).
-if (!loadSnapshot<CoworkChatSession>(KEY)) persist()
+persist()
 
 /** Title derived from the first user message ("New chat" when there is none). */
 export function chatTitleFrom(messages: ChatMessage[]): string {

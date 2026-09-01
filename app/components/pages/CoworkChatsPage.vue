@@ -20,7 +20,7 @@ import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverConte
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
-import { coworkAgents, coworkConnections, getTask, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -372,6 +372,12 @@ function taskLabel(session: CoworkChatSession): string {
   return session.contextLabel ?? (session.taskId ? getTask(session.taskId)?.title ?? '' : '')
 }
 
+/** Multi-agent rooms: the agent that authored an assistant turn (name+avatar
+ *  header shown above its message). Null for single-agent chats. */
+function msgAgent(msg: { role: string; agentId?: string }) {
+  return msg.role === 'assistant' && msg.agentId ? getAgent(msg.agentId) ?? null : null
+}
+
 // ── Chat list (left panel) — searchable history of saved rooms ────────────────
 const chatSearch = ref('')
 const filteredHistory = computed(() => {
@@ -575,6 +581,11 @@ onBeforeUnmount(() => {
             <!-- User messages carry a 36px avatar on the right; the AI answer has none. -->
             <MpAvatar v-if="msg.role === 'user'" name="Rizal Candra" size="lg" class="chat-user-av" />
             <div class="cwc-msg-col">
+              <!-- Multi-agent room: which agent is speaking (avatar + name) -->
+              <div v-if="msgAgent(msg)" class="cwc-agent-head">
+                <MpAvatar :name="msgAgent(msg)!.name" :src="msgAgent(msg)!.avatar" size="lg" class="cwc-agent-head__av" />
+                <span class="cwc-agent-head__name" :style="{ color: msgAgent(msg)!.color }">{{ msgAgent(msg)!.name }}</span>
+              </div>
               <!-- Collapsible "Done ›" reasoning, above the AI answer -->
               <div v-if="msg.role === 'assistant' && msg.reasoning" class="cwc-reason" :class="{ 'is-open': reasonOpen.has(i) }">
                 <button type="button" class="cwc-reason-head" @click="toggleReason(i)">
@@ -589,6 +600,21 @@ onBeforeUnmount(() => {
                 <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
                 <span v-else class="chat-bubble__text">{{ msg.text }}</span>
               </div>
+              <!-- Linked records (work order, sales order, …) -->
+              <div v-if="msg.attachments?.length" class="cwc-attach">
+                <button v-for="(at, k) in msg.attachments" :key="k" type="button" class="cwc-attach__chip" @click="router.push(at.to)">
+                  <MpIcon :name="at.icon || 'attachment'" size="sm" class="cwc-attach__icon" />
+                  <span class="cwc-attach__meta">
+                    <span class="cwc-attach__label">{{ at.label }}</span>
+                    <span v-if="at.sublabel" class="cwc-attach__sub">{{ at.sublabel }}</span>
+                  </span>
+                  <MpIcon name="caret-right" size="sm" class="cwc-attach__go" />
+                </button>
+              </div>
+              <!-- Agent suggestions (send as the next turn) -->
+              <div v-if="msg.suggestions?.length" class="cwc-msg-suggest">
+                <button v-for="(sg, k) in msg.suggestions" :key="k" type="button" class="cwc-suggest-chip" @click="send(sg)">{{ sg }}</button>
+              </div>
               <!-- Plan / pushback / connect-these-tools / receipt -->
               <CoworkGoalCard
                 v-if="msg.card"
@@ -601,7 +627,7 @@ onBeforeUnmount(() => {
               />
               <!-- Per-answer action toolbar (Sana-style): sources · copy · rate ·
                    audio · edit-as-doc · retry · save (task/goal). -->
-              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode" class="cwc-msg-actions">
+              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && !msg.agentId" class="cwc-msg-actions">
                 <button v-if="msgSources(i).length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
                   <span>Sources</span>
                   <span class="cwc-src-count">{{ msgSources(i).length }}</span>
@@ -898,7 +924,7 @@ onBeforeUnmount(() => {
 .cwc-sug-icon { flex-shrink: 0; }
 
 /* Message bubbles — identical to the drawer's */
-.chat-message { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); flex-shrink: 0; }
+.chat-message { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); margin-bottom: 28px; flex-shrink: 0; }
 .chat-message--user { flex-direction: row-reverse; }
 .chat-avatar { flex-shrink: 0; border-radius: var(--mp-radii-full, 50%); }
 .chat-bubble { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); max-width: 85%; word-break: break-word; }
@@ -911,6 +937,32 @@ onBeforeUnmount(() => {
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
 /* …but the typing loader keeps a subtle pill so the dots have a surface. */
 .chat-typing.chat-bubble--assistant { background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
+
+/* Multi-agent room: agent name + avatar above its message. */
+.cwc-agent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); margin-bottom: var(--mp-spacing-1, 4px); }
+.cwc-agent-head__av { flex-shrink: 0; width: 36px !important; height: 36px !important; background: transparent !important; }
+/* Transparent avatar (no coloured disc) — the agent artwork sits on its own. */
+.cwc-agent-head__av :deep(*) { background-color: transparent !important; box-shadow: none !important; }
+.cwc-agent-head__av :deep(> *) { width: 36px !important; height: 36px !important; }
+.cwc-agent-head__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+
+/* @agent mention chip inside a message */
+.chat-bubble__rich :deep(.agent-mention) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #1d55d4); }
+
+/* Linked-record chips under a message (work order, sales order, …) */
+.cwc-attach { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
+.cwc-attach__chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); max-width: 320px; padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; text-align: left; }
+.cwc-attach__chip:hover .cwc-attach__label { text-decoration: underline; text-underline-offset: 2px; }
+.cwc-attach__icon { flex-shrink: 0; color: var(--mp-icon-default, #536062); }
+.cwc-attach__meta { display: flex; flex-direction: column; min-width: 0; }
+.cwc-attach__label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-link, #1d55d4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwc-attach__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwc-attach__go { flex-shrink: 0; color: var(--mp-text-link, #1d55d4); }
+
+/* Suggestion chips under an agent message */
+.cwc-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
+.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
+.cwc-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
 
 /* Collapsible "Done ›" reasoning above an AI answer. */
 .cwc-reason { margin-bottom: var(--mp-spacing-2); }
