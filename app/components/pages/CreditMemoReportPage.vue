@@ -18,7 +18,7 @@ import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
 import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import {
-  MpIcon, MpTooltip, MpToggle, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+  MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -40,33 +40,33 @@ const pendingRange = ref<Date[]>([d(2025, 11, 1), d(2025, 11, 31)])
 const appliedRange = ref<Date[]>([d(2025, 11, 1), d(2025, 11, 31)])
 const rangeError = ref('')
 
-// PRD calendar presets. "Today" is the real client clock (correct behaviour;
-// the seed lives in Dec 2025, so most presets resolve to an empty period).
-function nowParts() { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth(), day: n.getDate() } }
-const PRESETS: { key: string; label: string; range: () => Date[] }[] = [
-  { key: 'this-month', label: 'Bulan Ini', range: () => { const { y, m } = nowParts(); return [d(y, m, 1), d(y, m + 1, 0)] } },
-  { key: 'last-month', label: 'Bulan Lalu', range: () => { const { y, m } = nowParts(); return [d(y, m - 1, 1), d(y, m, 0)] } },
-  { key: 'this-quarter', label: 'Kuartal Ini', range: () => { const { y, m } = nowParts(); const q = Math.floor(m / 3) * 3; return [d(y, q, 1), d(y, q + 3, 0)] } },
-  { key: 'this-year', label: 'Tahun Ini', range: () => { const { y } = nowParts(); const n = new Date(); return [d(y, 0, 1), d(y, n.getMonth(), n.getDate())] } },
-]
-const activePreset = ref('')
-function applyPreset(p: { key: string; range: () => Date[] }) {
-  pendingRange.value = p.range()
-  activePreset.value = p.key
-  applyReport()
-}
-
+// Presets (This month / This quarter / Per month / Per year / Custom) live inside
+// the AdvancedDateRangePicker via its `period-mode`, so the page has no chips.
 function monthsBetween(a: Date, b: Date) { return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) }
 function applyReport() {
   const [s, e] = pendingRange.value
-  if (!s || !e) { rangeError.value = 'Tanggal mulai dan akhir wajib diisi.'; return }
-  if (s > e) { rangeError.value = 'Tanggal mulai tidak boleh setelah tanggal akhir.'; return }
-  if (monthsBetween(s, e) > 24) { rangeError.value = 'Rentang tanggal tidak boleh lebih dari 24 bulan.'; return }
+  if (!s || !e) { rangeError.value = 'Start and end dates are required.'; return }
+  if (s > e) { rangeError.value = 'Start date cannot be after end date.'; return }
+  if (monthsBetween(s, e) > 24) { rangeError.value = 'Date range cannot exceed 24 months.'; return }
   rangeError.value = ''
   appliedRange.value = [...pendingRange.value]
-  toast.notify({ variant: 'success', title: 'Laporan diperbarui' })
+  generate()
 }
-function onPendingChange(v: Date[]) { pendingRange.value = v; activePreset.value = ''; rangeError.value = '' }
+function onPendingChange(v: Date[]) { pendingRange.value = v; rangeError.value = ''; applyReport() }
+
+// ── Report generation state — idle (empty prompt) → loading (skeleton) → ready ─
+// The page starts empty; the report is only generated after the user applies a
+// period or filters. Skeleton follows the ErpTablePage convention (~1.1s).
+const reportState = ref<'idle' | 'loading' | 'ready'>('idle')
+let genTimer: ReturnType<typeof setTimeout> | null = null
+function generate() {
+  reportState.value = 'loading'
+  if (genTimer) clearTimeout(genTimer)
+  genTimer = setTimeout(() => { reportState.value = 'ready' }, 1100)
+}
+onBeforeUnmount(() => { if (genTimer) clearTimeout(genTimer) })
+
+const STATUS_LABELS: Record<CmStatus, string> = { Active: 'Active', Sebagian: 'Partial', Habis: 'Used up' }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function fmtRangeDay(x: Date) { return `${x.getDate()} ${MONTHS[x.getMonth()]} ${x.getFullYear()}` }
@@ -78,7 +78,7 @@ const futureCapped = computed(() => { const e = appliedRange.value[1]; return !!
 // ── Filters (customer + transaction type) + zero-balance toggle ───────────────
 const filters = reactive<CmReportFilters>(emptyCmReportFilters())
 const drawerOpen = ref(false)
-function onApplyFilters(v: CmDrawerValue) { filters.customers = [...v.customers]; filters.txnTypes = [...v.txnTypes] }
+function onApplyFilters(v: CmDrawerValue) { filters.customers = [...v.customers]; filters.txnTypes = [...v.txnTypes]; generate() }
 function toggleZero() { filters.showZero = !filters.showZero }
 const activeFilterCount = computed(() => filters.customers.length + filters.txnTypes.length)
 const TXN_LABELS: Record<CmMutationType, string> = { Issued: 'CM Issued', Applied: 'CM Applied', Refund: 'CM Refund', Reversal: 'CM Reversal' }
@@ -101,18 +101,19 @@ function saveView() {
   const name = viewName.value.trim(); if (!name) return
   const v = addCmView({ name, filters: { customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
   activeViewId.value = v.id; viewDrawerOpen.value = false
-  toast.notify({ variant: 'success', title: 'View disimpan' })
+  toast.notify({ variant: 'success', title: 'View saved' })
 }
 const allViewsOpen = ref(false)
 
 // ── Columns ───────────────────────────────────────────────────────────────────
 const COLUMNS = [
-  { key: 'date', label: 'Date' }, { key: 'number', label: 'Number' }, { key: 'description', label: 'Description' },
-  { key: 'status', label: 'Status' }, { key: 'movement', label: 'Movement' }, { key: 'balance', label: 'Balance' },
+  { key: 'date', label: 'Date', right: false }, { key: 'number', label: 'Number', right: false }, { key: 'description', label: 'Description', right: false },
+  { key: 'status', label: 'Status', right: false }, { key: 'movement', label: 'Movement', right: true }, { key: 'balance', label: 'Balance', right: true },
 ]
 const colVis = reactive<Record<string, boolean>>(Object.fromEntries(COLUMNS.map((c) => [c.key, true])))
 const columnItems = COLUMNS.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 || i === COLUMNS.length - 1 }))
 const show = (k: string) => colVis[k] !== false
+const visibleColumns = computed(() => COLUMNS.filter((c) => show(c.key)))
 const visibleLeadSpan = computed(() => COLUMNS.filter((c) => show(c.key)).length - (show('balance') ? 1 : 0))
 
 // ── Rows (report query + date-window gate) ────────────────────────────────────
@@ -180,29 +181,29 @@ const exporting = ref(false)
 function exportExcel() {
   if (exporting.value) return
   exporting.value = true
-  toast.notify({ variant: 'information', title: 'File sedang disiapkan. Notifikasi akan dikirim saat siap diunduh.' })
+  toast.notify({ variant: 'information', title: 'Your file is being prepared. You’ll be notified when it’s ready to download.' })
   // Simulate the async job → in-app notification → download link.
   window.setTimeout(() => {
     exporting.value = false
     const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-    // Sheet 1 — Ringkasan Customer
-    const lines = ['Ringkasan Customer', ['Customer', 'CM Aktif', 'Total Saldo Tersisa', 'Mata Uang'].join(',')]
+    // Sheet 1 — Customer Summary
+    const lines = ['Customer Summary', ['Customer', 'Active CM', 'Total Remaining Balance', 'Currency'].join(',')]
     for (const g of groups.value) lines.push([g.name, g.activeCount, g.total, 'IDR'].map(esc).join(','))
-    // Sheet 2 — Detail CM
-    lines.push('', 'Detail CM', ['Customer', 'CM Number', 'Tanggal', 'Tipe', 'No. Transaksi', 'Keterangan', 'Mutasi', 'Saldo', 'Mata Uang'].join(','))
+    // Sheet 2 — CM Detail
+    lines.push('', 'CM Detail', ['Customer', 'CM Number', 'Date', 'Type', 'Transaction No.', 'Description', 'Movement', 'Balance', 'Currency'].join(','))
     for (const g of groups.value) for (const cm of g.cms) for (const r of historyRows(cm)) {
       lines.push([g.name, cm.cmNumber, r.date, r.type, r.transactionNo ?? '', r.description ?? '', r.movement ?? '', r.balance, 'IDR'].map(esc).join(','))
     }
     const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'laporan-credit-memo.csv'; a.click(); URL.revokeObjectURL(a.href)
-    toast.notify({ variant: 'success', title: 'File siap diunduh', description: 'Tersimpan di Riwayat Ekspor selama 7 hari.' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'credit-memo-report.csv'; a.click(); URL.revokeObjectURL(a.href)
+    toast.notify({ variant: 'success', title: 'File ready to download', description: 'Saved to Export history for 7 days.' })
   }, 1600)
 }
 
 // ── Status badge (Active / Sebagian / Habis) ──────────────────────────────────
 function statusClass(s: CmStatus) { return s === 'Active' ? 'cmr-badge cmr-badge--active' : s === 'Sebagian' ? 'cmr-badge cmr-badge--partial' : 'cmr-badge cmr-badge--used' }
 function typeClass(t: CmMutationType) { return t === 'Issued' || t === 'Reversal' ? 'cmr-type cmr-type--pos' : 'cmr-type cmr-type--neg' }
-function openTxn(no: string) { infoToast(`Membuka ${no}`) }
+function openTxn(no: string) { infoToast(`Opening ${no}`) }
 </script>
 
 <template>
@@ -221,9 +222,9 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
         <div class="cmr-controls-left">
           <div class="cmr-datefield">
             <label class="cmr-date-label">As of date</label>
-            <AdvancedDateRangePicker id="cmr-date" :model-value="pendingRange" is-full-width hide-label placeholder="Select date" @update:model-value="onPendingChange" />
+            <AdvancedDateRangePicker id="cmr-date" :model-value="pendingRange" is-full-width hide-label period-mode placeholder="Select date" @update:model-value="onPendingChange" />
           </div>
-          <button class="cmr-apply" type="button" @click="applyReport">Tampilkan</button>
+          <button class="cmr-apply" type="button" @click="applyReport">Apply</button>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before cmr-allfilters" type="button" @click="drawerOpen = true">
             <MpIcon name="filter" size="sm" /> All filters
             <span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
@@ -235,19 +236,16 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
           </MpTooltip>
           <ColumnSettingsMenu id="cmr-cols" :items="columnItems" :visibility="colVis" />
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" :disabled="exporting" @click="exportExcel">
-            <MpIcon name="download" size="sm" /> Ekspor ke Excel
+            <MpIcon name="download" size="sm" /> Export to Excel
           </button>
         </div>
       </div>
 
-      <!-- Preset chips + zero-balance toggle -->
+      <!-- Zero-balance toggle -->
       <div v-if="!fullscreen" class="cmr-presetbar">
-        <div class="cmr-presets">
-          <button v-for="p in PRESETS" :key="p.key" class="cmr-preset" :class="{ 'is-active': activePreset === p.key }" type="button" @click="applyPreset(p)">{{ p.label }}</button>
-        </div>
         <label class="cmr-zerotoggle">
           <MpToggle id="cmr-zero" :is-checked="filters.showZero" @change="toggleZero" />
-          <span>Tampilkan CM habis</span>
+          <span>Show fully-used CMs</span>
         </label>
       </div>
       <p v-if="!fullscreen && rangeError" class="cmr-range-error">{{ rangeError }}</p>
@@ -269,7 +267,7 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
           <button class="cmr-allviews" type="button" @click="allViewsOpen = true">All views</button>
         </div>
         <div class="cmr-viewbar-right">
-          <button v-if="groups.length" class="cmr-collapse-all" type="button" @click="toggleAll">{{ allCollapsed ? 'Buka Semua' : 'Tutup Semua' }}</button>
+          <button v-if="reportState === 'ready' && groups.length" class="cmr-collapse-all" type="button" @click="toggleAll">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</button>
           <button class="cmr-fs-btn" type="button" aria-label="Full screen" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
         </div>
       </div>
@@ -280,40 +278,69 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
           <button class="cmr-fs-btn" type="button" aria-label="Exit full screen" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
         </div>
 
-        <div class="cmr-report-head">
-          <span class="cmr-report-range">{{ rangeCaption }}</span>
-          <span class="cmr-report-updated">{{ lastUpdated }}</span>
+        <!-- Idle — no report generated yet -->
+        <div v-if="reportState === 'idle'" class="cmr-empty cmr-empty--idle">
+          <img src="/illustrations/report-empty.png" alt="" class="cmr-empty-img" width="240" height="200" />
+          <p class="cmr-empty-title">No report generated yet</p>
+          <p class="cmr-empty-desc">Choose a period and click Apply to generate the Credit Memo report.</p>
         </div>
-        <p v-if="futureCapped" class="cmr-info-banner"><MpIcon name="info" size="sm" /> Menampilkan data hingga hari ini.</p>
 
-        <div v-if="groups.length" class="cmr-table-wrap">
-          <table class="cmr-table">
-            <colgroup>
-              <col v-if="show('date')" class="cmr-col-date" />
-              <col v-if="show('number')" class="cmr-col-number" />
-              <col v-if="show('description')" class="cmr-col-desc" />
-              <col v-if="show('status')" class="cmr-col-status" />
-              <col v-if="show('movement')" class="cmr-col-movement" />
-              <col v-if="show('balance')" class="cmr-col-balance" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th v-if="show('date')" class="cmr-th">Date</th>
-                <th v-if="show('number')" class="cmr-th">Number</th>
-                <th v-if="show('description')" class="cmr-th">Description</th>
-                <th v-if="show('status')" class="cmr-th">Status</th>
-                <th v-if="show('movement')" class="cmr-th cmr-th--right">Movement</th>
-                <th v-if="show('balance')" class="cmr-th cmr-th--right">Balance</th>
-              </tr>
-            </thead>
-            <tbody v-for="g in groups" :key="g.id">
+        <template v-else>
+          <div class="cmr-report-head">
+            <span class="cmr-report-range">{{ rangeCaption }}</span>
+            <span class="cmr-report-updated">{{ lastUpdated }}</span>
+          </div>
+          <p v-if="futureCapped" class="cmr-info-banner"><MpIcon name="info" size="sm" /> Showing data up to today.</p>
+
+          <!-- Loading skeleton (3 solid rows, ErpTablePage convention) -->
+          <div v-if="reportState === 'loading'" class="cmr-table-wrap">
+            <table class="cmr-table">
+              <colgroup>
+                <col v-if="show('date')" class="cmr-col-date" /><col v-if="show('number')" class="cmr-col-number" /><col v-if="show('description')" class="cmr-col-desc" />
+                <col v-if="show('status')" class="cmr-col-status" /><col v-if="show('movement')" class="cmr-col-movement" /><col v-if="show('balance')" class="cmr-col-balance" />
+              </colgroup>
+              <thead>
+                <tr><th v-for="c in visibleColumns" :key="c.key" class="cmr-th" :class="{ 'cmr-th--right': c.right }">{{ c.label }}</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="n in 3" :key="n" class="cmr-row">
+                  <td v-for="c in visibleColumns" :key="c.key" class="cmr-td" :class="{ 'cmr-td--right': c.right }">
+                    <MpSkeleton class="cmr-skel" height="14px" rounded="sm" duration="0s" :width="c.right ? '72px' : '120px'" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Ready + data -->
+          <div v-else-if="groups.length" class="cmr-table-wrap">
+            <table class="cmr-table">
+              <colgroup>
+                <col v-if="show('date')" class="cmr-col-date" />
+                <col v-if="show('number')" class="cmr-col-number" />
+                <col v-if="show('description')" class="cmr-col-desc" />
+                <col v-if="show('status')" class="cmr-col-status" />
+                <col v-if="show('movement')" class="cmr-col-movement" />
+                <col v-if="show('balance')" class="cmr-col-balance" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th v-if="show('date')" class="cmr-th">Date</th>
+                  <th v-if="show('number')" class="cmr-th">Number</th>
+                  <th v-if="show('description')" class="cmr-th">Description</th>
+                  <th v-if="show('status')" class="cmr-th">Status</th>
+                  <th v-if="show('movement')" class="cmr-th cmr-th--right">Movement</th>
+                  <th v-if="show('balance')" class="cmr-th cmr-th--right">Balance</th>
+                </tr>
+              </thead>
+              <tbody v-for="g in groups" :key="g.id">
               <!-- Customer (L1) -->
               <tr class="cmr-row cmr-row--group" @click="toggleCustomer(g.id)">
                 <td class="cmr-td cmr-td--group" :colspan="visibleLeadSpan">
                   <span class="cmr-lead cmr-lead--l1">
                     <MpIcon :name="isCustomerOpen(g.id) ? 'caret-down' : 'caret-right'" size="sm" class="cmr-chev" />
                     <span class="cmr-customer">{{ g.name }}</span>
-                    <span class="cmr-cmcount">{{ g.activeCount }} CM aktif</span>
+                    <span class="cmr-cmcount">{{ g.activeCount }} active CM</span>
                   </span>
                 </td>
                 <td v-if="show('balance')" class="cmr-td cmr-td--right cmr-td--group cmr-strong">{{ formatIDR(g.total) }}</td>
@@ -331,9 +358,9 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
                     </td>
                     <td v-if="show('number')" class="cmr-td">{{ cm.cmNumber }}</td>
                     <td v-if="show('description')" class="cmr-td cmr-muted">Original {{ formatIDR(cm.originalAmount) }}</td>
-                    <td v-if="show('status')" class="cmr-td"><span :class="statusClass(statusOf(cm))">{{ statusOf(cm) }}</span></td>
+                    <td v-if="show('status')" class="cmr-td"><span :class="statusClass(statusOf(cm))">{{ STATUS_LABELS[statusOf(cm)] }}</span></td>
                     <td v-if="show('movement')" class="cmr-td cmr-td--right" />
-                    <td v-if="show('balance')" class="cmr-td cmr-td--right cmr-strong">{{ formatIDR(remainingOf(cm)) }}</td>
+                    <td v-if="show('balance')" class="cmr-td cmr-td--right">{{ formatIDR(remainingOf(cm)) }}</td>
                   </tr>
 
                   <!-- Transaction history (L3): Saldo Awal → mutations -->
@@ -341,7 +368,7 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
                     <tr v-for="r in historyRows(cm)" :key="r.id" class="cmr-row cmr-row--txn">
                       <td v-if="show('date')" class="cmr-td cmr-applied-date">{{ r.type === 'Saldo Awal' ? '' : formatDate(r.date) }}</td>
                       <td v-if="show('number')" class="cmr-td cmr-td--l3">
-                        <template v-if="r.type === 'Saldo Awal'"><span class="cmr-saldo-awal">Saldo Awal</span></template>
+                        <template v-if="r.type === 'Saldo Awal'"><span class="cmr-saldo-awal">Beginning balance</span></template>
                         <template v-else>
                           <span :class="typeClass(r.type as CmMutationType)">{{ r.type }}</span>
                           <a class="cmr-txn-link" @click.stop="openTxn(r.transactionNo!)">{{ r.transactionNo }}</a>
@@ -369,22 +396,23 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
           </table>
         </div>
 
-        <!-- Empty states (3 variants, PRD US-CMR-005) -->
-        <div v-else class="cmr-empty">
-          <img src="/illustrations/empty-folder.png" alt="" class="cmr-empty-img" width="240" height="200" />
-          <template v-if="emptyReason === 'filter'">
-            <p class="cmr-empty-title">Tidak ada data yang sesuai dengan filter ini.</p>
-            <button class="cmr-empty-cta" type="button" @click="resetFilters">Reset Filter</button>
-          </template>
-          <template v-else-if="emptyReason === 'all-zero'">
-            <p class="cmr-empty-title">Semua kredit memo pada periode ini sudah habis.</p>
-            <p class="cmr-empty-desc">Aktifkan "Tampilkan CM habis" untuk melihat kredit memo yang sudah habis.</p>
-          </template>
-          <template v-else>
-            <p class="cmr-empty-title">Tidak ada Kredit Memo aktif pada periode ini.</p>
-            <p class="cmr-empty-desc">Coba ubah rentang tanggal laporan.</p>
-          </template>
-        </div>
+          <!-- Ready, but no data — 3 variants (PRD US-CMR-005) -->
+          <div v-else class="cmr-empty">
+            <img src="/illustrations/empty-folder.png" alt="" class="cmr-empty-img" width="240" height="200" />
+            <template v-if="emptyReason === 'filter'">
+              <p class="cmr-empty-title">No data matches this filter.</p>
+              <button class="cmr-empty-cta" type="button" @click="resetFilters">Reset Filter</button>
+            </template>
+            <template v-else-if="emptyReason === 'all-zero'">
+              <p class="cmr-empty-title">All credit memos in this period are fully used.</p>
+              <p class="cmr-empty-desc">Turn on "Show fully-used CMs" to see them.</p>
+            </template>
+            <template v-else>
+              <p class="cmr-empty-title">No active credit memo in this period.</p>
+              <p class="cmr-empty-desc">Try adjusting the report date range.</p>
+            </template>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -405,8 +433,8 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
             <header class="cmr-vd-head"><span class="cmr-vd-title">Save view</span><button class="cmr-vd-close" type="button" aria-label="Close" @click="viewDrawerOpen = false"><MpIcon name="close" size="md" /></button></header>
             <div class="cmr-vd-body">
               <label class="cmr-vd-label">View name</label>
-              <input v-model="viewName" class="cmr-vd-input" type="text" placeholder="e.g. CM aktif customer besar" @keydown.enter.prevent="saveView" />
-              <p class="cmr-vd-hint">Menyimpan filter saat ini sebagai view. Tetap tersedia lain kali.</p>
+              <input v-model="viewName" class="cmr-vd-input" type="text" placeholder="e.g. Big customers with active CM" @keydown.enter.prevent="saveView" />
+              <p class="cmr-vd-hint">Saves the current filters as a view. It stays available next time.</p>
             </div>
             <footer class="cmr-vd-foot"><button class="cmr-vd-btn cmr-vd-btn--ghost" type="button" @click="viewDrawerOpen = false">Cancel</button><button class="cmr-vd-btn cmr-vd-btn--primary" type="button" @click="saveView">Save view</button></footer>
           </div>
@@ -426,7 +454,7 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
                 <button class="cmr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</button>
                 <button class="cmr-view-del" type="button" aria-label="Delete view" @click="deleteCmView(v.id); activeViewId = 'default'"><MpIcon name="delete" size="sm" /></button>
               </div>
-              <p v-if="!creditMemoViews.length" class="cmr-vd-hint">Belum ada view tersimpan. Filter, lalu Add view untuk menyimpan.</p>
+              <p v-if="!creditMemoViews.length" class="cmr-vd-hint">No saved views yet. Filter, then Add view to save one.</p>
             </div>
           </div>
         </div>
@@ -460,11 +488,7 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
 .cmr-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
 
 /* Presets + toggle */
-.cmr-presetbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.cmr-presets { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cmr-preset { height: 30px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
-.cmr-preset:hover { background: var(--mp-background-neutral-subtle); }
-.cmr-preset.is-active { border-color: var(--mp-border-brand, #0a6e4e); background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.cmr-presetbar { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cmr-zerotoggle { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
 .cmr-range-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 
@@ -524,7 +548,7 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
 .cmr-chev { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
 .cmr-applied-date { padding-left: 52px; }
 .cmr-td--l3 { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cmr-saldo-awal { padding-left: 4px; font-style: italic; color: var(--mp-text-secondary); }
+.cmr-saldo-awal { padding-left: 4px; color: var(--mp-text-secondary); }
 .cmr-txn-link { color: var(--mp-text-link); cursor: pointer; }
 .cmr-txn-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
@@ -542,6 +566,8 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
 
 /* Empty state */
 .cmr-empty { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.cmr-empty--idle { padding: 72px 0 64px; }
+.cmr-skel { display: inline-block; background-color: var(--mp-border-default) !important; background-image: none !important; animation: none !important; }
 .cmr-empty-img { width: 240px; height: 200px; object-fit: contain; }
 .cmr-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cmr-empty-desc { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
@@ -575,5 +601,6 @@ function openTxn(no: string) { infoToast(`Membuka ${no}`) }
 .cmr-view-del { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-subtle, #97a0af); }
 .cmr-view-del:hover { background: var(--mp-background-danger-subtle, #fdecec); color: var(--mp-text-danger, #c62828); }
 
-.cmr--full .cmr-stage { border-radius: 0; padding-top: var(--mp-spacing-4); }
+.cmr--full { padding: var(--mp-spacing-3); box-sizing: border-box; background: var(--mp-background-neutral-subtle); }
+.cmr--full .cmr-stage { border: 1px solid var(--mp-border-default); border-radius: 12px; padding-top: var(--mp-spacing-4); }
 </style>
