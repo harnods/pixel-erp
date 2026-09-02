@@ -107,11 +107,7 @@ const costSeries = computed(() => {
   bars.forEach((b) => { b.peak = b.value === max })
   return { bars, total, max, perDay: Math.round(total / COST_RANGE_DAYS) }
 })
-function rp(n: number): string {
-  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
-  if (n >= 1_000) return `Rp ${Math.round(n / 1_000)}K`
-  return `Rp ${n}`
-}
+function rp(n: number): string { return `Rp${Math.round(n).toLocaleString('id-ID')}` }
 
 const TAB_KEYS = ['overview', 'knowledge', 'skills', 'connections', 'visibility', 'usage']
 // Deep-link support: `?tab=usage` (from the index "View usage" action) opens straight to that tab.
@@ -285,19 +281,21 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
             <MpTabPanel value="visibility">
               <div class="cad-panel">
                 <section class="cad-sec">
-                  <div class="cad-vis-head">
-                    <h3 class="cad-h3">Who can use this agent</h3>
-                    <span class="cad-vis-scope">
-                      <template v-if="agent.visibilityEveryone">Everyone at {{ COWORK_COMPANY }}</template>
-                      <template v-else-if="visRoles.length">{{ visRoles.map((r) => `${r!.product} · ${r!.name}`).join(', ') }}</template>
-                      <template v-else>Specific users</template>
-                      · {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }}
-                    </span>
-                  </div>
-                  <div v-for="e in audienceUsers" :key="e.id" class="cad-person">
-                    <MpAvatar :src="e.photo" :name="e.fullName" size="sm" />
-                    <span class="cad-person__name">{{ e.fullName }}</span>
-                    <span class="cad-person__role">{{ [e.jobPosition, e.department].filter(Boolean).join(' · ') }}</span>
+                  <h3 class="cad-h3">Who can use this agent</h3>
+                  <p class="cad-vis-scope">
+                    <template v-if="agent.visibilityEveryone">Everyone at {{ COWORK_COMPANY }}</template>
+                    <template v-else-if="visRoles.length">{{ visRoles.map((r) => `${r!.product} · ${r!.name}`).join(', ') }}</template>
+                    <template v-else>Specific users</template>
+                    · {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }}
+                  </p>
+                  <div class="cad-aud-list">
+                    <div v-for="e in audienceUsers" :key="e.id" class="cad-aud-row">
+                      <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
+                      <div class="cad-aud-info">
+                        <span class="cad-aud-name">{{ e.fullName }}</span>
+                        <span class="cad-aud-sub">{{ [e.employeeId, e.jobPosition, e.department].filter(Boolean).join(' · ') }}</span>
+                      </div>
+                    </div>
                   </div>
                   <p v-if="!audienceUsers.length" class="cad-muted">Only you have access.</p>
                 </section>
@@ -306,14 +304,13 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 
             <!-- Usage — cost only -->
             <MpTabPanel value="usage">
-              <div class="cad-panel cad-panel--wide">
+              <div class="cad-panel cad-panel--full">
                 <section class="cad-cost">
                   <header class="cad-cost__head">
                     <div>
                       <p class="cad-cost__title">Total cost</p>
                       <p class="cad-cost__sub">Model &amp; tool usage · last {{ COST_RANGE_DAYS }} days</p>
                     </div>
-                    <span class="cad-cost__range">Last {{ COST_RANGE_DAYS }} days</span>
                   </header>
                   <div class="cad-cost__figures">
                     <div class="cad-cost__fig"><span class="cad-cost__flabel">Total cost</span><span class="cad-cost__fvalue">{{ rp(costSeries.total) }}</span></div>
@@ -416,7 +413,7 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 .cad-conn__logo-img { width: 28px; height: 28px; flex: 0 0 auto; border-radius: var(--mp-radii-md, 6px); object-fit: contain; background: #fff; }
 .cad-conn__logo { width: 28px; height: 28px; flex: 0 0 auto; border-radius: var(--mp-radii-md, 6px); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
 .cad-conn__name { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cad-conn__status { font-size: 12px; }
+.cad-conn__status { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); }
 .cad-conn__status.is-ok { color: #0a6e4e; }
 .cad-conn__status.is-off { color: var(--mp-text-secondary); }
 
@@ -429,17 +426,20 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 .cad-task__desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Visibility */
-.cad-vis-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; margin-bottom: var(--mp-spacing-3); }
-.cad-vis-head .cad-h3 { margin: 0; }
-.cad-vis-scope { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cad-vis-scope { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-secondary); }
+.cad-aud-list { display: flex; flex-direction: column; }
+.cad-aud-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; }
+.cad-aud-row + .cad-aud-row { border-top: 1px solid var(--mp-border-default); }
+.cad-aud-info { display: flex; flex-direction: column; min-width: 0; }
+.cad-aud-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cad-aud-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Usage — cost card + bar chart */
-.cad-panel--wide { max-width: 920px; }
-.cad-cost { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); padding: var(--mp-spacing-5); }
+/* Usage — cost figures + bar chart (full width, no box) */
+.cad-panel--full { max-width: none; }
+.cad-cost { padding: 0; }
 .cad-cost__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); }
 .cad-cost__title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cad-cost__sub { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cad-cost__range { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); padding: 4px 12px; white-space: nowrap; }
 .cad-cost__figures { display: flex; align-items: baseline; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-4); }
 .cad-cost__fig { display: flex; flex-direction: column; gap: 2px; }
 .cad-cost__flabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
