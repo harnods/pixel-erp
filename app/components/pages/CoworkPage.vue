@@ -510,11 +510,27 @@ const consentScopes = computed(() => (consentConn.value ? connectionScopes(conse
 const consentAuth = computed(() => (consentConn.value ? connectionAuthMode(consentConn.value) : 'oauth'))
 function openConsent(c: CoworkConnection) { consentConn.value = c; consentBusy.value = false; consentOpen.value = true }
 function cancelConsent() { if (consentBusy.value) return; consentOpen.value = false; consentConn.value = null }
-function authorizeConsent() {
+const consentReal = computed(() => consentConn.value?.provider === 'google' && google.isConfigured.value)
+async function authorizeConsent() {
   const c = consentConn.value
   if (!c || consentBusy.value) return
   consentBusy.value = true
-  // Simulate the provider round-trip (real OAuth for Google runs its own popup).
+  // Real Google OAuth when a client ID is configured; otherwise land it via the
+  // simulated round-trip so every app can be connected in the prototype.
+  if (c.provider === 'google' && google.isConfigured.value) {
+    try {
+      const { sample } = await google.connect(c.scope!)
+      setConnection(c.id, true)
+      if (sample) connSample[c.id] = sample
+      toast.notify({ variant: 'success', title: `${c.name} connected` })
+      consentOpen.value = false; consentConn.value = null
+    } catch {
+      toast.notify({ variant: 'error', title: `Couldn't connect ${c.name}`, description: 'Please try again.' })
+    } finally {
+      consentBusy.value = false
+    }
+    return
+  }
   window.setTimeout(() => {
     setConnection(c.id, true)
     toast.notify({ variant: 'success', title: `${c.name} connected` })
@@ -751,8 +767,7 @@ function confirmArchive() {
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
-  if (c.provider === 'google') connectGoogle(c) // real Google OAuth popup
-  else openConsent(c)                            // consent screen → connect
+  openConsent(c) // consent screen → connect (real Google OAuth on authorize when configured)
 }
 function manageConnection(c: CoworkConnection) {
   infoToast(`Manage ${c.name} — coming soon`)

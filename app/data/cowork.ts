@@ -1611,6 +1611,14 @@ export function connectionScopes(c: CoworkConnection): { label: string; write?: 
     { label: 'Read the records you can already see in ' + c.name },
     { label: 'Create and update records where you have edit rights', write: true },
   ]
+  // Google apps get accurate, product-specific scopes.
+  const GOOGLE: Record<string, { label: string; write?: boolean }[]> = {
+    gmail: [{ label: 'Read your emails and drafts' }, { label: 'Send emails on your behalf', write: true }, { label: 'Read your contacts' }],
+    gdrive: [{ label: 'Read your files and folders' }, { label: 'Create and edit files', write: true }, { label: 'Read file names and metadata' }],
+    gcal: [{ label: 'Read your calendars and events' }, { label: 'Create and update events on your behalf', write: true }, { label: 'Read attendees and availability' }],
+    gcontacts: [{ label: 'Read your contacts and their details' }, { label: 'Read contact groups and labels' }],
+  }
+  if (GOOGLE[c.id]) return GOOGLE[c.id]!
   const primary = c.categories.find((k) => k !== 'Featured') ?? c.categories[0]
   switch (primary) {
     case 'Communication': return [
