@@ -11,6 +11,7 @@ import { useTableState } from '~/composables/useTableState'
 import { listShipments, DELIVERY_COURIERS } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
+import { assigneeDisplayName } from '~/data/users'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -341,7 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Assignee / Warehouse — View details chip on hover ── -->
     <template #cell-courier="{ value }">{{ value || '—' }}</template>
-    <template #cell-assignee="{ value }">{{ value || '—' }}</template>
+    <template #cell-assignee="{ value }">{{ assigneeDisplayName(value as string) || t('Unassigned') }}</template>
     <template #cell-warehouseName="{ value, row }">
       <a class="cell-link cell-text shp-warehouse" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">{{ value }}</a>
     </template>

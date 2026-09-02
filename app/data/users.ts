@@ -80,3 +80,22 @@ export function getUserById(id: string): ErpUser | undefined {
 export function findUserByName(name: string): ErpUser | undefined {
   return users.find((u) => u.name === name);
 }
+
+/**
+ * Is this assignee still a company user?
+ *
+ * A task keeps the NAME it was assigned to. When that person leaves the company
+ * their user record goes, but the name stays stamped on every task they held —
+ * so the task looks assigned while nobody is actually responsible for it. Tasks
+ * whose assignee no longer resolves are treated as unassigned, which is what
+ * puts them back in front of a warehouse manager to hand over.
+ */
+export function isActiveUserName(name: string | undefined | null): boolean {
+  if (!name) return false;
+  return users.some((u) => u.name === name);
+}
+
+/** What to show in an Assignee cell: the person, or nothing if they've left. */
+export function assigneeDisplayName(name: string | undefined | null): string {
+  return isActiveUserName(name) ? String(name) : "";
+}

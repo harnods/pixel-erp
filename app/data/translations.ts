@@ -1062,6 +1062,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "This warehouse uses storage locations. Select a location before making adjustments.": "Gudang ini menggunakan lokasi penyimpanan. Pilih lokasi sebelum melakukan penyesuaian.",
   "Select location": "Pilih lokasi",
   "Remove location": "Hapus lokasi",
+  "Unassigned": "Belum ditugaskan",
   "Edit count task": "Ubah tugas perhitungan",
   "Count task updated": "Tugas perhitungan berhasil diperbarui",
   "Only an Open count task can be edited": "Hanya tugas perhitungan berstatus Terbuka yang dapat diubah",
