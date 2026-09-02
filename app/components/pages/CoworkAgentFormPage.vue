@@ -14,6 +14,7 @@ import {
   MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio, MpSelect,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css,
   toast,
 } from '@mekari/pixel3'
@@ -808,49 +809,61 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
     @save="(ids: string[]) => selectedEmployeeIds = ids"
   />
 
-  <!-- Approval-mode confirmation sheet (switching a skill to auto) -->
-  <Teleport to="body">
-    <Transition name="caf-sheet">
-      <div v-if="autoSheet.open" class="caf-sheet-overlay" @click.self="autoSheet.open = false">
-        <div class="caf-sheet" role="dialog" aria-modal="true">
-          <p class="caf-sheet__title">Let {{ name || 'this agent' }} run “{{ autoSheet.skill?.name }}” automatically?</p>
-          <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
-          <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
-          <div class="caf-sheet__grid">
-            <label class="caf-sheet__f">
-              <span class="caf-sheet__flabel">Max per run</span>
-              <span class="caf-sheet__fhint">The most actions it may take in one run.</span>
-              <MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" />
-            </label>
-            <label class="caf-sheet__f">
-              <span class="caf-sheet__flabel">Max per day</span>
-              <span class="caf-sheet__fhint">The daily cap across all runs.</span>
-              <MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" />
-            </label>
-            <label class="caf-sheet__f">
-              <span class="caf-sheet__flabel">Value ceiling</span>
-              <span class="caf-sheet__fhint">The rupiah amount of one action — e.g. a purchase request total. Anything above this still asks you first. (Not API/token cost.)</span>
-              <MpInput id="caf-c-ceil" v-model="ceilingDisplay" inputmode="numeric" />
-            </label>
-            <label class="caf-sheet__f">
-              <span class="caf-sheet__flabel">Scope <span class="caf-sheet__opt">(optional)</span></span>
-              <span class="caf-sheet__fhint">Limit to one area/location; leave blank for all.</span>
-              <MpInput id="caf-c-scope" v-model="autoSheet.scope" />
-            </label>
-          </div>
-          <div class="caf-sheet__notify">
-            <span class="caf-sheet__flabel caf-sheet__flabel--notify">Notify me</span>
-            <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
-            <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
-          </div>
-          <div class="caf-sheet__actions">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="autoSheet.open = false">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" :disabled="!autoSheetValid" @click="confirmAutoSheet">Turn on automatic approval</button>
-          </div>
+  <!-- Approval-mode confirmation modal (switching a skill to auto) -->
+  <MpModal
+    id="caf-auto-sheet"
+    :is-open="autoSheet.open"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="autoSheet.open = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Let {{ name || 'this agent' }} run “{{ autoSheet.skill?.name }}” automatically?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
+        <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
+        <div class="caf-sheet__grid">
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Max per run</span>
+            <span class="caf-sheet__fhint">The most actions it may take in one run.</span>
+            <MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Max per day</span>
+            <span class="caf-sheet__fhint">The daily cap across all runs.</span>
+            <MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Value ceiling</span>
+            <span class="caf-sheet__fhint">The rupiah amount of one action — e.g. a purchase request total. Anything above this still asks you first. (Not API/token cost.)</span>
+            <MpInput id="caf-c-ceil" v-model="ceilingDisplay" inputmode="numeric" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Scope <span class="caf-sheet__opt">(optional)</span></span>
+            <span class="caf-sheet__fhint">Limit to one area/location; leave blank for all.</span>
+            <MpInput id="caf-c-scope" v-model="autoSheet.scope" />
+          </label>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+        <div class="caf-sheet__notify">
+          <span class="caf-sheet__flabel caf-sheet__flabel--notify">Notify me</span>
+          <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
+          <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="autoSheet.open = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded :is-disabled="!autoSheetValid" @click="confirmAutoSheet">Turn on automatic approval</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
 
@@ -1030,19 +1043,12 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-chat { position: sticky; top: 0; height: 620px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 
 /* Approval-mode confirmation sheet (top-aligned, like ConfirmModal) */
-.caf-sheet-enter-active, .caf-sheet-leave-active { transition: opacity 200ms ease; }
-.caf-sheet-enter-from, .caf-sheet-leave-to { opacity: 0; }
-.caf-sheet-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; align-items: flex-start; justify-content: center; }
-.caf-sheet { width: min(480px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
-.caf-sheet__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
 .caf-sheet__grid { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .caf-sheet__f { display: flex; flex-direction: column; gap: 2px; }
 .caf-sheet__flabel { font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__opt { font-weight: 400; color: var(--mp-text-secondary); }
 .caf-sheet__fhint { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); margin-bottom: 4px; line-height: var(--mp-line-heights-sm, 16px); }
-.caf-sheet__confirm { margin-top: var(--mp-spacing-4); }
 .caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
 .caf-sheet__flabel--notify { font-size: var(--mp-font-sizes-md, 14px); }
-.caf-sheet__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 </style>
