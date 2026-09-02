@@ -17,6 +17,7 @@
  */
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
@@ -252,7 +253,7 @@ async function copyAnswer(i: number) {
 function rate(i: number, v: 'up' | 'down') {
   const cur = feedback.value[i]
   feedback.value = { ...feedback.value, [i]: cur === v ? undefined : v }
-  if (feedback.value[i]) toast.notify({ variant: 'info', title: v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving" })
+  if (feedback.value[i]) infoToast(v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving")
 }
 function speak(i: number) {
   const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
