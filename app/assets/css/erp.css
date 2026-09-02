@@ -20,7 +20,7 @@
   background: var(--mp-background-neutral);
   border-color: var(--mp-border-bold);
   color: var(--mp-text-default);
-  font-weight: var(--mp-font-weights-regular);
+  font-weight: var(--mp-font-weights-semi-bold);   /* semibold like primary; only ghost is regular */
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -42,6 +42,12 @@
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
 }
+/* OVERRIDE: an icon inside a primary button is ALWAYS white. currentColor icons
+   inherit the white text; icons that carry their own fill (airene-brand, brand
+   glyphs) would otherwise show their native colour, so force those white too. */
+.btn-enterprise--primary :is(.mp-icon, svg) { color: #fff !important; }
+.btn-enterprise--primary :is(.mp-icon, svg) [fill]:not([fill="none"]) { fill: #fff !important; }
+.btn-enterprise--primary :is(.mp-icon, svg) [stroke]:not([stroke="none"]) { stroke: #fff !important; }
 
 .btn-enterprise--danger {
   background: var(--mp-colors-red-600, #dc2626);
