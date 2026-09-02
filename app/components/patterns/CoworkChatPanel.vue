@@ -6,7 +6,7 @@
  * `cw-composer2` (field + "+", model chip, round send). Given a plain `messages`
  * array + a `send` handler, so it can back a real chat or a dry-run test panel.
  */
-import { ref, h, nextTick } from 'vue'
+import { ref, h, computed, nextTick } from 'vue'
 import { MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import { renderMessage } from '~/composables/useAireneChat'
 
@@ -20,8 +20,17 @@ const props = defineProps<{
   suggestions?: string[]
   models?: { id: string; label: string }[]
   modelId?: string
+  /** Chrome toggles — the wizard preview hides the header, the "+", agent switching. */
+  hideHeader?: boolean
+  hideAdd?: boolean
+  agentSwitchable?: boolean
+  /** Cap the number of user turns (preview). When reached the composer locks. */
+  maxTurns?: number
 }>()
 const emit = defineEmits<{ (e: 'send', text: string): void; (e: 'update:modelId', v: string): void }>()
+
+const turns = computed(() => props.messages.filter((m) => m.role === 'user').length)
+const atLimit = computed(() => props.maxTurns != null && turns.value >= props.maxTurns)
 
 // Gemini gradient mark (identical to the Chats page composer).
 const GeminiMark = (p: { size?: number }) =>
@@ -43,19 +52,20 @@ const bodyEl = ref<HTMLElement | null>(null)
 const modelLabel = () => props.models?.find((m) => m.id === props.modelId)?.label ?? props.models?.[0]?.label ?? 'Gemini Flash'
 function scrollToEnd() { nextTick(() => { if (bodyEl.value) bodyEl.value.scrollTop = bodyEl.value.scrollHeight }) }
 function submit() {
+  if (atLimit.value) return
   const t = input.value.trim()
   if (!t) return
   input.value = ''
   emit('send', t)
   scrollToEnd()
 }
-function ask(s: string) { emit('send', s); scrollToEnd() }
+function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEnd() }
 </script>
 
 <template>
   <div class="ccp">
     <!-- Header (mirrors the chat drawer chrome) -->
-    <div class="ccp-head">
+    <div v-if="!hideHeader" class="ccp-head">
       <button type="button" class="ccp-head-title">New chat<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="ccp-head-actions">
         <button type="button" class="ccp-head-icon" aria-label="Open in full"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M14 4h6v6M20 4l-8 8M10 20H4v-6M4 20l8-8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -72,10 +82,10 @@ function ask(s: string) { emit('send', s); scrollToEnd() }
         <div class="cwc-greetings">
           <img class="ccp-mascot" :src="agentAvatar" :alt="agentName || 'Agent'" />
           <p class="cwc-greeting-title">Hi, I'm {{ agentName || 'here' }}.</p>
-          <span class="ccp-agent-chip"><img :src="agentAvatar" :alt="agentName" class="ccp-agent-chip__av" /> {{ agentName || 'Your agent' }}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="ccp-agent-chip"><img :src="agentAvatar" :alt="agentName" class="ccp-agent-chip__av" /> {{ agentName || 'Your agent' }}<svg v-if="agentSwitchable" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <p class="cwc-greeting-msg">{{ greeting || 'Ask me anything to see how I’ll respond.' }}</p>
         </div>
-        <div class="cwc-suggestions">
+        <div v-if="!atLimit" class="cwc-suggestions">
           <button v-for="s in (suggestions ?? [])" :key="s" type="button" class="cwc-suggestion" @click="ask(s)">
             <MpIcon name="airene-brand" size="sm" class="cwc-sug-icon" /> {{ s }}
           </button>
@@ -101,11 +111,11 @@ function ask(s: string) { emit('send', s); scrollToEnd() }
     <div class="ccp-footer">
       <div class="cw-composer2">
         <div class="cw-composer2__field">
-          <textarea v-model="input" class="cw-composer2__input" rows="2" :placeholder="`Ask ${agentName || 'your agent'}…`" @keydown.enter.exact.prevent="submit" />
+          <textarea v-model="input" class="cw-composer2__input" rows="2" :disabled="atLimit" :placeholder="atLimit ? `Preview limited to ${maxTurns} messages` : `Ask ${agentName || 'your agent'}…`" @keydown.enter.exact.prevent="submit" />
         </div>
         <div class="cw-composer2__foot">
           <div class="cw-composer2__left">
-            <button type="button" class="cw-foot-btn ccp-plus" aria-label="Add"><MpIcon name="add" size="sm" /></button>
+            <button v-if="!hideAdd" type="button" class="cw-foot-btn ccp-plus" aria-label="Add"><MpIcon name="add" size="sm" /></button>
           </div>
           <div class="cw-composer2__right">
             <MpPopover v-if="models?.length" id="ccp-model" is-close-on-select placement="bottom-end">
@@ -119,7 +129,7 @@ function ask(s: string) { emit('send', s); scrollToEnd() }
               </MpPopoverContent>
             </MpPopover>
             <span v-else class="cw-model-btn"><GeminiMark :size="16" /> {{ modelLabel() }}</span>
-            <button class="cw-send-btn" type="button" aria-label="Send" @click="submit">
+            <button class="cw-send-btn" type="button" aria-label="Send" :aria-disabled="atLimit" @click="submit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M12 5L6 11M12 5L18 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
@@ -185,6 +195,9 @@ function ask(s: string) { emit('send', s); scrollToEnd() }
 .cw-model-btn > svg:first-child { flex-shrink: 0; }
 .cw-send-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #029861); color: var(--mp-text-inverse, #fff); cursor: pointer; }
 .cw-send-btn:hover { filter: brightness(0.94); }
+.cw-send-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.cw-send-btn[aria-disabled="true"]:hover { filter: none; }
+.cw-composer2__input:disabled { cursor: default; }
 .cwc-disclaimer { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
 .cwc-disclaimer-link { color: var(--mp-text-link); cursor: pointer; }
 .cwc-disclaimer-link:hover { text-decoration: underline; text-underline-offset: 2px; }

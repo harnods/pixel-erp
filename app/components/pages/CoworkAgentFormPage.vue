@@ -21,6 +21,7 @@ import {
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
@@ -674,30 +675,30 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             </div>
           </div>
 
-          <section class="caf-review-sec"><h3>Persona</h3>
-            <p class="caf-review-line"><span>Instruction</span>{{ instruction || '—' }}</p>
-            <p class="caf-review-line"><span>Model</span>{{ modelLabel }}</p>
-            <p class="caf-review-line"><span>Language</span>{{ LANGS.find((l) => l.id === language)?.label }}</p>
-            <button type="button" class="caf-review-edit" @click="goToStep('persona')">Edit</button>
+          <section class="caf-review-sec">
+            <div class="caf-review-sechead"><h3>Persona</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('persona')">Edit</button></div>
+            <ContentList label="Instruction" :value="instruction || '—'" />
+            <ContentList label="Model" :value="modelLabel" />
+            <ContentList label="Language" :value="LANGS.find((l) => l.id === language)?.label" />
           </section>
-          <section class="caf-review-sec"><h3>Knowledge</h3>
-            <p class="caf-review-line"><span>Sources</span>{{ knowledgeSummary }}</p>
-            <button type="button" class="caf-review-edit" @click="goToStep('knowledge')">Edit</button>
+          <section class="caf-review-sec">
+            <div class="caf-review-sechead"><h3>Knowledge</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('knowledge')">Edit</button></div>
+            <ContentList label="Sources" :value="knowledgeSummary" />
           </section>
-          <section class="caf-review-sec"><h3>Skills</h3>
-            <p class="caf-review-line"><span>Enabled</span>{{ enabledSkills.length ? enabledSkills.map((s) => s.name).join(', ') : 'None' }}</p>
-            <button type="button" class="caf-review-edit" @click="goToStep('skills')">Edit</button>
+          <section class="caf-review-sec">
+            <div class="caf-review-sechead"><h3>Skills</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('skills')">Edit</button></div>
+            <ContentList label="Enabled" :value="enabledSkills.length ? enabledSkills.map((s) => s.name).join(', ') : 'None'" />
           </section>
           <section v-if="autoSkills.length" class="caf-review-sec caf-review-sec--warn">
-            <h3><MpIcon name="magic" size="sm" /> Will act without asking</h3>
+            <div class="caf-review-sechead"><h3><MpIcon name="magic" size="sm" /> Will act without asking</h3></div>
             <div v-for="s in autoSkills" :key="s.id" class="caf-willact">
               <span class="caf-willact__name">{{ s.name }}</span>
               <span class="caf-willact__cond">{{ modeChip(s) }}<template v-if="skillState[s.id]!.autoConditions?.valueCeiling"> · ≤ {{ idr(skillState[s.id]!.autoConditions!.valueCeiling!) }}</template><template v-if="skillState[s.id]!.autoConditions?.scope"> · {{ skillState[s.id]!.autoConditions!.scope }}</template></span>
             </div>
           </section>
-          <section class="caf-review-sec"><h3>Visibility</h3>
-            <p class="caf-review-line"><span>Who</span>{{ visibilitySummary }}</p>
-            <button type="button" class="caf-review-edit" @click="goToStep('visibility')">Edit</button>
+          <section class="caf-review-sec">
+            <div class="caf-review-sechead"><h3>Visibility</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('visibility')">Edit</button></div>
+            <ContentList label="Who" :value="visibilitySummary" />
           </section>
 
           <!-- Actions live under the summary; the chat panel sits to the right of them -->
@@ -718,6 +719,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             :suggestions="testSuggestions"
             :models="MODELS"
             :model-id="model"
+            hide-header
+            hide-add
+            :agent-switchable="false"
+            :max-turns="3"
             @update:model-id="(v: string) => model = v"
             @send="sendTest"
           />
@@ -906,18 +911,21 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-audience { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Review */
+/* Step-5 summary — all content is 14px; key/value rows use the ContentList pattern */
 .caf-review-head { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .caf-review-avatar { width: 56px; height: 56px; border-radius: var(--mp-radii-lg, 12px); object-fit: contain; background: transparent; }
 .caf-review-head > div { flex: 1; min-width: 0; }
-.caf-review-name { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
-.caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.caf-review-sec { position: relative; padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default); }
-.caf-review-sec h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
+.caf-review-name { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
+.caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
+.caf-review-sec { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.caf-review-sechead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); min-height: 36px; }
+.caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
 .caf-review-sec--warn h3 { color: #6941C6; }
-.caf-review-line { display: grid; grid-template-columns: 110px 1fr; gap: var(--mp-spacing-3); margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.caf-review-line span:first-child { color: var(--mp-text-secondary); }
-.caf-review-edit { position: absolute; top: var(--mp-spacing-4); right: 0; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; color: var(--mp-text-link); }
-.caf-willact { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: 6px 0; font-size: var(--mp-font-sizes-sm); }
+/* Edit button — hidden until the section is hovered/focused; secondary style */
+.caf-review-edit { opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.caf-review-sec:hover .caf-review-edit,
+.caf-review-sec:focus-within .caf-review-edit { opacity: 1; pointer-events: auto; }
+.caf-willact { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: 6px 0; font-size: var(--mp-font-sizes-md, 14px); }
 .caf-willact__name { color: var(--mp-text-default); font-weight: 500; }
 .caf-willact__cond { color: #6941C6; }
 
