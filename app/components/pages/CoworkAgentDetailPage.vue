@@ -108,6 +108,21 @@ const costSeries = computed(() => {
   return { bars, total, max, perDay: Math.round(total / COST_RANGE_DAYS) }
 })
 function rp(n: number): string { return `Rp${Math.round(n).toLocaleString('id-ID')}` }
+// Y-axis scaled to the next Rp100rb above the peak, with a gridline per Rp100rb.
+const AXIS_STEP = 100_000
+const axisMax = computed(() => Math.max(AXIS_STEP, Math.ceil(costSeries.value.max / AXIS_STEP) * AXIS_STEP))
+const yTicks = computed(() => { const t: number[] = []; for (let v = AXIS_STEP; v <= axisMax.value; v += AXIS_STEP) t.push(v); return t })
+function yLabel(v: number): string { return `Rp${(v / 1000).toLocaleString('id-ID')}rb` }
+// X-axis: real calendar dates for the last 28 days, labelled every Monday.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const costDates = (() => {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const out: Date[] = []
+  for (let i = 0; i < COST_RANGE_DAYS; i++) { const d = new Date(today); d.setDate(today.getDate() - (COST_RANGE_DAYS - 1 - i)); out.push(d) }
+  return out
+})()
+const weekTicks = costDates.map((d, i) => (d.getDay() === 1 ? { i, label: `${MONTHS[d.getMonth()]} ${d.getDate()}` } : null)).filter(Boolean) as { i: number; label: string }[]
+function barDateLabel(i: number): string { const d = costDates[i]!; return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` }
 
 const TAB_KEYS = ['overview', 'knowledge', 'skills', 'connections', 'visibility', 'usage']
 // Deep-link support: `?tab=usage` (from the index "View usage" action) opens straight to that tab.
@@ -318,16 +333,23 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
                     <div class="cad-cost__fig"><span class="cad-cost__flabel">Avg / day</span><span class="cad-cost__fvalue cad-cost__fvalue--muted">{{ rp(costSeries.perDay) }}</span></div>
                   </div>
                   <div class="cad-chart" role="img" :aria-label="`Daily cost over the last ${COST_RANGE_DAYS} days, total ${rp(costSeries.total)}`">
-                    <div class="cad-chart__bars">
-                      <div v-for="bar in costSeries.bars" :key="bar.day" class="cad-chart__col">
-                        <span class="cad-chart__tip" :class="{ 'is-edge-l': bar.day <= 1, 'is-edge-r': bar.day >= COST_RANGE_DAYS - 2 }">
-                          <span class="cad-chart__tip-cost">{{ rp(bar.value) }}</span>
-                          <span class="cad-chart__tip-day">{{ bar.day === COST_RANGE_DAYS - 1 ? 'Today' : `${COST_RANGE_DAYS - 1 - bar.day} days ago` }}</span>
-                        </span>
-                        <div class="cad-chart__bar" :class="{ 'is-peak': bar.peak }" :style="{ height: `${Math.max(2, (bar.value / costSeries.max) * 100)}%` }" />
+                    <div class="cad-chart__plot">
+                      <div v-for="t in yTicks" :key="t" class="cad-chart__grid" :style="{ bottom: `${(t / axisMax) * 100}%` }">
+                        <span class="cad-chart__ytick">{{ yLabel(t) }}</span>
+                      </div>
+                      <div class="cad-chart__bars">
+                        <div v-for="bar in costSeries.bars" :key="bar.day" class="cad-chart__col">
+                          <span class="cad-chart__tip" :class="{ 'is-edge-l': bar.day <= 1, 'is-edge-r': bar.day >= COST_RANGE_DAYS - 2 }">
+                            <span class="cad-chart__tip-cost">{{ rp(bar.value) }}</span>
+                            <span class="cad-chart__tip-day">{{ barDateLabel(bar.day) }}</span>
+                          </span>
+                          <div class="cad-chart__bar" :class="{ 'is-peak': bar.peak }" :style="{ height: `${Math.max(1, (bar.value / axisMax) * 100)}%` }" />
+                        </div>
                       </div>
                     </div>
-                    <div class="cad-chart__axis"><span>{{ COST_RANGE_DAYS }} days ago</span><span>Today</span></div>
+                    <div class="cad-chart__xaxis">
+                      <span v-for="tk in weekTicks" :key="tk.i" class="cad-chart__xtick" :style="{ left: `${((tk.i + 0.5) / COST_RANGE_DAYS) * 100}%` }">{{ tk.label }}</span>
+                    </div>
                   </div>
                   <p class="cad-cost__note">Cost is estimated from model tokens and tool calls, and may take up to 24 hours to update.</p>
                 </section>
@@ -451,7 +473,11 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 .cad-cost__fvalue--muted { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-secondary); }
 .cad-cost__op { align-self: center; color: var(--mp-text-secondary); }
 .cad-chart { margin-top: var(--mp-spacing-5); }
-.cad-chart__bars { display: flex; align-items: flex-end; gap: 4px; height: 180px; padding-bottom: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default); }
+/* Plot area: gridlines (per Rp100rb) behind the bars, y-axis labels on the right. */
+.cad-chart__plot { position: relative; height: 220px; padding-right: 52px; border-bottom: 1px solid var(--mp-border-bold, #8c9596); }
+.cad-chart__grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--mp-border-subtle, #eef1f2); pointer-events: none; }
+.cad-chart__ytick { position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--mp-text-secondary); white-space: nowrap; }
+.cad-chart__bars { position: relative; height: 100%; display: flex; align-items: flex-end; gap: 4px; }
 .cad-chart__col { position: relative; flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }
 .cad-chart__bar { width: 100%; max-width: 22px; border-radius: 4px 4px 0 0; background: var(--mp-background-brand-bold, #029861); transition: height 240ms ease; }
 .cad-chart__bar.is-peak { background: #6941C6; }
@@ -466,7 +492,8 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 .cad-chart__col:hover .cad-chart__tip { opacity: 1; }
 .cad-chart__tip-cost { font-size: 12px; font-weight: 600; }
 .cad-chart__tip-day { font-size: 11px; color: rgba(255,255,255,0.72); }
-.cad-chart__axis { display: flex; justify-content: space-between; margin-top: var(--mp-spacing-2); font-size: 11px; color: var(--mp-text-secondary); }
+.cad-chart__xaxis { position: relative; height: 16px; margin-top: var(--mp-spacing-2); padding-right: 52px; }
+.cad-chart__xtick { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; color: var(--mp-text-secondary); white-space: nowrap; }
 .cad-cost__note { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .cad-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-20, 80px); color: var(--mp-text-secondary); }
