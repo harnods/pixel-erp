@@ -73,13 +73,13 @@ function createCampaign() {
 }
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Campaign', width: '260px', sortable: true, sortType: 'string' },
-  { key: 'brand', label: 'Brand', width: '160px', sortable: true, sortType: 'string' },
-  { key: 'purpose', label: 'Purpose', width: '180px' },
-  { key: 'creatives', label: 'Creatives', width: '110px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'owner', label: 'Owner', width: '160px' },
-  { key: 'status', label: 'Status', width: '150px' },
-  { key: 'updatedAt', label: 'Last updated', width: '160px', sortable: true, sortType: 'date' },
+  { key: 'name', label: 'Campaign', kind: 'name', sortable: true, sortType: 'string' },
+  { key: 'brand', label: 'Brand', kind: 'name', sortable: true, sortType: 'string' },
+  { key: 'purpose', label: 'Purpose' },
+  { key: 'creatives', label: 'Creatives', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'owner', label: 'Owner', kind: 'name' },
+  { key: 'status', label: 'Status', kind: 'status' },
+  { key: 'updatedAt', label: 'Last updated', kind: 'date', sortable: true, sortType: 'date' },
 ]
 </script>
 

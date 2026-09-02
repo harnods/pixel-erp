@@ -20,13 +20,13 @@ function goConfigure(id: string) { router.push(`/warehouses/${id}/configure`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',         width: '155px', sortType: 'text' },
-  { key: 'code',        label: 'Code',         width: '78px',  sortType: 'text' },
-  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right', sortType: 'number' },
-  { key: 'pics',        label: 'PIC',          width: '108px' },
-  { key: 'address',     label: 'Address',      width: '90px',  sortType: 'text' },
-  { key: 'status',      label: 'Status',       width: '90px',  sortType: 'text' },
-  { key: 'lastUpdated', label: 'Last updated', width: '120px' },
+  { key: 'name',        label: 'Name',         kind: 'name',    sortType: 'text' },
+  { key: 'code',        label: 'Code',         kind: 'number',  sortType: 'text' },
+  { key: 'skuTotal',    label: 'SKU qty',      kind: 'default', align: 'right', sortType: 'number' },
+  { key: 'pics',        label: 'PIC',          kind: 'name' },
+  { key: 'address',     label: 'Address',      kind: 'address', sortType: 'text' },
+  { key: 'status',      label: 'Status',       kind: 'status',  sortType: 'text' },
+  { key: 'lastUpdated', label: 'Last updated', kind: 'date' },
 ]
 
 // Column settings — Name is always on and cannot be hidden

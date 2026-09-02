@@ -48,12 +48,12 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',            label: 'Put-away no.',      width: '180px', sortType: 'text' },
-  { key: 'receivingTaskNos',  label: 'Receiving task no.', width: '240px' },
-  { key: 'warehouseName',     label: 'Warehouse',         width: '180px', sortType: 'text' },
-  { key: 'assignee',          label: 'Assignee',          width: '160px', sortType: 'text' },
-  { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'status',            label: 'Status',            width: '160px', sortType: 'text' },
+  { key: 'taskNo',            label: 'Put-away no.',      kind: 'number', sortType: 'text' },
+  { key: 'receivingTaskNos',  label: 'Receiving task no.', kind: 'number' },
+  { key: 'warehouseName',     label: 'Warehouse',         kind: 'name', sortType: 'text' },
+  { key: 'assignee',          label: 'Assignee',          kind: 'name', sortType: 'text' },
+  { key: 'itemQty',           label: 'Items',             align: 'right', sortType: 'number' },
+  { key: 'status',            label: 'Status',            kind: 'status', sortType: 'text' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.

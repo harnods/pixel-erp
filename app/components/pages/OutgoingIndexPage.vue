@@ -46,14 +46,14 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'salesNo',       label: 'Number',    width: '220px', sortType: 'text' },
-  { key: 'source',        label: 'Source',    width: '180px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse', width: '180px', sortType: 'text' },
-  { key: 'status',        label: 'Status',    width: '150px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Number',    kind: 'number', sortType: 'text' },
+  { key: 'source',        label: 'Source',    sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse', kind: 'name', sortType: 'text' },
+  { key: 'status',        label: 'Status',    kind: 'status', sortType: 'text' },
   { key: 'icons',         label: '',          width: '100px', noHeader: true },
-  { key: 'skuQty',        label: 'SKU qty',   width: '100px', align: 'right', sortType: 'number' },
-  { key: 'orderQty',      label: 'Order qty', width: '120px', align: 'right', sortType: 'number' },
-  { key: 'dueDate',       label: 'Due date',  width: '180px', sortType: 'date' },
+  { key: 'skuQty',        label: 'SKU qty',   align: 'right', sortType: 'number' },
+  { key: 'orderQty',      label: 'Order qty', align: 'right', sortType: 'number' },
+  { key: 'dueDate',       label: 'Due date',  kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
 // the ColumnSettings menu turns them back on. `memo` is a sub-row of Number, not a

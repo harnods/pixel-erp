@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { MpToastManager } from '@mekari/pixel3'
 import { useProductMenu } from '~/composables/useProductMenu'
+import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { isHrPath } from '~/utils/hrRoutes'
 
 // The module nav follows the active product: Talenta (HR) on /hr* + the HR module
@@ -11,16 +12,20 @@ const isHr = computed(() => isHrPath(route.path))
 const isCrm = computed(() => route.path.startsWith('/crm'))
 // The product-switcher rail is opt-in (top-right user menu → "Show ERP Menu").
 const { showProductMenu } = useProductMenu()
+// A report page can request a chrome-less full-screen view (header + nav hidden).
+const { isReportFullscreen } = useReportFullscreen()
 </script>
 
 <template>
   <div class="app-shell">
-    <ErpHeader />
-    <div class="main-container" :class="{ 'main-container--rail': showProductMenu }">
-      <ErpNavbarGroup v-if="showProductMenu" />
-      <HrSidebar v-if="isHr" />
-      <CrmSidebar v-else-if="isCrm" />
-      <ErpSidebar v-else />
+    <ErpHeader v-if="!isReportFullscreen" />
+    <div class="main-container" :class="{ 'main-container--rail': showProductMenu && !isReportFullscreen, 'main-container--fullscreen': isReportFullscreen }">
+      <template v-if="!isReportFullscreen">
+        <ErpNavbarGroup v-if="showProductMenu" />
+        <HrSidebar v-if="isHr" />
+        <CrmSidebar v-else-if="isCrm" />
+        <ErpSidebar v-else />
+      </template>
       <div class="content-area">
         <slot />
       </div>
@@ -138,6 +143,12 @@ body {
    ever visible through the rounded-corner cutouts (children tile the rest). */
 .main-container--rail {
   background: var(--mp-background-surface-bold);
+}
+/* Report full-screen — frame the white stage with an even 2px base-colour
+   border on all four sides, keeping the 12px rounded corners. */
+.main-container--fullscreen {
+  border: 2px solid var(--mp-background-surface-bold);
+  border-radius: 12px;
 }
 .main-container--rail .sidebar {
   border-top-left-radius: 12px;

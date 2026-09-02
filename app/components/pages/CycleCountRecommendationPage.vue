@@ -32,11 +32,11 @@ const { options: recWarehouses, warehouseId: selectedWarehouseId, setWarehouse }
 
 // ── Columns ─────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'product',       label: 'Product',         width: '260px', sortable: true, sortType: 'text'   },
-  { key: 'sku',           label: 'SKU',             width: '140px', sortable: true, sortType: 'text'   },
-  { key: 'onHand',        label: 'On hand qty',     width: '180px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'lastCountDate', label: 'Last count date', width: '160px', sortable: true, sortType: 'date'   },
-  { key: 'reasons',       label: 'Triggered by',    width: '240px' },
+  { key: 'product',       label: 'Product',         kind: 'name', sortable: true, sortType: 'text'   },
+  { key: 'sku',           label: 'SKU',             kind: 'number', sortable: true, sortType: 'text'   },
+  { key: 'onHand',        label: 'On hand qty',     sortable: true, sortType: 'number', align: 'right' },
+  { key: 'lastCountDate', label: 'Last count date', kind: 'date', sortable: true, sortType: 'date'   },
+  { key: 'reasons',       label: 'Triggered by',    kind: 'tags' },
 ]
 
 // ── Recommendation logic ─────────────────────────────────────────────────────

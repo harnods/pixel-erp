@@ -40,12 +40,12 @@ const { search, statusFilter, currentPage, paginated, total, perPage, setPage, s
   })
 
 const columns: TableColumn[] = [
-  { key: 'id',          label: 'Transaction number', width: '160px', sortable: true, sortType: 'text' },
-  { key: 'requestDate', label: 'Request date',       width: '200px', sortable: true, sortType: 'date' },
-  { key: 'claimType',   label: 'Claim type',         width: '160px',                 sortType: 'text' },
-  { key: 'category',    label: 'Claim category',     width: '220px',                 sortType: 'text' },
-  { key: 'status',      label: 'Status',             width: '180px' },
-  { key: 'amount',      label: 'Amount', align: 'right', width: '160px', sortable: true, sortType: 'number' },
+  { key: 'id',          label: 'Transaction number', kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'requestDate', label: 'Request date',       kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'claimType',   label: 'Claim type',                         sortType: 'text' },
+  { key: 'category',    label: 'Claim category',                     sortType: 'text' },
+  { key: 'status',      label: 'Status',             kind: 'status' },
+  { key: 'amount',      label: 'Amount', align: 'right', kind: 'amount', sortable: true, sortType: 'number' },
 ]
 
 // ── Policy drawer ──

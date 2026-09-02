@@ -170,20 +170,20 @@ function confirmDelete() {
 
 // ── Products table (Products tab) — ErpTablePage (read-only, single page) ──────
 const allStockColumns: TableColumn[] = [
-  { key: 'name',                label: 'Name',                 width: '320px', sortType: 'text'   },
-  { key: 'sku',                 label: 'SKU',                  width: '200px', sortType: 'text'   },
-  { key: 'barcode',             label: 'Barcode',              width: '170px', sortType: 'text'   },
-  { key: 'category',            label: 'Category',             width: '150px', sortType: 'text'   },
-  { key: 'locations',           label: 'Location',             width: '230px' },
-  { key: 'onHand',              label: 'On hand qty',          width: '120px', align: 'right', sortType: 'number' },
-  { key: 'reserved',            label: 'Reserved qty',         width: '120px', align: 'right', sortType: 'number' },
-  { key: 'available',           label: 'Available qty',        width: '120px', align: 'right', sortType: 'number' },
-  { key: 'onTheWay',            label: 'On the way qty',       width: '130px', align: 'right', sortType: 'number' },
-  { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right', sortType: 'number' },
-  { key: 'unit',                label: 'Unit',                 width: '90px',  sortType: 'text'   },
+  { key: 'name',                label: 'Name',                 kind: 'name',   sortType: 'text'   },
+  { key: 'sku',                 label: 'SKU',                  kind: 'number', sortType: 'text'   },
+  { key: 'barcode',             label: 'Barcode',              kind: 'number', sortType: 'text'   },
+  { key: 'category',            label: 'Category',             sortType: 'text'   },
+  { key: 'locations',           label: 'Location' },
+  { key: 'onHand',              label: 'On hand qty',          align: 'right', sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved qty',         align: 'right', sortType: 'number' },
+  { key: 'available',           label: 'Available qty',        align: 'right', sortType: 'number' },
+  { key: 'onTheWay',            label: 'On the way qty',       align: 'right', sortType: 'number' },
+  { key: 'minStock',            label: 'Min. stock',           align: 'right', sortType: 'number' },
+  { key: 'unit',                label: 'Unit',                 kind: 'unit',   sortType: 'text'   },
 ]
 // Column show/hide — first column (Name) always on; Last updated appended, hidden by default.
-const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const stockColVisibility = reactive<Record<string, boolean>>(
   Object.fromEntries(allStockCols.map(c => [c.key, c.key !== 'lastUpdated'])),
 )

@@ -35,10 +35,10 @@ export function useReviewQueue(fileId: () => string) {
     return i === -1 ? 0 : i
   })
 
-  /** Back to the surface's own Review files tab. */
+  /** Back to the surface's own Inbox tab. */
   function goBack() {
-    if (isPurchaseInvoices.value) router.push({ path: '/purchase-invoices', query: { tab: 'Review files' } })
-    else router.push({ path: '/expenses', query: { tab: 'Review files' } })
+    if (isPurchaseInvoices.value) router.push({ path: '/purchase-invoices', query: { tab: 'Dropbox' } })
+    else router.push({ path: '/expenses', query: { tab: 'Dropbox' } })
   }
 
   /**

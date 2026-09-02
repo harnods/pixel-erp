@@ -29,16 +29,16 @@ const { t } = useLocale()
 //  TAGS 160px | [actions 44px sticky]
 
 const columns: TableColumn[] = [
-  { key: 'date',         label: t('Date'),        width: '120px',                                 sortType: 'date'   },
-  { key: 'number',       label: t('Number'),      width: '200px', sortable: true,                 sortType: 'text'   },
+  { key: 'date',         label: t('Date'),        kind: 'date',                                   sortType: 'date'   },
+  { key: 'number',       label: t('Number'),      kind: 'number', sortable: true,                 sortType: 'text'   },
   { key: 'attachment',   label: '',            width: '40px',  noHeader: true, align: 'center' },
-  { key: 'customerName', label: t('Customer'),    width: '240px', sortable: true,                 sortType: 'text'   },
-  { key: 'dueDate',      label: t('Due date'),    width: '108px',                                 sortType: 'date'   },
-  { key: 'status',       label: t('Status'),      width: '160px',                                 sortType: 'text'   },
-  { key: 'djpStatus',    label: t('DJP status'),  width: '160px',                                 sortType: 'text'   },
-  { key: 'balance',      label: t('Balance due'), width: '160px', align: 'right', sortable: true,  sortType: 'number' },
-  { key: 'total',        label: t('Total'),       width: '160px', align: 'right', sortable: true,  sortType: 'number' },
-  { key: 'tags',         label: t('Tags'),        width: '160px'                                  },
+  { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                   sortType: 'date'   },
+  { key: 'status',       label: t('Status'),      kind: 'status',                                 sortType: 'text'   },
+  { key: 'djpStatus',    label: t('DJP status'),  kind: 'status',                                 sortType: 'text'   },
+  { key: 'balance',      label: t('Balance due'), kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'total',        label: t('Total'),       kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'tags',         label: t('Tags'),        kind: 'tags'                                    },
 ]
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ function formatDate(iso: string) {
 const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpStatus'])
 const allCols = computed<TableColumn[]>(() => [
   ...columns.filter(c => c.key !== 'djpStatus' || hasAnyTaxDocument.value),
-  { key: 'lastUpdated', label: t('Last updated'), width: '200px' },
+  { key: 'lastUpdated', label: t('Last updated'), kind: 'date' },
 ])
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.value.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
 const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))

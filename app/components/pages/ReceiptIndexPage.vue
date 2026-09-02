@@ -42,15 +42,15 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',       label: 'Number',            width: '260px', sortType: 'text' },
-  { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
-  { key: 'vendor',           label: 'Vendor',            width: '200px', sortType: 'text' },
-  { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
+  { key: 'purchaseNo',       label: 'Number',            kind: 'number', sortType: 'text' },
+  { key: 'warehouseName',    label: 'Warehouse',         kind: 'name', sortType: 'text' },
+  { key: 'vendor',           label: 'Vendor',            kind: 'name', sortType: 'text' },
+  { key: 'status',           label: 'Status',            kind: 'status', sortType: 'text' },
   { key: 'icons',            label: '',                  width: '100px', noHeader: true },
-  { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
-  { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
-  { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right', sortType: 'number' },
-  { key: 'estimatedArrival', label: 'Estimated arrival', width: '150px', sortType: 'date' },
+  { key: 'trackingNos',      label: 'Tracking no.',      kind: 'number' },
+  { key: 'skuQty',           label: 'SKU qty',           align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',      label: 'Purchase qty',      align: 'right', sortType: 'number' },
+  { key: 'estimatedArrival', label: 'Estimated arrival', kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.

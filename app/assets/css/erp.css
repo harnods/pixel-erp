@@ -293,6 +293,14 @@
   color: var(--mp-colors-text-secondary, #3a4749);
 }
 
+/* Page-tab count badge — a live counter, NOT a table-status chip. Override the
+   soft table-status fill above with the regular Pixel warning counter (solid
+   warning-bold fill + inverse text) so it reads as a count, not a status pill. */
+.mp-badge.page-tab-count.mp-badge--type_warning {
+  background: var(--mp-colors-background-warning-bold, #f5cd47);
+  color: var(--mp-colors-text-warning-inverse, #080d0e);
+}
+
 /* MpDatePicker calendar — restore the grid/flex layout the atomic utilities would
    provide. With the missing atomics, the calendar's wrappers fall back to
    display:block, so the weekday row and each week collapse into a single vertical

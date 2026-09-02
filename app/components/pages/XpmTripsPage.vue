@@ -43,12 +43,12 @@ const {
 watch(typeFilter, () => setPage(1))
 
 const columns: TableColumn[] = [
-  { key: 'name',          label: 'Trip name',      width: '220px' },
-  { key: 'requestBy',     label: 'Request by',     width: '160px' },
-  { key: 'destination',   label: 'Destination',    width: '160px' },
-  { key: 'requestDate',   label: 'Request date',   width: '160px', sortable: true, sortType: 'date' },
-  { key: 'tripDate',      label: 'Trip date',      width: '160px', sortable: true, sortType: 'date' },
-  { key: 'bookingStatus', label: 'Booking status', width: '200px' },
+  { key: 'name',          label: 'Trip name',      kind: 'name' },
+  { key: 'requestBy',     label: 'Request by',     kind: 'name' },
+  { key: 'destination',   label: 'Destination'      },
+  { key: 'requestDate',   label: 'Request date',   kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'tripDate',      label: 'Trip date',      kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'bookingStatus', label: 'Booking status', kind: 'status' },
 ]
 
 /** Split "Trip done · awaiting report" → badge label + secondary suffix. */

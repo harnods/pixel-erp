@@ -38,13 +38,13 @@ const statusLabel = computed(() => statusOptions.find((o) => o.value === statusF
 
 // ── Columns (mirror Sales orders; Balance due & Tags removed, Owner added) ──
 const columns: TableColumn[] = [
-  { key: 'date',         label: t('Date'),     width: '120px',                                sortType: 'date'   },
-  { key: 'id',           label: t('Number'),   width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'customerName', label: t('Customer'), width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'dueDate',      label: t('Due date'), width: '120px',                                sortType: 'date'   },
-  { key: 'status',       label: t('Status'),   width: '180px',                                sortType: 'text'   },
-  { key: 'amount',       label: t('Total'),    width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'owner',        label: t('Owner'),    width: '200px',                                sortType: 'text'   },
+  { key: 'date',         label: t('Date'),     kind: 'date',                                sortType: 'date'   },
+  { key: 'id',           label: t('Number'),   kind: 'number', sortable: true,                sortType: 'text'   },
+  { key: 'customerName', label: t('Customer'), kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'dueDate',      label: t('Due date'), kind: 'date',                                sortType: 'date'   },
+  { key: 'status',       label: t('Status'),   kind: 'status',                                sortType: 'text'   },
+  { key: 'amount',       label: t('Total'),    kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'owner',        label: t('Owner'),    kind: 'name',                                sortType: 'text'   },
 ]
 
 function addDays(iso: string, n: number): string {

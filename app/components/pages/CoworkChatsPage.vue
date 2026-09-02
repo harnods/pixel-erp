@@ -20,7 +20,7 @@ import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverConte
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
-import { coworkAgents, coworkConnections, getTask, addTask, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -191,7 +191,7 @@ function inferModule(text: string): CoworkModule {
   const t = text.toLowerCase()
   if (/(payroll|attendance|employee|contract|resign|leave|hr\b)/.test(t)) return 'HR'
   if (/(stock|warehouse|sku|inbound|outbound|fulfil|pick|pack|cycle count)/.test(t)) return 'WMS'
-  if (/(invoice|receivable|payable|bill|reconcil|cash|payment|close)/.test(t)) return 'Finance'
+  if (/(invoice|receivable|payable|bill|reconcil|cash|payment|close|revenue|profit|margin|income|expense|owed|overdue|budget|financ)/.test(t)) return 'Finance'
   if (/(work order|production|bom|manufactur)/.test(t)) return 'Production'
   if (/(order|deliver|ship)/.test(t)) return 'Sales'
   return 'CRM'
@@ -232,10 +232,17 @@ function openSaveMenu(i: number) { saveMenuFor.value = saveMenuFor.value === i ?
 
 // ── Per-answer action toolbar (copy · rate · audio · edit-as-doc · retry) ──
 const feedback = ref<Record<number, 'up' | 'down' | undefined>>({})
-const editingDoc = ref<Set<number>>(new Set())
-const docDraft = ref<Record<number, string>>({})
 const speakingIdx = ref<number | null>(null)
 const msgSourcesOpen = ref<Set<number>>(new Set())
+
+// The data sources an answer actually drew on = connected apps whose modules
+// cover the answer's topic (inferred from the question), not every enabled app.
+function msgSources(i: number): string[] {
+  const mod = inferModule(promptForMessage(i))
+  return sourceConnections.value
+    .filter((c) => (APP_MODULES[c.id] ?? []).includes(mod))
+    .map((c) => c.name)
+}
 
 function toggleMsgSources(i: number) { const s = new Set(msgSourcesOpen.value); s.has(i) ? s.delete(i) : s.add(i); msgSourcesOpen.value = s }
 async function copyAnswer(i: number) {
@@ -258,21 +265,23 @@ function speak(i: number) {
   speakingIdx.value = i
   synth.speak(u)
 }
-function toggleDoc(i: number) {
-  const s = new Set(editingDoc.value)
-  if (s.has(i)) s.delete(i)
-  else { s.add(i); docDraft.value = { ...docDraft.value, [i]: messages.value[i]?.text ?? '' } }
-  editingDoc.value = s
+// Edit as doc — open a Markdown editor panel docked to the RIGHT of the chat
+// (editor only, no meta panels). Save writes the edited Markdown back into the
+// answer; the chat re-renders it.
+const docEditor = ref<{ open: boolean; index: number; draft: string; title: string }>({ open: false, index: -1, draft: '', title: '' })
+function editAsDoc(i: number) {
+  docEditor.value = { open: true, index: i, draft: messages.value[i]?.text ?? '', title: (promptForMessage(i) || 'Answer').slice(0, 40) }
 }
-function saveDoc(i: number) {
-  const m = messages.value[i]
-  if (m) m.text = docDraft.value[i] ?? m.text
-  const s = new Set(editingDoc.value); s.delete(i); editingDoc.value = s
+function closeDocEditor() { docEditor.value.open = false }
+function saveDocEditor() {
+  const m = messages.value[docEditor.value.index]
+  if (m) m.text = docEditor.value.draft
+  docEditor.value.open = false
   toast.notify({ variant: 'success', title: 'Answer updated' })
 }
-function downloadDoc(i: number) {
-  const blob = new Blob([messages.value[i]?.text ?? ''], { type: 'text/markdown' })
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'answer.md'; a.click(); URL.revokeObjectURL(a.href)
+function downloadDocEditor() {
+  const blob = new Blob([docEditor.value.draft], { type: 'text/markdown' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${docEditor.value.title || 'answer'}.md`; a.click(); URL.revokeObjectURL(a.href)
 }
 function retry(i: number) { if (i === messages.value.length - 1) chat.regenerate() }
 function saveTurnAsGoal(i: number) {
@@ -361,6 +370,12 @@ function deleteChat() { chat.deleteChat(); kebabOpen.value = false }
 /** Rooms this chat can be continued from, tagged with their source task. */
 function taskLabel(session: CoworkChatSession): string {
   return session.contextLabel ?? (session.taskId ? getTask(session.taskId)?.title ?? '' : '')
+}
+
+/** Multi-agent rooms: the agent that authored an assistant turn (name+avatar
+ *  header shown above its message). Null for single-agent chats. */
+function msgAgent(msg: { role: string; agentId?: string }) {
+  return msg.role === 'assistant' && msg.agentId ? getAgent(msg.agentId) ?? null : null
 }
 
 // ── Chat list (left panel) — searchable history of saved rooms ────────────────
@@ -566,6 +581,11 @@ onBeforeUnmount(() => {
             <!-- User messages carry a 36px avatar on the right; the AI answer has none. -->
             <MpAvatar v-if="msg.role === 'user'" name="Rizal Candra" size="lg" class="chat-user-av" />
             <div class="cwc-msg-col">
+              <!-- Multi-agent room: which agent is speaking (avatar + name) -->
+              <div v-if="msgAgent(msg)" class="cwc-agent-head">
+                <MpAvatar :name="msgAgent(msg)!.name" :src="msgAgent(msg)!.avatar" size="lg" class="cwc-agent-head__av" />
+                <span class="cwc-agent-head__name" :style="{ color: msgAgent(msg)!.color }">{{ msgAgent(msg)!.name }}</span>
+              </div>
               <!-- Collapsible "Done ›" reasoning, above the AI answer -->
               <div v-if="msg.role === 'assistant' && msg.reasoning" class="cwc-reason" :class="{ 'is-open': reasonOpen.has(i) }">
                 <button type="button" class="cwc-reason-head" @click="toggleReason(i)">
@@ -575,21 +595,25 @@ onBeforeUnmount(() => {
                 </button>
                 <p v-if="reasonOpen.has(i)" class="cwc-reason-body">{{ msg.reasoning }}</p>
               </div>
-              <!-- Edit-as-doc: an inline .md editor replaces the rendered answer. -->
-              <div v-if="msg.role === 'assistant' && editingDoc.has(i)" class="cwc-doc">
-                <div class="cwc-doc-head"><MpIcon name="document" size="sm" /> Editing as Markdown</div>
-                <textarea v-model="docDraft[i]" class="cwc-doc-input" rows="12" spellcheck="false" />
-                <div class="cwc-doc-actions">
-                  <button type="button" class="cwc-doc-btn" @click="downloadDoc(i)"><MpIcon name="document" size="sm" /> Download .md</button>
-                  <span class="cwc-doc-spacer" />
-                  <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="toggleDoc(i)">Cancel</button>
-                  <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDoc(i)">Save</button>
-                </div>
-              </div>
-              <div v-else class="chat-bubble" :class="'chat-bubble--' + msg.role">
+              <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
                 <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+              </div>
+              <!-- Linked records (work order, sales order, …) -->
+              <div v-if="msg.attachments?.length" class="cwc-attach">
+                <button v-for="(at, k) in msg.attachments" :key="k" type="button" class="cwc-attach__chip" @click="router.push(at.to)">
+                  <MpIcon :name="at.icon || 'attachment'" size="sm" class="cwc-attach__icon" />
+                  <span class="cwc-attach__meta">
+                    <span class="cwc-attach__label">{{ at.label }}</span>
+                    <span v-if="at.sublabel" class="cwc-attach__sub">{{ at.sublabel }}</span>
+                  </span>
+                  <MpIcon name="caret-right" size="sm" class="cwc-attach__go" />
+                </button>
+              </div>
+              <!-- Agent suggestions (send as the next turn) -->
+              <div v-if="msg.suggestions?.length" class="cwc-msg-suggest">
+                <button v-for="(sg, k) in msg.suggestions" :key="k" type="button" class="cwc-suggest-chip" @click="send(sg)">{{ sg }}</button>
               </div>
               <!-- Plan / pushback / connect-these-tools / receipt -->
               <CoworkGoalCard
@@ -603,11 +627,10 @@ onBeforeUnmount(() => {
               />
               <!-- Per-answer action toolbar (Sana-style): sources · copy · rate ·
                    audio · edit-as-doc · retry · save (task/goal). -->
-              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && !editingDoc.has(i)" class="cwc-msg-actions">
-                <button v-if="activeSourceNames.length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
-                  <MpIcon name="book" size="sm" />
+              <div v-if="msg.role === 'assistant' && !msg.card && !goalMode && !msg.agentId" class="cwc-msg-actions">
+                <button v-if="msgSources(i).length" type="button" class="cwc-src-chip" :class="{ 'is-open': msgSourcesOpen.has(i) }" @click="toggleMsgSources(i)">
                   <span>Sources</span>
-                  <span class="cwc-src-count">{{ activeSourceNames.length }}</span>
+                  <span class="cwc-src-count">{{ msgSources(i).length }}</span>
                   <MpIcon :name="msgSourcesOpen.has(i) ? 'caret-down' : 'caret-right'" size="sm" class="cwc-src-chev" />
                 </button>
 
@@ -616,7 +639,7 @@ onBeforeUnmount(() => {
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'up' }" title="Good answer" aria-label="Thumbs up" @click="rate(i, 'up')"><MpIcon name="like" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': feedback[i] === 'down' }" title="Bad answer" aria-label="Thumbs down" @click="rate(i, 'down')"><MpIcon name="dislike" size="sm" /></button>
                   <button type="button" class="cwc-act" :class="{ 'is-on': speakingIdx === i }" :title="speakingIdx === i ? 'Stop' : 'Read aloud'" aria-label="Read aloud" @click="speak(i)"><MpIcon name="headphone" size="sm" /></button>
-                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="toggleDoc(i)"><MpIcon name="document" size="sm" /></button>
+                  <button type="button" class="cwc-act" title="Edit as doc" aria-label="Edit as document" @click="editAsDoc(i)"><MpIcon name="edit" size="sm" /></button>
                   <button v-if="i === messages.length - 1" type="button" class="cwc-act" title="Retry" aria-label="Retry" @click="retry(i)"><MpIcon name="refresh" size="sm" /></button>
 
                   <MpPopover :id="`cwc-save-${i}`" is-manual :is-open="saveMenuFor === i" placement="bottom-end" use-portal :is-keep-alive="false" @close="saveMenuFor = null">
@@ -649,7 +672,7 @@ onBeforeUnmount(() => {
 
                 <!-- Inline sources list (the connected data the answer drew on). -->
                 <ul v-if="msgSourcesOpen.has(i)" class="cwc-src-list">
-                  <li v-for="s in activeSourceNames" :key="s"><MpIcon name="check" size="sm" /> {{ s }}</li>
+                  <li v-for="s in msgSources(i)" :key="s"><MpIcon name="check" size="sm" /> {{ s }}</li>
                 </ul>
               </div>
             </div>
@@ -772,6 +795,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
     </div>
+
+    <!-- Right: inline Markdown editor panel (editor only — no meta panels). -->
+    <section v-if="docEditor.open" class="cwc-docpanel">
+      <header class="cwc-docpanel__head">
+        <span class="cwc-docpanel__title"><MpIcon name="edit" size="sm" /> {{ docEditor.title || 'Answer' }}.md</span>
+        <button type="button" class="cwc-docpanel__close" aria-label="Close editor" @click="closeDocEditor"><MpIcon name="close" size="md" /></button>
+      </header>
+      <textarea v-model="docEditor.draft" class="cwc-docpanel__editor" spellcheck="false" placeholder="Markdown…"></textarea>
+      <footer class="cwc-docpanel__foot">
+        <button type="button" class="cwc-doc-btn" @click="downloadDocEditor"><MpIcon name="download" size="sm" /> Download .md</button>
+        <span class="cwc-doc-spacer" />
+        <button type="button" class="cwc-doc-btn cwc-doc-btn--ghost" @click="closeDocEditor">Cancel</button>
+        <button type="button" class="cwc-doc-btn cwc-doc-btn--primary" @click="saveDocEditor">Save</button>
+      </footer>
+    </section>
   </div>
 </template>
 
@@ -886,7 +924,7 @@ onBeforeUnmount(() => {
 .cwc-sug-icon { flex-shrink: 0; }
 
 /* Message bubbles — identical to the drawer's */
-.chat-message { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); flex-shrink: 0; }
+.chat-message { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); margin-bottom: 28px; flex-shrink: 0; }
 .chat-message--user { flex-direction: row-reverse; }
 .chat-avatar { flex-shrink: 0; border-radius: var(--mp-radii-full, 50%); }
 .chat-bubble { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); max-width: 85%; word-break: break-word; }
@@ -899,6 +937,32 @@ onBeforeUnmount(() => {
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
 /* …but the typing loader keeps a subtle pill so the dots have a surface. */
 .chat-typing.chat-bubble--assistant { background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
+
+/* Multi-agent room: agent name + avatar above its message. */
+.cwc-agent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); margin-bottom: var(--mp-spacing-1, 4px); }
+.cwc-agent-head__av { flex-shrink: 0; width: 36px !important; height: 36px !important; background: transparent !important; }
+/* Transparent avatar (no coloured disc) — the agent artwork sits on its own. */
+.cwc-agent-head__av :deep(*) { background-color: transparent !important; box-shadow: none !important; }
+.cwc-agent-head__av :deep(> *) { width: 36px !important; height: 36px !important; }
+.cwc-agent-head__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+
+/* @agent mention chip inside a message */
+.chat-bubble__rich :deep(.agent-mention) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #1d55d4); }
+
+/* Linked-record chips under a message (work order, sales order, …) */
+.cwc-attach { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
+.cwc-attach__chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); max-width: 320px; padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; text-align: left; }
+.cwc-attach__chip:hover .cwc-attach__label { text-decoration: underline; text-underline-offset: 2px; }
+.cwc-attach__icon { flex-shrink: 0; color: var(--mp-icon-default, #536062); }
+.cwc-attach__meta { display: flex; flex-direction: column; min-width: 0; }
+.cwc-attach__label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-link, #1d55d4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwc-attach__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwc-attach__go { flex-shrink: 0; color: var(--mp-text-link, #1d55d4); }
+
+/* Suggestion chips under an agent message */
+.cwc-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
+.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
+.cwc-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
 
 /* Collapsible "Done ›" reasoning above an AI answer. */
 .cwc-reason { margin-bottom: var(--mp-spacing-2); }
@@ -932,11 +996,14 @@ onBeforeUnmount(() => {
 .cwc-save-goal__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .cwc-save-goal__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cwc-save-div { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default); }
-/* Edit-as-doc inline Markdown editor */
-.cwc-doc { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 10px); overflow: hidden; }
-.cwc-doc-head { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); }
-.cwc-doc-input { width: 100%; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3); font-family: var(--mp-fonts-mono, ui-monospace, monospace); font-size: var(--mp-font-sizes-sm); line-height: 1.6; color: var(--mp-text-default); background: var(--mp-background-neutral); }
-.cwc-doc-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); }
+/* Edit-as-doc — right-hand Markdown editor panel (editor only) */
+.cwc-docpanel { flex-shrink: 0; width: 460px; max-width: 46%; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-stage, #fff); }
+.cwc-docpanel__head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.cwc-docpanel__title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cwc-docpanel__close { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
+.cwc-docpanel__close:hover { background: var(--mp-background-neutral-subtle); }
+.cwc-docpanel__editor { flex: 1; min-height: 0; width: 100%; border: none; outline: none; resize: none; padding: var(--mp-spacing-4); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 13px; line-height: 20px; color: var(--mp-text-default); background: var(--mp-background-neutral, #fff); }
+.cwc-docpanel__foot { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cwc-doc-spacer { flex: 1; }
 .cwc-doc-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cwc-doc-btn:hover { background: var(--mp-background-neutral-subtle); }

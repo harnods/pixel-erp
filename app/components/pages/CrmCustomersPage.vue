@@ -65,15 +65,15 @@ function searchMatch(row: Row, s: string) {
 
 // ── Columns (Venom format, minus Location, plus Segments) ──
 const columns: TableColumn[] = [
-  { key: 'company',        label: 'Company',         width: '240px', sortable: true, sortType: 'text'   },
-  { key: 'lifecycleStage', label: 'Lifecycle',       width: '150px'                                     },
-  { key: 'segments',       label: 'Segments',        width: '220px'                                     },
-  { key: 'owner',          label: 'Contact owner',   width: '160px', sortable: true, sortType: 'text'   },
-  { key: 'contact',        label: 'Primary contact', width: '220px'                                     },
-  { key: 'openDeals',      label: 'Deals',           width: '100px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'inFlight',       label: 'In flight',       width: '150px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'outstanding',    label: 'Outstanding',     width: '150px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'billed',         label: 'Billed',          width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'company',        label: 'Company',         kind: 'name',   sortable: true, sortType: 'text'   },
+  { key: 'lifecycleStage', label: 'Lifecycle',       kind: 'status'                                     },
+  { key: 'segments',       label: 'Segments',        kind: 'tags'                                       },
+  { key: 'owner',          label: 'Contact owner',   kind: 'name',   sortable: true, sortType: 'text'   },
+  { key: 'contact',        label: 'Primary contact', kind: 'name'                                       },
+  { key: 'openDeals',      label: 'Deals',           align: 'right', sortable: true, sortType: 'number' },
+  { key: 'inFlight',       label: 'In flight',       kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'outstanding',    label: 'Outstanding',     kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'billed',         label: 'Billed',          kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
 ]
 
 // ── Table state (search + sort + pagination over the view-filtered rows) ──

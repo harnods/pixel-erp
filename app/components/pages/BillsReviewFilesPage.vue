@@ -18,7 +18,7 @@ import {
 import type { ReviewFile, FileClassification } from '~/data'
 
 /** Which surface's review queue this table is showing. Both Expenses and
- *  Purchase invoices have a "Review files" tab over the same table; only the
+ *  Purchase invoices have a "Inbox" tab over the same table; only the
  *  underlying queue and the review route differ. */
 const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' }>(), {
   surface: 'expenses',
@@ -39,13 +39,13 @@ function onGlobalFileDrop(fileList: FileList) {
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'file',            label: 'File',           width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'text'   },
-  { key: 'beneficiaryName', label: 'Beneficiary',    width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'confidence',      label: 'Confidence',     width: '120px', sortable: true,                 sortType: 'number' },
-  { key: 'classification',  label: 'Classification', width: '160px',                                 sortType: 'text'   },
-  { key: 'date',            label: 'Date',           width: '120px',                                 sortType: 'date'   },
-  { key: 'amount',          label: 'Amount',         width: '160px', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'file',            label: 'File',           kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'number',          label: 'Number',         kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'beneficiaryName', label: 'Vendor',          kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'confidence',      label: 'Confidence',     sortable: true,                 sortType: 'number' },
+  { key: 'classification',  label: 'Classification', kind: 'status',                                 sortType: 'text'   },
+  { key: 'date',            label: 'Date',           kind: 'date',                                   sortType: 'date'   },
+  { key: 'amount',          label: 'Amount',         kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
 ]
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
@@ -230,7 +230,6 @@ function confirmBulkDelete() {
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
-    last-column-flexible
     bulk-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -365,36 +364,42 @@ function confirmBulkDelete() {
     <!-- ── Cell: Number ── -->
     <template #cell-number="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatNumber(value as string | undefined) }}</template>
     </template>
 
-    <!-- ── Cell: Beneficiary ── -->
+    <!-- ── Cell: Vendor ── -->
     <template #cell-beneficiaryName="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <span v-else class="cell-text">{{ value }}</span>
     </template>
 
     <!-- ── Cell: Confidence ── -->
     <template #cell-confidence="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ t(confidenceLabel(value as number)) }}</template>
     </template>
 
     <!-- ── Cell: Classification ── -->
     <template #cell-classification="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <ErpStatusBadge v-else :status="value as string" />
     </template>
 
     <!-- ── Cell: Date ── -->
     <template #cell-date="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatDate(value as string) }}</template>
     </template>
 
     <!-- ── Cell: Amount ── -->
     <template #cell-amount="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatIDR(value as number) }}</template>
     </template>
 
@@ -466,6 +471,9 @@ function confirmBulkDelete() {
 <style scoped>
 /* Processing-row skeleton bar — matches Figma's OCR "processing" row state
    (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
+/* Uploaded-but-not-yet-scanned rows show a muted dash in every OCR column. */
+.rf-pending { color: var(--mp-text-placeholder, #9aa4ac); }
+
 .review-skeleton {
   display: block !important;
   width: 100%;

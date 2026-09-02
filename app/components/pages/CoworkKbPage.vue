@@ -79,8 +79,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 // ── ERP table state (search / sort / pagination) ─────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Filename', width: '360px', sortable: true },
-  { key: 'updatedAt', label: 'Last updated', width: '180px', sortable: true },
+  { key: 'name', label: 'Filename', kind: 'name', sortable: true },
+  { key: 'updatedAt', label: 'Last updated', kind: 'date', sortable: true },
 ]
 const {
   search, currentPage, perPage, sortKey, sortDir, total, paginated,

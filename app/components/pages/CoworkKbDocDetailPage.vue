@@ -33,7 +33,9 @@ async function loadBlob() {
   if (b?.text) fullText.value = b.text
   if (isImage.value && b?.dataUrl) imageUrl.value = b.dataUrl
 }
-onMounted(loadBlob)
+const route = useRoute()
+// Opened from the chat "Edit as doc" action (?edit=1) → jump straight into edit.
+onMounted(async () => { await loadBlob(); if (route.query.edit === '1' && editable.value) startEdit() })
 watch(() => props.orderId, loadBlob)
 
 // ── Used by (agents + skills whose attachments resolve to this doc) ──────────────

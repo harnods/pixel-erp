@@ -20,13 +20,13 @@ const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',           label: t('Date'),            width: '120px',                                sortType: 'date'   },
-  { key: 'number',         label: t('Number'),          width: '200px', sortable: true,                sortType: 'number' },
-  { key: 'customerName',   label: t('Customer'),        width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: t('Valid until'),      width: '140px',                                sortType: 'date'   },
-  { key: 'status',         label: t('Status'),          width: '140px',                                sortType: 'text'   },
-  { key: 'total',          label: t('Total'),           width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'tags',           label: t('Tags'),            width: '160px'                                 },
+  { key: 'date',           label: t('Date'),            kind: 'date',                                sortType: 'date'   },
+  { key: 'number',         label: t('Number'),          kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'customerName',   label: t('Customer'),        kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'expirationDate', label: t('Valid until'),      kind: 'date',                                sortType: 'date'   },
+  { key: 'status',         label: t('Status'),          kind: 'status',                                sortType: 'text'   },
+  { key: 'total',          label: t('Total'),           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'tags',           label: t('Tags'),            kind: 'tags'                                 },
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ function clearFilters() {
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))

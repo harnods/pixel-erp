@@ -24,17 +24,17 @@ const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'number',          label: 'Number',               width: '160px', sortable: true  },
-  { key: 'bomName',         label: 'BOM name',             width: '200px', sortable: true  },
-  { key: 'category',        label: 'Category',             width: '120px'                  },
-  { key: 'type',            label: 'Type',                 width: '140px'                  },
-  { key: 'trackRouting',    label: 'Track routing',        width: '130px'                  },
-  { key: 'status',          label: 'Status',               width: '170px'                  },
-  { key: 'parentNumber',    label: 'Parent work order',    width: '170px'                  },
-  { key: 'producedQty',     label: 'Produced qty',         width: '130px', align: 'right'  },
-  { key: 'productionPlan',  label: 'Production plan dates', width: '230px'                  },
-  { key: 'startDate',       label: 'Start date',           width: '130px'                  },
-  { key: 'endDate',         label: 'End date',             width: '130px'                  },
+  { key: 'number',          label: 'Number',               kind: 'number', sortable: true  },
+  { key: 'bomName',         label: 'BOM name',             kind: 'name', sortable: true  },
+  { key: 'category',        label: 'Category'                  },
+  { key: 'type',            label: 'Type'                  },
+  { key: 'trackRouting',    label: 'Track routing'                  },
+  { key: 'status',          label: 'Status',               kind: 'status'                  },
+  { key: 'parentNumber',    label: 'Parent work order',    kind: 'number'                  },
+  { key: 'producedQty',     label: 'Produced qty',         align: 'right'  },
+  { key: 'productionPlan',  label: 'Production plan dates'                  },
+  { key: 'startDate',       label: 'Start date',           kind: 'date'                  },
+  { key: 'endDate',         label: 'End date',             kind: 'date'                  },
 ]
 
 // ─── Filters ───────────────────────────────────────────────────────────────────

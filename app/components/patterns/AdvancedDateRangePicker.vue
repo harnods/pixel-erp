@@ -32,12 +32,17 @@ const props = withDefaults(defineProps<{
    *  backwards from today. 'future' → Next 7 / 14 / 30 days, resolving forwards
    *  (today → today+N) — used for forward-looking fields like Due date. */
   direction?: 'past' | 'future'
+  /** Report/period mode → the sidebar shows This month / This quarter / Per
+   *  month / Per year / Custom instead of the day-based presets. Used by the
+   *  Credit Memo report and other period reports. */
+  periodMode?: boolean
 }>(), {
   direction: 'past',
+  periodMode: false,
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
-type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom'
+type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear'
 
 const open = ref(false)
 const mode = ref<Mode>(props.direction === 'future' ? 'next30' : 'last30')
@@ -49,6 +54,8 @@ function startOfWeek(d: Date) { return addDays(d, -d.getDay()) }
 function endOfWeek(d: Date) { return addDays(startOfWeek(d), 6) }
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1) }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0) }
+function startOfQuarter(d: Date) { return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1) }
+function endOfQuarter(d: Date) { return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3 + 3, 0) }
 
 function fmtDMY(d: Date) {
   const dd = String(d.getDate()).padStart(2, '0')
@@ -73,6 +80,9 @@ function presetBounds(key: Mode): [Date, Date] {
     case 'next7':  return [today, addDays(today, 6)]
     case 'next14': return [today, addDays(today, 13)]
     case 'next30': return [today, addDays(today, 29)]
+    case 'thisMonth':   return [startOfMonth(today), endOfMonth(today)]
+    case 'thisQuarter': return [startOfQuarter(today), endOfQuarter(today)]
+    case 'thisYear':    return [new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)]
     default:       return [today, today]
   }
 }
@@ -116,31 +126,48 @@ const labelText = computed(() => {
     case 'month': return `${MONTHS_LONG[range.value[0].getMonth()]} ${range.value[0].getFullYear()}`
     case 'year': return `${range.value[0].getFullYear()}`
     case 'custom': return 'Custom'
+    case 'thisMonth': return 'This month'
+    case 'thisQuarter': return 'This quarter'
+    case 'thisYear': return 'This year'
     default: return fieldText.value
   }
 })
 
 // ─── Sidebar selection ──────────────────────────────────────────────────────────
 
-const topPresets = computed<{ key: Mode; label: string }[]>(() => props.direction === 'future'
+const topPresets = computed<{ key: Mode; label: string }[]>(() => props.periodMode
   ? [
-      { key: 'next7', label: 'Next 7 days' },
-      { key: 'next14', label: 'Next 14 days' },
-      { key: 'next30', label: 'Next 30 days' },
+      { key: 'thisMonth', label: 'This month' },
+      { key: 'thisQuarter', label: 'This quarter' },
+      { key: 'thisYear', label: 'This year' },
+    ]
+  : props.direction === 'future'
+    ? [
+        { key: 'next7', label: 'Next 7 days' },
+        { key: 'next14', label: 'Next 14 days' },
+        { key: 'next30', label: 'Next 30 days' },
+      ]
+    : [
+        { key: 'today', label: 'Today' },
+        { key: 'last7', label: 'Last 7 days' },
+        { key: 'last14', label: 'Last 14 days' },
+        { key: 'last30', label: 'Last 30 days' },
+      ])
+// `instant` items commit immediately (like the top presets); the rest open a
+// calendar granularity view.
+const granularityPresets = computed<{ key: Mode; label: string; instant?: boolean }[]>(() => props.periodMode
+  ? [
+      { key: 'month', label: 'Per month' },
+      { key: 'year', label: 'Per year' },
+      { key: 'custom', label: 'Custom' },
     ]
   : [
-      { key: 'today', label: 'Today' },
-      { key: 'last7', label: 'Last 7 days' },
-      { key: 'last14', label: 'Last 14 days' },
-      { key: 'last30', label: 'Last 30 days' },
+      { key: 'day', label: 'Per day' },
+      { key: 'week', label: 'Per week' },
+      { key: 'month', label: 'Per month' },
+      { key: 'year', label: 'Per year' },
+      { key: 'custom', label: 'Custom' },
     ])
-const granularityPresets: { key: Mode; label: string }[] = [
-  { key: 'day', label: 'Per day' },
-  { key: 'week', label: 'Per week' },
-  { key: 'month', label: 'Per month' },
-  { key: 'year', label: 'Per year' },
-  { key: 'custom', label: 'Custom' },
-]
 
 function selectInstant(key: Mode) {
   mode.value = key
@@ -238,20 +265,22 @@ function onYearClick(y: number) {
       <MpPopoverContent :class="css({ padding: '0' })" @blur="open = false" @escape="open = false">
         <div class="adr-popover">
           <div class="adr-sidebar">
-            <div class="adr-sidebar-title">Time range</div>
-            <button
-              v-for="opt in topPresets" :key="opt.key"
-              class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
-              @click.stop="selectInstant(opt.key)"
-            >
-              <span class="adr-preset-label">{{ opt.label }}</span>
-              <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
-            </button>
-            <div class="adr-sidebar-divider" />
+            <template v-if="topPresets.length">
+              <div class="adr-sidebar-title">Time range</div>
+              <button
+                v-for="opt in topPresets" :key="opt.key"
+                class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
+                @click.stop="selectInstant(opt.key)"
+              >
+                <span class="adr-preset-label">{{ opt.label }}</span>
+                <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
+              </button>
+              <div class="adr-sidebar-divider" />
+            </template>
             <button
               v-for="opt in granularityPresets" :key="opt.key"
               class="adr-sidebar-item" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
-              @click.stop="selectGranularity(opt.key)"
+              @click.stop="opt.instant ? selectInstant(opt.key) : selectGranularity(opt.key)"
             >{{ opt.label }}</button>
           </div>
 

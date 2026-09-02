@@ -49,12 +49,12 @@ const {
 })
 
 const columns: TableColumn[] = [
-  { key: 'name',       label: 'Card name',    width: '220px', sortable: true, sortType: 'text' },
-  { key: 'cardholder', label: 'Cardholder',   width: '200px' },
-  { key: 'expiration', label: 'Expiration',   width: '140px' },
-  { key: 'balance',    label: 'Card balance', width: '180px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'account',    label: 'Account',      width: '180px' },
-  { key: 'status',     label: 'Status',       width: '140px' },
+  { key: 'name',       label: 'Card name',    kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'cardholder', label: 'Cardholder',   kind: 'name' },
+  { key: 'expiration', label: 'Expiration',   kind: 'date' },
+  { key: 'balance',    label: 'Card balance', kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'account',    label: 'Account',      kind: 'name' },
+  { key: 'status',     label: 'Status',       kind: 'status' },
 ]
 
 // ── Create drawer ──

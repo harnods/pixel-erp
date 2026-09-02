@@ -31,11 +31,11 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
-  { key: 'number',          label: 'Number',      width: '240px', sortable: true, sortType: 'text' },
-  { key: 'date',            label: 'Date',        width: '130px', sortable: true, sortType: 'date' },
-  { key: 'originName',      label: 'Origin',      width: '220px', sortType: 'text' },
-  { key: 'destinationName', label: 'Destination', width: '220px', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated', width: '220px' },
+  { key: 'number',          label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'date',            label: 'Date',        kind: 'date',   sortable: true, sortType: 'date' },
+  { key: 'originName',      label: 'Origin',      kind: 'name',   sortType: 'text' },
+  { key: 'destinationName', label: 'Destination', kind: 'name',   sortType: 'text' },
+  { key: 'lastUpdated',     label: 'Last updated', kind: 'date' },
 ]
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
