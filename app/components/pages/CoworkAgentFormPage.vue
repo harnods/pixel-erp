@@ -78,6 +78,11 @@ const language = ref<'mirror' | 'id' | 'en'>('mirror')
 const DEFAULT_AVATAR = '/agents/airene.png'
 const headAvatar = computed(() => existing.value?.avatar || DEFAULT_AVATAR)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? MODELS[0].label)
+const menuClass = css({ minWidth: '220px', width: 'max-content' })
+// Track open state so the select trigger shows the bold active border while open
+// (the popover pattern prevents native focus, so :focus-within alone won't fire).
+const modelMenuOpen = ref(false)
+const langMenuOpen = ref(false)
 const allWorkspace = ref(false)
 // Knowledge data sources = the connected apps. Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
@@ -515,16 +520,34 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <MpFormControl id="caf-model" class="caf-field caf-field--half">
             <MpFormLabel>Model</MpFormLabel>
-            <MpSelect id="caf-model-sel" :model-value="model" @update:model-value="(v: string | number) => model = String(v)">
-              <option v-for="m in MODELS" :key="m.id" :value="m.id">{{ m.label }}</option>
-            </MpSelect>
+            <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @open="modelMenuOpen = true" @close="modelMenuOpen = false">
+              <MpPopoverTrigger>
+                <MpSelect id="caf-model-sel" :model-value="model" :class="modelMenuOpen ? 'caf-sel--open' : ''" @mousedown.prevent>
+                  <option :value="model">{{ modelLabel }}</option>
+                </MpSelect>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="menuClass">
+                <MpPopoverList>
+                  <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="model === m.id" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
           </MpFormControl>
 
           <MpFormControl id="caf-lang" class="caf-field caf-field--half">
             <MpFormLabel>Language</MpFormLabel>
-            <MpSelect id="caf-lang-sel" :model-value="language" @update:model-value="(v: string | number) => language = String(v) as 'mirror' | 'id' | 'en'">
-              <option v-for="l in LANGS" :key="l.id" :value="l.id">{{ l.label }}</option>
-            </MpSelect>
+            <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @open="langMenuOpen = true" @close="langMenuOpen = false">
+              <MpPopoverTrigger>
+                <MpSelect id="caf-lang-sel" :model-value="language" :class="langMenuOpen ? 'caf-sel--open' : ''" @mousedown.prevent>
+                  <option :value="language">{{ LANGS.find((l) => l.id === language)?.label }}</option>
+                </MpSelect>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="menuClass">
+                <MpPopoverList>
+                  <MpPopoverListItem v-for="l in LANGS" :key="l.id" :is-active="language === l.id" @click="language = l.id">{{ l.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
           </MpFormControl>
         </template>
 
@@ -597,7 +620,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
                 </p>
                 <p class="caf-skill__desc">{{ s.description }}</p>
                 <div v-if="s.requiresConnections?.length" class="caf-skill__needs">
-                  <span v-for="cid in s.requiresConnections" :key="cid" class="caf-need-chip" :class="{ 'caf-need-chip--missing': !connConnected(cid) }">
+                  <span v-for="cid in s.requiresConnections" :key="cid" class="caf-need-chip">
                     <img v-if="!connLogoFailed[cid]" class="caf-need-logo" :src="connObj(cid)?.logo || `/connectors/${cid}.png`" :alt="connName(cid)" loading="lazy" @error="connLogoFailed[cid] = true" />
                     <span v-else class="caf-need-logo caf-need-logo--mono" :style="{ background: connObj(cid)?.color || '#3a4749' }">{{ connMonogram(connName(cid)) }}</span>
                     {{ connConnected(cid) ? connName(cid) : `Needs ${connName(cid)}` }}
@@ -828,6 +851,8 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 680px; align-items: start; }
 .caf-form > * { grid-column: 1 / 7; min-width: 0; }
 .caf-field--half { grid-column: 1 / 4; }
+/* MpSelect (popover pattern): show the bold neutral border while the dropdown is open */
+:deep(.mp-select__control.caf-sel--open) { border-color: #8c9596 !important; box-shadow: 0 0 0 1px #8c9596 !important; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .caf-hint--tight { margin-top: 2px; max-width: 460px; }
@@ -854,8 +879,8 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-ta__foot { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-optimize { margin-left: auto; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
 /* Coverage badges inside the instruction box — grey (disabled) until detected, then green */
-.caf-cov { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1, 6px); }
-.caf-cov-badge { font-size: 11px; font-weight: 600; line-height: 1.5; border-radius: var(--mp-radii-full, 999px); padding: 2px 10px; color: var(--mp-text-disabled, #97a0af); background: var(--mp-background-neutral-subtle, #f1f3f4); transition: color .12s ease, background .12s ease; }
+.caf-cov { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); }
+.caf-cov-badge { font-size: var(--mp-font-sizes-sm, 12px); font-weight: 600; line-height: var(--mp-line-heights-md, 20px); border-radius: var(--mp-radii-full, 999px); padding: 4px 12px; color: var(--mp-text-disabled, #97a0af); background: var(--mp-background-neutral-subtle, #f1f3f4); transition: color .12s ease, background .12s ease; }
 .caf-cov-badge.is-on { color: #0a6e4e; background: #e7f5ef; }
 .caf-optimize:disabled { opacity: 0.7; cursor: default; }
 .caf-diff { margin-top: var(--mp-spacing-2); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); }
@@ -903,8 +928,8 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-risk--danger { color: #b42318; background: #fbeceb; }
 .caf-skill__desc { margin: 4px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-skill__needs { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
-.caf-need-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 2px 10px 2px 6px; }
-.caf-need-chip--missing { color: var(--mp-text-warning, #b54708); }
+/* "Needs Gmail" — plain secondary text (not a badge, never danger colour) */
+.caf-need-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .caf-need-logo { width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px; object-fit: contain; }
 .caf-need-logo--mono { display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #fff; line-height: 1; }
 .caf-approval { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
