@@ -12,6 +12,7 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, css, toast,
 } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { infoToast } from '~/utils/toasts'
 import {
   getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, coworkConnections, COWORK_ROLES,
   SKILL_RISK_META, canArchiveAgent, archiveAgent, restoreAgent, duplicateAgent, rollbackAgent,
@@ -157,7 +158,7 @@ function roleName(id: string) { return COWORK_ROLES.find((r) => r.id === id)?.na
           <MpBannerIcon id="cad-tpl-icon" />
           <MpBannerTitle id="cad-tpl-title">Template updated — review changes</MpBannerTitle>
           <MpBannerDescription id="cad-tpl-desc">Mekari updated the template this agent is based on. Review the changes before applying — nothing changes automatically.</MpBannerDescription>
-          <MpBannerLink id="cad-tpl-link"><a href="#" @click.prevent="toast.notify({ variant: 'info', title: 'Diff view — coming soon' })">Review changes</a></MpBannerLink>
+          <MpBannerLink id="cad-tpl-link"><a href="#" @click.prevent="infoToast('Diff view — coming soon')">Review changes</a></MpBannerLink>
         </MpBanner>
 
         <!-- Header -->
@@ -316,7 +317,7 @@ function roleName(id: string) { return COWORK_ROLES.find((r) => r.id === id)?.na
                     <div class="cad-stat"><span class="cad-stat__n">${{ usage.cost }}</span><span class="cad-stat__l">Est. cost · 30d</span></div>
                   </div>
                   <p v-if="usage.autoActions" class="cad-muted cad-usage__link">
-                    <a href="#" @click.prevent="toast.notify({ variant: 'info', title: 'Automatic actions feed — coming soon' })">View automatic actions feed →</a>
+                    <a href="#" @click.prevent="infoToast('Automatic actions feed — coming soon')">View automatic actions feed →</a>
                   </p>
                 </section>
               </div>
