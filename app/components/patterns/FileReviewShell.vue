@@ -14,13 +14,14 @@
  * Extracted from BillReviewPage.vue, which still carries its own copy; the two
  * should be reconciled when that page is next touched.
  */
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import {
-  MpIcon, MpTextlink, css,
+  MpIcon, MpTextlink, MpSpinner, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
 import type { ReviewFile } from '~/data'
+import { getReviewBlob } from '~/utils/reviewBlobStore'
 
 const props = defineProps<{
   /** The whole review run this file belongs to — drives "N of M" and the switcher. */
@@ -113,6 +114,35 @@ function previewSrc(page: number) {
   return images[page - 1] ?? images[images.length - 1]
 }
 
+// The actual uploaded document, loaded from IndexedDB by file id (present for
+// user-uploaded files; absent for seed rows → fall back to scenario previews).
+// Rendered as plain <img>s (single image, or the PDF's pages rasterised by
+// /api/expenses/pdf-pages) so the preview has our own light background instead
+// of Chrome's dark built-in PDF-viewer chrome.
+const realImages = ref<string[] | null>(null)
+const realLoading = ref(false)
+
+async function loadRealFile(id: string) {
+  realImages.value = null
+  const rec = await getReviewBlob(id)
+  if (!rec?.dataUrl) return
+  const isPdf = rec.mime === 'application/pdf' || (rec.fileName || '').toLowerCase().endsWith('.pdf')
+  if (!isPdf) { realImages.value = [rec.dataUrl]; return }
+  realLoading.value = true
+  try {
+    const res = await $fetch<{ pages: string[] }>('/api/expenses/pdf-pages', {
+      method: 'POST',
+      body: { dataBase64: rec.dataUrl },
+    })
+    realImages.value = res.pages?.length ? res.pages : null
+  } catch {
+    realImages.value = null
+  } finally {
+    realLoading.value = false
+  }
+}
+watch(() => props.fileId, (id) => { void loadRealFile(id) }, { immediate: true })
+
 defineExpose({ reviewFile, queueIndex, queueTotal })
 </script>
 
@@ -198,12 +228,28 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             <MpTextlink id="frs-reupload-link" as="a" href="#" @click.prevent="emit('reupload')">{{ t('Reupload file') }}</MpTextlink>
           </MpBannerDescription>
         </MpBanner>
-        <div
-          v-for="page in pageCount" :key="page"
-          class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
-        >
-          <img :src="previewSrc(page)" alt="" class="br-preview-img" />
+        <!-- Real uploaded document (from IndexedDB): a single image, or the PDF's
+             pages rasterised to PNGs — shown as <img>s on our own background.
+             Falls back to the scenario preview images for seed rows. -->
+        <template v-if="realImages">
+          <div
+            v-for="(src, i) in realImages" :key="i"
+            class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+          >
+            <img :src="src" alt="" class="br-preview-img" />
+          </div>
+        </template>
+        <div v-else-if="realLoading" class="br-preview-loading">
+          <MpSpinner />
         </div>
+        <template v-else>
+          <div
+            v-for="page in pageCount" :key="page"
+            class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+          >
+            <img :src="previewSrc(page)" alt="" class="br-preview-img" />
+          </div>
+        </template>
       </div>
 
       <!-- Resize divider -->
@@ -318,6 +364,14 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
   overflow: auto;
 }
 .br-preview-img { display: block; width: 100%; height: auto; }
+/* Spinner while the PDF's pages rasterise server-side. */
+.br-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: var(--mp-spacing-8);
+}
 .br-preview--zoom .br-preview-img { width: auto; max-width: none; }
 
 .ex-divider {

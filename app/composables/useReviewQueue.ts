@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data'
+import { reviewFiles, purchaseInvoiceReviewFiles, persistReviewFiles } from '~/data'
 import type { ReviewFile } from '~/data'
 
 /**
@@ -61,7 +61,11 @@ export function useReviewQueue(fileId: () => string) {
   function removeFromQueue(id: string) {
     const list = queue.value
     const i = list.findIndex((rf) => rf.id === id)
-    if (i !== -1) list.splice(i, 1)
+    if (i !== -1) {
+      list.splice(i, 1)
+      // Persist so a reviewed+saved file stays gone from the Dropbox after refresh.
+      persistReviewFiles()
+    }
   }
 
   return {

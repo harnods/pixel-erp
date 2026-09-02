@@ -8,7 +8,7 @@
 import { ref, computed, watch } from 'vue'
 import { MpButton, MpIcon, MpCheckbox } from '@mekari/pixel3'
 import {
-  coworkKb, childrenOf, isFolder, isDoc, descendantFolderIds, extLabel,
+  coworkKb, childrenOf, isFolder, isDoc, extLabel,
   type KbNode, type KbAttachment,
 } from '~/data/coworkKb'
 import { getBlob } from '~/utils/kbBlobStore'
@@ -21,13 +21,12 @@ const folderSel = ref<Set<string>>(new Set())
 const docSel = ref<Set<string>>(new Set())
 watch(() => props.isOpen, (open) => {
   if (!open) return
-  const f = new Set<string>()
+  // Docs only — folders are expand-only, not attachable (attach individual files).
   const d = new Set<string>()
   for (const a of props.modelValue ?? []) {
     if (a.scope === 'doc') d.add(a.id)
-    else f.add(a.id)
   }
-  folderSel.value = f
+  folderSel.value = new Set()
   docSel.value = d
   // Auto-expand everything so the selection is visible.
   expanded.value = new Set(coworkKb.filter(isFolder).map((n) => n.id))
@@ -42,40 +41,24 @@ function toggleExpand(id: string) {
   s.has(id) ? s.delete(id) : s.add(id)
   expanded.value = s
 }
-interface Row { node: KbNode; depth: number; coveredByFolder: boolean }
+interface Row { node: KbNode; depth: number }
 const rows = computed<Row[]>(() => {
   // Search → flat list of matching nodes (no tree hierarchy).
   const q = search.value.trim().toLowerCase()
   if (q) {
-    return coworkKb
-      .filter((n) => n.name.toLowerCase().includes(q))
-      .map((n) => ({ node: n, depth: 0, coveredByFolder: isDoc(n) ? parentCovered(n.parentId) : false }))
+    return coworkKb.filter((n) => n.name.toLowerCase().includes(q)).map((n) => ({ node: n, depth: 0 }))
   }
   const out: Row[] = []
-  const walk = (parentId: string | null, depth: number, covered: boolean) => {
+  const walk = (parentId: string | null, depth: number) => {
     for (const n of childrenOf(parentId)) {
-      const isCovered = covered || (isFolder(n) ? false : parentCovered(n.parentId))
-      out.push({ node: n, depth, coveredByFolder: covered })
-      if (isFolder(n) && expanded.value.has(n.id)) walk(n.id, depth + 1, covered || folderSel.value.has(n.id))
+      out.push({ node: n, depth })
+      if (isFolder(n) && expanded.value.has(n.id)) walk(n.id, depth + 1)
     }
   }
-  walk(null, 0, false)
+  walk(null, 0)
   return out
 })
-// Is a doc's folder (or an ancestor) already selected as a folder scope?
-function parentCovered(folderId: string): boolean {
-  if (folderSel.value.has(folderId)) return true
-  for (const fid of folderSel.value) {
-    if (descendantFolderIds(fid).includes(folderId)) return true
-  }
-  return false
-}
 
-function toggleFolder(id: string) {
-  const s = new Set(folderSel.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  folderSel.value = s
-}
 function toggleDoc(id: string) {
   const s = new Set(docSel.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -102,22 +85,13 @@ function docIcon(ext: string): string {
   return 'doc'
 }
 
-const selectedCount = computed(() => {
-  // Docs not already covered by a selected folder + selected folders.
-  let docs = 0
-  for (const id of docSel.value) {
-    const d = coworkKb.find((n) => n.id === id)
-    if (d && isDoc(d) && !parentCovered(d.parentId)) docs++
-  }
-  return folderSel.value.size + docs
-})
+const selectedCount = computed(() => docSel.value.size)
 
 function done() {
   const out: KbAttachment[] = []
-  for (const id of folderSel.value) out.push({ scope: 'folder', id, recursive: true })
   for (const id of docSel.value) {
     const d = coworkKb.find((n) => n.id === id)
-    if (d && isDoc(d) && !parentCovered(d.parentId)) out.push({ scope: 'doc', id })
+    if (d && isDoc(d)) out.push({ scope: 'doc', id })
   }
   emit('update:modelValue', out)
   emit('update:isOpen', false)
@@ -137,9 +111,9 @@ function cancel() { emit('update:isOpen', false) }
 
           <div class="kap-searchbar">
             <div class="kap-search">
-              <MpIcon name="search" size="sm" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="search" class="kap-search-input" type="text" placeholder="Search knowledge..." />
-              <button v-if="search" class="kap-search-clear" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <button v-if="search" class="kap-search-clear" type="button" aria-label="Clear search" @click="search = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
             </div>
           </div>
 
@@ -150,23 +124,17 @@ function cancel() { emit('update:isOpen', false) }
                 <MpIcon :name="expanded.has(row.node.id) ? 'caret-down' : 'caret-right'" size="sm" />
               </button>
               <span v-else class="kap-chev is-hidden" />
-              <label class="kap-label">
+              <label class="kap-label" @click="isFolder(row.node) && toggleExpand(row.node.id)">
                 <MpCheckbox
-                  v-if="isFolder(row.node)"
+                  v-if="isDoc(row.node)"
                   :id="`kap-${row.node.id}`"
-                  :is-checked="folderSel.has(row.node.id)"
-                  @change="toggleFolder(row.node.id)" />
-                <MpCheckbox
-                  v-else
-                  :id="`kap-${row.node.id}`"
-                  :is-checked="docSel.has(row.node.id) || row.coveredByFolder"
-                  :is-disabled="row.coveredByFolder"
+                  :is-checked="docSel.has(row.node.id)"
                   @change="toggleDoc(row.node.id)" />
+                <span v-else class="kap-cb-spacer" />
                 <img v-if="isDoc(row.node) && thumbs.get(row.node.id)" :src="thumbs.get(row.node.id)" :alt="row.node.name" class="kap-thumb" />
                 <MpIcon v-else :name="isFolder(row.node) ? 'folder-close' : docIcon((row.node as any).ext)" size="sm" class="kap-icon" :class="{ 'kap-icon--folder': isFolder(row.node) }" />
                 <span class="kap-name">{{ row.node.name }}</span>
                 <span v-if="isDoc(row.node)" class="kap-ext">{{ extLabel((row.node as any).ext) }}</span>
-                <span v-if="row.coveredByFolder" class="kap-covered">via folder</span>
               </label>
             </div>
           </div>
@@ -200,10 +168,11 @@ function cancel() { emit('update:isOpen', false) }
 .kap-close:hover { background: var(--mp-background-neutral-hovered); }
 /* Search */
 .kap-searchbar { flex-shrink: 0; padding: var(--mp-spacing-4) var(--mp-spacing-4) 0; }
-.kap-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
-.kap-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* Matches the table index filter-bar search (.cw-search): border-default pill, magnifier SVG. */
+.kap-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.kap-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .kap-search-input::placeholder { color: var(--mp-text-placeholder); }
-.kap-search-clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); border-radius: var(--mp-radii-full, 999px); }
+.kap-search-clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: var(--mp-radii-full, 999px); }
 .kap-search-clear:hover { background: var(--mp-background-neutral-hovered); }
 .kap-tree { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .kap-empty { padding: var(--mp-spacing-6); text-align: center; font-size: 13px; color: var(--mp-text-secondary); }
@@ -212,6 +181,7 @@ function cancel() { emit('update:isOpen', false) }
 .kap-chev.is-hidden { visibility: hidden; }
 .kap-label { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); flex: 1; min-width: 0; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
 .kap-label:hover { background: var(--mp-background-neutral-subtle, #f0f1f3); }
+.kap-cb-spacer { flex: 0 0 auto; width: 16px; }
 .kap-icon { flex: 0 0 auto; color: var(--mp-icon-default, #536062); }
 .kap-thumb { flex: 0 0 auto; width: 28px; height: 28px; object-fit: cover; border-radius: 4px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f6f7f9); }
 .kap-icon--folder { color: var(--mp-icon-brand, #0a6e4e); }
