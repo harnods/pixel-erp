@@ -791,7 +791,21 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
     <footer class="caf-footbar">
       <MpButton v-if="currentIndex > 0" is-rounded variant="ghost" @click="back">Back</MpButton>
       <MpButton is-rounded variant="ghost" @click="askCancel">Cancel</MpButton>
-      <MpButton v-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
+      <!-- Editing: Continue is a split button so you can Save changes from any step. -->
+      <MpButtonGroup v-if="isEdit && !isLast" is-split>
+        <MpButton is-rounded variant="primary" @click="next">Continue</MpButton>
+        <MpPopover id="caf-continue-split" is-close-on-select use-portal placement="top-end">
+          <MpPopoverTrigger>
+            <MpButton is-rounded variant="primary" aria-label="More save options" right-icon="chevrons-down" />
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '180px' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="publish">Save changes</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </MpButtonGroup>
+      <MpButton v-else-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
       <MpButton v-else is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
     </footer>
   </div>

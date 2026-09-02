@@ -1134,6 +1134,16 @@ export function visibilityAudienceCount(a: Pick<CoworkAgent, 'visibilityEveryone
   ;(a.visibilityEmployees ?? []).forEach((id) => ids.add(id))
   return ids.size
 }
+/** The actual people who can see an agent (everyone / role members / named users), de-duped. */
+export function visibilityAudience(a: Pick<CoworkAgent, 'visibilityEveryone' | 'visibilityRoles' | 'visibilityEmployees'>): Employee[] {
+  if (a.visibilityEveryone) return activeEmployeesList()
+  const seen = new Set<string>()
+  const out: Employee[] = []
+  const add = (e: Employee | undefined) => { if (e && !seen.has(e.id)) { seen.add(e.id); out.push(e) } }
+  ;(a.visibilityRoles ?? []).forEach((r) => employeesForRole(r).forEach(add))
+  ;(a.visibilityEmployees ?? []).forEach((id) => add(activeEmployeesList().find((e) => e.id === id)))
+  return out
+}
 /** Can the current user see (start a chat with / be assigned) this agent? (AG-21) */
 export function agentVisibleToCurrentUser(a: CoworkAgent): boolean {
   if (a.visibilityEveryone) return true
@@ -1153,7 +1163,7 @@ export const AGENT_SEED: CoworkAgent[] = [
     description: 'Your all-round co-worker across HR, sales, CRM, warehouse, finance and production.',
     persona: 'Mekari Airene, a versatile, reliable co-worker. Ground everything in the ERP data, prioritise what matters, and hand off to a specialist agent when a task is clearly in one domain.',
     taskTitles: ['Chase overdue receivables', 'Bank reconciliation review', 'Month-end close checklist'],
-    connections: ['xero', 'stripe'], model: 'gemini-flash-latest', avatar: '/agents/airene.png', color: '#7C3AED',
+    connections: ['mekari-talenta', 'mekari-jurnal', 'mekari-qontak'], model: 'gemini-flash-latest', avatar: '/agents/airene.png', color: '#7C3AED',
   },
   // ── Browse agents (10) ──
   {
@@ -1252,6 +1262,18 @@ function snapshotOf(a: CoworkAgent): CoworkAgentVersion['snapshot'] {
   }
 }
 /** Fill lifecycle/governance defaults on an agent (idempotent — safe on load + create). */
+// The core Mekari products an agent grounds on. Airene reaches all of them;
+// a specialist maps from its module. These are the connection ids under /connectors/*.
+const MEKARI_CORE_APPS = ['mekari-talenta', 'mekari-jurnal', 'mekari-qontak']
+const MODULE_MEKARI_APPS: Record<CoworkModule, string[]> = {
+  HR: ['mekari-talenta'],
+  Finance: ['mekari-jurnal'],
+  CRM: ['mekari-qontak'],
+  Sales: ['mekari-qontak', 'mekari-jurnal'],
+  WMS: ['mekari-jurnal'],
+  Production: ['mekari-jurnal'],
+}
+
 export function normalizeAgent(a: CoworkAgent): CoworkAgent {
   a.instruction ??= a.persona
   a.skills ??= AGENT_DEFAULT_SKILLS[a.id] ?? ['create-task']
@@ -1262,6 +1284,9 @@ export function normalizeAgent(a: CoworkAgent): CoworkAgent {
   a.visibilityRoles ??= []
   a.visibilityEmployees ??= []
   a.knowledgeAreas ??= [a.module]
+  // Live data sources are Mekari products (never the old module label like "Finance").
+  // Airene is the generalist → connects to every core Mekari product by default.
+  a.knowledgeApps ??= a.id === 'airene' ? [...MEKARI_CORE_APPS] : (MODULE_MEKARI_APPS[a.module] ?? [])
   a.allWorkspace ??= false
   a.knowledgeFiles ??= []
   a.knowledge ??= []
@@ -1319,7 +1344,7 @@ export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkP
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
-function persistAgents() { saveSnapshot('cowork-agents-v3', coworkAgents) }
+function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
 function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }

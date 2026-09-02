@@ -172,6 +172,10 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
 .chat-bubble__text { white-space: pre-wrap; }
 .chat-bubble--user { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-default); }
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* Answer eases in (fade + rise + de-blur) instead of snapping — like Claude/ChatGPT. */
+.chat-bubble--assistant { animation: ccpAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes ccpAnswerIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) { .chat-bubble--assistant { animation: none; } }
 .chat-bubble__rich { white-space: normal; }
 .chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
 .chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }
