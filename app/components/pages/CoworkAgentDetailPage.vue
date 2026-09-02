@@ -90,8 +90,11 @@ const usage = computed(() => {
   }
 })
 
-const activeTabIndex = ref(0)
 const TAB_KEYS = ['overview', 'knowledge', 'skills', 'connections', 'visibility', 'versions', 'usage']
+// Deep-link support: `?tab=usage` (from the index "View usage" action) opens straight to that tab.
+const route = useRoute()
+const initialTab = TAB_KEYS.indexOf(String(route.query.tab ?? ''))
+const activeTabIndex = ref(initialTab >= 0 ? initialTab : 0)
 
 function edit() { router.push(`/cowork-agents/${props.orderId}/edit`) }
 function chat() { toast.notify({ variant: 'success', title: `Opening a chat with ${agent.value?.name}` }) }

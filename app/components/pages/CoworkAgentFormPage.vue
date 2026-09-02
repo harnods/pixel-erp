@@ -14,8 +14,7 @@ import {
   MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio, MpSelect,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
-  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css,
   toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
@@ -24,6 +23,7 @@ import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ApprovalModeIcon from '~/components/patterns/ApprovalModeIcon.vue'
+import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
@@ -224,23 +224,15 @@ async function onKbUpload(ev: Event) {
 }
 const kbUploadInput = ref<HTMLInputElement | null>(null)
 
-// ── Employee picker drawer ──
+// ── User picker (shared SelectAccessDrawer) ──
 const pickerOpen = ref(false)
-const empSearch = ref('')
 const activeEmployees = computed(() => employees.filter((e) => e.status !== 'resigned'))
-const filteredEmployees = computed(() => {
-  const q = empSearch.value.trim().toLowerCase()
-  return activeEmployees.value.filter((e) => !q || e.fullName.toLowerCase().includes(q) || (e.jobPosition ?? '').toLowerCase().includes(q))
-})
+// Options for the two-column select drawer: name + "role · department" subtitle.
+const employeeOptions = computed(() => activeEmployees.value.map((e) => ({
+  id: e.id, name: e.fullName, subtitle: [e.jobPosition, e.department].filter(Boolean).join(' · '),
+})))
 const selectedEmployees = computed(() => selectedEmployeeIds.value.map((id) => employees.find((e) => e.id === id)).filter(Boolean))
 function removeEmployee(id: string) { selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id) }
-const draftEmpIds = ref<string[]>([])
-watch(pickerOpen, (open) => { if (open) { draftEmpIds.value = [...selectedEmployeeIds.value]; empSearch.value = '' } })
-function toggleDraftEmp(id: string, on: boolean) {
-  if (on) { if (!draftEmpIds.value.includes(id)) draftEmpIds.value = [...draftEmpIds.value, id] }
-  else draftEmpIds.value = draftEmpIds.value.filter((x) => x !== id)
-}
-function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pickerOpen.value = false }
 
 // ── Approval-mode confirmation sheet (SK-33) ──
 const autoSheet = reactive<{ open: boolean; skill?: CoworkSkill; maxPerRun: string; maxPerDay: string; ceiling: string; scope: string; notify: 'always' | 'daily_digest' | 'never' }>({
@@ -688,7 +680,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <div class="caf-vis-opts">
             <MpRadio id="caf-vis-everyone" name="caf-vis" value="everyone" :is-checked="visibilityMode === 'everyone'" @change="visibilityMode = 'everyone'">Everyone at {{ COWORK_COMPANY }}</MpRadio>
             <MpRadio id="caf-vis-roles" name="caf-vis" value="roles" :is-checked="visibilityMode === 'roles'" @change="visibilityMode = 'roles'">Specific roles</MpRadio>
-            <MpRadio id="caf-vis-people" name="caf-vis" value="people" :is-checked="visibilityMode === 'people'" @change="visibilityMode = 'people'">Specific people</MpRadio>
+            <MpRadio id="caf-vis-people" name="caf-vis" value="people" :is-checked="visibilityMode === 'people'" @change="visibilityMode = 'people'">Specific users</MpRadio>
           </div>
 
           <div v-if="visibilityMode === 'roles'" class="caf-roles">
@@ -704,14 +696,16 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <div v-if="visibilityMode === 'people'" class="caf-people">
             <div class="caf-people__head">
-              <span class="caf-plain-label">People with access</span>
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
+              <span class="caf-plain-label">Users with access</span>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Select users</button>
             </div>
             <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet. Only you will have access.</p>
             <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
               <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
               <div class="caf-person__info"><span class="caf-person__name">{{ e!.fullName }}</span><span class="caf-person__role">{{ e!.jobPosition }}</span></div>
-              <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
+              <MpTooltip :id="`caf-rm-${e!.id}`" label="Remove" placement="top" use-portal>
+                <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
+              </MpTooltip>
             </div>
           </div>
 
@@ -754,7 +748,17 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           </section>
           <section class="caf-review-sec">
             <div class="caf-review-sechead"><h3>Visibility</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('visibility')">Edit</button></div>
-            <ContentList label="Who" :value="visibilitySummary" />
+            <ContentList label="Who">
+              <template v-if="visibilityMode === 'everyone'">Everyone at {{ COWORK_COMPANY }} · {{ audienceCount }} people</template>
+              <template v-else-if="visibilityMode === 'roles'">
+                <span v-for="r in selectedRoleIds" :key="r" class="content-list__line">{{ COWORK_ROLES.find((x) => x.id === r)?.name }}<span class="caf-review-vsub"> · {{ roleMemberCount(r) }} people</span></span>
+                <span v-if="!selectedRoleIds.length" class="content-list__line">No roles selected</span>
+              </template>
+              <template v-else>
+                <span v-for="e in selectedEmployees" :key="e!.id" class="content-list__line">{{ e!.fullName }}<span class="caf-review-vsub"> · {{ e!.jobPosition }}</span></span>
+                <span v-if="!selectedEmployees.length" class="content-list__line">Only you</span>
+              </template>
+            </ContentList>
           </section>
         </div>
 
@@ -791,29 +795,18 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
     </footer>
   </div>
 
-  <!-- Employee picker drawer -->
-  <MpDrawer id="caf-people-drawer" :is-open="pickerOpen" placement="right" @close="pickerOpen = false">
-    <MpDrawerContent>
-      <MpDrawerHeader>Add people <MpModalCloseButton /></MpDrawerHeader>
-      <MpDrawerBody>
-        <MpInput id="caf-emp-search" v-model="empSearch" is-full-width placeholder="Search employees" />
-        <div class="caf-emplist">
-          <label v-for="e in filteredEmployees" :key="e.id" class="caf-emp">
-            <MpCheckbox :is-checked="draftEmpIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleDraftEmp(e.id, v)" />
-            <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
-            <span class="caf-emp__info"><span class="caf-emp__name">{{ e.fullName }}</span><span class="caf-emp__role">{{ e.jobPosition }} · {{ e.department }}</span></span>
-          </label>
-        </div>
-      </MpDrawerBody>
-      <MpDrawerFooter>
-        <MpButtonGroup>
-          <MpButton variant="ghost" is-rounded @click="pickerOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="savePeople">Save</MpButton>
-        </MpButtonGroup>
-      </MpDrawerFooter>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+  <!-- User picker — the shared two-column ERP select drawer (add ⊕ / remove ⊖ + Save) -->
+  <SelectAccessDrawer
+    :open="pickerOpen"
+    title="Select users"
+    list-title="Users"
+    :options="employeeOptions"
+    :model-value="selectedEmployeeIds"
+    empty-title="No users selected"
+    empty-caption="Add users from the list to give them access to this agent."
+    @update:open="pickerOpen = $event"
+    @save="(ids: string[]) => selectedEmployeeIds = ids"
+  />
 
   <!-- Approval-mode confirmation sheet (switching a skill to auto) -->
   <Teleport to="body">
@@ -1007,15 +1000,18 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
 .caf-review-sec { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
 .caf-review-sechead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); min-height: 36px; }
-.caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
-.caf-review-sec--warn h3 { color: #6941C6; }
+.caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
+/* "Will act without asking" is a lighter sub-heading: 14px semibold, black (not purple). */
+.caf-review-sec--warn h3 { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
+.caf-review-vsub { color: var(--mp-text-secondary); }
 /* Edit button — hidden until the section is hovered/focused; secondary style */
 .caf-review-edit { opacity: 0; pointer-events: none; transition: opacity .12s ease; }
 .caf-review-sec:hover .caf-review-edit,
 .caf-review-sec:focus-within .caf-review-edit { opacity: 1; pointer-events: auto; }
-.caf-willact { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: 6px 0; font-size: var(--mp-font-sizes-md, 14px); }
-.caf-willact__name { color: var(--mp-text-default); font-weight: 500; }
-.caf-willact__cond { color: #6941C6; }
+/* Name on top, the auto conditions as a caption underneath (not a right-aligned column). */
+.caf-willact { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.caf-willact__name { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); font-weight: 500; }
+.caf-willact__cond { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 :deep(.mp-button--variant_ghost:hover), :deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
 
