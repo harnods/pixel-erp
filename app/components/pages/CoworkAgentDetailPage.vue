@@ -102,13 +102,16 @@ function duplicate() {
   const c = duplicateAgent(props.orderId)
   if (c) { toast.notify({ variant: 'success', title: 'Agent duplicated' }); router.push(`/cowork-agents/${c.id}/edit`) }
 }
-function viewUsage() { activeTabIndex.value = TAB_KEYS.indexOf('usage') }
 
 // Archive / restore
 const archiveOpen = ref(false)
-const archiveDesc = computed(() => scheduledCount.value
-  ? `${scheduledCount.value} scheduled task${scheduledCount.value === 1 ? '' : 's'} use this agent and will be paused. You can restore it later.`
-  : 'This agent will be hidden from everyone. You can restore it later.')
+const archiveDesc = computed(() => {
+  const n = scheduledCount.value
+  const tasks = n
+    ? `${n} scheduled task${n === 1 ? '' : 's'} using this agent will be paused, and it'll be removed from the New chat picker.`
+    : 'It will be hidden from everyone and removed from the New chat picker.'
+  return `${tasks} Open chats stay readable but can't send new messages. Nothing is deleted — you can restore this agent anytime.`
+})
 function doArchive() {
   const { paused } = archiveAgent(props.orderId)
   toast.notify({ variant: 'success', title: 'Agent archived', description: paused ? `${paused} scheduled task${paused === 1 ? '' : 's'} paused.` : undefined })
@@ -140,7 +143,6 @@ function roleName(id: string) { return COWORK_ROLES.find((r) => r.id === id)?.na
               <MpPopoverListItem @click="chat">Chat</MpPopoverListItem>
               <MpPopoverListItem @click="edit">Edit agent</MpPopoverListItem>
               <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
-              <MpPopoverListItem @click="viewUsage">View usage</MpPopoverListItem>
               <MpPopoverListItem v-if="isArchived" @click="doRestore">Restore agent</MpPopoverListItem>
               <MpPopoverListItem v-else-if="canArchiveAgent(agent.id)" @click="archiveOpen = true">Archive agent</MpPopoverListItem>
             </MpPopoverList>
