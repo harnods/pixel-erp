@@ -851,9 +851,9 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
   { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
   { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
-  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C' },
-  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF' },
-  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111' },
+  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C', logo: '/connectors/instagram.svg' },
+  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF', logo: '/connectors/meta.svg' },
+  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111', logo: '/connectors/tiktok.svg' },
   { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
   // ── Finance ──
   { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
@@ -1592,6 +1592,57 @@ export function unscheduleTask(id: string): void {
 export function setConnection(id: string, connected: boolean): void {
   const c = coworkConnections.find((x) => x.id === id)
   if (c) { c.connected = connected; persistConnections() }
+}
+
+/** Auth mode for a connection's connect flow — drives the consent copy. */
+export type CoworkConnectionAuth = 'first_party' | 'oauth' | 'api_key'
+export function connectionAuthMode(c: CoworkConnection): CoworkConnectionAuth {
+  if (c.id.startsWith('mekari-')) return 'first_party'
+  if (c.provider === 'google') return 'oauth'
+  // A handful of catalogue apps are key-based rather than OAuth in real life.
+  if (['stripe', 'brex', 'metabase', 'bigquery', 'snowflake'].includes(c.id)) return 'api_key'
+  return 'oauth'
+}
+/** Plain-language permissions Cowork requests — differs per provider category
+ *  (Open principle: show scopes before consent). `write` = a change-class scope. */
+export function connectionScopes(c: CoworkConnection): { label: string; write?: boolean }[] {
+  if (c.id.startsWith('mekari-')) return [
+    { label: 'Access your data using your own Mekari permissions (RBAC enforced)' },
+    { label: 'Read the records you can already see in ' + c.name },
+    { label: 'Create and update records where you have edit rights', write: true },
+  ]
+  const primary = c.categories.find((k) => k !== 'Featured') ?? c.categories[0]
+  switch (primary) {
+    case 'Communication': return [
+      { label: `Read your ${c.name} conversations, channels and contacts` },
+      { label: 'Send messages and post on your behalf', write: true },
+      { label: 'Read your profile and account info' },
+    ]
+    case 'Productivity': return [
+      { label: `Read your ${c.name} documents, items and comments` },
+      { label: 'Create and update items on your behalf', write: true },
+      { label: 'Read workspace members and structure' },
+    ]
+    case 'Business & operations': return [
+      { label: `Read your ${c.name} records (deals, tickets, orders, contacts)` },
+      { label: 'Create and update records on your behalf', write: true },
+      { label: 'Read account, pipeline and catalog metadata' },
+    ]
+    case 'Data & analytics': return [
+      { label: `Read your ${c.name} reports, datasets and dashboards` },
+      { label: 'Run read-only queries against your data' },
+      { label: 'Read schema and metadata' },
+    ]
+    case 'Finance': return [
+      { label: `Read your ${c.name} invoices, payments and balances` },
+      { label: 'Create draft invoices and payments for your review', write: true },
+      { label: 'Read customers, vendors and account info' },
+    ]
+    default: return [
+      { label: `Read your ${c.name} data` },
+      { label: 'Act on your behalf within the tools you enable', write: true },
+    ]
+  }
 }
 
 let connSeq = 1

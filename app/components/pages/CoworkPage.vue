@@ -32,7 +32,7 @@ import {
   coworkTasks, coworkConnections, coworkAgents, coworkSkills,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
-  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
+  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection, connectionScopes, connectionAuthMode,
   addSkill, removeSkill,
   agentVisibleToCurrentUser, agentHasAutoAction, canArchiveAgent, duplicateAgent, archiveAgent, restoreAgent, tasksUsingAgent,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
@@ -502,9 +502,24 @@ function disconnectConnection(c: CoworkConnection) {
   setConnection(c.id, false)
   toast.notify({ variant: 'success', title: `${c.name} disconnected` })
 }
-function connectFake(c: CoworkConnection) {
-  setConnection(c.id, true)
-  toast.notify({ variant: 'success', title: `${c.name} connected` })
+// ── Connect consent (a Claude-style OAuth "authorize" screen, per provider) ──
+const consentConn = ref<CoworkConnection | null>(null)
+const consentOpen = ref(false)
+const consentBusy = ref(false)
+const consentScopes = computed(() => (consentConn.value ? connectionScopes(consentConn.value) : []))
+const consentAuth = computed(() => (consentConn.value ? connectionAuthMode(consentConn.value) : 'oauth'))
+function openConsent(c: CoworkConnection) { consentConn.value = c; consentBusy.value = false; consentOpen.value = true }
+function cancelConsent() { if (consentBusy.value) return; consentOpen.value = false; consentConn.value = null }
+function authorizeConsent() {
+  const c = consentConn.value
+  if (!c || consentBusy.value) return
+  consentBusy.value = true
+  // Simulate the provider round-trip (real OAuth for Google runs its own popup).
+  window.setTimeout(() => {
+    setConnection(c.id, true)
+    toast.notify({ variant: 'success', title: `${c.name} connected` })
+    consentOpen.value = false; consentConn.value = null; consentBusy.value = false
+  }, 900)
 }
 function addConnection() { openMcpModal() }
 
@@ -736,8 +751,8 @@ function confirmArchive() {
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
-  if (c.provider === 'google') connectGoogle(c)
-  else connectFake(c)
+  if (c.provider === 'google') connectGoogle(c) // real Google OAuth popup
+  else openConsent(c)                            // consent screen → connect
 }
 function manageConnection(c: CoworkConnection) {
   infoToast(`Manage ${c.name} — coming soon`)
@@ -1674,6 +1689,42 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
       <MpModalOverlay />
     </MpModal>
 
+    <!-- ── Connect consent (OAuth-style authorize screen, per provider) ── -->
+    <MpModal id="cw-consent-modal" :is-open="consentOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelConsent">
+      <MpModalContent>
+        <MpModalHeader>
+          <span class="cwc-consent-head">
+            <img v-if="consentConn && !connLogoFailed[consentConn.id]" class="cwc-consent-logo" :src="consentConn.logo || `/connectors/${consentConn.id}.png`" :alt="consentConn.name" @error="connLogoFailed[consentConn.id] = true">
+            <span v-else-if="consentConn" class="cwc-consent-logo cwc-consent-logo--mono" :style="{ background: consentConn.color || '#3a4749' }">{{ connLogo(consentConn.name) }}</span>
+            Connect {{ consentConn?.name }}
+          </span>
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="cwc-consent-sub">Mekari Cowork wants to access your <strong>{{ consentConn?.name }}</strong> account. It will be able to:</p>
+          <ul class="cwc-consent-scopes">
+            <li v-for="(s, i) in consentScopes" :key="i" class="cwc-consent-scope">
+              <MpIcon :name="s.write ? 'edit' : 'check'" size="sm" class="cwc-consent-ico" :class="{ 'is-write': s.write }" />
+              <span>{{ s.label }}</span>
+            </li>
+          </ul>
+          <p class="cwc-consent-note">
+            <template v-if="consentAuth === 'first_party'">Signed in with your Mekari account — no extra steps.</template>
+            <template v-else-if="consentAuth === 'api_key'">You'll enter an API key from {{ consentConn?.name }} to finish.</template>
+            <template v-else>You'll be redirected to {{ consentConn?.name }} to sign in and approve access.</template>
+          </p>
+          <p class="cwc-consent-trust">You can choose which tools stay enabled after connecting. Only connect apps you trust.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="cancelConsent">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" :is-loading="consentBusy" @click="authorizeConsent">{{ consentBusy ? 'Connecting…' : `Continue with ${consentConn?.name}` }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
     <!-- ── Create / edit skill modal ── -->
     <MpModal id="cw-skill-modal" :is-open="skillOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeSkillModal">
       <MpModalContent>
@@ -1950,6 +2001,18 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-agents-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-16, 64px) var(--mp-spacing-6); color: var(--mp-text-secondary); text-align: center; }
 .cw-agents-empty__title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .cw-agents-empty__caption { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Connect consent modal ── */
+.cwc-consent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.cwc-consent-logo { width: 28px; height: 28px; border-radius: var(--mp-radii-md, 6px); object-fit: contain; background: #fff; flex: 0 0 auto; }
+.cwc-consent-logo--mono { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; }
+.cwc-consent-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-scopes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.cwc-consent-scope { display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-ico { flex: 0 0 auto; margin-top: 1px; color: var(--mp-icon-success, #0a6e4e); }
+.cwc-consent-ico.is-write { color: var(--mp-icon-warning, #b54708); }
+.cwc-consent-note { margin: var(--mp-spacing-5, 20px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cwc-consent-trust { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
