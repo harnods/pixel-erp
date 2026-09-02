@@ -5,6 +5,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
 
 const EXP_KEY = 'review-files-expenses-v1'
 const PI_KEY = 'review-files-pi-v1'
+const BS_KEY = 'review-files-bank-statement-v1'
 
 // A row caught mid-scan when the tab closed can't resume (its file bytes were
 // only in memory), so clear the transient flags on load — it just shows as an
@@ -48,10 +49,12 @@ function nextReviewFileId(): string {
  *  queue — a file uploaded from one tab never silently appears on the other;
  *  it only crosses over via the explicit "Move files to X" bulk action
  *  (see moveReviewFilesToPurchaseInvoice / moveReviewFilesToExpenses below). */
-export type ReviewSurface = 'expenses' | 'purchase-invoices'
+export type ReviewSurface = 'expenses' | 'purchase-invoices' | 'bank-statement'
 
 function queueFor(surface: ReviewSurface): ReviewFile[] {
-  return surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles
+  if (surface === 'purchase-invoices') return purchaseInvoiceReviewFiles
+  if (surface === 'bank-statement') return bankStatementDropboxFiles
+  return reviewFiles
 }
 
 /** OCR-read document numbers are never uniform — format depends on what kind
@@ -189,11 +192,22 @@ const SEED_PI: ReviewFile[] = [
 
 export const purchaseInvoiceReviewFiles = reactive<ReviewFile[]>(sanitizeReviewFiles(loadSnapshot<ReviewFile>(PI_KEY) ?? SEED_PI))
 
-/** Persist both review queues (user uploads + OCR results) to the mini-DB
+/** Cash management's own Dropbox queue — uploaded bank statements awaiting OCR +
+ *  review. Same shape/behaviour as the Expenses / Purchase-invoices queues; here
+ *  the "beneficiary" is the bank and the "number" the statement number. */
+const SEED_BANK_STATEMENT: ReviewFile[] = [
+  { id: 'BSRF001', file: 'BCA_statement_072026.pdf',  number: 'STMT/BCA/2026/07', beneficiary: { id: 'BCA', name: 'Bank Central Asia (BCA)' }, confidence: 93, classification: 'unclassified', date: '2026-07-31', amount: 152_400_000 },
+  { id: 'BSRF002', file: 'Mandiri_rekening_koran.pdf', number: 'RK-2026-07-0042',   beneficiary: { id: 'MDR', name: 'Bank Mandiri' },            confidence: 88, classification: 'unclassified', date: '2026-07-31', amount: 87_900_000  },
+]
+
+export const bankStatementDropboxFiles = reactive<ReviewFile[]>(sanitizeReviewFiles(loadSnapshot<ReviewFile>(BS_KEY) ?? SEED_BANK_STATEMENT))
+
+/** Persist every review queue (user uploads + OCR results) to the mini-DB
  *  snapshot. Call after every mutation so a refresh keeps the Dropbox intact. */
 export function persistReviewFiles(): void {
   saveSnapshot(EXP_KEY, reviewFiles)
   saveSnapshot(PI_KEY, purchaseInvoiceReviewFiles)
+  saveSnapshot(BS_KEY, bankStatementDropboxFiles)
 }
 
 /** Move one or more review files out of the Expenses review queue and into

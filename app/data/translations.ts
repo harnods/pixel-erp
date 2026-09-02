@@ -201,6 +201,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Completed': 'Selesai',
   'Processing': 'Diproses',
   'Scanning…': 'Memindai…',
+  'Upload bank statement': 'Unggah rekening koran',
+  'Drop your bank statement files here. We\'ll upload them to Dropbox and scan each one.': 'Letakkan file rekening koran Anda di sini. Kami akan mengunggahnya ke Dropbox dan memindai satu per satu.',
 
   // ── Table columns / common data labels ──────────────────────────────────────
   'SKU': 'SKU',

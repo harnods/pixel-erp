@@ -12,16 +12,16 @@ import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
-  reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles,
+  reviewFiles, purchaseInvoiceReviewFiles, bankStatementDropboxFiles, deleteReviewFiles,
   moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses,
 } from '~/data'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import type { ReviewFile, FileClassification } from '~/data'
 
-/** Which surface's review queue this table is showing. Both Expenses and
- *  Purchase invoices have a "Inbox" tab over the same table; only the
- *  underlying queue and the review route differ. */
-const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' }>(), {
+/** Which surface's review queue this table is showing. Expenses, Purchase
+ *  invoices and Cash management (bank statements) each have a "Dropbox" tab over
+ *  the same table; only the underlying queue and the review route differ. */
+const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' | 'bank-statement' }>(), {
   surface: 'expenses',
 })
 
@@ -29,8 +29,14 @@ const { t } = useLocale()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
 
-const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
-const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
+const queue = computed(() =>
+  props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles
+  : props.surface === 'bank-statement' ? bankStatementDropboxFiles
+  : reviewFiles)
+const reviewBase = computed(() =>
+  props.surface === 'purchase-invoices' ? '/purchase-invoices/review'
+  : props.surface === 'bank-statement' ? '/cash-management/review'
+  : '/expenses/review')
 
 // The full-width dropzone above the filter bar is the single drop target for this
 // tab (replaces the old drag-anywhere overlay). It behaves EXACTLY like the
@@ -40,7 +46,7 @@ const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/pur
 function onDropzoneFiles(fileList: FileList) {
   const files = Array.from(fileList)
   if (!files.length) return
-  startUpload(files, props.surface, props.surface === 'purchase-invoices' ? 'Upload vendor invoices' : 'Upload bills')
+  startUpload(files, props.surface, props.surface === 'purchase-invoices' ? 'Upload vendor invoices' : props.surface === 'bank-statement' ? 'Upload bank statement' : 'Upload bills')
   uploadCenterOpen.value = true
 }
 
