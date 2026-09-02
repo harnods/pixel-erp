@@ -31,7 +31,7 @@ import { employees } from '~/data/employees'
 import {
   getAgent, addAgent, updateAgent, publishAgentVersion, deleteAgentSafe,
   COWORK_SKILLS, COWORK_COMPANY, APP_MODULES, coworkConnections, coworkAgents,
-  COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount,
+  COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount, visibilityAudience,
   SKILL_RISK_META, autoModeAvailable, COWORK_CURRENT_USER_ID,
   type CoworkAgent, type CoworkModule, type CoworkSkill, type CoworkSkillBinding,
   type CoworkApprovalMode, type CoworkAutoConditions,
@@ -129,11 +129,15 @@ function riskMeta(s: CoworkSkill) { return SKILL_RISK_META[s.riskClass ?? 'write
 const visibilityMode = ref<'everyone' | 'roles' | 'people'>('everyone')
 const selectedRoleIds = ref<string[]>([])
 const selectedEmployeeIds = ref<string[]>([])
-const audienceCount = computed(() => visibilityAudienceCount({
+const visibilitySelector = computed(() => ({
   visibilityEveryone: visibilityMode.value === 'everyone',
   visibilityRoles: visibilityMode.value === 'roles' ? selectedRoleIds.value : [],
   visibilityEmployees: visibilityMode.value === 'people' ? selectedEmployeeIds.value : [],
 }))
+const audienceCount = computed(() => visibilityAudienceCount(visibilitySelector.value))
+// The resolved people behind the count — shown in a modal via the "View" link.
+const audiencePeople = computed(() => visibilityAudience(visibilitySelector.value))
+const audienceModalOpen = ref(false)
 const rolesByProduct = computed(() => {
   const groups: Record<string, typeof COWORK_ROLES> = {}
   for (const r of COWORK_ROLES) (groups[r.product] ??= []).push(r)
@@ -710,7 +714,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             </div>
           </div>
 
-          <p class="caf-audience"><MpIcon name="profile" size="sm" /> {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} will see this agent</p>
+          <p class="caf-audience">
+            <MpIcon name="profile" size="sm" /> {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} will see this agent
+            <button v-if="audiencePeople.length" type="button" class="caf-audience__view" @click="audienceModalOpen = true">View</button>
+          </p>
         </template>
 
       </div>
@@ -822,6 +829,26 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
     @update:open="pickerOpen = $event"
     @save="(ids: string[]) => selectedEmployeeIds = ids"
   />
+
+  <!-- Audience modal — the actual people behind the visibility count (View) -->
+  <MpModal id="caf-audience-modal" :is-open="audienceModalOpen" size="md" scroll-behavior="inside" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="audienceModalOpen = false">
+    <MpModalContent>
+      <MpModalHeader>{{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} with access<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <div v-for="e in audiencePeople" :key="e.id" class="caf-aud-row">
+          <MpAvatar :src="e.photo" :name="e.fullName" size="md" />
+          <div class="caf-aud-info">
+            <span class="caf-aud-name">{{ e.fullName }}</span>
+            <span class="caf-aud-sub">{{ [e.employeeId, e.jobPosition, e.department].filter(Boolean).join(' · ') }}</span>
+          </div>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton is-rounded variant="ghost" @click="audienceModalOpen = false">Close</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- Approval-mode confirmation modal (switching a skill to auto) -->
   <MpModal
@@ -1017,6 +1044,13 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-person__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-person__x { border: none; background: none; cursor: pointer; color: var(--mp-icon-default); display: inline-flex; }
 .caf-audience { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.caf-audience__view { background: none; border: none; padding: 0 0 0 2px; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm); font-weight: 600; color: var(--mp-text-link); }
+.caf-audience__view:hover { text-decoration: underline; text-underline-offset: 2px; }
+.caf-aud-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; }
+.caf-aud-row + .caf-aud-row { border-top: 1px solid var(--mp-border-default); }
+.caf-aud-info { display: flex; flex-direction: column; min-width: 0; }
+.caf-aud-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-aud-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Review */
 /* Step-5 summary — all content is 14px; key/value rows use the ContentList pattern */
