@@ -12,7 +12,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import {
   MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio, MpSelect,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
   MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -494,10 +494,9 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             <MpFormLabel>Model</MpFormLabel>
             <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
-                <button type="button" class="caf-select">
-                  <span class="caf-select__label">{{ modelLabel }}</span>
-                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <MpSelect id="caf-model-sel" :model-value="model" @mousedown.prevent>
+                  <option :value="model">{{ modelLabel }}</option>
+                </MpSelect>
               </MpPopoverTrigger>
               <MpPopoverContent :class="menuClass">
                 <MpPopoverList>
@@ -511,10 +510,9 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             <MpFormLabel>Language</MpFormLabel>
             <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
-                <button type="button" class="caf-select">
-                  <span class="caf-select__label">{{ LANGS.find((l) => l.id === language)?.label }}</span>
-                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <MpSelect id="caf-lang-sel" :model-value="language" @mousedown.prevent>
+                  <option :value="language">{{ LANGS.find((l) => l.id === language)?.label }}</option>
+                </MpSelect>
               </MpPopoverTrigger>
               <MpPopoverContent :class="menuClass">
                 <MpPopoverList>
@@ -860,10 +858,6 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-area-logo--img { object-fit: contain; }
 span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
 
-.caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
-.caf-select:hover { border-color: var(--mp-border-bold, #8c9596); }
-.caf-select__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.caf-select__chev { flex: 0 0 auto; width: 20px; height: 20px; color: var(--mp-icon-default, #536062); }
 
 /* Skills */
 .caf-skill-search { margin-top: var(--mp-spacing-3); }
