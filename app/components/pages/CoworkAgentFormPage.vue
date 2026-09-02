@@ -1089,10 +1089,10 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 @media (max-width: 1080px) { .caf-review-2col { grid-template-columns: 1fr; } }
 .caf-review-col { min-width: 0; }
 /* Chat wrapper — a drawer-like bordered surface holding the shared panel */
-/* Full-height chat: fills the stage down to just above the footer (hug height),
-   staying pinned while the left summary scrolls. Offset = top chrome (nav+bar)
-   + footer + the scroll area's vertical padding. */
-.caf-chat { position: sticky; top: 0; height: calc(100dvh - 248px); min-height: 480px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+/* Tall chat that stays pinned while the left summary scrolls, but always clears
+   the sticky footer (its composer is never cut off). Offset covers the top chrome
+   (nav + bar + stepper), the footer, and the scroll padding + gap. */
+.caf-chat { position: sticky; top: 0; height: calc(100dvh - 300px); min-height: 460px; border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 
 /* Approval-mode confirmation sheet (top-aligned, like ConfirmModal) */
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
