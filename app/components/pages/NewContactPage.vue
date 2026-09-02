@@ -222,7 +222,7 @@ async function save() {
     <!-- ── Title bar (breadcrumb above H1, 72px) ── -->
     <header class="nc-titlebar">
       <div class="nc-titlebar-left">
-        <button class="nc-breadcrumb" @click="goBack">{{ t(list.label) }}</button>
+        <a class="nc-breadcrumb" role="link" tabindex="0" @click="goBack" @keydown.enter="goBack">{{ t(list.label) }}</a>
         <h1 class="nc-title">{{ isEdit ? t('Edit contact') : t('New contact') }}</h1>
       </div>
     </header>
@@ -383,7 +383,7 @@ async function save() {
               <div v-if="form.groups.length" class="nc-chips">
                 <span v-for="g in form.groups" :key="g" class="nc-chip">
                   {{ g }}
-                  <button class="nc-chip-remove" :aria-label="`${t('Remove')} ${g}`" @click="toggleGroup(g)">
+                  <button class="btn-enterprise btn-enterprise--plain nc-chip-remove" :aria-label="`${t('Remove')} ${g}`" @click="toggleGroup(g)">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                     </svg>
@@ -548,7 +548,7 @@ async function save() {
                    signalled by the green checks in the fields, not by swapping
                    the button for a badge. -->
               <div class="nc-tax-action">
-                <button v-if="isValidating" class="nc-btn nc-btn--ghost" disabled>
+                <button v-if="isValidating" class="btn-enterprise btn-enterprise--secondary" disabled>
                   <MpSpinner size="sm" />
                   {{ t('Validating') }}
                 </button>
@@ -556,7 +556,7 @@ async function save() {
                   v-else id="nc-validate-tt" use-portal placement="top"
                   :label="t('Entered info will be validated through the DJP database. Make sure the numbers are correct.')"
                 >
-                  <button class="nc-btn nc-btn--ghost" :disabled="!canValidate" @click="validateTax">
+                  <button class="btn-enterprise btn-enterprise--secondary" :disabled="!canValidate" @click="validateTax">
                     {{ t('Validate') }}
                   </button>
                 </MpTooltip>
@@ -605,7 +605,7 @@ async function save() {
             <div v-for="(bank, i) in banks" :key="bank.id" class="nc-fields nc-bank">
               <div v-if="banks.length > 1" class="nc-bank-head">
                 <span class="nc-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
-                <button class="nc-bank-remove" @click="removeBank(i)">{{ t('Remove') }}</button>
+                <a class="nc-bank-remove" role="button" tabindex="0" @click="removeBank(i)" @keydown.enter="removeBank(i)">{{ t("Remove") }}</a>
               </div>
               <div class="nc-row">
                 <MpFormControl :id="`nc-bank-name-${i}`" class="nc-col">
@@ -647,7 +647,7 @@ async function save() {
             </div>
 
             <div>
-              <button class="nc-btn nc-btn--ghost nc-btn--icon" @click="addBank">
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addBank">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
@@ -737,8 +737,8 @@ async function save() {
 
         <!-- ── Action group ── -->
         <div class="nc-actions">
-          <button class="nc-btn nc-btn--cancel" @click="goBack">{{ t('Cancel') }}</button>
-          <button class="nc-btn nc-btn--primary" :disabled="isSaveDisabled" @click="save">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaveDisabled" @click="save">
             {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
           </button>
         </div>
@@ -788,7 +788,7 @@ async function save() {
 }
 .nc-titlebar-left { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
 .nc-breadcrumb {
-  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+  align-self: flex-start; cursor: pointer;
   font-size: 12px; line-height: var(--mp-line-heights-md); color: var(--mp-text-link);
 }
 .nc-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -919,10 +919,7 @@ async function save() {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md, 6px);
   background: var(--mp-background-surface);
 }
-.nc-prefix-wrap:focus-within {
-  border-color: var(--mp-border-focused, #0f6d4d);
-  box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15, 109, 77, 0.2));
-}
+.nc-prefix-wrap:focus-within { border-color: var(--mp-border-focused, #0f6d4d); }
 .nc-prefix { padding-left: var(--mp-spacing-3); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); }
 .nc-prefix-input {
   flex: 1; min-width: 0; height: var(--mp-sizes-10, 40px);
@@ -935,48 +932,17 @@ async function save() {
 .nc-bank { gap: var(--mp-spacing-5); }
 .nc-bank-head { display: flex; align-items: center; justify-content: space-between; }
 .nc-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.nc-bank-remove {
-  border: none; background: none; padding: 0; cursor: pointer; font-family: inherit;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
-}
+.nc-bank-remove { cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .nc-bank-remove:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* ── Buttons ── */
-.nc-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  font-family: inherit; cursor: pointer; white-space: nowrap;
-  border: 1px solid transparent;
-}
-.nc-btn--ghost {
-  background: var(--mp-background-surface);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-default);
-}
-.nc-btn--ghost:hover:not(:disabled) { background: var(--mp-background-neutral-hovered); }
-.nc-btn--ghost:disabled { color: var(--mp-text-disabled); border-color: var(--mp-border-default); cursor: default; }
-.nc-btn--icon { font-weight: var(--mp-font-weights-regular); }
-.nc-btn--cancel {
-  background: transparent; border-color: transparent;
-  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
-}
-.nc-btn--cancel:hover { background: var(--mp-background-neutral-hovered); }
-.nc-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.nc-btn--primary:hover:not(:disabled) {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
-.nc-btn--primary:disabled {
+/* ── Buttons ── (shape/colour come from .btn-enterprise in erp.css; only the
+   disabled treatment, which erp.css doesn't define, is added here) */
+.btn-enterprise:disabled { cursor: default; }
+.btn-enterprise--secondary:disabled { color: var(--mp-text-disabled); border-color: var(--mp-border-default); }
+.btn-enterprise--primary:disabled {
   background: var(--mp-background-disabled, #e4e7e7);
   border-color: var(--mp-background-disabled, #e4e7e7);
   color: var(--mp-text-disabled);
-  cursor: default;
 }
 
 /* ── Action group (right-aligned, last) ── */

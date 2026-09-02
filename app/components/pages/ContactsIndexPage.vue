@@ -200,7 +200,7 @@ function confirmDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`contact-actions-${(row as unknown as Contact).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <button class="btn-enterprise btn-enterprise--plain row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -222,7 +222,7 @@ function confirmDelete() {
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No contacts') }}</p>
         <p class="empty-full-desc">{{ t('Contacts you add will appear here.') }}</p>
-        <button class="empty-full-btn" @click="newContact">
+        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before empty-full-btn" @click="newContact">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -249,7 +249,8 @@ function confirmDelete() {
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-62, 248px);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px);
@@ -266,13 +267,12 @@ function confirmDelete() {
 .cell-link { color: var(--mp-text-link); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+/* shape/colour come from .btn-enterprise in erp.css */
 .row-kebab {
-  display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  padding: 0; border-radius: var(--mp-radii-sm);
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 .empty-full {
   display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2);
@@ -281,12 +281,5 @@ function confirmDelete() {
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; margin-bottom: var(--mp-spacing-1); }
 .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .empty-full-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.empty-full-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); color: var(--mp-text-default);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
-}
-.empty-full-btn:hover { background: var(--mp-background-neutral-hovered); }
+.empty-full-btn { margin-top: var(--mp-spacing-2); }
 </style>

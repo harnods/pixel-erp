@@ -18,6 +18,7 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
@@ -92,6 +93,11 @@ const transactions = computed(() => {
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+/** Related-records column width — from the shared standard, never hardcoded. */
+function colStyle(kind: ColumnKind) {
+  const { minWidth, maxWidth } = columnWidth(kind)
+  return { width: minWidth, minWidth, maxWidth }
+}
 
 // ── Title-bar actions ─────────────────────────────────────────────────────────
 const CREATE_TRANSACTION_ITEMS = [
@@ -116,14 +122,14 @@ function confirmDelete() {
       <header class="cd-header">
         <div class="cd-bar">
           <div class="cd-bar-left">
-            <button class="cd-breadcrumb" @click="goBack">{{ t(listLabel) }}</button>
+            <a class="cd-breadcrumb" role="link" tabindex="0" @click="goBack" @keydown.enter="goBack">{{ t(listLabel) }}</a>
             <h1 class="cd-title">{{ contact.displayName }}</h1>
           </div>
 
           <div class="cd-bar-right">
             <MpPopover id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="cd-btn cd-btn--primary">
+                <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after">
                   {{ t('Create transaction') }}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -142,7 +148,7 @@ function confirmDelete() {
 
             <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="cd-kebab" :aria-label="t('More actions')">
+                <button class="btn-enterprise btn-enterprise--plain cd-kebab" :aria-label="t('More actions')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                   </svg>
@@ -291,10 +297,10 @@ function confirmDelete() {
               <h2 class="cd-section-title">{{ t('Transactions') }}</h2>
               <table v-if="transactions.length" class="cd-table">
                 <colgroup>
-                  <col style="width: 160px" />
-                  <col style="width: 200px" />
-                  <col style="width: 160px" />
-                  <col style="width: 200px" />
+                  <col :style="colStyle('date')" />
+                  <col :style="colStyle('number')" />
+                  <col :style="colStyle('status')" />
+                  <col :style="colStyle('amount')" />
                   <col />
                 </colgroup>
                 <thead>
@@ -350,7 +356,7 @@ function confirmDelete() {
 
   <div v-else class="cd-missing">
     <p>{{ t('Contact not found.') }}</p>
-    <button class="cd-btn cd-btn--primary" @click="goBack">{{ t('Back to') }} {{ t(listLabel) }}</button>
+    <button class="btn-enterprise btn-enterprise--primary" @click="goBack">{{ t('Back to') }} {{ t(listLabel) }}</button>
   </div>
 </template>
 
@@ -373,7 +379,7 @@ function confirmDelete() {
 .cd-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .cd-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .cd-breadcrumb {
-  align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+  align-self: flex-start; cursor: pointer;
   font-size: 12px; line-height: var(--mp-line-heights-md); color: var(--mp-text-link);
 }
 .cd-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -394,28 +400,10 @@ function confirmDelete() {
   background-color: var(--mp-border-selected, #029861) !important;
 }
 
-/* ── Buttons ── */
-.cd-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  border: 1px solid transparent;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  font-family: inherit; cursor: pointer; white-space: nowrap;
-}
-.cd-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.cd-btn--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+/* ── Buttons ── (shape/colour come from .btn-enterprise in erp.css) */
 .cd-kebab {
-  display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  padding: 0; border-radius: var(--mp-radii-sm);
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .cd-kebab:hover { background: var(--mp-background-neutral-hovered); }
@@ -480,15 +468,16 @@ function confirmDelete() {
 /* ── Related-records table (Transactions tab) ── */
 .cd-table { width: 100%; border-collapse: collapse; }
 .cd-table th {
-  height: 28px; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  height: var(--mp-sizes-7, 28px);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-surface, #f1f5f9);
   text-align: left; text-transform: uppercase;
   font-size: 12px; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary);
   white-space: nowrap;
 }
 .cd-table td {
-  min-height: 40px;
-  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  min-height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
 }
