@@ -22,11 +22,12 @@ import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
 import {
-  getAgent, addAgent, updateAgent, publishAgentVersion,
+  getAgent, addAgent, updateAgent, publishAgentVersion, deleteAgentSafe,
   COWORK_SKILLS, COWORK_COMPANY, APP_MODULES, coworkConnections, coworkAgents,
   COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount,
   SKILL_RISK_META, autoModeAvailable, COWORK_CURRENT_USER_ID,
@@ -52,18 +53,6 @@ const LANGS: { id: 'mirror' | 'id' | 'en'; label: string }[] = [
   { id: 'id', label: 'Always Bahasa Indonesia' },
   { id: 'en', label: 'Always English' },
 ]
-const INSTRUCTION_TEMPLATE = `Role: You are a [what] for [team]. You help with [main jobs].
-
-Scope: Only act within [systems / data]. Do not touch [out-of-scope areas].
-
-Tone: [e.g. concise, warm, professional]. Always ground answers in the data.
-
-Rules:
-- [rule 1]
-- [rule 2]
-
-Refuse when: [what the agent must not do — e.g. sharing another person's salary].`
-
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
   { key: 'persona', label: 'Persona' },
@@ -89,7 +78,6 @@ const language = ref<'mirror' | 'id' | 'en'>('mirror')
 const DEFAULT_AVATAR = '/agents/airene.png'
 const headAvatar = computed(() => existing.value?.avatar || DEFAULT_AVATAR)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? MODELS[0].label)
-const menuClass = css({ minWidth: '220px', width: 'max-content' })
 const allWorkspace = ref(false)
 // Knowledge data sources = the connected apps. Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
@@ -112,6 +100,16 @@ const skillSearch = ref('')
 const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()
   return COWORK_SKILLS.filter((s) => !q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q))
+})
+// Skills grouped by category (module); module-less skills fall under "General".
+const SKILL_GROUP_ORDER = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production', 'General']
+const skillGroups = computed(() => {
+  const map = new Map<string, CoworkSkill[]>()
+  for (const s of filteredSkills.value) {
+    const k = s.module ?? 'General'
+    ;(map.get(k) ?? map.set(k, []).get(k)!).push(s)
+  }
+  return SKILL_GROUP_ORDER.filter((k) => map.has(k)).map((k) => ({ category: k, skills: map.get(k)! }))
 })
 function connObj(id: string) { return coworkConnections.find((c) => c.id === id) }
 function connName(id: string): string { return connObj(id)?.name ?? id }
@@ -177,7 +175,18 @@ function applyOptimize() {
   else { instruction.value = d.after; instrError.value = '' }
   optimizeDiff.value = null
 }
-function useTemplate() { if (!instruction.value.trim()) { instruction.value = INSTRUCTION_TEMPLATE; instrError.value = '' } }
+// Coverage detection — the instruction badges light up (grey → green) as the text
+// reads as each section. Keyword/pattern heuristics, evaluated live as you type.
+const instrCoverage = computed(() => {
+  const raw = instruction.value
+  const t = ' ' + raw.toLowerCase() + ' '
+  return {
+    role: /\brole\s*:/.test(t) || /\byou(?:'re| are)\b|\bact as\b|\bacts as\b|\bas an? [a-z]+/.test(t),
+    scope: /\bscope\s*:/.test(t) || /\bonly (act|work|handle|use|answer)\b|\bdo not (touch|access|go)\b|\bout[- ]of[- ]scope\b|\bstay within\b|\blimit(?:ed)? to\b|\bnever access\b|\bwithin [a-z]/.test(t),
+    tone: /\btone\s*:/.test(t) || /\b(concise|warm|professional|friendly|formal|polite|empathetic|neutral|casual|reassuring|brief)\b/.test(t),
+    rules: /\brules?\s*:/.test(t) || /\b(must|always|never|should|avoid|ensure)\b/.test(t) || /(^|\n)\s*[-*•]\s+/.test(raw),
+  }
+})
 
 // ── Knowledge Base attach / upload ──
 const attachedDocs = computed(() => resolveAttachments(knowledge.value))
@@ -332,6 +341,15 @@ function next() {
 function back() { if (currentIndex.value > 0) current.value = stepKeys[currentIndex.value - 1]! }
 function goToStep(key: string) { current.value = key }
 function cancel() { router.push('/cowork-agents') }
+// Cancel = discard: confirm first (like the receiving-task cancel), then drop the
+// autosaved draft so nothing is kept, and leave.
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  cancelOpen.value = false
+  if (!isEdit.value && draftId.value) deleteAgentSafe(draftId.value)
+  router.push('/cowork-agents')
+}
 
 // ── Build patch from form state ──
 function buildBindings(): CoworkSkillBinding[] {
@@ -426,6 +444,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
   </header>
 
   <div class="caf-stage">
+    <div class="caf-scroll">
     <div class="caf-inner">
       <div class="caf-stepper-wrap"><ErpStepper :steps="STEPS" :current="current" :done="done" @select="goToStep" /></div>
 
@@ -466,11 +485,15 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <MpFormControl id="caf-instr" class="caf-field" is-required :is-invalid="!!instrError">
             <MpFormLabel>Instruction</MpFormLabel>
             <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction', 'is-error': !!instrError }">
-              <textarea v-model="instruction" class="caf-ta__input" rows="8" :placeholder="INSTRUCTION_TEMPLATE" @input="instrError = ''"></textarea>
+              <textarea v-model="instruction" class="caf-ta__input" rows="8" @input="instrError = ''"></textarea>
               <div class="caf-ta__foot">
-                <button v-if="!instruction.trim()" type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" @click="useTemplate">
-                  <MpIcon name="document" size="sm" /> Use template
-                </button>
+                <!-- Coverage badges: grey until the text reads as that section, then green -->
+                <div class="caf-cov">
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.role }">Role</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.scope }">Scope</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.tone }">Tone</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.rules }">Rules</span>
+                </div>
                 <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction' || !instruction.trim()" @click="optimize('instruction')">
                   <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
                   <MpIcon v-else name="airene-brand" size="sm" /> Optimize
@@ -492,34 +515,16 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <MpFormControl id="caf-model" class="caf-field caf-field--half">
             <MpFormLabel>Model</MpFormLabel>
-            <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-              <MpPopoverTrigger>
-                <MpSelect id="caf-model-sel" :model-value="model" @mousedown.prevent>
-                  <option :value="model">{{ modelLabel }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="menuClass">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="model === m.id" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <MpSelect id="caf-model-sel" :model-value="model" @update:model-value="(v: string | number) => model = String(v)">
+              <option v-for="m in MODELS" :key="m.id" :value="m.id">{{ m.label }}</option>
+            </MpSelect>
           </MpFormControl>
 
           <MpFormControl id="caf-lang" class="caf-field caf-field--half">
             <MpFormLabel>Language</MpFormLabel>
-            <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-              <MpPopoverTrigger>
-                <MpSelect id="caf-lang-sel" :model-value="language" @mousedown.prevent>
-                  <option :value="language">{{ LANGS.find((l) => l.id === language)?.label }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="menuClass">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="l in LANGS" :key="l.id" :is-active="language === l.id" @click="language = l.id">{{ l.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <MpSelect id="caf-lang-sel" :model-value="language" @update:model-value="(v: string | number) => language = String(v) as 'mirror' | 'id' | 'en'">
+              <option v-for="l in LANGS" :key="l.id" :value="l.id">{{ l.label }}</option>
+            </MpSelect>
           </MpFormControl>
         </template>
 
@@ -580,13 +585,15 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
         <template v-else-if="current === 'skills'">
           <p class="caf-step-caption">Turn on the skills this agent can use, and decide whether each one must ask you first or may act automatically.</p>
           <MpInput id="caf-skill-search" v-model="skillSearch" is-full-width placeholder="Search skills" class="caf-skill-search" />
-          <div class="caf-skills">
-            <div v-for="s in filteredSkills" :key="s.id" class="caf-skill">
+          <div class="caf-skill-groups">
+           <section v-for="g in skillGroups" :key="g.category" class="caf-skill-group">
+            <h3 class="caf-skill-group__title">{{ g.category }}</h3>
+            <div class="caf-skills">
+            <div v-for="s in g.skills" :key="s.id" class="caf-skill">
               <div class="caf-skill__main">
                 <p class="caf-skill__name">
                   {{ s.name }}
                   <span class="caf-risk" :class="`caf-risk--${riskMeta(s).tone}`">{{ riskMeta(s).label }}</span>
-                  <span v-if="s.module" class="caf-skill__mod">{{ s.module }}</span>
                 </p>
                 <p class="caf-skill__desc">{{ s.description }}</p>
                 <div v-if="s.requiresConnections?.length" class="caf-skill__needs">
@@ -621,6 +628,9 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
               <MpToggle :is-checked="skillState[s.id]?.enabled" :aria-label="`Toggle ${s.name}`"
                 @update:is-checked="(v: boolean) => skillState[s.id] = { ...skillState[s.id]!, enabled: v, approvalMode: v ? skillState[s.id]!.approvalMode : 'manual' }" />
             </div>
+            </div>
+           </section>
+           <p v-if="!skillGroups.length" class="caf-hint">No skills match “{{ skillSearch }}”.</p>
           </div>
         </template>
 
@@ -698,12 +708,6 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
             <div class="caf-review-sechead"><h3>Visibility</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('visibility')">Edit</button></div>
             <ContentList label="Who" :value="visibilitySummary" />
           </section>
-
-          <!-- Actions live under the summary; the chat panel sits to the right of them -->
-          <div class="caf-review-actions">
-            <MpButton is-rounded variant="ghost" @click="back">Back</MpButton>
-            <MpButton is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
-          </div>
         </div>
 
         <!-- Right: the shared "New chat" panel (same format as Chats), dry-run -->
@@ -727,12 +731,16 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
         </div>
       </div>
 
-      <!-- Footer actions (steps 1–4; the Review step has its own under the summary) -->
-      <div v-if="current !== 'review'" class="caf-actions">
-        <MpButton is-rounded variant="ghost" @click="currentIndex === 0 ? cancel() : back()">{{ currentIndex === 0 ? 'Cancel' : 'Back' }}</MpButton>
-        <MpButton is-rounded variant="primary" @click="next">Continue</MpButton>
-      </div>
     </div>
+    </div>
+
+    <!-- Full-width sticky footer: Back · Cancel · Continue/Save -->
+    <footer class="caf-footbar">
+      <MpButton v-if="currentIndex > 0" is-rounded variant="ghost" @click="back">Back</MpButton>
+      <MpButton is-rounded variant="ghost" @click="askCancel">Cancel</MpButton>
+      <MpButton v-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
+      <MpButton v-else is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
+    </footer>
   </div>
 
   <!-- Employee picker drawer -->
@@ -788,6 +796,17 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
   </Teleport>
 
   <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
+
+  <!-- Cancel = discard confirmation (same behaviour as the receiving-task cancel) -->
+  <ConfirmModal
+    v-model:is-open="cancelOpen"
+    :title="isEdit ? 'Discard changes?' : 'Discard this agent?'"
+    description="Your changes won't be saved."
+    confirm-label="Discard"
+    cancel-label="Keep editing"
+    :is-danger="true"
+    @confirm="confirmCancel"
+  />
 </template>
 
 <style scoped>
@@ -798,7 +817,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
 .caf-draft-note { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
 
-.caf-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
+.caf-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; }
+.caf-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-6); }
+/* Sticky full-width footer — mirrors ReceiveItemsPage .detail-footer */
+.caf-footbar { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid var(--mp-border-default); }
 /* Wide enough that the Review step can put the 680px summary column and the chat
    panel side by side; the stepper is capped narrower via its own wrapper. */
 .caf-inner { max-width: 1400px; }
@@ -829,8 +851,12 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
 .caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
 .caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
-.caf-ta__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
-.caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+.caf-ta__foot { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.caf-optimize { margin-left: auto; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+/* Coverage badges inside the instruction box — grey (disabled) until detected, then green */
+.caf-cov { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1, 6px); }
+.caf-cov-badge { font-size: 11px; font-weight: 600; line-height: 1.5; border-radius: var(--mp-radii-full, 999px); padding: 2px 10px; color: var(--mp-text-disabled, #97a0af); background: var(--mp-background-neutral-subtle, #f1f3f4); transition: color .12s ease, background .12s ease; }
+.caf-cov-badge.is-on { color: #0a6e4e; background: #e7f5ef; }
 .caf-optimize:disabled { opacity: 0.7; cursor: default; }
 .caf-diff { margin-top: var(--mp-spacing-2); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); }
 .caf-diff__label { margin: 0 0 var(--mp-spacing-1); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: .04em; }
@@ -861,7 +887,10 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 
 /* Skills */
 .caf-skill-search { margin-top: var(--mp-spacing-3); }
-.caf-skills { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
+/* Skills grouped by category — 32px between groups, an H3 header bar per group */
+.caf-skill-groups { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); margin-top: var(--mp-spacing-4); }
+.caf-skill-group__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
+.caf-skills { display: flex; flex-direction: column; }
 .caf-skill { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4, 16px) 0; border-bottom: 1px solid var(--mp-border-default); }
 .caf-skill__main { min-width: 0; }
 .caf-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
@@ -922,7 +951,6 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-willact__name { color: var(--mp-text-default); font-weight: 500; }
 .caf-willact__cond { color: #6941C6; }
 
-.caf-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6, 24px); max-width: 680px; }
 :deep(.mp-button--variant_ghost:hover), :deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
 
 .caf-emplist { margin-top: var(--mp-spacing-3); }
@@ -936,7 +964,6 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-review-2col { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: 680px minmax(0, 1fr); gap: var(--mp-spacing-8, 32px); align-items: start; }
 @media (max-width: 1080px) { .caf-review-2col { grid-template-columns: 1fr; } }
 .caf-review-col { min-width: 0; }
-.caf-review-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-6, 24px); }
 /* Chat wrapper — a drawer-like bordered surface holding the shared panel */
 .caf-chat { position: sticky; top: 0; height: 620px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 

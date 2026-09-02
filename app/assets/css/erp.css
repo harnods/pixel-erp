@@ -141,6 +141,20 @@
   box-shadow: 0 0 0 1px #8c9596;
 }
 
+/* MpSelect specifically: its active/open state must show a clearly BOLD neutral
+ * border — the Pixel default renders a faint ~16%-alpha hairline. We target the
+ * root's :focus-within (higher specificity + reliable while the dropdown is open)
+ * and force the border/ring so it never stays thin. Applies to EVERY MpSelect.
+ * See docs/patterns/Form.md. */
+.mp-select__root:focus-within .mp-select__control:not([aria-invalid="true"]):not([data-invalid]),
+.mp-select__control[aria-expanded="true"]:not([aria-invalid="true"]):not([data-invalid]),
+.mp-select__control[data-state="open"]:not([aria-invalid="true"]):not([data-invalid]) {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: #8c9596 !important;
+  box-shadow: 0 0 0 1px #8c9596 !important;
+}
+
 /* Invalid fields keep a red focus border + ring (never the brand green). */
 .mp-input__control:focus[aria-invalid="true"],
 .mp-input__control:focus[data-invalid],
