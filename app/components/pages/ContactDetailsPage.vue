@@ -93,10 +93,11 @@ const transactions = computed(() => {
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
-/** Related-records column width — from the shared standard, never hardcoded. */
+/** Related-records column width — from the shared standard, never hardcoded.
+ *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
 function colStyle(kind: ColumnKind) {
   const { minWidth, maxWidth } = columnWidth(kind)
-  return { width: minWidth, minWidth, maxWidth }
+  return { width: maxWidth, minWidth, maxWidth }
 }
 
 // ── Title-bar actions ─────────────────────────────────────────────────────────
