@@ -1516,19 +1516,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     <p class="cw-agent-desc">{{ a.description }}</p>
                     <p v-if="lastUsedLabel(a)" class="cw-agent-lastused">{{ lastUsedLabel(a) }}</p>
                   </div>
-                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select use-portal placement="bottom-end">
                     <MpPopoverTrigger>
                       <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '170px' })">
                       <MpPopoverList>
-                        <MpPopoverListItem @click="chatAgent(a)">Chat</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                        <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                        <MpPopoverListItem @click="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgentUsage(a)">View usage</MpPopoverListItem>
-                        <MpPopoverListItem v-if="a.status === 'archived'" @click="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
-                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click="askArchive(a)">Archive agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="chatAgent(a)">Chat</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgent(a)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="editAgent(a)">Edit agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgentUsage(a)">View usage</MpPopoverListItem>
+                        <MpPopoverListItem v-if="a.status === 'archived'" @click.stop="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
+                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click.stop="askArchive(a)">Archive agent</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
