@@ -29,7 +29,7 @@ const agent = computed<CoworkAgent | undefined>(() => getAgent(props.orderId))
 const MODEL_LABELS: Record<string, string> = {
   'gemini-flash-latest': 'Gemini Flash', 'gemini-pro-latest': 'Gemini Pro', 'gemini-flash-lite-latest': 'Gemini Flash Lite',
 }
-const LANG_LABELS: Record<string, string> = { mirror: "Mirror the user's language", id: 'Always Bahasa Indonesia', en: 'Always English' }
+const LANG_LABELS: Record<string, string> = { mirror: 'Auto (match the user)', id: 'Bahasa Indonesia', en: 'English' }
 const modelLabel = computed(() => MODEL_LABELS[agent.value?.model ?? ''] ?? 'Gemini Flash')
 const instruction = computed(() => agent.value?.instruction || agent.value?.persona || '')
 

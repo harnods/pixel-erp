@@ -50,9 +50,9 @@ const MODELS = [
   { id: 'gemini-flash-lite-latest', label: 'Gemini Flash Lite' },
 ]
 const LANGS: { id: 'mirror' | 'id' | 'en'; label: string }[] = [
-  { id: 'mirror', label: "Mirror the user's language" },
-  { id: 'id', label: 'Always Bahasa Indonesia' },
-  { id: 'en', label: 'Always English' },
+  { id: 'mirror', label: 'Auto (match the user)' },
+  { id: 'id', label: 'Bahasa Indonesia' },
+  { id: 'en', label: 'English' },
 ]
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -257,6 +257,11 @@ function openAutoSheet(s: CoworkSkill) {
   autoSheet.notify = st.notifyOnAuto ?? 'always'
   autoSheet.open = true
 }
+// Value ceiling shown with "." thousand separators (Indonesian), stored as raw digits.
+const ceilingDisplay = computed({
+  get: () => (autoSheet.ceiling ? 'Rp ' + Number(autoSheet.ceiling).toLocaleString('id-ID') : ''),
+  set: (v: string | number) => { autoSheet.ceiling = String(v ?? '').replace(/\D/g, '') },
+})
 const autoSheetValid = computed(() => {
   if (!autoSheet.skill) return false
   // write_external requires at least one guard-rail (SK-31)
@@ -342,8 +347,15 @@ function validateStep(key: string): boolean {
   if (key === 'persona') return validatePersona()
   return true
 }
+// Show the "no knowledge" warning only after the admin tries to Continue past
+// the Knowledge step with nothing attached — then let them proceed on the next click.
+const knowledgeWarnShown = ref(false)
 function next() {
   if (!validateStep(current.value)) return
+  if (current.value === 'knowledge' && hasNoKnowledge.value && !knowledgeWarnShown.value) {
+    knowledgeWarnShown.value = true
+    return
+  }
   if (!done.value.includes(current.value)) done.value.push(current.value)
   if (!isLast.value) current.value = stepKeys[currentIndex.value + 1]!
 }
@@ -557,7 +569,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
         <!-- ── Knowledge ── -->
         <template v-else-if="current === 'knowledge'">
-          <div v-if="hasNoKnowledge" class="caf-field">
+          <div v-if="hasNoKnowledge && knowledgeWarnShown" class="caf-field">
             <MpBanner id="caf-noknow-banner" variant="warning">
               <MpBannerIcon id="caf-noknow-banner-icon" />
               <MpBannerTitle id="caf-noknow-banner-title">This agent has no knowledge yet</MpBannerTitle>
@@ -823,9 +835,9 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
               <MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" />
             </label>
             <label class="caf-sheet__f">
-              <span class="caf-sheet__flabel">Value ceiling (Rp)</span>
-              <span class="caf-sheet__fhint">Anything worth more than this still asks you first.</span>
-              <MpInput id="caf-c-ceil" v-model="autoSheet.ceiling" type="number" />
+              <span class="caf-sheet__flabel">Value ceiling</span>
+              <span class="caf-sheet__fhint">The rupiah amount of one action — e.g. a purchase request total. Anything above this still asks you first. (Not API/token cost.)</span>
+              <MpInput id="caf-c-ceil" v-model="ceilingDisplay" inputmode="numeric" />
             </label>
             <label class="caf-sheet__f">
               <span class="caf-sheet__flabel">Scope <span class="caf-sheet__opt">(optional)</span></span>
@@ -1028,7 +1040,7 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-sheet { width: min(480px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
 .caf-sheet__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
-.caf-sheet__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
+.caf-sheet__grid { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .caf-sheet__f { display: flex; flex-direction: column; gap: 2px; }
 .caf-sheet__flabel { font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__opt { font-weight: 400; color: var(--mp-text-secondary); }
