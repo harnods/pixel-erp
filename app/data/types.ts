@@ -161,6 +161,13 @@ export interface ReviewFile {
    *  other column is blank (no number/vendor/confidence/etc). Absent/true = the
    *  row's fields have been extracted. */
   scanned?: boolean
+  /** true while the AI agent is actively OCR-ing this file (shows a spinner next
+   *  to the filename). Cleared when scanning finishes (scanned → true). */
+  scanning?: boolean
+  /** When the file was uploaded (ISO) and by whom — surfaced in the Dropbox
+   *  "Last updated" column. Absent on seed rows (fall back to lastUpdatedFor). */
+  uploadedAt?: string
+  uploadedBy?: string
 }
 
 /** A single stored sales invoice line: FKs to the invoice and to the product

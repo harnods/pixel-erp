@@ -200,6 +200,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Overdue': 'Telat bayar',
   'Completed': 'Selesai',
   'Processing': 'Diproses',
+  'Scanning…': 'Memindai…',
+  'Upload bank statement': 'Unggah rekening koran',
+  'Drop your bank statement files here. We\'ll upload them to Dropbox and scan each one.': 'Letakkan file rekening koran Anda di sini. Kami akan mengunggahnya ke Dropbox dan memindai satu per satu.',
 
   // ── Table columns / common data labels ──────────────────────────────────────
   'SKU': 'SKU',
@@ -751,6 +754,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Upload the completed template file to import your warehouses.": "Upload file templat yang sudah diisi untuk mengimpor gudang Anda.",
   "Drop your file here or": "Letakkan file Anda di sini atau",
   "choose": "pilih",
+  "Supported formats:": "Format yang didukung:",
+  "Maximum file size": "Ukuran file maksimal",
   "Supported formats: CSV, XLS, XLSX.": "Format yang didukung: CSV, XLS, XLSX.",
   "Maximum file size 10 MB.": "Ukuran file maksimal 10 MB.",
   "You must upload file": "Anda harus mengupload file",

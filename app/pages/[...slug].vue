@@ -30,7 +30,7 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
-import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
+import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
@@ -843,11 +843,14 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
+    // Dropbox badge = files still sitting in the inbox, not yet reviewed.
+    if (reviewFiles.length) out['Dropbox'] = reviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
     if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
+    if (purchaseInvoiceReviewFiles.length) out['Dropbox'] = purchaseInvoiceReviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Purchase requests') {
@@ -1087,34 +1090,35 @@ function onImportOutsideClick(e: MouseEvent) {
   }
 }
 
-// "Upload bills" (Import dropdown, Expenses) — drops each file into the Review
-// files table as a processing row (see addProcessingReviewFile), same entry
-// point as the dropzone card on the Inbox tab itself.
-const uploadBillsInputEl = ref<HTMLInputElement | null>(null)
+// "Upload bills" (Expenses) and "Upload vendor invoices" (Purchase invoices) both
+// open the SAME OCR dropzone modal — only the surface + copy differ. On Upload the
+// files go to the upload center (progress in the header activity popover) and land
+// in that surface's Dropbox, where OCR runs.
+const uploadModalOpen = ref(false)
+const uploadModalSurface = ref<'expenses' | 'purchase-invoices'>('purchase-invoices')
+const uploadModalTitle = computed(() =>
+  uploadModalSurface.value === 'expenses' ? 'Upload bills' : 'Upload vendor invoices')
+const uploadModalDesc = computed(() =>
+  uploadModalSurface.value === 'expenses'
+    ? "Drop your bill files here. We'll upload them to Dropbox and scan each one into a bill."
+    : "Drop your vendor invoice files here. We'll upload them to Dropbox and scan each one into a purchase invoice.")
+
+// Open on the next macrotask: the triggering click also closes the Import
+// dropdown, and toggling both in the same tick makes MpModal skip its open
+// transition (content mounts stuck at opacity 0). Deferring lets it animate in.
 function openUploadBills() {
   importDropdownOpen.value = false
-  uploadBillsInputEl.value?.click()
+  uploadModalSurface.value = 'expenses'
+  setTimeout(() => { uploadModalOpen.value = true }, 0)
 }
-function onUploadBillsChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  if (input.files) {
-    for (const f of Array.from(input.files)) addProcessingReviewFile(f.name)
-    selectTab('Dropbox')
-  }
-  input.value = ''
-}
-
-// "Upload vendor invoices" (Import dropdown, Purchase invoices) — opens the OCR
-// dropzone modal; on Upload the files are handed to the upload center (progress
-// shows in the header activity popover) and land in the Inbox, where OCR runs.
-const vendorUploadModalOpen = ref(false)
 function openVendorUploadModal() {
   importDropdownOpen.value = false
-  vendorUploadModalOpen.value = true
+  uploadModalSurface.value = 'purchase-invoices'
+  setTimeout(() => { uploadModalOpen.value = true }, 0)
 }
-function onVendorInvoicesUpload(names: string[]) {
-  if (!names.length) return
-  startUpload(names, 'purchase-invoices', 'Upload vendor invoices')
+function onUploadModalUpload(files: File[]) {
+  if (!files.length) return
+  startUpload(files, uploadModalSurface.value, uploadModalTitle.value)
   uploadCenterOpen.value = true       // pop the header activity center so progress is visible
   selectTab('Dropbox')
 }
@@ -1705,11 +1709,6 @@ function startResize(e: MouseEvent) {
                   <span>Upload bills</span>
                   <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
-                <input
-                  ref="uploadBillsInputEl" type="file" class="visually-hidden-input"
-                  accept=".csv,.png,.xlsx,.pdf,.jpg,.jpeg" multiple
-                  @change="onUploadBillsChange"
-                />
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -2240,12 +2239,15 @@ function startResize(e: MouseEvent) {
     @cancel="unsavedChangesModal.chooseCancel"
   />
 
-  <!-- Purchase invoices — "Upload vendor invoices" OCR dropzone modal -->
+  <!-- Shared OCR dropzone modal — "Upload vendor invoices" (Purchase invoices) /
+       "Upload bills" (Expenses); surface + copy switch per trigger. Kept mounted and
+       toggled via :open (MpModal needs the open transition to become visible). -->
   <ImportVendorInvoicesModal
-    v-if="vendorUploadModalOpen"
-    :open="true"
-    @close="vendorUploadModalOpen = false"
-    @upload="onVendorInvoicesUpload"
+    :open="uploadModalOpen"
+    :title="uploadModalTitle"
+    :description="uploadModalDesc"
+    @close="uploadModalOpen = false"
+    @upload="onUploadModalUpload"
   />
 </template>
 

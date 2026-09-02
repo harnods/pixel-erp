@@ -15,6 +15,7 @@ import { bills, addBill, updateBill } from '~/data/bills'
 import type { Bill } from '~/data/types'
 import { scrollToFirstError } from '~/utils/form'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
 
 const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
@@ -649,16 +650,16 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
           is-enable-input-file
           :is-loading="processingFile"
           :is-invalid="!!dropzoneError"
-          :placeholder="t('Drag and drop or')"
-          :description="t('Upload a bill or receipt and Mekari Airene will fill in the fields below.')"
+          :placeholder="t('Drop your file here or')"
+          :description="t('Supported formats: PDF, PNG and JPG. Maximum file size 10 MB.')"
           :button-text="t('Replace your file here')"
           @change="onDropzoneFileChange"
           @clear="clearUploadedFile"
         >
           <template #loading>
             <div class="ex-dropzone-loading">
-              <div class="ex-dropzone-loader"><MpSpinner /></div>
-              <h2 class="ex-dropzone-loading-title">{{ t('Processing autofill...') }}</h2>
+              <ErpDropzoneIcon loading />
+              <h2 class="ex-dropzone-loading-title">{{ t('Processing') }}</h2>
             </div>
           </template>
         </MpDropzone>
@@ -1294,7 +1295,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 }
 /* Center the idle description (MpDropzone left-aligns it by default). */
 .ex-dropzone :deep(.mp-dropzone__wrapper p.mp-text--weight_regular) { text-align: center; }
+.ex-dropzone :deep(.mp-dropzone__wrapper) { align-items: center; justify-content: center; }
 .ex-dropzone-thumb-img { width: 125px; height: auto; }
+
+/* Standard dropzone idle copy (shared look with ErpDropzone). */
+.ex-dropzone-cta { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: center; }
+.ex-dropzone-choose { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.ex-dropzone-hints { display: flex; flex-direction: column; gap: 2px; }
+.ex-dropzone-hint { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
 
 /* Uploading state — loader wrapped in a neutral-subtle circle, 24px above the title. */
 .ex-dropzone-loading { display: flex; flex-direction: column; align-items: center; gap: 24px; }
