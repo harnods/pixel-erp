@@ -31,7 +31,6 @@ import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCou
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { warehouses } from '~/data/warehouses'
-import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
