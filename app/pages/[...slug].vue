@@ -91,6 +91,11 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  // Contacts — one index page serves all three role lists; the route slug picks
+  // which role it filters by. New/detail/edit resolve via detailMatch below.
+  'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Vendors':           defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Other contacts':    defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
@@ -183,6 +188,8 @@ const InternalTransferFormPage = asyncPage(() => import('~/components/pages/Inte
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
+const NewContactPage = asyncPage(() => import('~/components/pages/NewContactPage.vue'))
+const ContactDetailsPage = asyncPage(() => import('~/components/pages/ContactDetailsPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
@@ -382,6 +389,15 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
+  }
+  // Contacts: /{customers|vendors|other-contacts}/new → create form,
+  // /:id → contact detail, /:id/edit → the same form in edit mode. The bare
+  // list route falls through to the padded index page in pageRegistry.
+  if (segs[0] === 'customers' || segs[0] === 'vendors' || segs[0] === 'other-contacts') {
+    const id = segs[1]
+    if (id === 'new') return { component: NewContactPage, id: 'new' }
+    if (id && segs[2] === 'edit') return { component: NewContactPage, id }
+    if (id) return { component: ContactDetailsPage, id }
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
   if (segs[0] === 'cowork-chats') return { component: CoworkChatsPage, id: '' }
@@ -1053,6 +1069,13 @@ function msgAgent(msg: { role: string; agentId?: string }) {
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
 provide('courierAddSignal', courierAddSignal)
+
+// ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
+// (it knows which role list is active), so signal it the same way.
+const contactAddSignal = ref(0)
+provide('contactAddSignal', contactAddSignal)
+const isContactsIndex = computed(() =>
+  ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -1766,6 +1789,14 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
           </div>
+        </div>
+        <div v-else-if="isContactsIndex" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="contactAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('Contact') }}
+          </button>
         </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
