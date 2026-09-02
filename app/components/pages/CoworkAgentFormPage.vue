@@ -1026,6 +1026,7 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-review-name { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
 .caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
 .caf-review-sec { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.caf-review-sec:last-child { border-bottom: none; }
 .caf-review-sechead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); min-height: 36px; }
 .caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
 /* "Will act without asking" is a lighter sub-heading: 14px semibold, black (not purple). */
@@ -1054,7 +1055,10 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 @media (max-width: 1080px) { .caf-review-2col { grid-template-columns: 1fr; } }
 .caf-review-col { min-width: 0; }
 /* Chat wrapper — a drawer-like bordered surface holding the shared panel */
-.caf-chat { position: sticky; top: 0; height: 620px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+/* Full-height chat: fills the stage down to just above the footer (hug height),
+   staying pinned while the left summary scrolls. Offset = top chrome (nav+bar)
+   + footer + the scroll area's vertical padding. */
+.caf-chat { position: sticky; top: 0; height: calc(100dvh - 248px); min-height: 480px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 
 /* Approval-mode confirmation sheet (top-aligned, like ConfirmModal) */
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
