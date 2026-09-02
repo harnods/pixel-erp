@@ -88,6 +88,8 @@ const allWorkspace = ref(false)
 // Knowledge data sources = the connected apps. Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
 const appOn = reactive<Record<string, boolean>>({})
+// True when the agent has nothing grounding it — no KB docs, no "all apps", no app picked.
+const hasNoKnowledge = computed(() => !knowledge.value.length && !allWorkspace.value && !connectedApps.value.some((c) => appOn[c.id]))
 const connLogoFailed = reactive<Record<string, boolean>>({})
 function connMonogram(nm: string): string {
   return nm.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2)
@@ -242,14 +244,15 @@ function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pick
 
 // ── Approval-mode confirmation sheet (SK-33) ──
 const autoSheet = reactive<{ open: boolean; skill?: CoworkSkill; maxPerRun: string; maxPerDay: string; ceiling: string; scope: string; notify: 'always' | 'daily_digest' | 'never' }>({
-  open: false, skill: undefined, maxPerRun: '', maxPerDay: '20', ceiling: '', scope: '', notify: 'always',
+  open: false, skill: undefined, maxPerRun: '10', maxPerDay: '20', ceiling: '50000000', scope: '', notify: 'always',
 })
 function openAutoSheet(s: CoworkSkill) {
   const st = skillState[s.id]!
   autoSheet.skill = s
-  autoSheet.maxPerRun = st.autoConditions?.maxPerRun?.toString() ?? ''
+  // Sensible defaults so the admin doesn't have to invent numbers.
+  autoSheet.maxPerRun = st.autoConditions?.maxPerRun?.toString() ?? '10'
   autoSheet.maxPerDay = st.autoConditions?.maxPerDay?.toString() ?? '20'
-  autoSheet.ceiling = st.autoConditions?.valueCeiling?.toString() ?? ''
+  autoSheet.ceiling = st.autoConditions?.valueCeiling?.toString() ?? '50000000'
   autoSheet.scope = st.autoConditions?.scope ?? ''
   autoSheet.notify = st.notifyOnAuto ?? 'always'
   autoSheet.open = true
@@ -554,6 +557,15 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
         <!-- ── Knowledge ── -->
         <template v-else-if="current === 'knowledge'">
+          <div v-if="hasNoKnowledge" class="caf-field">
+            <MpBanner id="caf-noknow-banner" variant="warning">
+              <MpBannerIcon id="caf-noknow-banner-icon" />
+              <MpBannerTitle id="caf-noknow-banner-title">This agent has no knowledge yet</MpBannerTitle>
+              <MpBannerDescription id="caf-noknow-banner-desc">
+                Without documents or a connected app, it answers from the model's general knowledge — not your company's data. That's fine for a general assistant, but attach a document or turn on an app to ground it in your own information. You can still continue.
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
           <MpFormControl id="caf-kb" class="caf-field">
             <MpFormLabel>Knowledge base</MpFormLabel>
             <p class="caf-hint caf-hint--tight">Attach documents from the Knowledge Base, or upload new ones. The agent retrieves the most relevant passages when it runs.</p>
@@ -800,13 +812,29 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
           <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
           <div class="caf-sheet__grid">
-            <label class="caf-sheet__f"><span>Max per run</span><MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Max per day</span><MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Value ceiling (Rp)</span><MpInput id="caf-c-ceil" v-model="autoSheet.ceiling" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Scope</span><MpInput id="caf-c-scope" v-model="autoSheet.scope" placeholder="e.g. warehouse JKT-01" /></label>
+            <label class="caf-sheet__f">
+              <span class="caf-sheet__flabel">Max per run</span>
+              <span class="caf-sheet__fhint">The most actions it may take in one run.</span>
+              <MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" />
+            </label>
+            <label class="caf-sheet__f">
+              <span class="caf-sheet__flabel">Max per day</span>
+              <span class="caf-sheet__fhint">The daily cap across all runs.</span>
+              <MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" />
+            </label>
+            <label class="caf-sheet__f">
+              <span class="caf-sheet__flabel">Value ceiling (Rp)</span>
+              <span class="caf-sheet__fhint">Anything worth more than this still asks you first.</span>
+              <MpInput id="caf-c-ceil" v-model="autoSheet.ceiling" type="number" />
+            </label>
+            <label class="caf-sheet__f">
+              <span class="caf-sheet__flabel">Scope <span class="caf-sheet__opt">(optional)</span></span>
+              <span class="caf-sheet__fhint">Limit to one area/location; leave blank for all.</span>
+              <MpInput id="caf-c-scope" v-model="autoSheet.scope" />
+            </label>
           </div>
           <div class="caf-sheet__notify">
-            <span class="caf-sheet__flabel">Notify me</span>
+            <span class="caf-sheet__flabel caf-sheet__flabel--notify">Notify me</span>
             <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
             <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
           </div>
@@ -1000,10 +1028,13 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-sheet { width: min(480px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
 .caf-sheet__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
-.caf-sheet__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3); }
-.caf-sheet__f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
+.caf-sheet__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
+.caf-sheet__f { display: flex; flex-direction: column; gap: 2px; }
+.caf-sheet__flabel { font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
+.caf-sheet__opt { font-weight: 400; color: var(--mp-text-secondary); }
+.caf-sheet__fhint { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); margin-bottom: 4px; line-height: var(--mp-line-heights-sm, 16px); }
 .caf-sheet__confirm { margin-top: var(--mp-spacing-4); }
-.caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); flex-wrap: wrap; }
-.caf-sheet__flabel { font-size: 12px; color: var(--mp-text-secondary); }
+.caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
+.caf-sheet__flabel--notify { font-size: var(--mp-font-sizes-md, 14px); }
 .caf-sheet__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 </style>
