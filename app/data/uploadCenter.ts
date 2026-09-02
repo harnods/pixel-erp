@@ -9,6 +9,7 @@
  */
 import { reactive, ref, computed } from 'vue'
 import { addUploadedReviewFile } from './reviewFiles'
+import { enqueueOcr } from './ocrQueue'
 import type { ReviewSurface } from './reviewFiles'
 
 export interface UploadItem { name: string; progress: number; done: boolean }
@@ -41,12 +42,12 @@ export const hasActiveUpload = computed(() => uploadBatches.some(batchUploading)
  * Start an upload batch. Each file "uploads" over ~1s (staggered), and lands in
  * the review-files Inbox for its surface the moment it finishes.
  */
-export function startUpload(names: string[], surface: ReviewSurface, label: string, by = 'Rizal Candra'): UploadBatch {
+export function startUpload(files: File[], surface: ReviewSurface, label: string, by = 'Rizal Candra'): UploadBatch {
   const batch: UploadBatch = {
     id: `up-${++_seq}`,
     surface, label, by,
     startedAt: Date.now(),
-    items: names.map((name) => ({ name, progress: 0, done: false })),
+    items: files.map((f) => ({ name: f.name, progress: 0, done: false })),
   }
   uploadBatches.unshift(batch)
   // Mutate through the reactive proxy stored in the array (NOT the local plain
@@ -54,6 +55,7 @@ export function startUpload(names: string[], surface: ReviewSurface, label: stri
   const stored = uploadBatches[0]!
 
   stored.items.forEach((item, i) => {
+    const file = files[i]!
     // Stagger the files so the popover shows a rolling count, not all at once.
     setTimeout(() => {
       const iv = setInterval(() => {
@@ -61,8 +63,15 @@ export function startUpload(names: string[], surface: ReviewSurface, label: stri
         if (item.progress >= 100) {
           clearInterval(iv)
           item.done = true
-          // Uploaded → lands in Dropbox with OCR NOT yet run (fields blank).
-          addUploadedReviewFile(item.name, surface)
+          // Uploaded → lands in Dropbox (OCR NOT yet run, fields blank), then the
+          // AI agent OCRs it in the background (one at a time — see ocrQueue).
+          const row = addUploadedReviewFile(item.name, surface, by)
+          enqueueOcr(row, file)
+          // Once nothing is left uploading, auto-hide the header monitor popover
+          // (a short beat so the user still sees the final 100%/done state).
+          if (!hasActiveUpload.value) {
+            setTimeout(() => { if (!hasActiveUpload.value) uploadCenterOpen.value = false }, 900)
+          }
         }
       }, 220)
     }, i * 350)

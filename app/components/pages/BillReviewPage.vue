@@ -533,10 +533,22 @@ function skipWithoutSaving() {
 // Seed the initial scenario. Runs here, after every ref applyScenario touches
 // has been declared — calling it up beside the scenario refs would hit the
 // payment refs before their initializers have run.
+// For a real user-uploaded file, override the header fields with its own OCR
+// data instead of the scenario dummy values. Seed rows (no uploadedAt) keep
+// their scenario data. Amount is derived from line items here, so it's left alone.
+function applyRealData() {
+  const rf = reviewFile.value
+  if (!rf?.uploadedAt) return
+  if (rf.beneficiary?.name) beneficiary.value = rf.beneficiary.name
+  if (rf.date) transactionDate.value = toDisplayDate(rf.date)
+  if (rf.number) transactionNo.value = rf.number
+}
+
 applyScenario(scenario.value)
+applyRealData()
 
 // Re-seed whenever the route points at a different file.
-watch(() => props.orderId, () => applyScenario(scenario.value))
+watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData() })
 </script>
 
 <template>
@@ -651,7 +663,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
               <ErpStatusBadge :status="expenseStatus" badge-for="additionalInformation" />
             </div>
             <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
-              {{ moreInfoOpen ? t('Less info') : t('Add more info') }}
+              {{ moreInfoOpen ? t('Show less') : t('Show more') }}
             </button>
           </div>
 
@@ -952,74 +964,75 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
             </div>
           </div>
 
-          <!-- Totals -->
-          <div class="br-totals">
-            <div class="ex-total-row">
-              <span class="ex-total-label">{{ t('Subtotal') }}</span>
-              <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
-            </div>
-            <div v-if="hasTax" class="ex-total-row">
-              <span class="ex-total-label">{{ taxLabel }}</span>
-              <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
-            </div>
-            <div class="ex-total-rule" />
-            <div class="ex-total-row">
-              <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
-              <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
-            </div>
-          </div>
         </div>
 
-        <!-- ══ Section: Additional info ══ -->
+        <!-- ══ Bottom: Additional info notes (left) + Totals (right) ══ -->
         <div class="br-section">
-          <div class="br-section-header">
-            <div class="br-section-titlerow">
-              <h2 class="br-section-title">{{ t('Additional info') }}</h2>
+          <div class="rv-bottom">
+            <div class="rv-notes">
+              <!-- Memo -->
+              <div class="ex-section">
+                <MpFormControl id="br-memo">
+                  <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+                  <MpTextarea id="br-memo-textarea" v-model="memo" is-full-width :rows="4" />
+                </MpFormControl>
+                <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
+              </div>
+
+              <!-- Attachment -->
+              <div class="ex-section ex-attachment-section">
+                <div class="ex-section-label">{{ t('Attachment') }}</div>
+                <div class="ex-attachment">
+                  <MpUpload
+                    id="br-attachment-upload"
+                    class="ex-attachment-upload"
+                    :class="{ 'ex-attachment-upload--dragover': formDragOver }"
+                    accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
+                    is-multiple is-full-width
+                    :placeholder="t('or drag and drop here')"
+                    :button-text="t('Choose file')"
+                    @change="onFormFileChange"
+                    @dragover.prevent="formDragOver = true"
+                    @dragleave.prevent="formDragOver = false"
+                    @drop.prevent="onFormFileDrop"
+                  />
+                  <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction') }}</p>
+                  <!-- The reviewed document itself is always attached to the expense -->
+                  <MpUploadList
+                    v-if="reviewFile"
+                    id="br-source-file"
+                    :title="reviewFile.file" status="success" subtitle="128 KB"
+                    :icon-name="fileIconName(reviewFile.file)"
+                  />
+                  <MpUploadList
+                    v-for="f in formAttachedFiles" :key="f.name"
+                    :id="`br-attachment-file-${f.name}`"
+                    :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
+                    :icon-name="fileIconName(f.name)"
+                    is-show-remove-button
+                    @remove="removeFormFile(f.name)"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <!-- Memo -->
-          <div class="ex-section">
-            <MpFormControl id="br-memo">
-              <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-              <MpTextarea id="br-memo-textarea" v-model="memo" is-full-width :rows="4" />
-            </MpFormControl>
-            <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
-          </div>
-
-          <!-- Attachment -->
-          <div class="ex-section ex-attachment-section">
-            <div class="ex-section-label">{{ t('Attachment') }}</div>
-            <div class="ex-attachment">
-              <MpUpload
-                id="br-attachment-upload"
-                class="ex-attachment-upload"
-                :class="{ 'ex-attachment-upload--dragover': formDragOver }"
-                accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
-                is-multiple is-full-width
-                :placeholder="t('or drag and drop here')"
-                :button-text="t('Choose file')"
-                @change="onFormFileChange"
-                @dragover.prevent="formDragOver = true"
-                @dragleave.prevent="formDragOver = false"
-                @drop.prevent="onFormFileDrop"
-              />
-              <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction') }}</p>
-              <!-- The reviewed document itself is always attached to the expense -->
-              <MpUploadList
-                v-if="reviewFile"
-                id="br-source-file"
-                :title="reviewFile.file" status="success" subtitle="128 KB"
-                :icon-name="fileIconName(reviewFile.file)"
-              />
-              <MpUploadList
-                v-for="f in formAttachedFiles" :key="f.name"
-                :id="`br-attachment-file-${f.name}`"
-                :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
-                :icon-name="fileIconName(f.name)"
-                is-show-remove-button
-                @remove="removeFormFile(f.name)"
-              />
+            <!-- Totals -->
+            <div class="rv-totals">
+              <div class="br-totals">
+                <div class="ex-total-row">
+                  <span class="ex-total-label">{{ t('Subtotal') }}</span>
+                  <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
+                </div>
+                <div v-if="hasTax" class="ex-total-row">
+                  <span class="ex-total-label">{{ taxLabel }}</span>
+                  <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
+                </div>
+                <div class="ex-total-rule" />
+                <div class="ex-total-row">
+                  <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
+                  <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1557,6 +1570,9 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
 
 /* ── Totals ───────────────────────────────────────────────────────────────── */
+.rv-bottom { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); flex-wrap: wrap; }
+.rv-notes  { display: flex; flex-direction: column; gap: 20px; flex: 1 1 380px; min-width: 320px; }
+.rv-totals { flex: 0 0 428px; max-width: 100%; display: flex; flex-direction: column; }
 .br-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-4); }
 .ex-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); }
 .ex-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

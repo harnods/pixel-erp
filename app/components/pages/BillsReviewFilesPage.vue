@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpButton, MpSelect, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpIcon, MpButton, MpSelect, MpSkeleton, MpSpinner, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
@@ -8,13 +8,14 @@ import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
-import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
+import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
   reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles,
-  moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses, addProcessingReviewFile,
+  moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses,
 } from '~/data'
+import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import type { ReviewFile, FileClassification } from '~/data'
 
 /** Which surface's review queue this table is showing. Both Expenses and
@@ -31,10 +32,16 @@ const toggleAirene = inject<() => void>('toggleAirene')
 const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
 const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
 
-// Dragging a file anywhere onto this tab drops it into the queue as a
-// "processing" row — same entry point as the "Upload bills" import menu item.
-function onGlobalFileDrop(fileList: FileList) {
-  for (const f of Array.from(fileList)) addProcessingReviewFile(f.name, props.surface)
+// The full-width dropzone above the filter bar is the single drop target for this
+// tab (replaces the old drag-anywhere overlay). It behaves EXACTLY like the
+// "Upload bills"/"Upload vendor invoices" modal: files go through the header upload
+// monitor (startUpload) and land as file-name-only rows — OCR is NOT run yet, so
+// the other columns stay empty until the file is scanned.
+function onDropzoneFiles(fileList: FileList) {
+  const files = Array.from(fileList)
+  if (!files.length) return
+  startUpload(files, props.surface, props.surface === 'purchase-invoices' ? 'Upload vendor invoices' : 'Upload bills')
+  uploadCenterOpen.value = true
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
@@ -120,9 +127,16 @@ function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
   return 'Low'
 }
 
-// Column show/hide (first column always on; Last updated appended, hidden by default)
+// Last updated = the real upload time + uploader for freshly-uploaded files;
+// seed rows have no audit fields, so fall back to the deterministic mock.
+function lastUpdatedInfo(row: Row): { at: string; by: string } {
+  return row.uploadedAt ? { at: row.uploadedAt, by: row.uploadedBy || '—' } : lastUpdatedFor(row.id)
+}
+
+// Column show/hide (first column always on; Last updated shown by default)
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
+// Last updated (upload date/time + uploader) is shown by default on the Dropbox tab.
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, true])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -238,6 +252,17 @@ function confirmBulkDelete() {
     @hide-column="hideColumn"
   >
 
+    <!-- ── Full-width drop target (above the filter bar) ── -->
+    <template #stats>
+      <ErpDropzone
+        :id="`${surface}-inbox-dropzone`"
+        class="inbox-dropzone"
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip"
+        hide-list
+        @change="onDropzoneFiles"
+      />
+    </template>
+
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
       <template v-if="allSelectedSameNonNativeClassification(selectedRows as Set<number>)">
@@ -308,11 +333,6 @@ function confirmBulkDelete() {
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <MpButton class="filter-all-btn">
-          <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
-        </MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -327,10 +347,6 @@ function confirmBulkDelete() {
           </button>
           <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns-review" :items="columnItems" :visibility="columnVisibility" />
-          <!-- Export -->
-          <MpButton class="filter-icon-btn" :aria-label="t('Export')">
-            <MpIcon name="download" size="md" />
-          </MpButton>
         </div>
 
         <!-- Pill search -->
@@ -358,6 +374,11 @@ function confirmBulkDelete() {
           :class="(row as Row).processing ? 'file-cell__name--processing' : 'cell-link'"
           @click.stop="openRowReview(row as Row)"
         >{{ value }}</a>
+        <!-- AI OCR in progress — spinner + label next to the filename. -->
+        <span v-if="(row as Row).scanning" class="file-cell__scanning">
+          <MpSpinner class="file-cell__spinner" />
+          {{ t('Scanning…') }}
+        </span>
       </div>
     </template>
 
@@ -434,7 +455,7 @@ function confirmBulkDelete() {
     </template>
 
     <template #cell-lastUpdated="{ row }">
-      <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
+      <LastUpdatedCell v-bind="lastUpdatedInfo(row as Row)" />
     </template>
   </ErpTablePage>
 
@@ -464,11 +485,12 @@ function confirmBulkDelete() {
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
-
-  <GlobalFileDropOverlay @drop="onGlobalFileDrop" />
 </template>
 
 <style scoped>
+/* Full-width drop target above the filter bar (the tab's only drop zone). */
+.inbox-dropzone { width: 100%; }
+
 /* Processing-row skeleton bar — matches Figma's OCR "processing" row state
    (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
 /* Uploaded-but-not-yet-scanned rows show a muted dash in every OCR column. */
@@ -507,6 +529,19 @@ function confirmBulkDelete() {
   color: var(--mp-text-default);
   cursor: default;
 }
+
+/* AI OCR-in-progress cue next to the filename. */
+.file-cell__scanning {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
+}
+.file-cell__spinner { width: 14px; height: 14px; }
+.file-cell__spinner :deep(svg) { width: 14px; height: 14px; }
 
 /* Row action kebab button */
 .row-kebab {
