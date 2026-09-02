@@ -148,13 +148,13 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
         <h1 class="cad-title">{{ agent.name }}</h1>
       </div>
       <div class="cad-actions">
-        <MpButton is-rounded variant="secondary" @click="edit">Edit agent</MpButton>
         <MpPopover id="cad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton is-rounded variant="primary" right-icon="chevrons-down">Actions</MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px' })">
             <MpPopoverList>
+              <MpPopoverListItem @click="edit">Edit agent</MpPopoverListItem>
               <MpPopoverListItem @click="chat">Chat</MpPopoverListItem>
               <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
               <MpPopoverListItem v-if="isArchived" @click="doRestore">Restore agent</MpPopoverListItem>
@@ -320,7 +320,11 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
                   <div class="cad-chart" role="img" :aria-label="`Daily cost over the last ${COST_RANGE_DAYS} days, total ${rp(costSeries.total)}`">
                     <div class="cad-chart__bars">
                       <div v-for="bar in costSeries.bars" :key="bar.day" class="cad-chart__col">
-                        <div class="cad-chart__bar" :class="{ 'is-peak': bar.peak }" :style="{ height: `${Math.max(2, (bar.value / costSeries.max) * 100)}%` }" :title="rp(bar.value)" />
+                        <span class="cad-chart__tip" :class="{ 'is-edge-l': bar.day <= 1, 'is-edge-r': bar.day >= COST_RANGE_DAYS - 2 }">
+                          <span class="cad-chart__tip-cost">{{ rp(bar.value) }}</span>
+                          <span class="cad-chart__tip-day">{{ bar.day === COST_RANGE_DAYS - 1 ? 'Today' : `${COST_RANGE_DAYS - 1 - bar.day} days ago` }}</span>
+                        </span>
+                        <div class="cad-chart__bar" :class="{ 'is-peak': bar.peak }" :style="{ height: `${Math.max(2, (bar.value / costSeries.max) * 100)}%` }" />
                       </div>
                     </div>
                     <div class="cad-chart__axis"><span>{{ COST_RANGE_DAYS }} days ago</span><span>Today</span></div>
@@ -443,14 +447,25 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
 .cad-cost__figures { display: flex; align-items: baseline; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-4); }
 .cad-cost__fig { display: flex; flex-direction: column; gap: 2px; }
 .cad-cost__flabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cad-cost__fvalue { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: 700; color: var(--mp-text-default); letter-spacing: -0.2px; }
-.cad-cost__fvalue--muted { font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-secondary); }
+.cad-cost__fvalue { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.cad-cost__fvalue--muted { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-secondary); }
 .cad-cost__op { align-self: center; color: var(--mp-text-secondary); }
 .cad-chart { margin-top: var(--mp-spacing-5); }
 .cad-chart__bars { display: flex; align-items: flex-end; gap: 4px; height: 180px; padding-bottom: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default); }
-.cad-chart__col { flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }
+.cad-chart__col { position: relative; flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }
 .cad-chart__bar { width: 100%; max-width: 22px; border-radius: 4px 4px 0 0; background: var(--mp-background-brand-bold, #029861); transition: height 240ms ease; }
 .cad-chart__bar.is-peak { background: #6941C6; }
+.cad-chart__col:hover .cad-chart__bar { filter: brightness(0.92); }
+/* Hover popover with the day's cost */
+.cad-chart__tip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: 8px; background: #1c2b2d; color: #fff; white-space: nowrap; text-align: center; opacity: 0; pointer-events: none; transition: opacity 120ms ease; z-index: 6; box-shadow: 0 6px 16px rgba(0,0,0,0.22); }
+.cad-chart__tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1c2b2d; }
+.cad-chart__tip.is-edge-l { left: 0; transform: none; }
+.cad-chart__tip.is-edge-l::after { left: 12px; transform: none; }
+.cad-chart__tip.is-edge-r { left: auto; right: 0; transform: none; }
+.cad-chart__tip.is-edge-r::after { left: auto; right: 12px; transform: none; }
+.cad-chart__col:hover .cad-chart__tip { opacity: 1; }
+.cad-chart__tip-cost { font-size: 12px; font-weight: 600; }
+.cad-chart__tip-day { font-size: 11px; color: rgba(255,255,255,0.72); }
 .cad-chart__axis { display: flex; justify-content: space-between; margin-top: var(--mp-spacing-2); font-size: 11px; color: var(--mp-text-secondary); }
 .cad-cost__note { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
