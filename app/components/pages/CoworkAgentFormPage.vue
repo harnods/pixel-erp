@@ -441,7 +441,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <MpFormControl id="caf-desc" class="caf-field" is-required :is-invalid="!!descError">
             <MpFormLabel>Description</MpFormLabel>
             <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description', 'is-error': !!descError }">
-              <textarea v-model="description" class="caf-ta__input caf-ta__input--sm" rows="2" @input="descError = ''"></textarea>
+              <textarea v-model="description" class="caf-ta__input" rows="3" @input="descError = ''"></textarea>
               <div class="caf-ta__foot">
                 <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
                   <MpSpinner v-if="optimizing === 'description'" size="sm" />
@@ -830,8 +830,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-ta:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
 .caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
-.caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 200px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
-.caf-ta__input--sm { min-height: 64px; }
+.caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
 .caf-ta__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
 .caf-optimize:disabled { opacity: 0.7; cursor: default; }
