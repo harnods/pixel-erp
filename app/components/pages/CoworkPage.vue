@@ -34,8 +34,10 @@ import {
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
   setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
   addSkill, removeSkill,
+  agentVisibleToCurrentUser, agentHasAutoAction, canArchiveAgent, duplicateAgent, archiveAgent, restoreAgent, tasksUsingAgent,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -653,17 +655,81 @@ watch([section, agentGridEl], async () => {
 }, { immediate: true })
 onBeforeUnmount(() => agentRo?.disconnect())
 
-// One flat list — an agent is shown only if it's visible to the current user
-// (shared with everyone, or the user is on its people list).
-const visibleAgents = computed(() => coworkAgents.filter((a) =>
-  a.visibilityEveryone || (a.visibilityEmployees ?? []).includes(CURRENT_USER_ID)))
+// ── Agents index: search + filters + sort (AG-20/21) ──
+const agentSearch = ref('')
+const agentTypeFilter = ref<'all' | 'curated' | 'custom'>('all')
+const agentStatusFilter = ref<'active' | 'draft' | 'archived'>('active')
+const agentCanUseFilter = ref(false)
+const agentTypeOptions = [
+  { value: 'all', label: 'All types' }, { value: 'curated', label: 'Curated' }, { value: 'custom', label: 'Custom' },
+]
+const agentTypeLabel = computed(() => agentTypeOptions.find((o) => o.value === agentTypeFilter.value)?.label ?? 'All types')
+// Status filter — no "All statuses" option (per request): default is published+draft.
+const agentStatusOptions = [
+  { value: 'active', label: 'Published & draft' }, { value: 'draft', label: 'Draft' }, { value: 'archived', label: 'Archived' },
+]
+const agentStatusLabel = computed(() => agentStatusOptions.find((o) => o.value === agentStatusFilter.value)?.label ?? 'Published & draft')
+
+// One flat list — an agent is shown only if it's visible to the current user.
+const visibleAgents = computed(() => {
+  const q = agentSearch.value.trim().toLowerCase()
+  let list = coworkAgents.filter((a) => agentVisibleToCurrentUser(a))
+  // Status filter — "Published & draft" (default, hides archived), "Draft", or "Archived".
+  if (agentStatusFilter.value === 'active') list = list.filter((a) => a.status !== 'archived')
+  else list = list.filter((a) => a.status === agentStatusFilter.value)
+  if (agentTypeFilter.value !== 'all') list = list.filter((a) => (a.type ?? 'curated') === agentTypeFilter.value)
+  if (agentCanUseFilter.value) list = list.filter((a) => agentVisibleToCurrentUser(a))
+  if (q) list = list.filter((a) => a.name.toLowerCase().includes(q) || (a.description ?? '').toLowerCase().includes(q))
+  // Sort: pinned → recently used → A–Z.
+  return [...list].sort((a, b) => {
+    if (!!b.pinned !== !!a.pinned) return a.pinned ? -1 : 1
+    const at = a.lastUsedAt ?? '', bt = b.lastUsedAt ?? ''
+    if (at !== bt) return bt.localeCompare(at)
+    return a.name.localeCompare(b.name)
+  })
+})
 const agentFiller = computed(() => {
   const rem = visibleAgents.value.length % agentCols.value
   return rem === 0 ? 0 : agentCols.value - rem
 })
+function agentBadge(a: CoworkAgent): { label: string; cls: string } {
+  if (a.id === 'airene') return { label: 'Default', cls: 'cw-abadge--brand' }
+  return a.type === 'custom' ? { label: 'Custom', cls: '' } : { label: 'Curated', cls: 'cw-abadge--info' }
+}
+function lastUsedLabel(a: CoworkAgent): string {
+  if (!a.lastUsedAt) return ''
+  const then = new Date(a.lastUsedAt + 'T00:00:00').getTime()
+  const days = Math.max(0, Math.round((Date.now() - then) / 86400000))
+  if (days <= 0) return 'Used today'
+  if (days === 1) return 'Used yesterday'
+  if (days < 7) return `Used ${days} days ago`
+  if (days < 30) return `Used ${Math.floor(days / 7)}w ago`
+  return `Used ${Math.floor(days / 30)}mo ago`
+}
 function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
 function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
 function newAgent() { router.push('/cowork-agents/new') }
+function chatAgent(a: CoworkAgent) { toast.notify({ variant: 'success', title: `Opening a chat with ${a.name}` }) }
+function duplicateAgentAction(a: CoworkAgent) {
+  const c = duplicateAgent(a.id)
+  if (c) { toast.notify({ variant: 'success', title: 'Agent duplicated' }); router.push(`/cowork-agents/${c.id}/edit`) }
+}
+function restoreAgentAction(a: CoworkAgent) { restoreAgent(a.id); toast.notify({ variant: 'success', title: 'Agent restored' }) }
+// Archive confirmation (with impact)
+const archiveTarget = ref<CoworkAgent | null>(null)
+const archiveModalOpen = ref(false)
+const archiveDesc = computed(() => {
+  const n = archiveTarget.value ? tasksUsingAgent(archiveTarget.value).length : 0
+  return n ? `${n} scheduled task${n === 1 ? '' : 's'} use this agent and will be paused. You can restore it later.`
+    : 'This agent will be hidden from everyone. You can restore it later.'
+})
+function askArchive(a: CoworkAgent) { archiveTarget.value = a; archiveModalOpen.value = true }
+function confirmArchive() {
+  if (!archiveTarget.value) return
+  const { paused } = archiveAgent(archiveTarget.value.id)
+  toast.notify({ variant: 'success', title: 'Agent archived', description: paused ? `${paused} scheduled task${paused === 1 ? '' : 's'} paused.` : undefined })
+  archiveTarget.value = null
+}
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
@@ -1368,32 +1434,116 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
         </section>
 
-        <!-- ── Agents ── -->
         <!-- ── Agents (one flat grid, filtered by visibility) ── -->
         <section v-else-if="section === 'Agents'" class="cw-agents">
-          <div ref="agentGridEl" class="cw-conn-clip">
-            <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
-              <div v-for="a in visibleAgents" :key="a.id" class="cw-agent-cell" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
-                <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
-                <div class="cw-agent-main">
-                  <p class="cw-agent-name">{{ a.name }}</p>
-                  <p class="cw-agent-desc">{{ a.description }}</p>
-                </div>
-                <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '160px' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                      <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
+          <!-- Filter bar: type + status + toggles (left) · search (right) -->
+          <div class="cw-filter">
+            <div class="cw-filter__left">
+              <MpPopover id="cw-agent-type" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-agent-type-sel" placeholder="Type" :model-value="agentTypeFilter" :class="css({ width: '150px' })" @mousedown.prevent>
+                    <option :value="agentTypeFilter">{{ agentTypeLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in agentTypeOptions" :key="o.value" :is-active="o.value === agentTypeFilter" @click="agentTypeFilter = o.value as any">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+              <MpPopover id="cw-agent-status" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-agent-status-sel" placeholder="Status" :model-value="agentStatusFilter" :class="css({ width: '180px' })" @mousedown.prevent>
+                    <option :value="agentStatusFilter">{{ agentStatusLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in agentStatusOptions" :key="o.value" :is-active="o.value === agentStatusFilter" @click="agentStatusFilter = o.value as any">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="agentSearch" class="cw-search__input" type="text" placeholder="Search agents...">
+                <button v-if="agentSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="agentSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
               </div>
-              <div v-for="n in agentFiller" :key="'agent-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
             </div>
           </div>
+
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Tasks/Schedule) -->
+          <div v-if="loading" class="cw-conn-clip">
+            <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+              <div v-for="n in 6" :key="'agent-sk-' + n" class="cw-agent-cell cw-agent-cell--sk">
+                <MpSkeleton class="cw-skeleton" width="72px" height="72px" rounded="md" duration="0s" />
+                <div class="cw-agent-main">
+                  <MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" />
+                  <MpSkeleton class="cw-skeleton" width="140px" height="16px" rounded="sm" duration="0s" />
+                  <MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty state (no agents at all) -->
+          <div v-else-if="!coworkAgents.filter((a) => agentVisibleToCurrentUser(a)).length" class="cw-agents-empty">
+            <MpIcon name="magic" size="lg" />
+            <p class="cw-agents-empty__title">No agents yet</p>
+            <p class="cw-agents-empty__caption">Start from a curated agent, or build one from scratch.</p>
+            <MpButton is-rounded variant="secondary" @click="newAgent">Create agent</MpButton>
+          </div>
+
+          <template v-else>
+            <div ref="agentGridEl" class="cw-conn-clip">
+              <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+                <div v-for="a in visibleAgents" :key="a.id" class="cw-agent-cell" :class="{ 'is-archived': a.status === 'archived' }" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
+                  <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
+                  <div class="cw-agent-main">
+                    <div class="cw-agent-badges">
+                      <span class="cw-abadge" :class="agentBadge(a).cls">{{ agentBadge(a).label }}</span>
+                      <span v-if="a.status === 'draft'" class="cw-abadge cw-abadge--warn">Draft</span>
+                      <span v-if="a.status === 'archived'" class="cw-abadge cw-abadge--warn">Archived</span>
+                      <span v-if="agentHasAutoAction(a)" class="cw-abadge cw-abadge--auto"><MpIcon name="magic" size="sm" /> Auto</span>
+                    </div>
+                    <p class="cw-agent-name">{{ a.name }}</p>
+                    <p class="cw-agent-desc">{{ a.description }}</p>
+                    <p v-if="lastUsedLabel(a)" class="cw-agent-lastused">{{ lastUsedLabel(a) }}</p>
+                  </div>
+                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '170px' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="chatAgent(a)">Chat</MpPopoverListItem>
+                        <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
+                        <MpPopoverListItem @click="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
+                        <MpPopoverListItem @click="openAgent(a)">View usage</MpPopoverListItem>
+                        <MpPopoverListItem v-if="a.status === 'archived'" @click="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
+                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click="askArchive(a)">Archive agent</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </div>
+                <div v-for="n in agentFiller" :key="'agent-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
+              </div>
+            </div>
+            <p v-if="!visibleAgents.length" class="cw-muted cw-conn-noresult">No agents match your filters.</p>
+          </template>
+
+          <ConfirmModal
+            v-model:is-open="archiveModalOpen"
+            title="Archive agent?"
+            :description="archiveDesc"
+            confirm-label="Archive agent"
+            :is-danger="true"
+            @confirm="confirmArchive"
+          />
         </section>
 
         <!-- ── Skills ── -->
@@ -1782,6 +1932,20 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-agent-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cw-agent-kebab { position: absolute; top: var(--mp-spacing-4, 16px); right: var(--mp-spacing-4, 16px); display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md, 6px); color: var(--mp-icon-default, #536062); cursor: pointer; }
 .cw-agent-kebab:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); }
+.cw-agent-cell.is-archived { opacity: 0.62; }
+.cw-agent-cell--sk { cursor: default; }
+/* Agent card badges */
+.cw-agent-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.cw-abadge { font-size: 11px; font-weight: 600; border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); display: inline-flex; align-items: center; gap: 3px; }
+.cw-abadge--info { color: #165082; background: #e7f0f7; }
+.cw-abadge--warn { color: #b54708; background: #fdf1e6; }
+.cw-abadge--brand { color: #0a6e4e; background: #e7f5ef; }
+.cw-abadge--auto { color: #6941C6; background: #f4f0fb; }
+.cw-agent-lastused { margin: 0; font-size: 12px; color: var(--mp-text-secondary); }
+/* Agents empty state */
+.cw-agents-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-16, 64px) var(--mp-spacing-6); color: var(--mp-text-secondary); text-align: center; }
+.cw-agents-empty__title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
+.cw-agents-empty__caption { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }

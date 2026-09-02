@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /**
- * Cowork — Create / Edit agent form. Reached at /cowork-agents/new and
- * /cowork-agents/:id/edit. Same page shell as the edit-task form (title bar +
- * stage), but guided by a 4-step ErpStepper: Persona · Knowledge · Skills ·
- * Visibility. Everything is stored on the agent (coworkAgents) and reflected on
- * the agent detail page.
+ * Cowork — Create / Edit agent wizard. Reached at /cowork-agents/new and
+ * /cowork-agents/:id/edit. A full-page 5-step stepper (Module 01 AG-10):
+ * Persona · Knowledge · Skills · Visibility · Review & publish.
+ *
+ * Everything is stored on the agent (coworkAgents) and reflected on the detail
+ * page. New agents autosave as a `draft` (AG-11); publishing captures a version
+ * (AG-04). Skills carry a per-binding approval mode (SK-30); visibility can be
+ * Everyone / Roles / People with a live audience count (AG-16).
  */
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import {
   MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
   MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -17,13 +20,19 @@ import {
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
+import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
+type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
 import {
-  getAgent, addAgent, updateAgent, COWORK_SKILLS, COWORK_COMPANY, APP_MODULES,
-  coworkConnections, type CoworkAgent, type CoworkModule,
+  getAgent, addAgent, updateAgent, publishAgentVersion,
+  COWORK_SKILLS, COWORK_COMPANY, APP_MODULES, coworkConnections, coworkAgents,
+  COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount,
+  SKILL_RISK_META, autoModeAvailable, COWORK_CURRENT_USER_ID,
+  type CoworkAgent, type CoworkModule, type CoworkSkill, type CoworkSkillBinding,
+  type CoworkApprovalMode, type CoworkAutoConditions,
 } from '~/data/cowork'
-import { coworkKb, addFolder, resolveAttachments, isFolder, getNode, getFolder, extLabel, type KbAttachment } from '~/data/coworkKb'
+import { coworkKb, addFolder, resolveAttachments, isFolder, getNode, extLabel, type KbAttachment } from '~/data/coworkKb'
 import { useKbIngest } from '~/composables/useKbIngest'
 
 const props = defineProps<{ orderId?: string }>()
@@ -37,6 +46,22 @@ const MODELS = [
   { id: 'gemini-pro-latest', label: 'Gemini Pro' },
   { id: 'gemini-flash-lite-latest', label: 'Gemini Flash Lite' },
 ]
+const LANGS: { id: 'mirror' | 'id' | 'en'; label: string }[] = [
+  { id: 'mirror', label: "Mirror the user's language" },
+  { id: 'id', label: 'Always Bahasa Indonesia' },
+  { id: 'en', label: 'Always English' },
+]
+const INSTRUCTION_TEMPLATE = `Role: You are a [what] for [team]. You help with [main jobs].
+
+Scope: Only act within [systems / data]. Do not touch [out-of-scope areas].
+
+Tone: [e.g. concise, warm, professional]. Always ground answers in the data.
+
+Rules:
+- [rule 1]
+- [rule 2]
+
+Refuse when: [what the agent must not do — e.g. sharing another person's salary].`
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -44,6 +69,7 @@ const STEPS = [
   { key: 'knowledge', label: 'Knowledge' },
   { key: 'skills', label: 'Skills' },
   { key: 'visibility', label: 'Visibility' },
+  { key: 'review', label: 'Review & publish' },
 ]
 const stepKeys = STEPS.map((s) => s.key)
 const current = ref('persona')
@@ -56,104 +82,110 @@ const name = ref('')
 const description = ref('')
 const instruction = ref('')
 const model = ref(MODELS[0].id)
+const language = ref<'mirror' | 'id' | 'en'>('mirror')
+// Avatar is fixed to the default Mekari Airene avatar for new agents (no picker);
+// editing keeps whatever the agent already has.
+const DEFAULT_AVATAR = '/agents/airene.png'
+const headAvatar = computed(() => existing.value?.avatar || DEFAULT_AVATAR)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? MODELS[0].label)
-const modelMenuClass = css({ minWidth: '220px', width: 'max-content' })
+const menuClass = css({ minWidth: '220px', width: 'max-content' })
 const allWorkspace = ref(false)
-// Knowledge data sources = the connected apps (Mekari Talenta / Qontak / Jurnal +
-// anything else turned on in Connections). Each app covers one or more modules.
+// Knowledge data sources = the connected apps. Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
 const appOn = reactive<Record<string, boolean>>({})
-// App logo (mirrors the Connections list): favicon/asset with a coloured-monogram fallback.
 const connLogoFailed = reactive<Record<string, boolean>>({})
 function connMonogram(nm: string): string {
   return nm.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2)
 }
-interface KFile { name: string; size: string; icon: string }
-const knowledgeFiles = ref<KFile[]>([])
 // ── Knowledge Base attachments (live scope references) ──
 const knowledge = ref<KbAttachment[]>([])
 const kbPickerOpen = ref(false)
 const kbUploading = ref(false)
 const { ingestFiles } = useKbIngest()
-const skillOn = reactive<Record<string, boolean>>({})
-COWORK_SKILLS.forEach((s) => { skillOn[s.id] = false })
-const visibilityEveryone = ref(true)
+
+// ── Skills state (per-skill enable + approval mode + auto conditions) ──
+interface SkillState { enabled: boolean; approvalMode: CoworkApprovalMode; autoConditions?: CoworkAutoConditions; notifyOnAuto?: 'always' | 'daily_digest' | 'never' }
+const skillState = reactive<Record<string, SkillState>>({})
+COWORK_SKILLS.forEach((s) => { skillState[s.id] = { enabled: false, approvalMode: 'manual' } })
+const skillSearch = ref('')
+const filteredSkills = computed(() => {
+  const q = skillSearch.value.trim().toLowerCase()
+  return COWORK_SKILLS.filter((s) => !q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q))
+})
+function connObj(id: string) { return coworkConnections.find((c) => c.id === id) }
+function connName(id: string): string { return connObj(id)?.name ?? id }
+function connConnected(id: string): boolean { return !!connObj(id)?.connected }
+function riskMeta(s: CoworkSkill) { return SKILL_RISK_META[s.riskClass ?? 'write_internal'] }
+
+// ── Visibility ──
+const visibilityMode = ref<'everyone' | 'roles' | 'people'>('everyone')
+const selectedRoleIds = ref<string[]>([])
 const selectedEmployeeIds = ref<string[]>([])
+const audienceCount = computed(() => visibilityAudienceCount({
+  visibilityEveryone: visibilityMode.value === 'everyone',
+  visibilityRoles: visibilityMode.value === 'roles' ? selectedRoleIds.value : [],
+  visibilityEmployees: visibilityMode.value === 'people' ? selectedEmployeeIds.value : [],
+}))
+const rolesByProduct = computed(() => {
+  const groups: Record<string, typeof COWORK_ROLES> = {}
+  for (const r of COWORK_ROLES) (groups[r.product] ??= []).push(r)
+  return Object.entries(groups)
+})
+function toggleRole(id: string, on: boolean) {
+  if (on) { if (!selectedRoleIds.value.includes(id)) selectedRoleIds.value.push(id) }
+  else selectedRoleIds.value = selectedRoleIds.value.filter((x) => x !== id)
+}
 
 onMounted(() => {
   const a = existing.value
-  if (!a) { name.value = ''; return }
+  if (!a) { current.value = 'persona'; return }
   name.value = a.name
   description.value = a.description ?? ''
   instruction.value = a.instruction || a.persona || ''
   model.value = a.model ?? MODELS[0].id
+  language.value = a.languageBehaviour ?? 'mirror'
   allWorkspace.value = !!a.allWorkspace
   ;(a.knowledgeApps ?? []).forEach((id) => { appOn[id] = true })
-  knowledgeFiles.value = (a.knowledgeFiles ?? []).map((f) => ({ name: f.name, size: f.size, icon: fileIcon(f.name.split('.').pop() || '') }))
   knowledge.value = [...(a.knowledge ?? [])]
-  ;(a.skills ?? []).forEach((s) => { skillOn[s] = true })
-  visibilityEveryone.value = a.visibilityEveryone ?? true
+  ;(a.skillBindings ?? []).forEach((b) => {
+    skillState[b.skillId] = { enabled: true, approvalMode: b.approvalMode, autoConditions: b.autoConditions, notifyOnAuto: b.notifyOnAuto }
+  })
+  visibilityMode.value = a.visibilityEveryone ? 'everyone' : (a.visibilityRoles?.length ? 'roles' : (a.visibilityEmployees?.length ? 'people' : 'everyone'))
+  selectedRoleIds.value = [...(a.visibilityRoles ?? [])]
   selectedEmployeeIds.value = [...(a.visibilityEmployees ?? [])]
 })
 
-// ── AI "Optimize" for the description / instruction textareas ──
+// ── AI "Optimize" (diff + Apply — never silent overwrite, AG-12) ──
 const optimizing = ref<'' | 'description' | 'instruction'>('')
+const optimizeDiff = ref<{ kind: 'description' | 'instruction'; before: string; after: string } | null>(null)
 async function optimize(kind: 'description' | 'instruction') {
   const text = (kind === 'description' ? description.value : instruction.value).trim()
   if (!text || optimizing.value) return
   optimizing.value = kind
+  optimizeDiff.value = null
   try {
-    const res = await $fetch<{ text: string }>('/api/cowork/optimize', {
-      method: 'POST', body: { text, kind, model: model.value },
-    })
-    if (res?.text) {
-      if (kind === 'description') description.value = res.text
-      else instruction.value = res.text
-    }
+    const res = await $fetch<{ text: string }>('/api/cowork/optimize', { method: 'POST', body: { text, kind, model: model.value } })
+    if (res?.text) optimizeDiff.value = { kind, before: text, after: res.text }
   } catch { infoToast('Could not optimize right now — please try again') }
   finally { optimizing.value = '' }
 }
+function applyOptimize() {
+  const d = optimizeDiff.value
+  if (!d) return
+  if (d.kind === 'description') { description.value = d.after; descError.value = '' }
+  else { instruction.value = d.after; instrError.value = '' }
+  optimizeDiff.value = null
+}
+function useTemplate() { if (!instruction.value.trim()) { instruction.value = INSTRUCTION_TEMPLATE; instrError.value = '' } }
 
-// ── Files ──
-function fileSizeLabel(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-function fileIcon(ext: string): string {
-  const e = ext.toLowerCase()
-  if (e === 'pdf') return 'pdf-document'
-  if (['doc', 'docx'].includes(e)) return 'word-document'
-  if (['xls', 'xlsx', 'csv'].includes(e)) return 'excel-document'
-  if (['ppt', 'pptx'].includes(e)) return 'attachment'
-  return 'attachment'
-}
-function onUploadChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  for (const f of Array.from(input.files ?? [])) {
-    const ext = f.name.split('.').pop() || 'file'
-    knowledgeFiles.value.push({ name: f.name, size: fileSizeLabel(f.size), icon: fileIcon(ext) })
-  }
-  input.value = ''
-}
-function removeFile(i: number) { knowledgeFiles.value.splice(i, 1) }
-
-// ── Knowledge Base attach ──
-/** Resolve attached scopes → distinct docs (for the count + chip labels). */
+// ── Knowledge Base attach / upload ──
 const attachedDocs = computed(() => resolveAttachments(knowledge.value))
-function attachmentLabel(a: KbAttachment): string {
-  const n = getNode(a.id)
-  if (!n) return 'Removed item'
-  return n.name
-}
+function attachmentLabel(a: KbAttachment): string { const n = getNode(a.id); return n ? n.name : 'Removed item' }
 function attachmentSub(a: KbAttachment): string {
   if (a.scope === 'doc') { const n = getNode(a.id); return n && !isFolder(n) ? extLabel((n as any).ext) : 'Document' }
   return `${resolveAttachments([a]).length} docs`
 }
 function removeAttachment(i: number) { knowledge.value.splice(i, 1) }
-
-// Quick-upload from the agent form → ingest into a shared "Agent uploads"
-// collection and attach each new doc directly.
 function ensureAgentUploadsFolder(): string {
   const existingF = coworkKb.find((n) => isFolder(n) && n.parentId === null && n.name === 'Agent uploads')
   if (existingF) return existingF.id
@@ -170,9 +202,7 @@ async function onKbUpload(ev: Event) {
     const docs = await ingestFiles(folder, files)
     for (const d of docs) if (!knowledge.value.some((a) => a.scope === 'doc' && a.id === d.id)) knowledge.value.push({ scope: 'doc', id: d.id })
     toast.notify({ variant: 'success', title: 'Knowledge added', description: `${docs.length} document${docs.length > 1 ? 's' : ''} attached.` })
-  } finally {
-    kbUploading.value = false
-  }
+  } finally { kbUploading.value = false }
 }
 const kbUploadInput = ref<HTMLInputElement | null>(null)
 
@@ -185,12 +215,7 @@ const filteredEmployees = computed(() => {
   return activeEmployees.value.filter((e) => !q || e.fullName.toLowerCase().includes(q) || (e.jobPosition ?? '').toLowerCase().includes(q))
 })
 const selectedEmployees = computed(() => selectedEmployeeIds.value.map((id) => employees.find((e) => e.id === id)).filter(Boolean))
-function toggleEmployee(id: string, on: boolean) {
-  if (on) { if (!selectedEmployeeIds.value.includes(id)) selectedEmployeeIds.value.push(id) }
-  else selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id)
-}
 function removeEmployee(id: string) { selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id) }
-// Picker drawer edits a draft; Save commits, Cancel discards.
 const draftEmpIds = ref<string[]>([])
 watch(pickerOpen, (open) => { if (open) { draftEmpIds.value = [...selectedEmployeeIds.value]; empSearch.value = '' } })
 function toggleDraftEmp(id: string, on: boolean) {
@@ -199,18 +224,107 @@ function toggleDraftEmp(id: string, on: boolean) {
 }
 function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pickerOpen.value = false }
 
-// ── Navigation ──
+// ── Approval-mode confirmation sheet (SK-33) ──
+const autoSheet = reactive<{ open: boolean; skill?: CoworkSkill; maxPerRun: string; maxPerDay: string; ceiling: string; scope: string; notify: 'always' | 'daily_digest' | 'never' }>({
+  open: false, skill: undefined, maxPerRun: '', maxPerDay: '20', ceiling: '', scope: '', notify: 'always',
+})
+function openAutoSheet(s: CoworkSkill) {
+  const st = skillState[s.id]!
+  autoSheet.skill = s
+  autoSheet.maxPerRun = st.autoConditions?.maxPerRun?.toString() ?? ''
+  autoSheet.maxPerDay = st.autoConditions?.maxPerDay?.toString() ?? '20'
+  autoSheet.ceiling = st.autoConditions?.valueCeiling?.toString() ?? ''
+  autoSheet.scope = st.autoConditions?.scope ?? ''
+  autoSheet.notify = st.notifyOnAuto ?? 'always'
+  autoSheet.open = true
+}
+const autoSheetValid = computed(() => {
+  if (!autoSheet.skill) return false
+  // write_external requires at least one guard-rail (SK-31)
+  if (autoSheet.skill.riskClass === 'write_external' && !autoSheet.maxPerDay && !autoSheet.ceiling) return false
+  return true
+})
+function confirmAutoSheet() {
+  const s = autoSheet.skill
+  if (!s || !autoSheetValid.value) return
+  const cond: CoworkAutoConditions = {}
+  if (autoSheet.maxPerRun) cond.maxPerRun = Number(autoSheet.maxPerRun)
+  if (autoSheet.maxPerDay) cond.maxPerDay = Number(autoSheet.maxPerDay)
+  if (autoSheet.ceiling) cond.valueCeiling = Number(autoSheet.ceiling)
+  if (autoSheet.scope.trim()) cond.scope = autoSheet.scope.trim()
+  skillState[s.id] = { enabled: true, approvalMode: 'auto', autoConditions: cond, notifyOnAuto: autoSheet.notify }
+  autoSheet.open = false
+}
+function setApproval(s: CoworkSkill, mode: CoworkApprovalMode) {
+  if (mode === 'auto') { openAutoSheet(s); return }
+  skillState[s.id] = { ...skillState[s.id]!, approvalMode: 'manual', autoConditions: undefined }
+}
+function modeChip(s: CoworkSkill): string {
+  const st = skillState[s.id]!
+  if (st.approvalMode !== 'auto') return 'Ask first'
+  const cap = st.autoConditions?.maxPerDay
+  return cap ? `Auto · ≤ ${cap}/day` : 'Auto'
+}
+
+// ── Review summary ──
+const enabledSkills = computed(() => COWORK_SKILLS.filter((s) => skillState[s.id]?.enabled))
+const autoSkills = computed(() => enabledSkills.value.filter((s) => skillState[s.id]?.approvalMode === 'auto'))
+const knowledgeSummary = computed(() => {
+  const parts: string[] = []
+  if (attachedDocs.value.length) parts.push(`${attachedDocs.value.length} document${attachedDocs.value.length === 1 ? '' : 's'} from Knowledge Base`)
+  if (allWorkspace.value) parts.push('All connected apps')
+  else { const apps = connectedApps.value.filter((c) => appOn[c.id]); if (apps.length) parts.push(apps.map((a) => a.name).join(', ')) }
+  return parts.length ? parts.join(' · ') : 'No knowledge sources yet'
+})
+const visibilitySummary = computed(() => {
+  if (visibilityMode.value === 'everyone') return `Everyone at ${COWORK_COMPANY}`
+  if (visibilityMode.value === 'roles') return `${selectedRoleIds.value.map((r) => COWORK_ROLES.find((x) => x.id === r)?.name).filter(Boolean).join(', ') || 'No roles selected'} · ${audienceCount.value} people`
+  return `${selectedEmployeeIds.value.length} people`
+})
+
+// ── Live test chat (Review step, right column) — dry-run, runs as you ──
+const testLog = ref<CoworkChatMsg[]>([])
+const testSuggestions = computed(() => {
+  const out = ['Summarise what you can help with.']
+  if (enabledSkills.value.length) out.push(`How would you use "${enabledSkills.value[0]!.name}"?`)
+  if (autoSkills.value.length) out.push('What will you do automatically?')
+  else out.push('Walk me through a task you handle.')
+  return out
+})
+function sendTest(q: string) {
+  const t = (q || '').trim()
+  if (!t) return
+  testLog.value.push({ role: 'user', text: t })
+  const acted = autoSkills.value.length
+    ? ` If this needed an action, "${autoSkills.value[0]!.name}" would run automatically (dry-run here, nothing is sent).`
+    : ' Any action would pause for your confirmation.'
+  testLog.value.push({ role: 'assistant', text: `Based on your instruction and ${enabledSkills.value.length} skill${enabledSkills.value.length === 1 ? '' : 's'}, I'd ground this in ${knowledgeSummary.value.toLowerCase()}.${acted}` })
+}
+
+// ── Navigation & validation (AG-18: inline per field) ──
 const nameError = ref('')
 const descError = ref('')
 const instrError = ref('')
+function nameTaken(): boolean {
+  const n = name.value.trim().toLowerCase()
+  return coworkAgents.some((a) => a.name.trim().toLowerCase() === n && a.id !== props.orderId && a.id !== draftId.value)
+}
 function validatePersona(): boolean {
-  nameError.value = name.value.trim() ? '' : 'You must fill in agent name'
+  const n = name.value.trim()
+  if (!n) nameError.value = 'You must fill in agent name'
+  else if (n.length > 60) nameError.value = 'Keep the name under 60 characters'
+  else if (nameTaken()) nameError.value = `An agent named "${n}" already exists. Try "${n} — Jakarta".`
+  else nameError.value = ''
   descError.value = description.value.trim() ? '' : 'You must fill in a description'
   instrError.value = instruction.value.trim() ? '' : 'You must fill in an instruction'
   return !nameError.value && !descError.value && !instrError.value
 }
+function validateStep(key: string): boolean {
+  if (key === 'persona') return validatePersona()
+  return true
+}
 function next() {
-  if (current.value === 'persona' && !validatePersona()) return
+  if (!validateStep(current.value)) return
   if (!done.value.includes(current.value)) done.value.push(current.value)
   if (!isLast.value) current.value = stepKeys[currentIndex.value + 1]!
 }
@@ -218,274 +332,511 @@ function back() { if (currentIndex.value > 0) current.value = stepKeys[currentIn
 function goToStep(key: string) { current.value = key }
 function cancel() { router.push('/cowork-agents') }
 
-const saving = ref(false)
-function save() {
-  if (!validatePersona()) { current.value = 'persona'; return }
-  saving.value = true
+// ── Build patch from form state ──
+function buildBindings(): CoworkSkillBinding[] {
+  return COWORK_SKILLS.filter((s) => skillState[s.id]?.enabled).map((s) => {
+    const st = skillState[s.id]!
+    const b: CoworkSkillBinding = { skillId: s.id, approvalMode: st.approvalMode, setAt: new Date().toISOString().slice(0, 10) }
+    if (st.approvalMode === 'auto') { b.autoConditions = st.autoConditions; b.notifyOnAuto = st.notifyOnAuto }
+    return b
+  })
+}
+function buildPatch(): Partial<CoworkAgent> {
   const apps = connectedApps.value.filter((c) => appOn[c.id]).map((c) => c.id)
   const areas = [...new Set(apps.flatMap((id) => APP_MODULES[id] ?? []))] as CoworkModule[]
-  const skills = COWORK_SKILLS.filter((s) => skillOn[s.id]).map((s) => s.id)
-  const patch: Partial<CoworkAgent> = {
+  return {
     name: name.value.trim(),
     description: description.value.trim(),
     instruction: instruction.value.trim(),
     persona: instruction.value.trim() || existing.value?.persona || '',
     model: model.value,
+    languageBehaviour: language.value,
+    avatar: existing.value?.avatar || DEFAULT_AVATAR,
     allWorkspace: allWorkspace.value,
     knowledgeAreas: areas,
     knowledgeApps: apps,
-    knowledgeFiles: knowledgeFiles.value.map((f) => ({ name: f.name, size: f.size })),
     knowledge: [...knowledge.value],
-    skills,
-    visibilityEveryone: visibilityEveryone.value,
-    visibilityEmployees: visibilityEveryone.value ? [] : [...selectedEmployeeIds.value],
+    skillBindings: buildBindings(),
+    visibilityEveryone: visibilityMode.value === 'everyone',
+    visibilityRoles: visibilityMode.value === 'roles' ? [...selectedRoleIds.value] : [],
+    visibilityEmployees: visibilityMode.value === 'people' ? [...selectedEmployeeIds.value] : [],
   }
-  let id = props.orderId!
+}
+
+// ── Draft autosave (AG-11) — new agents persist as a draft as soon as they have a name ──
+const draftId = ref<string | undefined>(isEdit.value ? props.orderId : undefined)
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleAutosave() {
+  if (isEdit.value) return
+  if (!name.value.trim()) return
+  clearTimeout(autosaveTimer)
+  autosaveTimer = setTimeout(() => {
+    const patch = buildPatch()
+    if (!draftId.value) {
+      const created = addAgent({
+        ...(patch as CoworkAgent), role: 'Custom agent', module: patch.knowledgeAreas?.[0] ?? 'Finance',
+        owned: true, color: '#6941C6', status: 'draft', type: 'custom',
+      })
+      draftId.value = created.id
+    } else {
+      updateAgent(draftId.value, { ...patch, status: 'draft' })
+    }
+  }, 700)
+}
+watch([name, description, instruction, model, language, allWorkspace, knowledge, visibilityMode, selectedRoleIds, selectedEmployeeIds, () => JSON.stringify(skillState), () => JSON.stringify(appOn)], scheduleAutosave, { deep: true })
+
+// ── Publish ──
+const saving = ref(false)
+function publish() {
+  if (!validatePersona()) { current.value = 'persona'; return }
+  saving.value = true
+  const patch = { ...buildPatch(), status: 'published' as const }
+  let id = draftId.value ?? props.orderId!
   if (isEdit.value && existing.value) {
     updateAgent(existing.value.id, patch)
-    toast.notify({ variant: 'success', title: 'Agent saved' })
+    publishAgentVersion(existing.value.id, 'Edited via wizard')
+    toast.notify({ variant: 'success', title: 'Agent saved', description: 'Start a chat' })
+  } else if (draftId.value) {
+    updateAgent(draftId.value, patch)
+    publishAgentVersion(draftId.value, 'Published')
+    toast.notify({ variant: 'success', title: `${patch.name} published`, description: 'Start a chat' })
   } else {
-    const seed = encodeURIComponent(name.value.trim() || 'agent')
     const created = addAgent({
-      ...(patch as CoworkAgent),
-      role: 'Custom agent',
-      module: areas[0] ?? 'Finance',
-      owned: true,
-      color: '#6941C6',
-      avatar: `https://api.dicebear.com/9.x/bottts-neutral/png?seed=${seed}&size=144&radius=20&backgroundColor=e6ddf7`,
+      ...(patch as CoworkAgent), role: 'Custom agent', module: patch.knowledgeAreas?.[0] ?? 'Finance',
+      owned: true, color: '#6941C6', type: 'custom',
     })
     id = created.id
-    toast.notify({ variant: 'success', title: 'Agent created' })
+    toast.notify({ variant: 'success', title: `${patch.name} published`, description: 'Start a chat' })
   }
   saving.value = false
   router.push(`/cowork-agents/${id}`)
 }
+function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 </script>
 
 <template>
   <!-- Title bar -->
   <header class="caf-bar">
-      <div class="caf-bar__left">
-        <button class="caf-crumb" type="button" @click="cancel">Agents</button>
-        <h1 class="caf-title">{{ isEdit ? 'Edit agent' : 'New agent' }}</h1>
-      </div>
-    </header>
+    <div class="caf-bar__left">
+      <button class="caf-crumb" type="button" @click="cancel">Agents</button>
+      <h1 class="caf-title">{{ isEdit ? 'Edit agent' : 'New agent' }}</h1>
+    </div>
+    <span v-if="!isEdit && draftId" class="caf-draft-note"><MpIcon name="check" size="sm" /> Draft saved</span>
+  </header>
 
-    <div class="caf-stage">
-      <div class="caf-inner">
-        <ErpStepper :steps="STEPS" :current="current" :done="done" @select="goToStep" />
+  <div class="caf-stage">
+    <div class="caf-inner">
+      <div class="caf-stepper-wrap"><ErpStepper :steps="STEPS" :current="current" :done="done" @select="goToStep" /></div>
 
-        <div class="caf-form">
-          <!-- ── Persona ── -->
-          <template v-if="current === 'persona'">
-            <MpFormControl id="caf-name" class="caf-field" is-required :is-invalid="!!nameError">
-              <MpFormLabel>Agent name</MpFormLabel>
-              <MpInput id="caf-name-input" v-model="name" is-full-width @input="nameError = ''" />
-              <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
-            </MpFormControl>
+      <div v-if="current !== 'review'" class="caf-form">
+        <!-- ── Persona ── -->
+        <template v-if="current === 'persona'">
+          <MpFormControl id="caf-name" class="caf-field" is-required :is-invalid="!!nameError">
+            <MpFormLabel>Agent name</MpFormLabel>
+            <MpInput id="caf-name-input" v-model="name" is-full-width @input="nameError = ''" />
+            <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
+          </MpFormControl>
 
-            <MpFormControl id="caf-desc" class="caf-field" is-required :is-invalid="!!descError">
-              <MpFormLabel>Description</MpFormLabel>
-              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description', 'is-error': !!descError }">
-                <textarea v-model="description" class="caf-ta__input" rows="2" @input="descError = ''"></textarea>
-                <div class="caf-ta__foot">
-                  <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
-                    <MpSpinner v-if="optimizing === 'description'" size="sm" />
-                    <MpIcon v-else name="airene-brand" size="sm" /> Optimize
-                  </button>
-                </div>
+          <MpFormControl id="caf-desc" class="caf-field" is-required :is-invalid="!!descError">
+            <MpFormLabel>Description</MpFormLabel>
+            <div class="caf-ta" :class="{ 'is-busy': optimizing === 'description', 'is-error': !!descError }">
+              <textarea v-model="description" class="caf-ta__input caf-ta__input--sm" rows="2" @input="descError = ''"></textarea>
+              <div class="caf-ta__foot">
+                <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'description'" @click="optimize('description')">
+                  <MpSpinner v-if="optimizing === 'description'" size="sm" />
+                  <MpIcon v-else name="airene-brand" size="sm" /> Optimize
+                </button>
               </div>
-              <MpFormErrorMessage>{{ descError }}</MpFormErrorMessage>
-              <p v-if="!descError" class="caf-hint">Describe what this agent will help your team with.</p>
-            </MpFormControl>
-
-            <MpFormControl id="caf-instr" class="caf-field" is-required :is-invalid="!!instrError">
-              <MpFormLabel>Instruction</MpFormLabel>
-              <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction', 'is-error': !!instrError }">
-                <textarea v-model="instruction" class="caf-ta__input" rows="5" @input="instrError = ''"></textarea>
-                <div class="caf-ta__foot">
-                  <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction'" @click="optimize('instruction')">
-                    <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
-                    <MpIcon v-else name="airene-brand" size="sm" /> Optimize
-                  </button>
-                </div>
+            </div>
+            <!-- Optimize diff (Apply / Discard) -->
+            <div v-if="optimizeDiff?.kind === 'description'" class="caf-diff">
+              <p class="caf-diff__label">Suggested rewrite</p>
+              <p class="caf-diff__before">{{ optimizeDiff.before }}</p>
+              <p class="caf-diff__after">{{ optimizeDiff.after }}</p>
+              <div class="caf-diff__actions">
+                <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="optimizeDiff = null">Discard</button>
+                <button type="button" class="btn-enterprise btn-enterprise--primary" @click="applyOptimize">Apply</button>
               </div>
-              <MpFormErrorMessage>{{ instrError }}</MpFormErrorMessage>
-              <p v-if="!instrError" class="caf-hint">Control your agent's behaviour by adding custom instructions.</p>
-            </MpFormControl>
+            </div>
+            <MpFormErrorMessage>{{ descError }}</MpFormErrorMessage>
+            <p v-if="!descError && optimizeDiff?.kind !== 'description'" class="caf-hint">Describe what this agent will help your team with.</p>
+          </MpFormControl>
 
-            <MpFormControl id="caf-model" class="caf-field caf-field--half">
-              <MpFormLabel>Model</MpFormLabel>
-              <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-                <MpPopoverTrigger>
-                  <button type="button" class="caf-select">
-                    <span class="caf-select__label">{{ modelLabel }}</span>
-                    <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="modelMenuClass">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="model === m.id" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </MpFormControl>
-          </template>
-
-          <!-- ── Knowledge ── -->
-          <template v-else-if="current === 'knowledge'">
-            <MpFormControl id="caf-kb" class="caf-field">
-              <MpFormLabel>Knowledge base</MpFormLabel>
-              <p class="caf-hint caf-hint--tight">Attach collections, folders or documents from the Knowledge Base. The agent retrieves the most relevant passages when it runs. Attaching a folder keeps it live: new files inside flow through automatically.</p>
-              <div class="caf-kb-actions">
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
-                <input ref="kbUploadInput" type="file" multiple class="caf-kb-file"
-                  accept=".md,.markdown,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
-                  @change="onKbUpload" />
+          <MpFormControl id="caf-instr" class="caf-field" is-required :is-invalid="!!instrError">
+            <MpFormLabel>Instruction</MpFormLabel>
+            <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction', 'is-error': !!instrError }">
+              <textarea v-model="instruction" class="caf-ta__input" rows="8" :placeholder="INSTRUCTION_TEMPLATE" @input="instrError = ''"></textarea>
+              <div class="caf-ta__foot">
+                <button v-if="!instruction.trim()" type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" @click="useTemplate">
+                  <MpIcon name="document" size="sm" /> Use template
+                </button>
+                <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction' || !instruction.trim()" @click="optimize('instruction')">
+                  <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
+                  <MpIcon v-else name="airene-brand" size="sm" /> Optimize
+                </button>
               </div>
-              <ul v-if="knowledge.length" class="caf-kb-list">
-                <li v-for="(a, i) in knowledge" :key="a.scope + a.id" class="caf-kb-chip">
-                  <MpIcon :name="a.scope === 'doc' ? 'doc' : 'folder-close'" size="sm" :class="a.scope === 'doc' ? '' : 'caf-kb-chip__folder'" />
-                  <span class="caf-kb-chip__name">{{ attachmentLabel(a) }}</span>
-                  <span class="caf-kb-chip__sub">{{ attachmentSub(a) }}</span>
-                  <button class="caf-kb-chip__x" type="button" aria-label="Remove" @click="removeAttachment(i)"><MpIcon name="close" size="sm" /></button>
-                </li>
-              </ul>
-              <p v-if="knowledge.length" class="caf-hint caf-hint--tight">{{ attachedDocs.length }} document{{ attachedDocs.length === 1 ? '' : 's' }} in scope.</p>
-            </MpFormControl>
-
-            <MpFormControl id="caf-ws" class="caf-field caf-field--gap32">
-              <div class="caf-ws-head">
-                <div>
-                  <MpFormLabel>Use all connected apps</MpFormLabel>
-                  <p class="caf-hint caf-hint--tight">Let the agent draw on every app you've connected in Connections. Narrowing to the ones it needs keeps answers more accurate; too much data can dilute results.</p>
-                </div>
-                <MpToggle :is-checked="allWorkspace" aria-label="Use all connected apps" @update:is-checked="(v: boolean) => allWorkspace = v" />
+            </div>
+            <div v-if="optimizeDiff?.kind === 'instruction'" class="caf-diff">
+              <p class="caf-diff__label">Suggested rewrite</p>
+              <p class="caf-diff__before">{{ optimizeDiff.before }}</p>
+              <p class="caf-diff__after">{{ optimizeDiff.after }}</p>
+              <div class="caf-diff__actions">
+                <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="optimizeDiff = null">Discard</button>
+                <button type="button" class="btn-enterprise btn-enterprise--primary" @click="applyOptimize">Apply</button>
               </div>
-              <div v-if="!allWorkspace" class="caf-areas">
-                <p class="caf-areas__label">Or pick the connected apps this agent should use:</p>
-                <div v-for="app in connectedApps" :key="app.id" class="caf-area-row">
-                  <span class="caf-area-app">
-                    <img v-if="!connLogoFailed[app.id]" class="caf-area-logo caf-area-logo--img" :src="app.logo || `/connectors/${app.id}.png`" :alt="app.name" loading="lazy" @error="connLogoFailed[app.id] = true" />
-                    <span v-else class="caf-area-logo" :style="{ background: app.color || '#3a4749' }">{{ connMonogram(app.name) }}</span>
-                    {{ app.name }}
+            </div>
+            <MpFormErrorMessage>{{ instrError }}</MpFormErrorMessage>
+            <p v-if="!instrError && optimizeDiff?.kind !== 'instruction'" class="caf-hint">Control your agent's behaviour. Use the Role · Scope · Tone · Rules · Refuse-when structure.</p>
+          </MpFormControl>
+
+          <MpFormControl id="caf-model" class="caf-field caf-field--half">
+            <MpFormLabel>Model</MpFormLabel>
+            <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+              <MpPopoverTrigger>
+                <button type="button" class="caf-select">
+                  <span class="caf-select__label">{{ modelLabel }}</span>
+                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="menuClass">
+                <MpPopoverList>
+                  <MpPopoverListItem v-for="m in MODELS" :key="m.id" :is-active="model === m.id" @click="model = m.id">{{ m.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </MpFormControl>
+
+          <MpFormControl id="caf-lang" class="caf-field caf-field--half">
+            <MpFormLabel>Language</MpFormLabel>
+            <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+              <MpPopoverTrigger>
+                <button type="button" class="caf-select">
+                  <span class="caf-select__label">{{ LANGS.find((l) => l.id === language)?.label }}</span>
+                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="menuClass">
+                <MpPopoverList>
+                  <MpPopoverListItem v-for="l in LANGS" :key="l.id" :is-active="language === l.id" @click="language = l.id">{{ l.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </MpFormControl>
+        </template>
+
+        <!-- ── Knowledge ── -->
+        <template v-else-if="current === 'knowledge'">
+          <MpFormControl id="caf-kb" class="caf-field">
+            <MpFormLabel>Knowledge base</MpFormLabel>
+            <p class="caf-hint caf-hint--tight">Attach documents from the Knowledge Base, or upload new ones. The agent retrieves the most relevant passages when it runs.</p>
+            <div class="caf-kb-actions">
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="kbPickerOpen = true">Attach from Knowledge Base</button>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" :disabled="kbUploading" @click="kbUploadInput?.click()">{{ kbUploading ? 'Uploading…' : 'Upload file' }}</button>
+              <input ref="kbUploadInput" type="file" multiple class="caf-hidden-file"
+                accept=".md,.markdown,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif" @change="onKbUpload" />
+            </div>
+            <ul v-if="knowledge.length" class="caf-kb-list">
+              <li v-for="(a, i) in knowledge" :key="a.scope + a.id" class="caf-kb-chip">
+                <MpIcon :name="a.scope === 'doc' ? 'doc' : 'folder-close'" size="sm" :class="a.scope === 'doc' ? '' : 'caf-kb-chip__folder'" />
+                <span class="caf-kb-chip__name">{{ attachmentLabel(a) }}</span>
+                <span class="caf-kb-chip__sub">{{ attachmentSub(a) }}</span>
+                <button class="caf-kb-chip__x" type="button" aria-label="Remove" @click="removeAttachment(i)"><MpIcon name="minus-circular" size="sm" /></button>
+              </li>
+            </ul>
+            <p v-if="knowledge.length" class="caf-hint caf-hint--tight">{{ attachedDocs.length }} document{{ attachedDocs.length === 1 ? '' : 's' }} in scope.</p>
+          </MpFormControl>
+
+          <MpFormControl id="caf-ws" class="caf-field caf-field--gap32">
+            <div class="caf-ws-head">
+              <div>
+                <MpFormLabel>Use all connected apps</MpFormLabel>
+                <p class="caf-hint caf-hint--tight">Let the agent draw on every app you've connected. Narrowing to the ones it needs keeps answers more accurate.</p>
+              </div>
+              <MpToggle :is-checked="allWorkspace" aria-label="Use all connected apps" @update:is-checked="(v: boolean) => allWorkspace = v" />
+            </div>
+            <div v-if="!allWorkspace" class="caf-areas">
+              <p class="caf-areas__label">Or pick the connected apps this agent should use (live data):</p>
+              <div v-for="app in connectedApps" :key="app.id" class="caf-area-row">
+                <span class="caf-area-app">
+                  <img v-if="!connLogoFailed[app.id]" class="caf-area-logo caf-area-logo--img" :src="app.logo || `/connectors/${app.id}.png`" :alt="app.name" loading="lazy" @error="connLogoFailed[app.id] = true" />
+                  <span v-else class="caf-area-logo" :style="{ background: app.color || '#3a4749' }">{{ connMonogram(app.name) }}</span>
+                  {{ app.name }}
+                </span>
+                <MpToggle :is-checked="appOn[app.id]" :aria-label="`Toggle ${app.name}`" @update:is-checked="(v: boolean) => appOn[app.id] = v" />
+              </div>
+            </div>
+          </MpFormControl>
+
+          <div class="caf-field">
+            <MpBanner id="caf-perm-banner" variant="info">
+              <MpBannerIcon id="caf-perm-banner-icon" />
+              <MpBannerTitle id="caf-perm-banner-title">Permissions stay as they are</MpBannerTitle>
+              <MpBannerDescription id="caf-perm-banner-desc">Files and integrations keep their original permissions. Only people with existing access will retrieve them here.</MpBannerDescription>
+              <MpBannerLink id="caf-perm-banner-link"><a href="#" @click.prevent="infoToast('Read more — coming soon')">Read more</a></MpBannerLink>
+            </MpBanner>
+          </div>
+        </template>
+
+        <!-- ── Skills ── -->
+        <template v-else-if="current === 'skills'">
+          <p class="caf-step-caption">Turn on the skills this agent can use, and decide whether each one must ask you first or may act automatically.</p>
+          <MpInput id="caf-skill-search" v-model="skillSearch" is-full-width placeholder="Search skills" class="caf-skill-search" />
+          <div class="caf-skills">
+            <div v-for="s in filteredSkills" :key="s.id" class="caf-skill">
+              <div class="caf-skill__main">
+                <p class="caf-skill__name">
+                  {{ s.name }}
+                  <span class="caf-risk" :class="`caf-risk--${riskMeta(s).tone}`">{{ riskMeta(s).label }}</span>
+                  <span v-if="s.module" class="caf-skill__mod">{{ s.module }}</span>
+                </p>
+                <p class="caf-skill__desc">{{ s.description }}</p>
+                <div v-if="s.requiresConnections?.length" class="caf-skill__needs">
+                  <span v-for="cid in s.requiresConnections" :key="cid" class="caf-need-chip" :class="{ 'caf-need-chip--missing': !connConnected(cid) }">
+                    <img v-if="!connLogoFailed[cid]" class="caf-need-logo" :src="connObj(cid)?.logo || `/connectors/${cid}.png`" :alt="connName(cid)" loading="lazy" @error="connLogoFailed[cid] = true" />
+                    <span v-else class="caf-need-logo caf-need-logo--mono" :style="{ background: connObj(cid)?.color || '#3a4749' }">{{ connMonogram(connName(cid)) }}</span>
+                    {{ connConnected(cid) ? connName(cid) : `Needs ${connName(cid)}` }}
                   </span>
-                  <MpToggle :is-checked="appOn[app.id]" :aria-label="`Toggle ${app.name}`" @update:is-checked="(v: boolean) => appOn[app.id] = v" />
+                </div>
+                <!-- Approval-mode control (only when enabled) -->
+                <div v-if="skillState[s.id]?.enabled" class="caf-approval">
+                  <span class="caf-approval__chip" :class="skillState[s.id]!.approvalMode === 'auto' ? 'caf-approval__chip--auto' : ''">
+                    <MpIcon :name="skillState[s.id]!.approvalMode === 'auto' ? 'magic' : 'approval-rules'" size="sm" /> {{ modeChip(s) }}
+                  </span>
+                  <MpPopover :id="`caf-appr-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                    <MpPopoverTrigger>
+                      <button type="button" class="caf-approval__btn">Change<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '280px' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem :is-active="skillState[s.id]!.approvalMode === 'manual'" @click="setApproval(s, 'manual')">
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="approval-rules" size="sm" /> Manually approve</span><span class="caf-appr-opt__d">The agent asks you before acting</span></div>
+                        </MpPopoverListItem>
+                        <MpPopoverListItem :is-disabled="!autoModeAvailable(s).allowed" @click="autoModeAvailable(s).allowed && setApproval(s, 'auto')">
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="magic" size="sm" /> Automatically approve</span><span class="caf-appr-opt__d">{{ autoModeAvailable(s).allowed ? 'The agent acts and notifies you' : autoModeAvailable(s).reason }}</span></div>
+                        </MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
                 </div>
               </div>
-            </MpFormControl>
+              <MpToggle :is-checked="skillState[s.id]?.enabled" :aria-label="`Toggle ${s.name}`"
+                @update:is-checked="(v: boolean) => skillState[s.id] = { ...skillState[s.id]!, enabled: v, approvalMode: v ? skillState[s.id]!.approvalMode : 'manual' }" />
+            </div>
+          </div>
+        </template>
 
-            <div class="caf-field">
-              <MpBanner id="caf-perm-banner" variant="info">
-                <MpBannerIcon id="caf-perm-banner-icon" />
-                <MpBannerTitle id="caf-perm-banner-title">Permissions stay as they are</MpBannerTitle>
-                <MpBannerDescription id="caf-perm-banner-desc">
-                  Files and integrations keep their original permissions. Only people with existing access will have access here. To share with more people, update permissions for each file or integration separately.
-                </MpBannerDescription>
-                <MpBannerLink id="caf-perm-banner-link">
-                  <a href="#" @click.prevent="infoToast('Read more — coming soon')">Read more</a>
-                </MpBannerLink>
-              </MpBanner>
-            </div>
-          </template>
+        <!-- ── Visibility ── -->
+        <template v-else-if="current === 'visibility'">
+          <p class="caf-step-caption">Choose who can start a chat with or assign a task to this agent.</p>
+          <div class="caf-vis-opts">
+            <MpRadio id="caf-vis-everyone" name="caf-vis" value="everyone" :is-checked="visibilityMode === 'everyone'" @change="visibilityMode = 'everyone'">Everyone at {{ COWORK_COMPANY }}</MpRadio>
+            <MpRadio id="caf-vis-roles" name="caf-vis" value="roles" :is-checked="visibilityMode === 'roles'" @change="visibilityMode = 'roles'">Specific roles</MpRadio>
+            <MpRadio id="caf-vis-people" name="caf-vis" value="people" :is-checked="visibilityMode === 'people'" @change="visibilityMode = 'people'">Specific people</MpRadio>
+          </div>
 
-          <!-- ── Skills ── -->
-          <template v-else-if="current === 'skills'">
-            <p class="caf-step-caption">Turn on the skills this agent can use. Each skill gives it concrete actions it can take on a task's action items.</p>
-            <div class="caf-skills">
-              <div v-for="s in COWORK_SKILLS" :key="s.id" class="caf-skill">
-                <div class="caf-skill__main">
-                  <p class="caf-skill__name">{{ s.name }}<span v-if="s.module" class="caf-skill__mod">{{ s.module }}</span></p>
-                  <p class="caf-skill__desc">{{ s.description }}</p>
-                </div>
-                <MpToggle :is-checked="skillOn[s.id]" :aria-label="`Toggle ${s.name}`" @update:is-checked="(v: boolean) => skillOn[s.id] = v" />
-              </div>
+          <div v-if="visibilityMode === 'roles'" class="caf-roles">
+            <div v-for="[product, roles] in rolesByProduct" :key="product" class="caf-role-group">
+              <p class="caf-role-group__title">{{ product }}</p>
+              <label v-for="r in roles" :key="r.id" class="caf-role">
+                <MpCheckbox :is-checked="selectedRoleIds.includes(r.id)" @update:is-checked="(v: boolean) => toggleRole(r.id, v)" />
+                <span class="caf-role__name">{{ r.name }}</span>
+                <span class="caf-role__count">{{ roleMemberCount(r.id) }} people</span>
+              </label>
             </div>
-          </template>
+          </div>
 
-          <!-- ── Visibility ── -->
-          <template v-else-if="current === 'visibility'">
-            <p class="caf-step-caption">Choose who can use this agent.</p>
-            <div class="caf-vis-row">
-              <span>Everyone at {{ COWORK_COMPANY }}</span>
-              <MpToggle :is-checked="visibilityEveryone" aria-label="Everyone at company" @update:is-checked="(v: boolean) => visibilityEveryone = v" />
+          <div v-if="visibilityMode === 'people'" class="caf-people">
+            <div class="caf-people__head">
+              <span class="caf-plain-label">People with access</span>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
             </div>
-            <div v-if="!visibilityEveryone" class="caf-people">
-              <div class="caf-people__head">
-                <MpFormLabel>People with access</MpFormLabel>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
-              </div>
-              <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet. Only you will have access.</p>
-              <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
-                <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
-                <div class="caf-person__info">
-                  <span class="caf-person__name">{{ e!.fullName }}</span>
-                  <span class="caf-person__role">{{ e!.jobPosition }}</span>
-                </div>
-                <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
-              </div>
+            <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet. Only you will have access.</p>
+            <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
+              <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
+              <div class="caf-person__info"><span class="caf-person__name">{{ e!.fullName }}</span><span class="caf-person__role">{{ e!.jobPosition }}</span></div>
+              <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
             </div>
-          </template>
+          </div>
+
+          <p class="caf-audience"><MpIcon name="profile" size="sm" /> {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} will see this agent</p>
+        </template>
+
+      </div>
+
+      <!-- ── Review & publish: summary (left 6) + New-chat test panel (right 6) ── -->
+      <div v-else class="caf-review-2col">
+        <div class="caf-review-col">
+          <div class="caf-review-head">
+            <img class="caf-review-avatar" :src="headAvatar" :alt="name">
+            <div>
+              <p class="caf-review-name">{{ name || 'Untitled agent' }}</p>
+              <p class="caf-review-desc">{{ description || 'No description' }}</p>
+            </div>
+          </div>
+
+          <section class="caf-review-sec"><h3>Persona</h3>
+            <p class="caf-review-line"><span>Instruction</span>{{ instruction || '—' }}</p>
+            <p class="caf-review-line"><span>Model</span>{{ modelLabel }}</p>
+            <p class="caf-review-line"><span>Language</span>{{ LANGS.find((l) => l.id === language)?.label }}</p>
+            <button type="button" class="caf-review-edit" @click="goToStep('persona')">Edit</button>
+          </section>
+          <section class="caf-review-sec"><h3>Knowledge</h3>
+            <p class="caf-review-line"><span>Sources</span>{{ knowledgeSummary }}</p>
+            <button type="button" class="caf-review-edit" @click="goToStep('knowledge')">Edit</button>
+          </section>
+          <section class="caf-review-sec"><h3>Skills</h3>
+            <p class="caf-review-line"><span>Enabled</span>{{ enabledSkills.length ? enabledSkills.map((s) => s.name).join(', ') : 'None' }}</p>
+            <button type="button" class="caf-review-edit" @click="goToStep('skills')">Edit</button>
+          </section>
+          <section v-if="autoSkills.length" class="caf-review-sec caf-review-sec--warn">
+            <h3><MpIcon name="magic" size="sm" /> Will act without asking</h3>
+            <div v-for="s in autoSkills" :key="s.id" class="caf-willact">
+              <span class="caf-willact__name">{{ s.name }}</span>
+              <span class="caf-willact__cond">{{ modeChip(s) }}<template v-if="skillState[s.id]!.autoConditions?.valueCeiling"> · ≤ {{ idr(skillState[s.id]!.autoConditions!.valueCeiling!) }}</template><template v-if="skillState[s.id]!.autoConditions?.scope"> · {{ skillState[s.id]!.autoConditions!.scope }}</template></span>
+            </div>
+          </section>
+          <section class="caf-review-sec"><h3>Visibility</h3>
+            <p class="caf-review-line"><span>Who</span>{{ visibilitySummary }}</p>
+            <button type="button" class="caf-review-edit" @click="goToStep('visibility')">Edit</button>
+          </section>
+
+          <!-- Actions live under the summary; the chat panel sits to the right of them -->
+          <div class="caf-review-actions">
+            <MpButton is-rounded variant="ghost" @click="back">Back</MpButton>
+            <MpButton is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
+          </div>
         </div>
 
-        <!-- Footer actions -->
-        <div class="caf-actions">
-          <MpButton is-rounded variant="ghost" @click="currentIndex === 0 ? cancel() : back()">{{ currentIndex === 0 ? 'Cancel' : 'Back' }}</MpButton>
-          <MpButton v-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
-          <MpButton v-else is-rounded variant="primary" :is-loading="saving" @click="save">{{ isEdit ? 'Save changes' : 'Create agent' }}</MpButton>
+        <!-- Right: the shared "New chat" panel (same format as Chats), dry-run -->
+        <div class="caf-chat">
+          <CoworkChatPanel
+            :messages="testLog"
+            :agent-name="name || 'your agent'"
+            :agent-avatar="headAvatar"
+            user-name="Rizal Candra"
+            :greeting="description || 'Ask me anything to see how I’ll respond.'"
+            :suggestions="testSuggestions"
+            :models="MODELS"
+            :model-id="model"
+            @update:model-id="(v: string) => model = v"
+            @send="sendTest"
+          />
         </div>
+      </div>
+
+      <!-- Footer actions (steps 1–4; the Review step has its own under the summary) -->
+      <div v-if="current !== 'review'" class="caf-actions">
+        <MpButton is-rounded variant="ghost" @click="currentIndex === 0 ? cancel() : back()">{{ currentIndex === 0 ? 'Cancel' : 'Back' }}</MpButton>
+        <MpButton is-rounded variant="primary" @click="next">Continue</MpButton>
       </div>
     </div>
+  </div>
 
-    <!-- Employee picker drawer -->
-    <MpDrawer id="caf-people-drawer" :is-open="pickerOpen" placement="right" @close="pickerOpen = false">
-      <MpDrawerContent>
-        <MpDrawerHeader>Add people <MpModalCloseButton /></MpDrawerHeader>
-        <MpDrawerBody>
-          <MpInput id="caf-emp-search" v-model="empSearch" is-full-width placeholder="Search employees" />
-          <div class="caf-emplist">
-            <label v-for="e in filteredEmployees" :key="e.id" class="caf-emp">
-              <MpCheckbox :is-checked="draftEmpIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleDraftEmp(e.id, v)" />
-              <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
-              <span class="caf-emp__info">
-                <span class="caf-emp__name">{{ e.fullName }}</span>
-                <span class="caf-emp__role">{{ e.jobPosition }} · {{ e.department }}</span>
-              </span>
-            </label>
+  <!-- Employee picker drawer -->
+  <MpDrawer id="caf-people-drawer" :is-open="pickerOpen" placement="right" @close="pickerOpen = false">
+    <MpDrawerContent>
+      <MpDrawerHeader>Add people <MpModalCloseButton /></MpDrawerHeader>
+      <MpDrawerBody>
+        <MpInput id="caf-emp-search" v-model="empSearch" is-full-width placeholder="Search employees" />
+        <div class="caf-emplist">
+          <label v-for="e in filteredEmployees" :key="e.id" class="caf-emp">
+            <MpCheckbox :is-checked="draftEmpIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleDraftEmp(e.id, v)" />
+            <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
+            <span class="caf-emp__info"><span class="caf-emp__name">{{ e.fullName }}</span><span class="caf-emp__role">{{ e.jobPosition }} · {{ e.department }}</span></span>
+          </label>
+        </div>
+      </MpDrawerBody>
+      <MpDrawerFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="pickerOpen = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="savePeople">Save</MpButton>
+        </MpButtonGroup>
+      </MpDrawerFooter>
+    </MpDrawerContent>
+    <MpDrawerOverlay />
+  </MpDrawer>
+
+  <!-- Approval-mode confirmation sheet (switching a skill to auto) -->
+  <Teleport to="body">
+    <Transition name="caf-sheet">
+      <div v-if="autoSheet.open" class="caf-sheet-overlay" @click.self="autoSheet.open = false">
+        <div class="caf-sheet" role="dialog" aria-modal="true">
+          <p class="caf-sheet__title">Let {{ name || 'this agent' }} run “{{ autoSheet.skill?.name }}” automatically?</p>
+          <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
+          <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
+          <div class="caf-sheet__grid">
+            <label class="caf-sheet__f"><span>Max per run</span><MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" placeholder="Any" /></label>
+            <label class="caf-sheet__f"><span>Max per day</span><MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" placeholder="Any" /></label>
+            <label class="caf-sheet__f"><span>Value ceiling (Rp)</span><MpInput id="caf-c-ceil" v-model="autoSheet.ceiling" type="number" placeholder="Any" /></label>
+            <label class="caf-sheet__f"><span>Scope</span><MpInput id="caf-c-scope" v-model="autoSheet.scope" placeholder="e.g. warehouse JKT-01" /></label>
           </div>
-        </MpDrawerBody>
-        <MpDrawerFooter>
-          <MpButtonGroup>
-            <MpButton variant="ghost" is-rounded @click="pickerOpen = false">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="savePeople">Save</MpButton>
-          </MpButtonGroup>
-        </MpDrawerFooter>
-      </MpDrawerContent>
-      <MpDrawerOverlay />
-    </MpDrawer>
+          <div class="caf-sheet__notify">
+            <span class="caf-sheet__flabel">Notify me</span>
+            <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
+            <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
+          </div>
+          <div class="caf-sheet__actions">
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="autoSheet.open = false">Cancel</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" :disabled="!autoSheetValid" @click="confirmAutoSheet">Turn on automatic approval</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
-    <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
+  <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
 </template>
 
 <style scoped>
-.caf-bar { flex-shrink: 0; min-height: 72px; box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6); display: flex; align-items: center; }
+.caf-bar { flex-shrink: 0; min-height: 72px; box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; }
 .caf-bar__left { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .caf-crumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
 .caf-crumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .caf-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
+.caf-draft-note { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
 
 .caf-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
-.caf-inner { max-width: 640px; }
-/* Mirror the edit-task form grid so MpFormControl fields get a definite width. */
-.caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 640px; align-items: start; }
+/* Wide enough that the Review step can put the 680px summary column and the chat
+   panel side by side; the stepper is capped narrower via its own wrapper. */
+.caf-inner { max-width: 1400px; }
+.caf-stepper-wrap { max-width: 1040px; }
+.caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 680px; align-items: start; }
 .caf-form > * { grid-column: 1 / 7; min-width: 0; }
 .caf-field--half { grid-column: 1 / 4; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.caf-hint--tight { margin-top: 2px; max-width: 460px; }
+.caf-hidden-file { display: none; }
+.caf-step-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.caf-plain-label { display: block; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+
+/* Avatar */
+.caf-avatar-row { display: flex; gap: var(--mp-spacing-4, 16px); align-items: flex-start; }
+.caf-avatar-preview { width: 72px; height: 72px; flex: 0 0 auto; border-radius: var(--mp-radii-lg, 12px); object-fit: contain; background: #e6ddf7; }
+.caf-avatar-choices { flex: 1; min-width: 0; }
+.caf-avatar-grid { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2); }
+.caf-avatar-opt { width: 44px; height: 44px; padding: 0; border: 2px solid transparent; border-radius: var(--mp-radii-md, 8px); background: #f1f3f4; cursor: pointer; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; color: var(--mp-icon-default); }
+.caf-avatar-opt img { width: 100%; height: 100%; object-fit: contain; }
+.caf-avatar-opt.is-active { border-color: var(--mp-border-selected, #029861); }
+.caf-avatar-upload { background: var(--mp-background-neutral-subtle); }
+
+/* Textarea + optimize */
+.caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+.caf-ta:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
+.caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
+.caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 200px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
+.caf-ta__input--sm { min-height: 64px; }
+.caf-ta__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+.caf-optimize:disabled { opacity: 0.7; cursor: default; }
+.caf-diff { margin-top: var(--mp-spacing-2); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); }
+.caf-diff__label { margin: 0 0 var(--mp-spacing-1); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.caf-diff__before { margin: 0 0 var(--mp-spacing-2); font-size: 13px; color: var(--mp-text-secondary); text-decoration: line-through; }
+.caf-diff__after { margin: 0; font-size: 13px; color: var(--mp-text-default); }
+.caf-diff__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
+
 .caf-kb-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
-.caf-kb-file { display: none; }
-/* 32px before "Add all workspace content" (12px on top of the 20px grid row-gap). */
 .caf-field--gap32 { margin-top: var(--mp-spacing-3, 12px); }
 .caf-kb-list { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; }
 .caf-kb-chip { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
@@ -495,20 +846,6 @@ function save() {
 .caf-kb-chip__sub { flex: 0 0 auto; font-size: 11px; color: var(--mp-text-secondary); }
 .caf-kb-chip__x { margin-left: auto; flex: 0 0 auto; display: inline-flex; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); padding: 2px; border-radius: 4px; }
 .caf-kb-chip__x:hover { background: var(--mp-background-neutral, #eceef0); color: var(--mp-icon-default, #536062); }
-.caf-kb-empty { margin: var(--mp-spacing-3) 0 0; font-size: 13px; color: var(--mp-text-secondary); }
-
-/* Textarea with a docked "Optimize" button inside the box */
-.caf-ta { border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
-/* Focus matches MpInput/MpSelect exactly: bold-gray border + 1px gray ring. */
-.caf-ta:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
-.caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
-.caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
-.caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
-.caf-ta__foot { display: flex; justify-content: flex-end; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
-.caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
-.caf-optimize:disabled { opacity: 0.7; cursor: default; }
-.caf-hint--tight { margin-top: 2px; max-width: 420px; }
-.caf-step-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .caf-ws-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
 .caf-areas { margin-top: var(--mp-spacing-3); }
@@ -519,41 +856,100 @@ function save() {
 .caf-area-logo--img { object-fit: contain; }
 span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
 
-/* MpPopover-backed select trigger — styled like a Pixel form input */
 .caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
 .caf-select:hover { border-color: var(--mp-border-bold, #8c9596); }
-.caf-select:focus-visible { outline: none; border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .caf-select__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .caf-select__chev { flex: 0 0 auto; width: 20px; height: 20px; color: var(--mp-icon-default, #536062); }
 
-.caf-skills { display: flex; flex-direction: column; }
+/* Skills */
+.caf-skill-search { margin-top: var(--mp-spacing-3); }
+.caf-skills { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
 .caf-skill { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4, 16px) 0; border-bottom: 1px solid var(--mp-border-default); }
 .caf-skill__main { min-width: 0; }
-.caf-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.caf-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .caf-skill__mod { font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 1px 8px; }
-.caf-skill__desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.caf-skill__actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2); }
-.caf-skill__chip { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+/* Risk badges — fixed label + Pixel semantic tone (never colour alone) */
+.caf-risk { font-size: 11px; font-weight: 600; border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; line-height: 1.5; white-space: nowrap; }
+.caf-risk--neutral { color: var(--mp-text-secondary, #536062); background: var(--mp-background-neutral-subtle, #f1f3f4); }
+.caf-risk--info { color: #165082; background: #e7f0f7; }
+.caf-risk--warning { color: #b54708; background: #fdf1e6; }
+.caf-risk--danger { color: #b42318; background: #fbeceb; }
+.caf-skill__desc { margin: 4px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.caf-skill__needs { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.caf-need-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 2px 10px 2px 6px; }
+.caf-need-chip--missing { color: var(--mp-text-warning, #b54708); }
+.caf-need-logo { width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px; object-fit: contain; }
+.caf-need-logo--mono { display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #fff; line-height: 1; }
+.caf-approval { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
+.caf-approval__chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+.caf-approval__chip--auto { color: #6941C6; background: #f4f0fb; }
+.caf-approval__btn { display: inline-flex; align-items: center; gap: 2px; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; color: var(--mp-text-link); padding: 2px 4px; }
+.caf-appr-opt { display: flex; flex-direction: column; gap: 2px; }
+.caf-appr-opt__t { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.caf-appr-opt__d { font-size: 12px; color: var(--mp-text-secondary); }
 
-.caf-vis-row { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.caf-people { margin-top: var(--mp-spacing-5, 20px); }
+/* Visibility */
+.caf-vis-opts { display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.caf-vis-opt { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
+.caf-roles { display: flex; flex-direction: column; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-2); }
+.caf-role-group__title { margin: 0 0 var(--mp-spacing-1); font-size: 12px; font-weight: 600; color: var(--mp-text-secondary); }
+.caf-role { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); cursor: pointer; }
+.caf-role__name { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-role__count { font-size: 12px; color: var(--mp-text-secondary); }
+.caf-people { margin-top: var(--mp-spacing-3); }
 .caf-people__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--mp-spacing-3, 12px); }
-.caf-addpeople { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.caf-addpeople:hover { text-decoration: underline; text-underline-offset: 2px; }
 .caf-person { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); }
 .caf-person__info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .caf-person__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .caf-person__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-person__x { border: none; background: none; cursor: pointer; color: var(--mp-icon-default); display: inline-flex; }
+.caf-audience { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.caf-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6, 24px); max-width: 640px; }
-/* Ghost buttons: no border/ring on hover or focus (was showing a green outline). */
-:deep(.mp-button--variant_ghost:hover),
-:deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
+/* Review */
+.caf-review-head { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.caf-review-avatar { width: 56px; height: 56px; border-radius: var(--mp-radii-lg, 12px); object-fit: contain; background: transparent; }
+.caf-review-head > div { flex: 1; min-width: 0; }
+.caf-review-name { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
+.caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.caf-review-sec { position: relative; padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default); }
+.caf-review-sec h3 { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
+.caf-review-sec--warn h3 { color: #6941C6; }
+.caf-review-line { display: grid; grid-template-columns: 110px 1fr; gap: var(--mp-spacing-3); margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.caf-review-line span:first-child { color: var(--mp-text-secondary); }
+.caf-review-edit { position: absolute; top: var(--mp-spacing-4); right: 0; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 12px; color: var(--mp-text-link); }
+.caf-willact { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: 6px 0; font-size: var(--mp-font-sizes-sm); }
+.caf-willact__name { color: var(--mp-text-default); font-weight: 500; }
+.caf-willact__cond { color: #6941C6; }
+
+.caf-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6, 24px); max-width: 680px; }
+:deep(.mp-button--variant_ghost:hover), :deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
 
 .caf-emplist { margin-top: var(--mp-spacing-3); }
 .caf-emp { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; border-bottom: 1px solid var(--mp-border-default); cursor: pointer; }
 .caf-emp__info { display: flex; flex-direction: column; }
 .caf-emp__name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .caf-emp__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Review — the summary keeps the exact 680px form width from earlier steps; the
+   chat panel sits after it, filling the remaining stage width. */
+.caf-review-2col { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: 680px minmax(0, 1fr); gap: var(--mp-spacing-8, 32px); align-items: start; }
+@media (max-width: 1080px) { .caf-review-2col { grid-template-columns: 1fr; } }
+.caf-review-col { min-width: 0; }
+.caf-review-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-6, 24px); }
+/* Chat wrapper — a drawer-like bordered surface holding the shared panel */
+.caf-chat { position: sticky; top: 0; height: 620px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+
+/* Approval-mode confirmation sheet (top-aligned, like ConfirmModal) */
+.caf-sheet-enter-active, .caf-sheet-leave-active { transition: opacity 200ms ease; }
+.caf-sheet-enter-from, .caf-sheet-leave-to { opacity: 0; }
+.caf-sheet-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; align-items: flex-start; justify-content: center; }
+.caf-sheet { width: min(480px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
+.caf-sheet__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
+.caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
+.caf-sheet__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3); }
+.caf-sheet__f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
+.caf-sheet__confirm { margin-top: var(--mp-spacing-4); }
+.caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); flex-wrap: wrap; }
+.caf-sheet__flabel { font-size: 12px; color: var(--mp-text-secondary); }
+.caf-sheet__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 </style>
