@@ -1,8 +1,20 @@
 import { reactive } from 'vue'
 import type { ReviewFile, FileClassification } from './types'
 import { VENDORS } from './master'
+import { loadSnapshot, saveSnapshot } from './persist'
 
-export const reviewFiles = reactive<ReviewFile[]>([
+const EXP_KEY = 'review-files-expenses-v1'
+const PI_KEY = 'review-files-pi-v1'
+
+// A row caught mid-scan when the tab closed can't resume (its file bytes were
+// only in memory), so clear the transient flags on load — it just shows as an
+// uploaded, not-yet-scanned row (filename only).
+function sanitizeReviewFiles(rows: ReviewFile[]): ReviewFile[] {
+  for (const r of rows) { r.scanning = false; r.processing = false }
+  return rows
+}
+
+const SEED_EXPENSES: ReviewFile[] = [
   { id: 'RF001', file: 'invoice_scan_001.pdf',  number: 'INV/VII/2026/0142',    beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  confidence: 96, classification: 'bill',         date: '2026-07-01', amount: 12_500_000 },
   { id: 'RF002', file: 'receipt_002.jpg',       number: 'KWT-070226-018',       beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        confidence: 88, classification: 'receipt',      date: '2026-07-02', amount: 1_250_000  },
   { id: 'RF003', file: 'scan_0003.png',         number: undefined,              beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      confidence: 54, classification: 'unclassified', date: '2026-07-03', amount: 8_200_000  },
@@ -17,9 +29,20 @@ export const reviewFiles = reactive<ReviewFile[]>([
   { id: 'RF012', file: 'travel_receipt_012.jpg',number: 'RCP20260712',          beneficiary: { id: 'V010', name: 'CV Prima Sentosa Raya' },       confidence: 85, classification: 'receipt',      date: '2026-07-12', amount: 7_800_000  },
   { id: 'RF013', file: 'software_license.csv',  number: '0037/INV-SW/2026',     beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        confidence: 91, classification: 'bill',         date: '2026-07-13', amount: 5_200_000  },
   { id: 'RF014', file: 'marketing_bill.pdf',    number: undefined,              beneficiary: { id: 'V005', name: 'CV Berkah Utama Indonesia' },   confidence: 47, classification: 'unclassified', date: '2026-07-14', amount: 26_500_000 },
-])
+]
+
+// User uploads + OCR results survive refresh via a localStorage snapshot (like the
+// other mock tables); the seed is used only before any snapshot exists. resetDb()
+// (Reset demo data) clears it back to the seed.
+export const reviewFiles = reactive<ReviewFile[]>(sanitizeReviewFiles(loadSnapshot<ReviewFile>(EXP_KEY) ?? SEED_EXPENSES))
 
 let reviewFileIdSeq = 0
+// Time-based unique id so a new upload never collides with a persisted row's id
+// after a refresh (the counter resets, but snapshot rows keep their old ids —
+// a collision would map the review preview to the wrong stored file blob).
+function nextReviewFileId(): string {
+  return `RF-U-${Date.now().toString(36)}-${(++reviewFileIdSeq).toString(36)}`
+}
 
 /** Expenses and Purchase invoices each keep their own independent review
  *  queue — a file uploaded from one tab never silently appears on the other;
@@ -52,7 +75,7 @@ function randomDocNumber(classification: FileClassification): string | undefined
 export function addProcessingReviewFile(filename: string, surface: ReviewSurface = 'expenses'): ReviewFile {
   const queue = queueFor(surface)
   const row: ReviewFile = {
-    id: `RF-NEW-${++reviewFileIdSeq}`,
+    id: nextReviewFileId(),
     file: filename,
     number: undefined,
     beneficiary: { id: '', name: '' },
@@ -63,22 +86,23 @@ export function addProcessingReviewFile(filename: string, surface: ReviewSurface
     processing: true,
   }
   queue.unshift(row)
+  persistReviewFiles()
 
   // Simulated OCR extraction pass — real values land ~1.2-2.2s later, same row.
   const delay = 1200 + Math.random() * 1000
   setTimeout(() => resolveProcessingReviewFile(row.id, queue), delay)
 
-  return row
+  return queue[0]!
 }
 
 /** Drop a freshly-UPLOADED file into the review table with OCR NOT yet run —
  *  only the filename shows; number/vendor/confidence/classification/date/amount
  *  stay blank until OCR runs later on the row. (Separate from the auto-scanning
  *  `addProcessingReviewFile` above.) */
-export function addUploadedReviewFile(filename: string, surface: ReviewSurface = 'expenses'): ReviewFile {
+export function addUploadedReviewFile(filename: string, surface: ReviewSurface = 'expenses', by = 'Rizal Candra'): ReviewFile {
   const queue = queueFor(surface)
   const row: ReviewFile = {
-    id: `RF-NEW-${++reviewFileIdSeq}`,
+    id: nextReviewFileId(),
     file: filename,
     number: undefined,
     beneficiary: { id: '', name: '' },
@@ -88,9 +112,14 @@ export function addUploadedReviewFile(filename: string, surface: ReviewSurface =
     amount: 0,
     processing: false,
     scanned: false,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: by,
   }
   queue.unshift(row)
-  return row
+  persistReviewFiles()
+  // Return the REACTIVE proxy (not the plain row) so background OCR mutations
+  // (scanning → scanned, filled fields) trigger the table to re-render live.
+  return queue[0]!
 }
 
 /** Run OCR on a previously-uploaded row — fills its fields and marks it scanned. */
@@ -103,6 +132,7 @@ export function scanReviewFile(id: string, surface: ReviewSurface = 'expenses'):
     resolveProcessingReviewFile(row.id, queue)
     row.date = new Date().toISOString().slice(0, 10)
     row.scanned = true
+    persistReviewFiles()
   }, 1200 + Math.random() * 1000)
 }
 
@@ -121,6 +151,7 @@ function resolveProcessingReviewFile(id: string, queue: ReviewFile[]): void {
   row.number = randomDocNumber(row.classification)
   row.amount = Math.round((500_000 + Math.random() * 40_000_000) / 1000) * 1000
   row.processing = false
+  persistReviewFiles()
 }
 
 /** Delete one or more review files (bulk or single) from the given surface's
@@ -135,6 +166,7 @@ export function deleteReviewFiles(ids: string[], surface: ReviewSurface = 'expen
       removed++
     }
   }
+  if (removed) persistReviewFiles()
   return removed
 }
 
@@ -147,13 +179,22 @@ export function deleteReviewFiles(ids: string[], surface: ReviewSurface = 'expen
  *  payment receipts, and one document OCR couldn't classify. Each review page
  *  seeds its own extracted content from the scenario FAB (same approach as
  *  BillReviewPage), so only the table-row fields live here. */
-export const purchaseInvoiceReviewFiles = reactive<ReviewFile[]>([
+const SEED_PI: ReviewFile[] = [
   { id: 'PIRF001', file: 'INV-EXP-0426-01.pdf',    number: '0142/INV/2026',        beneficiary: { id: 'V011', name: 'EXPAT Roasters Bali' },        confidence: 94, classification: 'invoice',      date: '2026-04-30', amount: 1_150_000 },
   { id: 'PIRF002', file: 'INV-EXP-0426-02.pdf',    number: 'INV/IV/2026/0089',     beneficiary: { id: 'V012', name: 'PT Kopi Nusantara Jaya' },     confidence: 89, classification: 'invoice',      date: '2026-04-28', amount: 4_320_000 },
   { id: 'PIRF003', file: 'receipt_tera_0417.pdf',  number: 'KWT-TERA-0417',        beneficiary: { id: 'V013', name: 'Tera Logistics' },             confidence: 91, classification: 'receipt',      date: '2026-04-17', amount: 2_400_000 },
   { id: 'PIRF004', file: 'Receipt from PT Inspirasi Digital Eksperiensia.pdf', number: 'Kwitansi 04/17',   beneficiary: { id: 'V014', name: 'PT Inspirasi Digital Eksperiensia' }, confidence: 96, classification: 'receipt', date: '2026-04-17', amount: 800_000 },
   { id: 'PIRF005', file: 'NOTA_3313.pdf',          number: undefined,              beneficiary: { id: '', name: '' },                               confidence: 38, classification: 'unclassified', date: '2026-04-22', amount: 0 },
-])
+]
+
+export const purchaseInvoiceReviewFiles = reactive<ReviewFile[]>(sanitizeReviewFiles(loadSnapshot<ReviewFile>(PI_KEY) ?? SEED_PI))
+
+/** Persist both review queues (user uploads + OCR results) to the mini-DB
+ *  snapshot. Call after every mutation so a refresh keeps the Dropbox intact. */
+export function persistReviewFiles(): void {
+  saveSnapshot(EXP_KEY, reviewFiles)
+  saveSnapshot(PI_KEY, purchaseInvoiceReviewFiles)
+}
 
 /** Move one or more review files out of the Expenses review queue and into
  *  the Purchase invoices staging list (see purchaseInvoiceReviewFiles above).
@@ -169,6 +210,7 @@ export function moveReviewFilesToPurchaseInvoice(ids: string[]): number {
       moved++
     }
   }
+  if (moved) persistReviewFiles()
   return moved
 }
 
@@ -186,5 +228,6 @@ export function moveReviewFilesToExpenses(ids: string[]): number {
       moved++
     }
   }
+  if (moved) persistReviewFiles()
   return moved
 }
