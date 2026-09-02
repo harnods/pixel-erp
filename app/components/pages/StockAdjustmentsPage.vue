@@ -139,6 +139,10 @@ const isAnyAwaiting = computed(() => isAwaiting.value || isCycleAwaiting.value)
 const showCheckbox = computed(() => !(isAnyAwaiting.value && viewAs.value === 'user'))
 const actionsWidth = computed(() => {
   if (!isAnyAwaiting.value) return undefined
+  // Cycle counts hide the approval-log and comments icons, so the ERP width leaves
+  // ~100px of dead space between Status and Approve — wide enough that the button
+  // stops reading as this row's action. Sized to what each flavor actually renders.
+  if (isCycleAwaiting.value) return viewAs.value === 'manager' ? '140px' : '76px'
   return viewAs.value === 'manager' ? '236px' : '148px'
 })
 
