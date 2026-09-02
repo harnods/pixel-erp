@@ -23,6 +23,7 @@ import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ApprovalModeIcon from '~/components/patterns/ApprovalModeIcon.vue'
 type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
@@ -629,7 +630,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
                 <!-- Approval-mode control (only when enabled) -->
                 <div v-if="skillState[s.id]?.enabled" class="caf-approval">
                   <span class="caf-approval__chip" :class="skillState[s.id]!.approvalMode === 'auto' ? 'caf-approval__chip--auto' : ''">
-                    <MpIcon :name="skillState[s.id]!.approvalMode === 'auto' ? 'magic' : 'approval-rules'" size="sm" /> {{ modeChip(s) }}
+                    <ApprovalModeIcon :mode="skillState[s.id]!.approvalMode" :size="14" /> {{ modeChip(s) }}
                   </span>
                   <MpPopover :id="`caf-appr-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                     <MpPopoverTrigger>
@@ -638,10 +639,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
                     <MpPopoverContent :class="css({ minWidth: '280px' })">
                       <MpPopoverList>
                         <MpPopoverListItem :is-active="skillState[s.id]!.approvalMode === 'manual'" @click="setApproval(s, 'manual')">
-                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="approval-rules" size="sm" /> Manually approve</span><span class="caf-appr-opt__d">The agent asks you before acting</span></div>
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><ApprovalModeIcon mode="manual" :size="16" /> Manually approve</span><span class="caf-appr-opt__d">The agent asks you before acting</span></div>
                         </MpPopoverListItem>
                         <MpPopoverListItem :is-disabled="!autoModeAvailable(s).allowed" @click="autoModeAvailable(s).allowed && setApproval(s, 'auto')">
-                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="magic" size="sm" /> Automatically approve</span><span class="caf-appr-opt__d">{{ autoModeAvailable(s).allowed ? 'The agent acts and notifies you' : autoModeAvailable(s).reason }}</span></div>
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><ApprovalModeIcon mode="auto" :size="16" /> Automatically approve</span><span class="caf-appr-opt__d">{{ autoModeAvailable(s).allowed ? 'The agent acts and notifies you' : autoModeAvailable(s).reason }}</span></div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>

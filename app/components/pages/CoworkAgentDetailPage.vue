@@ -12,6 +12,7 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, css, toast,
 } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ApprovalModeIcon from '~/components/patterns/ApprovalModeIcon.vue'
 import {
   getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, coworkConnections, COWORK_ROLES,
   SKILL_RISK_META, canArchiveAgent, archiveAgent, restoreAgent, duplicateAgent, rollbackAgent,
@@ -237,7 +238,7 @@ function roleName(id: string) { return COWORK_ROLES.find((r) => r.id === id)?.na
                       <p class="cad-skill__desc">{{ row.description }}</p>
                     </div>
                     <span class="cad-approval" :class="row.binding.approvalMode === 'auto' ? 'cad-approval--auto' : ''">
-                      <MpIcon :name="row.binding.approvalMode === 'auto' ? 'magic' : 'approval-rules'" size="sm" /> {{ bindingChip(row.binding) }}
+                      <ApprovalModeIcon :mode="row.binding.approvalMode" :size="14" /> {{ bindingChip(row.binding) }}
                     </span>
                   </div>
                   <p v-if="!skillRows.length" class="cad-muted">No skills enabled.</p>
