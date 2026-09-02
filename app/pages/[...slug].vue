@@ -31,12 +31,14 @@ import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCou
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
+import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
+import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
-import { purchaseOrders, purchaseInvoices } from '~/data'
+import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -764,8 +766,8 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
@@ -825,13 +827,11 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
-    if (reviewFiles.length) out['Review files'] = reviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
-    if (purchaseInvoices.length) out['Awaiting Approval'] = purchaseInvoices.length
-    if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
+    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
     return out
   }
   if (currentPageKey.value === 'Purchase requests') {
@@ -959,14 +959,14 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Expenses': {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
-    'Review files': BillsReviewFilesPage,
+    'Dropbox': BillsReviewFilesPage,
   },
   // Purchase invoices reuses the same review-files table over its own queue —
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
-    'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+    'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
   // task/comment icons), context-adapted to purchase requests.
@@ -1066,7 +1066,7 @@ function onImportOutsideClick(e: MouseEvent) {
 
 // "Upload bills" (Import dropdown, Expenses) — drops each file into the Review
 // files table as a processing row (see addProcessingReviewFile), same entry
-// point as the dropzone card on the Review files tab itself.
+// point as the dropzone card on the Inbox tab itself.
 const uploadBillsInputEl = ref<HTMLInputElement | null>(null)
 function openUploadBills() {
   importDropdownOpen.value = false
@@ -1076,9 +1076,24 @@ function onUploadBillsChange(ev: Event) {
   const input = ev.target as HTMLInputElement
   if (input.files) {
     for (const f of Array.from(input.files)) addProcessingReviewFile(f.name)
-    selectTab('Review files')
+    selectTab('Dropbox')
   }
   input.value = ''
+}
+
+// "Upload vendor invoices" (Import dropdown, Purchase invoices) — opens the OCR
+// dropzone modal; on Upload the files are handed to the upload center (progress
+// shows in the header activity popover) and land in the Inbox, where OCR runs.
+const vendorUploadModalOpen = ref(false)
+function openVendorUploadModal() {
+  importDropdownOpen.value = false
+  vendorUploadModalOpen.value = true
+}
+function onVendorInvoicesUpload(names: string[]) {
+  if (!names.length) return
+  startUpload(names, 'purchase-invoices', 'Upload vendor invoices')
+  uploadCenterOpen.value = true       // pop the header activity center so progress is visible
+  selectTab('Dropbox')
 }
 
 // ── Stock adjustments "Actions" dropdown (page title) ─────────────────────
@@ -1610,7 +1625,7 @@ function startResize(e: MouseEvent) {
               <!-- Group 1: spreadsheet + upload vendor invoices (OCR) -->
               <div class="import-group import-group--bordered">
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start import-item--ai">
+                <MpButton variant="ghost" class="import-item import-item--start import-item--ai" @click="openVendorUploadModal">
                   <span>Upload vendor invoices</span>
                   <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
@@ -1828,7 +1843,7 @@ function startResize(e: MouseEvent) {
           @click="purchaseOrdersTab = 'awaiting'"
         >
           Awaiting approval
-          <MpBadge for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
+          <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
         </button>
         <button
           class="page-tab"
@@ -1836,7 +1851,7 @@ function startResize(e: MouseEvent) {
           @click="purchaseOrdersTab = 'rejected'"
         >
           Rejected
-          <MpBadge for="additionalInformation" size="sm" type="critical">{{ poRejectedCount }}</MpBadge>
+          <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poRejectedCount }}</MpBadge>
         </button>
       </div>
 
@@ -2192,6 +2207,14 @@ function startResize(e: MouseEvent) {
     @leave="unsavedChangesModal.chooseLeave"
     @draft="unsavedChangesModal.chooseDraft"
     @cancel="unsavedChangesModal.chooseCancel"
+  />
+
+  <!-- Purchase invoices — "Upload vendor invoices" OCR dropzone modal -->
+  <ImportVendorInvoicesModal
+    v-if="vendorUploadModalOpen"
+    :open="true"
+    @close="vendorUploadModalOpen = false"
+    @upload="onVendorInvoicesUpload"
   />
 </template>
 

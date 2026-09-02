@@ -29,11 +29,11 @@ const categoryOptions = computed(() => [...new Set(rows.value.map((r) => r.categ
 const categoryLabel = computed(() => categoryOptions.value.find((o) => o.value === statusFilter.value)?.label ?? '')
 
 const columns: TableColumn[] = [
-  { key: 'name',              label: t('Name'),       width: '344px', sortable: true, sortType: 'text'   },
-  { key: 'sku',               label: t('SKU'),        width: '160px', sortable: true, sortType: 'text'   },
-  { key: 'category',          label: t('Category'),   width: '180px',                 sortType: 'text'   },
-  { key: 'unit',              label: t('Unit'),       width: '100px',                 sortType: 'text'   },
-  { key: 'defaultSalesPrice', label: t('Unit price'), width: '184px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'name',              label: t('Name'),       kind: 'name', sortable: true, sortType: 'text'   },
+  { key: 'sku',               label: t('SKU'),        kind: 'number', sortable: true, sortType: 'text'   },
+  { key: 'category',          label: t('Category'),                   sortType: 'text'   },
+  { key: 'unit',              label: t('Unit'),       kind: 'unit',                 sortType: 'text'   },
+  { key: 'defaultSalesPrice', label: t('Unit price'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
 ]
 
 const {

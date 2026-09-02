@@ -67,12 +67,12 @@ const hasActiveFilter = computed(() => !!statusFilter.value || !!priorityFilter.
 function clearFilters() { statusFilter.value = ''; priorityFilter.value = '' }
 
 const columns: TableColumn[] = [
-  { key: 'title',     label: 'Task name',   sortType: 'text', width: '280px' },
-  { key: 'stage',     label: 'Task stage',  width: '150px' },
-  { key: 'relatedTo', label: 'Related to',  sortType: 'text', width: '220px' },
-  { key: 'dueDate',   label: 'Due date',    sortType: 'date', width: '150px' },
-  { key: 'priority',  label: 'Priority',    width: '120px' },
-  { key: 'owner',     label: 'Owner',       sortType: 'text', width: '200px' },
+  { key: 'title',     label: 'Task name',   sortType: 'text', kind: 'name' },
+  { key: 'stage',     label: 'Task stage',  kind: 'status' },
+  { key: 'relatedTo', label: 'Related to',  sortType: 'text', kind: 'name' },
+  { key: 'dueDate',   label: 'Due date',    sortType: 'date', kind: 'date' },
+  { key: 'priority',  label: 'Priority',    kind: 'status' },
+  { key: 'owner',     label: 'Owner',       sortType: 'text', kind: 'name' },
 ]
 
 // ── Kanban ────────────────────────────────────────────────────────────────────

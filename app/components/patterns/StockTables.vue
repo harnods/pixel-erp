@@ -37,19 +37,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 // ── Products table ──────────────────────────────────────────────────────────────
 const allStockColumns: TableColumn[] = [
-  { key: 'name',                label: 'Name',                 width: '320px' },
-  { key: 'sku',                 label: 'SKU',                  width: '200px' },
-  { key: 'barcode',             label: 'Barcode',              width: '170px' },
-  { key: 'category',            label: 'Category',             width: '150px' },
-  { key: 'onHand',              label: 'On hand qty',          width: '120px', align: 'right' },
-  { key: 'reserved',            label: 'Reserved qty',         width: '120px', align: 'right' },
-  { key: 'available',           label: 'Available qty',        width: '120px', align: 'right' },
-  { key: 'onTheWay',            label: 'On the way qty',       width: '130px', align: 'right' },
-  { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right' },
-  { key: 'unit',                label: 'Unit',                 width: '90px'  },
-  { key: 'locations',           label: 'Location',             width: '230px' },
+  { key: 'name',                label: 'Name',                 kind: 'name' },
+  { key: 'sku',                 label: 'SKU',                  kind: 'number' },
+  { key: 'barcode',             label: 'Barcode',              kind: 'number' },
+  { key: 'category',            label: 'Category' },
+  { key: 'onHand',              label: 'On hand qty',          align: 'right' },
+  { key: 'reserved',            label: 'Reserved qty',         align: 'right' },
+  { key: 'available',           label: 'Available qty',        align: 'right' },
+  { key: 'onTheWay',            label: 'On the way qty',       align: 'right' },
+  { key: 'minStock',            label: 'Min. stock',           align: 'right' },
+  { key: 'unit',                label: 'Unit',                 kind: 'unit'  },
+  { key: 'locations',           label: 'Location',             kind: 'address' },
 ]
-const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const stockColVisibility = reactive<Record<string, boolean>>(
   Object.fromEntries(allStockCols.map(c => [c.key, c.key !== 'lastUpdated'])),
 )

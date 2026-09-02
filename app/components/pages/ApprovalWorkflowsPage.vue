@@ -24,14 +24,14 @@ function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 // amountText below) plus truncation on the cell itself, so a long value never
 // bleeds into the next column.
 const columns: TableColumn[] = [
-  { key: 'name',            label: 'Workflow name',     width: '200px', sortType: 'text' },
-  { key: 'description',     label: 'Description',       width: '220px' },
-  { key: 'appliesTo',       label: 'Applies to',        width: '230px', sortType: 'text' },
-  { key: 'minAmount',       label: 'Amount higher than', width: '160px', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels',   width: '130px' },
-  { key: 'createdBy',       label: 'Transaction created by', width: '190px' },
-  { key: 'status',          label: 'Status',            width: '110px', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated',      width: '150px' },
+  { key: 'name',            label: 'Workflow name',     kind: 'name', sortType: 'text' },
+  { key: 'description',     label: 'Description',       kind: 'address' },
+  { key: 'appliesTo',       label: 'Applies to',        sortType: 'text' },
+  { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'levels',          label: 'Approval levels'  },
+  { key: 'createdBy',       label: 'Transaction created by' },
+  { key: 'status',          label: 'Status',            kind: 'status', sortType: 'text' },
+  { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
 ]
 
 function appliesToText(row: ApprovalWorkflowRule) {

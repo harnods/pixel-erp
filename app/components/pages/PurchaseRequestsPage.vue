@@ -27,15 +27,15 @@ function viewDetails(id: string) { router.push(`/purchase-requests/${id}`) }
 
 // ─── Column definitions (DATE + NUMBER mirror the Expenses index) ──────────────
 const columns: TableColumn[] = [
-  { key: 'date',             label: t('Date'),             width: '160px',                                 sortType: 'date'   },
-  { key: 'number',           label: t('Number'),           width: '160px', sortable: true,                 sortType: 'number' },
+  { key: 'date',             label: t('Date'),             kind: 'date',                                   sortType: 'date'   },
+  { key: 'number',           label: t('Number'),           kind: 'number', sortable: true,                 sortType: 'number' },
   { key: 'attachment',       label: '',                    width: '52px',  noHeader: true, align: 'center' },
-  { key: 'procurementStaff', label: t('Procurement staff'), width: '200px', sortable: true,                sortType: 'text'   },
-  { key: 'requiredDate',     label: t('Required date'),    width: '160px',                                 sortType: 'date'   },
-  { key: 'status',           label: t('Status'),           width: '160px',                                 sortType: 'text'   },
-  { key: 'totalProducts',    label: t('Total products'),   width: '140px',                 sortable: true,  sortType: 'number' },
-  { key: 'urgency',          label: t('Urgency level'),    width: '160px', sortable: true,                 sortType: 'text'   },
-  { key: 'tags',             label: t('Tags'),             width: '160px'                                  },
+  { key: 'procurementStaff', label: t('Procurement staff'), kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'requiredDate',     label: t('Required date'),    kind: 'date',                                   sortType: 'date'   },
+  { key: 'status',           label: t('Status'),           kind: 'status',                                 sortType: 'text'   },
+  { key: 'totalProducts',    label: t('Total products'),                                   sortable: true,  sortType: 'number' },
+  { key: 'urgency',          label: t('Urgency level'),                    sortable: true,                 sortType: 'text'   },
+  { key: 'tags',             label: t('Tags'),             kind: 'tags'                                    },
 ]
 
 // ─── Rows — newest request first (transactional log), awaiting subset on that tab ──
@@ -166,7 +166,7 @@ function duplicate(pr: PurchaseRequest) {
 function copyLink() { infoToast(t('Link copied')) }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols
   .filter(c => c.label && !c.noHeader)

@@ -63,31 +63,31 @@ const isMigrationPending = computed(() =>
 //  LAST PURCHASE COST 184px ← right | DEFAULT PURCHASE COST 184px ← right |
 //  [actions 44px sticky]
 const columns: TableColumn[] = [
-  { key: 'name',                label: 'Name',                   width: '344px', sortable: true, sortType: 'text'   },
-  { key: 'sku',                 label: 'SKU',                    width: '160px', sortable: true, sortType: 'text'   },
-  { key: 'barcode',             label: 'Barcode',                width: '160px',                 sortType: 'text'   },
-  { key: 'category',            label: 'Category',               width: '160px',                 sortType: 'text'   },
-  { key: 'onHand',              label: 'On hand qty',            width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'reserved',            label: 'Reserved qty',           width: '130px', align: 'right',                 sortType: 'number' },
-  { key: 'available',           label: 'Available qty',          width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'onTheWay',            label: 'In transit qty',         width: '130px', align: 'right',                 sortType: 'number' },
-  { key: 'minStock',            label: 'Min. stock',             width: '104px', align: 'right',                 sortType: 'number' },
-  { key: 'unit',                label: 'Unit',                   width: '96px',                  sortType: 'text'   },
+  { key: 'name',                label: 'Name',                   kind: 'name',   sortable: true, sortType: 'text'   },
+  { key: 'sku',                 label: 'SKU',                    kind: 'number', sortable: true, sortType: 'text'   },
+  { key: 'barcode',             label: 'Barcode',                kind: 'number',                 sortType: 'text'   },
+  { key: 'category',            label: 'Category',                                               sortType: 'text'   },
+  { key: 'onHand',              label: 'On hand qty',            align: 'right', sortable: true, sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved qty',           align: 'right',                 sortType: 'number' },
+  { key: 'available',           label: 'Available qty',          align: 'right', sortable: true, sortType: 'number' },
+  { key: 'onTheWay',            label: 'In transit qty',         align: 'right',                 sortType: 'number' },
+  { key: 'minStock',            label: 'Min. stock',             align: 'right',                 sortType: 'number' },
+  { key: 'unit',                label: 'Unit',                   kind: 'unit',                   sortType: 'text'   },
   // Pricing/costing columns — ERP only, WMS doesn't deal in pricing.
   ...(isWms.value ? [] : [
-    { key: 'defaultSalesPrice',   label: 'Default sales price',    width: '184px', align: 'right' as const, sortable: true, sortType: 'number' as const },
-    { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'lastPurchaseCost',    label: 'Last purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'defaultPurchaseCost', label: 'Default purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'defaultSalesPrice',   label: 'Default sales price',    kind: 'amount' as const, align: 'right' as const, sortable: true, sortType: 'number' as const },
+    { key: 'averageCost',         label: 'Average cost',           kind: 'amount' as const, align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'lastPurchaseCost',    label: 'Last purchase cost',     kind: 'amount' as const, align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'defaultPurchaseCost', label: 'Default purchase cost',  kind: 'amount' as const, align: 'right' as const,                 sortType: 'number' as const },
     // DJP (tax) columns — hidden by default, opt-in via column settings.
-    { key: 'djpCode',             label: 'DJP code',               width: '260px',                                          sortType: 'text' as const },
-    { key: 'djpUnit',             label: 'DJP unit',                width: '140px',                                         sortType: 'text' as const },
+    { key: 'djpCode',             label: 'DJP code',               kind: 'number' as const,                                          sortType: 'text' as const },
+    { key: 'djpUnit',             label: 'DJP unit',                kind: 'unit' as const,                                          sortType: 'text' as const },
   ]),
 ]
 
 // Column show/hide (Name always on; Last updated / DJP columns appended, hidden by default)
 const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpCode', 'djpUnit'])
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))

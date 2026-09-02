@@ -71,6 +71,41 @@ export function addProcessingReviewFile(filename: string, surface: ReviewSurface
   return row
 }
 
+/** Drop a freshly-UPLOADED file into the review table with OCR NOT yet run —
+ *  only the filename shows; number/vendor/confidence/classification/date/amount
+ *  stay blank until OCR runs later on the row. (Separate from the auto-scanning
+ *  `addProcessingReviewFile` above.) */
+export function addUploadedReviewFile(filename: string, surface: ReviewSurface = 'expenses'): ReviewFile {
+  const queue = queueFor(surface)
+  const row: ReviewFile = {
+    id: `RF-NEW-${++reviewFileIdSeq}`,
+    file: filename,
+    number: undefined,
+    beneficiary: { id: '', name: '' },
+    confidence: 0,
+    classification: 'unclassified',
+    date: '',
+    amount: 0,
+    processing: false,
+    scanned: false,
+  }
+  queue.unshift(row)
+  return row
+}
+
+/** Run OCR on a previously-uploaded row — fills its fields and marks it scanned. */
+export function scanReviewFile(id: string, surface: ReviewSurface = 'expenses'): void {
+  const queue = queueFor(surface)
+  const row = queue.find((rf) => rf.id === id)
+  if (!row || row.scanned) return
+  row.processing = true
+  setTimeout(() => {
+    resolveProcessingReviewFile(row.id, queue)
+    row.date = new Date().toISOString().slice(0, 10)
+    row.scanned = true
+  }, 1200 + Math.random() * 1000)
+}
+
 /** OCR can land on any of the four classifications no matter which surface
  *  the file was uploaded to — a bill dropped into Purchase invoices' queue
  *  still shows up there as "Expenses" until someone moves it out. */
@@ -104,7 +139,7 @@ export function deleteReviewFiles(ids: string[], surface: ReviewSurface = 'expen
 }
 
 /** Purchase invoices' own review queue — the counterpart to `reviewFiles`
- *  above, read by the Review files tab on Purchase invoices and by the shared
+ *  above, read by the Inbox tab on Purchase invoices and by the shared
  *  /purchase-invoices/review/:id route. Files bulk-moved out of the Expenses
  *  queue ("Move files to Purchase invoice") land here too.
  *

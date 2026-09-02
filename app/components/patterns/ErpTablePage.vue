@@ -34,6 +34,7 @@
 
 import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
+import { columnWidth, type ColumnKind } from './columnWidths'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
 const slots = useSlots()
@@ -42,6 +43,13 @@ const { t } = useLocale()
 export interface TableColumn {
   key: string
   label: string
+  /** Semantic width class — the SOURCE OF TRUTH for column widths. Sets a
+   *  consistent [min,max] range per type (see columnWidths.ts + the design doc).
+   *  Prefer this over `width` for every semantic column so widths stay uniform
+   *  across all tables. `width` still wins if both are set (escape hatch). */
+  kind?: ColumnKind
+  /** Explicit fixed width. Use ONLY for layout-only columns (e.g. a 40px icon)
+   *  or as an escape hatch; semantic columns should use `kind` instead. */
   width?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
@@ -52,6 +60,11 @@ export interface TableColumn {
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
   noSkeleton?: boolean // skip the loading skeleton bar — use for layout-only columns (spacer, action columns)
+  /** Marks a trailing action column (e.g. an Approve + icon-button group) that must
+   *  hug the right edge next to the sticky [...] column. The flexible spacer is then
+   *  placed BEFORE this column instead of before the actions slot, so the whole action
+   *  group is pushed right with no gap. Only the first flagged column matters. */
+  isTrailingAction?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -130,14 +143,20 @@ const emit = defineEmits<{
   selectionChange: [count: number]
 }>()
 
-// Column width — pinned to `col.width` exactly (width + minWidth), unless this is
-// the last column AND the page opted into `lastColumnFlexible`, in which case only
-// `minWidth` is set so it can grow into leftover table width instead of staying
-// fixed. See the `lastColumnFlexible` prop doc above.
-function colStyle(col: TableColumn, ci: number) {
-  if (!col.width) return {}
-  if (props.lastColumnFlexible && ci === props.columns.length - 1) return { minWidth: col.width }
-  return { width: col.width, minWidth: col.width }
+// Column width resolution (source of truth = columnWidths.ts):
+//  • explicit `width`  → pinned exactly (min = max = width). Escape hatch /
+//    layout-only columns (e.g. a 40px icon column). Kept for backward compat.
+//  • `kind` (or unset) → the standard [minWidth, maxWidth] range for that type.
+//    Under table-layout:auto the column grows to fill up to `maxWidth` and never
+//    shrinks below `minWidth`; the flexible spacer soaks up any remainder so the
+//    caps hold and the sticky actions column stays flush right.
+function colStyle(col: TableColumn) {
+  // After first measurement: exact px from the distribution (table-layout:fixed).
+  const w = resolvedWidths.value[col.key]
+  if (w != null) { const p = `${w}px`; return { width: p, minWidth: p, maxWidth: p } }
+  // Fallback before measurement (SSR / first paint): pinned width, or the kind range.
+  if (col.width) return { width: col.width, minWidth: col.width, maxWidth: col.width }
+  return columnWidth(col.kind)
 }
 
 // ERP column sort: picking the already-active direction clears the sort (back to
@@ -339,7 +358,51 @@ function updateRowAlignment() {
   tallRows.value = next
 }
 
+// ── Column width distribution ────────────────────────────────────────────────
+// CSS table cells don't honour max-width under table-layout:auto (long content
+// blows past the cap), so we keep table-layout:fixed and compute exact px widths
+// here: every column starts at its `min`, then shares the leftover container width
+// growing toward its `max` (proportional to remaining capacity). Anything left
+// over after all columns hit their max is soaked up by the flexible spacer column,
+// so the caps hold and the sticky actions column stays flush right. See colStyle +
+// columnWidths.ts + docs/patterns/ErpTablePage.md.
+const resolvedWidths = ref<Record<string, number>>({})
+function px(v?: string) { const n = parseFloat(v ?? ''); return Number.isFinite(n) ? n : 0 }
+function computeWidths() {
+  const wrap = tableWrapperEl.value
+  if (!wrap) return
+  const cols = props.columns
+  if (!cols.length) { resolvedWidths.value = {}; return }
+  const ranges = cols.map(c => {
+    if (c.width) { const w = px(c.width); return { min: w, max: w } }
+    const r = columnWidth(c.kind); return { min: px(r.minWidth), max: px(r.maxWidth) }
+  })
+  const actionsW = slots.actions ? px(actionsColWidth.value) : 0
+  const widths = ranges.map(r => r.min)
+  let avail = wrap.clientWidth - widths.reduce((s, w) => s + w, 0) - actionsW
+  for (let guard = 0; guard < 8 && avail > 0.5; guard++) {
+    const growers = ranges.map((r, i) => ({ i, cap: r.max - widths[i] })).filter(g => g.cap > 0.5)
+    const totalCap = growers.reduce((s, g) => s + g.cap, 0)
+    if (totalCap <= 0.5) break
+    const give = Math.min(avail, totalCap)
+    let used = 0
+    for (const g of growers) {
+      const add = Math.min(give * (g.cap / totalCap), ranges[g.i].max - widths[g.i])
+      widths[g.i] += add; used += add
+    }
+    avail -= used
+    if (used < 0.5) break
+  }
+  const map: Record<string, number> = {}
+  cols.forEach((c, i) => { map[c.key] = Math.round(widths[i]) })
+  // Skip the write when nothing changed — avoids a ResizeObserver feedback loop.
+  const prev = resolvedWidths.value
+  const same = Object.keys(map).length === Object.keys(prev).length && cols.every(c => prev[c.key] === map[c.key])
+  if (!same) resolvedWidths.value = map
+}
+
 function refresh() {
+  computeWidths()
   checkOverflow()
   updateRowAlignment()
 }
@@ -364,9 +427,20 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
 
 // ─── Bulk bar ─────────────────────────────────────────────────────────────────
 
+// A flexible spacer column soaks up leftover table width so semantic columns hold
+// their max width (table-layout:auto would otherwise stretch them to fill) and the
+// sticky actions [...] column stays flush at the right edge. Present whenever an
+// actions slot exists. Positioned right BEFORE the first trailing-action column (so
+// an action button-group hugs the right edge next to [...]), else after all data
+// columns (right before the actions slot). Collapses to 0 when the table overflows.
+const spacerBeforeIndex = computed(() => {
+  const i = props.columns.findIndex(c => c.isTrailingAction)
+  return i === -1 ? props.columns.length : i
+})
+
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 1 : 0) +
+  (slots.actions ? 2 : 0) +   // actions column + its flexible spacer
   (props.hasAiChat ? 1 : 0)
 )
 
@@ -407,11 +481,17 @@ const bulkCountLabel = computed(() => {
         <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
              Skipped on the full empty state so the table fits the container (no scroll). -->
         <colgroup v-if="!isFullEmpty">
-          <col
-            v-for="(col, ci) in columns"
-            :key="col.key"
-            :style="colStyle(col, ci)"
-          />
+          <!-- Flexible spacer — the ONLY auto-width column, so table-layout:fixed
+               hands it all the leftover width and every real column (incl. actions)
+               keeps its declared width. Effect: the trailing action group + [...] are
+               always pinned to the far right edge. Collapses to 0 on overflow. It is
+               placed before the first trailing-action column (spacerBeforeIndex), else
+               right before the actions slot. -->
+          <template v-for="(col, ci) in columns" :key="col.key">
+            <col v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-col-spacer" />
+            <col :style="colStyle(col)" />
+          </template>
+          <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
           <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
@@ -452,9 +532,9 @@ const bulkCountLabel = computed(() => {
 
           <!-- Normal column headers -->
           <tr v-else>
+            <template v-for="(col, ci) in columns" :key="col.key">
+            <th v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
             <th
-              v-for="(col, ci) in columns"
-              :key="col.key"
               class="erp-th"
               :class="{
                 'erp-th--sortable': col.sortable && !col.sortType,
@@ -464,7 +544,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--fixed':    col.isFixed,
               }"
               :data-col="col.key"
-              :style="colStyle(col, ci)"
+              :style="colStyle(col)"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
               <span class="th-inner">
@@ -518,6 +598,10 @@ const bulkCountLabel = computed(() => {
                 </MpPopover>
               </span>
             </th>
+            </template>
+
+            <!-- Flexible spacer th (no trailing-action column → sits before the actions slot) -->
+            <th v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
 
             <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
@@ -549,9 +633,9 @@ const bulkCountLabel = computed(() => {
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
+              <template v-for="(col, ci) in columns" :key="col.key">
+              <td v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
-                v-for="(col, ci) in columns"
-                :key="col.key"
                 class="erp-td"
                 :class="{
                   'erp-td--right':  col.align === 'right',
@@ -577,6 +661,10 @@ const bulkCountLabel = computed(() => {
                   <template v-if="typeof row[col.key] !== 'boolean'">{{ row[col.key] }}</template>
                 </slot>
               </td>
+              </template>
+
+              <!-- Flexible spacer td (no trailing-action column → sits before the actions slot) -->
+              <td v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
 
               <!-- Actions td — sticky right -->
               <td
@@ -615,9 +703,9 @@ const bulkCountLabel = computed(() => {
           <!-- Skeleton rows — first load (alone) OR pagination change (appended below data) -->
           <template v-if="showSkeleton">
             <tr v-for="n in 3" :key="`sk-${n}`" class="erp-tr erp-tr--skeleton">
+              <template v-for="(col, ci) in columns" :key="col.key">
+              <td v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
-                v-for="col in columns"
-                :key="col.key"
                 class="erp-td"
                 :class="{
                   'erp-td--right':  col.align === 'right',
@@ -634,6 +722,8 @@ const bulkCountLabel = computed(() => {
                   :width="col.align === 'right' ? '56px' : '72px'"
                 />
               </td>
+              </template>
+              <td v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
               <!-- match data-row columns during pagination; hidden on first load -->
               <td
                 v-if="$slots.actions && !loading"
@@ -782,8 +872,15 @@ const bulkCountLabel = computed(() => {
 
 .erp-table {
   width: 100%;
-  min-width: max-content;     /* force overflow so sticky works */
-  table-layout: fixed;        /* honour column widths; prevent content from expanding cells */
+  /* table-layout:fixed so declared column widths hold exactly and long content
+     ellipsizes/wraps instead of blowing past the column's cap (auto layout ignores
+     cell max-width). Exact px widths come from the JS distribution (computeWidths):
+     each column grows from its min toward its max, and the flexible spacer column
+     soaks up any remainder so caps hold and the sticky actions column stays flush
+     right. When columns' min-widths exceed the container the table overflows and the
+     wrapper scrolls (sticky columns keep working). */
+  table-layout: fixed;
+  min-width: max-content;     /* force overflow so sticky works when mins don't fit */
   border-collapse: collapse;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -909,6 +1006,21 @@ const bulkCountLabel = computed(() => {
   width: var(--erp-actions-width, 52px);
   min-width: var(--erp-actions-width, 52px);
   max-width: var(--erp-actions-width, 52px);
+}
+
+/* Flexible spacer column — the only auto-width column, so table-layout:fixed
+   hands it ALL the leftover width (every real column, incl. actions, keeps its
+   declared width). This pins the actions [...] column to the far-right edge on
+   wide tables. It has no min-width, so on horizontal overflow it collapses to 0
+   and the actions column sits flush after the last data column. Empty + not
+   sticky; only the row separator (inherited border) crosses it. */
+.erp-col-spacer {
+  width: auto;
+}
+.erp-th--spacer,
+.erp-td--spacer {
+  padding: 0;
+  min-width: 0;
 }
 
 /* AI chat header column */

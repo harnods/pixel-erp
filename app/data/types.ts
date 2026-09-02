@@ -157,6 +157,10 @@ export interface ReviewFile {
   /** true while OCR is still extracting this file's fields — only the
    *  filename is known yet, every other column renders a skeleton bar. */
   processing?: boolean
+  /** false = uploaded but OCR hasn't run yet: only the filename is known, every
+   *  other column is blank (no number/vendor/confidence/etc). Absent/true = the
+   *  row's fields have been extracted. */
+  scanned?: boolean
 }
 
 /** A single stored sales invoice line: FKs to the invoice and to the product

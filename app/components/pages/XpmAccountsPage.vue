@@ -102,12 +102,12 @@ const rows = computed<MovementRow[]>(() => walletMovements(selectedWallet.value.
 })))
 
 const columns: TableColumn[] = [
-  { key: 'number',   label: 'Number',           width: '160px', sortable: true, sortType: 'text' },
-  { key: 'date',     label: 'Date',             width: '140px', sortType: 'date' },
-  { key: 'type',     label: 'Transaction type', width: '180px', sortType: 'text' },
-  { key: 'moneyIn',  label: 'Money in',         width: '160px', align: 'right', sortType: 'number' },
-  { key: 'moneyOut', label: 'Money out',        width: '160px', align: 'right', sortType: 'number' },
-  { key: 'balance',  label: 'Balance',          width: '160px', align: 'right' },
+  { key: 'number',   label: 'Number',           kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'date',     label: 'Date',             kind: 'date', sortType: 'date' },
+  { key: 'type',     label: 'Transaction type', sortType: 'text' },
+  { key: 'moneyIn',  label: 'Money in',         kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'moneyOut', label: 'Money out',        kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'balance',  label: 'Balance',          kind: 'amount', align: 'right' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))

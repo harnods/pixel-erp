@@ -55,7 +55,7 @@ function toISODate(display: string) {
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
 function goExpenses() {
-  router.push({ path: '/expenses', query: { tab: 'Review files' } })
+  router.push({ path: '/expenses', query: { tab: 'Dropbox' } })
 }
 
 // ── The file under review + its position in the queue ("3 of 5") ─────────────

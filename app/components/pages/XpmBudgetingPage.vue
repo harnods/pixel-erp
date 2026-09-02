@@ -44,12 +44,12 @@ const {
 })
 
 const columns: TableColumn[] = [
-  { key: 'scope',    label: 'Scope',    width: '200px' },
-  { key: 'period',   label: 'Period',   width: '140px' },
-  { key: 'category', label: 'Category', width: '180px' },
-  { key: 'cap',      label: 'Cap',      width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'spent',    label: 'Spent',    width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'type',     label: 'Type',     width: '140px' },
+  { key: 'scope',    label: 'Scope'      },
+  { key: 'period',   label: 'Period'     },
+  { key: 'category', label: 'Category'   },
+  { key: 'cap',      label: 'Cap',      kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'spent',    label: 'Spent',    kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'type',     label: 'Type'       },
 ]
 
 // ── "Set budget" drawer, opened from the shell title-bar action bus ──

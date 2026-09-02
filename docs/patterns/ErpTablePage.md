@@ -141,8 +141,11 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
     the table (styled `::-webkit-scrollbar` + `scrollbar-width: thin`), so users
     without a trackpad can always drag to scroll left/right (instead of an auto-hiding
     overlay bar).
-* The table uses `min-width: max-content` so wide column definitions can create the
-    horizontal overflow needed for sticky behaviour.
+* The table uses `table-layout: auto` with per-column min/max widths (see the width
+    standard above). When the columns' min-widths exceed the container the table
+    grows past 100% and the wrapper scrolls, giving the horizontal overflow needed
+    for sticky behaviour; otherwise columns grow to their max and the flexible
+    spacer column soaks up the rest.
 * If `hasAiChat` is enabled, the AI column is the outermost sticky-right column
     (`right: 0`, width 28px). The actions/fixed column shifts left by 28px.
 * If the action slot contains more than one kebab/icon button, set `actionsWidth`
@@ -153,21 +156,53 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 
 ***
 
-## Standard Columns
+## Column width standard — SOURCE OF TRUTH
+
+> **This is the single source of truth for ERP table column widths.** Every table
+> in the repo must use it so a "date" column is the same width everywhere, a "name"
+> column the same, and so on. The same values live in code at
+> [`columnWidths.ts`](../../app/components/patterns/columnWidths.ts) — keep the two
+> in sync.
+>
+> **How to apply:** set the column's `kind` (NOT a hand-picked pixel `width`):
+> ```ts
+> const columns: TableColumn[] = [
+>   { key: 'date',   label: 'Date',   kind: 'date',   sortType: 'date' },
+>   { key: 'number', label: 'Number', kind: 'number', sortType: 'text' },
+>   { key: 'vendor', label: 'Vendor', kind: 'name',   sortType: 'text' },
+>   { key: 'amount', label: 'Total',  kind: 'amount', align: 'right', sortType: 'number' },
+> ]
+> ```
+
+Each `kind` defines a **[min, max]** width range. The column grows to use available
+width up to its **max** and never shrinks below its **min**; the table's flexible
+spacer column absorbs any width beyond the maxes so the caps hold and the sticky
+actions `[...]` column stays flush right. Fixed types set min = max.
+
+| `kind` | Min width | Max width | Use for |
+| ------ | --------- | --------- | ------- |
+| `date` | **160px** | **160px** (fixed) | Any date column (created, transaction, etc.) — `DD/MM/YYYY` |
+| `number` | **160px** | **240px** | Document / transaction number (often a link) |
+| `name` | **240px** | **280px** | Vendor / customer / beneficiary / warehouse / product — any entity name |
+| `status` | **128px** | **160px** | Status column rendered with a badge (`ErpStatusBadge`) |
+| `amount` | **160px** | **240px** | Any monetary amount (balance due, total, price) — right-aligned, IDR |
+| `tags` | **160px** | **240px** | Tag chips (`ErpTagList`) |
+| `unit` | **128px** | **128px** (fixed) | Unit of measurement (pcs, kg, …) |
+| `address` | **200px** | **240px** | Address, or any content that can wrap to multiple lines |
+| `default` (unset) | **160px** | **240px** | Anything not covered above |
+
+**Non-semantic columns** keep an explicit `width` instead of a `kind`:
 
 | Column | Width | Align | Notes |
 | ------ | ----- | ----- | ----- |
-| Checkbox | — | — | Rendered **inside the first column's cell** (select-all in the header, per-row in the body) via `has-checkbox`. Not a separate column. |
-| Date | 120px (**140px** for running-balance ledger tables) | left | `DD/MM/YYYY`. Use **140px** on transaction ledgers where a prominent linked **Number** column follows immediately (e.g. Cash management → Account transactions / Bank statement) so the date isn't cramped against the link. Plain index pages stay 120px. |
-| Document number | 200px | left | link style |
-| Attachment | 40px | center | `noHeader: true`, `MpIcon name="attachment"` |
-| Customer / Vendor | 240px | left |  |
-| Due date | 108px | left | `DD/MM/YYYY` |
-| Status | 160px | left | `ErpStatusBadge` + optional sub-label |
-| Balance due | 160px | right | IDR format |
-| Total | 160px | right | IDR format |
-| Tags | 160px | left | `MpBadge for="additionalInformation"` |
-| Actions | 44px | center | `MpButton variant="tertiary" left-icon="more-vertical"`, sticky right |
+| Checkbox | — | — | Rendered **inside the first column's cell** via `has-checkbox`. Not a separate column. |
+| Attachment / icon | 40px | center | `noHeader: true`, `width: '40px'` |
+| Due date | use `kind: 'date'` | left | (a date → follows the `date` standard) |
+| Actions `[...]` | 52px (`actionsWidth`) | right | Sticky right kebab; auto-widen via `actionsWidth` only if the slot holds multiple buttons |
+
+> Setting an explicit `width` on a **semantic** column is an escape hatch — avoid
+> it. If a column genuinely needs a different width, prefer adding/adjusting a
+> `kind` here so every table benefits and stays consistent.
 
 ***
 
@@ -195,13 +230,25 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 interface TableColumn {
   key: string
   label: string
-  width?: string
+  kind?: ColumnKind   // SOURCE OF TRUTH for width — see the column-width standard above
+  width?: string      // explicit fixed width; escape hatch / layout-only columns only
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
-  isFixed?: boolean   // sticky right (for a data column; actions are always sticky)
-  noHeader?: boolean  // render empty <th> — use for icon-only columns (e.g. attachment)
+  sortType?: 'text' | 'number' | 'date'
+  isFixed?: boolean          // sticky right (for a data column; actions are always sticky)
+  isTrailingAction?: boolean // action button-group column that must hug the right edge
+                             // next to [...] — the flexible spacer is placed before it
+  noHeader?: boolean         // render empty <th> — use for icon-only columns (e.g. attachment)
+  noSkeleton?: boolean       // skip the loading skeleton bar — layout-only / action columns
 }
 ```
+
+**Width resolution order** (`colStyle`): explicit `width` → pinned exactly (min =
+max = width); otherwise the `kind`'s range (or `default` when `kind` is unset). The
+table uses `table-layout: auto` so these min/max ranges are honoured, plus a
+flexible spacer column that soaks up leftover width — keeping the caps intact and
+the sticky actions `[...]` column flush right. The spacer sits before the first
+`isTrailingAction` column when present, else right before the actions slot.
 
 ## Slots
 

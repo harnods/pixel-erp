@@ -163,7 +163,7 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Purchase invoices': [
     a('New', 'partial', 'title button no @click'), a('Details', 'missing', 'only OCR review route'),
     a('Edit', 'missing'), a('Archive', 'missing'), a('Delete', 'partial', 'dead kebab button'),
-    a('Import', 'partial'), a('Review files (OCR)', 'built'),
+    a('Import', 'partial'), a('Dropbox (OCR)', 'built'),
   ],
   'Purchase orders': [
     a('New', 'built', 'overlay, no URL'), a('Details', 'built', 'overlay, no URL'), a('Edit', 'partial'),

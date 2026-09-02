@@ -15,7 +15,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { purchaseInvoices } from '~/data'
+import { purchaseInvoicesAwaitingApproval } from '~/data'
 import type { PurchaseInvoice } from '~/data'
 
 const { t } = useLocale()
@@ -27,14 +27,22 @@ function approve() {
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',       label: 'Date',        width: '120px',                                 sortType: 'date'   },
-  { key: 'number',     label: 'Number',      width: '200px', sortable: true,                 sortType: 'text'   },
-  { key: 'vendorName', label: 'Vendor',      width: '240px', sortable: true,                 sortType: 'text'   },
-  { key: 'dueDate',    label: 'Due date',    width: '108px',                                 sortType: 'date'   },
-  { key: 'status',     label: 'Status',      width: '160px',                                 sortType: 'text'   },
-  { key: 'amount',     label: 'Balance due', width: '160px', align: 'right', sortable: true,  sortType: 'number' },
-  { key: 'tags',       label: 'Tags',        width: '160px'                                  },
+  { key: 'date',       label: 'Date',        kind: 'date',                                 sortType: 'date'   },
+  { key: 'number',     label: 'Number',      kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'vendorName', label: 'Vendor',      kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'dueDate',    label: 'Due date',    kind: 'date',                                 sortType: 'date'   },
+  { key: 'status',     label: 'Status',      kind: 'status',                                 sortType: 'text'   },
+  { key: 'amount',     label: 'Balance due', kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'tags',       label: 'Tags',        kind: 'tags'                                  },
 ]
+
+// Row-action buttons (Approve + Approval log + Comments) live in their own
+// trailing data column so they sit flush-right yet scroll away on horizontal
+// overflow — only the sticky #actions kebab stays pinned. Not sortable/hideable,
+// so it's kept out of the column-settings menu (see visibleColumns below).
+const rowActionsColumn: TableColumn = {
+  key: 'rowActions', label: '', width: '188px', align: 'right', noHeader: true, noSkeleton: true, isTrailingAction: true,
+}
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +55,7 @@ type Row = PurchaseInvoice & {
 // 'draft' and the balance due is the full amount (nothing paid out yet).
 
 const rows = computed<Row[]>(() =>
-  purchaseInvoices.map(inv => ({
+  purchaseInvoicesAwaitingApproval.map(inv => ({
     ...inv,
     vendorName: inv.vendor.name,
     status: 'draft' as const,
@@ -80,10 +88,10 @@ function seqNo(num: string) {
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
+const visibleColumns = computed<TableColumn[]>(() => [...allCols.filter(c => columnVisibility[c.key]), rowActionsColumn])
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── First-load skeleton (pagination skeleton is handled by ErpTablePage) ─────
@@ -104,7 +112,6 @@ function clearFilters() { search.value = '' }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="228px"
     :loading="loading"
     :search="search"
     :has-active-filter="!!search"
@@ -201,8 +208,8 @@ function clearFilters() { search.value = '' }
       </div>
     </template>
 
-    <!-- ── Actions ── -->
-    <template #actions="{ row }">
+    <!-- ── Row actions (Approve + Approval log + Comments) — scroll away on overflow ── -->
+    <template #cell-rowActions>
       <div class="row-actions">
         <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop="approve()">{{ t('Approve') }}</button>
         <div class="row-actions__icons">
@@ -212,24 +219,28 @@ function clearFilters() { search.value = '' }
           <MpButton class="row-icon-btn" :aria-label="t('Add comment')" @click.stop>
             <MpIcon name="comment" size="md" />
           </MpButton>
-          <MpPopover :id="`pi-awaiting-row-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-            <MpPopoverTrigger>
-              <MpButton class="row-icon-btn" :aria-label="t('More actions')" @click.stop>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="12" cy="5" r="2" />
-                  <circle cx="12" cy="12" r="2" />
-                  <circle cx="12" cy="19" r="2" />
-                </svg>
-              </MpButton>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click.stop>{{ t('View details') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
         </div>
       </div>
+    </template>
+
+    <!-- ── Actions — sticky right: only the [...] kebab stays pinned on horizontal scroll ── -->
+    <template #actions="{ row }">
+      <MpPopover :id="`pi-awaiting-row-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopoverTrigger>
+          <MpButton class="row-icon-btn" :aria-label="t('More actions')" @click.stop>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click.stop>{{ t('View details') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
 
     <template #cell-lastUpdated="{ row }">
@@ -287,10 +298,12 @@ function clearFilters() { search.value = '' }
   white-space: nowrap;
 }
 
-/* Row actions: Approve button + icon button group */
+/* Row actions: Approve button + icon button group — flush to the right edge,
+   sitting just left of the sticky [...] kebab column */
 .row-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--mp-spacing-6);
 }
 

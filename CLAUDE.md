@@ -29,6 +29,28 @@ route silently falls back (`source: "fallback"`, no real model). When starting
 that way, load the env first:
 `set -a; . ./.env; set +a; PORT=4322 node .output/server/index.mjs`.
 
+## Table column widths — MANDATORY standard (no exceptions)
+
+Any page with a table/index/list **MUST** follow the column-width standard — no
+matter what a mockup or ad-hoc request says. This is not a suggestion.
+
+- Set each semantic column's `kind` on its `TableColumn` — **never** hardcode a
+  pixel `width` on a date/number/name/status/amount/tags/unit/address column.
+  Kinds: `date` (160), `number` (160–240), `name` (240–280), `status` (128–160),
+  `amount` (160–240), `tags` (160–240), `unit` (128), `address` (200–240); omit
+  `kind` for `default` (160–240). Only layout-only columns (icon/attachment/
+  checkbox) keep an explicit `width`.
+- Widths are `[min,max]` ranges resolved by `ErpTablePage` (columns grow to max, a
+  flexible spacer soaks up the rest, the `[...]` actions column stays flush right).
+- If a semantic column truly needs a different width, change the range in
+  `columnWidths.ts` (+ the doc) so **every** table benefits — do NOT special-case
+  one table with a pixel width.
+- Always render tables via `ErpTablePage` + `useTableState`; never hand-roll a table.
+
+Source of truth: `docs/patterns/ErpTablePage.md` › "Column width standard" (spec) and
+`app/components/patterns/columnWidths.ts` (values) — keep the two in sync. When
+building/editing a table, load the `erp-table-page` skill.
+
 ## UI copy
 
 - Indonesian copy follows the **uxw-mekari** guideline (tone, grammar, term

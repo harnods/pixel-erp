@@ -51,19 +51,19 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Delivery is per sales order — one delivery = one order.
 const columns: TableColumn[] = [
-  { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
-  { key: 'packingTaskNo', label: 'Packing no.',     width: '180px', sortType: 'text' },
-  { key: 'taskNo',        label: 'Delivery no.',    width: '180px', sortType: 'text' },
-  { key: 'source',        label: 'Source',          width: '180px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse',       width: '180px', sortType: 'text' },
-  { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
-  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
-  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
-  { key: 'skuQty',        label: 'SKU qty',     width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'orderQty',      label: 'Order qty',   width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'toShipQty',     label: 'To ship',     width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
-  { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
+  { key: 'salesNo',       label: 'Sales order no.', kind: 'number', sortType: 'text' },
+  { key: 'packingTaskNo', label: 'Packing no.',     kind: 'number', sortType: 'text' },
+  { key: 'taskNo',        label: 'Delivery no.',    kind: 'number', sortType: 'text' },
+  { key: 'source',        label: 'Source',          sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',       kind: 'name', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',    kind: 'name', sortType: 'text' },
+  { key: 'courier',       label: 'Courier',     kind: 'name', sortType: 'text' },
+  { key: 'trackingNo',    label: 'Tracking no.', kind: 'number', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',     align: 'right', sortType: 'number' },
+  { key: 'orderQty',      label: 'Order qty',   align: 'right', sortType: 'number' },
+  { key: 'toShipQty',     label: 'To ship',     align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',      kind: 'status', sortType: 'text' },
+  { key: 'shippedDate',   label: 'Ship date',   kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — Delivery no. is hidden by default; Assignee is shown (the
 // person handling the shipping task: the packer pre-handover, then the shipment

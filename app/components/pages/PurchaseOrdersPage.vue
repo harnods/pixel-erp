@@ -38,15 +38,15 @@ const duplicatePurchaseOrder = inject<(id: string) => void>('duplicatePurchaseOr
 
 // ─── Column definitions (date/number widths match the Expenses index) ─────────
 const columns: TableColumn[] = [
-  { key: 'date',       label: 'Date',        width: '160px', sortType: 'date'                },
-  { key: 'number',     label: 'Number',      width: '160px', sortable: true, sortType: 'text' },
+  { key: 'date',       label: 'Date',        kind: 'date',   sortType: 'date'                },
+  { key: 'number',     label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
   { key: 'attachment', label: '',            width: '40px',  noHeader: true, align: 'center' },
-  { key: 'vendorName', label: 'Vendor',      width: '240px', sortable: true                  },
-  { key: 'dueDate',    label: 'Due date',    width: '108px'                                  },
-  { key: 'status',     label: 'Status',      width: '180px'                                  },
-  { key: 'balance',    label: 'Balance due', width: '160px', align: 'right', sortable: true  },
-  { key: 'total',      label: 'Total',       width: '160px', align: 'right', sortable: true  },
-  { key: 'tags',       label: 'Tags',        width: '160px'                                  },
+  { key: 'vendorName', label: 'Vendor',      kind: 'name',   sortable: true                  },
+  { key: 'dueDate',    label: 'Due date',    kind: 'date'                                    },
+  { key: 'status',     label: 'Status',      kind: 'status'                                  },
+  { key: 'balance',    label: 'Balance due', kind: 'amount', align: 'right', sortable: true  },
+  { key: 'total',      label: 'Total',       kind: 'amount', align: 'right', sortable: true  },
+  { key: 'tags',       label: 'Tags',        kind: 'tags'                                    },
 ]
 // Column show/hide (first column always on).
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))

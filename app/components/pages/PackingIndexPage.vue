@@ -62,18 +62,18 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Packing is per sales order — one task = one order (no bundling).
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Packing no.',    width: '180px', sortType: 'text' },
-  { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
-  { key: 'source',        label: 'Source',      width: '280px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
-  { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
-  { key: 'skuQty',        label: 'SKU qty',     width: '100px', align: 'right', sortType: 'number' },
-  { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
-  { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
-  { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
+  { key: 'taskNo',        label: 'Packing no.',    kind: 'number', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order no.', kind: 'number', sortType: 'text' },
+  { key: 'source',        label: 'Source',      sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',   kind: 'name', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',    kind: 'name', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',     align: 'right', sortType: 'number' },
+  { key: 'toPackQty',     label: 'To pack',     align: 'right', sortType: 'number' },
+  { key: 'packedQty',     label: 'Packed qty',  align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',      kind: 'status', sortType: 'text' },
   { key: 'icons',         label: '',            width: '48px',  noHeader: true },
-  { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
-  { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
+  { key: 'startDate',     label: 'Start date',  kind: 'date', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',    kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — To pack is hidden by default (not useful — SKU qty + Packed
 // qty already tell the story). The sort menu's "Hide column" flips others off, the

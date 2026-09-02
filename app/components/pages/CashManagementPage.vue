@@ -32,19 +32,17 @@ interface TreeRow extends CashAccount { depth: number; hasChildren: boolean }
 // ─── Column definitions ───────────────────────────────────────────────────────
 
 const columns: TableColumn[] = [
-  { key: 'code',             label: 'Account code',      width: '200px',                 sortType: 'text'   },
-  { key: 'name',             label: 'Account name',      width: '360px', sortable: true, sortType: 'text'   },
-  { key: 'currency',         label: 'Currency',          width: '120px',                 sortType: 'text'   },
-  { key: 'statementBalance', label: 'Statement balance', width: '200px', align: 'right', sortType: 'number' },
-  { key: 'bookBalance',      label: 'Book balance',      width: '200px', align: 'right', sortType: 'number' },
-  { key: 'lastUpdated',      label: 'Last updated',      width: '180px',                 sortType: 'date'   },
-  // Empty flex column (no width) — absorbs all leftover table width so the two
-  // action columns below are pushed to the far right on wide screens.
-  { key: 'spacer',           label: '',                                  noHeader: true, noSkeleton: true },
+  { key: 'code',             label: 'Account code',      kind: 'number',                 sortType: 'text'   },
+  { key: 'name',             label: 'Account name',      kind: 'name', sortable: true, sortType: 'text'   },
+  { key: 'currency',         label: 'Currency',                                          sortType: 'text'   },
+  { key: 'statementBalance', label: 'Statement balance', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'bookBalance',      label: 'Book balance',      kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'lastUpdated',      label: 'Last updated',      kind: 'date',                   sortType: 'date'   },
   // Reconcile lives in its OWN column, right-aligned, sticky just left of the
   // kebab so it stays pinned to the table's right edge even when the table
-  // overflows horizontally (narrow screens).
-  { key: 'reconcile',        label: '',                  width: '148px', align: 'right', noHeader: true, isFixed: true, noSkeleton: true },
+  // overflows horizontally (narrow screens). isTrailingAction places the shared
+  // ErpTablePage flex spacer BEFORE it, pushing reconcile + kebab flush right.
+  { key: 'reconcile',        label: '',                  width: '148px', align: 'right', noHeader: true, isFixed: true, noSkeleton: true, isTrailingAction: true },
 ]
 
 /** Columns the user can toggle in Column settings — excludes the layout-only
@@ -345,11 +343,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <!-- ── Cell: Last updated ── -->
     <template #cell-lastUpdated="{ row }">
       {{ formatDateTime((row as CashAccount).lastUpdated) }}
-    </template>
-
-    <!-- ── Cell: Spacer — empty flex column (pushes the action columns right) ── -->
-    <template #cell-spacer>
-      <span />
     </template>
 
     <!-- ── Cell: Reconcile — its own right-aligned column (Figma 5527-171257) ── -->

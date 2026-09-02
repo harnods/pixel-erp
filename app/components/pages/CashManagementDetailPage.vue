@@ -223,12 +223,12 @@ const {
 // declared widths and the sticky action kebab stays flush right (not flung out
 // by a stretched last column).
 const statementColumns: TableColumn[] = [
-  { key: 'date',        label: 'Date',        width: '140px',                 sortType: 'date' },
-  { key: 'description', label: 'Description', width: '360px'                                    },
-  { key: 'moneyIn',     label: 'Money in',    width: '160px', align: 'right'                    },
-  { key: 'moneyOut',    label: 'Money out',   width: '160px', align: 'right'                    },
-  { key: 'balance',     label: 'Balance',     width: '160px', align: 'right'                    },
-  { key: 'status',      label: 'Status',      width: '140px'                                    },
+  { key: 'date',        label: 'Date',        kind: 'date',                 sortType: 'date' },
+  { key: 'description', label: 'Description', kind: 'address'                                    },
+  { key: 'moneyIn',     label: 'Money in',    kind: 'amount', align: 'right'                    },
+  { key: 'moneyOut',    label: 'Money out',   kind: 'amount', align: 'right'                    },
+  { key: 'balance',     label: 'Balance',     kind: 'amount', align: 'right'                    },
+  { key: 'status',      label: 'Status',      kind: 'status'                                    },
   { key: 'spacer',      label: '',                          noHeader: true, noSkeleton: true    },
 ]
 
@@ -298,13 +298,13 @@ const {
 
 // Running-balance ledger → only Date is sortable (see statementColumns note).
 const allTransactionColumns: TableColumn[] = [
-  { key: 'date',     label: 'Date',     width: '140px',                 sortType: 'date' },
-  { key: 'number',   label: 'Number',   width: '220px'                                    },
-  { key: 'contact',  label: 'Contact',  width: '260px'                                    },
-  { key: 'moneyIn',  label: 'Money in', width: '160px', align: 'right'                    },
-  { key: 'moneyOut', label: 'Money out',width: '160px', align: 'right'                    },
-  { key: 'balance',  label: 'Balance',  width: '160px', align: 'right'                    },
-  { key: 'status',   label: 'Status',   width: '140px'                                    },
+  { key: 'date',     label: 'Date',     kind: 'date',                 sortType: 'date' },
+  { key: 'number',   label: 'Number',   kind: 'number'                                    },
+  { key: 'contact',  label: 'Contact',  kind: 'name'                                      },
+  { key: 'moneyIn',  label: 'Money in', kind: 'amount', align: 'right'                    },
+  { key: 'moneyOut', label: 'Money out',kind: 'amount', align: 'right'                    },
+  { key: 'balance',  label: 'Balance',  kind: 'amount', align: 'right'                    },
+  { key: 'status',   label: 'Status',   kind: 'status'                                    },
   // Empty flex column — absorbs leftover width so the sticky kebab stays flush right.
   { key: 'spacer',   label: '',                         noHeader: true, noSkeleton: true  },
 ]

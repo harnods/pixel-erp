@@ -81,18 +81,18 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
-  { key: 'number',        label: 'Number',       width: '230px', sortable: true, sortType: 'text' },
-  { key: 'date',          label: 'Date',         width: '130px', sortable: true, sortType: 'date' },
-  { key: 'warehouseName', label: 'Warehouse',    width: '200px', sortType: 'text' },
-  { key: 'category',      label: 'Category',     width: '170px', sortType: 'text' },
-  { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
-  { key: 'tags',          label: 'Tags',         width: '200px' },
-  { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
-  { key: 'totalSku',      label: 'Total SKU',    width: '110px', sortType: 'number', align: 'right' },
-  { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
-  { key: 'endDate',       label: 'End date',     width: '200px', sortType: 'date' },
-  { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
-  { key: 'status',        label: 'Status',       width: '130px', sortType: 'text' },
+  { key: 'number',        label: 'Number',       kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'date',          label: 'Date',         kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'warehouseName', label: 'Warehouse',    kind: 'name', sortType: 'text' },
+  { key: 'category',      label: 'Category',     sortType: 'text' },
+  { key: 'account',       label: 'Account',      kind: 'name', sortType: 'text' },
+  { key: 'tags',          label: 'Tags',         kind: 'tags' },
+  { key: 'lastUpdated',   label: 'Last updated', kind: 'date' },
+  { key: 'totalSku',      label: 'Total SKU',    sortType: 'number', align: 'right' },
+  { key: 'startDate',     label: 'Start date',   kind: 'date', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',     kind: 'date', sortType: 'date' },
+  { key: 'assignee',      label: 'Assignee',     kind: 'name', sortType: 'text' },
+  { key: 'status',        label: 'Status',       kind: 'status', sortType: 'text' },
 ]
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips

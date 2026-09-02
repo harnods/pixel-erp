@@ -108,16 +108,16 @@ function closeExportModal() { exportModalOpen.value = false }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',          label: 'Date',          width: '160px',                                 sortType: 'date'   },
-  { key: 'number',        label: 'Number',        width: '160px', sortable: true,                 sortType: 'number' },
+  { key: 'date',          label: 'Date',          kind: 'date',                                 sortType: 'date'   },
+  { key: 'number',        label: 'Number',        kind: 'number', sortable: true,                 sortType: 'number' },
   { key: 'attachment',    label: '',              width: '52px',  noHeader: true, align: 'center' },
-  { key: 'beneficiaryName', label: 'Beneficiary', width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'category',      label: 'Category',      width: '160px', sortable: true,                 sortType: 'text'   },
-  { key: 'dueDate',       label: 'Due date',      width: '108px',                                 sortType: 'date'   },
-  { key: 'status',        label: 'Status',        width: '160px',                                 sortType: 'text'   },
-  { key: 'balanceDue',    label: 'Balance due',   width: '160px', align: 'right', sortable: true,  sortType: 'number' },
-  { key: 'total',         label: 'Total',         width: '160px', align: 'right', sortable: true,  sortType: 'number' },
-  { key: 'tags',          label: 'Tags',          width: '160px'                                  },
+  { key: 'beneficiaryName', label: 'Beneficiary', kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'category',      label: 'Category',      sortable: true,                 sortType: 'text'   },
+  { key: 'dueDate',       label: 'Due date',      kind: 'date',                                 sortType: 'date'   },
+  { key: 'status',        label: 'Status',        kind: 'status',                                 sortType: 'text'   },
+  { key: 'balanceDue',    label: 'Balance due',   kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'total',         label: 'Total',         kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'tags',          label: 'Tags',          kind: 'tags'                                  },
 ]
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ const unpaidTotal = computed(() => unpaidBills.value.reduce((sum, r) => sum + r.
 const paidTotal = computed(() => paidBills.value.reduce((sum, r) => sum + r.total, 0))
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols
   .filter(c => c.label && !c.noHeader)

@@ -259,13 +259,13 @@ const consumeReturnRecords = computed<CrrRecord[]>(() => {
 })
 
 const crrColumns: TableColumn[] = [
-  { key: 'number',      label: 'Number',                    width: '200px' },
-  { key: 'product',     label: 'Product',                   width: '240px' },
-  { key: 'date',        label: 'Date',                       width: '120px' },
-  { key: 'qty',         label: 'Qty to consume / return',   width: '190px', align: 'right' },
-  { key: 'unit',        label: 'Unit',                       width: '80px'  },
-  { key: 'memo',        label: 'Memo',                       width: '160px' },
-  { key: 'recordedBy',  label: 'Recorded by',                width: '160px' },
+  { key: 'number',      label: 'Number',                    kind: 'number' },
+  { key: 'product',     label: 'Product',                   kind: 'name' },
+  { key: 'date',        label: 'Date',                       kind: 'date' },
+  { key: 'qty',         label: 'Qty to consume / return',   align: 'right' },
+  { key: 'unit',        label: 'Unit',                       kind: 'unit'  },
+  { key: 'memo',        label: 'Memo'                        },
+  { key: 'recordedBy',  label: 'Recorded by',                kind: 'name' },
 ]
 const CRR_TYPE_OPTIONS: { label: string; value: 'Consume' | 'Return' }[] = [
   { label: 'Consume', value: 'Consume' },

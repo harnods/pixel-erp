@@ -49,13 +49,13 @@ const {
 })
 
 const columns: TableColumn[] = [
-  { key: 'date',        label: 'Date',        width: '180px', sortable: true, sortType: 'date' },
-  { key: 'source',      label: 'Source',      width: '140px' },
-  { key: 'description', label: 'Description', width: '260px' },
-  { key: 'name',        label: 'Name',        width: '160px' },
-  { key: 'account',     label: 'Account',     width: '160px' },
-  { key: 'status',      label: 'Status',      width: '160px' },
-  { key: 'amount',      label: 'Amount',      width: '160px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'date',        label: 'Date',        kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'source',      label: 'Source' },
+  { key: 'description', label: 'Description', kind: 'address' },
+  { key: 'name',        label: 'Name',        kind: 'name' },
+  { key: 'account',     label: 'Account',     kind: 'name' },
+  { key: 'status',      label: 'Status',      kind: 'status' },
+  { key: 'amount',      label: 'Amount',      kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
 ]
 </script>
 

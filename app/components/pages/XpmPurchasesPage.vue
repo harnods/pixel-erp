@@ -45,12 +45,12 @@ const {
 
 // 2nd column swaps Vendor → Requester on the Request tab (key drives #cell-party).
 const columns = computed<TableColumn[]>(() => [
-  { key: 'document', label: 'Document', width: '220px' },
-  { key: 'party',    label: isRequest.value ? 'Requester' : 'Vendor', width: '180px' },
-  { key: 'date',     label: 'Date',   width: '150px', sortable: true, sortType: 'date' },
-  { key: 'due',      label: 'Due',    width: '150px', sortable: true, sortType: 'date' },
-  { key: 'status',   label: 'Status', width: '160px' },
-  { key: 'total',    label: 'Total',  width: '160px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'document', label: 'Document', kind: 'number' },
+  { key: 'party',    label: isRequest.value ? 'Requester' : 'Vendor', kind: 'name' },
+  { key: 'date',     label: 'Date',   kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'due',      label: 'Due',    kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'status',   label: 'Status', kind: 'status' },
+  { key: 'total',    label: 'Total',  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
 ])
 
 // ── Create drawer ──
