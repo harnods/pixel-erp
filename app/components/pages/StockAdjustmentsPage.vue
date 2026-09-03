@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch, inject } from 'vue'
 import {
   MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
@@ -36,6 +36,7 @@ import {
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 import { useScenario } from '~/composables/useScenario'
+import { assigneeDisplayName } from '~/data/users'
 
 const route = useRoute()
 const router = useRouter()
@@ -138,6 +139,10 @@ const isAnyAwaiting = computed(() => isAwaiting.value || isCycleAwaiting.value)
 const showCheckbox = computed(() => !(isAnyAwaiting.value && viewAs.value === 'user'))
 const actionsWidth = computed(() => {
   if (!isAnyAwaiting.value) return undefined
+  // Cycle counts hide the approval-log and comments icons, so the ERP width leaves
+  // ~100px of dead space between Status and Approve — wide enough that the button
+  // stops reading as this row's action. Sized to what each flavor actually renders.
+  if (isCycleAwaiting.value) return viewAs.value === 'manager' ? '140px' : '76px'
   return viewAs.value === 'manager' ? '236px' : '148px'
 })
 
@@ -157,6 +162,18 @@ function setDemoState(s: DemoState) {
 
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
+// Mirror the Warehouse filter up so [...slug].vue can scope the "Recommended for
+// counting today" banner (and the tab badges) to the warehouse(s) actually on
+// screen — otherwise the banner names SKUs from warehouses the table is hiding.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+// Published for [...slug].vue, which renders the recommendation banner and the tab
+// badges from it. Deferred to the next tick on purpose: this ref is a parent
+// dependency, so writing it inline (during this child's own update) re-renders the
+// parent mid-update and REMOUNTS this page — the fresh copy starts with an empty
+// filter, which looks exactly like "the checkbox doesn't work".
+watch(warehouseFilter, (v) => { nextTick(() => { activeWarehouseFilter.value = [...v] }) })
+onMounted(() => { nextTick(() => { activeWarehouseFilter.value = [...warehouseFilter.value] }) })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const categoryFilter = ref<string[]>([])
 const statusFilter = ref<string[]>([])
 const assigneeFilter = ref<string[]>([])
@@ -425,7 +442,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in whOptions" :key="opt.value" class="checkbox-filter-item">
+              <div v-for="opt in whOptions" :key="opt.value" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-wh-${opt.value}`"
                   :is-checked="warehouseFilter.includes(opt.value)"
@@ -434,7 +451,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt.label }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -452,7 +469,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt" class="checkbox-filter-item">
+              <div v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-cat-${opt}`"
                   :is-checked="categoryFilter.includes(opt)"
@@ -461,7 +478,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -479,7 +496,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
+              <div v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-status-${opt.value}`"
                   :is-checked="statusFilter.includes(opt.value)"
@@ -488,7 +505,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt.label }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -585,7 +602,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </span>
     </template>
 
-    <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
+    <!-- A task whose assignee has left the company reads as Unassigned, so it's
+         visible as something a manager still has to hand over. -->
+    <template #cell-assignee="{ value }">
+      <span :class="{ 'sa-unassigned': !assigneeDisplayName(value as string) }">
+        {{ assigneeDisplayName(value as string) || t('Unassigned') }}
+      </span>
+    </template>
 
     <template #cell-totalSku="{ row }">{{ adjustmentLineItems(row as unknown as StockAdjustment).length }}</template>
 
@@ -926,6 +949,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 
 /* Awaiting approval row actions */
+.sa-unassigned { color: var(--mp-text-subtle); }
 .sa-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
 .sa-approval-actions .row-kebab { margin-left: 0; }
 .row-icon-ghost {
