@@ -707,6 +707,7 @@ function lastUsedLabel(a: CoworkAgent): string {
   return `Used ${Math.floor(days / 30)}mo ago`
 }
 function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
+function openAgentUsage(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}?tab=usage`) }
 function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
 function newAgent() { router.push('/cowork-agents/new') }
 function chatAgent(a: CoworkAgent) { toast.notify({ variant: 'success', title: `Opening a chat with ${a.name}` }) }
@@ -720,8 +721,10 @@ const archiveTarget = ref<CoworkAgent | null>(null)
 const archiveModalOpen = ref(false)
 const archiveDesc = computed(() => {
   const n = archiveTarget.value ? tasksUsingAgent(archiveTarget.value).length : 0
-  return n ? `${n} scheduled task${n === 1 ? '' : 's'} use this agent and will be paused. You can restore it later.`
-    : 'This agent will be hidden from everyone. You can restore it later.'
+  const tasks = n
+    ? `${n} scheduled task${n === 1 ? '' : 's'} using this agent will be paused, and it'll be removed from the New chat picker.`
+    : 'It will be hidden from everyone and removed from the New chat picker.'
+  return `${tasks} Open chats stay readable but can't send new messages. Nothing is deleted — you can restore this agent anytime.`
 })
 function askArchive(a: CoworkAgent) { archiveTarget.value = a; archiveModalOpen.value = true }
 function confirmArchive() {
@@ -1513,19 +1516,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     <p class="cw-agent-desc">{{ a.description }}</p>
                     <p v-if="lastUsedLabel(a)" class="cw-agent-lastused">{{ lastUsedLabel(a) }}</p>
                   </div>
-                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select use-portal placement="bottom-end">
                     <MpPopoverTrigger>
                       <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '170px' })">
                       <MpPopoverList>
-                        <MpPopoverListItem @click="chatAgent(a)">Chat</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                        <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                        <MpPopoverListItem @click="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgent(a)">View usage</MpPopoverListItem>
-                        <MpPopoverListItem v-if="a.status === 'archived'" @click="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
-                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click="askArchive(a)">Archive agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="chatAgent(a)">Chat</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgent(a)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="editAgent(a)">Edit agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgentUsage(a)">View usage</MpPopoverListItem>
+                        <MpPopoverListItem v-if="a.status === 'archived'" @click.stop="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
+                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click.stop="askArchive(a)">Archive agent</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -1853,6 +1856,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.cw-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
 .cw-search__input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
 .cw-search__input::placeholder { color: var(--mp-text-placeholder); }
 .cw-search__clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: 999px; }

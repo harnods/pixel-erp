@@ -20,7 +20,7 @@
   background: var(--mp-background-neutral);
   border-color: var(--mp-border-bold);
   color: var(--mp-text-default);
-  font-weight: var(--mp-font-weights-regular);
+  font-weight: var(--mp-font-weights-semi-bold);   /* semibold like primary; only ghost is regular */
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -42,6 +42,12 @@
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
 }
+/* OVERRIDE: an icon inside a primary button is ALWAYS white. currentColor icons
+   inherit the white text; icons that carry their own fill (airene-brand, brand
+   glyphs) would otherwise show their native colour, so force those white too. */
+.btn-enterprise--primary :is(.mp-icon, svg) { color: #fff !important; }
+.btn-enterprise--primary :is(.mp-icon, svg) [fill]:not([fill="none"]) { fill: #fff !important; }
+.btn-enterprise--primary :is(.mp-icon, svg) [stroke]:not([stroke="none"]) { stroke: #fff !important; }
 
 .btn-enterprise--danger {
   background: var(--mp-colors-red-600, #dc2626);
@@ -141,6 +147,20 @@
   box-shadow: 0 0 0 1px #8c9596;
 }
 
+/* MpSelect specifically: its active/open state must show a clearly BOLD neutral
+ * border — the Pixel default renders a faint ~16%-alpha hairline. We target the
+ * root's :focus-within (higher specificity + reliable while the dropdown is open)
+ * and force the border/ring so it never stays thin. Applies to EVERY MpSelect.
+ * See docs/patterns/Form.md. */
+.mp-select__root:focus-within .mp-select__control:not([aria-invalid="true"]):not([data-invalid]),
+.mp-select__control[aria-expanded="true"]:not([aria-invalid="true"]):not([data-invalid]),
+.mp-select__control[data-state="open"]:not([aria-invalid="true"]):not([data-invalid]) {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: #8c9596 !important;
+  box-shadow: 0 0 0 1px #8c9596 !important;
+}
+
 /* Invalid fields keep a red focus border + ring (never the brand green). */
 .mp-input__control:focus[aria-invalid="true"],
 .mp-input__control:focus[data-invalid],
@@ -161,7 +181,9 @@
    scoped border wins over border-color here, so only the subtle ring is added. */
 .filter-search:focus-within,
 .pr-filter-search:focus-within,
-.rcvgd-search-wrap:focus-within {
+.rcvgd-search-wrap:focus-within,
+.cw-search:focus-within,
+.sad-search:focus-within {
   border-color: #8c9596;
   box-shadow: 0 0 0 1px #8c9596;
 }

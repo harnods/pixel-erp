@@ -29,6 +29,19 @@ route silently falls back (`source: "fallback"`, no real model). When starting
 that way, load the env first:
 `set -a; . ./.env; set +a; PORT=4322 node .output/server/index.mjs`.
 
+## Pixel 3 DT 2.4 Enterprise overrides — source of truth
+
+Where Pixel's default DT 2.4 Enterprise rendering is wrong for this ERP, we
+override it (mostly in `app/assets/css/erp.css`). The recurring "always wrong"
+cases — secondary button (black text not gray, semibold), ghost button (regular
+weight), primary-button icons (always white), MpSelect + search focus (neutral
+slate ring, never green), search always a rounded form pill, 14px/regular default
+type (12px only for captions), ContentList for key/value on detail pages — are all
+listed in `docs/patterns/pixel-enterprise-overrides.md`. Prefer the ERP wrapper
+classes/components (`btn-enterprise--*`, `.filter-search`, `ContentList`) over raw
+Pixel variants. When you find a NEW recurring Pixel-default-is-wrong case, add it
+there and to `erp.css`.
+
 ## Table column widths — MANDATORY standard (no exceptions)
 
 Any page with a table/index/list **MUST** follow the column-width standard — no

@@ -110,12 +110,48 @@ Use the right surface:
 |---|---|---|
 | Text input | `MpInput` in `MpFormControl` | Add label, help text, error state explicitly |
 | Multi-line text | `MpTextarea` in `MpFormControl` | Keep validation close to the field |
-| Select / dropdown | `MpSelect` + `MpPopover` | See **Select** below — dropdown is a popover, not the native list |
+| Select / dropdown | `MpSelect` | Active/focus state MUST show the **bold neutral border** — see ⚠️ below |
 | Select with tags | `MpInputTag` | Verify props/slots |
 | Date | `MpDatePicker` in `MpFormControl` | Verify formatting and value contract |
 | Checkbox / radio / toggle | `MpCheckbox`, `MpRadio`, `MpToggle` | Preserve accessible labels and state |
 
 ---
+
+## Every input has a focus/active state — NO EXCEPTIONS ⚠️
+
+**Any** typeable/selectable control — `MpInput`, `MpTextarea`, `MpSelect`, and
+every **custom-styled field** (search boxes, filter-bar search, the two-pane
+drawer search, combobox triggers) — MUST show a visible focus/active state. The
+canonical treatment across the ERP is the **bold neutral border**: `#8c9596`
+(Gray/Slate400) border + a 1px ring of the same colour, applied on
+`:focus-within`. A field with no focus state (a flat border that never changes
+on focus) is a bug — match the surrounding module.
+
+- For custom search boxes the shared rule lives in `app/assets/css/erp.css` —
+  one selector list drives every module's search focus ring:
+  `.filter-search`, `.pr-filter-search`, `.rcvgd-search-wrap`, `.cw-search`,
+  `.sad-search` all get `…:focus-within { border-color:#8c9596; box-shadow:0 0 0
+  1px #8c9596 }`. When you add a new custom search/input wrapper, **add its class
+  to that list** rather than re-styling focus per component.
+- Pixel inputs (`MpInput`/`MpTextarea`) already ship this; don't override.
+- `MpSelect` needs the extra `!important` fix below (Pixel's default is too faint).
+
+## MpSelect active/focus border ⚠️ (recurring mistake)
+
+Every `MpSelect`'s **active/open (focus) state must show a clearly bold neutral
+border** (`#8c9596` = Gray/Slate400, plus a 1px ring of the same colour) — the
+same treatment as `MpInput`/`MpTextarea` focus. The Pixel `@latest` default
+renders only a faint ~16%-alpha hairline that stays thin even when open.
+
+- The global fix lives in `app/assets/css/erp.css` and targets
+  `.mp-select__root:focus-within .mp-select__control`, plus the open-popover
+  states `[aria-expanded="true"]` / `[data-state="open"]`, with `!important`
+  (Pixel ships a layered `!important` that otherwise wins). **Do not** re-solve
+  this per component.
+- Prefer a **plain `MpSelect`** with real `<option>`s (native focus keeps the
+  bold border). If you wrap `MpSelect` inside an `MpPopover` trigger, the popover
+  steals focus and the border reverts to the thin default — avoid that for form
+  selects.
 
 ## Checkbox / radio label gap & alignment ⚠️ (recurring mistake)
 

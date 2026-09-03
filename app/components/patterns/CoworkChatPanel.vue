@@ -82,7 +82,6 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
         <div class="cwc-greetings">
           <img class="ccp-mascot" :src="agentAvatar" :alt="agentName || 'Agent'" />
           <p class="cwc-greeting-title">Hi, I'm {{ agentName || 'here' }}.</p>
-          <span class="ccp-agent-chip"><img :src="agentAvatar" :alt="agentName" class="ccp-agent-chip__av" /> {{ agentName || 'Your agent' }}<svg v-if="agentSwitchable" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <p class="cwc-greeting-msg">{{ greeting || 'Ask me anything to see how I’ll respond.' }}</p>
         </div>
         <div v-if="!atLimit" class="cwc-suggestions">
@@ -155,8 +154,6 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
 .cwc-greetings { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: var(--mp-spacing-2); flex-shrink: 0; margin-top: auto; }
 .ccp-mascot { width: 60px; height: 60px; object-fit: contain; background: transparent; }
 .cwc-greeting-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
-.ccp-agent-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-sm, 12px); font-weight: 600; color: var(--mp-text-default); }
-.ccp-agent-chip__av { width: 18px; height: 18px; border-radius: 50%; object-fit: contain; background: transparent; }
 .cwc-greeting-msg { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); }
 /* Suggestions (identical to Chats page) */
 .cwc-suggestions { display: flex; flex-direction: column; flex-shrink: 0; margin-top: var(--mp-spacing-3); }
@@ -172,6 +169,10 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
 .chat-bubble__text { white-space: pre-wrap; }
 .chat-bubble--user { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-default); }
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* Answer eases in (fade + rise + de-blur) instead of snapping — like Claude/ChatGPT. */
+.chat-bubble--assistant { animation: ccpAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes ccpAnswerIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) { .chat-bubble--assistant { animation: none; } }
 .chat-bubble__rich { white-space: normal; }
 .chat-bubble__rich :deep(.chat-md-p) { margin: 0; }
 .chat-bubble__rich :deep(.chat-md-p + .chat-md-p) { margin-top: var(--mp-spacing-2, 8px); }

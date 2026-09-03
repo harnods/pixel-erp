@@ -1,0 +1,93 @@
+# Pixel 3 DT 2.4 Enterprise — ERP overrides (SOURCE OF TRUTH)
+
+Where Pixel 3's default DT 2.4 Enterprise rendering does **not** match how this
+ERP must look, we override it. This doc is the single list of those overrides —
+the recurring "why is this always wrong?" cases. If a component below looks like
+Pixel's default, it's wrong; use the override.
+
+Most overrides live UNLAYERED in `app/assets/css/erp.css` (so they beat Pixel's
+`@layer` rules), keyed on Pixel's own recipe classes so they apply to **every**
+instance. Prefer the ERP wrapper classes/components named here over calling the
+raw Pixel component with a variant.
+
+> When you hit a NEW recurring "Pixel default is wrong here" case, add it to this
+> doc and to `erp.css`, then it's covered forever.
+
+---
+
+## 1. Secondary button
+
+Pixel's `MpButton variant="secondary"` renders **gray text** — wrong. ERP
+secondary = neutral fill, **bold black border**, **black text**, **semibold**.
+
+| Property | Value |
+|---|---|
+| Fill | `var(--mp-background-neutral)` |
+| Border | `var(--mp-border-bold)` (bold, black) |
+| Text | `var(--mp-text-default)` (**black**, never `text.secondary`/gray) |
+| Font weight | **semibold** |
+| Hover | `var(--mp-background-neutral-hovered)` |
+
+Use `class="btn-enterprise btn-enterprise--secondary"` — NOT `MpButton
+variant="secondary"` (gray text). See `Button.md`. (`erp.css` › `.btn-enterprise--secondary`.)
+
+## 2. Ghost button — regular weight
+
+Ghost is the **only** button that is **regular** weight (primary + secondary are
+semibold). Font size stays 14px. No fill, no border, `text.secondary`, hover =
+neutral-hovered. Used for Cancel / dismiss / close / back. If a ghost button
+looks bold, it's wrong. (`erp.css` › `.btn-enterprise--ghost`.)
+
+## 3. Primary button — icon is always white
+
+An icon inside a primary button is **always white**. currentColor icons inherit
+the white text automatically, but icons that carry their own fill (e.g.
+`airene-brand`, brand glyphs) show their native colour unless forced. Override
+whites out fill + stroke of any icon inside a primary button.
+(`erp.css` › `.btn-enterprise--primary :is(.mp-icon, svg)`.)
+
+## 4. MpSelect — focus / active state
+
+Pixel's default focus/open state is a faint ~16%-alpha hairline. Override: a
+clearly **bold neutral slate** border + 1px ring (`#8c9596`) on focus AND while
+the dropdown is open — never brand green. Invalid stays red. Applies to every
+MpSelect (and MpInput / MpTextarea / MpDatePicker / MpInputTag share the same
+neutral focus ring). (`erp.css` › `.mp-select__control:focus…`, `.mp-select__root:focus-within…`.)
+
+## 5. Search — always a form pill, shared focus ring
+
+Every search box in the app is the **pill** form used in the filter bar above a
+table: neutral fill, `border.default`, **fully-rounded** (`radii.full`), 14px
+input, placeholder = `text.placeholder`. On focus it gets the same neutral slate
+ring (`#8c9596`) as the form controls — never brand green. Do not build a
+square/plain search input. Canonical markup = `.filter-search` + `.filter-search-input`
+(`BillsReviewFilesPage.vue` and every index/filter bar). Focus override in
+`erp.css` › `.filter-search:focus-within, …`.
+
+## 6. Typography — 14px/regular is the default; 12px only for captions
+
+Body / field / value / control text is **14px regular** (`font-sizes.md`,
+`text.default`). Do **not** use 12px (`font-sizes.sm`) for normal text. The ONLY
+place 12px appears is a **caption** — the small secondary line, usually directly
+**below** a 14px value (field helper text, the label above a value in a
+ContentList, "Visible to vendor", uploaded-by lines). Caption = 12px
+`text.secondary`. If you're reaching for 12px and it isn't a caption under a
+14px line, use 14px.
+
+## 7. Content detail pages — key/value uses ContentList
+
+A content/detail page's header summary and any key→value display use the
+**`ContentList`** component (`app/components/patterns/ContentList.vue`): a **12px
+`text.secondary` label (caption)** stacked directly above its **14px
+`text.default` value** — see rule 6. Don't hand-roll label/value pairs with ad-hoc
+sizes; compose status/tags inside it with `ErpStatusBadge` / `ErpTagList`. See
+`ContentList.md` and `details-page-format.md`.
+
+---
+
+## Rule of thumb
+
+Reach for the **ERP class/component** (`btn-enterprise--*`, `.filter-search`,
+`ContentList`, `ErpStatusBadge`), not the raw Pixel variant. The `erp.css`
+overrides then guarantee the DT 2.4 Enterprise look even where Pixel's default
+would be wrong.
