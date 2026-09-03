@@ -50,23 +50,19 @@ function clear() { emit('update:modelValue', null) }
         >
           <div
             role="combobox" :aria-expanded="isOpen" :tabindex="0"
+            class="ps-trigger"
             :class="css({
               minW: '0', w: 'full', pl: '3', pr: '2.75rem', py: '2',
               display: 'flex', alignItems: 'center', outline: '0',
               borderWidth: '1px', borderStyle: 'solid', borderRadius: 'md', appearance: 'none',
-              transition: 'all 200ms', cursor: 'pointer', userSelect: 'none', fontSize: 'md',
-              bg: 'var(--mp-colors-background-neutral, #ffffff)',
+              transition: 'border-color 200ms, box-shadow 200ms', cursor: 'pointer', userSelect: 'none', fontSize: 'md',
+            })"
+            :style="{
+              background: 'var(--mp-colors-background-neutral, #ffffff)',
               color: selected ? 'var(--mp-colors-text-default, #080d0e)' : 'var(--mp-colors-text-secondary, #5f6b6d)',
-              // Neutral focus/active — same as form fields & search (rule/select-active-neutral):
-              // #8C9596 border + a 1px neutral ring when open or focused.
               borderColor: isOpen ? 'var(--mp-colors-border-bold, #8c9596)' : 'var(--mp-colors-border-default, #e3e7e9)',
               boxShadow: isOpen ? '0 0 0 1px var(--mp-colors-border-bold, #8c9596)' : 'none',
-              _hover: { borderColor: 'var(--mp-colors-border-bold, #8c9596)' },
-              _focusVisible: {
-                borderColor: 'var(--mp-colors-border-bold, #8c9596)',
-                boxShadow: '0 0 0 1px var(--mp-colors-border-bold, #8c9596)',
-              },
-            })"
+            }"
             @click="isOpen = !isOpen"
             @keydown.enter.prevent="isOpen = !isOpen"
             @keydown.space.prevent="isOpen = !isOpen"
@@ -82,7 +78,7 @@ function clear() { emit('update:modelValue', null) }
             :style="{ color: 'var(--mp-colors-text-secondary, #5f6b6d)' }"
             @click.stop="clear"
           >
-            <MpIcon name="reset" size="sm" />
+            <MpIcon name="close" size="sm" />
           </div>
 
           <MpIcon
@@ -108,3 +104,14 @@ function clear() { emit('update:modelValue', null) }
     </MpPopover>
   </div>
 </template>
+
+<style scoped>
+/* Neutral hover + focus, same as form fields / search (rule/select-active-neutral).
+   !important beats the inline default border color when not open. */
+.ps-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
+.ps-trigger:focus-visible {
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596) !important;
+  outline: none;
+}
+</style>

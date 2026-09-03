@@ -111,6 +111,8 @@ const owners = ['Ana', 'Budi', 'Cici']
 .fb-group { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 /* Left group: filters ↔ filters and filters ↔ All filters are always 16px */
 .fb-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+/* Fixed width so the clear (×) appears inside without growing / wrapping the bar */
+.fb-search { width: 16rem; flex: 0 0 16rem; }
 .fb-search :deep(.mp-input__control),
 .fb-search { border-radius: var(--mp-radii-full, 999px); }
 .fb-clear { display: inline-flex; cursor: pointer; color: var(--mp-text-secondary); }

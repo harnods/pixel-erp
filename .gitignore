@@ -34,3 +34,6 @@ package-lock.json
 *.pdf
 .vercel
 .env*
+
+# Playwright test artifacts
+test-results/

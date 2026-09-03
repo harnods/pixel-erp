@@ -16,6 +16,11 @@ watch(() => route.path, () => { pageRules.value = [] })
 const railRules = computed(() => (pageRules.value.length ? pageRules.value : FOUNDATION_RULES))
 const railIsFoundation = computed(() => pageRules.value.length === 0)
 
+// Pattern pages (full-width layouts like the filter bar) get a wider content column
+// so they render the way a real full-width index page does — not the narrow gallery column.
+const WIDE_PAGES = ['/pixel/filter-bar']
+const isWide = computed(() => WIDE_PAGES.includes(route.path))
+
 // Sidebar nav — every component is its own page under /pixel/<slug>
 const sidebar = [
   {
@@ -112,7 +117,7 @@ const sidebar = [
     </aside>
 
     <main class="pxmain">
-      <div class="pxcontent">
+      <div class="pxcontent" :class="{ 'pxcontent--wide': isWide }">
         <NuxtPage />
       </div>
     </main>
@@ -192,6 +197,7 @@ const sidebar = [
 }
 .pxmain { flex: 1 1 auto; min-width: 0; }
 .pxcontent { max-width: 52rem; margin: 0 auto; padding: var(--mp-spacing-8) var(--mp-spacing-8) var(--mp-spacing-9); }
+.pxcontent--wide { max-width: 72rem; } /* pattern pages (e.g. filter bar) — real page width, one line */
 
 /* Right rail — rules governing the current page */
 .pxrail {
