@@ -105,6 +105,7 @@ defineExpose({ reset })
                 hide-header
                 hide-add
                 :agent-switchable="false"
+                :thinking="generating"
                 @update:model-id="(v: string) => model = v"
                 @send="onSend"
               />
@@ -112,7 +113,6 @@ defineExpose({ reset })
 
             <!-- Right: the drafted skill (only appears once the agent has drafted one) -->
             <div v-if="draft" class="scd-draft">
-              <template>
                 <div class="scd-draft__head">
                   <div class="scd-draft__meta">
                     <input v-model="draft.name" class="scd-draft__name" placeholder="Skill name" />
@@ -132,7 +132,6 @@ defineExpose({ reset })
                   <span class="scd-draft__hint">Saved as a Custom skill · stays off until enabled on an agent.</span>
                   <MpButton is-rounded variant="primary" @click="save">Save skill</MpButton>
                 </div>
-              </template>
             </div>
           </div>
         </aside>
