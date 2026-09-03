@@ -34,13 +34,60 @@ that way, load the env first:
 Where Pixel's default DT 2.4 Enterprise rendering is wrong for this ERP, we
 override it (mostly in `app/assets/css/erp.css`). The recurring "always wrong"
 cases — secondary button (black text not gray, semibold), ghost button (regular
-weight), primary-button icons (always white), MpSelect + search focus (neutral
-slate ring, never green), search always a rounded form pill, 14px/regular default
-type (12px only for captions), ContentList for key/value on detail pages — are all
-listed in `docs/patterns/pixel-enterprise-overrides.md`. Prefer the ERP wrapper
+weight), primary-button icons (always white), select/search focus (neutral
+slate ring, never green), **dropdowns/filters use `<ErpFilterSelect>` (an
+MpPopover menu, clearable) — NEVER a native `<select>` or Pixel `MpSelect`, which
+render the OS dropdown (off-system, clips in scroll containers)**, search always a
+rounded form pill, 14px/regular default type (12px only for captions), ContentList
+for key/value on detail pages — are all listed in
+`docs/patterns/pixel-enterprise-overrides.md`. Prefer the ERP wrapper
 classes/components (`btn-enterprise--*`, `.filter-search`, `ContentList`) over raw
 Pixel variants. When you find a NEW recurring Pixel-default-is-wrong case, add it
 there and to `erp.css`.
+
+## Form & modal actions — always present, never disabled
+
+The footer/action buttons of a form or modal (**Cancel** + the primary action,
+e.g. Save / Import / Create) are **always rendered** — never hidden or disabled
+based on whether preconditions are met. If the user clicks the primary action
+before its preconditions are satisfied (nothing fetched, a required field empty,
+nothing selected), **show an inline error message below the form** explaining
+what to do — don't grey out or hide the button. This pairs with the no-disabled-
+buttons and errors-inline-not-toast rules. Secondary buttons inside these forms
+use `btn-enterprise--secondary` (black text, dark border), not a raw Pixel
+`MpButton variant="secondary"`.
+
+## Drawers — custom Teleport overlay panel (NOT Pixel `MpDrawer`)
+
+**Pixel `MpDrawer` has NO structural CSS in this Pixel3 build** — its header and
+footer detach to the viewport edges and the body renders as a bare floating card.
+So ERP/Cowork drawers do **not** use `MpDrawer`. ~30 of the 38 `*Drawer.vue` (every
+filters drawer, `SelectAccessDrawer`, `CrmCustomerViewDrawer`, …) use the same
+hand-rolled shell — copy it from **`BillsFiltersDrawer.vue`** ("All filters"):
+
+```
+<Teleport to="body"><Transition name="xxx">
+  <div v-if="open" class="xxx-overlay">          <!-- fixed inset 0; flex justify-end; overlay bg -->
+    <div class="xxx-panel" role="dialog">        <!-- margin 12px; height calc(100%-24px); radius 12px; flex column; overflow hidden -->
+      <header class="xxx-header">…title + MpButton close (MpIcon name="close")…</header>
+      <div class="xxx-body">…scrollable content…</div>
+      <footer class="xxx-footer">…ghost Cancel + primary…</footer>
+```
+
+Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
+`transform: translateX(calc(100% + 12px))` on enter/leave. A drawer that is a
+**form** ignores overlay clicks (close only via ×/Cancel/Esc) so in-progress input
+is never lost. Buttons use the `btn-enterprise--{ghost,primary,secondary}` classes,
+not raw `MpButton` variants. (Modal vs drawer: drawer when the underlying page
+context helps; modal for a short blocking decision.)
+
+## List bullets — `<li>` always shows its marker
+
+The global CSS reset strips `list-style`, so rendered/markdown lists lose their
+bullets. **Every `<li>` must show a marker**: set `list-style: disc outside` on
+`ul` (`decimal` on `ol`) **and** `display: list-item` on `li`. Applies to any
+`v-html`/markdown output (chat, KB docs, skill preview) and hand-written content
+lists — never leave a bulleted list rendering as flush, marker-less lines.
 
 ## Table column widths — MANDATORY standard (no exceptions)
 

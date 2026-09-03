@@ -3,8 +3,18 @@
 **Pixel components**: `MpDrawer` (+ header / body / footer subcomponents — verify with `get-component`)
 **Purpose**: Side panel that slides in from the edge for contextual detail or editing without leaving the current page.
 
-> ⚠️ There is no custom `ErpDrawer` component. Use Pixel `MpDrawer` directly.
-> The subcomponent API below should be confirmed with `get-component("MpDrawer")`.
+> ⚠️ **`MpDrawerHeader` / `MpDrawerFooter` are broken in this Pixel3 build** — they
+> render *outside* the floating card, detached at the viewport top/bottom edges (only
+> `MpDrawerBody` is styled as the card). **Do not use them.** Two working options:
+>
+> 1. **Preferred — custom Teleport overlay** (what ~30 of 38 `*Drawer.vue` use, incl.
+>    every filters drawer). Copy the shell from **`BillsFiltersDrawer.vue`**. No
+>    `MpDrawer` at all: a `Teleport`+`Transition` `.xxx-overlay` (fixed inset 0) around
+>    a `.xxx-panel` (12px margin, `calc(100%-24px)` height, 12px radius, flex column)
+>    with plain `<header>` / `.body` / `<footer>` inside. This is the ERP default.
+> 2. **MpDrawer, header+footer inside the body.** If you use `MpDrawer`, put the header
+>    row, content, AND footer row all inside a single `MpDrawerBody` (styled as the
+>    card) — never `MpDrawerHeader`/`MpDrawerFooter`. See `NewLocationDrawer.vue`.
 
 ---
 

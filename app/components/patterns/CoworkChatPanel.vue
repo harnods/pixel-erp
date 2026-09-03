@@ -6,7 +6,7 @@
  * `cw-composer2` (field + "+", model chip, round send). Given a plain `messages`
  * array + a `send` handler, so it can back a real chat or a dry-run test panel.
  */
-import { ref, h, computed, nextTick } from 'vue'
+import { ref, h, computed, nextTick, watch } from 'vue'
 import { MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import { renderMessage } from '~/composables/useAireneChat'
 
@@ -26,6 +26,8 @@ const props = defineProps<{
   agentSwitchable?: boolean
   /** Cap the number of user turns (preview). When reached the composer locks. */
   maxTurns?: number
+  /** Show the bouncing typing dots (agent is thinking / streaming a reply). */
+  thinking?: boolean
 }>()
 const emit = defineEmits<{ (e: 'send', text: string): void; (e: 'update:modelId', v: string): void }>()
 
@@ -51,6 +53,7 @@ const input = ref('')
 const bodyEl = ref<HTMLElement | null>(null)
 const modelLabel = () => props.models?.find((m) => m.id === props.modelId)?.label ?? props.models?.[0]?.label ?? 'Gemini Flash'
 function scrollToEnd() { nextTick(() => { if (bodyEl.value) bodyEl.value.scrollTop = bodyEl.value.scrollHeight }) }
+watch(() => [props.messages.length, props.thinking], () => scrollToEnd())
 function submit() {
   if (atLimit.value) return
   const t = input.value.trim()
@@ -104,6 +107,14 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
           </div>
         </div>
       </template>
+
+      <!-- Typing indicator (agent is thinking) -->
+      <div v-if="thinking" class="chat-message chat-message--assistant">
+        <img class="ccp-msg-av" :src="agentAvatar" :alt="agentName" />
+        <div class="cwc-msg-col">
+          <div class="chat-bubble chat-typing"><span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" /></div>
+        </div>
+      </div>
     </div>
 
     <!-- Composer (cw-composer2, identical to the Chats page) -->
@@ -169,8 +180,15 @@ function ask(s: string) { if (atLimit.value) return; emit('send', s); scrollToEn
 .chat-bubble__text { white-space: pre-wrap; }
 .chat-bubble--user { background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-default); }
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* Typing indicator — bouncing dots while the agent thinks. */
+.chat-typing { display: flex; align-items: center; gap: var(--mp-spacing-1, 4px); background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
+.typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mp-text-secondary); flex-shrink: 0; animation: ccpTypingBounce 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ccpTypingBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .typing-dot { animation: none; } }
 /* Answer eases in (fade + rise + de-blur) instead of snapping — like Claude/ChatGPT. */
-.chat-bubble--assistant { animation: ccpAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.chat-bubble--assistant:not(.chat-typing) { animation: ccpAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes ccpAnswerIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @media (prefers-reduced-motion: reduce) { .chat-bubble--assistant { animation: none; } }
 .chat-bubble__rich { white-space: normal; }
