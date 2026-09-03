@@ -25,7 +25,6 @@ import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULE
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
-import { infoToast } from '~/utils/toasts'
 
 // Gemini mark — 4-point star with Google's multi-hue gradient (model picker).
 const GeminiMark = (props: { size?: number }) =>
