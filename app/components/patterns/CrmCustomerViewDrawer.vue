@@ -18,7 +18,7 @@ export interface ViewDraft {
 
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
-import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpInput, MpFormControl, MpFormLabel } from '@mekari/pixel3'
 import { LIFECYCLE_STAGES, CRM_GROUP_BY } from '~/data/crm'
 
 const props = defineProps<{
@@ -68,19 +68,19 @@ function toggle(list: string[], v: string) {
           <!-- View name -->
           <MpFormControl :id="`${id}-name-fc`" :is-error="nameError">
             <MpFormLabel>View name</MpFormLabel>
-            <input
-              v-model="draft.name" class="cvd-input" type="text" placeholder="e.g. My accounts"
+            <MpInput
+              v-model="draft.name" type="text" placeholder="e.g. My accounts" is-full-width
               @input="nameError = false" @keydown.enter.prevent="save"
-            >
+            />
             <span v-if="nameError" class="cvd-error">Give this view a name.</span>
           </MpFormControl>
 
           <!-- View type -->
           <div class="cvd-field">
             <span class="cvd-field-label">View type</span>
-            <div class="cvd-segmented">
-              <button type="button" class="cvd-seg" :class="{ 'is-active': draft.type === 'table' }" @click="draft.type = 'table'"><MpIcon name="table-view-list" size="sm" /> Table</button>
-              <button type="button" class="cvd-seg" :class="{ 'is-active': draft.type === 'board' }" @click="draft.type = 'board'"><MpIcon name="table-view-column" size="sm" /> Board</button>
+            <div class="cvd-typetabs">
+              <button type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'table' }" @click="draft.type = 'table'"><MpIcon name="table-view-list" size="sm" /> Table</button>
+              <button type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'board' }" @click="draft.type = 'board'"><MpIcon name="table-view-column" size="sm" /> Board</button>
             </div>
           </div>
 
@@ -122,22 +122,21 @@ function toggle(list: string[], v: string) {
           <!-- Segment -->
           <div v-if="segmentOptions.length" class="cvd-field">
             <span class="cvd-field-label">Segment</span>
-            <div class="cvd-chips">
-              <button
-                v-for="s in segmentOptions" :key="s" type="button"
-                class="cvd-chip" :class="{ 'is-on': draft.filters.segments.includes(s) }"
-                @click="toggle(draft.filters.segments, s)"
-              >{{ s }}</button>
-            </div>
+            <ul class="cvd-checklist">
+              <li v-for="s in segmentOptions" :key="s" class="cvd-check-item" @click="toggle(draft.filters.segments, s)">
+                <span @click.stop><MpCheckbox :id="`${id}-sg-${s}`" :is-checked="draft.filters.segments.includes(s)" @change="() => toggle(draft.filters.segments, s)" /></span>
+                <span class="cvd-check-label">{{ s }}</span>
+              </li>
+            </ul>
           </div>
         </div>
 
         <footer class="cvd-footer">
-          <button v-if="mode === 'edit'" class="cvd-btn cvd-btn--danger" type="button" @click="emit('delete')">Delete view</button>
-          <button v-else class="cvd-btn cvd-btn--ghost" type="button" @click="resetFilters">Reset filter</button>
+          <button v-if="mode === 'edit'" class="btn-enterprise btn-enterprise--danger" type="button" @click="emit('delete')">Delete view</button>
+          <button v-else class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">Reset filter</button>
           <div class="cvd-footer-right">
-            <button class="cvd-btn cvd-btn--ghost" type="button" @click="close">Cancel</button>
-            <button class="cvd-btn cvd-btn--primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</button>
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</button>
           </div>
         </footer>
       </div>
@@ -168,9 +167,17 @@ function toggle(list: string[], v: string) {
 .cvd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cvd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-.cvd-segmented { display: inline-flex; padding: 2px; background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-md, 8px); gap: 2px; }
-.cvd-seg { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); flex: 1; justify-content: center; height: 32px; padding: 0 var(--mp-spacing-3); border: none; background: transparent; border-radius: var(--mp-radii-sm, 6px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.cvd-seg.is-active { background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08); font-weight: var(--mp-font-weights-medium, 500); }
+/* layout-only container for the Table/Board tabs; controls use the sanctioned .page-tab pattern */
+.cvd-typetabs { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); }
+.page-tab {
+  position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  background: none; border: none; cursor: pointer; padding: var(--mp-spacing-3) 0;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
+  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); white-space: nowrap; transition: color 100ms;
+}
+.page-tab:not(.page-tab--active):hover { color: var(--mp-text-default); }
+.page-tab--active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
+.page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-text-selected); border-radius: var(--mp-radii-sm, 2px) var(--mp-radii-sm, 2px) 0 0; }
 
 .cvd-radiolist, .cvd-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cvd-radio-item, .cvd-check-item { display: flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; user-select: none; }
@@ -181,17 +188,6 @@ function toggle(list: string[], v: string) {
 
 .cvd-divider { height: 1px; background: var(--mp-border-default); }
 
-.cvd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
-.cvd-chip { padding: 4px 12px; border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); border-radius: 999px; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.cvd-chip.is-on { border-color: var(--mp-border-brand, #0a6e4e); background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); }
-
 .cvd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cvd-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cvd-btn { height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); cursor: pointer; border: 1px solid transparent; }
-.cvd-btn--ghost { background: transparent; color: var(--mp-text-default); border-color: transparent; }
-.cvd-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
-.cvd-btn--danger { background: transparent; color: var(--mp-text-danger, #c62828); }
-.cvd-btn--danger:hover { background: var(--mp-background-danger-subtle, #fdecec); }
-.cvd-btn--primary { background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; }
-.cvd-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 </style>

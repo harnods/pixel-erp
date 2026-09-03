@@ -6,12 +6,13 @@
  * column (employee avatar + name from the HR directory). Reads the CRM mini-DB.
  */
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { crmOrders, type CrmOrder, type OrderStatus } from '~/data/crm'
@@ -34,7 +35,6 @@ const STATUS: Record<OrderStatus, { label: string; type: 'completed' | 'warning'
   'cancelled':        { label: 'Cancelled',        type: 'announcement' },
 }
 const statusOptions = Object.entries(STATUS).map(([value, v]) => ({ value, label: v.label }))
-const statusLabel = computed(() => statusOptions.find((o) => o.value === statusFilter.value)?.label ?? '')
 
 // ── Columns (mirror Sales orders; Balance due & Tags removed, Owner added) ──
 const columns: TableColumn[] = [
@@ -90,7 +90,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <h1 class="crm-title">Orders</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('New order')">
+        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New order')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
           New order
         </button>
@@ -120,18 +120,14 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       >
         <template #filters>
           <div class="filter-left">
-            <MpPopover id="crm-order-status-filter" is-close-on-select>
-              <MpPopoverTrigger>
-                <MpSelect id="crm-order-status-select" :placeholder="t('Status')" :model-value="statusFilter" is-clearable :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''">
-                  <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="opt in statusOptions" :key="opt.value" :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <ErpFilterSelect
+              id="crm-order-status-select"
+              :model-value="statusFilter"
+              :placeholder="t('Status')"
+              :options="statusOptions"
+              width="160px"
+              @update:model-value="(v: string) => (statusFilter = v)"
+            />
             <button class="filter-all-btn" @click="soon('All filters')">
               <MpIcon name="filter" size="sm" />
               {{ t('All filters') }}

@@ -67,6 +67,10 @@
 .btn-enterprise--icon-before { padding-left: var(--mp-spacing-3); }
 .btn-enterprise--icon-after  { padding-right: var(--mp-spacing-3); }
 
+/* Icon-only button — square, no horizontal padding. Combine with a variant
+   (e.g. --secondary) for an icon-only action such as a "More actions" kebab. */
+.btn-enterprise--icon { width: 36px; height: 36px; padding: 0; }
+
 /* ── Button size: sm ──────────────────────────────────────────────────────────── */
 .btn-enterprise--sm {
   padding: var(--mp-spacing-1) var(--mp-spacing-2);

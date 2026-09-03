@@ -8,7 +8,7 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, h } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpText, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { MpText, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import { employees } from '~/data'
 import { crmCustomers } from '~/data/crm'
 
@@ -136,7 +136,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
           <!-- Header -->
           <header class="dpd-header">
             <MpText weight="semiBold">Preview</MpText>
-            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="emit('close')" />
+            <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" aria-label="Close" @click="emit('close')"><MpIcon name="close" size="md" /></button>
           </header>
 
           <!-- View record / Actions -->
@@ -144,7 +144,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
             <a class="dpd-link" @click.prevent="soon('View record')">View record</a>
             <MpPopover id="dpd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="dpd-actions-btn" type="button">Actions
+                <button class="btn-enterprise btn-enterprise--secondary" type="button">Actions
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </MpPopoverTrigger>
@@ -174,7 +174,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
                 <div><dt>Deal Stage:</dt><dd>{{ ctx.stage }}</dd></div>
               </dl>
               <div class="dpd-quick">
-                <button v-for="a in ACTIONS" :key="a.label" class="dpd-quick-btn" type="button" @click="soon(a.label)">
+                <button v-for="a in ACTIONS" :key="a.label" class="btn-enterprise btn-enterprise--plain dpd-quick-tile" type="button" @click="soon(a.label)">
                   <span class="dpd-quick-ic"><ActionIcon :d="a.d" /></span>
                   <span class="dpd-quick-label">{{ a.label }}</span>
                 </button>
@@ -183,10 +183,10 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
             <!-- About this deal -->
             <section class="dpd-section">
-              <button class="dpd-section-head" type="button" @click="toggle('about')">
+              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('about')" @keydown.enter="toggle('about')" @keydown.space.prevent="toggle('about')">
                 <svg class="dpd-chevron" :class="{ 'is-open': openSections.about }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="dpd-section-title">About this deal</span>
-              </button>
+              </div>
               <div v-show="openSections.about" class="dpd-section-body">
                 <div v-for="f in fields" :key="f.label" class="dpd-field">
                   <span class="dpd-field-label">{{ f.label }}</span>
@@ -204,10 +204,10 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
             <!-- Recent / Upcoming activities -->
             <section class="dpd-section">
-              <button class="dpd-section-head" type="button" @click="toggle('recent')">
+              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('recent')" @keydown.enter="toggle('recent')" @keydown.space.prevent="toggle('recent')">
                 <svg class="dpd-chevron" :class="{ 'is-open': openSections.recent }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="dpd-section-title">Recent activities</span>
-              </button>
+              </div>
               <div v-show="openSections.recent" class="dpd-section-body">
                 <div v-for="(a, i) in recentActivities" :key="i" class="dpd-activity">
                   <span class="dpd-activity-ic"><ActivityIcon :d="a.icon" /></span>
@@ -216,10 +216,10 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
               </div>
             </section>
             <section class="dpd-section">
-              <button class="dpd-section-head" type="button" @click="toggle('upcoming')">
+              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('upcoming')" @keydown.enter="toggle('upcoming')" @keydown.space.prevent="toggle('upcoming')">
                 <svg class="dpd-chevron" :class="{ 'is-open': openSections.upcoming }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="dpd-section-title">Upcoming activities</span>
-              </button>
+              </div>
               <div v-show="openSections.upcoming" class="dpd-section-body">
                 <div v-for="(a, i) in upcomingActivities" :key="i" class="dpd-activity">
                   <span class="dpd-activity-ic"><ActivityIcon :d="a.icon" /></span>
@@ -231,11 +231,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
             <!-- Contacts -->
             <section class="dpd-section">
               <div class="dpd-section-head dpd-section-head--static">
-                <button class="dpd-section-toggle" type="button" @click="toggle('contacts')">
+                <div class="dpd-section-toggle" role="button" tabindex="0" @click="toggle('contacts')" @keydown.enter="toggle('contacts')" @keydown.space.prevent="toggle('contacts')">
                   <svg class="dpd-chevron" :class="{ 'is-open': openSections.contacts }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   <span class="dpd-section-title">Contacts ({{ contacts.length }})</span>
-                </button>
-                <button class="dpd-add" type="button" @click="soon('Add contact')">+ Add</button>
+                </div>
+                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="soon('Add contact')">+ Add</button>
               </div>
               <div v-show="openSections.contacts" class="dpd-section-body">
                 <div v-for="ct in contacts" :key="ct.name" class="dpd-company">
@@ -248,11 +248,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
             <!-- Companies -->
             <section class="dpd-section">
               <div class="dpd-section-head dpd-section-head--static">
-                <button class="dpd-section-toggle" type="button" @click="toggle('companies')">
+                <div class="dpd-section-toggle" role="button" tabindex="0" @click="toggle('companies')" @keydown.enter="toggle('companies')" @keydown.space.prevent="toggle('companies')">
                   <svg class="dpd-chevron" :class="{ 'is-open': openSections.companies }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   <span class="dpd-section-title">Companies (1)</span>
-                </button>
-                <button class="dpd-add" type="button" @click="soon('Add company')">+ Add</button>
+                </div>
+                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="soon('Add company')">+ Add</button>
               </div>
               <div v-show="openSections.companies" class="dpd-section-body">
                 <div v-for="co in companies" :key="co.name" class="dpd-company">
@@ -269,20 +269,19 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 </template>
 
 <style scoped>
-.dpd-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
+.dpd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .dpd-panel {
   margin: var(--mp-spacing-3);
   width: min(440px, calc(100% - 24px)); height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px); overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); /* pixel-police-allow-shadow */
 }
 /* Header — ERP drawer pattern: white, semibold title, ghost close, bottom rule. */
 .dpd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .dpd-subbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .dpd-link { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); cursor: pointer; text-decoration: underline; }
-.dpd-actions-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .dpd-body { flex: 1; min-height: 0; overflow-y: auto; }
 
@@ -296,9 +295,9 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 .dpd-summary-meta dt { margin: 0; color: var(--mp-text-secondary); }
 .dpd-summary-meta dd { margin: 0; color: var(--mp-text-default); }
 .dpd-quick { display: flex; justify-content: space-between; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
-.dpd-quick-btn { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); background: none; border: none; cursor: pointer; flex: 1; }
+.dpd-quick-tile { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); flex: 1; }
 .dpd-quick-ic { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--mp-border-default); color: var(--mp-text-secondary); }
-.dpd-quick-btn:hover .dpd-quick-ic { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+.dpd-quick-tile:hover .dpd-quick-ic { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
 .dpd-quick-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Sections */
@@ -310,7 +309,6 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 .dpd-section-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .dpd-chevron { flex-shrink: 0; color: var(--mp-text-secondary); transition: transform 150ms; }
 .dpd-chevron.is-open { transform: rotate(90deg); }
-.dpd-add { background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #165082); }
 .dpd-section-body { padding: 0 var(--mp-spacing-4) var(--mp-spacing-4); }
 
 .dpd-field { display: flex; flex-direction: column; gap: 2px; padding: var(--mp-spacing-2) 0; }

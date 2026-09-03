@@ -2,10 +2,9 @@
 /**
  * CRM (Qontak) product sidebar — shown while the CRM product is active (/crm*).
  *
- * CRM has NO level-2 menu: a single level-1 rail only (Home, Deals, Orders,
- * Tasks, Customers, Products, then a divider before Settings). Visuals mirror
- * ErpSidebar's level-1 rail (52px collapsed / 216px expanded, CDN outline/fill
- * icons, hover → link blue, active → pressed bg + fill icon).
+ * Level-1 icon rail + an ERP-style level-2 PANEL (same mechanism as ErpSidebar):
+ * a nav item with `children` (Customers → Companies · Contacts) opens the 188px
+ * secondary panel and the rail collapses to icons, exactly like Sales in the ERP.
  */
 import { ref, computed } from 'vue'
 import { useLocale } from '~/composables/useLocale'
@@ -17,25 +16,26 @@ const { t } = useLocale()
 
 const expanded = ref(true)
 function handleToggle() { expanded.value = !expanded.value }
-// Below tablet width the expanded nav (216px) starves the content area, so we
-// force the collapsed icon rail there regardless of the saved preference
-// (mirrors ErpSidebar).
+
 const isNarrowViewport = ref(false)
 if (import.meta.client) {
   const mq = window.matchMedia('(max-width: 1024px)')
   isNarrowViewport.value = mq.matches
   mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
 }
-const navExpanded = computed(() => expanded.value && !isNarrowViewport.value)
 
-interface Item { icon: string; name: string; to: string }
+interface Child { name: string; to: string }
+interface Item { icon: string; name: string; to: string; children?: Child[] }
 // Two groups → the border-bottom between them is the divider before Settings.
 const navGroups: Item[][] = [
   [
     { icon: 'pipeline',     name: 'Deals',     to: '/crm/deals' },
     { icon: 'cart',         name: 'Orders',    to: '/crm/orders' },
     { icon: 'productivity', name: 'Tasks',     to: '/crm/tasks' },
-    { icon: 'contact',      name: 'Customers', to: '/crm/customers' },
+    { icon: 'contact',      name: 'Customers', to: '/crm/customers', children: [
+      { name: 'Companies', to: '/crm/customers' },
+      { name: 'Contacts',  to: '/crm/contacts' },
+    ] },
     { icon: 'products',     name: 'Products',  to: '/crm/products' },
   ],
   [
@@ -44,14 +44,28 @@ const navGroups: Item[][] = [
 ]
 
 const activeItem = computed<string>(() => {
-  // /crm (bare) lands on Deals, so treat it as Deals-active too.
   if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
+  // Contacts is a level-2 sibling of Companies under the Customers parent.
+  if (route.path === '/crm/contacts' || route.path.startsWith('/crm/contacts/')) return 'Customers'
   for (const g of navGroups) for (const it of g)
     if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   return 'Deals'
 })
 
-function handleNavClick(item: Item) { router.push(item.to) }
+// Level-2 panel: opens whenever the active section has children (e.g. Customers).
+const activePanel = computed<Item | null>(() => {
+  for (const g of navGroups) for (const it of g)
+    if (it.name === activeItem.value && it.children?.length) return it
+  return null
+})
+
+// Rail collapses to the icon rail while a level-2 panel is open (ERP behavior).
+const navExpanded = computed(() => expanded.value && !isNarrowViewport.value && !activePanel.value)
+
+function isChildActive(to: string): boolean {
+  return route.path === to || route.path.startsWith(to + '/')
+}
+function handleNavClick(item: Item) { router.push(item.children?.length ? item.children[0]!.to : item.to) }
 </script>
 
 <template>
@@ -64,7 +78,7 @@ function handleNavClick(item: Item) { router.push(item.to) }
         </button>
       </div>
 
-      <!-- Nav groups (level-1 only; group boundary = divider) -->
+      <!-- Level-1 nav rail -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
         <button
           v-for="item in group"
@@ -81,6 +95,27 @@ function handleNavClick(item: Item) { router.push(item.to) }
         </button>
       </div>
     </nav>
+
+    <!-- Level-2 panel (ERP .sidebar-panel) — Customers → Companies · Contacts -->
+    <Transition name="panel">
+      <div v-if="activePanel && !isNarrowViewport" class="sidebar-panel">
+        <div class="panel-header">
+          <span class="panel-title">{{ t(activePanel.name).toUpperCase() }}</span>
+        </div>
+        <div class="panel-list">
+          <button
+            v-for="child in activePanel.children"
+            :key="child.name"
+            class="panel-item"
+            :class="{ active: isChildActive(child.to) }"
+            type="button"
+            @click="router.push(child.to)"
+          >
+            <span>{{ t(child.name) }}</span>
+          </button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -90,12 +125,8 @@ function handleNavClick(item: Item) { router.push(item.to) }
 .sidebar {
   width: 52px;
   background: var(--mp-background-neutral-subtle);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
-  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: width;
+  display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1); will-change: width;
   padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
 }
 .sidebar.is-expanded { width: 216px; }
@@ -104,8 +135,7 @@ function handleNavClick(item: Item) { router.push(item.to) }
 .sidebar-toggle {
   width: var(--mp-sizes-9); height: var(--mp-sizes-9);
   display: flex; align-items: center; justify-content: center;
-  border-radius: var(--mp-radii-md); cursor: pointer;
-  background: transparent; border: none;
+  border-radius: var(--mp-radii-md); cursor: pointer; background: transparent; border: none;
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-1);
   flex-shrink: 0; transition: background-color 100ms;
 }
@@ -125,8 +155,7 @@ function handleNavClick(item: Item) { router.push(item.to) }
 .nav-group:last-child { border-bottom: none; }
 
 .nav-item {
-  display: flex; align-items: center; justify-content: flex-start;
-  gap: var(--mp-spacing-2);
+  display: flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-9); height: var(--mp-sizes-9);
   border-radius: var(--mp-radii-md); border: none; background: transparent;
   cursor: pointer; padding: var(--mp-spacing-2); overflow: hidden;
@@ -151,8 +180,30 @@ function handleNavClick(item: Item) { router.push(item.to) }
 .nav-label {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
-  opacity: 0; overflow: hidden; white-space: nowrap; pointer-events: none;
-  transition: opacity 140ms ease;
+  opacity: 0; overflow: hidden; white-space: nowrap; pointer-events: none; transition: opacity 140ms ease;
 }
 .sidebar.is-expanded .nav-label { opacity: 1; }
+
+/* ── Level-2 panel (mirrors ErpSidebar .sidebar-panel) ── */
+.sidebar-panel {
+  width: 188px; background: var(--mp-background-neutral-subtle); height: 100%;
+  display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+  padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
+}
+.panel-header { height: 72px; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.panel-title { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 2.88px; color: var(--mp-text-default); }
+.panel-list { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.panel-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
+  width: 100%; padding: var(--mp-spacing-2); border-radius: var(--mp-radii-md); border: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
+  cursor: pointer; text-align: left; line-height: var(--mp-line-heights-md); transition: background-color 100ms;
+}
+.panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
+.panel-item.active { background-color: var(--mp-background-neutral-pressed, #E2E8F0); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
+
+/* Slide-in transition */
+.panel-enter-active, .panel-leave-active { transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease; overflow: hidden; }
+.panel-enter-from, .panel-leave-to { width: 0; opacity: 0; }
+.panel-enter-to, .panel-leave-from { width: 188px; opacity: 1; }
 </style>
