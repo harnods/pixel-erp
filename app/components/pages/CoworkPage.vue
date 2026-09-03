@@ -814,9 +814,16 @@ const skillSections = computed<SkillSection[]>(() => {
 })
 
 function openSkill(s: CoworkSkill) { router.push(`/cowork-skills/${s.id}`) }
-function deleteSkillById(s: CoworkSkill) {
+// Delete a custom skill — always via a confirmation dialog (destructive).
+const deleteSkillTarget = ref<CoworkSkill | null>(null)
+const deleteSkillOpen = ref(false)
+function deleteSkillById(s: CoworkSkill) { deleteSkillTarget.value = s; deleteSkillOpen.value = true }
+function confirmDeleteSkill() {
+  const s = deleteSkillTarget.value
+  if (!s) return
   removeSkill(s.id)
-  toast.notify({ variant: 'success', title: 'Skill deleted' })
+  toast.notify({ variant: 'success', title: `“${s.name}” deleted` })
+  deleteSkillTarget.value = null
 }
 
 // ── Create / edit skill modal (AI-generate from a prompt, or upload a .md) ─────
@@ -1712,14 +1719,14 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       </div>
                       <p class="cw-conn-desc">{{ s.description }}</p>
                     </div>
-                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select placement="bottom-end">
+                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '160px' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="openSkill(s)">View details</MpPopoverListItem>
-                          <MpPopoverListItem v-if="s.source === 'custom'" @click="deleteSkillById(s)">Delete</MpPopoverListItem>
+                          <MpPopoverListItem @click.stop="openSkill(s)">View details</MpPopoverListItem>
+                          <MpPopoverListItem v-if="s.source === 'custom'" @click.stop="deleteSkillById(s)">Delete</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1731,6 +1738,15 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
             <p v-if="!skillSections.length" class="cw-muted cw-conn-noresult">No skills match “{{ skillSearch }}”.</p>
           </div>
+
+          <ConfirmModal
+            v-model:is-open="deleteSkillOpen"
+            title="Delete this skill?"
+            :description="deleteSkillTarget ? `“${deleteSkillTarget.name}” will be removed from Cowork and detached from any agents using it. This can't be undone.` : ''"
+            confirm-label="Delete skill"
+            :is-danger="true"
+            @confirm="confirmDeleteSkill"
+          />
         </section>
     </template>
 
