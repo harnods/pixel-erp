@@ -30,6 +30,7 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
+import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
@@ -91,6 +92,11 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  // Contacts — one index page serves all three role lists; the route slug picks
+  // which role it filters by. New/detail/edit resolve via detailMatch below.
+  'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Vendors':           defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Other contacts':    defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
@@ -183,6 +189,8 @@ const InternalTransferFormPage = asyncPage(() => import('~/components/pages/Inte
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
+const NewContactPage = asyncPage(() => import('~/components/pages/NewContactPage.vue'))
+const ContactDetailsPage = asyncPage(() => import('~/components/pages/ContactDetailsPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
@@ -389,6 +397,15 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
+  }
+  // Contacts: /{customers|vendors|other-contacts}/new → create form,
+  // /:id → contact detail, /:id/edit → the same form in edit mode. The bare
+  // list route falls through to the padded index page in pageRegistry.
+  if (segs[0] === 'customers' || segs[0] === 'vendors' || segs[0] === 'other-contacts') {
+    const id = segs[1]
+    if (id === 'new') return { component: NewContactPage, id: 'new' }
+    if (id && segs[2] === 'edit') return { component: NewContactPage, id }
+    if (id) return { component: ContactDetailsPage, id }
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
   if (segs[0] === 'cowork-chats') return { component: CoworkChatsPage, id: '' }
@@ -796,7 +813,7 @@ const pageTabs: Record<string, string[]> = {
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
 // Cycle counts' Recommendations tab has its own single-warehouse selector.
-const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
+const { warehouseId: recommendationWarehouseId, setWarehouse: setRecommendationWarehouse } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
@@ -932,13 +949,77 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
-// product names, only shown once the Recommendations tab actually has SKUs
-// flagged for counting.
-const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
-const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
+// ── Daily "Recommended for counting today" banner (Cycle counts index, Count
+// task tab only) ─────────────────────────────────────────────────────────────
+// Recommendations are computed per warehouse, so this banner is too: it answers
+// for exactly the warehouse(s) the index is filtered to, and never names a SKU
+// from a warehouse the table is hiding.
+const onCycleCountTab = computed(() =>
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task',
 )
+
+// The warehouses the banner speaks for. No filter set means "every warehouse the
+// user can see" — the same question a multi-warehouse filter asks, so it gets the
+// same answer shape.
+const cycleCountBannerScope = computed(() => {
+  const picked = activeWarehouseFilter.value
+  const all = warehouses.filter(w => w.status === 'active' && !w.isDefault)
+  return picked.length ? all.filter(w => picked.includes(w.id)) : all
+})
+// Warehouses with recommendations switched off (or nothing flagged) drop out
+// rather than reporting a bare "0 SKUs".
+const cycleCountBannerCounts = computed(() =>
+  cycleCountBannerScope.value
+    .map(w => ({ id: w.id, name: w.name, count: recommendationCount(w.id) }))
+    .filter(w => w.count > 0),
+)
+const cycleCountBannerTotal = computed(() =>
+  cycleCountBannerCounts.value.reduce((sum, w) => sum + w.count, 0),
+)
+
+// Two shapes, chosen by how many warehouses are IN SCOPE — not by how many have
+// something flagged. With several in scope, naming 3 products across them answers
+// the wrong question (the manager wants to know where the work is) and, worse,
+// reads as if the list covered every warehouse in the filter. So each warehouse
+// reports its own count, as a link straight into the Recommendations tab already
+// filtered to it. Only a scope of exactly one warehouse names the products, where
+// there is nothing to misattribute.
+const cycleCountBannerMulti = computed(() =>
+  onCycleCountTab.value && cycleCountBannerScope.value.length > 1 && cycleCountBannerCounts.value.length > 0,
+)
+const cycleCountBannerSingleId = computed(() =>
+  cycleCountBannerScope.value.length === 1 ? cycleCountBannerScope.value[0]!.id : undefined,
+)
+const cycleCountBannerNames = computed(() =>
+  topRecommendedProductNames(3, cycleCountBannerSingleId.value ? [cycleCountBannerSingleId.value] : activeWarehouseFilter.value),
+)
+const cycleCountBannerVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length > 0,
+)
+
+// Recommendations are opt-in per warehouse. Filter to one that has them switched
+// off and there is nothing to recommend — but silently dropping the banner reads
+// as a bug ("where did it go?"), so say why and point at the setting instead.
+// Only when EVERY filtered warehouse is off: if any one is on, its list is the
+// useful thing to show.
+const cycleCountRecOffNames = computed(() => {
+  const ids = activeWarehouseFilter.value
+  if (!ids.length) return []
+  const off = warehouses.filter(w => ids.includes(w.id) && !getWarehouseConfig(w.id).cycleCountRec)
+  return off.length === ids.length ? off.map(w => w.name) : []
+})
+const cycleCountRecOffConfigId = computed(() =>
+  activeWarehouseFilter.value.length === 1 ? activeWarehouseFilter.value[0] : null,
+)
+const cycleCountRecOffVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length === 0 && cycleCountRecOffNames.value.length > 0,
+)
+
+/** Open the Recommendations tab, pre-filtered to one warehouse when given. */
+function openRecommendations(warehouseId?: string) {
+  if (warehouseId) setRecommendationWarehouse(warehouseId)
+  selectTab('Recommendations')
+}
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 // WMS analytics — one page, direction per tab. Shared by the ERP "WMS analytics"
@@ -1063,6 +1144,13 @@ function msgAgent(msg: { role: string; agentId?: string }) {
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
 provide('courierAddSignal', courierAddSignal)
+
+// ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
+// (it knows which role list is active), so signal it the same way.
+const contactAddSignal = ref(0)
+provide('contactAddSignal', contactAddSignal)
+const isContactsIndex = computed(() =>
+  ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -1780,6 +1868,14 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
         </div>
+        <div v-else-if="isContactsIndex" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="contactAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('Contact') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1887,12 +1983,38 @@ function startResize(e: MouseEvent) {
       </div>
 
       <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
-        <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
+        <!-- Several warehouses in scope: where the work is, not which products. -->
+        <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>Recommended for counting today</MpBannerTitle>
+          <MpBannerDescription>
+            <template v-for="(w, i) in cycleCountBannerCounts" :key="w.id">
+              <MpButton variant="textLink" size="sm" @click="openRecommendations(w.id)">
+                {{ w.count }} {{ w.count === 1 ? 'SKU' : 'SKUs' }}
+              </MpButton>
+              <span>&nbsp;in {{ w.name }}</span>
+              <span v-if="i < cycleCountBannerCounts.length - 2">, </span>
+              <span v-else-if="i === cycleCountBannerCounts.length - 2"> and </span>
+            </template>
+            <span>&nbsp;{{ cycleCountBannerTotal === 1 ? 'is' : 'are' }} recommended for counting today.</span>
+          </MpBannerDescription>
+        </MpBanner>
+        <!-- Exactly one warehouse in scope: the top 3 products themselves. -->
+        <MpBanner v-else-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
           <MpBannerDescription>{{ cycleCountBannerNames.join(', ') }}</MpBannerDescription>
           <MpBannerLink>
-            <MpButton variant="textLink" size="sm" @click="selectTab('Recommendations')">View all recommendations</MpButton>
+            <MpButton variant="textLink" size="sm" @click="openRecommendations(cycleCountBannerSingleId)">View all recommendations</MpButton>
+          </MpBannerLink>
+        </MpBanner>
+        <!-- Nothing to recommend because the setting is off, not because nothing needs counting. -->
+        <MpBanner v-else-if="cycleCountRecOffVisible" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>{{ cycleCountRecOffNames.length === 1 ? `Cycle count recommendations are off for ${cycleCountRecOffNames[0]}` : 'Cycle count recommendations are off for the selected warehouses' }}</MpBannerTitle>
+          <MpBannerDescription>Turn them on in Configure warehouse to see which SKUs need counting here.</MpBannerDescription>
+          <MpBannerLink v-if="cycleCountRecOffConfigId">
+            <MpButton variant="textLink" size="sm" @click="router.push(`/warehouses/${cycleCountRecOffConfigId}/configure`)">Configure warehouse</MpButton>
           </MpBannerLink>
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />

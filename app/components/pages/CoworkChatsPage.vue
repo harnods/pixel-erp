@@ -17,6 +17,7 @@
  */
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'

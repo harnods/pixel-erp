@@ -13,6 +13,7 @@ import { deliveryTasksFor, DELIVERY_COURIERS, type DeliveryTask } from '~/data/d
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
+import { assigneeDisplayName } from '~/data/users'
 
 // A delivery's order source (Sales Order / Manual / marketplace channel) — looked
 // up from the order since DeliveryTask itself doesn't carry it.
@@ -443,7 +444,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Assignee ── -->
-    <template #cell-assignee="{ value }">{{ value || '—' }}</template>
+    <template #cell-assignee="{ value }">{{ assigneeDisplayName(value as string) || t('Unassigned') }}</template>
 
     <!-- ── Numeric cells ── -->
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>

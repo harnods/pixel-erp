@@ -159,6 +159,9 @@ function toggle(list: string[], v: string) {
 .cvd-close:hover { background: var(--mp-background-neutral-hovered); }
 
 .cvd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
+.cvd-input { width: 100%; height: 36px; padding: 0 var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cvd-input:focus { border-color: var(--mp-border-brand, #0a6e4e); }
+.cvd-input::placeholder { color: var(--mp-text-placeholder); }
 .cvd-error { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 
 .cvd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
