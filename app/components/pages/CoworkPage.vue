@@ -1617,7 +1617,24 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="skillGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Connections) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'skill-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': skillCols }">
+                  <div v-for="n in skillCols" :key="'skill-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head"><MpSkeleton class="cw-skeleton" width="120px" height="16px" rounded="sm" duration="0s" /></div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="160px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="skillGridEl" class="cw-conn-sections">
             <section v-for="sec in skillSections" :key="sec.key" class="cw-conn-section">
               <h2 v-if="sec.title" class="cw-conn-cat-title">{{ sec.title }}</h2>
               <div class="cw-conn-clip">
