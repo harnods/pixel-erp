@@ -1,16 +1,22 @@
 <script setup lang="ts">
 /**
- * SkillCreateDrawer — "Create with AI". A Pixel MpDrawer (floating variant, per
- * docs/patterns/Drawer.md): chat with the Skill builder on the left; once it
- * drafts a skill, an editable Markdown preview appears on the right (rendered by
- * default, with a single "Edit" toggle — like the KB doc editor, minus the
- * summary/keywords/details panel). Save emits the skill for the page to persist.
+ * SkillCreateDrawer — "Create with AI". Uses the ERP's canonical drawer shell:
+ * a custom Teleport overlay + floating panel (identical structure to
+ * BillsFiltersDrawer / SalesInvoiceFiltersDrawer / the ~30 other *Drawer.vue).
+ * We do NOT use Pixel `MpDrawer` — it has no structural CSS in this Pixel3
+ * build, so its header/footer detach to the viewport edges (see the "Drawers"
+ * note in CLAUDE.md).
+ *
+ * Left: chat with the Skill builder. Once it drafts a skill, an editable
+ * Markdown preview appears on the right (rendered by default, single "Edit"
+ * toggle — like the KB doc editor, minus the summary/keywords/details panel).
+ * The panel widens from chat-only to two columns when a draft exists. Save
+ * emits the skill for the page to persist. Closing is via ×, Cancel, or Esc —
+ * an overlay click is intentionally ignored so an in-progress draft is never
+ * lost by a stray click.
  */
-import { ref, computed } from 'vue'
-import {
-  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerCloseButton, MpDrawerOverlay,
-  MpButton, MpButtonGroup, MpIcon,
-} from '@mekari/pixel3'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import type { CoworkModule } from '~/data/cowork'
 
@@ -79,83 +85,130 @@ function renderMd(md: string): string {
 const renderedMd = computed(() => (draft.value ? renderMd(draft.value.markdown) : ''))
 
 function save() { if (draft.value) emit('save', { ...draft.value }) }
+
+// Esc closes (matches the other drawers' keyboard behaviour).
+function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) close() }
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <MpDrawer
-    id="skill-create-drawer"
-    class="scd-drawer"
-    :is-open="open"
-    placement="right"
-    variant="floating"
-    :size="draft ? '2xl' : 'md'"
-    is-close-on-esc
-    is-close-on-overlay-click
-    :is-keep-alive="false"
-    @close="close"
-  >
-    <MpDrawerContent>
-      <MpDrawerHeader>Create a skill with AI<MpDrawerCloseButton /></MpDrawerHeader>
-      <MpDrawerBody>
-        <div class="scd-cols" :class="{ 'scd-cols--split': !!draft }">
-          <!-- Left: chat with the Skill builder -->
-          <div class="scd-chat">
-            <CoworkChatPanel
-              :messages="messages"
-              agent-name="Skill builder"
-              agent-avatar="/agents/airene.png"
-              greeting="Tell me what the skill should do — I'll draft it, then you can edit and save it."
-              :suggestions="SUGGESTIONS"
-              :models="MODELS"
-              :model-id="model"
-              hide-header
-              hide-add
-              :agent-switchable="false"
-              :thinking="generating"
-              @update:model-id="(v: string) => model = v"
-              @send="onSend"
-            />
+  <Teleport to="body">
+    <Transition name="scd">
+      <div v-if="open" class="scd-overlay">
+        <div class="scd-panel" :class="{ 'scd-panel--split': !!draft }" role="dialog" aria-label="Create a skill with AI">
+          <header class="scd-header">
+            <span class="scd-title">Create a skill with AI</span>
+            <MpButton class="scd-close" aria-label="Close" @click="close">
+              <MpIcon name="close" size="md" />
+            </MpButton>
+          </header>
+
+          <div class="scd-body">
+            <div class="scd-cols" :class="{ 'scd-cols--split': !!draft }">
+              <!-- Left: chat with the Skill builder -->
+              <div class="scd-chat">
+                <CoworkChatPanel
+                  :messages="messages"
+                  agent-name="Skill builder"
+                  agent-avatar="/agents/airene.png"
+                  greeting="Tell me what the skill should do — I'll draft it, then you can edit and save it."
+                  :suggestions="SUGGESTIONS"
+                  :models="MODELS"
+                  :model-id="model"
+                  hide-header
+                  hide-add
+                  :agent-switchable="false"
+                  :thinking="generating"
+                  @update:model-id="(v: string) => model = v"
+                  @send="onSend"
+                />
+              </div>
+
+              <!-- Right: the drafted skill (only once the agent has drafted one) -->
+              <div v-if="draft" class="scd-preview">
+                <div class="scd-preview__head">
+                  <div class="scd-preview__meta">
+                    <input v-model="draft.name" class="scd-name" placeholder="Skill name">
+                    <input v-model="draft.description" class="scd-desc" placeholder="One-line description">
+                  </div>
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary scd-edit" @click="mode = mode === 'edit' ? 'preview' : 'edit'">
+                    <MpIcon :name="mode === 'edit' ? 'check' : 'edit'" size="sm" /> {{ mode === 'edit' ? 'Done' : 'Edit' }}
+                  </button>
+                </div>
+                <div class="scd-preview__doc">
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div v-if="mode === 'preview'" class="scd-md" v-html="renderedMd" />
+                  <textarea v-else v-model="draft.markdown" class="scd-editor" spellcheck="false" placeholder="Skill definition (Markdown)…" />
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- Right: the drafted skill (only once the agent has drafted one) -->
-          <div v-if="draft" class="scd-preview">
-            <div class="scd-preview__head">
-              <div class="scd-preview__meta">
-                <input v-model="draft.name" class="scd-name" placeholder="Skill name">
-                <input v-model="draft.description" class="scd-desc" placeholder="One-line description">
-              </div>
-              <button type="button" class="btn-enterprise btn-enterprise--secondary scd-edit" @click="mode = mode === 'edit' ? 'preview' : 'edit'">
-                <MpIcon :name="mode === 'edit' ? 'check' : 'edit'" size="sm" /> {{ mode === 'edit' ? 'Done' : 'Edit' }}
-              </button>
+          <footer v-if="draft" class="scd-footer">
+            <span class="scd-foot-hint">Saved as a Custom skill · stays off until enabled on an agent.</span>
+            <div class="scd-footer-right">
+              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
+              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">Save skill</button>
             </div>
-            <div class="scd-preview__doc">
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <div v-if="mode === 'preview'" class="scd-md" v-html="renderedMd" />
-              <textarea v-else v-model="draft.markdown" class="scd-editor" spellcheck="false" placeholder="Skill definition (Markdown)…" />
-            </div>
-          </div>
+          </footer>
         </div>
-      </MpDrawerBody>
-      <MpDrawerFooter v-if="draft">
-        <span class="scd-foot-hint">Saved as a Custom skill · stays off until enabled on an agent.</span>
-        <MpButtonGroup>
-          <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="save">Save skill</MpButton>
-        </MpButtonGroup>
-      </MpDrawerFooter>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
-/* The body hosts a full-height two-column layout, so drop its default padding
-   and let the columns manage their own scroll. */
-.scd-drawer :deep(.mp-drawer__body), .scd-drawer :deep([data-pixel-component="MpDrawerBody"]) { padding: 0; overflow: hidden; }
+/* Shell — identical structure to BillsFiltersDrawer et al. */
+.scd-enter-active { transition: background-color 250ms ease; }
+.scd-leave-active { transition: background-color 250ms ease; }
+.scd-enter-from, .scd-leave-to { background-color: transparent; }
+.scd-enter-active .scd-panel { transition: transform 350ms ease-out; }
+.scd-leave-active .scd-panel { transition: transform 250ms ease-in; }
+.scd-enter-from .scd-panel,
+.scd-leave-to .scd-panel { transform: translateX(calc(100% + 12px)); }
+
+.scd-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
+  display: flex; justify-content: flex-end;
+}
+.scd-panel {
+  margin: var(--mp-spacing-3, 12px);
+  width: min(440px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: width 260ms ease;
+}
+.scd-panel--split { width: min(960px, calc(100% - 24px)); }
+
+.scd-header {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.scd-title {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.scd-close {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.scd-close:hover { background: var(--mp-background-neutral-hovered); }
+
+.scd-body { flex: 1; min-height: 0; overflow: hidden; }
 .scd-cols { display: grid; grid-template-columns: 1fr; height: 100%; min-height: 0; }
 .scd-cols--split { grid-template-columns: 420px minmax(0, 1fr); }
 .scd-chat { min-height: 0; height: 100%; }
 .scd-cols--split .scd-chat { border-right: 1px solid var(--mp-border-default); }
+
 .scd-preview { min-height: 0; display: flex; flex-direction: column; }
 .scd-preview__head { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .scd-preview__meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
@@ -174,5 +227,12 @@ function save() { if (draft.value) emit('save', { ...draft.value }) }
 .scd-md :deep(ol) { margin: 0 0 10px; padding-inline-start: 22px; list-style: decimal outside; }
 .scd-md :deep(li) { margin: 2px 0; display: list-item; }
 .scd-md :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; background: var(--mp-background-neutral-subtle); padding: 1px 5px; border-radius: 4px; }
-.scd-foot-hint { flex: 1; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+
+.scd-footer {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default);
+}
+.scd-foot-hint { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.scd-footer-right { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

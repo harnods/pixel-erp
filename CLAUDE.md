@@ -57,16 +57,29 @@ buttons and errors-inline-not-toast rules. Secondary buttons inside these forms
 use `btn-enterprise--secondary` (black text, dark border), not a raw Pixel
 `MpButton variant="secondary"`.
 
-## Drawers — always Pixel `MpDrawer` floating (never a custom overlay)
+## Drawers — custom Teleport overlay panel (NOT Pixel `MpDrawer`)
 
-**Read `docs/patterns/Drawer.md` before building ANY drawer.** ERP/Cowork drawers
-are Pixel `MpDrawer` with `variant="floating"` + `placement="right"` + a `size`:
-`MpDrawer > MpDrawerContent > MpDrawerHeader` (title + `MpDrawerCloseButton`) /
-`MpDrawerBody` (scrollable) / `MpDrawerFooter` (`MpButtonGroup`: ghost Cancel +
-primary, both `is-rounded`) + `MpDrawerOverlay`. **Never hand-roll a Teleport
-`*-overlay` panel** — that's the recurring mistake. Reference: `NewLocationDrawer.vue`
-and the 30+ `*Drawer.vue` in `app/components/patterns/`. (Modal vs drawer: drawer
-when the underlying page context helps; modal for a short blocking decision.)
+**Pixel `MpDrawer` has NO structural CSS in this Pixel3 build** — its header and
+footer detach to the viewport edges and the body renders as a bare floating card.
+So ERP/Cowork drawers do **not** use `MpDrawer`. ~30 of the 38 `*Drawer.vue` (every
+filters drawer, `SelectAccessDrawer`, `CrmCustomerViewDrawer`, …) use the same
+hand-rolled shell — copy it from **`BillsFiltersDrawer.vue`** ("All filters"):
+
+```
+<Teleport to="body"><Transition name="xxx">
+  <div v-if="open" class="xxx-overlay">          <!-- fixed inset 0; flex justify-end; overlay bg -->
+    <div class="xxx-panel" role="dialog">        <!-- margin 12px; height calc(100%-24px); radius 12px; flex column; overflow hidden -->
+      <header class="xxx-header">…title + MpButton close (MpIcon name="close")…</header>
+      <div class="xxx-body">…scrollable content…</div>
+      <footer class="xxx-footer">…ghost Cancel + primary…</footer>
+```
+
+Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
+`transform: translateX(calc(100% + 12px))` on enter/leave. A drawer that is a
+**form** ignores overlay clicks (close only via ×/Cancel/Esc) so in-progress input
+is never lost. Buttons use the `btn-enterprise--{ghost,primary,secondary}` classes,
+not raw `MpButton` variants. (Modal vs drawer: drawer when the underlying page
+context helps; modal for a short blocking decision.)
 
 ## List bullets — `<li>` always shows its marker
 
