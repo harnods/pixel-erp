@@ -10,7 +10,7 @@
  */
 import { ref, computed, reactive, inject, onMounted } from 'vue'
 import {
-  MpIcon, MpTooltip, toast,
+  MpIcon, MpTooltip, toast, MpButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
@@ -177,10 +177,10 @@ const deleteDescription = computed(() =>
         <h1 class="crm-title">Contacts</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Import contacts')">Import</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New contact')">
-          <MpIcon name="add" size="sm" /> New contact
-        </button>
+        <MpButtonGroup>
+          <MpButton variant="secondary" is-rounded @click="soon('Import contacts')">Import</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="soon('New contact')">New contact</MpButton>
+        </MpButtonGroup>
       </div>
     </header>
 
@@ -206,9 +206,7 @@ const deleteDescription = computed(() =>
             width="200px"
             @update:model-value="(v: string) => (ownerFilter = v)"
           />
-          <button v-if="activeViewId !== 'all'" class="btn-enterprise btn-enterprise--secondary" type="button" @click="openEdit">
-            <MpIcon name="filter" size="sm" /> Edit view
-          </button>
+          <MpButton v-if="activeViewId !== 'all'" variant="secondary" is-rounded left-icon="filter" @click="openEdit">Edit view</MpButton>
         </div>
 
         <div class="filter-right">
@@ -254,10 +252,7 @@ const deleteDescription = computed(() =>
         <template #bulk-actions="{ selectedRows, deselectAll }">
           <MpPopover id="con-bulk" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after" type="button">
-                Actions
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              <MpButton variant="secondary" size="sm" is-rounded right-icon="chevrons-down">Actions</MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
               <MpPopoverList>
@@ -338,10 +333,10 @@ const deleteDescription = computed(() =>
           </div>
         </MpModalBody>
         <MpModalFooter>
-          <div class="con-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="associateOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmAssociate">Associate</button>
-          </div>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton variant="ghost" is-rounded @click="associateOpen = false">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmAssociate">Associate</MpButton>
+          </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -384,5 +379,4 @@ const deleteDescription = computed(() =>
 .con-assoc-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .con-assoc-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .con-assoc-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
-.con-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

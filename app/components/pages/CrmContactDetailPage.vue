@@ -7,7 +7,7 @@
  */
 import { computed } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpButton, MpButtonGroup, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -32,21 +32,20 @@ const contact = computed(() => getCrmContact(props.orderId))
         </div>
       </div>
       <div class="cd-bar-actions">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit contact')">Edit</button>
-        <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button">
-              Actions
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="soon('Edit contact')">Edit</MpPopoverListItem>
-              <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete contact')">Delete</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <MpButtonGroup>
+          <MpButton variant="secondary" is-rounded @click="soon('Edit contact')">Edit</MpButton>
+          <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down">Actions</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="soon('Edit contact')">Edit</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete contact')">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </MpButtonGroup>
       </div>
     </header>
 
@@ -77,7 +76,7 @@ const contact = computed(() => getCrmContact(props.orderId))
   <div v-else class="cd-missing">
     <MpIcon name="profile" size="lg" />
     <p>Contact not found.</p>
-    <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/contacts')">Back to Contacts</button>
+    <MpButton variant="ghost" is-rounded @click="router.push('/crm/contacts')">Back to Contacts</MpButton>
   </div>
 </template>
 

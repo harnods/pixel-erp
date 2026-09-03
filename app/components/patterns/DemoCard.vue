@@ -10,6 +10,8 @@ defineProps<{
   tag?: string
   /** rule/* IDs that govern this component in the ERP */
   rules?: string[]
+  /** "When to use" guidance — the user can correct this directly */
+  when?: string
   /** Short note about the Enterprise override, if any */
   override?: string
   /** Correct-usage snippet shown under "For AI agents" */
@@ -36,6 +38,11 @@ onErrorCaptured((e) => {
       <span v-if="override" class="demo__ovr">Enterprise override</span>
     </div>
     <p v-if="override" class="demo__note">{{ override }}</p>
+
+    <div v-if="when" class="demo__when">
+      <span class="demo__when-label">When to use</span>
+      <span class="demo__when-text">{{ when }}</span>
+    </div>
 
     <div class="demo__stage" :class="{ 'demo__stage--err': err }">
       <template v-if="!err"><slot /></template>
@@ -88,6 +95,23 @@ onErrorCaptured((e) => {
   border-radius: var(--mp-radii-full, 999px);
 }
 .demo__note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: 1.5; }
+.demo__when {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-3);
+  border-left: 3px solid var(--mp-colors-border-bold, #8c9596);
+  background: var(--mp-background-neutral-subtle, #f5f6f6);
+  border-radius: var(--mp-radii-sm, 4px);
+}
+.demo__when-label {
+  font-size: var(--mp-font-sizes-xs, 0.6875rem);
+  font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mp-colors-text-default, #080d0e);
+}
+.demo__when-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: 1.55; }
 .demo__stage {
   display: flex;
   flex-wrap: wrap;

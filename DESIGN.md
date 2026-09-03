@@ -88,8 +88,12 @@ Use these directly from `@mekari/pixel3`:
 
 ### Buttons
 
-See [docs/patterns/Button.md](docs/patterns/Button.md) for the source-of-truth
-button spec.
+**Source of truth: [`docs/design/RULES.md`](docs/design/RULES.md) (`rule/btn-*`).**
+New buttons use Pixel **`<MpButton>`** per the storybook — its secondary variant is
+globally overridden in `erp.css` to the Enterprise look (black label + dark border).
+**`.btn-enterprise` is legacy** — do not add new ones; existing usages migrate when a
+file is next touched. [docs/patterns/Button.md](docs/patterns/Button.md) documents the
+legacy class and shared visual rules.
 
 Core rules:
 

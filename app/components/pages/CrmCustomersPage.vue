@@ -8,7 +8,7 @@
  */
 import { ref, computed, reactive, inject, onMounted } from 'vue'
 import {
-  MpIcon, MpTooltip,
+  MpButton, MpButtonGroup, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -271,10 +271,10 @@ function confirmDelete() {
         <h1 class="crm-title">Companies</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Import companies')">Import</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="router.push('/crm/customers/new')">
-          <MpIcon name="add" size="sm" /> New company
-        </button>
+        <MpButtonGroup>
+          <MpButton variant="secondary" is-rounded @click="soon('Import companies')">Import</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/new')">New company</MpButton>
+        </MpButtonGroup>
       </div>
     </header>
 

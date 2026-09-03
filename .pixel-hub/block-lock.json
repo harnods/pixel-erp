@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "blocks": {
+    "general-form-popover-select": {
+      "installedAt": "2026-09-03T10:52:03.678Z",
+      "outDir": "/Users/dirmansuharno/dona/erp-app/app/pixel-blocks",
+      "files": [
+        {
+          "path": "PopoverSelect.vue",
+          "hash": "e60547bc5e3b3d4baae7e63e259a88b1c42907c19cac725c8251155d5a7e8e45"
+        }
+      ]
+    }
+  }
+}
