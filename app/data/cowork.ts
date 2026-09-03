@@ -813,7 +813,7 @@ const CONNECTION_SEED: CoworkConnection[] = [
   // ── Mekari products (native, connected by default) ──
   { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
   { id: 'mekari-jurnal', name: 'Mekari Jurnal', categories: ['Featured', 'Finance'], connected: true, provider: 'fake', detail: 'Accounting & invoicing', color: '#0A6E4E' },
-  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E' },
+  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E', logo: '/connectors/mekari-qontak.webp?v=3' },
   // ── Google (real OAuth) ──
   { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
     detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
@@ -1324,7 +1324,7 @@ export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_
     saveSnapshot('cowork-tasks-v2', coworkTasks)
   }
 }
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v4', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v5', CONNECTION_SEED))
 // v4 = adds lifecycle/governance fields (status, type, skillBindings, versions, roles).
 export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v4', AGENT_SEED).map(normalizeAgent))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
@@ -1349,7 +1349,7 @@ export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkP
 }
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v4', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v5', coworkConnections) }
 function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
 function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
 let skillSeq = 1
