@@ -52,6 +52,20 @@ const isMigrationPending = computed(() =>
 
 function goBack() { router.push('/product-list') }
 
+// ── Tax info ───────────────────────────────────────────────────────────────────
+// `djpCode` carries the DJP catalogue entry as one "<code> - <description>" label
+// (that's how the classification list is stored, see taxClassificationCodes.ts).
+// The PRD treats the Classification Code and its Description as two separate
+// attributes — the description is looked up from the DJP master, never typed — so
+// split the stored label back apart for display rather than duplicating the data.
+const hasTaxInfo = computed(() => !!product.value?.djpCode)
+const djpCodeOnly = computed(() => product.value?.djpCode?.split(' - ')[0] ?? '')
+const djpDescription = computed(() => {
+  const label = product.value?.djpCode ?? ''
+  const sep = label.indexOf(' - ')
+  return sep === -1 ? '' : label.slice(sep + 3)
+})
+
 // ── Tabs — driven by ?section= (NOT ?tab=: this route's first segment, "product-list",
 // is also the index page's pageKey, whose OWN ?tab= is managed globally in
 // [...slug].vue — reusing that name here would fight with it) so back/forward still
@@ -372,9 +386,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </div>
       </section>
 
-      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting.
-           Tax info sits in the same row but gates on product.djpCode independently,
-           since tax classification applies regardless of ERP/WMS scenario. -->
+      <!-- Purchase info / Sales info / Tax info — all three are ERP only; WMS
+           doesn't deal in pricing/accounting and has no tax module. -->
       <div class="pd-two-col">
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Purchase info</h2>
@@ -405,13 +418,28 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           </div>
         </section>
 
-        <!-- Tax info — only shown once tax info has actually been filled in on the
-             product. Same vertical-list pattern as Sales info (single column, fixed 270px). -->
-        <section v-if="product.djpCode" class="pd-section pd-section--flex">
+        <!-- Tax info — ERP only (WMS Standalone has no tax module), and always
+             rendered once we're in ERP, whether or not the product is classified:
+             tax classification is optional at creation and is typically completed
+             later by Tax/Finance (PRD-03a BR-002), so the section doubles as the
+             signal that a product still has a classification gap. Same vertical-list
+             pattern as Sales info (single column, fixed 270px). -->
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Tax info</h2>
-          <div class="pd-field-col pd-field-col--fixed">
+          <div v-if="!hasTaxInfo" class="pd-tax-empty">
+            <MpIcon name="information" size="sm" color="icon.secondary" />
+            <span>
+              Tax info is incomplete.
+              <a class="pd-link" @click.prevent="router.push(`/product-list/${product.sku}/edit`)">Add tax info</a>
+              to use this product on a tax document.
+            </span>
+          </div>
+          <div v-else class="pd-field-col pd-field-col--fixed">
             <ContentList label="Product classification" :value="product.productClassification" />
-            <ContentList label="DJP code" :value="product.djpCode" />
+            <ContentList label="DJP code" :value="djpCodeOnly" />
+            <ContentList label="DJP description">
+              <ClampText :text="djpDescription" :lines="3" />
+            </ContentList>
             <ContentList label="DJP unit" :value="product.djpUnit" />
           </div>
         </section>
@@ -922,6 +950,19 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
 .pd-field-col--fixed { width: 270px; }
+/* Tax info empty state — an unclassified product isn't an error, just a gap Tax/
+   Finance still has to close, so this reads as an inline hint, not a warning. */
+.pd-tax-empty {
+  display: flex;
+  gap: var(--mp-spacing-2);
+  align-items: flex-start;
+  padding: var(--mp-spacing-2) 0;
+  max-width: 360px;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-lg, 20px);
+  color: var(--mp-text-secondary);
+}
+.pd-tax-empty :deep(svg) { flex: none; margin-top: 2px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
