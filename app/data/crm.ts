@@ -186,12 +186,118 @@ export const activeCustomersCount = computed(() => crmCustomers.filter((c) => c.
 export const ordersThisMonthValue = computed(() =>
   crmOrders.filter((o) => o.date >= '2026-02-01' && o.status !== 'cancelled').reduce((n, o) => n + o.amount, 0))
 
+// Primary segment (industry) options for the create-customer form.
+export const CUSTOMER_SEGMENTS = ['Roastery', 'Café chain', 'Hotel', 'Distributor', 'Retail', 'Office'] as const
+
+// Create a new customer (client-side, snapshot-persisted). Lifecycle stage maps
+// to the underlying status (+ a seed open deal so an "Opportunity" reads back as
+// one via lifecycleOf). New customers start with zero money/activity.
+export function addCrmCustomer(input: {
+  company: string
+  contact: string
+  email: string
+  phone: string
+  city: string
+  segment: string
+  owner: string
+  lifecycle: LifecycleStage
+}): CrmCustomer {
+  const status: CustomerStatus =
+    input.lifecycle === 'Customer' ? 'active' : input.lifecycle === 'Former customer' ? 'churned' : 'prospect'
+  const customer: CrmCustomer = {
+    id: `cust-${Date.now()}`,
+    company: input.company.trim(),
+    contact: input.contact.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    segment: input.segment,
+    segments: input.segment ? [input.segment] : [],
+    city: input.city.trim(),
+    owner: input.owner,
+    openDeals: input.lifecycle === 'Opportunity' ? 1 : 0,
+    lifetimeValue: 0,
+    inFlight: 0,
+    outstanding: 0,
+    status,
+    lastActivity: new Date().toISOString().slice(0, 10),
+  }
+  crmCustomers.unshift(customer)
+  persistCrmCustomers()
+  return customer
+}
+
 // Customer row actions (client-side, snapshot-persisted).
 export function deleteCrmCustomer(id: string): void {
   const i = crmCustomers.findIndex((c) => c.id === id)
   if (i !== -1) { crmCustomers.splice(i, 1); saveSnapshot('crm-customers-v1', crmCustomers) }
 }
 export function getCrmCustomer(id: string): CrmCustomer | undefined { return crmCustomers.find((c) => c.id === id) }
+
+// ── Contacts — the people inside the companies database. Derived from each
+// company's primary contact, so the two views stay in sync (Companies ↔ Contacts).
+export interface CrmContact {
+  id: string
+  name: string
+  company: string
+  companyId: string
+  email: string
+  phone: string
+  owner: string
+  lifecycle: LifecycleStage
+  tags: string[]
+}
+export function crmContactsList(): CrmContact[] {
+  return crmCustomers
+    .filter((c) => c.contact.trim())
+    .map((c) => ({
+      id: `${c.id}-c`,
+      name: c.contact,
+      company: c.company,
+      companyId: c.id,
+      email: c.email,
+      phone: c.phone,
+      owner: c.owner,
+      lifecycle: lifecycleOf(c),
+      tags: [...c.segments],
+    }))
+}
+// Delete a contact = clear its company's primary-contact fields (contacts are the
+// company's primary contact), so it drops out of the derived list. Persisted.
+export function deleteCrmContact(companyId: string): void {
+  const c = crmCustomers.find((x) => x.id === companyId)
+  if (!c) return
+  c.contact = ''; c.email = ''; c.phone = ''
+  saveSnapshot('crm-customers-v1', crmCustomers)
+}
+export function getCrmContact(id: string): CrmContact | undefined {
+  return crmContactsList().find((c) => c.id === id)
+}
+
+// Deterministic mock job title (no real field on the seed data yet).
+const JOB_TITLES = ['Procurement Manager', 'Operations Lead', 'Head of Purchasing', 'Café Owner', 'Store Manager', 'Finance Manager', 'Founder']
+function seedHash(s: string): number { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h >>> 0 }
+export function jobTitleFor(name: string): string { return JOB_TITLES[seedHash(name) % JOB_TITLES.length]! }
+
+// Deterministic mock SKU for an ordered product name.
+export function skuFor(product: string): string { return `SKU-${(seedHash(product) % 9000) + 1000}` }
+
+// ── Company notes / comments — localStorage-persisted per company ──
+export interface CrmComment { id: string; companyId: string; author: string; text: string; at: string }
+export const crmCompanyComments = reactive<CrmComment[]>(loadSnapshot<CrmComment>('crm-company-comments-v1') ?? [])
+function persistComments() { saveSnapshot('crm-company-comments-v1', crmCompanyComments) }
+export function companyCommentsFor(companyId: string): CrmComment[] {
+  return crmCompanyComments.filter((c) => c.companyId === companyId).slice().sort((a, b) => b.at.localeCompare(a.at))
+}
+export function addCompanyComment(companyId: string, text: string, author = 'You'): CrmComment {
+  const c: CrmComment = { id: `cmt-${Date.now()}`, companyId, author, text: text.trim(), at: new Date().toISOString() }
+  crmCompanyComments.push(c)
+  persistComments()
+  return c
+}
+export function deleteCompanyComment(id: string): void {
+  const i = crmCompanyComments.findIndex((c) => c.id === id)
+  if (i !== -1) { crmCompanyComments.splice(i, 1); persistComments() }
+}
 
 // ── Per-customer deals (open pipeline) — synthetic & deterministic so the count
 // matches `openDeals` and the total value ≈ `inFlight`. Powers the customer
@@ -291,4 +397,30 @@ export function updateCrmView(id: string, patch: Partial<Omit<CrmSavedView, 'id'
 export function deleteCrmView(id: string): void {
   const i = crmCustomerViews.findIndex((x) => x.id === id)
   if (i !== -1) { crmCustomerViews.splice(i, 1); persistCustomerViews() }
+}
+
+// ── Contacts saved views (custom views, same idea as company views) ──
+// NB: contacts filter by Contact owner only — lifecycle is a company attribute,
+// not a person's, so it isn't a contact-level filter.
+export interface CrmContactViewFilters { owners: string[] }
+export function emptyContactViewFilters(): CrmContactViewFilters { return { owners: [] } }
+export interface CrmContactView { id: string; name: string; filters: CrmContactViewFilters }
+export const crmContactViews = reactive<CrmContactView[]>(loadSnapshot<CrmContactView>('crm-contact-views-v1') ?? [])
+function persistContactViews() { saveSnapshot('crm-contact-views-v1', crmContactViews) }
+let contactViewSeq = crmContactViews.length + 1
+export function addContactView(v: Omit<CrmContactView, 'id'>): CrmContactView {
+  const view: CrmContactView = { ...v, id: `cview-${Date.now()}-${contactViewSeq++}` }
+  crmContactViews.push(view)
+  persistContactViews()
+  return view
+}
+export function updateContactView(id: string, patch: Partial<Omit<CrmContactView, 'id'>>): void {
+  const v = crmContactViews.find((x) => x.id === id)
+  if (!v) return
+  Object.assign(v, patch)
+  persistContactViews()
+}
+export function deleteContactView(id: string): void {
+  const i = crmContactViews.findIndex((x) => x.id === id)
+  if (i !== -1) { crmContactViews.splice(i, 1); persistContactViews() }
 }

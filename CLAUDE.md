@@ -3,6 +3,27 @@
 Guidance for Claude (and any AI assistant) contributing to the Mekari ERP/WMS
 prototype. See `README.md` for the full project overview.
 
+## ⛔ Before ANY UI work — read this first
+
+Building or editing **anything a user sees** (a `.vue` page/component, form, modal,
+table, drawer, filter, button, copy)? **Do not work from your training prior.**
+
+1. **Invoke the `pixel-erp-design` skill.** It routes you to the exact rules +
+   pattern docs for the surface you're touching, and carries the authority
+   hierarchy. It is the mandatory entry point.
+2. **`docs/design/RULES.md`** is the canonical rule registry — every accepted
+   decision as a stable `rule/<id>` with Do/Don't + Why + Source. When a mockup or
+   your instinct conflicts with a rule, **the rule wins** (see the hierarchy in the
+   skill / RULES.md). Cite rule IDs in commits and PRs.
+3. **`docs/design/reachable-states.md`** — a surface isn't done until every state
+   it can reach is designed (empty / filtered-empty / loading / error / permission /
+   destructive), not just the populated success case.
+4. `pixel-police` (a PostToolUse hook) flags the grep-able rules automatically and
+   cites the `rule/*` ID; resolve or justify each note.
+
+The sections below are the long-form rationale for specific rules — RULES.md is the
+index; this file and `docs/patterns/*` are the detail.
+
 ## Two-port workflow: dev (4321) + preview (4322)
 
 Always run **two** servers, and keep them in these roles:

@@ -13,6 +13,7 @@ import {
 } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import GeminiMark from '~/components/patterns/GeminiMark.vue'
+import { infoToast } from '~/utils/toasts'
 import {
   getAgent, COWORK_SKILLS, COWORK_COMPANY, COWORK_CATALOG, coworkConnections, COWORK_ROLES,
   SKILL_RISK_META, canArchiveAgent, archiveAgent, restoreAgent, duplicateAgent,
@@ -191,7 +192,7 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
           <MpBannerIcon id="cad-tpl-icon" />
           <MpBannerTitle id="cad-tpl-title">Template updated — review changes</MpBannerTitle>
           <MpBannerDescription id="cad-tpl-desc">Mekari updated the template this agent is based on. Review the changes before applying — nothing changes automatically.</MpBannerDescription>
-          <MpBannerLink id="cad-tpl-link"><a href="#" @click.prevent="toast.notify({ variant: 'info', title: 'Diff view — coming soon' })">Review changes</a></MpBannerLink>
+          <MpBannerLink id="cad-tpl-link"><a href="#" @click.prevent="infoToast('Diff view — coming soon')">Review changes</a></MpBannerLink>
         </MpBanner>
 
         <!-- Header -->

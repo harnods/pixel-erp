@@ -54,6 +54,23 @@ the dropdown is open — never brand green. Invalid stays red. Applies to every
 MpSelect (and MpInput / MpTextarea / MpDatePicker / MpInputTag share the same
 neutral focus ring). (`erp.css` › `.mp-select__control:focus…`, `.mp-select__root:focus-within…`.)
 
+## 4b. Dropdowns — always `<ErpFilterSelect>` (an MpPopover menu)
+
+Pixel's **`MpSelect` renders a NATIVE `<select>`**, so its menu is the OS
+dropdown — off-system, and it clips inside scroll containers. So a dropdown is
+**never** a native `<select>` **nor** `MpSelect`. Every dropdown/filter uses
+**`ErpFilterSelect`** (`app/components/patterns/ErpFilterSelect.vue`): a form-pill
+trigger + a Pixel **`MpPopover`** option list (`use-portal`, so it escapes
+clipping), and it's **clearable** — an (×) on hover resets it.
+
+```vue
+<ErpFilterSelect id="…-filter" :model-value="val" placeholder="Lifecycle"
+  :options="[...LIFECYCLE_STAGES]" @update:model-value="v => (val = v)" />
+```
+
+Options are `string[]` or `{ value, label }[]`. The pixel-police full-scan
+**fails on a native `<select>` OR an `MpSelect` in the CRM module.**
+
 ## 5. Search — always a form pill, shared focus ring
 
 Every search box in the app is the **pill** form used in the filter bar above a
@@ -91,3 +108,28 @@ Reach for the **ERP class/component** (`btn-enterprise--*`, `.filter-search`,
 `ContentList`, `ErpStatusBadge`), not the raw Pixel variant. The `erp.css`
 overrides then guarantee the DT 2.4 Enterprise look even where Pixel's default
 would be wrong.
+
+---
+
+## Enforcement — the "pixel police"
+
+Two guards keep modules on-system:
+
+- **`scripts/pixel-police-ci.sh`** (CI gate) — checks only the lines a PR *adds*
+  (hardcoded colors, raw HTML controls, hardcoded px, drop-shadows, non-Pixel3
+  imports). It deliberately ignores pre-existing code, so it never flags committed
+  debt — only new drift.
+- **`tests/pixel-police.spec.ts`** (`npm test`) — a **full-scan** guard. The CRM
+  module block scans every CRM file end-to-end and fails on bespoke CSS: raw
+  off-system `MpButton variant="secondary|ghost"`, hand-rolled button/control
+  classes (`*-btn`, `*-input`, chips, segmented…), raw `<button>/<input>` without
+  a **sanctioned** class, hardcoded color literals, and drop-shadows on surfaces.
+
+**Sanctioned raw-control classes** (used across dozens of non-CRM files, so they
+*are* the override system — not drift): `btn-enterprise*`, `filter-all-btn`,
+`filter-icon-btn`, `filter-btn-group`, `filter-search`/`search-input`,
+`search-clear-btn`, `row-kebab`, `page-tab`, `detail-breadcrumb`, `sidebar-toggle`.
+Anything else that renders like a control must be a Pixel component or one of
+these — never a new per-page class. When you add a genuinely reusable override,
+put it in `erp.css` (global) and add its name to the police allowlist; do **not**
+create a per-page bespoke control class.

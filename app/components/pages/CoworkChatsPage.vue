@@ -24,6 +24,7 @@ import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULE
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
+import { infoToast } from '~/utils/toasts'
 
 // Gemini mark — 4-point star with Google's multi-hue gradient (model picker).
 const GeminiMark = (props: { size?: number }) =>
@@ -252,7 +253,7 @@ async function copyAnswer(i: number) {
 function rate(i: number, v: 'up' | 'down') {
   const cur = feedback.value[i]
   feedback.value = { ...feedback.value, [i]: cur === v ? undefined : v }
-  if (feedback.value[i]) toast.notify({ variant: 'info', title: v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving" })
+  if (feedback.value[i]) infoToast(v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving")
 }
 function speak(i: number) {
   const synth = typeof window !== 'undefined' ? window.speechSynthesis : null

@@ -1,7 +1,11 @@
-# Mekari ERP — Design Rules
+# Mekari ERP — Design Rules (long-form)
 
-Single source of truth for design decisions and component rules in this project.
-All developers must follow these rules before writing code.
+Long-form rationale and component rules for this project. The **canonical registry**
+of accepted decisions — each as a stable `rule/<id>` with Do/Don't + Why + Source,
+and the authority hierarchy for resolving conflicts — is
+[`docs/design/RULES.md`](docs/design/RULES.md). Start there (or invoke the
+`pixel-erp-design` skill, which routes you to the right rules per surface); this file
+is the detail behind those IDs.
 
 ---
 

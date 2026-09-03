@@ -7,7 +7,8 @@
  */
 import { h, ref, reactive, watch } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpButton, MpIcon, MpSelect, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { employees } from '~/data'
 import { formatIDR } from '~/utils/currency'
 import CrmDealPreviewDrawer, { type DealPreviewCtx } from '~/components/CrmDealPreviewDrawer.vue'
@@ -159,7 +160,7 @@ watch(view, (v) => {
       </div>
       <div class="crm-titlebar__right">
         <!-- Primary action: New deal only (no split) -->
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('New deal')">
+        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New deal')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
           New deal
         </button>
@@ -167,7 +168,7 @@ watch(view, (v) => {
         <!-- More actions → icon button (Import / Bulk edit / Edit properties) -->
         <MpPopover id="deal-more-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <button class="crm-iconbtn" type="button" aria-label="More actions">
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon" type="button" aria-label="More actions">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
             </button>
           </MpPopoverTrigger>
@@ -185,16 +186,14 @@ watch(view, (v) => {
     <!-- ── Filter bar ── -->
     <div class="crm-filter">
       <div class="crm-filter__left">
-        <MpSelect
+        <ErpFilterSelect
           id="deal-pipeline-select"
           :model-value="pipeline"
-          :class="css({ width: '176px' })"
+          placeholder="Sales pipeline"
+          :options="['Sales pipeline', 'Wholesale pipeline', 'Retail pipeline']"
+          width="176px"
           @update:model-value="(v: string) => (pipeline = v)"
-        >
-          <option value="Sales pipeline">Sales pipeline</option>
-          <option value="Wholesale pipeline">Wholesale pipeline</option>
-          <option value="Retail pipeline">Retail pipeline</option>
-        </MpSelect>
+        />
         <MpButton class="filter-all-btn" variant="tertiary" @click="soon('All filters')">
           <MpIcon name="filter" size="sm" />
           All filters
@@ -305,26 +304,6 @@ watch(view, (v) => {
 .crm-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default, #272b32); }
 .crm-subtitle { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #656f80); }
 .crm-titlebar__right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-
-.crm-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer; white-space: nowrap; border: 1px solid transparent;
-}
-.crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default, #272b32); }
-.crm-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.crm-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse, #fff); }
-.crm-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
-
-/* Kebab icon button (More actions), sits to the right of the primary. */
-.crm-iconbtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: var(--mp-radii-full, 999px);
-  border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #fff);
-  color: var(--mp-text-default, #272b32); cursor: pointer;
-}
-.crm-iconbtn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Filter bar ── */
 .crm-filter {

@@ -81,7 +81,7 @@ function lifecycleBadge(lc: LifecycleStage) {
       <span class="cb-groupby-label">Group by</span>
       <MpPopover id="cb-groupby" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
-          <button class="cb-groupby-btn" type="button">
+          <button class="btn-enterprise btn-enterprise--secondary" type="button">
             <MpIcon name="table-view-column" size="sm" />
             <span>{{ groupByLabel }}</span>
             <MpIcon name="chevrons-down" size="sm" />
@@ -139,8 +139,6 @@ function lifecycleBadge(lc: LifecycleStage) {
 
 .cb-toolbar { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-4); }
 .cb-groupby-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.cb-groupby-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cb-groupby-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .cb-board { display: flex; gap: var(--mp-spacing-4); overflow-x: auto; padding-bottom: var(--mp-spacing-3); align-items: flex-start; }
 .cb-col { flex: 0 0 288px; width: 288px; display: flex; flex-direction: column; background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default); border-radius: 12px; max-height: 100%; transition: background 0.12s ease, border-color 0.12s ease; }
@@ -152,7 +150,7 @@ function lifecycleBadge(lc: LifecycleStage) {
 
 .cb-col-body { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); overflow-y: auto; }
 .cb-card { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: 8px; cursor: pointer; }
-.cb-card:hover { border-color: var(--mp-border-bold, #c4c9d0); box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06); }
+.cb-card:hover { border-color: var(--mp-border-bold, #c4c9d0); }
 .cb-card:active { cursor: grabbing; }
 .cb-card.is-dragging { opacity: 0.45; }
 .cb-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-2); }
