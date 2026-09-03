@@ -574,6 +574,7 @@ const mcpOpen = ref(false)
 const mcpUrl = ref('')
 const mcpName = ref('')
 const mcpAuth = ref<'OAuth' | 'API key' | 'None'>('OAuth')
+const mcpApiKey = ref('')
 const mcpAdvanced = ref(false)
 const mcpClientId = ref('')
 const mcpClientSecret = ref('')
@@ -584,6 +585,7 @@ const mcpRedirectUrl = computed(() =>
 const mcpUrlValid = computed(() => /^https?:\/\/.+\..+/.test(mcpUrl.value.trim()))
 function openMcpModal() {
   mcpUrl.value = ''; mcpName.value = ''; mcpAuth.value = 'OAuth'; mcpAdvanced.value = false
+  mcpApiKey.value = ''
   mcpClientId.value = ''; mcpClientSecret.value = ''; mcpScope.value = ''; mcpError.value = ''
   mcpOpen.value = true
 }
@@ -1415,7 +1417,27 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="connGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Agents) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'conn-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': connCols }">
+                  <div v-for="n in connCols" :key="'conn-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head">
+                        <MpSkeleton class="cw-skeleton" width="36px" height="36px" rounded="md" duration="0s" />
+                        <MpSkeleton class="cw-skeleton" width="96px" height="16px" rounded="sm" duration="0s" />
+                      </div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="150px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="connGridEl" class="cw-conn-sections">
             <section v-for="sec in connSections" :key="sec.category" class="cw-conn-section">
               <h2 class="cw-conn-cat-title">{{ sec.category }}</h2>
               <div class="cw-conn-clip">
@@ -1661,32 +1683,45 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <option value="None">None</option>
             </select>
           </div>
-          <p class="mcp-help">You will be redirected to the third party website to complete authentication when you connect.</p>
+          <!-- OAuth: redirect note + pre-registered app advanced settings -->
+          <template v-if="mcpAuth === 'OAuth'">
+            <p class="mcp-help">You will be redirected to the third-party website to sign in and approve access when you connect.</p>
+            <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
+              <span>Advanced settings</span>
+              <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
+            </button>
+            <div v-if="mcpAdvanced" class="mcp-adv">
+              <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
 
-          <!-- Advanced settings accordion -->
-          <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
-            <span>Advanced settings</span>
-            <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
-          </button>
-          <div v-if="mcpAdvanced" class="mcp-adv">
-            <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
+              <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
+              <div class="mcp-input-wrap mcp-input-wrap--readonly">
+                <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
+                <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              </div>
 
-            <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
-            <div class="mcp-input-wrap mcp-input-wrap--readonly">
-              <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
-              <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
+              <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+
+              <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
+              <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
+
+              <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
+              <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
+              <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
             </div>
+          </template>
 
-            <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
-            <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+          <!-- API key: a secret token sent as an Authorization header -->
+          <template v-else-if="mcpAuth === 'API key'">
+            <label class="mcp-label" for="mcp-apikey">API key</label>
+            <input id="mcp-apikey" v-model="mcpApiKey" class="mcp-input mcp-input--plain" type="password" placeholder="sk-…" />
+            <p class="mcp-help">Paste the API key or bearer token from your MCP provider. It is sent as an <code>Authorization: Bearer</code> header on every request and stored encrypted.</p>
+          </template>
 
-            <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
-            <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
-
-            <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
-            <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
-            <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
-          </div>
+          <!-- None: public server -->
+          <template v-else>
+            <p class="mcp-help">This server requires no authentication — anyone with the URL can call it. Only add servers you fully trust.</p>
+          </template>
 
           <!-- Trust warning -->
           <div class="mcp-warn">
@@ -1930,6 +1965,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
 .cw-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+.cw-conn-sk-title { display: block; margin-bottom: var(--mp-spacing-4, 16px); }
+.cw-conn-sk-desc { margin-top: var(--mp-spacing-2, 8px); }
 
 /* Multiple module badges (multi-source task) wrap within the cell. */
 .cw-modules { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
