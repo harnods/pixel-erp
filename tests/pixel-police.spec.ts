@@ -94,10 +94,10 @@ describe('pixel-police — CRM module: Pixel + sanctioned overrides only (full s
   // dropdowns must use Pixel MpSelect (its menu is a popover, and it's clearable).
   const SANCTIONED = /btn-enterprise|filter-all-btn|filter-icon-btn|filter-btn-group|filter-search|search-clear-btn|row-kebab|page-tab|detail-breadcrumb|sidebar-toggle/
 
-  it('no raw off-system MpButton variant — use btn-enterprise--secondary/ghost', () => {
-    const hits = violations(crmFiles, /<MpButton[^>]*variant=['"](secondary|ghost)['"]/)
-    expect(hits, `Raw Pixel button variant renders off-system (gray secondary). Use btn-enterprise:\n${hits.join('\n')}`).toEqual([])
-  })
+  // NB: Pixel <MpButton variant="secondary"|"ghost"> is the STANDARD per
+  // docs/design/RULES.md › rule/btn-mpbutton-standard + rule/btn-secondary-black
+  // (secondary is globally overridden to the Enterprise look in erp.css). So it is
+  // NOT flagged — .btn-enterprise is the legacy path, migrated when a file is touched.
 
   it('no hand-rolled button / control-primitive CSS classes (use Pixel or an override)', () => {
     // A CSS selector defining a class whose name reads as a control primitive

@@ -5,15 +5,16 @@
  * Overview = company profile + key fields + notes. Each list tab has its own
  * filter bar (search + a tertiary "+ New …") and a standard ErpTablePage.
  */
-import { ref, computed, watch } from 'vue'
+import { ref, computed, reactive, watch, inject } from 'vue'
 import {
-  MpIcon, MpAvatar, MpTextarea, MpButton, MpInputTag,
+  MpIcon, MpAvatar, MpTextarea, MpButton, MpButtonGroup, MpInputTag, MpTooltip,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, type DataInterface,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import { useTableState } from '~/composables/useTableState'
 import { formatIDR } from '~/utils/currency'
@@ -29,6 +30,7 @@ import {
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const route = useRoute()
+const toggleAirene = inject<() => void>('toggleAirene')
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 const customer = computed(() => getCrmCustomer(props.orderId))
@@ -117,6 +119,10 @@ const contactColumns: TableColumn[] = [
   { key: 'owner',       label: 'Contact owner', kind: 'name', sortable: true, sortType: 'text' },
   { key: 'lastUpdated', label: 'Last updated',  kind: 'date'                                    },
 ]
+const contactVisibility = reactive<Record<string, boolean>>(Object.fromEntries(contactColumns.map((c) => [c.key, true])))
+const contactColumnItems = contactColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const contactVisibleColumns = computed<TableColumn[]>(() => contactColumns.filter((c) => contactVisibility[c.key]))
+function hideContactColumn(key: string) { contactVisibility[key] = false }
 const { search: contactSearch, paginated: contactPage, total: contactTotal, currentPage: contactCur, perPage: contactPer, sortKey: contactSk, sortDir: contactSd, setPage: contactSetPage, setPerPage: contactSetPer, toggleSort: contactToggle, setSort: contactSetSort } =
   useTableState<ContactRow>(contactRows, { perPage: 10, filterFn: (r, s) => [r.name, r.jobTitle, r.email, r.phone, r.owner].join(' ').toLowerCase().includes(s) })
 
@@ -169,23 +175,22 @@ function orderBadge(status: string) {
         </div>
       </div>
       <div class="cd-bar-actions">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit company')">Edit</button>
-        <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button">
-              Actions
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="soon('New deal')">New deal</MpPopoverListItem>
-              <MpPopoverListItem @click="soon('Log activity')">Log activity</MpPopoverListItem>
-              <MpPopoverListItem @click="soon('Add contact')">Add contact</MpPopoverListItem>
-              <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete company')">Delete</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <MpButtonGroup>
+          <MpButton variant="secondary" is-rounded @click="soon('Edit company')">Edit</MpButton>
+          <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down">Actions</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="soon('New deal')">New deal</MpPopoverListItem>
+                <MpPopoverListItem @click="soon('Log activity')">Log activity</MpPopoverListItem>
+                <MpPopoverListItem @click="soon('Add contact')">Add contact</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete company')">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </MpButtonGroup>
       </div>
     </header>
 
@@ -292,20 +297,30 @@ function orderBadge(status: string) {
           <MpTabPanel>
             <div class="cd-panel">
               <ErpTablePage
-                :columns="contactColumns" :rows="(contactPage as Record<string, unknown>[])" :total="contactTotal"
+                :columns="contactVisibleColumns" :rows="(contactPage as Record<string, unknown>[])" :total="contactTotal"
                 :current-page="contactCur" :per-page="contactPer" :sort-key="contactSk" :sort-dir="contactSd"
                 :search="contactSearch" :has-active-filter="!!contactSearch" filter-empty-label="contact"
-                @page-change="contactSetPage" @per-page-change="contactSetPer" @sort="contactToggle" @sort-change="contactSetSort" @clear-filters="contactSearch = ''"
+                @page-change="contactSetPage" @per-page-change="contactSetPer" @sort="contactToggle" @sort-change="contactSetSort" @hide-column="hideContactColumn" @clear-filters="contactSearch = ''"
               >
                 <template #filters>
-                  <div class="filter-left" />
+                  <div class="filter-left">
+                    <MpButton variant="tertiary" is-rounded @click="soon('New contact')">New contact</MpButton>
+                  </div>
                   <div class="filter-right">
+                    <div class="filter-btn-group">
+                      <MpTooltip id="cd-ct-airene" label="Ask Airene" placement="bottom" use-portal>
+                        <button class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+                      </MpTooltip>
+                      <ColumnSettingsMenu id="cd-ct-columns" :items="contactColumnItems" :visibility="contactVisibility" />
+                      <MpTooltip id="cd-ct-export" label="Export" placement="bottom" use-portal>
+                        <button class="filter-icon-btn" type="button" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                      </MpTooltip>
+                    </div>
                     <div class="filter-search">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                       <input v-model="contactSearch" class="filter-search-input" type="text" placeholder="Search..." />
                       <button v-if="contactSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="contactSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
                     </div>
-                    <MpButton variant="tertiary" is-rounded @click="soon('New contact')">New contact</MpButton>
                   </div>
                 </template>
                 <template #cell-name="{ row }">
@@ -473,6 +488,10 @@ function orderBadge(status: string) {
 .cd-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-icon-btn { display: flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.filter-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
 .filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }

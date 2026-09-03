@@ -13,7 +13,7 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -130,12 +130,7 @@ function confirmDelete() {
           <div class="cd-bar-right">
             <MpPopover id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after">
-                  {{ t('Create transaction') }}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </button>
+                <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Create transaction') }}</MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
@@ -149,7 +144,7 @@ function confirmDelete() {
 
             <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="btn-enterprise btn-enterprise--plain cd-kebab" :aria-label="t('More actions')">
+                <button class="cd-kebab" :aria-label="t('More actions')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                   </svg>
@@ -357,7 +352,7 @@ function confirmDelete() {
 
   <div v-else class="cd-missing">
     <p>{{ t('Contact not found.') }}</p>
-    <button class="btn-enterprise btn-enterprise--primary" @click="goBack">{{ t('Back to') }} {{ t(listLabel) }}</button>
+    <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Back to') }} {{ t(listLabel) }}</MpButton>
   </div>
 </template>
 
@@ -401,13 +396,15 @@ function confirmDelete() {
   background-color: var(--mp-border-selected, #029861) !important;
 }
 
-/* ── Buttons ── (shape/colour come from .btn-enterprise in erp.css) */
+/* ── Kebab (self-styled; no longer relies on .btn-enterprise) ── */
 .cd-kebab {
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  padding: 0; border-radius: var(--mp-radii-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  padding: 0; border: none; background: transparent;
+  border-radius: var(--mp-radii-md); cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.cd-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.cd-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
 
 /* ── Stage ── */
 .cd-stage {

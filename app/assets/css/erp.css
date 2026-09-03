@@ -93,6 +93,88 @@
 }
 .btn-enterprise--plain:hover { background: var(--mp-background-neutral-hovered); }
 
+/* ── MpButton secondary — Enterprise override (global) ────────────────────────
+ * The project standard is to use Pixel <MpButton> per storybook. Pixel's secondary
+ * variant, however, renders a brand-blue label on a subtle/light border. The ERP
+ * secondary must read as a real, clickable action: DEFAULT (near-black) label on a
+ * DARK NEUTRAL border. Primary / ghost / danger are already correct — leave them.
+ *
+ * Target the stable recipe class `.mp-button--variant_secondary` (not the atomic
+ * Panda hashes). erp.css is UNLAYERED, so this beats Pixel's @layer pixel_recipes
+ * rules — including its :hover — without !important. See rule/btn-secondary-black. */
+.mp-button--variant_secondary,
+.mp-button--variant_secondary:hover,
+.mp-button--variant_secondary:focus-visible {
+  /* Use the fully-qualified --mp-colors-* tokens: the short aliases
+     (--mp-text-default / --mp-border-bold) resolve EMPTY in this Pixel build. */
+  color: var(--mp-colors-text-default, #080d0e);
+  border-color: var(--mp-colors-border-bold, #8c9596);
+}
+
+/* ── MpButton focus ring — neutral, not brand green ──────────────────────────
+ * Pixel's :focus-visible ring on a button is a brand-emerald BOX-SHADOW. The ERP
+ * uses a NEUTRAL focus everywhere (same as form fields: Slate400 #8C9596). Kill any
+ * outline and REPLACE the green shadow with a single neutral ring — one ring, not
+ * two. Applies to every MpButton. */
+.mp-button:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--mp-colors-border-bold, #8c9596) !important;
+}
+
+/* ── Action footer — responsive (form & modal footers) ───────────────────────
+ * Desktop: buttons hug content, right-aligned. Mobile (≤640px): footer buttons go
+ * FULL-WIDTH and STACK, primary on top (column-reverse — assumes DOM order = ghost
+ * Cancel then primary). Full-width here is RESPONSIVE-only, never the is-full-width
+ * prop. See rule/btn-responsive-footer + rule/btn-no-full-width. Applies to
+ * .erp-action-footer (form footers) and every MpModal footer. */
+.erp-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mp-spacing-2); /* 8px — same as every MpButtonGroup (rule/btn-group-gap-8) */
+}
+@media (max-width: 640px) {
+  .erp-action-footer,
+  .mp-modal__footer {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .erp-action-footer > .mp-button,
+  .erp-action-footer > .btn-enterprise,
+  .mp-modal__footer > .mp-button,
+  .mp-modal__footer > .btn-enterprise {
+    width: 100%;
+  }
+}
+
+/* ── MpModal backdrop — scrim (atomic-CSS gap remediation) ───────────────────
+ * The pulled Pixel build leaves the modal's full-screen overlay layer
+ * (.mp-modal__rootChild) transparent, so there's no dimmed backdrop behind a
+ * modal. Restore the scrim. erp.css is UNLAYERED so this wins without !important. */
+.mp-modal__rootChild {
+  background: var(--mp-colors-background-overlay, rgba(8, 13, 14, 0.55));
+}
+
+/* ── Dropdown-button popover menu — fixed min-width 160px (ERP standard) ──────
+ * Every MpPopover used as a button dropdown / split-button menu uses this class on
+ * its MpPopoverContent. See rule/btn-dropdown-min-width. */
+.erp-dropdown-menu {
+  min-width: 160px;
+}
+
+/* ── MpPopoverListItem hover (atomic-CSS gap remediation) ─────────────────────
+ * Pixel's hover rule is `.mp-popover-list-item:hover { background:
+ * var(--mp-background-neutral-hovered) }`, but that short alias resolves EMPTY in
+ * this build — so menu items show no hover state. Restore it with the fully-
+ * qualified --mp-colors-* token (+ hex fallback). Affects every popover menu
+ * (dropdown buttons, row action menus, ErpFilterSelect). */
+.mp-popover-list-item:hover {
+  /* neutral-hovered token resolves to a near-invisible #F8F9F9 in this build;
+     use slate-200 (#EBF0F1) so the hover is actually visible. */
+  background: var(--mp-colors-slate-200, #ebf0f1) !important;
+}
+
 /* ── MpToggle: disabled+ON state (global ERP override) ──────────────────────
  * Show brand-selected palette (light green track, dark green knob) when the
  * toggle is checked (ON) but disabled (read-only view mode).
@@ -439,3 +521,16 @@ input[type="number"] {
   text-decoration: none;
 }
 .cell-link:hover { text-decoration: underline; }
+
+/* ── Info toast — white surface, blue border, blue filled icon ────────────────
+   infoToast() rides Pixel's `greeting` variant (dark pill) and tags its content
+   with `.erp-info-toast`. We repaint ONLY that toast via :has() so the neutral
+   greeting/error/success toasts keep their native look. Icon colour is set on the
+   MpIcon itself (var(--mp-colors-blue-600)); here we do the surface + text. */
+.mp-toast__root--variant_greeting:has(.erp-info-toast) {
+  background: var(--mp-background-neutral, #fff) !important;
+  border: 1px solid var(--mp-colors-blue-600, #387ceb) !important;
+}
+.mp-toast__root--variant_greeting:has(.erp-info-toast) .mp-toast__label {
+  color: var(--mp-text-default, #1d1f24) !important;
+}

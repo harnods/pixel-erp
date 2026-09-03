@@ -61,20 +61,37 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Pixel `width` on a name/date/amount column | semantic `kind` | `rule/table-column-kind` |
 | `MpTextlink` for a clickable row name | `<span>` styled as link | `rule/table-name-link-span` |
 | Hand-rolled `<table>` / toggle chips | `ErpTablePage` / `MpInputTag` | `rule/table-use-erptablepage`, `rule/select-multi-mpinputtag` |
+| `size="md"` on a button | omit size (md is default) | `rule/btn-no-size-md` |
+| `size="sm"` on primary/danger/ghost | drop it (sm = secondary, bulk-bar only) | `rule/btn-sm-secondary-only` |
+| An icon on a danger button | text-only danger | `rule/btn-danger-no-icon` |
+| `left-icon` on a sm button | right-icon dropdown only | `rule/btn-sm-dropdown-only` |
+| `is-full-width` on a button | button hugs content | `rule/btn-no-full-width` |
 | Shipping only the populated success case | design every reachable state | `reachable-states.md` |
 
 ---
 
 ## Buttons — source: `docs/patterns/Button.md`
 
+- **`rule/btn-mpbutton-standard`** — *Do:* build **new** buttons with Pixel
+  **`<MpButton>`** per the Pixel storybook (its secondary is globally overridden to
+  the Enterprise look — see `rule/btn-secondary-black`). *Don't:* add **new**
+  `.btn-enterprise` buttons — that class is **legacy**. Existing `.btn-enterprise`
+  usages are tolerated and migrated when the file is next touched (do not mass-flag).
+  **Why:** one button implementation, driven by the design system. **This rule
+  overrides any older wording in `DESIGN.md` / `Button.md`.** **Lint:** review.
+
 - **`rule/btn-cancel-ghost`** — *Do:* every button labelled Cancel / Close /
   Dismiss / Back / Keep editing uses the **ghost** variant. *Don't:* use secondary
   for Cancel. **Why:** dismiss is not an action; ghost keeps one visual action per
   screen. **Lint:** pixel-police (heuristic).
-- **`rule/btn-secondary-black`** — *Do:* secondary button = **black/default text**
-  (`text.default`) + **bold border** + **semibold**, on a neutral fill. *Don't:*
-  use `text.secondary` (gray) for secondary button text. **Why:** ERP secondary is
-  a real action, must read as clickable, not muted. **Lint:** review.
+- **`rule/btn-secondary-black`** — *Do:* secondary button = **default (near-black)
+  label** (`--mp-colors-text-default`) + **dark neutral border** (`--mp-colors-border-bold`).
+  **Standard = Pixel `<MpButton variant="secondary" is-rounded>`** — its secondary is
+  **globally overridden** in `erp.css` (`.mp-button--variant_secondary`) to these
+  colors, so plain MpButton is correct; you do **not** need `.btn-enterprise--secondary`
+  for the visual. *Don't:* leave Pixel's default (brand-blue label). **Why:** ERP
+  secondary is a real action, must read as clickable, not muted. Primary / ghost /
+  danger MpButton variants are already correct — no override. **Lint:** review.
 - **`rule/btn-ghost-regular`** — *Do:* ghost buttons use **regular** weight.
   **Why:** ghost is the lowest-emphasis action. **Lint:** review.
 - **`rule/btn-one-primary`** — *Do:* exactly one primary action per screen/modal.
@@ -82,9 +99,86 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/btn-always-pill`** — *Do:* every ERP button is pill-rounded
   (`is-rounded` / `radii-full`). **Why:** house shape. **Lint:** pixel-police
   (heuristic).
-- **`rule/btn-no-sm`** — *Do:* use default button size. *Don't:* `size="sm"`
-  unless the task explicitly asks (dense table/bulk bars are the only exception).
-  **Why:** consistent control height. **Lint:** review.
+- **`rule/btn-no-size-md`** — *Do:* omit `size` — **`md` is the default**. *Don't:*
+  ever write `size="md"` (redundant). **Lint:** pixel-police.
+- **`rule/btn-sm-secondary-only`** — *Do:* `size="sm"` is allowed **only** on
+  `variant="secondary"`, and **only** in a **table-header bulk-action bar** — nowhere
+  else. *Don't:* `size="sm"` on primary/danger/ghost/textLink, or a small button
+  outside a bulk bar. **Why:** one control height everywhere except that one dense
+  context. **Lint:** pixel-police.
+- **`rule/btn-danger-no-icon`** — *Do:* keep danger buttons **text-only**. *Don't:*
+  put `left-icon` or `right-icon` on `variant="danger"`. **Lint:** pixel-police.
+- **`rule/btn-sm-dropdown-only`** — *Do:* a `size="sm"` button may carry **only a
+  right-icon dropdown chevron**. *Don't:* give a small button a `left-icon`. **Lint:**
+  pixel-police.
+- **`rule/btn-no-full-width`** — *Do:* buttons hug their content. *Don't:* use the
+  `is-full-width` prop. Full-width is a **responsive-only** behavior — see
+  `rule/btn-responsive-footer` — never a manual prop. **Lint:** pixel-police.
+- **`rule/btn-responsive-footer`** — *Do:* build form/modal footer actions as an
+  **`<MpButtonGroup class="erp-action-footer">`**. It is **always right-aligned** on
+  desktop and, on **mobile (≤640px)**, becomes **full-width, stacked, primary on top**.
+  Variants: **2-button** (ghost Cancel + primary Save) or **3-button** (ghost Back +
+  ghost Cancel + primary Save). Keep DOM order with the primary **last** (the CSS
+  reverses to put it on top on mobile). Modal footers (`MpModalFooter`) also get the
+  responsive behavior automatically. *Don't:* hand-roll per-page footer CSS or use
+  `is-full-width`. **Why:** one footer pattern; thumb-friendly on mobile. **Lint:**
+  review.
+- **`rule/btn-group-gap-8`** — *Do:* buttons in an `MpButtonGroup` sit **8px apart**
+  (the default `spacing="2"`) — including the action footer. *Don't:* override the gap
+  to another value. **Why:** one consistent button spacing. **Lint:** review.
+- **`rule/page-title-actions-group`** — *Do:* page-title-bar actions live **top-right**
+  (title left, actions right — `space-between`). A **single** action may stand alone;
+  **two or more** are wrapped in an `MpButtonGroup` (8px gap) ordered **secondary then
+  primary** (e.g. `Import` then `+ New <entity>`). Keep **one primary**. *Don't:* put
+  bulk ops (**Export, Column settings**) here — those live in the filter bar's icon
+  group (`rule/filter-bar-icon-group`); and don't place multiple loose buttons.
+  **Why:** consistent title-bar cluster. **Source:** `docs/patterns/page-title-bar.md`.
+  **Lint:** review.
+- **`rule/btn-icon-tooltip`** — *Do:* an **icon-only** button carries both an
+  **`aria-label`** and an **`MpTooltip`** naming the action. *Don't:* ship a bare
+  icon button with no accessible name / hint. **Why:** icon-only actions are
+  unlabelled without it. **Lint:** review.
+- **`rule/filter-bar-icon-group`** — *Do:* the filter bar's tool icons — **AI
+  (Airene) → `airene-brand`, Column settings → `table-view-column`, Export →
+  `download`** — are **GHOST icon-only `MpButton`s inside one `MpButtonGroup`**
+  (transparent, 36×36 — the `.filter-icon-btn` style), each wrapped in an `MpTooltip`
+  (see `rule/btn-icon-tooltip`). *Don't:* use secondary/filled buttons, scatter them
+  loose, or hand-roll the grouping. **Why:** one consistent tool cluster on every list
+  page. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
+- **`rule/icon-pixel-library`** — *Do:* every icon is an **`MpIcon`** with a name from
+  the **Pixel icon library** — verify the name via the `mekari-pixel` MCP
+  (`get-icon-name`) before using it. *Don't:* use a raw `<svg>`, an emoji, an image, or
+  a guessed/invalid icon name as a UI icon (an invalid name renders nothing / 404s).
+  **Why:** consistent, on-system iconography. **Lint:** review (verify names via MCP).
+- **`rule/btn-danger-confirm`** — *Do:* a **danger** button always opens a
+  confirmation **`MpModal`** (`size="md"`) before running the destructive action —
+  never delete/void/cancel directly on click. Copy follows the **UXW** library
+  template exactly: title **"Delete {object}?"** (sentence case), body **"Deleted
+  {object} cannot be restored."** (sentence case, period), a danger confirm using
+  the **same verb+noun as the action** (**"Delete product"** — never "OK/Confirm/
+  Yes"), and a ghost **Cancel**. Source:
+  `.agents/skills/pixel-guardian/references/uxw-copy-library.md`. **Why:** destructive
+  actions must be reversible-by-intent — one guaranteed confirm step, worded so the
+  user knows exactly what happens. **Lint:** pixel-police (flags a danger button with
+  `@click` in a file that has no `MpModal`) + review for the copy.
+- **`rule/btn-save-toast`** — *Do:* a button whose action is a **save / submit /
+  approve / delete** shows a **success `MpToast`** (`successToast()`) when it
+  succeeds. Copy follows the **UXW** library: a short past-participle phrase —
+  **"[Object] saved"**, **"Changes saved"**, **"[Object] submitted"**, **"[Object]
+  deleted"** — sentence case, **no period**. *Don't:* stay silent after a successful
+  submit, or use a toast for an error (errors go inline). **Why:** confirm success
+  consistently, worded the same everywhere. **Source:**
+  `.agents/skills/pixel-guardian/references/uxw-copy-library.md`. **Lint:** review.
+- **`rule/btn-dropdown-mppopover`** — *Do:* a button that opens a menu of options
+  **must** be a real **`MpPopover`** (`MpPopoverTrigger` → `MpPopoverContent` →
+  `MpPopoverList` → `MpPopoverListItem`). A dropdown chevron button (`right-icon`
+  chevron) is only ever the *trigger* inside an `MpPopover`. *Don't:* render a
+  chevron button that does nothing, or hand-roll a menu. **Why:** every dropdown in
+  the ERP behaves the same, on-system, and is keyboard/click-away correct. **Lint:**
+  pixel-police (flags a chevron button in a file with no `MpPopover`).
+- **`rule/btn-dropdown-min-width`** — *Do:* a dropdown-button / split-button popover
+  menu has a **fixed `min-width` of 160px** — put `class="erp-dropdown-menu"` on its
+  `MpPopoverContent`. **Why:** consistent menu width across the app. **Lint:** review.
 - **`rule/btn-primary-icon-white`** — *Do:* icons inside a primary button are
   always white. **Why:** contrast on brand fill. **Lint:** review.
 - **`rule/btn-no-disabled-validation`** — *Do:* keep action buttons **clickable**;
@@ -116,11 +210,18 @@ is the point: they *feel* normal, which is exactly why they slip through.
 
 ## Selects, filters & inputs — source: `docs/patterns/ErpFilterBar.md`
 
-- **`rule/select-erpfilterselect`** — *Do:* all dropdowns/filters use
-  **`ErpFilterSelect`** (an `MpPopover` menu, clearable). *Don't:* use a native
-  `<select>` **or** Pixel `MpSelect` — both render the OS dropdown (off-system,
-  clips in scroll containers). **Why:** on-system, consistent, clearable. **Lint:**
-  pixel-police.
+- **`rule/select-erpfilterselect`** — **Repo-wide, no exceptions: never `MpSelect`.**
+  *Do:* every dropdown is an **`MpAutocomplete`** — its options always render in a
+  Pixel popover menu (never native). Variants: **select** = omit `is-searchable`
+  (not typeable); **searchable** = add `is-searchable` (type-to-filter); always add
+  `use-portal` so the menu never clips. A chosen value must show an (×) to reset —
+  **but `is-clearable` does NOT render the × in this pulled Pixel build** (verified;
+  same atomic-CSS gap as MpSelect), so add a **manual reset ×** overlay (MpIcon
+  `close`, shown when there's a value) until Pixel is upgraded. *Don't:* use `MpSelect` (native `<select>` → OS dropdown, uncontrollable,
+  clips), a native `<select>`, or a hand-rolled `<div>` fake select. `ErpFilterSelect`
+  is the ERP wrapper around `MpAutocomplete`. **Why:** the OS draws (and owns) a native
+  `<select>` menu — it can't be styled or made a popover; `MpAutocomplete` draws its
+  own in-DOM popover. **Lint:** pixel-police (flags ANY `MpSelect`, and native `<select>`).
 - **`rule/select-active-neutral`** — *Do:* select/search active+focus state = **bold
   neutral border** (`#8c9596`) + **slate ring**. *Don't:* green/brand focus ring.
   **Why:** neutral focus is the ERP override of Pixel's default. **Lint:** review.
@@ -204,8 +305,36 @@ is the point: they *feel* normal, which is exactly why they slip through.
 
 - **`rule/empty-state-structure`** — *Do:* an empty state = illustration + title +
   caption + a **secondary-variant** button. **Lint:** review.
-- **`rule/toast-success-only`** — *Do:* toast is for **success/info only** (pairs
-  with `rule/form-errors-inline`). **Lint:** review.
+- **`rule/skeleton-solid-static`** — *Do:* loading skeletons are **solid and static** —
+  **no shimmer gradient, no animation**. Every `<MpSkeleton>` gets **`duration="0s"`**
+  and the flattening class (`.erp-skeleton` in `ErpTablePage`, `.cw-skeleton` in Cowork):
+  `background-image: none` + `background-color: var(--mp-border-default)` +
+  `animation: none`. *Don't:* leave Pixel's default animated shimmer gradient. **Why:**
+  the ERP reads as calm/enterprise — motion and gradients are visual noise while loading.
+  **Source:** `docs/patterns/ErpTablePage.md` › Skeleton. **Lint:** review.
+- **`rule/skeleton-3-rows`** — *Do:* a first-load skeleton shows **exactly 3** placeholder
+  rows/bars (in a table, 3 rows × one bar per column), then flips to content — via
+  **`ErpTablePage :loading`** (which also appends 3 skeleton rows below existing data on a
+  pagination change). *Don't:* show a spinner over blank space, a full page of skeleton
+  rows, or a different count. **Why:** 3 rows signal "loading" without faking the result
+  size; one consistent loading state everywhere. **Source:** `docs/patterns/ErpTablePage.md`
+  › Skeleton, `docs/patterns/index-page-format.md`. **Lint:** review.
+- **`rule/toast-use-mptoast`** — *Do:* **every** toast is a Pixel **`MpToast`**, raised
+  through `toast.notify()` or the `~/utils/toasts` helpers (`successToast` / `infoToast` /
+  `errorToast` / `greetingToast`), with a **single `<MpToastManager />`** mounted once
+  (app.vue / the `/pixel` shell). Variants are exactly the three Pixel ships —
+  **`success | error | greeting`** — plus the project's **`info`** helper (a `greeting`
+  toast with a hand-drawn blue info icon via the `render` slot, since Pixel has no info
+  variant). *Don't:* hand-roll a toast/snackbar `<div>`, pull in another toast library, or
+  invent a variant. **Why:** one toast system — on-brand, consistent position (top-center)
+  and duration (3s). **Lint:** review.
+- **`rule/toast-success-only`** — *Do:* use a toast to confirm an action **succeeded**
+  (`success`) or surface **neutral status / info** (`info`) — pairs with
+  `rule/form-errors-inline`. The **`error`** variant is reserved for **system / async
+  failures** the user can't fix at a field (server/network — "Server error, please try
+  again"). *Don't:* toast a **form/field validation** error — those are always **inline**
+  (`rule/form-errors-inline`). **Why:** confirmations belong in a transient toast; the fix
+  for a bad field belongs next to the field. **Lint:** review.
 
 ## Theme, type & tokens — source: `DESIGN.md`, `docs/patterns/pixel-enterprise-overrides.md`
 
@@ -227,6 +356,16 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/badge-status-mapping`** — *Do:* map statuses to badge intents per the
   `MpBadge` table in `DESIGN.md`; use `ErpStatusBadge`. **Why:** consistent status
   color semantics. **Lint:** review.
+- **`rule/style-with-css`** — *Do:* style native tags and one-off overrides with the
+  Pixel **`css()`** utility. Spacing / radius / font-size **tokens work** (`px: '3'`,
+  `rounded: 'full'`, `fontSize: 'md'`). **Build caveat:** this pulled Pixel build leaves
+  the short semantic **color** tokens empty (`border.subtle`, `text.secondary`, …), so
+  for colors pass the fully-qualified var + hex fallback inside css() — e.g.
+  `borderColor: 'var(--mp-colors-border-default, #e3e7e9)'` (using a bare `'border.subtle'`
+  renders black). *Don't:* hand-roll a scoped `<style>` with custom classes + hardcoded
+  values for Pixel-shaped UI. Layout wrappers may use `MpFlex` / CSS-props. **Why:**
+  css() keeps styling on the design system; the var-fallback works around the broken
+  aliases. **Source:** docs.mekari.design css() + css-props guides. **Lint:** review.
 - **`rule/token-no-hardcoded-color`** — *Do:* colors come from `var(--mp-color-*)` /
   Pixel token keys. *Don't:* hardcode hex/rgb/hsl. **Lint:** pixel-police.
 - **`rule/token-no-hardcoded-spacing`** — *Do:* spacing/sizing from
@@ -244,14 +383,46 @@ is the point: they *feel* normal, which is exactly why they slip through.
   Pemasok. **Lint:** review.
 - **`rule/copy-number-not-id`** — *Do:* label identifiers **"… number"**. *Don't:*
   "… ID". **Lint:** review.
-- **`rule/copy-add-noun-only`** — *Do:* `+` / create titles use the **noun only**
-  (`+ Barang keluar`); combobox inline-create uses `Tambah <noun>`. *Don't:* "baru"
-  on add buttons. **Lint:** review.
+- **`rule/copy-add-noun-only`** — *Do:* a create button uses the **Pixel `add`
+  icon** (`left-icon="add"`) — never a literal "+" in the text — with the label
+  **"New <entity>"** in English (e.g. `[add] New contact`) or the **noun only** in
+  Indonesian (`Barang keluar`). Combobox inline-create uses `Tambah <noun>`. *Don't:*
+  type a "+" character, or use "baru" on add buttons. **Lint:** review. Relates to
+  `rule/icon-pixel-library`.
 - **`rule/copy-id-translations`** — *Do:* all strings live in
   `app/data/translations.ts` (English key → Indonesian value) via `t()`. **Lint:**
   review.
 
 ---
+
+## Patterns — Filter bar (index pages) — source: `docs/patterns/ErpFilterBar.md`
+
+The filter bar is a fixed composite. It never varies in structure — only in which
+filters appear on the left.
+
+- **`rule/filter-bar-anatomy`** — *Do:* lay the bar out as **left group | right
+  group**, split with `justify-content: space-between`. **Left** = inline dropdown
+  filters + an **"All filters"** button. **Right** = the icon tool group **then**
+  search (search is always the rightmost element). *Don't:* reorder these, put search
+  on the left, or mix tools into the left group. **Why:** every list page reads the
+  same. **Lint:** review.
+- **`rule/filter-bar-left-gap`** — *Do:* in the left group, the gap between filters
+  and the **All filters** button — and between two filters — is always **16px**
+  (`gap: var(--mp-spacing-4)`). **Lint:** review.
+- **`rule/filter-bar-search-pill`** — *Do:* the search field is a **rounded pill**,
+  the **rightmost** element of the right group, with a leading search icon and a
+  clear (×) shown only when it has a value. *Don't:* use a square input or move it.
+  **Lint:** review.
+- **`rule/filter-bar-all-filters-drawer`** — *Do:* filters that don't fit as inline
+  dropdowns live behind an **"All filters"** button (left group) that opens the
+  filters **drawer** (`rule/drawer-custom-shell`, opened via this button per
+  `rule/drawer-open-via-manage`). *Don't:* overflow the bar with many inline selects.
+  **Lint:** review.
+
+Also governing the filter bar: `rule/filter-bar-search-export` (Search + Export
+always present), `rule/filter-bar-icon-group` (AI · column settings · export = ghost
+icon `MpButtonGroup` + tooltips), `rule/select-erpfilterselect` (filters use
+`ErpFilterSelect`, never a native `<select>`).
 
 ## Adding a rule
 

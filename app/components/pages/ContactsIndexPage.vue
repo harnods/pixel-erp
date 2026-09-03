@@ -9,7 +9,7 @@
  * "Customers" breadcrumb both of those pages link back to).
  */
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+  MpButton, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -36,6 +36,8 @@ const listSlug = computed(() => {
 const list = computed(() => LISTS[listSlug.value]!)
 
 const TYPE_LABEL: Record<ContactType, string> = { customer: 'Customer', vendor: 'Vendor', other: 'Others' }
+// Type-specific create label — "New customer" / "New vendor" / "New contact".
+const addLabel = computed(() => ({ customer: 'New customer', vendor: 'New vendor', other: 'New contact' }[list.value.type]))
 
 // ── Columns (widths come from `kind` — never hardcode px on a semantic column) ─
 const allCols: TableColumn[] = [
@@ -95,6 +97,7 @@ function newContact() { router.push(`/${listSlug.value}/new`) }
 // The primary create action lives in the page title bar ([...slug].vue); it
 // bumps this signal rather than reaching into the page.
 const contactAddSignal = inject<Ref<number>>('contactAddSignal')
+const toggleAirene = inject<() => void>('toggleAirene')
 if (contactAddSignal) watch(contactAddSignal, () => newContact())
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -158,7 +161,15 @@ function confirmDelete() {
         </MpPopover>
       </div>
       <div class="filter-right">
-        <ColumnSettingsMenu id="contacts-columns" :items="columnItems" :visibility="columnVisibility" />
+        <div class="filter-btn-group">
+          <MpTooltip id="contacts-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+          </MpTooltip>
+          <ColumnSettingsMenu id="contacts-columns" :items="columnItems" :visibility="columnVisibility" />
+          <MpTooltip id="contacts-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" type="button" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+          </MpTooltip>
+        </div>
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -200,7 +211,7 @@ function confirmDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`contact-actions-${(row as unknown as Contact).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="btn-enterprise btn-enterprise--plain row-kebab" :aria-label="t('More actions')">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -222,12 +233,7 @@ function confirmDelete() {
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No contacts') }}</p>
         <p class="empty-full-desc">{{ t('Contacts you add will appear here.') }}</p>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before empty-full-btn" @click="newContact">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          {{ t('Contact') }}
-        </button>
+        <MpButton class="empty-full-btn" variant="secondary" is-rounded left-icon="add" @click="newContact">{{ t(addLabel) }}</MpButton>
       </div>
     </template>
   </ErpTablePage>
@@ -245,7 +251,11 @@ function confirmDelete() {
 /* no flex-grow here — the MpPopover root would stretch and detach the select's
    chevron from its 180px trigger */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
-.filter-right { margin-left: auto; display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.filter-right { margin-left: auto; display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-icon-btn { display: flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.filter-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -267,12 +277,14 @@ function confirmDelete() {
 .cell-link { color: var(--mp-text-link); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* shape/colour come from .btn-enterprise in erp.css */
+/* Row-action kebab — self-contained table-action pattern (NOT a page button). */
 .row-kebab {
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  padding: 0; border-radius: var(--mp-radii-sm);
-  color: var(--mp-icon-default, var(--mp-text-secondary));
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  padding: 0; border: none; background: transparent; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
+.row-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 
 .empty-full {
   display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2);

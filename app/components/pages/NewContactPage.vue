@@ -15,7 +15,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
-  MpInput, MpTextarea, MpCheckbox, MpRadio, MpSelect, MpSpinner, MpTooltip, MpIcon,
+  MpButton, MpButtonGroup, MpInput, MpTextarea, MpCheckbox, MpRadio, MpSelect, MpSpinner, MpTooltip, MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -164,9 +164,6 @@ function removeBank(i: number) { banks.value.splice(i, 1) }
 const typeError = ref('')
 const displayNameError = ref('')
 const isSaving = ref(false)
-// Save is blocked only while a validation call is in flight (Figma: disabled Save
-// in the Validating state). Field errors otherwise surface on click.
-const isSaveDisabled = computed(() => isValidating.value || isSaving.value)
 
 function goBack() {
   router.push(isEdit.value ? `/${listSlug.value}/${props.orderId}` : `/${listSlug.value}`)
@@ -548,17 +545,17 @@ async function save() {
                    signalled by the green checks in the fields, not by swapping
                    the button for a badge. -->
               <div class="nc-tax-action">
-                <button v-if="isValidating" class="btn-enterprise btn-enterprise--secondary" disabled>
+                <MpButton v-if="isValidating" variant="secondary" is-rounded is-disabled>
                   <MpSpinner size="sm" />
                   {{ t('Validating') }}
-                </button>
+                </MpButton>
                 <MpTooltip
                   v-else id="nc-validate-tt" use-portal placement="top"
                   :label="t('Entered info will be validated through the DJP database. Make sure the numbers are correct.')"
                 >
-                  <button class="btn-enterprise btn-enterprise--secondary" :disabled="!canValidate" @click="validateTax">
+                  <MpButton variant="secondary" is-rounded @click="validateTax">
                     {{ t('Validate') }}
-                  </button>
+                  </MpButton>
                 </MpTooltip>
               </div>
             </div>
@@ -647,12 +644,9 @@ async function save() {
             </div>
 
             <div>
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addBank">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
+              <MpButton variant="secondary" is-rounded left-icon="add" @click="addBank">
                 {{ t('Add another bank') }}
-              </button>
+              </MpButton>
             </div>
           </div>
         </section>
@@ -736,12 +730,12 @@ async function save() {
         </section>
 
         <!-- ── Action group ── -->
-        <div class="nc-actions">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaveDisabled" @click="save">
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
             {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
-          </button>
-        </div>
+          </MpButton>
+        </MpButtonGroup>
 
       </div>
     </div>
@@ -944,9 +938,6 @@ async function save() {
   border-color: var(--mp-background-disabled, #e4e7e7);
   color: var(--mp-text-disabled);
 }
-
-/* ── Action group (right-aligned, last) ── */
-.nc-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) 0; }
 
 /* ── Demo scenario FAB (same as ApprovalWorkflowsPage) ── */
 .demo-fab {
