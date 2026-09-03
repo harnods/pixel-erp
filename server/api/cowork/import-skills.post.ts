@@ -27,9 +27,23 @@ function parseFrontmatter(md: string): { fm: Record<string, string>; body: strin
   const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/)
   if (!m) return { fm: {}, body: md }
   const fm: Record<string, string> = {}
-  for (const line of m[1]!.split('\n')) {
-    const kv = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/)
-    if (kv) fm[kv[1]!.toLowerCase()] = kv[2]!.trim().replace(/^["']|["']$/g, '')
+  const lines = m[1]!.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const kv = lines[i]!.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/)
+    if (!kv) continue
+    const key = kv[1]!.toLowerCase()
+    let val = kv[2]!.trim()
+    if (/^[>|][+-]?$/.test(val)) {
+      // YAML block scalar (`>` folded / `|` literal): gather the indented lines.
+      const block: string[] = []
+      let j = i + 1
+      while (j < lines.length && (lines[j]!.trim() === '' || /^\s/.test(lines[j]!))) { block.push(lines[j]!.replace(/^\s+/, '')); j++ }
+      i = j - 1
+      val = (val[0] === '>' ? block.join(' ') : block.join('\n')).trim()
+    } else {
+      val = val.replace(/^["']|["']$/g, '')
+    }
+    fm[key] = val
   }
   return { fm, body: md.slice(m[0]!.length) }
 }

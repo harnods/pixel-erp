@@ -85,13 +85,13 @@ defineExpose({ reset })
   <Teleport to="body">
     <Transition name="scd">
       <div v-if="open" class="scd-overlay" @click.self="close">
-        <aside class="scd">
+        <aside class="scd" :class="{ 'scd--wide': !!draft }">
           <header class="scd-head">
-            <span class="scd-head__title"><MpIcon name="magic" size="sm" /> Create a skill with AI</span>
+            <span class="scd-head__title">Create a skill with AI</span>
             <button class="scd-head__x" type="button" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></button>
           </header>
 
-          <div class="scd-body">
+          <div class="scd-body" :class="{ 'scd-body--split': !!draft }">
             <!-- Left: chat with the Skill builder -->
             <div class="scd-chat">
               <CoworkChatPanel
@@ -110,11 +110,9 @@ defineExpose({ reset })
               />
             </div>
 
-            <!-- Right: the drafted skill (editable Markdown) -->
-            <div class="scd-draft">
-              <div v-if="generating && !draft" class="scd-draft__empty"><MpSpinner size="md" /><p>Drafting your skill…</p></div>
-              <div v-else-if="!draft" class="scd-draft__empty"><MpIcon name="doc" size="lg" /><p>Your skill will appear here to review and edit.</p></div>
-              <template v-else>
+            <!-- Right: the drafted skill (only appears once the agent has drafted one) -->
+            <div v-if="draft" class="scd-draft">
+              <template>
                 <div class="scd-draft__head">
                   <div class="scd-draft__meta">
                     <input v-model="draft.name" class="scd-draft__name" placeholder="Skill name" />
@@ -147,15 +145,17 @@ defineExpose({ reset })
 .scd-enter-active, .scd-leave-active { transition: opacity 200ms ease; }
 .scd-enter-from, .scd-leave-to { opacity: 0; }
 .scd-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
-.scd { width: min(1040px, 96vw); height: 100%; background: var(--mp-background-neutral, #fff); display: flex; flex-direction: column; }
+.scd { width: min(520px, 96vw); height: 100%; background: var(--mp-background-neutral, #fff); display: flex; flex-direction: column; transition: width 220ms ease; }
+.scd--wide { width: min(1040px, 96vw); }
 .scd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .scd-head__title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
 .scd-head__x { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: none; background: none; cursor: pointer; color: var(--mp-icon-default); border-radius: var(--mp-radii-md, 8px); }
 .scd-head__x:hover { background: var(--mp-background-neutral-subtle); }
-.scd-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 420px minmax(0, 1fr); }
-.scd-chat { min-height: 0; border-right: 1px solid var(--mp-border-default); }
+.scd-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+.scd-body--split { grid-template-columns: 420px minmax(0, 1fr); }
+.scd-chat { min-height: 0; }
+.scd-body--split .scd-chat { border-right: 1px solid var(--mp-border-default); }
 .scd-draft { min-height: 0; display: flex; flex-direction: column; }
-.scd-draft__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .scd-draft__head { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .scd-draft__meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .scd-draft__name { border: none; outline: none; font-family: inherit; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); background: none; padding: 2px 0; }

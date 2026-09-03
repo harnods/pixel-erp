@@ -929,8 +929,9 @@ function toggleImport(path: string, on: boolean) {
 }
 const importSelCount = computed(() => importSel.value.size)
 function doImport() {
+  if (!importSkills.value.length) { importError.value = 'Fetch a repository first, then choose which skills to import.'; return }
   const chosen = importSkills.value.filter((s) => importSel.value.has(s.path))
-  if (!chosen.length) { importError.value = 'Select at least one skill to import'; return }
+  if (!chosen.length) { importError.value = 'Select at least one skill to import.'; return }
   for (const s of chosen) {
     addSkill({
       name: s.name, description: s.description, module: s.module,
@@ -1821,7 +1822,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     </MpModal>
 
     <!-- ── Import skills from a repository ── -->
-    <MpModal id="cw-import-modal" :is-open="importOpen" size="md" scroll-behavior="inside" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="importOpen = false">
+    <MpModal id="cw-import-modal" :is-open="importOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="importOpen = false">
       <MpModalContent>
         <MpModalHeader>Import skills from a repository<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1829,7 +1830,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <label class="mcp-label" for="imp-url">Repository URL</label>
           <div class="imp-row">
             <input id="imp-url" v-model="importRepo" class="mcp-input mcp-input--plain" type="url" placeholder="https://github.com/owner/repo" @keydown.enter.prevent="fetchRepo">
-            <MpButton is-rounded variant="secondary" :is-loading="importBusy" @click="fetchRepo">Fetch</MpButton>
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="fetchRepo"><MpSpinner v-if="importBusy" size="sm" /><span v-else>Fetch</span></button>
           </div>
           <p v-if="importError" class="cw-form-error">{{ importError }}</p>
 
@@ -1840,12 +1841,13 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
             <ul class="imp-list">
               <li v-for="s in importSkills" :key="s.path" class="imp-item">
-                <MpCheckbox :is-checked="importSel.has(s.path)" @update:is-checked="(v: boolean) => toggleImport(s.path, v)" />
-                <div class="imp-item__body">
-                  <p class="imp-item__name">{{ s.name }} <span v-if="s.module" class="imp-item__mod">{{ s.module }}</span></p>
-                  <p class="imp-item__desc">{{ s.description }}</p>
-                  <p class="imp-item__path">{{ s.path }}</p>
-                </div>
+                <MpCheckbox :is-checked="importSel.has(s.path)" @update:is-checked="(v: boolean) => toggleImport(s.path, v)">
+                  {{ s.name }}<span v-if="s.module" class="imp-item__mod">{{ s.module }}</span>
+                  <template #description>
+                    <span v-if="s.description" class="imp-item__desc">{{ s.description }}</span>
+                    <span class="imp-item__path">{{ s.path }}</span>
+                  </template>
+                </MpCheckbox>
               </li>
             </ul>
             <p class="imp-note">Imported skills land under <strong>Custom</strong> and stay off until you enable them on an agent — nothing runs automatically.</p>
@@ -1854,7 +1856,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton is-rounded variant="ghost" @click="importOpen = false">Cancel</MpButton>
-            <MpButton v-if="importSkills.length" is-rounded variant="primary" @click="doImport">Import {{ importSelCount }} skill{{ importSelCount === 1 ? '' : 's' }}</MpButton>
+            <MpButton is-rounded variant="primary" @click="doImport">Import{{ importSelCount ? ` ${importSelCount} skill${importSelCount === 1 ? '' : 's'}` : '' }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -2195,14 +2197,14 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .imp-row { display: flex; gap: var(--mp-spacing-2, 8px); align-items: center; }
 .imp-row .mcp-input { flex: 1; }
 .imp-meta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: var(--mp-spacing-5, 20px) 0 var(--mp-spacing-2, 8px); font-size: 13px; color: var(--mp-text-default); }
-.imp-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 12px); overflow: hidden; }
-.imp-item { display: flex; align-items: flex-start; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-3, 12px); }
+.imp-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 12px); overflow-y: auto; max-height: 320px; }
+.imp-item { padding: var(--mp-spacing-3, 12px); }
 .imp-item + .imp-item { border-top: 1px solid var(--mp-border-default); }
-.imp-item__body { min-width: 0; }
-.imp-item__name { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
-.imp-item__mod { font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; }
-.imp-item__desc { margin: 2px 0 0; font-size: 13px; color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
-.imp-item__path { margin: 4px 0 0; font-size: 11px; color: var(--mp-text-placeholder, #6e7a7c); font-family: ui-monospace, monospace; }
+/* The label + description live inside MpCheckbox (correct 12px gap, top align). */
+.imp-item :deep(.mp-checkbox__label), .imp-item :deep([data-pixel-component="MpCheckboxLabel"]) { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.imp-item__mod { margin-left: var(--mp-spacing-2, 8px); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; }
+.imp-item__desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.imp-item__path { display: block; margin-top: 4px; font-size: 11px; color: var(--mp-text-placeholder, #6e7a7c); font-family: ui-monospace, monospace; }
 .imp-note { margin: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
