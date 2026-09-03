@@ -38,6 +38,7 @@ import {
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import SkillCreateDrawer from '~/components/patterns/SkillCreateDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -891,8 +892,19 @@ const importError = ref('')
 const importSkills = ref<ImportedSkill[]>([])
 const importSel = ref<Set<string>>(new Set())
 const importMeta = ref<{ repo: string; path: string; truncated: boolean } | null>(null)
-// "Create with AI" — Phase 2 upgrades this to a chat drawer + editable preview.
-function openCreateAI() { openSkillModal() }
+// "Create with AI" — a chat drawer where you ask an agent to draft a skill,
+// then review/edit its Markdown and save.
+const createAIOpen = ref(false)
+function openCreateAI() { createAIOpen.value = true }
+function onCreateAISave(s: { name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string }) {
+  addSkill({
+    name: s.name.trim(), description: s.description.trim(), module: s.module,
+    actions: (s.actions.length ? s.actions : ['Run skill']).map((label) => ({ id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label })),
+    markdown: s.markdown, source: 'custom', createdAt: new Date().toISOString(),
+  })
+  toast.notify({ variant: 'success', title: 'Skill created' })
+  createAIOpen.value = false
+}
 function openImport() {
   importOpen.value = true; importRepo.value = ''; importError.value = ''
   importSkills.value = []; importSel.value = new Set(); importMeta.value = null; importBusy.value = false
@@ -1848,6 +1860,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <!-- ── Create a skill with AI (chat + editable Markdown preview) ── -->
+    <SkillCreateDrawer v-model:open="createAIOpen" @save="onCreateAISave" />
 
     <!-- ── Connect consent (OAuth-style authorize screen, per provider) ── -->
     <MpModal id="cw-consent-modal" :is-open="consentOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelConsent">
