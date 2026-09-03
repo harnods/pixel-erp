@@ -1719,7 +1719,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="cwc-consent-sub">Mekari Cowork wants to access your <strong>{{ consentConn?.name }}</strong> account. It will be able to:</p>
           <ul class="cwc-consent-scopes">
             <li v-for="(s, i) in consentScopes" :key="i" class="cwc-consent-scope">
-              <MpIcon :name="s.write ? 'edit' : 'check'" size="sm" class="cwc-consent-ico" :class="{ 'is-write': s.write }" />
+              <MpIcon name="check" size="sm" class="cwc-consent-ico" />
               <span>{{ s.label }}</span>
             </li>
           </ul>
@@ -2025,7 +2025,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cwc-consent-scopes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
 .cwc-consent-scope { display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .cwc-consent-ico { flex: 0 0 auto; margin-top: 1px; color: var(--mp-icon-success, #0a6e4e); }
-.cwc-consent-ico.is-write { color: var(--mp-icon-warning, #b54708); }
 .cwc-consent-note { margin: var(--mp-spacing-5, 20px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cwc-consent-trust { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 

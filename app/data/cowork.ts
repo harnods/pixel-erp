@@ -803,6 +803,12 @@ const TASKS_SEED: CoworkTask[] = [
 // are REAL OAuth connections; the rest are demo-only. An app can belong to several
 // categories (e.g. Notion is Featured + Productivity) — one record, rendered in
 // each of its categories, sharing a single connected state.
+// Brand logos for apps without a bundled PNG. The `?v=2` busts any stale
+// browser cache from before these assets existed.
+const IG_LOGO = '/connectors/instagram.svg?v=2'
+const META_LOGO = '/connectors/meta.svg?v=2'
+const TIKTOK_LOGO = '/connectors/tiktok.svg?v=2'
+
 const CONNECTION_SEED: CoworkConnection[] = [
   // ── Mekari products (native, connected by default) ──
   { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
@@ -851,9 +857,9 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
   { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
   { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
-  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C', logo: '/connectors/instagram.svg' },
-  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF', logo: '/connectors/meta.svg' },
-  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111', logo: '/connectors/tiktok.svg' },
+  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C', logo: IG_LOGO },
+  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF', logo: META_LOGO },
+  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111', logo: TIKTOK_LOGO },
   { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
   // ── Finance ──
   { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
@@ -1318,7 +1324,7 @@ export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_
     saveSnapshot('cowork-tasks-v2', coworkTasks)
   }
 }
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v4', CONNECTION_SEED))
 // v4 = adds lifecycle/governance fields (status, type, skillBindings, versions, roles).
 export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v4', AGENT_SEED).map(normalizeAgent))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
@@ -1343,7 +1349,7 @@ export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkP
 }
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v4', coworkConnections) }
 function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
 function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
 let skillSeq = 1
