@@ -330,6 +330,7 @@ const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPa
 const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
 const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
 const CrmCustomerDetailPage = asyncPage(() => import('~/components/pages/CrmCustomerDetailPage.vue'))
+const NewCustomerPage = asyncPage(() => import('~/components/pages/NewCustomerPage.vue'))
 // CRM (Qontak) level-1 pages — all full-bleed, own their title bar/stage.
 // There's no CRM home: the bare /crm lands directly on Deals.
 const CRM_PAGES: Record<string, Component> = {
@@ -385,6 +386,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs[0] === 'crm') {
     const sub = segs[1] ?? ''
     const id = segs[2]
+    // /crm/customers/new → create-customer form (before the :id detail match).
+    if (sub === 'customers' && id === 'new') return { component: NewCustomerPage, id: 'new' }
     // /crm/orders/:id, /crm/products/:id, /crm/customers/:id → CRM detail pages.
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
@@ -1503,10 +1506,17 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork skills'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-skills', query: { new: '1' } })">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Create skill
-          </button>
+          <MpPopover id="skill-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton is-rounded variant="primary" right-icon="chevrons-down">Create skill</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push({ path: '/cowork-skills', query: { new: 'import' } })">Import from repository</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/cowork-skills', query: { new: 'ai' } })">Create with AI</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
           <div class="page-import-btn">

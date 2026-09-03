@@ -803,11 +803,17 @@ const TASKS_SEED: CoworkTask[] = [
 // are REAL OAuth connections; the rest are demo-only. An app can belong to several
 // categories (e.g. Notion is Featured + Productivity) — one record, rendered in
 // each of its categories, sharing a single connected state.
+// Brand logos for apps without a bundled PNG. The `?v=2` busts any stale
+// browser cache from before these assets existed.
+const IG_LOGO = '/connectors/instagram.svg?v=2'
+const META_LOGO = '/connectors/meta.svg?v=2'
+const TIKTOK_LOGO = '/connectors/tiktok.svg?v=2'
+
 const CONNECTION_SEED: CoworkConnection[] = [
   // ── Mekari products (native, connected by default) ──
   { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
   { id: 'mekari-jurnal', name: 'Mekari Jurnal', categories: ['Featured', 'Finance'], connected: true, provider: 'fake', detail: 'Accounting & invoicing', color: '#0A6E4E' },
-  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E' },
+  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E', logo: '/connectors/mekari-qontak.webp?v=3' },
   // ── Google (real OAuth) ──
   { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
     detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
@@ -851,9 +857,9 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
   { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
   { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
-  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C' },
-  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF' },
-  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111' },
+  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C', logo: IG_LOGO },
+  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF', logo: META_LOGO },
+  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111', logo: TIKTOK_LOGO },
   { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
   // ── Finance ──
   { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
@@ -1318,7 +1324,7 @@ export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_
     saveSnapshot('cowork-tasks-v2', coworkTasks)
   }
 }
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v5', CONNECTION_SEED))
 // v4 = adds lifecycle/governance fields (status, type, skillBindings, versions, roles).
 export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v4', AGENT_SEED).map(normalizeAgent))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
@@ -1343,9 +1349,9 @@ export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkP
 }
 
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
+function persistConnections() { saveSnapshot('cowork-connections-v5', coworkConnections) }
 function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
-function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
+function persistSkills() { saveSnapshot('cowork-skills-v2', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
 export function addSkill(s: Omit<CoworkSkill, 'id'> & { id?: string }): CoworkSkill {
@@ -1592,6 +1598,65 @@ export function unscheduleTask(id: string): void {
 export function setConnection(id: string, connected: boolean): void {
   const c = coworkConnections.find((x) => x.id === id)
   if (c) { c.connected = connected; persistConnections() }
+}
+
+/** Auth mode for a connection's connect flow — drives the consent copy. */
+export type CoworkConnectionAuth = 'first_party' | 'oauth' | 'api_key'
+export function connectionAuthMode(c: CoworkConnection): CoworkConnectionAuth {
+  if (c.id.startsWith('mekari-')) return 'first_party'
+  if (c.provider === 'google') return 'oauth'
+  // A handful of catalogue apps are key-based rather than OAuth in real life.
+  if (['stripe', 'brex', 'metabase', 'bigquery', 'snowflake'].includes(c.id)) return 'api_key'
+  return 'oauth'
+}
+/** Plain-language permissions Cowork requests — differs per provider category
+ *  (Open principle: show scopes before consent). `write` = a change-class scope. */
+export function connectionScopes(c: CoworkConnection): { label: string; write?: boolean }[] {
+  if (c.id.startsWith('mekari-')) return [
+    { label: 'Access your data using your own Mekari permissions (RBAC enforced)' },
+    { label: 'Read the records you can already see in ' + c.name },
+    { label: 'Create and update records where you have edit rights', write: true },
+  ]
+  // Google apps get accurate, product-specific scopes.
+  const GOOGLE: Record<string, { label: string; write?: boolean }[]> = {
+    gmail: [{ label: 'Read your emails and drafts' }, { label: 'Send emails on your behalf', write: true }, { label: 'Read your contacts' }],
+    gdrive: [{ label: 'Read your files and folders' }, { label: 'Create and edit files', write: true }, { label: 'Read file names and metadata' }],
+    gcal: [{ label: 'Read your calendars and events' }, { label: 'Create and update events on your behalf', write: true }, { label: 'Read attendees and availability' }],
+    gcontacts: [{ label: 'Read your contacts and their details' }, { label: 'Read contact groups and labels' }],
+  }
+  if (GOOGLE[c.id]) return GOOGLE[c.id]!
+  const primary = c.categories.find((k) => k !== 'Featured') ?? c.categories[0]
+  switch (primary) {
+    case 'Communication': return [
+      { label: `Read your ${c.name} conversations, channels and contacts` },
+      { label: 'Send messages and post on your behalf', write: true },
+      { label: 'Read your profile and account info' },
+    ]
+    case 'Productivity': return [
+      { label: `Read your ${c.name} documents, items and comments` },
+      { label: 'Create and update items on your behalf', write: true },
+      { label: 'Read workspace members and structure' },
+    ]
+    case 'Business & operations': return [
+      { label: `Read your ${c.name} records (deals, tickets, orders, contacts)` },
+      { label: 'Create and update records on your behalf', write: true },
+      { label: 'Read account, pipeline and catalog metadata' },
+    ]
+    case 'Data & analytics': return [
+      { label: `Read your ${c.name} reports, datasets and dashboards` },
+      { label: 'Run read-only queries against your data' },
+      { label: 'Read schema and metadata' },
+    ]
+    case 'Finance': return [
+      { label: `Read your ${c.name} invoices, payments and balances` },
+      { label: 'Create draft invoices and payments for your review', write: true },
+      { label: 'Read customers, vendors and account info' },
+    ]
+    default: return [
+      { label: `Read your ${c.name} data` },
+      { label: 'Act on your behalf within the tools you enable', write: true },
+    ]
+  }
 }
 
 let connSeq = 1
