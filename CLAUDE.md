@@ -57,6 +57,25 @@ buttons and errors-inline-not-toast rules. Secondary buttons inside these forms
 use `btn-enterprise--secondary` (black text, dark border), not a raw Pixel
 `MpButton variant="secondary"`.
 
+## Drawers — always Pixel `MpDrawer` floating (never a custom overlay)
+
+**Read `docs/patterns/Drawer.md` before building ANY drawer.** ERP/Cowork drawers
+are Pixel `MpDrawer` with `variant="floating"` + `placement="right"` + a `size`:
+`MpDrawer > MpDrawerContent > MpDrawerHeader` (title + `MpDrawerCloseButton`) /
+`MpDrawerBody` (scrollable) / `MpDrawerFooter` (`MpButtonGroup`: ghost Cancel +
+primary, both `is-rounded`) + `MpDrawerOverlay`. **Never hand-roll a Teleport
+`*-overlay` panel** — that's the recurring mistake. Reference: `NewLocationDrawer.vue`
+and the 30+ `*Drawer.vue` in `app/components/patterns/`. (Modal vs drawer: drawer
+when the underlying page context helps; modal for a short blocking decision.)
+
+## List bullets — `<li>` always shows its marker
+
+The global CSS reset strips `list-style`, so rendered/markdown lists lose their
+bullets. **Every `<li>` must show a marker**: set `list-style: disc outside` on
+`ul` (`decimal` on `ol`) **and** `display: list-item` on `li`. Applies to any
+`v-html`/markdown output (chat, KB docs, skill preview) and hand-written content
+lists — never leave a bulleted list rendering as flush, marker-less lines.
+
 ## Table column widths — MANDATORY standard (no exceptions)
 
 Any page with a table/index/list **MUST** follow the column-width standard — no
