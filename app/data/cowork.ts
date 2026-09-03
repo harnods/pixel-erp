@@ -1351,7 +1351,7 @@ export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkP
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
 function persistConnections() { saveSnapshot('cowork-connections-v5', coworkConnections) }
 function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
-function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
+function persistSkills() { saveSnapshot('cowork-skills-v2', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
 export function addSkill(s: Omit<CoworkSkill, 'id'> & { id?: string }): CoworkSkill {

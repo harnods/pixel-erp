@@ -16,7 +16,7 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   css, toast,
@@ -882,6 +882,54 @@ function saveSkill() {
   closeSkillModal()
 }
 
+// ── Import skills from a Git repository (real fetch → preview → import) ─────────
+interface ImportedSkill { name: string; description: string; module?: CoworkModule; markdown: string; path: string }
+const importOpen = ref(false)
+const importRepo = ref('')
+const importBusy = ref(false)
+const importError = ref('')
+const importSkills = ref<ImportedSkill[]>([])
+const importSel = ref<Set<string>>(new Set())
+const importMeta = ref<{ repo: string; path: string; truncated: boolean } | null>(null)
+// "Create with AI" — Phase 2 upgrades this to a chat drawer + editable preview.
+function openCreateAI() { openSkillModal() }
+function openImport() {
+  importOpen.value = true; importRepo.value = ''; importError.value = ''
+  importSkills.value = []; importSel.value = new Set(); importMeta.value = null; importBusy.value = false
+}
+async function fetchRepo() {
+  const repo = importRepo.value.trim()
+  if (!repo) { importError.value = 'Enter a repository URL'; return }
+  importBusy.value = true; importError.value = ''; importSkills.value = []; importMeta.value = null
+  try {
+    const res = await $fetch<{ error?: string; repo: string; path: string; truncated: boolean; skills: ImportedSkill[] }>(
+      '/api/cowork/import-skills', { method: 'POST', body: { repo } })
+    if (res.error) { importError.value = res.error; return }
+    importSkills.value = res.skills
+    importSel.value = new Set(res.skills.map((s) => s.path))
+    importMeta.value = { repo: res.repo, path: res.path, truncated: res.truncated }
+  } catch (e: any) {
+    importError.value = e?.data?.error || 'Could not reach that repository. Check the URL points to a public repo.'
+  } finally { importBusy.value = false }
+}
+function toggleImport(path: string, on: boolean) {
+  const s = new Set(importSel.value); on ? s.add(path) : s.delete(path); importSel.value = s
+}
+const importSelCount = computed(() => importSel.value.size)
+function doImport() {
+  const chosen = importSkills.value.filter((s) => importSel.value.has(s.path))
+  if (!chosen.length) { importError.value = 'Select at least one skill to import'; return }
+  for (const s of chosen) {
+    addSkill({
+      name: s.name, description: s.description, module: s.module,
+      actions: [{ id: 'run-skill', label: 'Run skill' }], markdown: s.markdown, source: 'custom',
+      createdAt: new Date().toISOString(),
+    })
+  }
+  toast.notify({ variant: 'success', title: `Imported ${chosen.length} skill${chosen.length > 1 ? 's' : ''}` })
+  importOpen.value = false
+}
+
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })
 
@@ -893,8 +941,12 @@ function handleQueryTriggers() {
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
   if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
-  // Create skill is not available yet — show a coming-soon notice instead of the modal.
-  if (q.new === '1' && section.value === 'Skills') { infoToast('Create skill — coming soon'); router.replace({ path: '/cowork-skills', query: {} }) }
+  // Create skill: dropdown in the title bar routes here with ?new=import | ai.
+  if (section.value === 'Skills' && (q.new === 'import' || q.new === 'ai' || q.new === '1')) {
+    if (q.new === 'import') openImport()
+    else openCreateAI()
+    router.replace({ path: '/cowork-skills', query: {} })
+  }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -1603,7 +1655,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Skills ── -->
         <section v-else-if="section === 'Skills'" class="cw-connections">
-          <!-- Filter bar: search (right) — same pattern as Connections -->
+          <!-- Filter bar: search (right) — Create dropdown lives in the page title bar -->
           <div class="cw-filter">
             <div class="cw-filter__left" />
             <div class="cw-filter__right">
@@ -1751,6 +1803,47 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <MpButton is-rounded variant="ghost" @click="closeMcpModal">Cancel</MpButton>
             <MpButton is-rounded variant="primary" @click="connectMcp">Connect</MpButton>
           </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Import skills from a repository ── -->
+    <MpModal id="cw-import-modal" :is-open="importOpen" size="md" scroll-behavior="inside" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="importOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Import skills from a repository<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="imp-sub">Paste a public Git repository. We read its Markdown skill files (from <code>skills/</code>, <code>.claude/skills/</code>, or the repo root) so you can review and import them as Custom skills.</p>
+          <label class="mcp-label" for="imp-url">Repository URL</label>
+          <div class="imp-row">
+            <input id="imp-url" v-model="importRepo" class="mcp-input mcp-input--plain" type="url" placeholder="https://github.com/owner/repo" @keydown.enter.prevent="fetchRepo">
+            <MpButton is-rounded variant="secondary" :is-loading="importBusy" @click="fetchRepo">Fetch</MpButton>
+          </div>
+          <p v-if="importError" class="cw-form-error">{{ importError }}</p>
+
+          <template v-if="importSkills.length">
+            <div class="imp-meta">
+              <span>{{ importSelCount }} of {{ importSkills.length }} selected from <strong>{{ importMeta?.repo }}</strong></span>
+              <span v-if="importMeta?.truncated" class="cw-muted">· showing the first {{ importSkills.length }}</span>
+            </div>
+            <ul class="imp-list">
+              <li v-for="s in importSkills" :key="s.path" class="imp-item">
+                <MpCheckbox :is-checked="importSel.has(s.path)" @update:is-checked="(v: boolean) => toggleImport(s.path, v)" />
+                <div class="imp-item__body">
+                  <p class="imp-item__name">{{ s.name }} <span v-if="s.module" class="imp-item__mod">{{ s.module }}</span></p>
+                  <p class="imp-item__desc">{{ s.description }}</p>
+                  <p class="imp-item__path">{{ s.path }}</p>
+                </div>
+              </li>
+            </ul>
+            <p class="imp-note">Imported skills land under <strong>Custom</strong> and stay off until you enable them on an agent — nothing runs automatically.</p>
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="importOpen = false">Cancel</MpButton>
+            <MpButton v-if="importSkills.length" is-rounded variant="primary" @click="doImport">Import {{ importSelCount }} skill{{ importSelCount === 1 ? '' : 's' }}</MpButton>
+          </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -2081,6 +2174,21 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cwc-consent-ico { flex: 0 0 auto; margin-top: 1px; color: var(--mp-icon-success, #0a6e4e); }
 .cwc-consent-note { margin: var(--mp-spacing-5, 20px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cwc-consent-trust { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+
+/* ── Import skills modal ── */
+.imp-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.imp-row { display: flex; gap: var(--mp-spacing-2, 8px); align-items: center; }
+.imp-row .mcp-input { flex: 1; }
+.imp-meta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: var(--mp-spacing-5, 20px) 0 var(--mp-spacing-2, 8px); font-size: 13px; color: var(--mp-text-default); }
+.imp-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 12px); overflow: hidden; }
+.imp-item { display: flex; align-items: flex-start; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-3, 12px); }
+.imp-item + .imp-item { border-top: 1px solid var(--mp-border-default); }
+.imp-item__body { min-width: 0; }
+.imp-item__name { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.imp-item__mod { font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; }
+.imp-item__desc { margin: 2px 0 0; font-size: 13px; color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.imp-item__path { margin: 4px 0 0; font-size: 11px; color: var(--mp-text-placeholder, #6e7a7c); font-family: ui-monospace, monospace; }
+.imp-note { margin: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
