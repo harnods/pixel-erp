@@ -111,6 +111,11 @@ const props = withDefaults(defineProps<{
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
   stickyActions?: boolean
+  /** Make the whole row open the record (emits `rowClick`). Opt-in: pages that don't
+   *  set it keep the default non-clickable row. Clicks that land on a control inside
+   *  the row — link, button, checkbox, the actions kebab — are ignored, so the
+   *  existing per-cell affordances still win. */
+  isRowClickable?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -129,6 +134,7 @@ const props = withDefaults(defineProps<{
   filterEmptyLabel: undefined,
   lastColumnFlexible: false,
   stickyActions: true,
+  isRowClickable: false,
 })
 
 const emit = defineEmits<{
@@ -141,6 +147,7 @@ const emit = defineEmits<{
   clearSearch: []
   clearAll: []
   selectionChange: [count: number]
+  rowClick: [row: Record<string, unknown>, index: number]
 }>()
 
 // Column width resolution (source of truth = columnWidths.ts):
@@ -157,6 +164,19 @@ function colStyle(col: TableColumn) {
   // Fallback before measurement (SSR / first paint): pinned width, or the kind range.
   if (col.width) return { width: col.width, minWidth: col.width, maxWidth: col.width }
   return columnWidth(col.kind)
+}
+
+/**
+ * Row click → open the record. Ignored when the click landed on something that
+ * already has its own behaviour (the name link, a kebab, a checkbox, the Airene
+ * icon), so row-click never steals a more specific action.
+ */
+function onRowClick(row: Record<string, unknown>, index: number, ev: MouseEvent) {
+  if (!props.isRowClickable) return
+  const el = ev.target as HTMLElement | null
+  if (el?.closest('a, button, input, select, textarea, label, [role="button"], .erp-td--ai, .erp-td--actions')) return
+  if (window.getSelection()?.toString()) return   // don't navigate mid text-selection
+  emit('rowClick', row, index)
 }
 
 // ERP column sort: picking the already-active direction clears the sort (back to
@@ -628,9 +648,10 @@ const bulkCountLabel = computed(() => {
               v-for="(row, ri) in displayRows"
               :key="ri"
               class="erp-tr"
-              :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
+              :class="{ 'erp-tr--align-top': tallRows?.has(ri), 'erp-tr--clickable': isRowClickable }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
+              @click="onRowClick(row, ri, $event)"
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
               <template v-for="(col, ci) in columns" :key="col.key">
@@ -1094,6 +1115,8 @@ const bulkCountLabel = computed(() => {
 .erp-tr:hover .erp-td {
   background: var(--mp-background-neutral-hovered);
 }
+/* Opt-in row navigation (isRowClickable) — the whole row reads as the target. */
+.erp-tr--clickable { cursor: pointer; }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 

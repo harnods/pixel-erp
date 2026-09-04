@@ -70,6 +70,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
+  billing:    { type: 'warning',      label: 'Billing'    },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
@@ -100,6 +101,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'not allocated':{ type: 'announcement', label: 'Not allocated' },
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
+  setup:      { type: 'announcement', label: 'Setup'      },
   direct:     { type: 'announcement', label: 'Direct'     },
   unclassified:{ type: 'announcement', label: 'Other documents' },
 

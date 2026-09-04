@@ -129,6 +129,8 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
+  // Accounting → Project accounting. Engagement detail/forms resolve via detailMatch.
+  'Project accounting': defineAsyncComponent(() => import('~/components/pages/ProjectAccountingPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 
@@ -162,6 +164,10 @@ const pageRegistry: Record<string, Component> = {
   'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 
+const ProjectEngagementDetailsPage = asyncPage(() => import('~/components/pages/ProjectEngagementDetailsPage.vue'))
+const NewEngagementPage = asyncPage(() => import('~/components/pages/NewEngagementPage.vue'))
+const ProjectExpensePage = asyncPage(() => import('~/components/pages/ProjectExpensePage.vue'))
+const ProjectInvoicePage = asyncPage(() => import('~/components/pages/ProjectInvoicePage.vue'))
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
@@ -468,6 +474,15 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'opening-balance') return { component: WmsCutoverOpeningBalancePage, id: 'opening-balance' }
     if (segs[2] === 'pending') return { component: WmsPendingSetupPage, id: 'pending' }
     return { component: WmsCutoverProductsPage, id: 'products' }
+  }
+  // /project-accounting/… → the engagement wizard, its two project-tagged
+  // transaction forms, and the engagement detail. The bare index falls through to
+  // the registry. Keep the literal segments ahead of the /:id catch-all.
+  if (segs.length >= 2 && segs[0] === 'project-accounting') {
+    if (segs[1] === 'new') return { component: NewEngagementPage, id: 'new' }
+    if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
+    if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
+    return { component: ProjectEngagementDetailsPage, id: segs[1]! }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
@@ -1644,6 +1659,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('New approval workflow') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/project-accounting/expense/new')">
+            {{ t('New expense') }}
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/project-accounting/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New engagement') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
