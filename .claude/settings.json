@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/pixel-police.sh",
+            "timeout": 15,
+            "statusMessage": "Pixel Police checking..."
+          },
+          {
+            "type": "prompt",
+            "prompt": "You are a UXW (UX Writer) reviewer for Mekari ERP.\n\nTool result: $ARGUMENTS\n\nCheck if tool_input.file_path ends in '.vue'. If it does NOT, respond with ok=true and stop.\n\nIf it IS a .vue file, scan ALL user-facing strings in the file content (from tool_input.content or tool_input.new_string) and check:\n1. Button labels must be action-oriented verbs in Bahasa Indonesia (e.g. 'Simpan', 'Tambah', 'Hapus', 'Batalkan') — NOT 'OK', 'Submit', 'Yes', 'No'\n2. Placeholder text must follow pattern 'Cari [noun]...' or 'Masukkan [noun]' — NOT 'Enter...', 'Input...', 'Type...'\n3. Empty state messages must be friendly and suggest an action — NOT just 'No data' or 'Data tidak ditemukan'\n4. Error messages must be human-readable, explain what went wrong, and suggest next step — NOT technical codes or passive sentences\n5. Toast/notification messages must be concise, max 60 chars, past tense for success (e.g. 'Data berhasil disimpan') and present tense for errors\n6. Column headers and form labels must be title case in Bahasa Indonesia — no ALL CAPS\n7. Tone must be professional but approachable — no overly formal words like 'mohon maaf', no slang\n\nIf violations found, set ok=false, continueOnBlock=true, and list each issue with the exact string and the suggested fix.\nIf all clear, set ok=true.",
+            "timeout": 30,
+            "continueOnBlock": true,
+            "statusMessage": "UXW Police checking copy..."
+          }
+        ]
+      }
+    ]
+  }
+}
