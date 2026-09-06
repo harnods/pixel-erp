@@ -17,6 +17,7 @@
  */
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
@@ -252,7 +253,7 @@ async function copyAnswer(i: number) {
 function rate(i: number, v: 'up' | 'down') {
   const cur = feedback.value[i]
   feedback.value = { ...feedback.value, [i]: cur === v ? undefined : v }
-  if (feedback.value[i]) toast.notify({ variant: 'info', title: v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving" })
+  if (feedback.value[i]) infoToast(v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving")
 }
 function speak(i: number) {
   const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
@@ -935,6 +936,10 @@ onBeforeUnmount(() => {
 .chat-user-av :deep(> *) { width: 36px !important; height: 36px !important; }
 /* AI answer — no avatar, no bubble: plain text spanning the column. */
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* The answer eases in (fade + rise + de-blur) instead of snapping — like Claude/ChatGPT. */
+.chat-bubble--assistant:not(.chat-typing) { animation: cwcAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes cwcAnswerIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) { .chat-bubble--assistant:not(.chat-typing) { animation: none; } }
 /* …but the typing loader keeps a subtle pill so the dots have a surface. */
 .chat-typing.chat-bubble--assistant { background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
 
@@ -961,8 +966,9 @@ onBeforeUnmount(() => {
 
 /* Suggestion chips under an agent message */
 .cwc-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
-.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
-.cwc-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+/* Follow-up suggestion = secondary button: dark-gray border (--mp-border-bold), black text. */
+.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
+.cwc-suggest-chip:hover { background: var(--mp-background-neutral-hovered, #ebf0f1); }
 
 /* Collapsible "Done ›" reasoning above an AI answer. */
 .cwc-reason { margin-bottom: var(--mp-spacing-2); }

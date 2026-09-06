@@ -16,7 +16,7 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   css, toast,
@@ -32,12 +32,13 @@ import {
   coworkTasks, coworkConnections, coworkAgents, coworkSkills,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
-  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
+  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection, connectionScopes, connectionAuthMode,
   addSkill, removeSkill,
   agentVisibleToCurrentUser, agentHasAutoAction, canArchiveAgent, duplicateAgent, archiveAgent, restoreAgent, tasksUsingAgent,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import SkillCreateDrawer from '~/components/patterns/SkillCreateDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -502,9 +503,40 @@ function disconnectConnection(c: CoworkConnection) {
   setConnection(c.id, false)
   toast.notify({ variant: 'success', title: `${c.name} disconnected` })
 }
-function connectFake(c: CoworkConnection) {
-  setConnection(c.id, true)
-  toast.notify({ variant: 'success', title: `${c.name} connected` })
+// ── Connect consent (a Claude-style OAuth "authorize" screen, per provider) ──
+const consentConn = ref<CoworkConnection | null>(null)
+const consentOpen = ref(false)
+const consentBusy = ref(false)
+const consentScopes = computed(() => (consentConn.value ? connectionScopes(consentConn.value) : []))
+const consentAuth = computed(() => (consentConn.value ? connectionAuthMode(consentConn.value) : 'oauth'))
+function openConsent(c: CoworkConnection) { consentConn.value = c; consentBusy.value = false; consentOpen.value = true }
+function cancelConsent() { if (consentBusy.value) return; consentOpen.value = false; consentConn.value = null }
+const consentReal = computed(() => consentConn.value?.provider === 'google' && google.isConfigured.value)
+async function authorizeConsent() {
+  const c = consentConn.value
+  if (!c || consentBusy.value) return
+  consentBusy.value = true
+  // Real Google OAuth when a client ID is configured; otherwise land it via the
+  // simulated round-trip so every app can be connected in the prototype.
+  if (c.provider === 'google' && google.isConfigured.value) {
+    try {
+      const { sample } = await google.connect(c.scope!)
+      setConnection(c.id, true)
+      if (sample) connSample[c.id] = sample
+      toast.notify({ variant: 'success', title: `${c.name} connected` })
+      consentOpen.value = false; consentConn.value = null
+    } catch {
+      toast.notify({ variant: 'error', title: `Couldn't connect ${c.name}`, description: 'Please try again.' })
+    } finally {
+      consentBusy.value = false
+    }
+    return
+  }
+  window.setTimeout(() => {
+    setConnection(c.id, true)
+    toast.notify({ variant: 'success', title: `${c.name} connected` })
+    consentOpen.value = false; consentConn.value = null; consentBusy.value = false
+  }, 900)
 }
 function addConnection() { openMcpModal() }
 
@@ -543,6 +575,7 @@ const mcpOpen = ref(false)
 const mcpUrl = ref('')
 const mcpName = ref('')
 const mcpAuth = ref<'OAuth' | 'API key' | 'None'>('OAuth')
+const mcpApiKey = ref('')
 const mcpAdvanced = ref(false)
 const mcpClientId = ref('')
 const mcpClientSecret = ref('')
@@ -553,6 +586,7 @@ const mcpRedirectUrl = computed(() =>
 const mcpUrlValid = computed(() => /^https?:\/\/.+\..+/.test(mcpUrl.value.trim()))
 function openMcpModal() {
   mcpUrl.value = ''; mcpName.value = ''; mcpAuth.value = 'OAuth'; mcpAdvanced.value = false
+  mcpApiKey.value = ''
   mcpClientId.value = ''; mcpClientSecret.value = ''; mcpScope.value = ''; mcpError.value = ''
   mcpOpen.value = true
 }
@@ -707,6 +741,7 @@ function lastUsedLabel(a: CoworkAgent): string {
   return `Used ${Math.floor(days / 30)}mo ago`
 }
 function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
+function openAgentUsage(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}?tab=usage`) }
 function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
 function newAgent() { router.push('/cowork-agents/new') }
 function chatAgent(a: CoworkAgent) { toast.notify({ variant: 'success', title: `Opening a chat with ${a.name}` }) }
@@ -720,8 +755,10 @@ const archiveTarget = ref<CoworkAgent | null>(null)
 const archiveModalOpen = ref(false)
 const archiveDesc = computed(() => {
   const n = archiveTarget.value ? tasksUsingAgent(archiveTarget.value).length : 0
-  return n ? `${n} scheduled task${n === 1 ? '' : 's'} use this agent and will be paused. You can restore it later.`
-    : 'This agent will be hidden from everyone. You can restore it later.'
+  const tasks = n
+    ? `${n} scheduled task${n === 1 ? '' : 's'} using this agent will be paused, and it'll be removed from the New chat picker.`
+    : 'It will be hidden from everyone and removed from the New chat picker.'
+  return `${tasks} Open chats stay readable but can't send new messages. Nothing is deleted — you can restore this agent anytime.`
 })
 function askArchive(a: CoworkAgent) { archiveTarget.value = a; archiveModalOpen.value = true }
 function confirmArchive() {
@@ -733,8 +770,7 @@ function confirmArchive() {
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
-  if (c.provider === 'google') connectGoogle(c)
-  else connectFake(c)
+  openConsent(c) // consent screen → connect (real Google OAuth on authorize when configured)
 }
 function manageConnection(c: CoworkConnection) {
   infoToast(`Manage ${c.name} — coming soon`)
@@ -778,9 +814,16 @@ const skillSections = computed<SkillSection[]>(() => {
 })
 
 function openSkill(s: CoworkSkill) { router.push(`/cowork-skills/${s.id}`) }
-function deleteSkillById(s: CoworkSkill) {
+// Delete a custom skill — always via a confirmation dialog (destructive).
+const deleteSkillTarget = ref<CoworkSkill | null>(null)
+const deleteSkillOpen = ref(false)
+function deleteSkillById(s: CoworkSkill) { deleteSkillTarget.value = s; deleteSkillOpen.value = true }
+function confirmDeleteSkill() {
+  const s = deleteSkillTarget.value
+  if (!s) return
   removeSkill(s.id)
-  toast.notify({ variant: 'success', title: 'Skill deleted' })
+  toast.notify({ variant: 'success', title: `“${s.name}” deleted` })
+  deleteSkillTarget.value = null
 }
 
 // ── Create / edit skill modal (AI-generate from a prompt, or upload a .md) ─────
@@ -847,6 +890,66 @@ function saveSkill() {
   closeSkillModal()
 }
 
+// ── Import skills from a Git repository (real fetch → preview → import) ─────────
+interface ImportedSkill { name: string; description: string; module?: CoworkModule; markdown: string; path: string }
+const importOpen = ref(false)
+const importRepo = ref('')
+const importBusy = ref(false)
+const importError = ref('')
+const importSkills = ref<ImportedSkill[]>([])
+const importSel = ref<Set<string>>(new Set())
+const importMeta = ref<{ repo: string; path: string; truncated: boolean } | null>(null)
+// "Create with AI" — a chat drawer where you ask an agent to draft a skill,
+// then review/edit its Markdown and save.
+const createAIOpen = ref(false)
+function openCreateAI() { createAIOpen.value = true }
+function onCreateAISave(s: { name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string }) {
+  addSkill({
+    name: s.name.trim(), description: s.description.trim(), module: s.module,
+    actions: (s.actions.length ? s.actions : ['Run skill']).map((label) => ({ id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label })),
+    markdown: s.markdown, source: 'custom', createdAt: new Date().toISOString(),
+  })
+  toast.notify({ variant: 'success', title: 'Skill created' })
+  createAIOpen.value = false
+}
+function openImport() {
+  importOpen.value = true; importRepo.value = ''; importError.value = ''
+  importSkills.value = []; importSel.value = new Set(); importMeta.value = null; importBusy.value = false
+}
+async function fetchRepo() {
+  const repo = importRepo.value.trim()
+  if (!repo) { importError.value = 'Enter a repository URL'; return }
+  importBusy.value = true; importError.value = ''; importSkills.value = []; importMeta.value = null
+  try {
+    const res = await $fetch<{ error?: string; repo: string; path: string; truncated: boolean; skills: ImportedSkill[] }>(
+      '/api/cowork/import-skills', { method: 'POST', body: { repo } })
+    if (res.error) { importError.value = res.error; return }
+    importSkills.value = res.skills
+    importSel.value = new Set(res.skills.map((s) => s.path))
+    importMeta.value = { repo: res.repo, path: res.path, truncated: res.truncated }
+  } catch (e: any) {
+    importError.value = e?.data?.error || 'Could not reach that repository. Check the URL points to a public repo.'
+  } finally { importBusy.value = false }
+}
+function toggleImport(path: string, on: boolean) {
+  const s = new Set(importSel.value); on ? s.add(path) : s.delete(path); importSel.value = s
+}
+const importSelCount = computed(() => importSel.value.size)
+function doImport() {
+  if (!importSkills.value.length) { importError.value = 'Fetch a repository first, then choose which skills to import.'; return }
+  const chosen = importSkills.value.filter((s) => importSel.value.has(s.path))
+  if (!chosen.length) { importError.value = 'Select at least one skill to import.'; return }
+  for (const s of chosen) {
+    addSkill({
+      name: s.name, description: s.description, module: s.module,
+      actions: [{ id: 'run-skill', label: 'Run skill' }], markdown: s.markdown, source: 'custom',
+      createdAt: new Date().toISOString(),
+    })
+  }
+  toast.notify({ variant: 'success', title: `Imported ${chosen.length} skill${chosen.length > 1 ? 's' : ''}` })
+  importOpen.value = false
+}
+
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })
 
@@ -858,8 +961,12 @@ function handleQueryTriggers() {
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
   if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
-  // Create skill is not available yet — show a coming-soon notice instead of the modal.
-  if (q.new === '1' && section.value === 'Skills') { infoToast('Create skill — coming soon'); router.replace({ path: '/cowork-skills', query: {} }) }
+  // Create skill: dropdown in the title bar routes here with ?new=import | ai.
+  if (section.value === 'Skills' && (q.new === 'import' || q.new === 'ai' || q.new === '1')) {
+    if (q.new === 'import') openImport()
+    else openCreateAI()
+    router.replace({ path: '/cowork-skills', query: {} })
+  }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -1382,7 +1489,27 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="connGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Agents) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'conn-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': connCols }">
+                  <div v-for="n in connCols" :key="'conn-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head">
+                        <MpSkeleton class="cw-skeleton" width="36px" height="36px" rounded="md" duration="0s" />
+                        <MpSkeleton class="cw-skeleton" width="96px" height="16px" rounded="sm" duration="0s" />
+                      </div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="150px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="connGridEl" class="cw-conn-sections">
             <section v-for="sec in connSections" :key="sec.category" class="cw-conn-section">
               <h2 class="cw-conn-cat-title">{{ sec.category }}</h2>
               <div class="cw-conn-clip">
@@ -1513,19 +1640,19 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                     <p class="cw-agent-desc">{{ a.description }}</p>
                     <p v-if="lastUsedLabel(a)" class="cw-agent-lastused">{{ lastUsedLabel(a) }}</p>
                   </div>
-                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
+                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select use-portal placement="bottom-end">
                     <MpPopoverTrigger>
                       <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '170px' })">
                       <MpPopoverList>
-                        <MpPopoverListItem @click="chatAgent(a)">Chat</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                        <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                        <MpPopoverListItem @click="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
-                        <MpPopoverListItem @click="openAgent(a)">View usage</MpPopoverListItem>
-                        <MpPopoverListItem v-if="a.status === 'archived'" @click="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
-                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click="askArchive(a)">Archive agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="chatAgent(a)">Chat</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgent(a)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="editAgent(a)">Edit agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgentUsage(a)">View usage</MpPopoverListItem>
+                        <MpPopoverListItem v-if="a.status === 'archived'" @click.stop="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
+                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click.stop="askArchive(a)">Archive agent</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -1548,7 +1675,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
         <!-- ── Skills ── -->
         <section v-else-if="section === 'Skills'" class="cw-connections">
-          <!-- Filter bar: search (right) — same pattern as Connections -->
+          <!-- Filter bar: search (right) — Create dropdown lives in the page title bar -->
           <div class="cw-filter">
             <div class="cw-filter__left" />
             <div class="cw-filter__right">
@@ -1562,7 +1689,24 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="skillGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Connections) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'skill-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': skillCols }">
+                  <div v-for="n in skillCols" :key="'skill-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head"><MpSkeleton class="cw-skeleton" width="120px" height="16px" rounded="sm" duration="0s" /></div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="160px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="skillGridEl" class="cw-conn-sections">
             <section v-for="sec in skillSections" :key="sec.key" class="cw-conn-section">
               <h2 v-if="sec.title" class="cw-conn-cat-title">{{ sec.title }}</h2>
               <div class="cw-conn-clip">
@@ -1575,14 +1719,14 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       </div>
                       <p class="cw-conn-desc">{{ s.description }}</p>
                     </div>
-                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select placement="bottom-end">
+                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '160px' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="openSkill(s)">View details</MpPopoverListItem>
-                          <MpPopoverListItem v-if="s.source === 'custom'" @click="deleteSkillById(s)">Delete</MpPopoverListItem>
+                          <MpPopoverListItem @click.stop="openSkill(s)">View details</MpPopoverListItem>
+                          <MpPopoverListItem v-if="s.source === 'custom'" @click.stop="deleteSkillById(s)">Delete</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1594,6 +1738,15 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
             <p v-if="!skillSections.length" class="cw-muted cw-conn-noresult">No skills match “{{ skillSearch }}”.</p>
           </div>
+
+          <ConfirmModal
+            v-model:is-open="deleteSkillOpen"
+            title="Delete this skill?"
+            :description="deleteSkillTarget ? `“${deleteSkillTarget.name}” will be removed from Cowork and detached from any agents using it. This can't be undone.` : ''"
+            confirm-label="Delete skill"
+            :is-danger="true"
+            @confirm="confirmDeleteSkill"
+          />
         </section>
     </template>
 
@@ -1628,32 +1781,45 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <option value="None">None</option>
             </select>
           </div>
-          <p class="mcp-help">You will be redirected to the third party website to complete authentication when you connect.</p>
+          <!-- OAuth: redirect note + pre-registered app advanced settings -->
+          <template v-if="mcpAuth === 'OAuth'">
+            <p class="mcp-help">You will be redirected to the third-party website to sign in and approve access when you connect.</p>
+            <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
+              <span>Advanced settings</span>
+              <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
+            </button>
+            <div v-if="mcpAdvanced" class="mcp-adv">
+              <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
 
-          <!-- Advanced settings accordion -->
-          <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
-            <span>Advanced settings</span>
-            <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
-          </button>
-          <div v-if="mcpAdvanced" class="mcp-adv">
-            <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
+              <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
+              <div class="mcp-input-wrap mcp-input-wrap--readonly">
+                <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
+                <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              </div>
 
-            <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
-            <div class="mcp-input-wrap mcp-input-wrap--readonly">
-              <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
-              <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
+              <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+
+              <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
+              <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
+
+              <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
+              <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
+              <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
             </div>
+          </template>
 
-            <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
-            <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+          <!-- API key: a secret token sent as an Authorization header -->
+          <template v-else-if="mcpAuth === 'API key'">
+            <label class="mcp-label" for="mcp-apikey">API key</label>
+            <input id="mcp-apikey" v-model="mcpApiKey" class="mcp-input mcp-input--plain" type="password" placeholder="sk-…" />
+            <p class="mcp-help">Paste the API key or bearer token from your MCP provider. It is sent as an <code>Authorization: Bearer</code> header on every request and stored encrypted.</p>
+          </template>
 
-            <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
-            <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
-
-            <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
-            <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
-            <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
-          </div>
+          <!-- None: public server -->
+          <template v-else>
+            <p class="mcp-help">This server requires no authentication — anyone with the URL can call it. Only add servers you fully trust.</p>
+          </template>
 
           <!-- Trust warning -->
           <div class="mcp-warn">
@@ -1666,6 +1832,87 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             <MpButton is-rounded variant="ghost" @click="closeMcpModal">Cancel</MpButton>
             <MpButton is-rounded variant="primary" @click="connectMcp">Connect</MpButton>
           </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Import skills from a repository ── -->
+    <MpModal id="cw-import-modal" :is-open="importOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="importOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Import skills from a repository<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="imp-sub">Paste a public Git repository. We read its Markdown skill files (from <code>skills/</code>, <code>.claude/skills/</code>, or the repo root) so you can review and import them as Custom skills.</p>
+          <label class="mcp-label" for="imp-url">Repository URL</label>
+          <div class="imp-row">
+            <input id="imp-url" v-model="importRepo" class="mcp-input mcp-input--plain" type="url" placeholder="https://github.com/owner/repo" @keydown.enter.prevent="fetchRepo">
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="fetchRepo"><MpSpinner v-if="importBusy" size="sm" /><span v-else>Fetch</span></button>
+          </div>
+          <p v-if="importError" class="cw-form-error">{{ importError }}</p>
+
+          <template v-if="importSkills.length">
+            <div class="imp-meta">
+              <span>{{ importSelCount }} of {{ importSkills.length }} selected from <strong>{{ importMeta?.repo }}</strong></span>
+              <span v-if="importMeta?.truncated" class="cw-muted">· showing the first {{ importSkills.length }}</span>
+            </div>
+            <ul class="imp-list">
+              <li v-for="s in importSkills" :key="s.path" class="imp-item">
+                <MpCheckbox :is-checked="importSel.has(s.path)" @update:is-checked="(v: boolean) => toggleImport(s.path, v)">
+                  {{ s.name }}<span v-if="s.module" class="imp-item__mod">{{ s.module }}</span>
+                  <template #description>
+                    <span v-if="s.description" class="imp-item__desc">{{ s.description }}</span>
+                    <span class="imp-item__path">{{ s.path }}</span>
+                  </template>
+                </MpCheckbox>
+              </li>
+            </ul>
+            <p class="imp-note">Imported skills land under <strong>Custom</strong> and stay off until you enable them on an agent — nothing runs automatically.</p>
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="importOpen = false">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" @click="doImport">Import{{ importSelCount ? ` ${importSelCount} skill${importSelCount === 1 ? '' : 's'}` : '' }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Create a skill with AI (chat + editable Markdown preview) ── -->
+    <SkillCreateDrawer v-model:open="createAIOpen" @save="onCreateAISave" />
+
+    <!-- ── Connect consent (OAuth-style authorize screen, per provider) ── -->
+    <MpModal id="cw-consent-modal" :is-open="consentOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelConsent">
+      <MpModalContent>
+        <MpModalHeader>
+          <span class="cwc-consent-head">
+            <img v-if="consentConn && !connLogoFailed[consentConn.id]" class="cwc-consent-logo" :src="consentConn.logo || `/connectors/${consentConn.id}.png`" :alt="consentConn.name" @error="connLogoFailed[consentConn.id] = true">
+            <span v-else-if="consentConn" class="cwc-consent-logo cwc-consent-logo--mono" :style="{ background: consentConn.color || '#3a4749' }">{{ connLogo(consentConn.name) }}</span>
+            Connect {{ consentConn?.name }}
+          </span>
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="cwc-consent-sub">Mekari Cowork wants to access your <strong>{{ consentConn?.name }}</strong> account. It will be able to:</p>
+          <ul class="cwc-consent-scopes">
+            <li v-for="(s, i) in consentScopes" :key="i" class="cwc-consent-scope">
+              <MpIcon name="check" size="sm" class="cwc-consent-ico" />
+              <span>{{ s.label }}</span>
+            </li>
+          </ul>
+          <p class="cwc-consent-note">
+            <template v-if="consentAuth === 'first_party'">Signed in with your Mekari account — no extra steps.</template>
+            <template v-else-if="consentAuth === 'api_key'">You'll enter an API key from {{ consentConn?.name }} to finish.</template>
+            <template v-else>You'll be redirected to {{ consentConn?.name }} to sign in and approve access.</template>
+          </p>
+          <p class="cwc-consent-trust">You can choose which tools stay enabled after connecting. Only connect apps you trust.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="cancelConsent">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" :is-loading="consentBusy" @click="authorizeConsent">{{ consentBusy ? 'Connecting…' : `Continue with ${consentConn?.name}` }}</MpButton>
+          </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -1853,6 +2100,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.cw-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
 .cw-search__input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
 .cw-search__input::placeholder { color: var(--mp-text-placeholder); }
 .cw-search__clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: 999px; }
@@ -1860,6 +2108,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
 /* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
 .cw-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+.cw-conn-sk-title { display: block; margin-bottom: var(--mp-spacing-4, 16px); }
+.cw-conn-sk-desc { margin-top: var(--mp-spacing-2, 8px); }
 
 /* Multiple module badges (multi-source task) wrap within the cell. */
 .cw-modules { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
@@ -1946,6 +2196,32 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-agents-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-16, 64px) var(--mp-spacing-6); color: var(--mp-text-secondary); text-align: center; }
 .cw-agents-empty__title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .cw-agents-empty__caption { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Connect consent modal ── */
+.cwc-consent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.cwc-consent-logo { width: 28px; height: 28px; border-radius: var(--mp-radii-md, 6px); object-fit: contain; background: #fff; flex: 0 0 auto; }
+.cwc-consent-logo--mono { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; }
+.cwc-consent-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-scopes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.cwc-consent-scope { display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-ico { flex: 0 0 auto; margin-top: 1px; color: var(--mp-icon-success, #0a6e4e); }
+.cwc-consent-note { margin: var(--mp-spacing-5, 20px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cwc-consent-trust { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+
+/* ── Import skills modal ── */
+.imp-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.imp-row { display: flex; gap: var(--mp-spacing-2, 8px); align-items: center; }
+.imp-row .mcp-input { flex: 1; }
+.imp-meta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: var(--mp-spacing-5, 20px) 0 var(--mp-spacing-2, 8px); font-size: 13px; color: var(--mp-text-default); }
+.imp-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 12px); overflow-y: auto; max-height: 320px; }
+.imp-item { padding: var(--mp-spacing-3, 12px); }
+.imp-item + .imp-item { border-top: 1px solid var(--mp-border-default); }
+/* The label + description live inside MpCheckbox (correct 12px gap, top align). */
+.imp-item :deep(.mp-checkbox__label), .imp-item :deep([data-pixel-component="MpCheckboxLabel"]) { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.imp-item__mod { margin-left: var(--mp-spacing-2, 8px); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; }
+.imp-item__desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.imp-item__path { display: block; margin-top: 4px; font-size: 11px; color: var(--mp-text-placeholder, #6e7a7c); font-family: ui-monospace, monospace; }
+.imp-note { margin: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }

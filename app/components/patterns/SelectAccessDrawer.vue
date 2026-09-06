@@ -78,7 +78,7 @@ async function save() {
           <!-- Available -->
           <section class="sad-col">
             <div class="sad-search">
-              <MpIcon name="search" size="sm" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="leftSearch" class="sad-search-input" type="text" placeholder="Search..." />
               <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -108,7 +108,7 @@ async function save() {
           <section class="sad-col">
             <template v-if="selectedCount">
               <div class="sad-search">
-                <MpIcon name="search" size="sm" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 <input v-model="rightSearch" class="sad-search-input" type="text" placeholder="Search..." />
                 <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -179,7 +179,9 @@ async function save() {
 .sad-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .sad-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); }
 .sad-divider { background: var(--mp-border-default); }
-.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); flex-shrink: 0; }
+/* Matches the table filter-bar search: border-default pill + neutral focus ring. */
+.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
+.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {

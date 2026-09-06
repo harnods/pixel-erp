@@ -32,6 +32,7 @@ import { putAwayTasks } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { pickingTasks } from '~/data/pickingTasks'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
+import { assigneeDisplayName } from '~/data/users'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -719,7 +720,9 @@ onUnmounted(() => {
             </ContentList>
           </div>
           <div class="content-list-col">
-            <ContentList :label="t('Assignee')" :value="adjustment.assignee || '—'" />
+            <!-- Unassigned when the person has left the company: the name is still
+                 stamped on the task, but nobody is responsible for it any more. -->
+            <ContentList :label="t('Assignee')" :value="assigneeDisplayName(adjustment.assignee) || t('Unassigned')" />
           </div>
         </template>
 

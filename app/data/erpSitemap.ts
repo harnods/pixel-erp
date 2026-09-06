@@ -182,6 +182,23 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('Delete', 'missing'), a('Duplicate', 'partial'), a('Import', 'partial'), a('Export', 'built'),
     a('Print barcode', 'built'),
   ],
+  // ── Contacts ──
+  // One index + form + detail set serves all three role lists (Customers,
+  // Vendors, Other contacts) — the route slug picks the role it filters by.
+  'Customers': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Validate NPWP/NITKU', 'built', 'mock DJP lookup'),
+    a('Create transaction', 'partial', 'menu routes to the module index, not a prefilled form'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Vendors': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Other contacts': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
   // ── Production ──
   'Production request': [
     a('Details', 'partial', 'preview drawer, no /:id'), a('Create work order', 'built'),

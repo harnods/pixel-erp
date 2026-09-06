@@ -326,7 +326,7 @@ function goBack() { closePurchaseOrder?.() }
             </button>
           </MpTooltip>
           <!-- Approve — only while awaiting approval -->
-          <MpButton v-if="isAwaitingApproval" variant="primary" size="md" @click="onApprove">Approve</MpButton>
+          <MpButton v-if="isAwaitingApproval" variant="primary" @click="onApprove">Approve</MpButton>
       </div>
     </header>
 

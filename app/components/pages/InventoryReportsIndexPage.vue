@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 // Inventory → Reports index (Reports module → Inventory submenu). Same card grid as
 // Reports › WMS (WmsReportsIndexPage): cards fill the stage width as an equal-column
 // grid, the last row is padded with fillers so every column is present top and bottom,
@@ -85,7 +86,7 @@ function viewReport(slug: string) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <button v-if="r.built" type="button" class="btn-enterprise btn-enterprise--secondary report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</button>
+        <MpButton v-if="r.built" variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</MpButton>
         <span v-else class="report-soon">{{ t('Coming soon') }}</span>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->

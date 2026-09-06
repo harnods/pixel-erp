@@ -1,7 +1,11 @@
-# Mekari ERP — Design Rules
+# Mekari ERP — Design Rules (long-form)
 
-Single source of truth for design decisions and component rules in this project.
-All developers must follow these rules before writing code.
+Long-form rationale and component rules for this project. The **canonical registry**
+of accepted decisions — each as a stable `rule/<id>` with Do/Don't + Why + Source,
+and the authority hierarchy for resolving conflicts — is
+[`docs/design/RULES.md`](docs/design/RULES.md). Start there (or invoke the
+`pixel-erp-design` skill, which routes you to the right rules per surface); this file
+is the detail behind those IDs.
 
 ---
 
@@ -84,8 +88,12 @@ Use these directly from `@mekari/pixel3`:
 
 ### Buttons
 
-See [docs/patterns/Button.md](docs/patterns/Button.md) for the source-of-truth
-button spec.
+**Source of truth: [`docs/design/RULES.md`](docs/design/RULES.md) (`rule/btn-*`).**
+New buttons use Pixel **`<MpButton>`** per the storybook — its secondary variant is
+globally overridden in `erp.css` to the Enterprise look (black label + dark border).
+**`.btn-enterprise` is legacy** — do not add new ones; existing usages migrate when a
+file is next touched. [docs/patterns/Button.md](docs/patterns/Button.md) documents the
+legacy class and shared visual rules.
 
 Core rules:
 

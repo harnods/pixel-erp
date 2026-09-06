@@ -1,6 +1,6 @@
 import { CATALOG } from './catalog'
 import { salesInvoices } from './salesInvoices'
-import { DJP_SKUS } from './productsIndex'
+import { getProductTaxInfo } from './productsIndex'
 import type { SalesInvoiceLineItem, SalesInvoice, SILineItem } from './types'
 
 /**
@@ -90,13 +90,14 @@ export function getLineItemsForInvoice(invoiceId: string): SalesInvoiceLineItem[
 }
 
 /** True when a product has both a DJP code and a DJP unit set — the e-Faktur
- *  eligibility rule. Reads off the same `DJP_SKUS` set the Products index
- *  displays (productsIndex.ts), keyed via the product's SKU, so this never
- *  drifts from what "DJP code" / "DJP unit" show on the product's own page. */
+ *  eligibility rule. Resolved through `getProductTaxInfo()` (productsIndex.ts),
+ *  the same accessor the Products index and product detail page read, so
+ *  classifying a product on its own page immediately unblocks its invoices
+ *  instead of leaving them gated on the stale seed data. */
 export function productHasDjpInfo(productId: string): boolean {
   const p = CATALOG.find(c => c.id === productId)
   if (!p) return false
-  const info = DJP_SKUS.get(p.sku)
+  const info = getProductTaxInfo(p.sku)
   return !!(info && info.djpCode && info.djpUnit)
 }
 
@@ -129,7 +130,7 @@ export function getMissingDjpProducts(invoiceId: string): MissingDjpProduct[] {
     if (seen.has(li.productId)) continue
     const p = CATALOG.find(c => c.id === li.productId)
     if (!p) continue
-    const info = DJP_SKUS.get(p.sku)
+    const info = getProductTaxInfo(p.sku)
     const missingCode = !info?.djpCode
     const missingUnit = !info?.djpUnit
     if (!missingCode && !missingUnit) continue

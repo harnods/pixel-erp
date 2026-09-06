@@ -12,23 +12,26 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import {
   MpButton, MpInput, MpToggle, MpIcon, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox, MpAvatar, MpRadio, MpSelect,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink,
-  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay, MpModalCloseButton, MpButtonGroup,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, MpButtonGroup,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css,
   toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import KbAttachPicker from '~/components/patterns/KbAttachPicker.vue'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ApprovalModeIcon from '~/components/patterns/ApprovalModeIcon.vue'
+import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 type CoworkChatMsg = { role: 'user' | 'assistant'; text: string }
 import { infoToast } from '~/utils/toasts'
 import { employees } from '~/data/employees'
 import {
-  getAgent, addAgent, updateAgent, publishAgentVersion,
+  getAgent, addAgent, updateAgent, publishAgentVersion, deleteAgentSafe,
   COWORK_SKILLS, COWORK_COMPANY, APP_MODULES, coworkConnections, coworkAgents,
-  COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount,
+  COWORK_ROLES, employeesForRole, roleMemberCount, visibilityAudienceCount, visibilityAudience,
   SKILL_RISK_META, autoModeAvailable, COWORK_CURRENT_USER_ID,
   type CoworkAgent, type CoworkModule, type CoworkSkill, type CoworkSkillBinding,
   type CoworkApprovalMode, type CoworkAutoConditions,
@@ -48,22 +51,10 @@ const MODELS = [
   { id: 'gemini-flash-lite-latest', label: 'Gemini Flash Lite' },
 ]
 const LANGS: { id: 'mirror' | 'id' | 'en'; label: string }[] = [
-  { id: 'mirror', label: "Mirror the user's language" },
-  { id: 'id', label: 'Always Bahasa Indonesia' },
-  { id: 'en', label: 'Always English' },
+  { id: 'mirror', label: 'Auto (match the user)' },
+  { id: 'id', label: 'Bahasa Indonesia' },
+  { id: 'en', label: 'English' },
 ]
-const INSTRUCTION_TEMPLATE = `Role: You are a [what] for [team]. You help with [main jobs].
-
-Scope: Only act within [systems / data]. Do not touch [out-of-scope areas].
-
-Tone: [e.g. concise, warm, professional]. Always ground answers in the data.
-
-Rules:
-- [rule 1]
-- [rule 2]
-
-Refuse when: [what the agent must not do — e.g. sharing another person's salary].`
-
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
   { key: 'persona', label: 'Persona' },
@@ -90,10 +81,16 @@ const DEFAULT_AVATAR = '/agents/airene.png'
 const headAvatar = computed(() => existing.value?.avatar || DEFAULT_AVATAR)
 const modelLabel = computed(() => MODELS.find((m) => m.id === model.value)?.label ?? MODELS[0].label)
 const menuClass = css({ minWidth: '220px', width: 'max-content' })
+// Track open state so the select trigger shows the bold active border while open
+// (the popover pattern prevents native focus, so :focus-within alone won't fire).
+const modelMenuOpen = ref(false)
+const langMenuOpen = ref(false)
 const allWorkspace = ref(false)
 // Knowledge data sources = the connected apps. Each app covers one or more modules.
 const connectedApps = computed(() => coworkConnections.filter((c) => c.connected))
 const appOn = reactive<Record<string, boolean>>({})
+// True when the agent has nothing grounding it — no KB docs, no "all apps", no app picked.
+const hasNoKnowledge = computed(() => !knowledge.value.length && !allWorkspace.value && !connectedApps.value.some((c) => appOn[c.id]))
 const connLogoFailed = reactive<Record<string, boolean>>({})
 function connMonogram(nm: string): string {
   return nm.replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('').slice(0, 2)
@@ -113,6 +110,16 @@ const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()
   return COWORK_SKILLS.filter((s) => !q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q))
 })
+// Skills grouped by category (module); module-less skills fall under "General".
+const SKILL_GROUP_ORDER = ['HR', 'Sales', 'CRM', 'WMS', 'Finance', 'Production', 'General']
+const skillGroups = computed(() => {
+  const map = new Map<string, CoworkSkill[]>()
+  for (const s of filteredSkills.value) {
+    const k = s.module ?? 'General'
+    ;(map.get(k) ?? map.set(k, []).get(k)!).push(s)
+  }
+  return SKILL_GROUP_ORDER.filter((k) => map.has(k)).map((k) => ({ category: k, skills: map.get(k)! }))
+})
 function connObj(id: string) { return coworkConnections.find((c) => c.id === id) }
 function connName(id: string): string { return connObj(id)?.name ?? id }
 function connConnected(id: string): boolean { return !!connObj(id)?.connected }
@@ -122,11 +129,15 @@ function riskMeta(s: CoworkSkill) { return SKILL_RISK_META[s.riskClass ?? 'write
 const visibilityMode = ref<'everyone' | 'roles' | 'people'>('everyone')
 const selectedRoleIds = ref<string[]>([])
 const selectedEmployeeIds = ref<string[]>([])
-const audienceCount = computed(() => visibilityAudienceCount({
+const visibilitySelector = computed(() => ({
   visibilityEveryone: visibilityMode.value === 'everyone',
   visibilityRoles: visibilityMode.value === 'roles' ? selectedRoleIds.value : [],
   visibilityEmployees: visibilityMode.value === 'people' ? selectedEmployeeIds.value : [],
 }))
+const audienceCount = computed(() => visibilityAudienceCount(visibilitySelector.value))
+// The resolved people behind the count — shown in a modal via the "View" link.
+const audiencePeople = computed(() => visibilityAudience(visibilitySelector.value))
+const audienceModalOpen = ref(false)
 const rolesByProduct = computed(() => {
   const groups: Record<string, typeof COWORK_ROLES> = {}
   for (const r of COWORK_ROLES) (groups[r.product] ??= []).push(r)
@@ -177,7 +188,18 @@ function applyOptimize() {
   else { instruction.value = d.after; instrError.value = '' }
   optimizeDiff.value = null
 }
-function useTemplate() { if (!instruction.value.trim()) { instruction.value = INSTRUCTION_TEMPLATE; instrError.value = '' } }
+// Coverage detection — the instruction badges light up (grey → green) as the text
+// reads as each section. Keyword/pattern heuristics, evaluated live as you type.
+const instrCoverage = computed(() => {
+  const raw = instruction.value
+  const t = ' ' + raw.toLowerCase() + ' '
+  return {
+    role: /\brole\s*:/.test(t) || /\byou(?:'re| are)\b|\bact as\b|\bacts as\b|\bas an? [a-z]+/.test(t),
+    scope: /\bscope\s*:/.test(t) || /\bonly (act|work|handle|use|answer)\b|\bdo not (touch|access|go)\b|\bout[- ]of[- ]scope\b|\bstay within\b|\blimit(?:ed)? to\b|\bnever access\b|\bwithin [a-z]/.test(t),
+    tone: /\btone\s*:/.test(t) || /\b(concise|warm|professional|friendly|formal|polite|empathetic|neutral|casual|reassuring|brief)\b/.test(t),
+    rules: /\brules?\s*:/.test(t) || /\b(must|always|never|should|avoid|ensure)\b/.test(t) || /(^|\n)\s*[-*•]\s+/.test(raw),
+  }
+})
 
 // ── Knowledge Base attach / upload ──
 const attachedDocs = computed(() => resolveAttachments(knowledge.value))
@@ -207,38 +229,36 @@ async function onKbUpload(ev: Event) {
 }
 const kbUploadInput = ref<HTMLInputElement | null>(null)
 
-// ── Employee picker drawer ──
+// ── User picker (shared SelectAccessDrawer) ──
 const pickerOpen = ref(false)
-const empSearch = ref('')
 const activeEmployees = computed(() => employees.filter((e) => e.status !== 'resigned'))
-const filteredEmployees = computed(() => {
-  const q = empSearch.value.trim().toLowerCase()
-  return activeEmployees.value.filter((e) => !q || e.fullName.toLowerCase().includes(q) || (e.jobPosition ?? '').toLowerCase().includes(q))
-})
+// Options for the two-column select drawer: name + "role · department" subtitle.
+const employeeOptions = computed(() => activeEmployees.value.map((e) => ({
+  id: e.id, name: e.fullName, subtitle: [e.jobPosition, e.department].filter(Boolean).join(' · '),
+})))
 const selectedEmployees = computed(() => selectedEmployeeIds.value.map((id) => employees.find((e) => e.id === id)).filter(Boolean))
 function removeEmployee(id: string) { selectedEmployeeIds.value = selectedEmployeeIds.value.filter((x) => x !== id) }
-const draftEmpIds = ref<string[]>([])
-watch(pickerOpen, (open) => { if (open) { draftEmpIds.value = [...selectedEmployeeIds.value]; empSearch.value = '' } })
-function toggleDraftEmp(id: string, on: boolean) {
-  if (on) { if (!draftEmpIds.value.includes(id)) draftEmpIds.value = [...draftEmpIds.value, id] }
-  else draftEmpIds.value = draftEmpIds.value.filter((x) => x !== id)
-}
-function savePeople() { selectedEmployeeIds.value = [...draftEmpIds.value]; pickerOpen.value = false }
 
 // ── Approval-mode confirmation sheet (SK-33) ──
 const autoSheet = reactive<{ open: boolean; skill?: CoworkSkill; maxPerRun: string; maxPerDay: string; ceiling: string; scope: string; notify: 'always' | 'daily_digest' | 'never' }>({
-  open: false, skill: undefined, maxPerRun: '', maxPerDay: '20', ceiling: '', scope: '', notify: 'always',
+  open: false, skill: undefined, maxPerRun: '10', maxPerDay: '20', ceiling: '50000000', scope: '', notify: 'always',
 })
 function openAutoSheet(s: CoworkSkill) {
   const st = skillState[s.id]!
   autoSheet.skill = s
-  autoSheet.maxPerRun = st.autoConditions?.maxPerRun?.toString() ?? ''
+  // Sensible defaults so the admin doesn't have to invent numbers.
+  autoSheet.maxPerRun = st.autoConditions?.maxPerRun?.toString() ?? '10'
   autoSheet.maxPerDay = st.autoConditions?.maxPerDay?.toString() ?? '20'
-  autoSheet.ceiling = st.autoConditions?.valueCeiling?.toString() ?? ''
+  autoSheet.ceiling = st.autoConditions?.valueCeiling?.toString() ?? '50000000'
   autoSheet.scope = st.autoConditions?.scope ?? ''
   autoSheet.notify = st.notifyOnAuto ?? 'always'
   autoSheet.open = true
 }
+// Value ceiling shown with "." thousand separators (Indonesian), stored as raw digits.
+const ceilingDisplay = computed({
+  get: () => (autoSheet.ceiling ? 'Rp ' + Number(autoSheet.ceiling).toLocaleString('id-ID') : ''),
+  set: (v: string | number) => { autoSheet.ceiling = String(v ?? '').replace(/\D/g, '') },
+})
 const autoSheetValid = computed(() => {
   if (!autoSheet.skill) return false
   // write_external requires at least one guard-rail (SK-31)
@@ -324,14 +344,30 @@ function validateStep(key: string): boolean {
   if (key === 'persona') return validatePersona()
   return true
 }
+// Show the "no knowledge" warning only after the admin tries to Continue past
+// the Knowledge step with nothing attached — then let them proceed on the next click.
+const knowledgeWarnShown = ref(false)
 function next() {
   if (!validateStep(current.value)) return
+  if (current.value === 'knowledge' && hasNoKnowledge.value && !knowledgeWarnShown.value) {
+    knowledgeWarnShown.value = true
+    return
+  }
   if (!done.value.includes(current.value)) done.value.push(current.value)
   if (!isLast.value) current.value = stepKeys[currentIndex.value + 1]!
 }
 function back() { if (currentIndex.value > 0) current.value = stepKeys[currentIndex.value - 1]! }
 function goToStep(key: string) { current.value = key }
 function cancel() { router.push('/cowork-agents') }
+// Cancel = discard: confirm first (like the receiving-task cancel), then drop the
+// autosaved draft so nothing is kept, and leave.
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  cancelOpen.value = false
+  if (!isEdit.value && draftId.value) deleteAgentSafe(draftId.value)
+  router.push('/cowork-agents')
+}
 
 // ── Build patch from form state ──
 function buildBindings(): CoworkSkillBinding[] {
@@ -426,6 +462,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
   </header>
 
   <div class="caf-stage">
+    <div class="caf-scroll">
     <div class="caf-inner">
       <div class="caf-stepper-wrap"><ErpStepper :steps="STEPS" :current="current" :done="done" @select="goToStep" /></div>
 
@@ -466,11 +503,15 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <MpFormControl id="caf-instr" class="caf-field" is-required :is-invalid="!!instrError">
             <MpFormLabel>Instruction</MpFormLabel>
             <div class="caf-ta" :class="{ 'is-busy': optimizing === 'instruction', 'is-error': !!instrError }">
-              <textarea v-model="instruction" class="caf-ta__input" rows="8" :placeholder="INSTRUCTION_TEMPLATE" @input="instrError = ''"></textarea>
+              <textarea v-model="instruction" class="caf-ta__input" rows="8" @input="instrError = ''"></textarea>
               <div class="caf-ta__foot">
-                <button v-if="!instruction.trim()" type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" @click="useTemplate">
-                  <MpIcon name="document" size="sm" /> Use template
-                </button>
+                <!-- Coverage badges: grey until the text reads as that section, then green -->
+                <div class="caf-cov">
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.role }">Role</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.scope }">Scope</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.tone }">Tone</span>
+                  <span class="caf-cov-badge" :class="{ 'is-on': instrCoverage.rules }">Rules</span>
+                </div>
                 <button type="button" class="btn-enterprise btn-enterprise--ghost caf-optimize" :disabled="optimizing === 'instruction' || !instruction.trim()" @click="optimize('instruction')">
                   <MpSpinner v-if="optimizing === 'instruction'" size="sm" />
                   <MpIcon v-else name="airene-brand" size="sm" /> Optimize
@@ -492,12 +533,11 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <MpFormControl id="caf-model" class="caf-field caf-field--half">
             <MpFormLabel>Model</MpFormLabel>
-            <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopover id="caf-model-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @open="modelMenuOpen = true" @close="modelMenuOpen = false">
               <MpPopoverTrigger>
-                <button type="button" class="caf-select">
-                  <span class="caf-select__label">{{ modelLabel }}</span>
-                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <MpSelect id="caf-model-sel" :model-value="model" :class="modelMenuOpen ? 'caf-sel--open' : ''" @mousedown.prevent>
+                  <option :value="model">{{ modelLabel }}</option>
+                </MpSelect>
               </MpPopoverTrigger>
               <MpPopoverContent :class="menuClass">
                 <MpPopoverList>
@@ -509,12 +549,11 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <MpFormControl id="caf-lang" class="caf-field caf-field--half">
             <MpFormLabel>Language</MpFormLabel>
-            <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopover id="caf-lang-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @open="langMenuOpen = true" @close="langMenuOpen = false">
               <MpPopoverTrigger>
-                <button type="button" class="caf-select">
-                  <span class="caf-select__label">{{ LANGS.find((l) => l.id === language)?.label }}</span>
-                  <svg class="caf-select__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <MpSelect id="caf-lang-sel" :model-value="language" :class="langMenuOpen ? 'caf-sel--open' : ''" @mousedown.prevent>
+                  <option :value="language">{{ LANGS.find((l) => l.id === language)?.label }}</option>
+                </MpSelect>
               </MpPopoverTrigger>
               <MpPopoverContent :class="menuClass">
                 <MpPopoverList>
@@ -527,6 +566,15 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
         <!-- ── Knowledge ── -->
         <template v-else-if="current === 'knowledge'">
+          <div v-if="hasNoKnowledge && knowledgeWarnShown" class="caf-field">
+            <MpBanner id="caf-noknow-banner" variant="warning">
+              <MpBannerIcon id="caf-noknow-banner-icon" />
+              <MpBannerTitle id="caf-noknow-banner-title">This agent has no knowledge yet</MpBannerTitle>
+              <MpBannerDescription id="caf-noknow-banner-desc">
+                Without documents or a connected app, it answers from the model's general knowledge — not your company's data. That's fine for a general assistant, but attach a document or turn on an app to ground it in your own information. You can still continue.
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
           <MpFormControl id="caf-kb" class="caf-field">
             <MpFormLabel>Knowledge base</MpFormLabel>
             <p class="caf-hint caf-hint--tight">Attach documents from the Knowledge Base, or upload new ones. The agent retrieves the most relevant passages when it runs.</p>
@@ -582,17 +630,19 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
         <template v-else-if="current === 'skills'">
           <p class="caf-step-caption">Turn on the skills this agent can use, and decide whether each one must ask you first or may act automatically.</p>
           <MpInput id="caf-skill-search" v-model="skillSearch" is-full-width placeholder="Search skills" class="caf-skill-search" />
-          <div class="caf-skills">
-            <div v-for="s in filteredSkills" :key="s.id" class="caf-skill">
+          <div class="caf-skill-groups">
+           <section v-for="g in skillGroups" :key="g.category" class="caf-skill-group">
+            <h3 class="caf-skill-group__title">{{ g.category }}</h3>
+            <div class="caf-skills">
+            <div v-for="s in g.skills" :key="s.id" class="caf-skill">
               <div class="caf-skill__main">
                 <p class="caf-skill__name">
                   {{ s.name }}
                   <span class="caf-risk" :class="`caf-risk--${riskMeta(s).tone}`">{{ riskMeta(s).label }}</span>
-                  <span v-if="s.module" class="caf-skill__mod">{{ s.module }}</span>
                 </p>
                 <p class="caf-skill__desc">{{ s.description }}</p>
                 <div v-if="s.requiresConnections?.length" class="caf-skill__needs">
-                  <span v-for="cid in s.requiresConnections" :key="cid" class="caf-need-chip" :class="{ 'caf-need-chip--missing': !connConnected(cid) }">
+                  <span v-for="cid in s.requiresConnections" :key="cid" class="caf-need-chip">
                     <img v-if="!connLogoFailed[cid]" class="caf-need-logo" :src="connObj(cid)?.logo || `/connectors/${cid}.png`" :alt="connName(cid)" loading="lazy" @error="connLogoFailed[cid] = true" />
                     <span v-else class="caf-need-logo caf-need-logo--mono" :style="{ background: connObj(cid)?.color || '#3a4749' }">{{ connMonogram(connName(cid)) }}</span>
                     {{ connConnected(cid) ? connName(cid) : `Needs ${connName(cid)}` }}
@@ -601,7 +651,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
                 <!-- Approval-mode control (only when enabled) -->
                 <div v-if="skillState[s.id]?.enabled" class="caf-approval">
                   <span class="caf-approval__chip" :class="skillState[s.id]!.approvalMode === 'auto' ? 'caf-approval__chip--auto' : ''">
-                    <MpIcon :name="skillState[s.id]!.approvalMode === 'auto' ? 'magic' : 'approval-rules'" size="sm" /> {{ modeChip(s) }}
+                    <ApprovalModeIcon :mode="skillState[s.id]!.approvalMode" :size="14" /> {{ modeChip(s) }}
                   </span>
                   <MpPopover :id="`caf-appr-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                     <MpPopoverTrigger>
@@ -610,10 +660,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
                     <MpPopoverContent :class="css({ minWidth: '280px' })">
                       <MpPopoverList>
                         <MpPopoverListItem :is-active="skillState[s.id]!.approvalMode === 'manual'" @click="setApproval(s, 'manual')">
-                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="approval-rules" size="sm" /> Manually approve</span><span class="caf-appr-opt__d">The agent asks you before acting</span></div>
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><ApprovalModeIcon mode="manual" :size="16" /> Manually approve</span><span class="caf-appr-opt__d">The agent asks you before acting</span></div>
                         </MpPopoverListItem>
                         <MpPopoverListItem :is-disabled="!autoModeAvailable(s).allowed" @click="autoModeAvailable(s).allowed && setApproval(s, 'auto')">
-                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><MpIcon name="magic" size="sm" /> Automatically approve</span><span class="caf-appr-opt__d">{{ autoModeAvailable(s).allowed ? 'The agent acts and notifies you' : autoModeAvailable(s).reason }}</span></div>
+                          <div class="caf-appr-opt"><span class="caf-appr-opt__t"><ApprovalModeIcon mode="auto" :size="16" /> Automatically approve</span><span class="caf-appr-opt__d">{{ autoModeAvailable(s).allowed ? 'The agent acts and notifies you' : autoModeAvailable(s).reason }}</span></div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -623,6 +673,9 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
               <MpToggle :is-checked="skillState[s.id]?.enabled" :aria-label="`Toggle ${s.name}`"
                 @update:is-checked="(v: boolean) => skillState[s.id] = { ...skillState[s.id]!, enabled: v, approvalMode: v ? skillState[s.id]!.approvalMode : 'manual' }" />
             </div>
+            </div>
+           </section>
+           <p v-if="!skillGroups.length" class="caf-hint">No skills match “{{ skillSearch }}”.</p>
           </div>
         </template>
 
@@ -632,7 +685,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           <div class="caf-vis-opts">
             <MpRadio id="caf-vis-everyone" name="caf-vis" value="everyone" :is-checked="visibilityMode === 'everyone'" @change="visibilityMode = 'everyone'">Everyone at {{ COWORK_COMPANY }}</MpRadio>
             <MpRadio id="caf-vis-roles" name="caf-vis" value="roles" :is-checked="visibilityMode === 'roles'" @change="visibilityMode = 'roles'">Specific roles</MpRadio>
-            <MpRadio id="caf-vis-people" name="caf-vis" value="people" :is-checked="visibilityMode === 'people'" @change="visibilityMode = 'people'">Specific people</MpRadio>
+            <MpRadio id="caf-vis-people" name="caf-vis" value="people" :is-checked="visibilityMode === 'people'" @change="visibilityMode = 'people'">Specific users</MpRadio>
           </div>
 
           <div v-if="visibilityMode === 'roles'" class="caf-roles">
@@ -648,18 +701,23 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 
           <div v-if="visibilityMode === 'people'" class="caf-people">
             <div class="caf-people__head">
-              <span class="caf-plain-label">People with access</span>
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Add user</button>
+              <span class="caf-plain-label">Users with access</span>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="pickerOpen = true"><MpIcon name="add" size="md" /> Select users</button>
             </div>
             <p v-if="!selectedEmployees.length" class="caf-hint">No one added yet. Only you will have access.</p>
             <div v-for="e in selectedEmployees" :key="e!.id" class="caf-person">
               <MpAvatar :src="e!.photo" :name="e!.fullName" size="sm" />
               <div class="caf-person__info"><span class="caf-person__name">{{ e!.fullName }}</span><span class="caf-person__role">{{ e!.jobPosition }}</span></div>
-              <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
+              <MpTooltip :id="`caf-rm-${e!.id}`" label="Remove" placement="top" use-portal>
+                <button type="button" class="caf-person__x" aria-label="Remove" @click="removeEmployee(e!.id)"><MpIcon name="minus-circular" size="md" /></button>
+              </MpTooltip>
             </div>
           </div>
 
-          <p class="caf-audience"><MpIcon name="profile" size="sm" /> {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} will see this agent</p>
+          <p class="caf-audience">
+            <MpIcon name="profile" size="sm" /> {{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} will see this agent
+            <button v-if="audiencePeople.length" type="button" class="caf-audience__view" @click="audienceModalOpen = true">View</button>
+          </p>
         </template>
 
       </div>
@@ -698,14 +756,18 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
           </section>
           <section class="caf-review-sec">
             <div class="caf-review-sechead"><h3>Visibility</h3><button type="button" class="btn-enterprise btn-enterprise--secondary caf-review-edit" @click="goToStep('visibility')">Edit</button></div>
-            <ContentList label="Who" :value="visibilitySummary" />
+            <ContentList label="Who">
+              <template v-if="visibilityMode === 'everyone'">Everyone at {{ COWORK_COMPANY }} · {{ audienceCount }} people</template>
+              <template v-else-if="visibilityMode === 'roles'">
+                <span v-for="r in selectedRoleIds" :key="r" class="content-list__line">{{ COWORK_ROLES.find((x) => x.id === r)?.name }}<span class="caf-review-vsub"> · {{ roleMemberCount(r) }} people</span></span>
+                <span v-if="!selectedRoleIds.length" class="content-list__line">No roles selected</span>
+              </template>
+              <template v-else>
+                <span v-for="e in selectedEmployees" :key="e!.id" class="content-list__line">{{ e!.fullName }}<span class="caf-review-vsub"> · {{ e!.jobPosition }}</span></span>
+                <span v-if="!selectedEmployees.length" class="content-list__line">Only you</span>
+              </template>
+            </ContentList>
           </section>
-
-          <!-- Actions live under the summary; the chat panel sits to the right of them -->
-          <div class="caf-review-actions">
-            <MpButton is-rounded variant="ghost" @click="back">Back</MpButton>
-            <MpButton is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
-          </div>
         </div>
 
         <!-- Right: the shared "New chat" panel (same format as Chats), dry-run -->
@@ -729,67 +791,133 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
         </div>
       </div>
 
-      <!-- Footer actions (steps 1–4; the Review step has its own under the summary) -->
-      <div v-if="current !== 'review'" class="caf-actions">
-        <MpButton is-rounded variant="ghost" @click="currentIndex === 0 ? cancel() : back()">{{ currentIndex === 0 ? 'Cancel' : 'Back' }}</MpButton>
-        <MpButton is-rounded variant="primary" @click="next">Continue</MpButton>
-      </div>
     </div>
+    </div>
+
+    <!-- Full-width sticky footer: Back · Cancel · Continue/Save -->
+    <footer class="caf-footbar">
+      <MpButton v-if="currentIndex > 0" is-rounded variant="ghost" @click="back">Back</MpButton>
+      <MpButton is-rounded variant="ghost" @click="askCancel">Cancel</MpButton>
+      <!-- Editing: Continue is a split button so you can Save changes from any step. -->
+      <MpButtonGroup v-if="isEdit && !isLast" is-split>
+        <MpButton is-rounded variant="primary" @click="next">Continue</MpButton>
+        <MpPopover id="caf-continue-split" is-close-on-select use-portal placement="top-end">
+          <MpPopoverTrigger>
+            <MpButton is-rounded variant="primary" aria-label="More save options" right-icon="chevrons-down" />
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '180px' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="publish">Save changes</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </MpButtonGroup>
+      <MpButton v-else-if="!isLast" is-rounded variant="primary" @click="next">Continue</MpButton>
+      <MpButton v-else is-rounded variant="primary" :is-loading="saving" @click="publish">{{ isEdit ? 'Save changes' : 'Publish agent' }}</MpButton>
+    </footer>
   </div>
 
-  <!-- Employee picker drawer -->
-  <MpDrawer id="caf-people-drawer" :is-open="pickerOpen" placement="right" @close="pickerOpen = false">
-    <MpDrawerContent>
-      <MpDrawerHeader>Add people <MpModalCloseButton /></MpDrawerHeader>
-      <MpDrawerBody>
-        <MpInput id="caf-emp-search" v-model="empSearch" is-full-width placeholder="Search employees" />
-        <div class="caf-emplist">
-          <label v-for="e in filteredEmployees" :key="e.id" class="caf-emp">
-            <MpCheckbox :is-checked="draftEmpIds.includes(e.id)" @update:is-checked="(v: boolean) => toggleDraftEmp(e.id, v)" />
-            <MpAvatar :src="e.photo" :name="e.fullName" size="lg" />
-            <span class="caf-emp__info"><span class="caf-emp__name">{{ e.fullName }}</span><span class="caf-emp__role">{{ e.jobPosition }} · {{ e.department }}</span></span>
+  <!-- User picker — the shared two-column ERP select drawer (add ⊕ / remove ⊖ + Save) -->
+  <SelectAccessDrawer
+    :open="pickerOpen"
+    title="Select users"
+    list-title="Users"
+    :options="employeeOptions"
+    :model-value="selectedEmployeeIds"
+    empty-title="No users selected"
+    empty-caption="Add users from the list to give them access to this agent."
+    @update:open="pickerOpen = $event"
+    @save="(ids: string[]) => selectedEmployeeIds = ids"
+  />
+
+  <!-- Audience modal — the actual people behind the visibility count (View) -->
+  <MpModal id="caf-audience-modal" :is-open="audienceModalOpen" size="md" scroll-behavior="inside" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="audienceModalOpen = false">
+    <MpModalContent>
+      <MpModalHeader>{{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} with access<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <div v-for="e in audiencePeople" :key="e.id" class="caf-aud-row">
+          <MpAvatar :src="e.photo" :name="e.fullName" size="md" />
+          <div class="caf-aud-info">
+            <span class="caf-aud-name">{{ e.fullName }}</span>
+            <span class="caf-aud-sub">{{ [e.employeeId, e.jobPosition, e.department].filter(Boolean).join(' · ') }}</span>
+          </div>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton is-rounded variant="ghost" @click="audienceModalOpen = false">Close</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- Approval-mode confirmation modal (switching a skill to auto) -->
+  <MpModal
+    id="caf-auto-sheet"
+    :is-open="autoSheet.open"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="autoSheet.open = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Let {{ name || 'this agent' }} run “{{ autoSheet.skill?.name }}” automatically?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
+        <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
+        <div class="caf-sheet__grid">
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Max per run</span>
+            <span class="caf-sheet__fhint">The most actions it may take in one run.</span>
+            <MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Max per day</span>
+            <span class="caf-sheet__fhint">The daily cap across all runs.</span>
+            <MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Value ceiling</span>
+            <span class="caf-sheet__fhint">The rupiah amount of one action — e.g. a purchase request total. Anything above this still asks you first. (Not API/token cost.)</span>
+            <MpInput id="caf-c-ceil" v-model="ceilingDisplay" inputmode="numeric" />
+          </label>
+          <label class="caf-sheet__f">
+            <span class="caf-sheet__flabel">Scope <span class="caf-sheet__opt">(optional)</span></span>
+            <span class="caf-sheet__fhint">Limit to one area/location; leave blank for all.</span>
+            <MpInput id="caf-c-scope" v-model="autoSheet.scope" />
           </label>
         </div>
-      </MpDrawerBody>
-      <MpDrawerFooter>
-        <MpButtonGroup>
-          <MpButton variant="ghost" is-rounded @click="pickerOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="savePeople">Save</MpButton>
-        </MpButtonGroup>
-      </MpDrawerFooter>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
-
-  <!-- Approval-mode confirmation sheet (switching a skill to auto) -->
-  <Teleport to="body">
-    <Transition name="caf-sheet">
-      <div v-if="autoSheet.open" class="caf-sheet-overlay" @click.self="autoSheet.open = false">
-        <div class="caf-sheet" role="dialog" aria-modal="true">
-          <p class="caf-sheet__title">Let {{ name || 'this agent' }} run “{{ autoSheet.skill?.name }}” automatically?</p>
-          <span v-if="autoSheet.skill" class="caf-risk" :class="`caf-risk--${riskMeta(autoSheet.skill).tone}`">{{ riskMeta(autoSheet.skill).label }}</span>
-          <p class="caf-sheet__desc">The agent will act and tell you afterwards — within the limits below. It never bypasses your permissions.</p>
-          <div class="caf-sheet__grid">
-            <label class="caf-sheet__f"><span>Max per run</span><MpInput id="caf-c-run" v-model="autoSheet.maxPerRun" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Max per day</span><MpInput id="caf-c-day" v-model="autoSheet.maxPerDay" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Value ceiling (Rp)</span><MpInput id="caf-c-ceil" v-model="autoSheet.ceiling" type="number" placeholder="Any" /></label>
-            <label class="caf-sheet__f"><span>Scope</span><MpInput id="caf-c-scope" v-model="autoSheet.scope" placeholder="e.g. warehouse JKT-01" /></label>
-          </div>
-          <div class="caf-sheet__notify">
-            <span class="caf-sheet__flabel">Notify me</span>
-            <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
-            <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
-          </div>
-          <div class="caf-sheet__actions">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="autoSheet.open = false">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" :disabled="!autoSheetValid" @click="confirmAutoSheet">Turn on automatic approval</button>
-          </div>
+        <div class="caf-sheet__notify">
+          <span class="caf-sheet__flabel caf-sheet__flabel--notify">Notify me</span>
+          <MpRadio id="caf-notify-always" name="caf-notify" value="always" :is-checked="autoSheet.notify === 'always'" @change="autoSheet.notify = 'always'">Every action</MpRadio>
+          <MpRadio id="caf-notify-digest" name="caf-notify" value="daily_digest" :is-checked="autoSheet.notify === 'daily_digest'" @change="autoSheet.notify = 'daily_digest'">Daily digest</MpRadio>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="autoSheet.open = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded :is-disabled="!autoSheetValid" @click="confirmAutoSheet">Turn on automatic approval</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <KbAttachPicker v-model:is-open="kbPickerOpen" v-model="knowledge" />
+
+  <!-- Cancel = discard confirmation (same behaviour as the receiving-task cancel) -->
+  <ConfirmModal
+    v-model:is-open="cancelOpen"
+    :title="isEdit ? 'Discard changes?' : 'Discard this agent?'"
+    description="Your changes won't be saved."
+    confirm-label="Discard"
+    cancel-label="Keep editing"
+    :is-danger="true"
+    @confirm="confirmCancel"
+  />
 </template>
 
 <style scoped>
@@ -800,7 +928,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
 .caf-draft-note { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
 
-.caf-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
+.caf-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; }
+.caf-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-6); }
+/* Sticky full-width footer — mirrors ReceiveItemsPage .detail-footer */
+.caf-footbar { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid var(--mp-border-default); }
 /* Wide enough that the Review step can put the 680px summary column and the chat
    panel side by side; the stepper is capped narrower via its own wrapper. */
 .caf-inner { max-width: 1400px; }
@@ -808,6 +939,8 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-form { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-6, 24px); row-gap: var(--mp-spacing-5, 20px); max-width: 680px; align-items: start; }
 .caf-form > * { grid-column: 1 / 7; min-width: 0; }
 .caf-field--half { grid-column: 1 / 4; }
+/* MpSelect (popover pattern): show the bold neutral border while the dropdown is open */
+:deep(.mp-select__control.caf-sel--open) { border-color: #8c9596 !important; box-shadow: 0 0 0 1px #8c9596 !important; }
 @media (max-width: 640px) { .caf-field--half { grid-column: 1 / 7; } }
 .caf-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .caf-hint--tight { margin-top: 2px; max-width: 460px; }
@@ -831,8 +964,12 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-ta.is-error { border-color: var(--mp-border-danger, #d1362f); }
 .caf-ta.is-error:focus-within { box-shadow: 0 0 0 1px var(--mp-border-danger, #d1362f); }
 .caf-ta__input { display: block; width: 100%; box-sizing: border-box; min-height: 240px; border: none; outline: none; resize: vertical; padding: var(--mp-spacing-3, 12px); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); background: none; }
-.caf-ta__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
-.caf-optimize { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+.caf-ta__foot { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2, 8px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.caf-optimize { margin-left: auto; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 6px); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3, 12px); font-size: var(--mp-font-sizes-sm, 12px); }
+/* Coverage badges inside the instruction box — grey (disabled) until detected, then green */
+.caf-cov { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); }
+.caf-cov-badge { font-size: var(--mp-font-sizes-sm, 12px); font-weight: 600; line-height: var(--mp-line-heights-md, 20px); border-radius: var(--mp-radii-full, 999px); padding: 4px 12px; color: var(--mp-text-disabled, #97a0af); background: var(--mp-background-neutral-subtle, #f1f3f4); transition: color .12s ease, background .12s ease; }
+.caf-cov-badge.is-on { color: #0a6e4e; background: #e7f5ef; }
 .caf-optimize:disabled { opacity: 0.7; cursor: default; }
 .caf-diff { margin-top: var(--mp-spacing-2); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); }
 .caf-diff__label { margin: 0 0 var(--mp-spacing-1); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: .04em; }
@@ -860,14 +997,13 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
 .caf-area-logo--img { object-fit: contain; }
 span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: var(--mp-font-weights-bold, 700); color: #fff; line-height: 1; }
 
-.caf-select { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); width: 100%; box-sizing: border-box; padding: 0 var(--mp-spacing-3, 12px); height: 40px; border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); text-align: left; }
-.caf-select:hover { border-color: var(--mp-border-bold, #8c9596); }
-.caf-select__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.caf-select__chev { flex: 0 0 auto; width: 20px; height: 20px; color: var(--mp-icon-default, #536062); }
 
 /* Skills */
 .caf-skill-search { margin-top: var(--mp-spacing-3); }
-.caf-skills { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
+/* Skills grouped by category — 32px between groups, an H3 header bar per group */
+.caf-skill-groups { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); margin-top: var(--mp-spacing-4); }
+.caf-skill-group__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
+.caf-skills { display: flex; flex-direction: column; }
 .caf-skill { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4, 16px) 0; border-bottom: 1px solid var(--mp-border-default); }
 .caf-skill__main { min-width: 0; }
 .caf-skill__name { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
@@ -880,8 +1016,8 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-risk--danger { color: #b42318; background: #fbeceb; }
 .caf-skill__desc { margin: 4px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-skill__needs { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
-.caf-need-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 2px 10px 2px 6px; }
-.caf-need-chip--missing { color: var(--mp-text-warning, #b54708); }
+/* "Needs Gmail" — plain secondary text (not a badge, never danger colour) */
+.caf-need-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .caf-need-logo { width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px; object-fit: contain; }
 .caf-need-logo--mono { display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #fff; line-height: 1; }
 .caf-approval { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
@@ -908,6 +1044,13 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-person__role { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .caf-person__x { border: none; background: none; cursor: pointer; color: var(--mp-icon-default); display: inline-flex; }
 .caf-audience { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.caf-audience__view { background: none; border: none; padding: 0 0 0 2px; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm); font-weight: 600; color: var(--mp-text-link); }
+.caf-audience__view:hover { text-decoration: underline; text-underline-offset: 2px; }
+.caf-aud-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2, 8px) 0; }
+.caf-aud-row + .caf-aud-row { border-top: 1px solid var(--mp-border-default); }
+.caf-aud-info { display: flex; flex-direction: column; min-width: 0; }
+.caf-aud-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.caf-aud-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Review */
 /* Step-5 summary — all content is 14px; key/value rows use the ContentList pattern */
@@ -917,18 +1060,21 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-review-name { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
 .caf-review-desc { margin: 2px 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
 .caf-review-sec { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.caf-review-sec:last-child { border-bottom: none; }
 .caf-review-sechead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); min-height: 36px; }
-.caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
-.caf-review-sec--warn h3 { color: #6941C6; }
+.caf-review-sechead h3 { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); display: inline-flex; align-items: center; gap: 6px; }
+/* "Will act without asking" is a lighter sub-heading: 14px semibold, black (not purple). */
+.caf-review-sec--warn h3 { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
+.caf-review-vsub { color: var(--mp-text-secondary); }
 /* Edit button — hidden until the section is hovered/focused; secondary style */
 .caf-review-edit { opacity: 0; pointer-events: none; transition: opacity .12s ease; }
 .caf-review-sec:hover .caf-review-edit,
 .caf-review-sec:focus-within .caf-review-edit { opacity: 1; pointer-events: auto; }
-.caf-willact { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: 6px 0; font-size: var(--mp-font-sizes-md, 14px); }
-.caf-willact__name { color: var(--mp-text-default); font-weight: 500; }
-.caf-willact__cond { color: #6941C6; }
+/* Name on top, the auto conditions as a caption underneath (not a right-aligned column). */
+.caf-willact { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.caf-willact__name { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); font-weight: 500; }
+.caf-willact__cond { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
-.caf-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6, 24px); max-width: 680px; }
 :deep(.mp-button--variant_ghost:hover), :deep(.mp-button--variant_ghost:focus-visible) { border-color: transparent !important; box-shadow: none !important; }
 
 .caf-emplist { margin-top: var(--mp-spacing-3); }
@@ -942,21 +1088,19 @@ span.caf-area-logo:not(.caf-area-logo--img) { display: inline-flex; align-items:
 .caf-review-2col { margin-top: var(--mp-spacing-6, 24px); display: grid; grid-template-columns: 680px minmax(0, 1fr); gap: var(--mp-spacing-8, 32px); align-items: start; }
 @media (max-width: 1080px) { .caf-review-2col { grid-template-columns: 1fr; } }
 .caf-review-col { min-width: 0; }
-.caf-review-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-6, 24px); }
 /* Chat wrapper — a drawer-like bordered surface holding the shared panel */
-.caf-chat { position: sticky; top: 0; height: 620px; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
+/* Tall chat that stays pinned while the left summary scrolls, but always clears
+   the sticky footer (its composer is never cut off). Offset covers the top chrome
+   (nav + bar + stepper), the footer, and the scroll padding + gap. */
+.caf-chat { position: sticky; top: 0; height: calc(100dvh - 300px); min-height: 460px; border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-xl, 16px); background: var(--mp-background-neutral, #fff); overflow: hidden; }
 
 /* Approval-mode confirmation sheet (top-aligned, like ConfirmModal) */
-.caf-sheet-enter-active, .caf-sheet-leave-active { transition: opacity 200ms ease; }
-.caf-sheet-enter-from, .caf-sheet-leave-to { opacity: 0; }
-.caf-sheet-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; align-items: flex-start; justify-content: center; }
-.caf-sheet { width: min(480px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
-.caf-sheet__title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
 .caf-sheet__desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: 13px; color: var(--mp-text-secondary); }
-.caf-sheet__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3); }
-.caf-sheet__f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--mp-text-secondary); }
-.caf-sheet__confirm { margin-top: var(--mp-spacing-4); }
-.caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); flex-wrap: wrap; }
-.caf-sheet__flabel { font-size: 12px; color: var(--mp-text-secondary); }
-.caf-sheet__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
+.caf-sheet__grid { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.caf-sheet__f { display: flex; flex-direction: column; gap: 2px; }
+.caf-sheet__flabel { font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; color: var(--mp-text-default); }
+.caf-sheet__opt { font-weight: 400; color: var(--mp-text-secondary); }
+.caf-sheet__fhint { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); margin-bottom: 4px; line-height: var(--mp-line-heights-sm, 16px); }
+.caf-sheet__notify { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
+.caf-sheet__flabel--notify { font-size: var(--mp-font-sizes-md, 14px); }
 </style>

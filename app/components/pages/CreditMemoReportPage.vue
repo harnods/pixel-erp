@@ -19,14 +19,14 @@ import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
-  MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+  MpButton, MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpBanner, MpBannerIcon, MpBannerTitle, css,
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CreditMemoFiltersDrawer, { type CmDrawerValue } from '~/components/patterns/CreditMemoFiltersDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
-import { infoToast } from '~/utils/toasts'
+import { infoToast, successToast } from '~/utils/toasts'
 import {
   creditMemoReport, historyRows, remainingOf, statusOf, cmCustomerNames,
   creditMemoViews, addCmView, updateCmView, deleteCmView, emptyCmReportFilters,
@@ -114,7 +114,7 @@ function commitAddView() {
   if (!name) return
   const v = addCmView({ name, filters: { keyword: filters.keyword, keywordColumn: filters.keywordColumn, customerComparator: filters.customerComparator, customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
   activeViewId.value = v.id
-  toast.notify({ variant: 'success', title: 'View saved' })
+  successToast('View saved')
 }
 function cancelAddView() { addingView.value = false }
 
@@ -130,7 +130,7 @@ function commitEditView() {
   const name = editViewName.value.trim()
   const id = editingViewId.value
   editingViewId.value = ''
-  if (name) { updateCmView(id, { name }); toast.notify({ variant: 'success', title: 'View renamed' }) }
+  if (name) { updateCmView(id, { name }); successToast('View renamed') }
 }
 function cancelEditView() { editingViewId.value = '' }
 
@@ -143,7 +143,7 @@ function confirmDeleteView() {
   deleteCmView(v.id)
   if (activeViewId.value === v.id) activeViewId.value = 'default'
   delViewTarget.value = null
-  toast.notify({ variant: 'success', title: 'View deleted' })
+  successToast('View deleted')
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ const exporting = ref(false)
 function exportExcel() {
   if (exporting.value) return
   exporting.value = true
-  toast.notify({ variant: 'information', title: 'Your file is being prepared. You’ll be notified when it’s ready to download.' })
+  infoToast('Your file is being prepared. You’ll be notified when it’s ready to download.')
   // Simulate the async job → in-app notification → download link.
   window.setTimeout(() => {
     exporting.value = false
@@ -237,7 +237,7 @@ function exportExcel() {
     }
     const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'credit-memo-report.csv'; a.click(); URL.revokeObjectURL(a.href)
-    toast.notify({ variant: 'success', title: 'File ready to download', description: 'Saved to Export history for 7 days.' })
+    successToast('File ready to download')
   }, 1600)
 }
 
@@ -265,17 +265,16 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <label class="cmr-date-label">As of date</label>
             <AdvancedDateRangePicker id="cmr-date" :model-value="pendingRange" is-full-width hide-label period-mode placeholder="Select date" @update:model-value="onPendingChange" />
           </div>
-          <button class="cmr-apply" type="button" @click="applyReport">Apply</button>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before cmr-allfilters" type="button" @click="drawerOpen = true">
-            <MpIcon name="filter" size="sm" /> All filters
-            <span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
-          </button>
+          <MpButton variant="primary" is-rounded @click="applyReport">Apply</MpButton>
+          <MpButton variant="secondary" is-rounded left-icon="filter" class="cmr-allfilters" @click="drawerOpen = true">
+            All filters<span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
+          </MpButton>
         </div>
         <div class="cmr-controls-right">
           <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
             <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
           </MpTooltip>
-          <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="exportExcel">Export to Excel</button>
+          <MpButton variant="secondary" is-rounded @click="exportExcel">Export to Excel</MpButton>
         </div>
       </div>
 
@@ -358,7 +357,10 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <span class="cmr-report-range">{{ rangeCaption }}</span>
             <span class="cmr-report-updated">{{ lastUpdated }}</span>
           </div>
-          <p v-if="futureCapped" class="cmr-info-banner"><MpIcon name="info" size="sm" /> Showing data up to today.</p>
+          <MpBanner v-if="futureCapped" id="cmr-cap" variant="info" class="cmr-info-banner">
+            <MpBannerIcon id="cmr-cap-icon" />
+            <MpBannerTitle id="cmr-cap-title">Showing data up to today.</MpBannerTitle>
+          </MpBanner>
 
           <!-- Loading skeleton (3 solid rows, ErpTablePage convention) -->
           <div v-if="reportState === 'loading'" class="cmr-table-wrap">
@@ -525,8 +527,6 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-btn-group { display: flex; align-items: center; }
 .cmr-datefield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 220px; }
 .cmr-date-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
-.cmr-apply { height: 36px; padding: 0 var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: pointer; }
-.cmr-apply:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 .cmr-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 999px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
 .cmr-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
 .cmr-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
@@ -578,7 +578,8 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-report-head { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-2) 0; }
 .cmr-report-range { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cmr-report-updated { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.cmr-info-banner { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 var(--mp-spacing-2); padding: 6px 12px; border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-information, #165082); font-size: var(--mp-font-sizes-sm); }
+/* look comes from MpBanner (variant info); only the placement is local */
+.cmr-info-banner { margin: 0 0 var(--mp-spacing-2); }
 
 .cmr-table-wrap { overflow-x: auto; }
 .cmr-table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
