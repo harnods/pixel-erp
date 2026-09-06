@@ -710,7 +710,7 @@ function goBack() { router.push('/sales-deliveries') }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 /* header stays visible while the body scrolls */
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
-.detail-items-sentinel { height: 1px; }
+.detail-items-sentinel { height: var(--mp-sizes-px, 1px); }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-items, .detail-linked {
   width: 100%;
