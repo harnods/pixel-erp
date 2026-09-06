@@ -388,11 +388,11 @@ function confirmBulkDelete() {
       <div class="filter-right">
         <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
         <MpButtonGroup class="filter-btn-group">
-          <MpTooltip :label="t('Ask Airene')">
+          <MpTooltip :label="t('Ask Airene')" placement="bottom">
             <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
-          <MpTooltip :label="t('Export')">
+          <MpTooltip :label="t('Export')" placement="bottom">
             <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded />
           </MpTooltip>
         </MpButtonGroup>
@@ -528,11 +528,11 @@ function confirmBulkDelete() {
 
     <!-- ── Actions ── row kebab = real MpPopover menu (ghost icon + tooltip) ── -->
     <template #actions="{ row }">
+      <!-- Row [...] kebab: no MpTooltip (rule/table-actions-no-tooltip) — a tooltip
+           wrapper between trigger and button also breaks the popover click. -->
       <MpPopover :id="`si-row-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpTooltip :label="t('More actions')">
-            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
-          </MpTooltip>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>

@@ -144,9 +144,19 @@ is the point: they *feel* normal, which is exactly why they slip through.
   **Why:** consistent title-bar cluster. **Source:** `docs/patterns/page-title-bar.md`.
   **Lint:** review.
 - **`rule/btn-icon-tooltip`** — *Do:* an **icon-only** button carries both an
-  **`aria-label`** and an **`MpTooltip`** naming the action. *Don't:* ship a bare
-  icon button with no accessible name / hint. **Why:** icon-only actions are
-  unlabelled without it. **Lint:** review.
+  **`aria-label`** and an **`MpTooltip`** naming the action. **Exception:** the table
+  row **`[…]` actions kebab does NOT get a tooltip** (`rule/table-actions-no-tooltip`) —
+  it opens a menu whose items are self-labelling, and a tooltip wrapper also breaks the
+  popover trigger. *Don't:* ship a bare icon button (other than the row kebab) with no
+  hint. **Why:** icon-only actions are unlabelled without it. **Lint:** review.
+- **`rule/table-actions-no-tooltip`** — *Do:* the table row **`[…]` actions column
+  button** has an `aria-label` only — **no `MpTooltip`**. *Don't:* wrap the kebab trigger
+  in a tooltip (it's unnecessary and can break the `MpPopover` click). **Why:** the menu
+  labels itself; the tooltip adds noise and bugs. **Lint:** review.
+- **`rule/tooltip-consistent-placement`** — *Do:* a row/group of icon buttons (e.g. the
+  filter-bar tool group) uses **one consistent tooltip `placement`** — `bottom` for the
+  top-of-page filter tools. *Don't:* let tooltips flip direction per button (default auto
+  placement). **Why:** mixed up/down tooltips read as broken. **Lint:** review.
 - **`rule/filter-bar-icon-group`** — *Do:* the filter bar's tool icons — **AI
   (Airene) → `airene-brand`, Column settings → `table-view-column`, Export →
   `download`** — are **GHOST icon-only `MpButton`s inside one `MpButtonGroup`**
@@ -587,6 +597,31 @@ ERP override wins.
   **`ContentList`**. **Why:** one key/value renderer. **Lint:** review.
 - **`rule/detail-breadcrumb-no-gap`** — *Do:* the breadcrumb sits **directly above**
   the title, `gap: 0`. **Lint:** review.
+- **`rule/detail-activity-log-always`** — *Do:* **every** detail page carries the
+  **Activity log** (`rule/activity-log-modal`) — build it unprompted, it's part of the
+  page's reachable states, not an add-on. *Don't:* ship a detail page without it.
+  **Why:** provenance is standard on every record. **Lint:** review.
+- **`rule/detail-approval-header`** — *Do:* when the record has an **approval flow**,
+  drive the header off **`useApprovalViewAs()`** (shared singleton; `viewAs` =
+  `'user'` (requestor) | `'manager'`). The title-row right (`.detail-titlerow-right`)
+  **always** shows two icon buttons (`.detail-icon-btn` + `MpTooltip`): **Approval log**
+  (`MpIcon name="task-todo"` → `ApprovalLogModal`, `rule/approval-log-modal`) and
+  **Comment log** (`MpIcon name="comment"`). A **manager** additionally gets a primary
+  **Approve** button (`v-if="canApprove"`, `canApprove = viewAs==='manager' && …`); a
+  requestor gets only the two icons. *Don't:* show Approve to a requestor, or hand-roll
+  a per-module approval header. **Why:** one role-aware approval surface everywhere.
+  **Source:** `StockAdjustmentDetailsPage.vue`. **Lint:** review.
+- **`rule/detail-scenario-fab`** — *Do:* an approval (or otherwise multi-state) detail
+  page gets a **demo scenario FAB** bottom-right (`.demo-fab`, `MpIcon name="sliders"`,
+  an `MpPopover` `placement="top-end"`) that toggles the demo state — **As requestor /
+  As manager / Approved / Awaiting approval** (drives `setViewAs()` + status). *Don't:*
+  scatter role/state toggles into the page body. **Why:** PMs preview every scenario
+  from one control. **Lint:** review.
+- **`rule/detail-transaction-journal`** — *Do:* a **transaction** detail page (bill,
+  invoice, transfer, adjustment posting …) offers its **Journal entry** via a "View
+  journal entry" link → `JournalEntryDrawer` (`rule/journal-entry-modal`). *Don't:*
+  omit it on a page that posts to the ledger. **Why:** the posting is always one click
+  away. **Lint:** review.
 
 ## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/empty-state.md`
 

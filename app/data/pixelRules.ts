@@ -18,7 +18,9 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/btn-responsive-footer': 'Footer = MpButtonGroup.erp-action-footer, right-aligned; full-width stack on mobile.',
   'rule/btn-group-gap-8': 'Buttons in an MpButtonGroup sit 8px apart (default spacing).',
   'rule/page-title-actions-group': 'Page-title actions: 1 button loose; 2+ wrapped in an MpButtonGroup.',
-  'rule/btn-icon-tooltip': 'Icon-only buttons need aria-label + an MpTooltip.',
+  'rule/btn-icon-tooltip': 'Icon-only buttons need aria-label + an MpTooltip — EXCEPT the table row [...] kebab (aria-label only, no tooltip).',
+  'rule/table-actions-no-tooltip': 'The table row [...] actions kebab has aria-label only, NO MpTooltip (menu self-labels; a tooltip wrapper also breaks the popover).',
+  'rule/tooltip-consistent-placement': 'A group of icon-button tooltips uses one consistent placement (bottom for top-of-page filter tools) — never mixed up/down.',
   'rule/filter-bar-icon-group': 'Filter-bar tools = ghost icon MpButtons (airene-brand, table-view-column, download) in one MpButtonGroup + tooltips.',
   'rule/icon-pixel-library': 'Every icon is an MpIcon from the Pixel icon library (verify name via MCP) — never raw svg/emoji.',
   'rule/btn-dropdown-mppopover': 'A dropdown button must be a real MpPopover menu.',
@@ -72,6 +74,10 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/drawer-open-via-manage': 'A drawer opens only via a Manage button.',
   'rule/detail-contentlist': 'Detail-page key/value pairs use ContentList.',
   'rule/detail-breadcrumb-no-gap': 'Breadcrumb sits directly above the title (gap 0).',
+  'rule/detail-activity-log-always': 'Every detail page carries the Activity log — build it unprompted (part of reachable states).',
+  'rule/detail-approval-header': 'Approval record: header driven by useApprovalViewAs — always Approval log + Comment log icons; manager also gets a primary Approve.',
+  'rule/detail-scenario-fab': 'Approval/multi-state detail page gets a bottom-right demo FAB (sliders) toggling As requestor / As manager / Approved / Awaiting approval.',
+  'rule/detail-transaction-journal': 'A transaction detail page offers Journal entry via a "View journal entry" link → JournalEntryDrawer.',
 
   // Feedback / empty / tabs
   'rule/empty-state-structure': 'Empty state = illustration + title + caption + secondary button.',
