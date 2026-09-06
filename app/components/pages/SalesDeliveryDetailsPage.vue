@@ -674,7 +674,7 @@ function goBack() { router.push('/sales-deliveries') }
 
 /* dashed rule between header 1 (primary row) and header 2 (detail grid): 4px dash / 4px gap */
 .detail-divider {
-  height: 1px;
+  height: var(--mp-sizes-px, 1px);
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
@@ -843,7 +843,7 @@ function goBack() { router.push('/sales-deliveries') }
 }
 /* dashed rule before Total: 4px dash / 4px gap, border-default */
 .detail-total-rule {
-  height: 1px;
+  height: var(--mp-sizes-px, 1px);
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
