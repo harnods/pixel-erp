@@ -32,7 +32,6 @@ import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
 import { awaitingSalesOrdersCount } from '~/data/salesOrders'
 import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
-import { awaitingSalesDeliveriesCount } from '~/data/salesDeliveries'
 import { bills } from '~/data/bills'
 import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
@@ -880,7 +879,6 @@ const pageTabs: Record<string, string[]> = {
   'Sales invoices': ['All sales invoices', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
-  'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -945,9 +943,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Sales quotes') {
     const n = awaitingSalesQuotesCount(); return n ? { 'Awaiting approval': n } : {}
-  }
-  if (currentPageKey.value === 'Sales deliveries') {
-    const n = awaitingSalesDeliveriesCount(); return n ? { 'Awaiting approval': n } : {}
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
@@ -1136,7 +1131,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
-  'Sales deliveries': { 'All sales deliveries': pageRegistry['Sales deliveries']!, 'Awaiting approval': pageRegistry['Sales deliveries']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -1701,17 +1695,9 @@ function startResize(e: MouseEvent) {
             {{ t('New sales quote') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            {{ t('Import') }}
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/sales-deliveries/new')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ t('New sales delivery') }}
-          </button>
-        </div>
+        <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
+             sales order (fulfillment), never standalone. -->
+        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
           <!-- Secondary: "+ New account" -->
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">

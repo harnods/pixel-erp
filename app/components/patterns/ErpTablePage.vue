@@ -967,6 +967,12 @@ const bulkCountLabel = computed(() => {
    (and therefore "last") element child, so it wrongly inherits flex-shrink
    and gets crushed. Pin the checkbox to its natural size unconditionally. */
 .erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
+/* The row-select MpCheckbox carries no label, but its root still reserves the
+   built-in 12px box→label gap — combined with .erp-cell-check's own 12px that
+   doubled the box→content gap to 24px. Zero the empty checkbox's internal gap so
+   the single 12px comes only from .erp-cell-check (rule/checkbox-gap-12). */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { gap: 0; }
+.erp-cell-check > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {

@@ -116,11 +116,18 @@ watch(appliedFilters, () => setPage(1))
 // Reset to page 1 when switching between the All / Awaiting approval tabs.
 watch(isAwaiting, () => setPage(1))
 
-const isDrawerFilterActive = computed(() => {
+const activeFilterCount = computed(() => {
   const f = appliedFilters
-  return !!f.keyword || !!f.requestDate || !!f.requiredDate
-    || f.status.length > 0 || f.urgency.length > 0 || f.tags.length > 0
+  let n = 0
+  if (f.keyword) n++
+  if (f.requestDate) n++
+  if (f.requiredDate) n++
+  if (f.status.length > 0) n++
+  if (f.urgency.length > 0) n++
+  if (f.tags.length > 0) n++
+  return n
 })
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All status" entry; clearing (x) resets to show-all.
@@ -264,7 +271,7 @@ const exportColumns = computed(() => [
       <div class="filter-left">
         <ErpFilterSelect id="pr-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
 
-        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}</MpButton>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -464,14 +471,14 @@ const exportColumns = computed(() => [
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information));
-  border-color: var(--mp-border-selected, var(--mp-border-information));
-  color: var(--mp-text-selected, var(--mp-text-information));
+  background: var(--mp-background-neutral-subtle);
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  color: var(--mp-text-default);
 }
 
 .filter-btn-group { display: flex; align-items: center; }
-/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 .filter-icon-btn {
   display: flex; align-items: center; justify-content: center;

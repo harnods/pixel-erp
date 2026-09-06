@@ -170,12 +170,19 @@ const {
 
 watch(appliedFilters, () => setPage(1))
 
-const isDrawerFilterActive = computed(() => {
+const activeFilterCount = computed(() => {
   const f = appliedFilters
-  return !!f.keyword || !!f.transactionDate || !!f.dueDate || f.status.length > 0
-    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== ''
-    || f.tags.length > 0 || f.djpStatus.length > 0
+  let n = 0
+  if (f.keyword) n++
+  if (f.transactionDate) n++
+  if (f.dueDate) n++
+  if (f.status.length > 0) n++
+  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
+  if (f.tags.length > 0) n++
+  if (f.djpStatus.length > 0) n++
+  return n
 })
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // Empty-state wiring: filtered-empty shows "Clear all filters"; full-empty shows the illustration.
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -417,7 +424,7 @@ function confirmBulkDelete() {
       <div class="filter-left">
         <ErpFilterSelect id="si-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions.slice(1)" />
 
-        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}</MpButton>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -945,9 +952,9 @@ function confirmBulkDelete() {
   font-weight: var(--mp-font-weights-semi-bold);
 }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
-  color: var(--mp-text-selected, var(--mp-text-information));
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+  color: var(--mp-text-default);
 }
 
 /* Icon button group */
@@ -955,8 +962,8 @@ function confirmBulkDelete() {
   display: flex;
   align-items: center;
 }
-/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {

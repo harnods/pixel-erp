@@ -87,9 +87,3 @@ function build(): SalesDelivery[] {
 }
 
 export const salesDeliveries: SalesDelivery[] = build()
-
-/** "Awaiting approval" queue for the Sales deliveries › Awaiting approval tab. */
-export function awaitingSalesDeliveries(): SalesDelivery[] {
-  return salesDeliveries.filter(r => r.number % 7 === 0)
-}
-export function awaitingSalesDeliveriesCount(): number { return awaitingSalesDeliveries().length }

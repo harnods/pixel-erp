@@ -464,8 +464,8 @@ const exportColumns = computed(() => [
   display: flex;
   align-items: center;
 }
-/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {

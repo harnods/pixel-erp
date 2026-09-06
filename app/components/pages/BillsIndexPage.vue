@@ -1059,8 +1059,8 @@ function confirmBulkDelete() {
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 /* Active = drawer filters applied (mirrors SalesInvoicesPage's --active). */
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
   color: var(--mp-text-selected, var(--mp-text-information)) !important;
 }
 
@@ -1068,8 +1068,8 @@ function confirmBulkDelete() {
   display: flex;
   align-items: center;
 }
-/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {

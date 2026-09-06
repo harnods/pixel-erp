@@ -17,7 +17,7 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesDeliveryFiltersDrawer, { emptySalesDeliveryFilters, type SalesDeliveryFiltersValue } from '~/components/patterns/SalesDeliveryFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesDeliveries, awaitingSalesDeliveries } from '~/data'
+import { salesDeliveries } from '~/data'
 import type { SalesDelivery } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -41,14 +41,10 @@ type Row = SalesDelivery & { customerName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
-// Awaiting-approval tab (?tab=) filters to the approval queue; same table.
-const route = useRoute()
-const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
-
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : (isAwaiting.value ? awaitingSalesDeliveries() : salesDeliveries).map(sd => ({ ...sd, customerName: sd.customer.name })),
+    : salesDeliveries.map(sd => ({ ...sd, customerName: sd.customer.name })),
 )
 
 // ─── Second quick filter (Billing status) — combined inside filterFn ────────────
@@ -129,11 +125,18 @@ const {
 watch(billingFilter, () => setPage(1))
 watch(appliedFilters, () => setPage(1))
 
-const isDrawerFilterActive = computed(() => {
+const activeFilterCount = computed(() => {
   const f = appliedFilters
-  return !!f.keyword || !!f.deliveryDate || f.fulfillmentStatus.length > 0 || f.billingStatus.length > 0
-    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '' || f.tags.length > 0
+  let n = 0
+  if (f.keyword) n++
+  if (f.deliveryDate) n++
+  if (f.fulfillmentStatus.length > 0) n++
+  if (f.billingStatus.length > 0) n++
+  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
+  if (f.tags.length > 0) n++
+  return n
 })
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All …" entry; clearing (x) resets to show-all.
@@ -240,8 +243,6 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Process in fulfillment') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
@@ -258,7 +259,7 @@ const exportColumns = computed(() => [
 
         <ErpFilterSelect id="sd-billing-status" v-model="billingFilter" :placeholder="t('Billing status')" :options="billingOptions" />
 
-        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}</MpButton>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -309,7 +310,7 @@ const exportColumns = computed(() => [
         placement="top"
         use-portal
       >
-        <MpButton variant="ghost" left-icon="truck" :aria-label="t('Processed in fulfillment')" is-rounded />
+        <MpIcon name="truck" size="md" class="fulfillment-icon" :aria-label="t('Processed in fulfillment')" />
       </MpTooltip>
     </template>
 
@@ -357,14 +358,13 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="navigateTo(`/sales-deliveries/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'">{{ t('Create sales invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -399,6 +399,9 @@ const exportColumns = computed(() => [
 .cell-number {
   color: var(--mp-text-default);
 }
+/* Fulfillment marker = a plain status icon (not an interactive button) — muted,
+   like the attachment icon on Sales invoices. */
+.fulfillment-icon { color: var(--mp-icon-default, var(--mp-text-secondary)); vertical-align: middle; }
 
 /* Cell with hover action button (View details / Open preview) */
 .cell-text {
@@ -512,17 +515,17 @@ const exportColumns = computed(() => [
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information));
-  border-color: var(--mp-border-selected, var(--mp-border-information));
-  color: var(--mp-text-selected, var(--mp-text-information));
+  background: var(--mp-background-neutral-subtle);
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  color: var(--mp-text-default);
 }
 
 .filter-btn-group {
   display: flex;
   align-items: center;
 }
-/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {

@@ -175,12 +175,16 @@ is the point: they *feel* normal, which is exactly why they slip through.
   placement). **Why:** mixed up/down tooltips read as broken. **Lint:** review.
 - **`rule/filter-bar-icon-group`** — *Do:* the filter bar's tool icons — **AI
   (Airene) → `airene-brand`, Column settings → `table-view-column`, Export →
-  `download`** — are **GHOST icon-only `MpButton`s inside one `MpButtonGroup`**
-  (transparent, 36×36 — the `.filter-icon-btn` style), **flush — no gap between them**
-  (the 36px hit areas give the separation), each wrapped in an `MpTooltip` (see
-  `rule/btn-icon-tooltip`). *Don't:* use secondary/filled buttons, add a gap, scatter them
-  loose, or hand-roll the grouping. **Why:** one consistent tool cluster on every list
-  page. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
+  `download`** — are **GHOST icon-only `MpButton`s (all `is-rounded` → identical
+  oval hover) inside one `MpButtonGroup`**, spaced the group's **default 8px**
+  apart (`rule/btn-group-gap-8`) — do **not** override the group gap to 0/flush.
+  Each carries an `MpTooltip` (see `rule/btn-icon-tooltip`). **Column settings is
+  the shared `ColumnSettingsMenu`, whose trigger is itself a rounded ghost
+  `MpButton`** — so all three tools look and hover identically. *Don't:* make one
+  tool a raw `<button>`/square hover while the others are oval, add a `gap:0`
+  override, use secondary/filled buttons, scatter them loose, or hand-roll the
+  grouping. **Why:** one consistent tool cluster on every list page — every icon
+  the same shape and spacing. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
 - **`rule/icon-pixel-library`** — *Do:* every icon is an **`MpIcon`** with a name from
   the **Pixel icon library** — verify the name via the `mekari-pixel` MCP
   (`get-icon-name`) before using it. *Don't:* use a raw `<svg>`, an emoji, an image, or
@@ -869,6 +873,14 @@ filters appear on the left.
   filters **drawer** (`rule/drawer-custom-shell`, opened via this button per
   `rule/drawer-open-via-manage`). *Don't:* overflow the bar with many inline selects.
   **Lint:** review.
+- **`rule/filter-all-filters-active-count`** — *Do:* when N drawer filters are
+  active, the **"All filters"** button shows the count — **"All filters (N)"** — and
+  keeps its **secondary look: border stays neutral border-bold** (`#8c9596`), text
+  default, at most a subtle neutral-subtle background. *Don't:* turn it brand/green
+  or into a "selected" fill when active — the `(N)` is the active signal, not colour.
+  N counts one per active filter row (an amount min/max/value trio counts as one).
+  **Why:** the active state must read as "filters applied", not as a different button
+  colour. **Lint:** review (grep `background-selected` on `.filter-all-btn--active`).
 
 Also governing the filter bar: `rule/filter-bar-search-export` (Search + Export
 always present), `rule/filter-bar-icon-group` (AI · column settings · export = ghost
