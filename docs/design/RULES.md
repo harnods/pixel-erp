@@ -543,9 +543,17 @@ ERP override wins.
   kebab stays middle). It's per-row, not whole-table — `ErpTablePage` toggles
   `.erp-tr--align-top` on each measured tall row. **Why:** the golden padding/align rule
   (`docs/table-design.md`). **Lint:** review.
-- **`rule/table-default-sort-alpha`** — *Do:* named-entity tables default to
-  **alphabetical by name**. (Transactional logs may default newest-first.) **Why:**
-  predictable scanning. **Lint:** review.
+- **`rule/table-default-newest-first`** — *Do:* any table whose rows carry a
+  **`date`** (every transactional index — invoices, orders, quotes, deliveries,
+  requests, bills, …) defaults to **newest-first (date descending): the latest
+  record is always on top**. `useTableState` applies this automatically when no
+  explicit sort is set. *Don't:* leave a dated table in source/ascending order
+  (oldest on top). **Why:** the most recent activity is what users look for first.
+  **Lint:** review.
+- **`rule/table-default-sort-alpha`** — *Do:* **named-entity** tables (no `date`
+  column — products, vendors, warehouses, …) default to **alphabetical by name**.
+  Dated/transactional tables follow `rule/table-default-newest-first` instead.
+  **Why:** predictable scanning. **Lint:** review.
 - **`rule/table-sortable-columns`** — *Do:* every column sortable via hover-header
   icon → `MpPopover`; give it a `sortType`. **Why:** uniform sort affordance.
   **Lint:** review.
