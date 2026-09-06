@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
 } from '@mekari/pixel3'
-import { infoToast } from '~/utils/toasts'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
+import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
@@ -38,11 +42,17 @@ const columns: TableColumn[] = [
   { key: 'tags',             label: t('Tags'),             kind: 'tags'                                    },
 ]
 
+// Prototype preview toggle (ScenarioFab, bottom-right): data vs empty-state view
+const previewMode = ref<'data' | 'empty'>('data')
+
 // ─── Rows — newest request first (transactional log), awaiting subset on that tab ──
 const rows = computed<PurchaseRequest[]>(() => {
+  if (previewMode.value === 'empty') return []
   const list = [...purchaseRequests].sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number)
   return isAwaiting.value ? list.filter(pr => pr.awaitingApproval) : list
 })
+
+type Row = PurchaseRequest
 
 // ─── "All filters" drawer — a second, independent filter layer, ANDed with the
 // toolbar's own Status select + search (same pattern as SalesOrdersPage). ──────
@@ -120,9 +130,6 @@ const statusOptions = [
   { label: t('Closed'),              value: 'closed'              },
   { label: t('Voided'),              value: 'voided'              },
 ]
-const statusLabel = computed(
-  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
-)
 
 const urgencyOptions = [
   { label: t('High'),   value: 'high'   },
@@ -163,7 +170,6 @@ function markCompleted(id: string) {
 function duplicate(pr: PurchaseRequest) {
   toast.notify({ variant: 'success', title: `${t('Purchase request duplicated')} #${pr.number}` })
 }
-function copyLink() { infoToast(t('Link copied')) }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
@@ -173,6 +179,45 @@ const columnItems = allCols
   .map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── Bulk actions (selection bar) ──────────────────────────────────────────────
+function bulkSelectedRequests(selectedRows: Set<number>): Row[] {
+  return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
+}
+
+// ─── Export / Copy link / Share via email (shared patterns) ────────────────────
+const exportOpen = ref(false)
+const copyOpen = ref(false)
+const copyItems = ref<{ title: string; subtitle?: string; url: string }[]>([])
+const shareOpen = ref(false)
+const shareTitle = ref('')
+const shareSubject = ref('')
+const shareAttachment = ref('')
+function recordLink(id: string) { return `https://mkrierp.id/${id}` }
+function openExport() { exportOpen.value = true }
+function openCopyLinks(rs: Row[]) {
+  copyItems.value = rs.map(r => ({ title: `${t('Purchase Request')} #${r.number}`, subtitle: r.procurementStaff, url: recordLink(r.id) }))
+  copyOpen.value = true
+}
+function openShare(r: Row) {
+  shareTitle.value = `${t('Purchase Request')} #${r.number}`
+  shareSubject.value = `${t('Purchase Request')} #${r.number}`
+  shareAttachment.value = `PR-${r.number}.pdf`
+  shareOpen.value = true
+}
+function openShareBulk(selectedRows: Set<number>) {
+  const rs = bulkSelectedRequests(selectedRows)
+  if (rs.length) openShare(rs[0]!)
+}
+const exportColumns = computed(() => [
+  ...columns
+    .filter(c => c.label && !c.noHeader)
+    .map(c => ({ key: c.key, label: c.label, ...(c.key === 'number' ? { required: true } : {}) })),
+  { key: 'warehouse', label: t('Warehouse') },
+  { key: 'referenceNo', label: t('Reference no.') },
+  { key: 'message', label: t('Message') },
+  { key: 'memo', label: t('Memo') },
+])
 </script>
 
 <template>
@@ -196,71 +241,48 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @clear-filters="clearFilters"
   >
 
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ selectedRows }">
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
+      <MpPopover id="pr-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+        <MpPopoverTrigger>
+          <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent class="erp-dropdown-menu">
+          <MpPopoverList>
+            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: status select (MpSelect + MpPopover) + All filters -->
+      <!-- Left: Status select + All filters -->
       <div class="filter-left">
-        <MpPopover id="pr-status-filter" is-close-on-select>
-          <MpPopoverTrigger>
-            <MpSelect
-              id="pr-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="pr-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
 
-        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
-          <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
-        </button>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
       <div class="filter-right">
-        <div class="filter-btn-group">
-          <!-- Airene -->
-          <MpTooltip id="pr-tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-                <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-              </svg>
-            </button>
+        <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip :label="t('Ask Airene')" placement="bottom">
+            <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
-          <!-- Column settings -->
           <ColumnSettingsMenu id="pr-tt-columns" :items="columnItems" :visibility="columnVisibility" />
-          <!-- Export -->
-          <MpTooltip id="pr-tt-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" type="button" :aria-label="t('Export')">
-              <MpIcon name="download" size="md" />
-            </button>
+          <MpTooltip :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="openExport" />
           </MpTooltip>
-        </div>
+        </MpButtonGroup>
 
-        <!-- Pill search -->
+        <!-- Pill search (sanctioned ErpFilterBar pill; icons are MpIcon) -->
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input
             v-model="search"
             class="filter-search-input"
@@ -268,9 +290,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             :placeholder="t('Search...')"
           />
           <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-            </svg>
+            <MpIcon name="close" size="sm" />
           </button>
         </div>
       </div>
@@ -283,7 +303,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Cell: Number — "View details" on row hover ── -->
     <template #cell-number="{ row, value }">
-      <a class="cell-link cell-text cell-number" :title="`${t('Purchase Request')} #${value}`" @click.stop="viewDetails((row as PurchaseRequest).id)">{{ t('Purchase Request') }} #{{ value }}</a>
+      <span class="cell-link cell-text cell-number" :title="`${t('Purchase Request')} #${value}`" @click.stop="viewDetails((row as PurchaseRequest).id)">{{ t('Purchase Request') }} #{{ value }}</span>
     </template>
 
     <!-- ── Cell: Attachment icon (narrow column, no header) ── -->
@@ -334,12 +354,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No purchase requests') }}</p>
         <p class="empty-full-desc">{{ t('Purchase requests will appear here.') }}</p>
-        <button class="empty-cta">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          {{ t('New purchase request') }}
-        </button>
+        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/purchase-requests/new')">{{ t('New purchase request') }}</MpButton>
       </div>
     </template>
 
@@ -347,13 +362,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #actions="{ row }">
       <MpPopover :id="`pr-actions-${(row as PurchaseRequest).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -364,7 +373,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem @click="copyLink">{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as PurchaseRequest)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as PurchaseRequest])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -386,6 +396,14 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
+
+  <!-- ── Export / Copy link / Share via email (shared patterns) ── -->
+  <ExportModal :open="exportOpen" :title="t('Export purchase requests')" entity-label="purchase requests" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
+  <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
+  <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
+  <ScenarioFab v-model="previewMode" />
 </template>
 
 <style scoped>
@@ -452,6 +470,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 
 .filter-btn-group { display: flex; align-items: center; }
+/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 .filter-icon-btn {
   display: flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); padding: var(--mp-spacing-2);
