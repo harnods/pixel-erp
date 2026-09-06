@@ -29,6 +29,10 @@ import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
+import { awaitingSalesOrdersCount } from '~/data/salesOrders'
+import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
+import { awaitingSalesDeliveriesCount } from '~/data/salesDeliveries'
 import { bills } from '~/data/bills'
 import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
@@ -873,6 +877,10 @@ const pageTabs: Record<string, string[]> = {
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Sales invoices': ['All sales invoices', 'Awaiting approval'],
+  'Sales orders': ['All sales orders', 'Awaiting approval'],
+  'Sales quotes': ['All sales quotes', 'Awaiting approval'],
+  'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -927,6 +935,19 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  // Sales modules — the Awaiting approval tab badges its own deterministic queue.
+  if (currentPageKey.value === 'Sales invoices') {
+    const n = awaitingSalesInvoicesCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales orders') {
+    const n = awaitingSalesOrdersCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales quotes') {
+    const n = awaitingSalesQuotesCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales deliveries') {
+    const n = awaitingSalesDeliveriesCount(); return n ? { 'Awaiting approval': n } : {}
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
@@ -1111,6 +1132,11 @@ const wmsOverviewTabComponents: Record<string, Component> = {
 const tabComponents: Record<string, Record<string, Component>> = {
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
+  // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
+  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
+  'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
+  'Sales deliveries': { 'All sales deliveries': pageRegistry['Sales deliveries']!, 'Awaiting approval': pageRegistry['Sales deliveries']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,

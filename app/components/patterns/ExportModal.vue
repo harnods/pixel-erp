@@ -98,7 +98,7 @@ function onExport() {
 <template>
   <MpModal
     :is-open="open"
-    size="md"
+    size="lg"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -275,10 +275,16 @@ function onExport() {
   align-items: center;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-colors-border-default, #d5dadd);
   border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral);
   color: var(--mp-text-secondary);
+}
+/* Focus/active = neutral border-bold + 1px inset ring, never green
+   (rule/form-focus-border-bold). :focus-within because the input is borderless. */
+.export-col-search:focus-within {
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
 }
 
 .export-col-search__input {

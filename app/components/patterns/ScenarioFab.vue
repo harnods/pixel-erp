@@ -41,12 +41,12 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
           <MpIcon name="settings" size="md" />
         </MpButton>
       </MpPopoverTrigger>
-      <MpPopoverContent is-dark is-close-on-select :class="css({ minWidth: '220px' })">
+      <MpPopoverContent is-close-on-select :class="css({ minWidth: '220px' })">
         <MpPopoverList>
           <MpPopoverListItem
             v-for="s in scenarios"
             :key="s.value"
-            :class="css({ color: 'white' })"
+            :is-active="s.value === modelValue"
             @click="$emit('update:modelValue', s.value)"
           >
             {{ s.label }}

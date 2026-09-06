@@ -17,7 +17,7 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesDeliveryFiltersDrawer, { emptySalesDeliveryFilters, type SalesDeliveryFiltersValue } from '~/components/patterns/SalesDeliveryFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesDeliveries } from '~/data'
+import { salesDeliveries, awaitingSalesDeliveries } from '~/data'
 import type { SalesDelivery } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -41,10 +41,14 @@ type Row = SalesDelivery & { customerName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) filters to the approval queue; same table.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : salesDeliveries.map(sd => ({ ...sd, customerName: sd.customer.name })),
+    : (isAwaiting.value ? awaitingSalesDeliveries() : salesDeliveries).map(sd => ({ ...sd, customerName: sd.customer.name })),
 )
 
 // ─── Second quick filter (Billing status) — combined inside filterFn ────────────

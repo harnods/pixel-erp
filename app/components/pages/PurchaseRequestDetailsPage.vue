@@ -526,7 +526,7 @@ function goBack() { router.push('/purchase-requests') }
 .detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
 .detail-divider {
-  height: 1px;
+  height: var(--mp-sizes-px, 1px);
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
@@ -556,7 +556,7 @@ function goBack() { router.push('/purchase-requests') }
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
-.detail-items-sentinel { height: 1px; }
+.detail-items-sentinel { height: var(--mp-sizes-px, 1px); }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-items, .detail-linked {
   width: 100%;

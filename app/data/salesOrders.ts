@@ -129,3 +129,10 @@ function build(): SalesOrder[] {
 }
 
 export const salesOrders: SalesOrder[] = build()
+
+/** "Awaiting approval" queue for the Sales orders › Awaiting approval tab
+ *  (deterministic every-7th subset; drives both the list and the count badge). */
+export function awaitingSalesOrders(): SalesOrder[] {
+  return salesOrders.filter(r => r.number % 7 === 0)
+}
+export function awaitingSalesOrdersCount(): number { return awaitingSalesOrders().length }

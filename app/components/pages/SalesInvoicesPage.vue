@@ -19,7 +19,7 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesInvoices, deleteSalesInvoices } from '~/data'
+import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
 import { getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
 
@@ -64,10 +64,14 @@ type Row = SalesInvoice & {
 // Prototype preview toggle (ScenarioFab, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) filters to the approval queue; same table.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : salesInvoices.map(inv => {
+    : (isAwaiting.value ? awaitingSalesInvoices() : salesInvoices).map(inv => {
     const overdueLabel = inv.status === 'overdue'
       ? (() => {
           const days = Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000)

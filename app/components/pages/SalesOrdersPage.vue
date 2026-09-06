@@ -17,7 +17,7 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesOrderFiltersDrawer, { emptySalesOrderFilters, type SalesOrderFiltersValue } from '~/components/patterns/SalesOrderFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesOrders } from '~/data'
+import { salesOrders, awaitingSalesOrders } from '~/data'
 import type { SalesOrder } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -41,10 +41,14 @@ type Row = SalesOrder & { customerName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) filters to the approval queue; same table.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : salesOrders.map(so => ({ ...so, customerName: so.customer.name })),
+    : (isAwaiting.value ? awaitingSalesOrders() : salesOrders).map(so => ({ ...so, customerName: so.customer.name })),
 )
 
 // ─── "All filters" drawer — a second, independent filter layer, ANDed with the
