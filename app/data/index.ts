@@ -62,6 +62,8 @@ export * from './outboundSync'
 export * from './salesOrders'
 export * from './salesOrderDetails'
 export * from './salesQuotes'
+export * from './salesQuoteDetails'
+export * from './salesDeliveryDetails'
 export * from './salesInvoices'
 export * from './salesDeliveries'
 
