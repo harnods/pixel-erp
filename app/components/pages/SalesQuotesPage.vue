@@ -12,6 +12,9 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
+import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesQuoteFiltersDrawer, { emptySalesQuoteFilters, type SalesQuoteFiltersValue } from '~/components/patterns/SalesQuoteFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesQuotes } from '~/data'
@@ -154,6 +157,36 @@ const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(al
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── Export / Copy link / Share via email (shared patterns) ────────────────────
+const exportOpen = ref(false)
+const copyOpen = ref(false)
+const copyItems = ref<{ title: string; subtitle?: string; url: string }[]>([])
+const shareOpen = ref(false)
+const shareTitle = ref('')
+const shareSubject = ref('')
+const shareAttachment = ref('')
+function recordLink(id: string) { return `https://mkrierp.id/${id}` }
+function openExport() { exportOpen.value = true }
+function openCopyLinks(rs: Row[]) {
+  copyItems.value = rs.map(r => ({ title: `${t('Sales Quote')} #${r.number}`, subtitle: r.customerName, url: recordLink(r.id) }))
+  copyOpen.value = true
+}
+function openShare(r: Row) {
+  shareTitle.value = `${t('Sales Quote')} #${r.number}`
+  shareSubject.value = `${t('Sales Quote')} #${r.number}`
+  shareAttachment.value = `${r.number}.pdf`
+  shareOpen.value = true
+}
+const exportColumns = computed(() => [
+  ...columns
+    .filter(c => c.label && !c.noHeader)
+    .map(c => ({ key: c.key, label: c.label, ...(c.key === 'number' ? { required: true } : {}) })),
+  { key: 'warehouse', label: t('Warehouse') },
+  { key: 'referenceNo', label: t('Reference no.') },
+  { key: 'message', label: t('Message') },
+  { key: 'memo', label: t('Memo') },
+])
 </script>
 
 <template>
@@ -188,7 +221,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <MpPopoverList>
             <MpPopoverListItem>{{ t('Convert to sales order') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -212,7 +246,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </MpTooltip>
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded />
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="openExport" />
           </MpTooltip>
         </MpButtonGroup>
 
@@ -319,6 +353,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
+
+  <ExportModal :open="exportOpen" :title="t('Export sales quotes')" entity-label="sales quotes" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
+  <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
+  <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
 
   <ScenarioFab v-model="previewMode" />
 </template>

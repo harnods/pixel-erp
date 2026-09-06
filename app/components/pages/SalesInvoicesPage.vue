@@ -15,6 +15,9 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceFiltersValue } from '~/components/patterns/SalesInvoiceFiltersDrawer.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
+import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
@@ -231,6 +234,31 @@ function bulkSelectedInvoices(selectedRows: Set<number>): Row[] {
   return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
 }
 
+// ─── Export / Copy link / Share via email (shared patterns) ────────────────────
+const exportOpen = ref(false)
+const copyOpen = ref(false)
+const copyItems = ref<{ title: string; subtitle?: string; url: string }[]>([])
+const shareOpen = ref(false)
+const shareTitle = ref('')
+const shareSubject = ref('')
+const shareAttachment = ref('')
+function invoiceLink(id: string) { return `https://mkrierp.id/${id}` }
+function openExport() { exportOpen.value = true }
+function openCopyLinks(rows: Row[]) {
+  copyItems.value = rows.map(r => ({ title: `${t('Sales Invoice')} #${r.number}`, subtitle: r.customerName ?? r.customer.name, url: invoiceLink(r.id) }))
+  copyOpen.value = true
+}
+function openShare(r: Row) {
+  shareTitle.value = `${t('Invoice')} #${r.number}`
+  shareSubject.value = `${t('Invoice')} #${r.number}`
+  shareAttachment.value = `INV-${r.number}.pdf`
+  shareOpen.value = true
+}
+function openShareBulk(selectedRows: Set<number>) {
+  const rows = bulkSelectedInvoices(selectedRows)
+  if (rows.length) openShare(rows[0]!)
+}
+
 // "Submit to DJP" only shows once every selected invoice has a tax document
 // AND that document's DJP status is Draft or Rejected — anything already
 // awaiting approval or approved has nothing left to (re-)submit.
@@ -311,8 +339,8 @@ function confirmBulkDelete() {
               @click="submitBulkToDjp(selectedRows as Set<number>, deselectAll)"
             >{{ t('Submit to DJP') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(bulkSelectedInvoices(selectedRows as Set<number>))">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -397,7 +425,7 @@ function confirmBulkDelete() {
           </MpTooltip>
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded />
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="openExport" />
           </MpTooltip>
         </MpButtonGroup>
 
@@ -547,8 +575,8 @@ function confirmBulkDelete() {
           <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
             <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -608,6 +636,44 @@ function confirmBulkDelete() {
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Export / Copy link / Share via email (shared patterns) ── -->
+  <ExportModal
+    :open="exportOpen"
+    :title="t('Export sales invoices')"
+    entity-label="sales invoices"
+    :columns="[
+      { key: 'date', label: t('Date') },
+      { key: 'number', label: t('Number'), required: true },
+      { key: 'customer', label: t('Customer') },
+      { key: 'email', label: t('Email') },
+      { key: 'dueDate', label: t('Due date') },
+      { key: 'status', label: t('Status') },
+      { key: 'balanceDue', label: t('Balance due') },
+      { key: 'total', label: t('Total') },
+      { key: 'tags', label: t('Tags') },
+      { key: 'warehouse', label: t('Warehouse') },
+      { key: 'referenceNo', label: t('Reference no.') },
+      { key: 'terms', label: t('Terms') },
+      { key: 'message', label: t('Message') },
+      { key: 'memo', label: t('Memo') },
+    ]"
+    :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]"
+    :total="total"
+    @close="exportOpen = false"
+    @export="exportOpen = false"
+  />
+  <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
+  <ShareViaEmailModal
+    :open="shareOpen"
+    :title="shareTitle"
+    :subject="shareSubject"
+    :attachment-name="shareAttachment"
+    :attachment-size-k-b="128"
+    sender-email="rizal.candra@centralperk.co.id"
+    @close="shareOpen = false"
+    @send="shareOpen = false"
+  />
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />

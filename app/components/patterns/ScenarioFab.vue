@@ -14,7 +14,7 @@
  * where each scenario is { label, value }. Defaults map Default→'data',
  * Empty state→'empty' (the shape index pages already switch on).
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, MpIcon, css } from '@mekari/pixel3'
 
 export interface Scenario { label: string; value: string }
 
@@ -37,9 +37,9 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
   <div class="scenario-fab-wrap">
     <MpPopover id="scenario-fab" placement="top-end" use-portal :is-keep-alive="false">
       <MpPopoverTrigger>
-        <button class="scenario-fab" type="button" :aria-label="ariaLabel">
+        <MpButton class="scenario-fab" variant="ghost" is-rounded :aria-label="ariaLabel">
           <MpIcon name="settings" size="md" />
-        </button>
+        </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent is-dark is-close-on-select :class="css({ minWidth: '220px' })">
         <MpPopoverList>
@@ -64,22 +64,23 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
   bottom: var(--mp-spacing-6);
   z-index: 1000;
 }
+/* Circular black FAB — override the ghost MpButton into a fixed 48px inverse-fill
+   pill. Always black (the prototype scenario control, not a brand action); icon
+   renders white via the inverse text token. */
 .scenario-fab {
-  display: flex;
+  width: var(--mp-sizes-12, 48px) !important;
+  height: var(--mp-sizes-12, 48px) !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  background: var(--mp-background-inverse, #080d0e) !important;
+  color: var(--mp-text-inverse, #ffffff) !important;
+  box-shadow: var(--mp-shadows-lg); /* pixel-police-allow-shadow: floating action button needs elevation, not a surface card */
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-12, 48px);
-  height: var(--mp-sizes-12, 48px);
-  border: none;
-  border-radius: var(--mp-radii-full, 999px);
-  /* Always black (inverse surface) — the prototype scenario control, not a
-     brand action. Icon renders white via inverse text token. */
-  background: var(--mp-background-inverse, #080d0e);
-  color: var(--mp-text-inverse, #ffffff);
-  box-shadow: var(--mp-shadows-lg); /* pixel-police-allow-shadow: floating action button needs elevation, not a surface card */
-  cursor: pointer;
   transition: transform 0.1s ease;
 }
-.scenario-fab:hover { transform: scale(1.05); }
-.scenario-fab :deep(svg) { color: var(--mp-text-inverse, #ffffff); }
+.scenario-fab:hover { transform: scale(1.05); background: var(--mp-background-inverse, #080d0e) !important; }
+.scenario-fab :deep(svg) { color: var(--mp-text-inverse, #ffffff) !important; }
 </style>
