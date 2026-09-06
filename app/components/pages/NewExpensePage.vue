@@ -16,11 +16,17 @@ import type { Bill } from '~/data/types'
 import { scrollToFirstError } from '~/utils/form'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import { applicableDimensions } from '~/data/dimensions'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('expenses').length > 0)
 
 // Edit mode — /expenses/:id/edit reuses this form. 'new' (or no id) = create.
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
@@ -119,10 +125,12 @@ interface LineRow {
   // even if the account is later cleared via the autocomplete's X icon — only a
   // fresh, never-touched row hides them.
   revealed: boolean
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
 }
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, accountId: '', description: '', taxId: '', amount: '', accountError: false, amountError: false, revealed: false }
+  return { id: rowSeq++, accountId: '', description: '', taxId: '', amount: '', accountError: false, amountError: false, revealed: false, dimensions: {} }
 }
 const rows = ref<LineRow[]>([makeRow()])
 
@@ -447,6 +455,7 @@ function handleSave(mode: 'close' | 'new') {
     description: r.description,
     tax: TAX_OPTIONS.find((tax) => tax.id === r.taxId)?.name ?? '—',
     amount: Number(r.amount) || 0,
+    ...(Object.keys(r.dimensions).length ? { dimensions: r.dimensions } : {}),
   }))
 
   // Withholding is persisted (the Bill model carries a single deduction) so it
@@ -533,6 +542,7 @@ function prefillFromBill(b: Bill, opts: { includePayment?: boolean } = {}) {
         id: rowSeq++, accountId, description: li.description,
         taxId: /ppn/i.test(li.tax) ? 'ppn10' : 'none', amount: String(li.amount),
         accountError: false, amountError: false, revealed: true,
+        dimensions: li.dimensions ?? {},
       }
     })
     rows.value.push(makeRow()) // trailing "add new" row
@@ -760,6 +770,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
           <MpFormControl id="ex-tags">
             <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
             <MpInputTag id="ex-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="ex-dim-upsell" />
           </MpFormControl>
         </div>
 
@@ -783,6 +794,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                 <col class="ex-col-account" />
                 <col class="ex-col-desc" />
                 <col class="ex-col-tax" />
+                <col v-if="showDimensionsColumn" class="ex-col-dimensions" />
                 <col class="ex-col-amount" />
                 <col class="ex-col-del" />
               </colgroup>
@@ -792,6 +804,15 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                   <th class="ex-th">{{ t('Account') }}</th>
                   <th class="ex-th">{{ t('Description') }}</th>
                   <th class="ex-th">{{ t('Tax') }}</th>
+                  <th v-if="showDimensionsColumn" class="ex-th ex-th--dimensions">
+                    <span class="ex-th-dim-label">
+                      {{ t('Dimensions') }}
+                      <MpTooltip id="ex-dim-tt" :label="t('Values may be restricted to specific users.')" placement="top" use-portal>
+                        <MpIcon name="security" size="sm" />
+                      </MpTooltip>
+                    </span>
+                    <a class="ex-th-dim-bulk" @click="infoToast(`${t('Bulk')} — coming soon`)">{{ t('Bulk') }}</a>
+                  </th>
                   <th class="ex-th">{{ t('Amount') }}</th>
                   <th class="ex-th ex-th--del" />
                 </tr>
@@ -803,7 +824,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                   draggable="true"
                   @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)" @drop="onDrop($event, idx)" @dragend="onDragEnd"
                 >
-                  <td class="ex-td ex-td--drag ex-td--border"><MpIcon name="drag" size="sm" /></td>
+                  <td class="ex-td ex-td--drag ex-td--border"><div class="ex-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                   <td class="ex-td ex-td--input ex-td--border" :class="{ 'ex-td--error': row.accountError }">
                     <MpTooltip
                       v-if="row.accountError"
@@ -839,6 +860,12 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                         :placeholder="t('Select tax')"
                       />
                     </td>
+                    <td v-if="showDimensionsColumn" class="ex-td ex-td--border ex-td--dimensions">
+                      <ErpLineDimensionsCell
+                        :model-value="row.dimensions" transaction-type="expenses" :id="`ex-dim-${row.id}`"
+                        @update:model-value="(v) => row.dimensions = v"
+                      />
+                    </td>
                     <td class="ex-td ex-td--input ex-td--border ex-td--amount" :class="{ 'ex-td--error': row.amountError }">
                       <MpTooltip
                         v-if="row.amountError"
@@ -865,9 +892,11 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                       </div>
                     </td>
                     <td class="ex-td ex-td--del">
-                      <MpButton class="ex-del-btn" @click="removeRow(row.id)">
-                        <MpIcon name="minus-circular" size="sm" />
-                      </MpButton>
+                      <div class="ex-cell-center">
+                        <MpButton class="ex-del-btn" @click="removeRow(row.id)">
+                          <MpIcon name="minus-circular" size="sm" />
+                        </MpButton>
+                      </div>
                     </td>
                   </template>
                 </tr>
@@ -1416,6 +1445,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .ex-col-account { width: 240px; }
 .ex-col-desc { width: auto; }
 .ex-col-tax { width: 140px; }
+.ex-col-dimensions { width: 220px; }
 .ex-col-amount { width: 280px; }
 .ex-col-del { width: 44px; }
 
@@ -1430,24 +1460,31 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   white-space: nowrap;
 }
 .ex-th--drag, .ex-th--del { padding: 0; }
+.ex-th--dimensions { display: table-cell; }
+.ex-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.ex-th-dim-bulk { float: right; font-weight: var(--mp-font-weights-regular); text-transform: none; color: var(--mp-text-link); cursor: pointer; }
 
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
 .ex-tr--dragging { opacity: 0.4; }
 .ex-tr--dragover > .ex-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
-.ex-td--drag { padding: 0; text-align: center; vertical-align: middle; color: var(--mp-text-placeholder); cursor: grab; }
+.ex-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .ex-tr--dragging .ex-td--drag { cursor: grabbing; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']), .ex-td--input :deep([class*='datepicker']) { border-radius: 0; border-color: transparent; }
 .ex-td--input .ex-datepicker { width: 100%; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
+.ex-td--del { padding: 0; text-align: center; }
 .ex-td--border { border-right: 1px solid var(--mp-border-default); }
+/* The Dimensions column can make a row taller than the standard row height —
+   every other cell (drag handle, del button) must pin to the TOP of that
+   taller row instead of centering into the extra space. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 
 /* Line-item validation — same red convention as CreateReceiptPage's cr-td--prod-error/cr-td--qty-error. */
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
@@ -1459,10 +1496,11 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 /* Line items table: left-aligned container, right-side-only column dividers
    instead of row-separator borders. */
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
+.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default); }
 .ex-lineitems-table .ex-td--amount { padding: 0; }
+.ex-td--dimensions { padding: 0; height: auto; }
 
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+.ex-amount-cell { display: flex; align-items: stretch; height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);

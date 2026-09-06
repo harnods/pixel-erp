@@ -25,9 +25,15 @@ import {
 } from '~/data'
 import type { SalesInvoice } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import { applicableDimensions } from '~/data/dimensions'
+import { infoToast } from '~/utils/toasts'
 
 const router = useRouter()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('sales').length > 0)
 
 // Chart of accounts — no master-data module for these yet, so a small local
 // list stands in (same stopgap as NewExpensePage.vue's ACCOUNT_OPTIONS).
@@ -109,6 +115,8 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
@@ -150,6 +158,7 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    dimensions: {},
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -471,6 +480,7 @@ function onSave() {
           <MpFormControl id="f-tags" class="si-field">
             <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
         </div>
       </section>
@@ -498,6 +508,7 @@ function onSave() {
               <col class="si-col-price" />
               <col class="si-col-discount" />
               <col class="si-col-tax" />
+              <col v-if="showDimensionsColumn" class="si-col-dimensions" />
               <col class="si-col-amount" />
               <col class="si-col-del" />
             </colgroup>
@@ -511,6 +522,15 @@ function onSave() {
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
                 <th class="si-th">{{ t('Tax') }}</th>
+                <th v-if="showDimensionsColumn" class="si-th si-th--dimensions">
+                  <span class="si-th-dim-label">
+                    {{ t('Dimensions') }}
+                    <MpTooltip id="si-dim-tt" :label="t('Values may be restricted to specific users.')" placement="top" use-portal>
+                      <MpIcon name="security" size="sm" />
+                    </MpTooltip>
+                  </span>
+                  <a class="si-th-dim-bulk" @click="infoToast(`${t('Bulk')} — coming soon`)">{{ t('Bulk') }}</a>
+                </th>
                 <th class="si-th">{{ t('Amount') }}</th>
                 <th class="si-th si-th--del" />
               </tr>
@@ -523,7 +543,7 @@ function onSave() {
                 @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)"
                 @drop="onDrop($event, idx)" @dragend="onDragEnd"
               >
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
 
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.productError }">
                   <MpTooltip
@@ -604,6 +624,13 @@ function onSave() {
                   </MpSelect>
                 </td>
 
+                <td v-if="showDimensionsColumn" class="si-td si-td--border si-td--dimensions">
+                  <ErpLineDimensionsCell
+                    :model-value="item.dimensions" transaction-type="sales" :id="`si-dim-${item._key}`"
+                    @update:model-value="(v) => item.dimensions = v"
+                  />
+                </td>
+
                 <!-- Amount is derived (qty × price − discount), so it reads as a
                      value with the same prefix chrome rather than an input. -->
                 <td class="si-td si-td--border si-td--affix">
@@ -614,15 +641,17 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--del">
-                  <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </MpButton>
+                  <div class="si-cell-center">
+                    <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </div>
                 </td>
               </tr>
 
               <!-- Trailing "Select product" row — picking here appends a new line -->
               <tr class="si-tr">
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
@@ -1033,6 +1062,7 @@ function onSave() {
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
 .si-col-tax      { width: 128px; }
+.si-col-dimensions { width: 220px; }
 .si-col-amount   { width: 164px; }
 .si-col-del      { width: 52px; }
 
@@ -1047,6 +1077,11 @@ function onSave() {
   white-space: nowrap;
 }
 .si-th--drag, .si-th--del { padding: 0; }
+.si-th--dimensions { display: table-cell; }
+.si-th--dimensions > .si-th-dim-label,
+.si-th--dimensions > .si-th-dim-bulk { display: inline-flex; align-items: center; }
+.si-th-dim-label { gap: var(--mp-spacing-1); }
+.si-th-dim-bulk { float: right; font-weight: var(--mp-font-weights-regular); text-transform: none; color: var(--mp-text-link); cursor: pointer; }
 
 /* Rows carry BOTH a bottom border (row separator) and right borders (column
    dividers) — the Figma's Row has border-b and each cell border-r. */
@@ -1056,7 +1091,7 @@ function onSave() {
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .si-td--border { border-right: 1px solid var(--mp-border-default); }
 .si-tr--dragging { opacity: 0.4; }
@@ -1064,6 +1099,11 @@ function onSave() {
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
+.si-td--dimensions { padding: 0; }
+/* The Dimensions column can make a row taller than the standard 52px — every
+   other cell (drag handle, inputs, affix boxes) must pin to the TOP of that
+   taller row instead of stretching or centering into the extra space. */
+.si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-13, 52px); }
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
@@ -1092,7 +1132,7 @@ function onSave() {
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
 .si-td--affix { padding: 0; }
-.si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-13, 52px); }
+.si-affix-cell { display: flex; align-items: stretch; height: var(--mp-sizes-13, 52px); }
 .si-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);

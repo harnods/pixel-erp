@@ -98,6 +98,8 @@ export interface BillLineItem {
   description: string
   tax: string
   amount: number
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions?: Record<string, string>
 }
 
 /** Recorded when a bill is created already marked "I have paid this bill" —
@@ -192,7 +194,7 @@ export interface SalesOrderItem {
 }
 
 /** A sales invoice line item, hydrated (joined against the product master) for display. */
-export type SILineItem = SalesOrderItem & { taxLabel: string }
+export type SILineItem = SalesOrderItem & { taxLabel: string; dimensions?: Record<string, string> }
 
 export interface SalesOrder {
   id: string

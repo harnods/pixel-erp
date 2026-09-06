@@ -21,6 +21,8 @@ import {
 } from '~/data/taxDocuments'
 import { generateEFakturPdf } from '~/utils/eFakturPdf'
 import type jsPDF from 'jspdf'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -36,6 +38,12 @@ const hasApproval = true
 
 const router = useRouter()
 const invoice = computed(() => getSalesInvoiceDetail(props.orderId))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('sales').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([name, value]) => ({ name, value }))
+}
 
 const activityOpen = ref(false)
 const taxDocDrawerOpen = ref(false)
@@ -372,6 +380,7 @@ function receivePayment() { router.push('/sales-invoices') }
               <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
               <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
               <th class="detail-th">{{ t('Tax') }}</th>
+              <th v-if="showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
               <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
@@ -391,6 +400,9 @@ function receivePayment() { router.push('/sales-invoices') }
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
               <td class="detail-td">{{ it.taxLabel }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(it.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>

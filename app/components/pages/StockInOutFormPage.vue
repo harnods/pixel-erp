@@ -3,7 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpInputTag, MpDatePicker,
+  MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpInputTag, MpDatePicker, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css, type DataInterface,
 } from '@mekari/pixel3'
@@ -19,11 +19,16 @@ import { addAdjustment, accountOptions, IN_OUT_CATEGORIES, stockAdjustments } fr
 import { addWmsAdjustmentSafe } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const router = useRouter()
 const route = useRoute()
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
 
 function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -95,13 +100,15 @@ interface ProductRow {
   locationRows: LocationRow[]
   avgMode: 'auto' | 'custom'
   avgCostInput: string
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
 }
 
 const rows = ref<ProductRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
 
 function makeProductRow(sku: string): ProductRow {
-  return { sku, locationRows: [], avgMode: 'auto', avgCostInput: '' }
+  return { sku, locationRows: [], avgMode: 'auto', avgCostInput: '', dimensions: {} }
 }
 
 function applyPicker(skus: string[]) {
@@ -295,6 +302,7 @@ async function handleSave() {
       if (isBatchTrackedSku(r.sku)) return sum + locBatchTotal(loc)
       return sum + parseDelta(loc.delta)
     }, 0),
+    ...(Object.keys(r.dimensions).length ? { dimensions: r.dimensions } : {}),
   }))
   const input = {
     kind: 'in-out' as const,
@@ -385,6 +393,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl v-if="!isWms" id="scf-tags" class="scf-f-tags">
             <MpFormLabel>Tags</MpFormLabel>
             <MpInputTag id="scf-tags-input" placeholder="Select tag" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="scf-dim-upsell" />
           </MpFormControl>
 
           <MpFormControl id="scf-category" class="scf-f-category" is-required :is-invalid="categoryError">
@@ -470,6 +479,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <button class="sio-remove-prod" type="button" aria-label="Remove product" @click="removeRow(row.sku)">
                   <MpIcon name="minus-circular" size="sm" />
                 </button>
+              </div>
+
+              <!-- Dimensions — one per product line (not per location); ERP-only,
+                   same gating as the header-level Tags field above. -->
+              <div v-if="!isWms && showDimensionsColumn" class="sio-product-dimensions">
+                <span class="sio-product-dimensions-label">
+                  Dimensions
+                  <MpTooltip id="sio-dim-tt" label="Values may be restricted to specific users." placement="top" use-portal>
+                    <MpIcon name="security" size="sm" />
+                  </MpTooltip>
+                </span>
+                <ErpLineDimensionsCell
+                  :model-value="row.dimensions" transaction-type="stock-adjustment" :id="`sio-dim-${row.sku}`"
+                  @update:model-value="(v) => row.dimensions = v"
+                />
               </div>
 
               <!-- Location sub-table: all products (batch, SN, regular) -->
@@ -738,6 +762,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .sio-product-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sio-product-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sio-product-id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+.sio-product-dimensions { display: flex; align-items: flex-start; gap: var(--mp-spacing-4); padding: 0 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); }
+.sio-product-dimensions-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); flex: 0 0 140px; padding: var(--mp-spacing-2) 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default); }
+.sio-product-dimensions :deep(.eldc) { flex: 1 0 0; min-width: 0; }
 
 .sio-product-avg { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
 .sio-avg-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; line-height: var(--mp-line-heights-sm); }

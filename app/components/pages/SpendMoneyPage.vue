@@ -9,6 +9,9 @@ import {
 import { bills } from '~/data/bills'
 import type { Bill } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 // orderId = the unpaid bill the "Add payment" action was launched from — this
 // page always exists in the context of settling that bill (Payee is derived
@@ -65,6 +68,12 @@ function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = fa
 // due — the full amount this payment is expected to settle. Any other unpaid
 // bills for the same payee are listed too, amount left blank (optional to pay
 // down in the same transaction). ──
+// Spend money posts against the Expenses module, so it takes the same
+// line-level Dimensions column as the other transaction forms — shown the
+// moment a dimension in Settings > Dimensions covers "Expenses".
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('expenses').length > 0)
+
 interface PaymentRow {
   id: number
   billId: string
@@ -74,10 +83,12 @@ interface PaymentRow {
   total: number
   amount: string
   removable: boolean
+  /** dimension id → chosen value, for the line-level Dimensions column. */
+  dimensions: Record<string, string>
 }
 let rowSeq = 0
 function makeRow(b: Bill, amount: string, removable: boolean): PaymentRow {
-  return { id: rowSeq++, billId: b.id, billLabel: billLabel(b), description: '', balanceDue: b.balanceDue, total: b.total, amount, removable }
+  return { id: rowSeq++, billId: b.id, billLabel: billLabel(b), description: '', balanceDue: b.balanceDue, total: b.total, amount, removable, dimensions: {} }
 }
 function buildInitialRows(): PaymentRow[] {
   const b = sourceBill.value
@@ -226,6 +237,7 @@ function handleSave() {
           <MpFormControl id="sm-tags">
             <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="sm-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="sm-dim-upsell" />
           </MpFormControl>
         </div>
 
@@ -242,6 +254,7 @@ function handleSave() {
               <colgroup>
                 <col class="sm-col-expense" />
                 <col class="ex-col-desc" />
+                <col v-if="showDimensionsColumn" class="sm-col-dimensions" />
                 <col class="sm-col-num" />
                 <col class="sm-col-num" />
                 <col class="sm-col-num" />
@@ -251,6 +264,7 @@ function handleSave() {
                 <tr>
                   <th class="ex-th">{{ t('Expense') }}</th>
                   <th class="ex-th">{{ t('Description') }}</th>
+                  <th v-if="showDimensionsColumn" class="ex-th">{{ t('Dimensions') }}</th>
                   <th class="ex-th ex-th--num">{{ t('Balance due') }}</th>
                   <th class="ex-th ex-th--num">{{ t('Total') }}</th>
                   <th class="ex-th ex-th--num">{{ t('Amount') }}</th>
@@ -266,6 +280,13 @@ function handleSave() {
                   <td class="ex-td ex-td--input ex-td--border">
                     <MpInput :id="`sm-desc-${row.id}`" v-model="row.description" is-full-width />
                   </td>
+                  <td v-if="showDimensionsColumn" class="ex-td ex-td--border sm-td--dimensions">
+                    <ErpLineDimensionsCell
+                      :id="`sm-dim-${row.id}`"
+                      v-model="row.dimensions"
+                      transaction-type="expenses"
+                    />
+                  </td>
                   <td class="ex-td ex-td--border ex-td--readonly">{{ formatIDR(row.balanceDue) }}</td>
                   <td class="ex-td ex-td--border ex-td--readonly">{{ formatIDR(row.total) }}</td>
                   <td class="ex-td ex-td--input ex-td--border ex-td--amount">
@@ -275,9 +296,11 @@ function handleSave() {
                     </div>
                   </td>
                   <td class="ex-td ex-td--del">
-                    <MpButton class="ex-del-btn" :disabled="!row.removable" @click="removeRow(row.id)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </MpButton>
+                    <div class="ex-cell-center">
+                      <MpButton class="ex-del-btn" :disabled="!row.removable" @click="removeRow(row.id)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </MpButton>
+                    </div>
                   </td>
                 </tr>
                 <tr class="ex-tr">
@@ -289,7 +312,7 @@ function handleSave() {
                       @update:model-value="onAddExpenseRow"
                     />
                   </td>
-                  <td class="ex-td" colspan="5" />
+                  <td class="ex-td" :colspan="showDimensionsColumn ? 6 : 5" />
                 </tr>
               </tbody>
             </table>
@@ -454,6 +477,11 @@ function handleSave() {
 .sm-col-expense { width: 320px; }
 .sm-col-num { width: 180px; }
 .sm-col-del { width: 52px; }
+/* Dimensions column — one mini combobox per applicable dimension, stacked, so
+   the cell needs vertical room and can't stay on the 52px row height. */
+.sm-col-dimensions { width: 240px; }
+.sm-td--dimensions { padding: var(--mp-spacing-2) var(--mp-spacing-2); }
+.ex-lineitems-table .sm-td--dimensions { height: auto; }
 
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
@@ -471,14 +499,17 @@ function handleSave() {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
+.ex-td--del { padding: 0; text-align: center; }
 .ex-td--border { border-right: 1px solid var(--mp-border-default); }
+/* The Dimensions column can make a row taller than the standard row height —
+   every other cell (del button) must pin to the TOP of that taller row. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-13, 52px); }
 .ex-td--readonly { text-align: right; background: var(--mp-background-neutral-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Expense cell reads as a (disabled) MpSelect — same chevron affordance as the
@@ -487,13 +518,13 @@ function handleSave() {
 .sm-expense-chevron { flex-shrink: 0; color: var(--mp-text-secondary); }
 
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: 52px; vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
+.ex-lineitems-table .ex-td { height: 52px; border-bottom: 1px solid var(--mp-border-default); }
 .ex-lineitems-table .ex-td--amount { padding: 0; }
 
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: 52px; }
+.ex-amount-cell { display: flex; align-items: stretch; height: 52px; }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; justify-content: center;
-  padding: var(--mp-spacing-4, 16px) var(--mp-spacing-2) 0;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;

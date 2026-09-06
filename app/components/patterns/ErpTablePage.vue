@@ -111,6 +111,12 @@ const props = withDefaults(defineProps<{
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
   stickyActions?: boolean
+  /** Keep the actions kebab top-aligned on tall (multi-line) rows instead of the
+   *  default vertical-centering — use when a column can wrap to many lines (e.g.
+   *  a long tag list), where a centered kebab drifts far from the row's first
+   *  line. Off by default (see DimensionsIndexPage.vue for the one table that
+   *  opts in). */
+  actionsAlignTop?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -129,6 +135,7 @@ const props = withDefaults(defineProps<{
   filterEmptyLabel: undefined,
   lastColumnFlexible: false,
   stickyActions: true,
+  actionsAlignTop: false,
 })
 
 const emit = defineEmits<{
@@ -473,7 +480,7 @@ const bulkCountLabel = computed(() => {
     <div
       ref="tableWrapperEl"
       class="erp-table-wrapper"
-      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
       :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
@@ -1118,6 +1125,11 @@ const bulkCountLabel = computed(() => {
    of a tall row, so it stays vertically centred regardless of row height. */
 .erp-tr--align-top .erp-td--actions {
   vertical-align: middle;
+}
+/* Opt-in override (`actionsAlignTop`) — for tables where a column can wrap to
+   many lines, centering drifts the kebab far from the row's first line. */
+.actions-align-top .erp-tr--align-top .erp-td--actions {
+  vertical-align: top;
 }
 
 /* Right-aligned cells — flip padding */

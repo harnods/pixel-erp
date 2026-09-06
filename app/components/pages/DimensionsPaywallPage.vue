@@ -29,14 +29,16 @@
       responsive at the widths this app's stage actually renders at.
 
   OPEN ITEMS for product/design follow-up:
-    - Wire "Start using Dimensions" / "Activate Dimensions" to the real
-      activation flow once it exists.
-    - Build the post-activation Dimensions management page (classification
-      types, values, mandatory toggle) — out of scope for this page.
+    - Build the post-activation Dimensions management page's create/edit form
+      (classification types, values, mandatory toggle) — out of scope; the
+      "+ New dimension" button on the management page (DimensionsIndexPage.vue)
+      currently shows a "coming soon" toast.
 -->
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { MpText, MpIcon, css } from '@mekari/pixel3'
+
+const emit = defineEmits<{ activate: [] }>()
 
 const { t } = useLocale()
 
@@ -193,7 +195,7 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
           <MpText size="body" color="text.secondary">{{ COPY.heroBody }}</MpText>
         </div>
         <div :class="css({ display: 'flex', alignItems: 'center', gap: '4' })">
-          <button class="btn-enterprise btn-enterprise--primary">{{ COPY.primaryCta }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="emit('activate')">{{ COPY.primaryCta }}</button>
           <button class="btn-enterprise btn-enterprise--ghost">{{ COPY.learnMore }}</button>
         </div>
       </div>
@@ -248,7 +250,7 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
       <div :class="ctaSection">
         <p :class="ctaQuestion">{{ COPY.ctaQuestion }}</p>
         <div>
-          <button class="btn-enterprise btn-enterprise--secondary">{{ COPY.ctaButton }}</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="emit('activate')">{{ COPY.ctaButton }}</button>
         </div>
       </div>
 

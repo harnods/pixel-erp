@@ -43,6 +43,8 @@ import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const { requestDimensionCreate } = useDimensionsFormDrawer()
 const route = useRoute()
 const router = useRouter()
 
@@ -116,7 +118,10 @@ const pageRegistry: Record<string, Component> = {
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
-  'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPaywallPage.vue')),
+  'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPage.vue')),
+  // Reports → Financials index (report cards). The Multidimensional report itself
+  // resolves via detailMatch (/financial-report/multidimensional).
+  'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   // Reports → Sales index (flush report-card grid, same format as WMS).
@@ -343,6 +348,9 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
+const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
+const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
+const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -430,6 +438,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /sales-report/credit-memo → Credit Memo report (Reports → Sales → View report).
   if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
     return { component: CreditMemoReportPage, id: segs[1]! }
+  }
+  // /financial-report/:slug → the built Financials reports (Reports → Financials
+  // → View report). Only these slugs match; anything else falls through to the
+  // Financials reports index.
+  if (segs.length >= 2 && segs[0] === 'financial-report') {
+    if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
+    if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
+    if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
@@ -1543,6 +1559,14 @@ function startResize(e: MouseEvent) {
             {{ t('New approval workflow') }}
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Dimensions' && dimensionsActivated" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="requestDimensionCreate()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New dimension') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1873,7 +1897,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>

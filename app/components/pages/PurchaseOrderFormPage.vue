@@ -5,7 +5,7 @@ import {
   MpInputGroup, MpInputLeftAddon,
   MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon,
+  MpIcon, MpTooltip,
   css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -16,6 +16,10 @@ import type { POAttachment } from '~/data/purchaseOrderDetails'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import { applicableDimensions } from '~/data/dimensions'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
@@ -28,6 +32,9 @@ const openPurchaseOrder = inject<(id: string) => void>('openPurchaseOrder')
 const router = useRouter()
 
 const source = computed(() => props.duplicateOrderId ? getPurchaseOrderDetail(props.duplicateOrderId) : null)
+
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
 function isoToDMY(iso: string) {
@@ -85,6 +92,8 @@ interface POLine {
   requestedQty?: number; availableQty?: number     // only for request-sourced lines
   qty: number                                       // qty to order
   unit: string; unitCost: number; discountPct: number; taxLabel: string
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
 }
 interface POGroup { prId: string; prNumber: number; collapsed: boolean; lines: POLine[] }
 
@@ -94,6 +103,7 @@ function lineFromPR(l: PurchaseRequestLine): POLine {
     _key: ++_seq, product: l.product, sku: l.sku, description: l.description,
     requestedQty: l.requestedQty, availableQty: l.availableQty,
     qty: l.requestedQty, unit: l.unit, unitCost: l.unitCost, discountPct: 0, taxLabel: l.taxLabel,
+    dimensions: {},
   }
 }
 function groupFromPR(id: string): POGroup | null {
@@ -109,6 +119,7 @@ const fromPr = computed(() => groups.value.length > 0)
 const blankItems = ref<POLine[]>((source.value?.lineItems ?? []).map(it => ({
   _key: ++_seq, product: it.product, sku: it.sku, description: it.description,
   qty: it.qty, unit: it.unit, unitCost: it.unitPrice, discountPct: it.discountPct, taxLabel: it.taxLabel,
+  dimensions: {},
 })))
 
 // Every editable line across the current mode (drives totals).
@@ -137,6 +148,7 @@ function onNewProduct() {
   blankItems.value.push({
     _key: ++_seq, product: p.name, sku: p.code, description: '',
     qty: 1, unit: p.unit, unitCost: p.price, discountPct: 0, taxLabel: 'PPN 11%',
+    dimensions: {},
   })
   newProduct.value = ''
 }
@@ -409,6 +421,7 @@ function onSendToFulfillment() {
             <MpFormControl id="f-tags" class="po-field">
               <MpFormLabel>Tags</MpFormLabel>
               <MpInputTag id="f-tags-inp" :data="tagsList" placeholder="Select tags" @change="onTagsChange" />
+              <ErpDimensionTagUpsell id="po-dim-upsell" />
             </MpFormControl>
           </div>
         </section>
@@ -436,6 +449,7 @@ function onSendToFulfillment() {
                 <col class="pit-col-cost" />
                 <col class="pit-col-num" />
                 <col class="pit-col-tax" />
+                <col v-if="showDimensionsColumn" class="pit-col-dimensions" />
                 <col class="pit-col-amount" />
               </colgroup>
               <thead>
@@ -449,13 +463,22 @@ function onSendToFulfillment() {
                   <th class="pit-th pit-th--num">UNIT COST</th>
                   <th class="pit-th pit-th--num">DISCOUNT</th>
                   <th class="pit-th">TAX</th>
+                  <th v-if="showDimensionsColumn" class="pit-th pit-th--dimensions">
+                    <span class="pit-th-dim-label">
+                      DIMENSIONS
+                      <MpTooltip id="po-dim-tt" label="Values may be restricted to specific users." placement="top" use-portal>
+                        <MpIcon name="security" size="sm" />
+                      </MpTooltip>
+                    </span>
+                    <a class="pit-th-dim-bulk" @click="infoToast('Bulk — coming soon')">Bulk</a>
+                  </th>
                   <th class="pit-th pit-th--num">AMOUNT</th>
                 </tr>
               </thead>
               <tbody v-for="g in groups" :key="g.prId" class="pit-group-body">
                 <!-- Group header (accordion toggle + remove) -->
                 <tr class="pit-group-row">
-                  <td class="pit-group-cell" colspan="10">
+                  <td class="pit-group-cell" :colspan="showDimensionsColumn ? 11 : 10">
                     <div class="pit-group-inner">
                       <button type="button" class="pit-group-toggle" @click="toggleGroup(g)">
                         <MpIcon name="caret-down" size="sm" class="pit-group-caret" :class="{ 'pit-group-caret--collapsed': g.collapsed }" />
@@ -495,13 +518,19 @@ function onSendToFulfillment() {
                     <td class="pit-td pit-td--input pit-td--border">
                       <MpAutocomplete :id="`po-tax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
                     </td>
+                    <td v-if="showDimensionsColumn" class="pit-td pit-td--border pit-td--dimensions">
+                      <ErpLineDimensionsCell
+                        :model-value="line.dimensions" transaction-type="purchases" :id="`po-dim-${line._key}`"
+                        @update:model-value="(v) => line.dimensions = v"
+                      />
+                    </td>
                     <td class="pit-td pit-td--num pit-td--ro">{{ fmt(lineAmount(line)) }}</td>
                   </tr>
                 </template>
               </tbody>
               <tbody>
                 <tr class="pit-add-row">
-                  <td colspan="10">
+                  <td :colspan="showDimensionsColumn ? 11 : 10">
                     <button type="button" class="pit-add-btn" @click="addPrOpen = true">
                       <MpIcon name="add" size="sm" />
                       Add purchase request
@@ -523,6 +552,7 @@ function onSendToFulfillment() {
                 <col class="pit-col-cost" />
                 <col class="pit-col-num" />
                 <col class="pit-col-tax" />
+                <col v-if="showDimensionsColumn" class="pit-col-dimensions" />
                 <col class="pit-col-amount" />
                 <col class="pit-col-del" />
               </colgroup>
@@ -535,6 +565,15 @@ function onSendToFulfillment() {
                   <th class="pit-th pit-th--num">UNIT COST</th>
                   <th class="pit-th pit-th--num">DISCOUNT</th>
                   <th class="pit-th">TAX</th>
+                  <th v-if="showDimensionsColumn" class="pit-th pit-th--dimensions">
+                    <span class="pit-th-dim-label">
+                      DIMENSIONS
+                      <MpTooltip id="po-fdim-tt" label="Values may be restricted to specific users." placement="top" use-portal>
+                        <MpIcon name="security" size="sm" />
+                      </MpTooltip>
+                    </span>
+                    <a class="pit-th-dim-bulk" @click="infoToast('Bulk — coming soon')">Bulk</a>
+                  </th>
                   <th class="pit-th pit-th--num">AMOUNT</th>
                   <th class="pit-th pit-th--del" />
                 </tr>
@@ -568,11 +607,19 @@ function onSendToFulfillment() {
                   <td class="pit-td pit-td--input pit-td--border">
                     <MpAutocomplete :id="`po-btax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
                   </td>
+                  <td v-if="showDimensionsColumn" class="pit-td pit-td--border pit-td--dimensions">
+                    <ErpLineDimensionsCell
+                      :model-value="line.dimensions" transaction-type="purchases" :id="`po-bdim-${line._key}`"
+                      @update:model-value="(v) => line.dimensions = v"
+                    />
+                  </td>
                   <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ fmt(lineAmount(line)) }}</td>
                   <td class="pit-td pit-td--del">
-                    <MpButton class="pit-del-btn" :aria-label="`Remove ${line.product}`" @click="removeBlankItem(line._key)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </MpButton>
+                    <div class="pit-cell-center">
+                      <MpButton class="pit-del-btn" :aria-label="`Remove ${line.product}`" @click="removeBlankItem(line._key)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </MpButton>
+                    </div>
                   </td>
                 </tr>
                 <!-- Trailing empty row — picking a product appends a new line -->
@@ -586,6 +633,7 @@ function onSendToFulfillment() {
                   <td class="pit-td pit-td--num pit-td--border" />
                   <td class="pit-td pit-td--num pit-td--border" />
                   <td class="pit-td pit-td--border" />
+                  <td v-if="showDimensionsColumn" class="pit-td pit-td--border" />
                   <td class="pit-td pit-td--num pit-td--border" />
                   <td class="pit-td pit-td--del" />
                 </tr>
@@ -897,6 +945,7 @@ function onSendToFulfillment() {
 .pit-col-unit { width: 104px; }
 .pit-col-cost { width: 150px; }
 .pit-col-tax { width: 120px; }
+.pit-col-dimensions { width: 220px; }
 .pit-col-amount { width: 150px; }
 .pit-col-del { width: 44px; }
 
@@ -912,6 +961,9 @@ function onSendToFulfillment() {
 }
 .pit-th--num { text-align: right; }
 .pit-th--del { padding: 0; }
+.pit-th--dimensions { display: table-cell; }
+.pit-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.pit-th-dim-bulk { float: right; font-weight: var(--mp-font-weights-regular); text-transform: none; color: var(--mp-text-link); cursor: pointer; }
 
 /* Body cells — 40px baseline; editable cells own the focus ring (child borderless) */
 .pit-td {
@@ -919,7 +971,7 @@ function onSendToFulfillment() {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .pit-td--border { border-right: 1px solid var(--mp-border-default); }
 .pit-td--num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -927,13 +979,14 @@ function onSendToFulfillment() {
 .pit-td--ro { background: var(--mp-background-neutral-subtle); }
 .pit-td--clip { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Editable cell */
-.pit-td--input { padding: 0; vertical-align: middle; }
+.pit-td--input { padding: 0; }
 .pit-td--input :deep([class*='input']),
 .pit-td--input :deep([class*='autocomplete']) {
   border-radius: 0; border-color: transparent; background: transparent;
   box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: strip inner control chrome so the cell owns the ring */
 }
 .pit-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pit-td--dimensions { padding: 0; }
 .pit-num-input :deep(input) { text-align: right; }
 
 /* Affix cell (Rp prefix / % suffix) fills the 40px cell height */
@@ -945,8 +998,10 @@ function onSendToFulfillment() {
 }
 .pit-affix-cell .pit-num-input { flex: 1; min-width: 0; }
 
-/* Delete button */
-.pit-td--del { padding: 0; text-align: center; vertical-align: middle; }
+/* Delete button — the Dimensions column can make a row taller than the
+   standard 40px; pin the button to the TOP of that taller row. */
+.pit-td--del { padding: 0; text-align: center; }
+.pit-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 .pit-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;

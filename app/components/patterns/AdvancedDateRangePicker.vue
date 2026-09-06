@@ -36,9 +36,15 @@ const props = withDefaults(defineProps<{
    *  month / Per year / Custom instead of the day-based presets. Used by the
    *  Credit Memo report and other period reports. */
   periodMode?: boolean
+  /** Names the label prefix after the granularity in play — "Month: December
+   *  2026", "Year: 2026" — instead of the fixed "Date range:". Opt-in, so every
+   *  existing caller keeps its current label. Used by the Multidimensional
+   *  report (Figma 4836-56598). */
+  labelPrefixMode?: boolean
 }>(), {
   direction: 'past',
   periodMode: false,
+  labelPrefixMode: false,
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
@@ -130,6 +136,20 @@ const labelText = computed(() => {
     case 'thisQuarter': return 'This quarter'
     case 'thisYear': return 'This year'
     default: return fieldText.value
+  }
+})
+
+// With `labelPrefixMode`, the prefix names the granularity the label describes
+// ("Month: December 2026") — anything else stays the generic "Date range:".
+const labelPrefix = computed(() => {
+  if (!props.labelPrefixMode) return 'Date range:'
+  switch (mode.value) {
+    case 'month': return 'Month:'
+    case 'year': return 'Year:'
+    case 'day': return 'Date:'
+    case 'week': return 'Week:'
+    case 'thisQuarter': return 'Quarter:'
+    default: return 'Date range:'
   }
 })
 
@@ -239,7 +259,7 @@ function onYearClick(y: number) {
 <template>
   <div class="adr-wrap" :class="{ 'adr-wrap--full': isFullWidth }">
     <label v-if="hasValue && !hideLabel" class="adr-label">
-      <span class="adr-label-prefix">Date range:</span>
+      <span class="adr-label-prefix">{{ labelPrefix }}</span>
       <span class="adr-label-value">{{ labelText }}</span>
     </label>
 
