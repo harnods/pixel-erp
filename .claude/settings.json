@@ -6,6 +6,12 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash .claude/scripts/pixel-fix-hook.sh",
+            "timeout": 20,
+            "statusMessage": "Pixel Fix auto-repairing..."
+          },
+          {
+            "type": "command",
             "command": "bash .claude/scripts/pixel-police.sh",
             "timeout": 15,
             "statusMessage": "Pixel Police checking..."

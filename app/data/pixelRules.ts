@@ -38,6 +38,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/checkbox-multiline-top': 'A multi-line checkbox label keeps the box top-aligned.',
   'rule/select-erpfilterselect': 'Dropdown = MpAutocomplete (omit is-searchable = select); its menu is a popover, never the native OS <select>.',
   'rule/select-active-neutral': 'Select/search focus = neutral slate ring, never green.',
+  'rule/form-focus-border-bold': 'Every form field focus/active = neutral border-bold (#8c9596) + 1px ring, never brand green; a hand-rolled input must set this itself.',
   'rule/select-multi-mpinputtag': 'Multi-select tag input uses MpInputTag — no hand-rolled chips.',
   'rule/filter-bar-search-export': 'Filter bar always carries Search + Export on the right.',
 

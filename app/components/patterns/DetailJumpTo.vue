@@ -84,7 +84,7 @@ function choose(id: string) { search.value = ''; emit('select', id) }
   cursor: pointer;
   padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
 }
-.djt-item:hover { background: var(--mp-background-neutral-subtle); }
+.djt-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .djt-item-primary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .djt-item-secondary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .djt-empty { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

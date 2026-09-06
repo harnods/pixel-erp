@@ -363,6 +363,13 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/select-active-neutral`** — *Do:* select/search active+focus state = **bold
   neutral border** (`#8c9596`) + **slate ring**. *Don't:* green/brand focus ring.
   **Why:** neutral focus is the ERP override of Pixel's default. **Lint:** review.
+- **`rule/form-focus-border-bold`** — *Do:* **every** form field's **focus / active**
+  state is a **neutral bold border** — `border-color: var(--mp-colors-border-bold, #8c9596)`
+  **+ a 1px neutral ring** (`box-shadow: 0 0 0 1px #8c9596`) — inputs, textareas, selects,
+  search, date pickers, input-tags, **and any hand-rolled input**. Pixel form controls get
+  this from `erp.css` automatically; a **hand-rolled** `<input>` must set it itself. *Don't:*
+  use the brand-emerald focus border/ring Pixel ships (or any coloured focus). **Why:** one
+  calm neutral focus across every form. **Source:** `erp.css` › Form-field focus. **Lint:** review.
 - **`rule/select-multi-mpinputtag`** — *Do:* multi-select tag input uses
   **`MpInputTag`**. *Don't:* hand-roll toggle chips. **Why:** one tag-input
   behavior. **Lint:** review.
@@ -620,6 +627,12 @@ ERP override wins.
   primary button (see `rule/btn-sm-secondary-only`). *Don't:* float a separate selection
   toolbar above/below the table, or use a primary button in the bar. **Why:** selection
   acts in place, over the same columns. **Lint:** review.
+- **`rule/table-checkbox-implies-bulk`** — *Do:* if a table has **row-selection
+  checkboxes**, it **always** has a **bulk-action bar** — the two ship together, build them
+  as a pair **unprompted** (there is no selectable table without a bulk action). *Don't:*
+  add checkboxes with nothing to do on selection, or wait to be asked for the bulk bar.
+  **Why:** a checkbox promises an action on the selection; pairs with
+  `rule/table-bulk-actions-bar`. **Lint:** review.
 - **`rule/table-sticky-first-col`** — *Do:* a wide table that scrolls horizontally pins
   its **first column** (`position: sticky; left: 0`; opaque bg matching the row) while
   the rest scroll; the sticky-right actions column stays flush (built into

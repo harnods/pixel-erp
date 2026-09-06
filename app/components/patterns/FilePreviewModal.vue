@@ -68,13 +68,13 @@ function download() {
 <style scoped>
 .fpm-frame {
   display: block; width: 100%; height: 72vh; min-height: 420px;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
 }
 .fpm-image-wrap {
   display: flex; align-items: center; justify-content: center;
   width: 100%; min-height: 320px; max-height: 72vh; padding: var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
 }
 .fpm-image { max-width: 100%; max-height: 68vh; object-fit: contain; border-radius: var(--mp-radii-sm); }
 .fpm-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
