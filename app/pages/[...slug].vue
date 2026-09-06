@@ -165,6 +165,7 @@ const pageRegistry: Record<string, Component> = {
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
+const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -348,6 +349,7 @@ const CRM_PAGES: Record<string, Component> = {
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
+const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -663,6 +665,17 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'sales-quotes') {
     return { component: SalesQuoteDetailsPage, id: segs[1] }
+  }
+  // /sales-deliveries/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries' && segs[1] === 'new') {
+    return { component: NewSalesDeliveryPage, id: 'new' }
+  }
+  // /sales-deliveries/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-deliveries' && segs[2] === 'edit') {
+    return { component: NewSalesDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries') {
+    return { component: SalesDeliveryDetailsPage, id: segs[1] }
   }
   // /sales-invoices/new → New sales invoice form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
@@ -1609,11 +1622,11 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/sales-deliveries/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New sales delivery
+            {{ t('New sales delivery') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
