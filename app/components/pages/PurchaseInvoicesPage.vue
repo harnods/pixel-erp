@@ -267,8 +267,8 @@ const exportColumns = computed(() => [
     </template>
 
     <!-- ── Cell: Number (matches Expenses/Sales: "{label} #{5-digit}") ── -->
-    <template #cell-number="{ value }">
-      <span class="cell-link cell-text cell-number" @click.stop>{{ t('Purchase Invoice') }} #{{ seqNo(value as string) }}</span>
+    <template #cell-number="{ row, value }">
+      <span class="cell-link cell-text cell-number" @click.stop="navigateTo(`/purchase-invoices/${(row as Row).id}`)">{{ t('Purchase Invoice') }} #{{ seqNo(value as string) }}</span>
     </template>
 
     <!-- ── Cell: Attachment icon ── -->
@@ -318,7 +318,7 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="navigateTo(`/purchase-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>

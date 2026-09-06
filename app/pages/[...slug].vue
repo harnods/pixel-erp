@@ -171,6 +171,9 @@ const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQu
 const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
 const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
 const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
+const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/PurchaseInvoiceDetailsPage.vue'))
+const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
+const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -681,6 +684,21 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'purchase-deliveries') {
     return { component: PurchaseDeliveryDetailsPage, id: segs[1] }
+  }
+  // /purchase-requests/{new,:id} (index-only key otherwise renders the list)
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] === 'new') {
+    return { component: NewPurchaseRequestPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-requests' && segs[2] === 'edit') {
+    return { component: NewPurchaseRequestPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
+    return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices'
+      && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
+    return { component: PurchaseInvoiceDetailsPage, id: segs[1] }
   }
   // /sales-quotes/new → create form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-quotes' && segs[1] === 'new') {

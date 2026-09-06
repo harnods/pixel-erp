@@ -68,6 +68,8 @@ export * from './purchaseQuotes'
 export * from './purchaseQuoteDetails'
 export * from './purchaseDeliveries'
 export * from './purchaseDeliveryDetails'
+export * from './purchaseInvoiceDetails'
+export * from './purchaseRequestDetails'
 export * from './salesInvoices'
 export * from './salesDeliveries'
 
