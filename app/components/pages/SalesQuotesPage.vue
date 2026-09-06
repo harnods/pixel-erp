@@ -11,6 +11,7 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import SalesQuoteFiltersDrawer, { emptySalesQuoteFilters, type SalesQuoteFiltersValue } from '~/components/patterns/SalesQuoteFiltersDrawer.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesQuotes } from '~/data'
@@ -188,7 +189,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             <MpPopoverListItem>{{ t('Convert to sales order') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -320,32 +320,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @apply="applyDrawerFilters"
   />
 
-  <!-- ── Prototype preview FAB (bottom-right): toggle data vs empty-state view ── -->
-  <div class="preview-fab-wrap">
-    <MpPopover id="preview-fab" placement="top-end" use-portal :is-keep-alive="false">
-      <MpPopoverTrigger>
-        <button class="preview-fab" :aria-label="t('Preview options')">
-          <MpIcon name="show" size="md" />
-        </button>
-      </MpPopoverTrigger>
-      <MpPopoverContent is-dark is-close-on-select :class="css({ minWidth: '220px' })">
-        <MpPopoverList>
-          <MpPopoverListItem
-            :class="css({ color: 'white', _hover: { background: 'transparent' } })"
-            @click="previewMode = 'data'"
-          >
-            {{ t('View table with data') }}
-          </MpPopoverListItem>
-          <MpPopoverListItem
-            :class="css({ color: 'white', _hover: { background: 'transparent' } })"
-            @click="previewMode = 'empty'"
-          >
-            {{ t('View empty state') }}
-          </MpPopoverListItem>
-        </MpPopoverList>
-      </MpPopoverContent>
-    </MpPopover>
-  </div>
+  <ScenarioFab v-model="previewMode" />
 </template>
 
 <style scoped>
@@ -377,29 +352,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   background: var(--mp-background-neutral-hovered);
   color: var(--mp-text-default);
 }
-
-/* ── Prototype preview FAB ──────────────────────────────────────────────── */
-.preview-fab-wrap {
-  position: fixed;
-  right: var(--mp-spacing-6);
-  bottom: var(--mp-spacing-6);
-  z-index: 1000;
-}
-.preview-fab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-12, 48px);
-  height: var(--mp-sizes-12, 48px);
-  border: none;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse);
-  color: var(--mp-text-inverse);
-  box-shadow: var(--mp-shadows-lg);
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-.preview-fab:hover { transform: scale(1.05); }
 
 /* ── Full empty state ───────────────────────────────────────────────────── */
 .empty-full {

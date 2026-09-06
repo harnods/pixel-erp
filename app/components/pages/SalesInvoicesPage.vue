@@ -14,6 +14,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceFiltersValue } from '~/components/patterns/SalesInvoiceFiltersDrawer.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
@@ -57,8 +58,13 @@ type Row = SalesInvoice & {
 
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
 
+// Prototype preview toggle (ScenarioFab, bottom-right): data vs empty-state view
+const previewMode = ref<'data' | 'empty'>('data')
+
 const rows = computed<Row[]>(() =>
-  salesInvoices.map(inv => {
+  previewMode.value === 'empty'
+    ? []
+    : salesInvoices.map(inv => {
     const overdueLabel = inv.status === 'overdue'
       ? (() => {
           const days = Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000)
@@ -307,7 +313,6 @@ function confirmBulkDelete() {
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -536,8 +541,14 @@ function confirmBulkDelete() {
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/sales-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="navigateTo(`/sales-invoices/${(row as Row).id}`)">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).balance > 0">{{ t('Add payment') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -597,6 +608,9 @@ function confirmBulkDelete() {
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
+  <ScenarioFab v-model="previewMode" />
 </template>
 
 <style scoped>

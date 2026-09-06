@@ -34,6 +34,7 @@ import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
+import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -1154,6 +1155,8 @@ const showNewWarehouseTransfer = computed(() =>
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
 function newSalesInvoice() { router.push('/sales-invoices/new') }
+// Sales-invoice Import ▸ dropdown → "Import from spreadsheet" opens the shared modal.
+const salesInvoiceImportOpen = ref(false)
 function newEmployee() { router.push('/employee-directory/new') }
 // Import dropdown: add new employees from a file, or bulk-update existing records.
 function importEmployees(mode: 'add' | 'update') {
@@ -1490,12 +1493,22 @@ function startResize(e: MouseEvent) {
           <MpButton class="page-actions-toggle" variant="primary" is-rounded right-icon="chevrons-down" @click.stop="titleActionsOpen = !titleActionsOpen">{{ t('Actions') }}</MpButton>
           <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
-            {{ t('Import') }}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <MpPopover id="si-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="salesInvoiceImportOpen = true">{{ t('Import from spreadsheet') }}</MpPopoverListItem>
+                <MpPopoverListItem>{{ t('Import from other applications') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2385,6 +2398,14 @@ function startResize(e: MouseEvent) {
     :description="uploadModalDesc"
     @close="uploadModalOpen = false"
     @upload="onUploadModalUpload"
+  />
+
+  <!-- Sales-invoice "Import from spreadsheet" (rule/import-modal) -->
+  <ImportSpreadsheetModal
+    :open="salesInvoiceImportOpen"
+    entity-label="sales invoices"
+    @close="salesInvoiceImportOpen = false"
+    @upload="salesInvoiceImportOpen = false"
   />
 </template>
 
