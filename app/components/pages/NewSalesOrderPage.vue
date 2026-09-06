@@ -909,7 +909,7 @@ function onSave() {
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
 .si-td--affix { padding: 0; }
 /* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
-.si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: #f1f3f5; }
+.si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
 .si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;

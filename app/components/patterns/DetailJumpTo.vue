@@ -10,7 +10,7 @@
  * (StockAdjustment, Bill, WarehouseTransfer, SalesOrder …).
  */
 import { ref, computed } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, MpIcon, css } from '@mekari/pixel3'
 
 export interface JumpItem { id: string; primary: string; secondary?: string }
 
@@ -38,23 +38,20 @@ function choose(id: string) { search.value = ''; emit('select', id) }
 <template>
   <MpPopover :id="id" use-portal :is-keep-alive="false" placement="bottom-start">
     <MpPopoverTrigger>
-      <button class="djt-chevron" type="button" :aria-label="ariaLabel">
-        <MpIcon name="chevrons-down" size="md" />
-      </button>
+      <MpButton class="djt-chevron" variant="ghost" left-icon="chevrons-down" :aria-label="ariaLabel" is-rounded />
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ width: '304px' })">
       <div class="djt">
         <div class="djt-search-wrap">
-          <input v-model="search" class="djt-search" type="text" :placeholder="placeholder" />
-          <button v-if="search" class="djt-clear" type="button" aria-label="Clear search" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <!-- sanctioned search-pill input (rule/filter-bar-search); MpInput can't sit borderless here -->
+          <input v-model="search" class="djt-search-input" type="text" :placeholder="placeholder" />
+          <MpButton v-if="search" class="djt-clear" variant="ghost" left-icon="close" aria-label="Clear search" is-rounded @click="search = ''" />
         </div>
-        <div class="djt-list">
-          <button v-for="it in results" :key="it.id" class="djt-item" type="button" @click="choose(it.id)">
+        <div class="djt-list" role="listbox">
+          <div v-for="it in results" :key="it.id" class="djt-item" role="option" tabindex="0" @click="choose(it.id)" @keydown.enter="choose(it.id)">
             <span class="djt-item-primary">{{ it.primary }}</span>
             <span v-if="it.secondary" class="djt-item-secondary">{{ it.secondary }}</span>
-          </button>
+          </div>
           <p v-if="!results.length" class="djt-empty">{{ emptyText }}</p>
         </div>
       </div>
@@ -63,35 +60,28 @@ function choose(id: string) { search.value = ''; emit('select', id) }
 </template>
 
 <style scoped>
-.djt-chevron {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.djt-chevron:hover { background: var(--mp-background-neutral-hovered); }
-
 .djt { display: flex; flex-direction: column; }
 .djt-search-wrap { padding: var(--mp-spacing-3); position: relative; }
-.djt-search {
+.djt-search-input {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) 34px var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); outline: none;
 }
-.djt-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
-.djt-search::placeholder { color: var(--mp-text-placeholder); }
+/* Focus/active = neutral border-bold + 1px ring (never brand green) — the global
+   ERP form-focus rule (erp.css). */
+.djt-search-input:focus {
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+}
+.djt-search-input::placeholder { color: var(--mp-text-placeholder); }
 .djt-clear {
-  position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer;
-  color: var(--mp-icon-default, var(--mp-text-secondary)); border-radius: var(--mp-radii-full, 999px);
+  position: absolute; right: var(--mp-spacing-4, 16px); top: 50%; transform: translateY(-50%);
 }
-.djt-clear:hover { background: var(--mp-background-neutral-hovered); }
 
 .djt-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; padding: 0 var(--mp-spacing-1) var(--mp-spacing-1); }
 .djt-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
-  background: none; border: none; cursor: pointer;
+  cursor: pointer;
   padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
 }
 .djt-item:hover { background: var(--mp-background-neutral-subtle); }
