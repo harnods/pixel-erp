@@ -64,6 +64,8 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | `size="md"` on a button | omit size (md is default) | `rule/btn-no-size-md` |
 | `size="sm"` on primary/danger/ghost | drop it (sm = secondary, bulk-bar only) | `rule/btn-sm-secondary-only` |
 | An icon on a danger button | text-only danger | `rule/btn-danger-no-icon` |
+| `left-icon` on any button that isn't `+ New <noun>` | text-only (icon only on create) | `rule/btn-icon-add-only` |
+| A leading icon on a menu item (incl. bulk actions) | text-only menu item | `rule/popover-no-icons` |
 | `left-icon` on a sm button | right-icon dropdown only | `rule/btn-sm-dropdown-only` |
 | `is-full-width` on a button | button hugs content | `rule/btn-no-full-width` |
 | Shipping only the populated success case | design every reachable state | `reachable-states.md` |
@@ -117,6 +119,14 @@ is the point: they *feel* normal, which is exactly why they slip through.
   over-weights it. **Lint:** pixel-police.
 - **`rule/btn-danger-no-icon`** — *Do:* keep danger buttons **text-only**. *Don't:*
   put `left-icon` or `right-icon` on `variant="danger"`. **Lint:** pixel-police.
+- **`rule/btn-icon-add-only`** — *Do:* a button is **text-only by default** — the
+  **only** button that carries a `left-icon` is a **create button** (`[add] New <noun>`,
+  `rule/copy-add-noun-only`). This holds for **every** variant — **primary, secondary,
+  ghost, textLink**. Any other icon (download, upload, filter, print, eye/show, …) is
+  added **only when explicitly requested**. *Don't:* decorate Download / Upload / Import /
+  Preview / Save / Export buttons with a leading icon. **Why:** icons on ordinary buttons
+  are visual noise; the `+ New` affordance is the one place an icon earns its place. **Lint:**
+  pixel-police (heuristic).
 - **`rule/btn-sm-dropdown-only`** — *Do:* a `size="sm"` button may carry **only a
   right-icon dropdown chevron**. *Don't:* give a small button a `left-icon`. **Lint:**
   pixel-police.
@@ -199,6 +209,13 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/btn-dropdown-min-width`** — *Do:* a dropdown-button / split-button popover
   menu has a **fixed `min-width` of 160px** — put `class="erp-dropdown-menu"` on its
   `MpPopoverContent`. **Why:** consistent menu width across the app. **Lint:** review.
+- **`rule/popover-no-icons`** — *Do:* `MpPopover` menu items (`MpPopoverListItem`) are
+  **text-only** — this includes the row `[…]` actions menu, the **bulk-action "Actions"
+  menu**, and dropdown-button menus. An icon on a menu item is added **only when
+  explicitly requested**. *Don't:* prefix menu items with a leading `MpIcon` by default.
+  (The one standing exception is the **column-sort menu**, whose asc/desc arrows are
+  functional direction indicators — leave those.) **Why:** menus read as clean text
+  lists; icons add noise and imply a status the label already carries. **Lint:** review.
 - **`rule/btn-primary-icon-white`** — *Do:* icons inside a primary button are
   always white. **Why:** contrast on brand fill. **Lint:** review.
 - **`rule/btn-no-disabled-validation`** — *Do:* keep action buttons **clickable**;
@@ -312,6 +329,19 @@ is the point: they *feel* normal, which is exactly why they slip through.
   file listed below as a **removable** row; drag-drop and click-to-browse both add files,
   duplicate names are ignored. *Don't:* build a bespoke `<input type="file">` or file
   list. **Why:** one dropzone everywhere. **Lint:** review.
+- **`rule/file-preview-modal`** — *Do:* previewing an **already-saved** file (attachment,
+  generated document, uploaded image) uses the shared **`FilePreviewModal.vue`** (`MpModal`
+  size `xl`) — a **PDF** renders in a full-width bordered **`<iframe>`** (72vh); an **image**
+  renders as a contained, centred **`<img>`** on a subtle-neutral surface. `kind` is
+  auto-detected from the filename extension. One component for every file type. *Don't:*
+  fork a separate PDF-viewer vs image-viewer modal, or stretch the image. (For a
+  **not-yet-saved** jsPDF doc confirmed with **Print**, that's `PdfPreviewModal`.)
+  **Why:** one consistent preview surface. **Source:** `FilePreviewModal.vue`. **Lint:** review.
+- **`rule/file-preview-download`** — *Do:* the preview footer is **ghost Close + primary
+  Download** (`left-icon="download"`), pinned right; Download saves the file under its
+  filename, Close/× dismisses. It's a preview, not an editor — no other actions. *Don't:*
+  add edit/print/share buttons or a second primary. **Why:** preview = look + take a copy.
+  **Lint:** review.
 - **`rule/checkbox-multiline-top`** — *Do:* when a checkbox label wraps to >1 line,
   align the box to the **top** (`align-items: flex-start`). **Why:** box tracks the
   first line, not the vertical center of a paragraph. **Lint:** review.
@@ -659,6 +689,20 @@ ERP override wins.
   **`ContentList`**. **Why:** one key/value renderer. **Lint:** review.
 - **`rule/detail-breadcrumb-no-gap`** — *Do:* the breadcrumb sits **directly above**
   the title, `gap: 0`. **Lint:** review.
+- **`rule/detail-jump-to`** — *Do:* a detail page for a record that has **siblings**
+  (transactions, orders, adjustments …) carries a **"Jump to…" switcher** — the shared
+  **`DetailJumpTo.vue`**, a **28px chevron** placed **immediately after the title + status
+  badge** that opens a searchable popover of sibling records; picking one emits `select`
+  and the page **routes** to it (`router.push(basePath/id)`). *Don't:* hand-roll the
+  `.detail-jump` markup inline, or make the user go back to the list to switch records.
+  **Why:** fast record-to-record navigation, identical everywhere. **Source:**
+  `DetailJumpTo.vue` (extracted from StockAdjustment/Bill/… detail pages). **Lint:** review.
+- **`rule/detail-jump-to-anatomy`** — *Do:* the popover is **304px** — a **search** field
+  (clear × once typed) that filters by the primary **or** secondary text, then the record
+  **list** (each row = primary line + optional secondary caption); no match shows an empty
+  line. Chevron/close are **`MpIcon`** (`chevrons-down`, `close`), never raw `<svg>`
+  (`rule/icon-pixel-library`). *Don't:* drop the search or the secondary caption. **Why:**
+  the switcher reads the same on every detail page. **Lint:** review.
 - **`rule/detail-activity-log-always`** — *Do:* **every** detail page carries the
   **Activity log** (`rule/activity-log-modal`) — build it unprompted, it's part of the
   page's reachable states, not an add-on. *Don't:* ship a detail page without it.

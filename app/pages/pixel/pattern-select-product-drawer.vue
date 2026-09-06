@@ -35,7 +35,7 @@ function onSave(skus: string[]) { selected.value = skus }
   :open=&quot;open&quot; :products=&quot;products&quot; :model-value=&quot;selected&quot;
   @update:open=&quot;open = $event&quot; @save=&quot;onSave&quot; />">
       <div class="spp-row">
-        <MpButton variant="secondary" is-rounded left-icon="add" @click="open = true">Select product</MpButton>
+        <MpButton variant="secondary" is-rounded @click="open = true">Select product</MpButton>
         <span class="spp-hint">{{ selected.length }} product(s) selected</span>
       </div>
     </DemoSection>

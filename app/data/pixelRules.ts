@@ -13,6 +13,8 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/btn-no-size-md': 'md is the default size — never write size="md".',
   'rule/btn-sm-secondary-only': 'size="sm" only in a table bulk-action bar, always variant=secondary (default an "Actions" dropdown) — never primary; no sm anywhere else.',
   'rule/btn-danger-no-icon': 'Danger buttons are text-only — no left/right icon.',
+  'rule/btn-icon-add-only': 'Buttons are text-only by default; the ONLY button with a left-icon is a create button (+ New <noun>). All variants (primary/secondary/ghost/textLink) — no download/upload/filter/print/show icon unless explicitly requested.',
+  'rule/popover-no-icons': 'MpPopover menu items are text-only (incl. row [...] and bulk-action menus) — no leading MpIcon unless explicitly requested; the column-sort asc/desc arrows are the one functional exception.',
   'rule/btn-sm-dropdown-only': 'A sm button may carry only a right-icon dropdown chevron.',
   'rule/btn-no-full-width': 'No manual full-width — buttons hug content (see responsive-footer).',
   'rule/btn-responsive-footer': 'Footer = MpButtonGroup.erp-action-footer, right-aligned; full-width stack on mobile.',
@@ -55,6 +57,8 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/approval-log-timeline': 'Built on Pixel MpTimeline — stages = MpTimelineAccordion, approvers = MpTimelineItem (status approved/need-approval); rail, marker colour+icon & alignment come from the component (never a hand-rolled rail/svg).',
   'rule/import-modal': 'File import = MpModal (md) + title/description + shared ErpDropzone + Cancel/Upload footer (shown only once a file is staged); uploads only. Template-based spreadsheet import is a stepped page, not this modal.',
   'rule/import-modal-dropzone': 'Import body is always ErpDropzone (dashed drop area + accepted types/max size + removable staged-file rows); never a bespoke file input.',
+  'rule/file-preview-modal': 'Preview a saved file = shared FilePreviewModal (MpModal xl); PDF → iframe, image → contained img; kind auto-detected. One component for all types (PdfPreviewModal is the jsPDF+Print variant).',
+  'rule/file-preview-download': 'Preview footer = ghost Close + primary Download (left-icon download); it is a preview, not an editor — no edit/print/share.',
 
   // Tables
   'rule/table-use-erptablepage': 'Tables render via ErpTablePage — never hand-rolled.',
@@ -81,6 +85,8 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/select-product-columns': 'Two columns — Available "Products" left, "Selected products (n)" right; each with own search + Add all/Remove all; click left row to add (+), right row to remove (−).',
   'rule/detail-contentlist': 'Detail-page key/value pairs use ContentList.',
   'rule/detail-breadcrumb-no-gap': 'Breadcrumb sits directly above the title (gap 0).',
+  'rule/detail-jump-to': 'Record with siblings gets a "Jump to…" switcher (shared DetailJumpTo, 28px chevron after title+badge) → searchable popover; select routes to that record.',
+  'rule/detail-jump-to-anatomy': 'Jump-to popover = 304px, search (filters primary/secondary) + record list (primary + secondary caption); chevron/close are MpIcon, never raw svg.',
   'rule/detail-activity-log-always': 'Every detail page carries the Activity log — build it unprompted (part of reachable states).',
   'rule/detail-approval-header': 'Approval record: header driven by useApprovalViewAs — always Approval log + Comment log icons; manager also gets a primary Approve.',
   'rule/detail-scenario-fab': 'Approval/multi-state detail page gets a bottom-right demo FAB (sliders) toggling As requestor / As manager / Approved / Awaiting approval.',

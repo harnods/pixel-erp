@@ -57,7 +57,7 @@ function download() {
       <MpModalFooter>
         <div class="fpm-footer">
           <MpButton variant="ghost" is-rounded @click="emit('close')">Close</MpButton>
-          <MpButton variant="primary" is-rounded left-icon="download" @click="download">Download</MpButton>
+          <MpButton variant="primary" is-rounded @click="download">Download</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

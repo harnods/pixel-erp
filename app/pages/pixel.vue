@@ -73,6 +73,9 @@ const sidebar = [
       { slug: 'pattern-all-filters-drawer', label: 'All filters drawer' },
       { slug: 'pattern-select-product-drawer', label: 'Select product drawer' },
       { slug: 'pattern-import-modal', label: 'Import modal' },
+      { slug: 'pattern-pdf-preview-modal', label: 'PDF preview modal' },
+      { slug: 'pattern-image-preview-modal', label: 'Image preview modal' },
+      { slug: 'pattern-jump-to', label: 'Jump to' },
     ],
   },
   {

@@ -345,6 +345,7 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -638,6 +639,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /delivery/:taskId → delivery (shipment) detail
   if (segs.length >= 2 && segs[0] === 'delivery') {
     return { component: DeliveryTaskDetailsPage, id: segs[1] }
+  }
+  // /sales-orders/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-orders' && segs[1] === 'new') {
+    return { component: NewSalesOrderPage, id: 'new' }
+  }
+  // /sales-orders/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-orders' && segs[2] === 'edit') {
+    return { component: NewSalesOrderPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }

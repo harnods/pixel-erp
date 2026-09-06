@@ -30,7 +30,7 @@ function onUpload(files: File[]) { lastUploaded.value = files.length }
     <DemoSection title="Open it"
       desc="A title + one-line description of what's being imported, then the dropzone. The footer (Cancel + Upload) is hidden until a file is staged — nothing to upload, nothing to confirm. Reuse ImportVendorInvoicesModal (generic: pass title / description / initialFiles); don't hand-roll a new import modal."
       :rules="['rule/import-modal']"
-      code="<MpButton variant=&quot;secondary&quot; is-rounded left-icon=&quot;upload&quot; @click=&quot;open = true&quot;>Import</MpButton>
+      code="<MpButton variant=&quot;secondary&quot; is-rounded @click=&quot;open = true&quot;>Import</MpButton>
 
 <ImportVendorInvoicesModal
   :open=&quot;open&quot;
@@ -38,7 +38,7 @@ function onUpload(files: File[]) { lastUploaded.value = files.length }
   description=&quot;Drop your files here…&quot;
   @close=&quot;open = false&quot; @upload=&quot;onUpload&quot; />">
       <div class="im-row">
-        <MpButton variant="secondary" is-rounded left-icon="upload" @click="open = true">Import</MpButton>
+        <MpButton variant="secondary" is-rounded @click="open = true">Import</MpButton>
         <span class="im-hint">{{ lastUploaded ? `${lastUploaded} file(s) uploaded` : 'Opens with 2 sample files staged' }}</span>
       </div>
     </DemoSection>
