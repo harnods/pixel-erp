@@ -35,28 +35,11 @@
       currently shows a "coming soon" toast.
 -->
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { MpText, MpIcon, css } from '@mekari/pixel3'
 
 const emit = defineEmits<{ activate: [] }>()
 
 const { t } = useLocale()
-
-// Same page-scoped hack as TaxPaywallPage/MekariPayPaywallPage: zero the
-// stage's top border while mounted so the hero can sit flush to the top.
-const rootEl = ref<HTMLElement | null>(null)
-let stageEl: HTMLElement | null = null
-let prevBorderTopWidth = ''
-onMounted(() => {
-  stageEl = rootEl.value?.closest('.stage') as HTMLElement | null
-  if (stageEl) {
-    prevBorderTopWidth = stageEl.style.borderTopWidth
-    stageEl.style.borderTopWidth = '0px'
-  }
-})
-onBeforeUnmount(() => {
-  if (stageEl) stageEl.style.borderTopWidth = prevBorderTopWidth
-})
 
 const COPY = {
   heroTitle: t('Elevate your business performance tracking with Dimensions'),
@@ -131,23 +114,32 @@ const COPY = {
   helpfulLabel: t('Was this helpful?'),
 }
 
-// Bleed against the stage's 24px side padding so the hero spans edge to edge.
-// The stage's top border is zeroed on mount (see above), so no negative top
-// margin is needed — the hero sits flush to the top.
-const root = css({ display: 'flex', flexDirection: 'column', gap: '5', marginInline: '-6' })
+// Sits inside the stage's own 24px padding (left/right/top/bottom) — no
+// bleed, matching Figma's Masthead card being fully inset within the Stage.
+const root = css({ display: 'flex', flexDirection: 'column', gap: '5' })
 
+// No padding on the card itself — the background image bleeds edge to edge.
+// Only the text column (heroCol) is padded, so it insets from the card edges
+// while the image stays flush.
 const hero = css({
   position: 'relative', overflow: 'hidden',
-  background: 'background.surface',
-  minHeight: '320px',
-  paddingInline: '10', paddingBlock: '8', gap: '8',
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  borderTopLeftRadius: 'xl', borderTopRightRadius: 'xl',
-  flexWrap: 'wrap',
+  background: 'background.neutral.subtle',
+  minHeight: '378px',
+  display: 'flex', alignItems: 'center',
+  borderRadius: 'xl',
 })
-const heroCol = css({ display: 'flex', flexDirection: 'column', gap: '6', maxWidth: '480px', flexShrink: 0 })
+// Image sits absolutely behind the text column (Figma: image z-1, text col z-2,
+// overlapping by a negative right margin) rather than as a flex sibling beside it.
+const heroCol = css({
+  position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '6',
+  maxWidth: '480px', paddingLeft: '10', paddingBlock: '8',
+})
+// Native asset resolution (685×378) so it fills the card's full 378px height
+// without upscaling blur — a small crop top/bottom from overflow:hidden is
+// intentional, matching the reference's larger, edge-bleeding illustration.
 const heroImg = css({
-  width: '440px', height: 'auto', flexShrink: 0, display: 'block',
+  position: 'absolute', top: '50%', right: '0', transform: 'translateY(-50%)',
+  width: '685px', height: 'auto', zIndex: 0, pointerEvents: 'none',
   '@media (max-width: 1024px)': { display: 'none' },
 })
 
@@ -186,7 +178,7 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
 </script>
 
 <template>
-  <div ref="rootEl" :class="root">
+  <div :class="root">
     <!-- ── Hero ─────────────────────────────────────────────────────────── -->
     <div :class="hero">
       <div :class="heroCol">
