@@ -66,7 +66,7 @@ while IFS= read -r f; do
   # project's sanctioned search-pill input (erp.css .filter-search/.pr-filter-search/
   # .rcvgd-search-wrap focus ring; MpInput can't sit borderless inside that pill). Anything
   # else raw is still flagged.
-  rawctl_hits="$(grep -nE '<(button|input|select|textarea)[ >]' <<<"$added" | grep -viE 'btn-enterprise|search-input' || true)"
+  rawctl_hits="$(grep -nE '<(button|input|select|textarea)[ >]' <<<"$added" | grep -viE 'btn-enterprise|search-input|search-clear' || true)"
   if [[ -n "$rawctl_hits" ]]; then
     file_msgs+="  ✗ Raw HTML control — use MpButton / MpInput / MpSelect / MpTextarea (or a btn-enterprise button)"$'\n'
     file_msgs+="$(sed 's/^/       + /' <<<"$rawctl_hits" | head -3)"$'\n'

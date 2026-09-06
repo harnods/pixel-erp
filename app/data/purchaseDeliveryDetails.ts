@@ -1,11 +1,11 @@
-import { salesDeliveries } from './salesDeliveries'
+import { purchaseDeliveries } from './purchaseDeliveries'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
-import type { SalesDelivery, SalesOrderItem } from './types'
+import type { PurchaseDelivery, SalesOrderItem } from './types'
 
 /**
- * Presentational detail for the Sales Delivery *details* page. A SalesDelivery in
- * salesDeliveries.ts is intentionally lightweight (no line items) — this file
+ * Presentational detail for the Purchase Delivery *details* page. A PurchaseDelivery in
+ * purchaseDeliveries.ts is intentionally lightweight (no line items) — this file
  * synthesises coherent line items + shipping chrome deterministically from the
  * delivery's id/index, so the index row and the detail view always agree on the
  * grand total: the synthesised items target the delivery's pre-tax value and the
@@ -15,18 +15,18 @@ import type { SalesDelivery, SalesOrderItem } from './types'
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
 
-export type SDLineItem = SalesOrderItem & { taxLabel: string }
+export type PDLineItem = SalesOrderItem & { taxLabel: string }
 
-export interface SDAttachment { name: string; sizeKB: number }
+export interface PDAttachment { name: string; sizeKB: number }
 
-export interface SDLinkedTxn {
+export interface PDLinkedTxn {
   date: string          // ISO
-  type: string          // "Sales Order" | "Sales Invoice"
+  type: string          // "Purchase Order" | "Purchase Invoice"
   number: string        // "#10118"
   status: string        // mapped via ErpStatusBadge
 }
 
-export interface SalesDeliveryDetail extends SalesDelivery {
+export interface PurchaseDeliveryDetail extends PurchaseDelivery {
   email: string[]
   billingAddress: string
   shipTo: string
@@ -35,14 +35,14 @@ export interface SalesDeliveryDetail extends SalesDelivery {
   driver: string
   referenceNo: string
   warehouse: string
-  lineItems: SDLineItem[]
+  lineItems: PDLineItem[]
   message: string
   memo: string
-  attachments: SDAttachment[]
+  attachments: PDAttachment[]
   totals: SalesOrderTotals
   lastUpdatedBy: string
   lastUpdatedAt: string
-  linkedTransactions: SDLinkedTxn[]
+  linkedTransactions: PDLinkedTxn[]
   banner: { message: string; linkLabel: string } | null
 }
 
@@ -66,7 +66,7 @@ const UPDATERS = ['Rizal Candra', 'Dewi Anggraini', 'Bram Sitohang', 'Nadia Pusp
 function pick<T>(arr: T[], i: number): T { return arr[i % arr.length]! }
 
 function emailFor(name: string): string[] {
-  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'customer'
+  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'vendor'
   return [`hello@${slug}.com`, `finance@${slug}.com`]
 }
 
@@ -81,7 +81,7 @@ function addDays(iso: string, days: number): string {
  * The tax line (see totals) is the plug that makes the grand total equal
  * `delivery.total` exactly, so the detail and the index never disagree.
  */
-function buildItems(delivery: SalesDelivery, idx: number): SDLineItem[] {
+function buildItems(delivery: PurchaseDelivery, idx: number): PDLineItem[] {
   const preTax = Math.round(delivery.total / (1 + TAX_RATE))
   const a = pick(products, idx)
   const b = pick(products, idx + 5)
@@ -91,7 +91,7 @@ function buildItems(delivery: SalesDelivery, idx: number): SDLineItem[] {
   // Derive a realistic bulk qty, then back out a unit price so each line amount
   // lands on its portion — subtotal ≈ preTax, so the tax plug (total − subtotal)
   // stays a positive ~11%, never negative even when the record total is small.
-  const mk = (p: typeof products[number], portion: number, qtySeed: number): SDLineItem => {
+  const mk = (p: typeof products[number], portion: number, qtySeed: number): PDLineItem => {
     const qty = Math.max(1, qtySeed)
     const unitPrice = Math.max(1, Math.round(portion / qty))
     return {
@@ -111,27 +111,27 @@ function buildItems(delivery: SalesDelivery, idx: number): SDLineItem[] {
 }
 
 /**
- * A delivery always originates from a sales order; once billed it also links to
- * the resulting sales invoice.
+ * A delivery always originates from a purchase order; once billed it also links to
+ * the resulting purchase invoice.
  */
-function buildLinked(delivery: SalesDelivery, idx: number): SDLinkedTxn[] {
-  const order: SDLinkedTxn = {
+function buildLinked(delivery: PurchaseDelivery, idx: number): PDLinkedTxn[] {
+  const order: PDLinkedTxn = {
     date: addDays(delivery.date, -2),
-    type: 'Sales Order',
+    type: 'Purchase Order',
     number: `#${10090 + idx}`,
     status: 'closed',
   }
   if (delivery.billingStatus !== 'invoiced') return [order]
-  const invoice: SDLinkedTxn = {
+  const invoice: PDLinkedTxn = {
     date: addDays(delivery.date, 1),
-    type: 'Sales Invoice',
+    type: 'Purchase Invoice',
     number: `#${40000 + idx}`,
     status: 'open',
   }
   return [order, invoice]
 }
 
-function buildDetail(base: SalesDelivery, idx: number): SalesDeliveryDetail {
+function buildDetail(base: PurchaseDelivery, idx: number): PurchaseDeliveryDetail {
   const lineItems = buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
   const totals: SalesOrderTotals = {
@@ -147,18 +147,18 @@ function buildDetail(base: SalesDelivery, idx: number): SalesDeliveryDetail {
 
   return {
     ...base,
-    email: emailFor(base.customer.name),
+    email: emailFor(base.vendor.name),
     billingAddress: pick(BILLING_ADDRESSES, idx),
     shipTo: pick(SHIP_TO, idx),
     shipVia: pick(SHIP_VIA, idx),
     trackingNo: base.fulfillmentStatus === 'direct' ? '—' : `TRK${String(100000 + idx * 7).slice(0, 8)}`,
     driver: pick(DRIVERS, idx),
-    referenceNo: `SO-${10090 + idx}`,
+    referenceNo: `PO-${10090 + idx}`,
     warehouse: pick(WAREHOUSES, idx),
     lineItems,
     message: 'Please inspect the goods on arrival and confirm receipt with the driver.',
     memo: 'Handle coffee machines with care — fragile.',
-    attachments: [{ name: `DO-${20001 + idx}-Signed.pdf`, sizeKB: 82 }],
+    attachments: [{ name: `DO-${30001 + idx}-Signed.pdf`, sizeKB: 82 }],
     totals,
     lastUpdatedBy: pick(UPDATERS, idx),
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
@@ -169,9 +169,9 @@ function buildDetail(base: SalesDelivery, idx: number): SalesDeliveryDetail {
   }
 }
 
-/** Look up a full delivery detail by SalesDelivery id; falls back to the first. */
-export function getSalesDeliveryDetail(id: string): SalesDeliveryDetail {
-  const i = salesDeliveries.findIndex(d => d.id === id)
+/** Look up a full delivery detail by PurchaseDelivery id; falls back to the first. */
+export function getPurchaseDeliveryDetail(id: string): PurchaseDeliveryDetail {
+  const i = purchaseDeliveries.findIndex(d => d.id === id)
   const idx = i >= 0 ? i : 0
-  return buildDetail(salesDeliveries[idx]!, idx)
+  return buildDetail(purchaseDeliveries[idx]!, idx)
 }

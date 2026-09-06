@@ -1,11 +1,11 @@
-import { salesQuotes } from './salesQuotes'
+import { purchaseQuotes } from './purchaseQuotes'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
-import type { SalesQuote, SalesOrderItem } from './types'
+import type { PurchaseQuote, SalesOrderItem } from './types'
 
 /**
- * Presentational detail for the Sales Quote *details* page. A SalesQuote in
- * salesQuotes.ts is intentionally lightweight (no line items) — this file
+ * Presentational detail for the Purchase Quote *details* page. A PurchaseQuote in
+ * purchaseQuotes.ts is intentionally lightweight (no line items) — this file
  * synthesises coherent line items + document chrome (addresses, notes, totals)
  * deterministically from the quote's id/index, so the index row and the detail
  * view always agree on the grand total: the synthesised items target the quote's
@@ -16,33 +16,33 @@ import type { SalesQuote, SalesOrderItem } from './types'
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
 
-export type SQLineItem = SalesOrderItem & { taxLabel: string }
+export type PQLineItem = SalesOrderItem & { taxLabel: string }
 
-export interface SQAttachment { name: string; sizeKB: number }
+export interface PQAttachment { name: string; sizeKB: number }
 
-export interface SQLinkedTxn {
+export interface PQLinkedTxn {
   date: string          // ISO
-  type: string          // "Sales Order"
+  type: string          // "Purchase Order"
   number: string        // "#10118"
   status: string        // mapped via ErpStatusBadge
 }
 
-export interface SalesQuoteDetail extends SalesQuote {
+export interface PurchaseQuoteDetail extends PurchaseQuote {
   email: string[]
   billingAddress: string
   shipTo: string
   referenceNo: string
   paymentTerms: string
   warehouse: string
-  salesperson: string
-  lineItems: SQLineItem[]
+  buyer: string
+  lineItems: PQLineItem[]
   message: string
   memo: string
-  attachments: SQAttachment[]
+  attachments: PQAttachment[]
   totals: SalesOrderTotals
   lastUpdatedBy: string
   lastUpdatedAt: string
-  linkedTransactions: SQLinkedTxn[]
+  linkedTransactions: PQLinkedTxn[]
   banner: { message: string; linkLabel: string } | null
 }
 
@@ -60,12 +60,12 @@ const SHIP_TO = [
 ]
 const WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
 const PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
-const SALESPEOPLE = ['Rizal Candra', 'Dewi Anggraini', 'Bram Sitohang', 'Nadia Puspita']
+const BUYERS = ['Rizal Candra', 'Dewi Anggraini', 'Bram Sitohang', 'Nadia Puspita']
 
 function pick<T>(arr: T[], i: number): T { return arr[i % arr.length]! }
 
 function emailFor(name: string): string[] {
-  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'customer'
+  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'vendor'
   return [`hello@${slug}.com`, `finance@${slug}.com`]
 }
 
@@ -74,7 +74,7 @@ function emailFor(name: string): string[] {
  * The tax line (see totals below) is the plug that makes the grand total equal
  * `quote.total` exactly, so the detail and the index never disagree.
  */
-function buildItems(quote: SalesQuote, idx: number): SQLineItem[] {
+function buildItems(quote: PurchaseQuote, idx: number): PQLineItem[] {
   const preTax = Math.round(quote.total / (1 + TAX_RATE))
   const a = pick(products, idx)
   const b = pick(products, idx + 3)
@@ -84,7 +84,7 @@ function buildItems(quote: SalesQuote, idx: number): SQLineItem[] {
   // Derive a realistic bulk qty, then back out a unit price so each line amount
   // lands on its portion — subtotal ≈ preTax, so the tax plug (total − subtotal)
   // stays a positive ~11%, never negative even when the record total is small.
-  const mk = (p: typeof products[number], portion: number, qtySeed: number): SQLineItem => {
+  const mk = (p: typeof products[number], portion: number, qtySeed: number): PQLineItem => {
     const qty = Math.max(1, qtySeed)
     const unitPrice = Math.max(1, Math.round(portion / qty))
     return {
@@ -104,20 +104,20 @@ function buildItems(quote: SalesQuote, idx: number): SQLineItem[] {
 }
 
 /**
- * A quote that has been accepted (`closed`) has been converted to a sales order;
+ * A quote that has been accepted (`closed`) has been converted to a purchase order;
  * `open` quotes are still pending; `declined` quotes went nowhere.
  */
-function buildLinked(quote: SalesQuote, idx: number): SQLinkedTxn[] {
+function buildLinked(quote: PurchaseQuote, idx: number): PQLinkedTxn[] {
   if (quote.status !== 'closed') return []
   return [{
     date: quote.date,
-    type: 'Sales Order',
+    type: 'Purchase Order',
     number: `#${10090 + idx}`,
     status: 'open',
   }]
 }
 
-function buildDetail(base: SalesQuote, idx: number): SalesQuoteDetail {
+function buildDetail(base: PurchaseQuote, idx: number): PurchaseQuoteDetail {
   const lineItems = buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
   const totals: SalesOrderTotals = {
@@ -132,30 +132,30 @@ function buildDetail(base: SalesQuote, idx: number): SalesQuoteDetail {
 
   return {
     ...base,
-    email: emailFor(base.customer.name),
+    email: emailFor(base.vendor.name),
     billingAddress: pick(BILLING_ADDRESSES, idx),
     shipTo: pick(SHIP_TO, idx),
     referenceNo: `RFQ-${92000 + idx}`,
     paymentTerms: pick(PAYMENT_TERMS, idx),
     warehouse: pick(WAREHOUSES, idx),
-    salesperson: pick(SALESPEOPLE, idx),
+    buyer: pick(BUYERS, idx),
     lineItems,
     message: 'This quote is valid until the expiration date above. Prices are subject to stock availability.',
-    memo: 'Follow up with the customer two days before expiration.',
+    memo: 'Follow up with the vendor two days before expiration.',
     attachments: [{ name: `RFQ-${92000 + idx}.pdf`, sizeKB: 64 }],
     totals,
-    lastUpdatedBy: pick(SALESPEOPLE, idx),
+    lastUpdatedBy: pick(BUYERS, idx),
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
     linkedTransactions: buildLinked(base, idx),
     banner: base.status === 'closed'
-      ? { message: 'This quote has been converted to a sales order.', linkLabel: 'View sales order' }
+      ? { message: 'This quote has been converted to a purchase order.', linkLabel: 'View purchase order' }
       : null,
   }
 }
 
-/** Look up a full quote detail by SalesQuote id; falls back to the first quote. */
-export function getSalesQuoteDetail(id: string): SalesQuoteDetail {
-  const i = salesQuotes.findIndex(q => q.id === id)
+/** Look up a full quote detail by PurchaseQuote id; falls back to the first quote. */
+export function getPurchaseQuoteDetail(id: string): PurchaseQuoteDetail {
+  const i = purchaseQuotes.findIndex(q => q.id === id)
   const idx = i >= 0 ? i : 0
-  return buildDetail(salesQuotes[idx]!, idx)
+  return buildDetail(purchaseQuotes[idx]!, idx)
 }

@@ -281,6 +281,33 @@ export interface SalesDelivery {
   tags?: string[]
 }
 
+// Purchase Quote — the buy-side mirror of SalesQuote (vendor-keyed). Lightweight
+// index record; the detail page synthesises coherent line items (purchaseQuoteDetails.ts).
+export type PurchaseQuoteStatus = 'open' | 'closed' | 'declined'
+
+export interface PurchaseQuote {
+  id: string
+  number: number                          // rendered as "Purchase Quote #30090"
+  vendor: Pick<Vendor, 'id' | 'name'>
+  date: string                            // quote date, ISO
+  expirationDate: string                  // ISO
+  status: PurchaseQuoteStatus
+  total: number                           // quote total IDR
+  tags?: string[]
+}
+
+// Purchase Delivery — the buy-side mirror of SalesDelivery (vendor-keyed).
+export interface PurchaseDelivery {
+  id: string
+  number: number                          // rendered as "Purchase Delivery #30001"
+  vendor: Pick<Vendor, 'id' | 'name'>
+  date: string                            // delivery date, ISO
+  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
+  billingStatus: BillingStatus            // unbilled | invoiced
+  total: number                           // delivery total IDR
+  tags?: string[]
+}
+
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
 
 export interface PurchaseOrder {

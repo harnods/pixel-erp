@@ -114,6 +114,8 @@ const pageRegistry: Record<string, Component> = {
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Purchase requests': defineAsyncComponent(() => import('~/components/pages/PurchaseRequestsPage.vue')),
+  'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
+  'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
@@ -167,6 +169,8 @@ const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOr
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
 const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
+const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
+const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -351,6 +355,8 @@ const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesI
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
+const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
+const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -655,6 +661,26 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /purchase-quotes/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes' && segs[1] === 'new') {
+    return { component: NewPurchaseQuotePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-quotes' && segs[2] === 'edit') {
+    return { component: NewPurchaseQuotePage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes') {
+    return { component: PurchaseQuoteDetailsPage, id: segs[1] }
+  }
+  // /purchase-deliveries/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries' && segs[1] === 'new') {
+    return { component: NewPurchaseDeliveryPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-deliveries' && segs[2] === 'edit') {
+    return { component: NewPurchaseDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries') {
+    return { component: PurchaseDeliveryDetailsPage, id: segs[1] }
   }
   // /sales-quotes/new → create form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-quotes' && segs[1] === 'new') {
@@ -1941,6 +1967,18 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New purchase order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-quotes/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase quote') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase deliveries'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-deliveries/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase delivery') }}
           </button>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
