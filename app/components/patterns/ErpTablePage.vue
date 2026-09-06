@@ -951,7 +951,9 @@ const bulkCountLabel = computed(() => {
 .erp-cell-check {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
+  /* checkbox → cell content is 12px, same as MpCheckbox's built-in box→label gap
+     (rule/checkbox-gap-12) */
+  gap: var(--mp-spacing-3);
   width: 100%;
   min-width: 0;
 }
@@ -1329,6 +1331,8 @@ const bulkCountLabel = computed(() => {
   font-weight: var(--mp-font-weights-regular);
 }
 
+/* The bulk bar sits in the header row — it must NOT make the header taller. Keep it
+   at the 28px header height; the sm action button is constrained to fit (erp.css). */
 .erp-bulk-bar {
   display: flex;
   align-items: center;

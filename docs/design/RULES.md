@@ -67,6 +67,12 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | `left-icon` on a sm button | right-icon dropdown only | `rule/btn-sm-dropdown-only` |
 | `is-full-width` on a button | button hugs content | `rule/btn-no-full-width` |
 | Shipping only the populated success case | design every reachable state | `reachable-states.md` |
+| Placeholder text in an input/textarea | no placeholder; label the field | `rule/input-no-placeholder` |
+| `size="sm"` on a form field | md only (the default) | `rule/form-size-md-only` |
+| Extra padding around a checkbox + its label | none; 12px gap is built in | `rule/checkbox-gap-12` |
+| A separate column just for a row checkbox | put it in the first data cell | `rule/table-checkbox-first-cell` |
+| Green/brand active segment, square segmented | pill + `#E2E8F0`/`#165082` active | `rule/segmented-control-pill` |
+| A calendar clipped by an overflow container | portal it (`AdvancedDateRangePicker`) | `rule/date-picker-no-clip` |
 
 ---
 
@@ -101,11 +107,14 @@ is the point: they *feel* normal, which is exactly why they slip through.
   (heuristic).
 - **`rule/btn-no-size-md`** — *Do:* omit `size` — **`md` is the default**. *Don't:*
   ever write `size="md"` (redundant). **Lint:** pixel-police.
-- **`rule/btn-sm-secondary-only`** — *Do:* `size="sm"` is allowed **only** on
-  `variant="secondary"`, and **only** in a **table-header bulk-action bar** — nowhere
-  else. *Don't:* `size="sm"` on primary/danger/ghost/textLink, or a small button
-  outside a bulk bar. **Why:** one control height everywhere except that one dense
-  context. **Lint:** pixel-police.
+- **`rule/btn-sm-secondary-only`** — *Do:* `size="sm"` is allowed **only** in a
+  **table-header bulk-action bar**, and there every button is **`variant="secondary"`**.
+  The **default** bulk button is an **"Actions" dropdown** (secondary sm, right-icon
+  chevron); a non-dropdown secondary-sm button is also fine. *Don't:* use a **primary**
+  button in the bulk bar (nor danger/ghost/textLink), and never `size="sm"` anywhere
+  outside the bulk bar. **Why:** one control height everywhere except that one dense
+  context, and the bulk bar is a neutral (secondary) surface — a primary CTA there
+  over-weights it. **Lint:** pixel-police.
 - **`rule/btn-danger-no-icon`** — *Do:* keep danger buttons **text-only**. *Don't:*
   put `left-icon` or `right-icon` on `variant="danger"`. **Lint:** pixel-police.
 - **`rule/btn-sm-dropdown-only`** — *Do:* a `size="sm"` button may carry **only a
@@ -141,8 +150,9 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/filter-bar-icon-group`** — *Do:* the filter bar's tool icons — **AI
   (Airene) → `airene-brand`, Column settings → `table-view-column`, Export →
   `download`** — are **GHOST icon-only `MpButton`s inside one `MpButtonGroup`**
-  (transparent, 36×36 — the `.filter-icon-btn` style), each wrapped in an `MpTooltip`
-  (see `rule/btn-icon-tooltip`). *Don't:* use secondary/filled buttons, scatter them
+  (transparent, 36×36 — the `.filter-icon-btn` style), **flush — no gap between them**
+  (the 36px hit areas give the separation), each wrapped in an `MpTooltip` (see
+  `rule/btn-icon-tooltip`). *Don't:* use secondary/filled buttons, add a gap, scatter them
   loose, or hand-roll the grouping. **Why:** one consistent tool cluster on every list
   page. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
 - **`rule/icon-pixel-library`** — *Do:* every icon is an **`MpIcon`** with a name from
@@ -232,6 +242,130 @@ is the point: they *feel* normal, which is exactly why they slip through.
   carries **Search** (rounded pill form) + **Export**. *Don't:* put Export in the
   page title bar. **Why:** fixed affordance location. **Lint:** review.
 
+### Form fields — baku ERP overrides of Pixel 3 DT 2.4 Enterprise
+
+These are **fixed** (baku). Where they contradict Pixel's default rendering, the
+ERP override wins.
+
+- **`rule/input-no-placeholder`** — *Do:* text inputs (and textareas) ship **with no
+  placeholder**. Label the field; leave the control empty. *Don't:* use placeholder
+  text as a label, hint, or example. **Why:** placeholders vanish on typing, fail
+  contrast, and get mistaken for a value — the label + optional caption carry the
+  meaning. This overrides Pixel examples that show placeholders. **Lint:** review.
+- **`rule/field-invalid-caption`** — *Do:* the instant a field is invalid, render its
+  **error caption directly below the field** (`MpFormErrorMessage` / red caption),
+  using the **UXW error copy format** (say what's wrong + how to fix, sentence case,
+  no period-less fragments). *Don't:* signal an error only by red border, or via a
+  toast. **Why:** the fix must sit where the error is; pairs with
+  `rule/form-errors-inline`. **Lint:** review.
+- **`rule/form-field-stacking`** — *Do:* a form is a **6-column grid, max 558px**, and by
+  **default every field stacks vertically full-width** (20px between rows). Place fields
+  **side-by-side only when explicitly requested**. *Don't:* auto-pair two fields on one
+  row. **Why:** stacked is the predictable default; pairing is a deliberate choice.
+  **Source:** `docs/patterns/Form.md`. **Lint:** review.
+- **`rule/form-select-half`** — *Do:* a **select / `MpAutocomplete`** is **span 3 (half
+  width, ~267px)** and sits on its **own row** (stacked), not stretched full-width and not
+  paired beside another field by default. *Don't:* full-width a select, or put two selects
+  on one row unless asked. **Why:** selects read at half width; consistency. **Source:**
+  `docs/patterns/Form.md`. **Lint:** review.
+- **`rule/form-toggle-inline`** — *Do:* a toggle field in a form is **`MpToggle` on the
+  LEFT, label on the RIGHT**, with a **12px gap (same as checkbox↔label,
+  `rule/checkbox-gap-12`)**, left-aligned. *Don't:* put the label on the left / toggle far
+  right, space-between across the form width, or use any other gap. **Why:** fixed form
+  format — toggle then label, one compact control. **Lint:** review.
+- **`rule/select-quick-add`** — *Do:* when a select may need a value that doesn't exist
+  yet, use **`MpAutocomplete`** with **`is-show-button-action`** + the **`#buttonAction`**
+  slot + **`@button-action`**: an action pinned at the **bottom of the popover** reading
+  **"Add new <noun>"** with no search, and **`Add "<search>" as a new <noun>`** while
+  typing. *Don't:* hand-roll the create row, or hide the create path. **Why:** one
+  inline-create affordance across every combobox. **Source:** `PurchaseOrderFormPage.vue`.
+  **Lint:** review.
+- **`rule/form-size-md-only`** — *Do:* every form control is **size `md`** (the
+  default) — inputs, selects, textareas, date pickers, tag inputs. *Don't:* use
+  `size="sm"` (or any non-md size) on a form field in the ERP. **Why:** one field
+  height across the product; sm is reserved (buttons in dropdown menus only, per
+  `rule/btn-sm-dropdown-only`), never forms. **Lint:** review.
+- **`rule/input-char-counter`** — *Do:* when a text input or textarea has a max
+  length, use the **character-counter variant** — cap with native `maxlength` and show
+  the **`n/max`** counter at the **top-right of the label row** (right-aligned to the
+  field). Pixel 3 has no built-in counter, so it is a small composed pattern; keep it
+  identical everywhere. **Defaults:** a **name** input caps at **60** (`n/60`); a
+  **description** textarea caps at **250** (`n/250`). *Don't:* put the counter **below**
+  the field, leave a length-capped field with no counter, or invent a different layout.
+  **Why:**
+  consistent affordance for length limits. **Lint:** review.
+- **`rule/checkbox-gap-12`** — *Do:* the gap between a checkbox/radio and its label is
+  **exactly 12px** — and it is **already built into `MpCheckbox`/`MpRadio`
+  (`gap: 12px`)**, so add nothing. *Don't:* add `padding-right` on the box **and**
+  `padding-left`/`margin-left` on the label (the classic double-gap → 24px). **Why:**
+  one control-to-label rhythm; the component already provides it. **Lint:** review.
+- **`rule/date-picker-variants`** — *Do:* two date controls only — **default single
+  date** = `MpDatePicker` (`format="DD/MM/YYYY"`, `value-type="format"`); **range /
+  presets** = the ERP **`AdvancedDateRangePicker`** (preset list + 2-month calendar in
+  Custom, portaled). *Don't:* hand-roll a second range picker. **Why:** two vetted
+  controls cover every date need. **Source:** `docs/patterns/date-range-picker.md`.
+  **Lint:** review.
+- **`rule/date-picker-no-clip`** — *Do:* a date picker's calendar must **render fully,
+  never clipped** — the ERP calendars portal / escape their container (as
+  `AdvancedDateRangePicker` does). *Don't:* place a calendar whose popup is cut off by
+  an `overflow: hidden` / scroll ancestor. **Why:** same failure class as native
+  `<select>` clipping (`rule/select-erpfilterselect`). **Lint:** review.
+- **`rule/input-tag-comparator`** — *Do:* a filter that matches a tag/entity against a
+  set uses the **comparator-prefix tag variant** — a leading **"Is any of" / "Is none
+  of"** control + a typeable, suggestion-backed tag input = **`ErpTagComparatorField`**
+  (see the *All filters* drawer). *Don't:* rebuild it inline. **Why:** one filter-tag
+  behavior across drawers. **Lint:** review.
+- **`rule/segmented-control-pill`** — *Do:* `MpSegmentedControl` in the ERP is
+  **pill-shaped**, and the **active segment matches the sidebar level-2 active state**
+  — background **`#E2E8F0`**, text **`#165082`** (`--mp-text-link`), semibold. *Don't:*
+  leave the active segment **green/brand** (Pixel default) or square. **Why:** the
+  segmented switch and the level-2 nav are the same "which view am I on" signal, so
+  they share one active color. This overrides Pixel's brand active. **Source:**
+  `app/assets/css/erp.css`. **Lint:** review.
+- **`rule/segmented-icon-active-fill`** — *Do:* an **icon-only** segmented control (view
+  switches like table/board) renders the **active** segment's icon **filled**
+  (`MpIcon variant="fill"`) and inactive icons outline — matching the sidebar's active-
+  nav fill. Use **`ErpIconSegmented`** (MpSegmentedControl exposes no per-item icon
+  variant, so it can't do this). *Don't:* leave the active icon as an outline. **Why:**
+  the filled icon is the same "you are here" signal the nav uses. **Source:**
+  `app/components/patterns/ErpIconSegmented.vue`. **Lint:** review.
+
+## Data display — badge · tag · avatar · content list
+
+- **`rule/badge-single-mpbadge`** — *Do:* there is **one** badge — **`MpBadge`**. Use it
+  directly, choosing `for` (context) + `type` (colour). **`ErpStatusBadge` is
+  deprecated** — don't add new usages; migrate to `MpBadge` + the mapped type. *Don't:*
+  introduce a second badge wrapper. **Why:** one badge, mapped consistently, beats two
+  components that drift. **Lint:** review.
+- **`rule/badge-for-context`** — *Do:* pick `for` by **where** the badge sits —
+  `tableStatus` (table rows / status columns), `additionalInformation` (beside a
+  page-title H1 or tab), `indicator` (bare dot). *Don't:* use `tableStatus` next to a
+  title or vice-versa. **Why:** `for` sets the right footprint per context. **Lint:**
+  review.
+- **`rule/badge-size-default`** — *Do:* always the **default** badge size. *Don't:* set
+  `size="sm"` (or any size) — the `for` value already fits its context. **Why:** one
+  badge size across the ERP. **Lint:** review.
+- **`rule/tag-gray-only`** — *Do:* a tag (`MpTag`) is **always gray**. *Don't:* use
+  `variant="red"` or any coloured tag — colour is for badges, not tags. **Why:** tags
+  are neutral labels; status/colour lives in badges. **Lint:** review.
+- **`rule/tag-size-default`** — *Do:* tags are the **default md** size. *Don't:* set
+  `size="sm"`. **Why:** one tag size across the ERP. **Lint:** review.
+- **`rule/tag-list-mptag`** — *Do:* the table tag-cell renderer (`ErpTagList`) renders
+  each tag as a real **`MpTag`** (gray, md), clamped to 2 lines with a "More" overflow
+  link. *Don't:* hand-roll tag chips. **Why:** table tags are the same MpTag as
+  everywhere. **Lint:** review.
+- **`rule/avatar-lg-xl-circle`** — *Do:* `MpAvatar` is **always a circle**; the
+  **default size is `lg`**, and the only other size used is **`xl`** (large profile
+  headers). *Don't:* use `sm`/`md`, or the `square` variant. **Why:** one avatar shape
+  and a two-size scale across the ERP. **Lint:** review.
+- **`rule/content-list-horizontal`** — *Do:* `ContentList` has two layouts — **vertical**
+  (label stacked over value) and **horizontal** (`horizontal` prop: label **left, min
+  184px**, then a **24px gap**, then the value fills the rest — and in horizontal the
+  label is **14px/regular**, same as the value, not the 12px caption), both with **8px
+  top/bottom** padding. *Don't:* hand-roll a horizontal key/value row with different
+  metrics. **Why:** detail-page key/value stays aligned and consistent. **Source:**
+  `docs/patterns/ContentList.md`. **Lint:** review.
+
 ## Tables — source: `docs/patterns/ErpTablePage.md` (+ skill `erp-table-page`)
 
 - **`rule/table-use-erptablepage`** — *Do:* render every table via **`ErpTablePage`
@@ -244,6 +378,15 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/table-no-outer-border`** — *Do:* no outer border box; wrapper is
   `overflow-x: auto` only. **Why:** ERP tables are borderless-outer. **Lint:**
   review.
+- **`rule/table-checkbox-first-cell`** — *Do:* a row-selection checkbox lives
+  **inside the first data cell** (before its content), sharing that cell — and the row
+  name is the checkbox's **own label** (`<MpCheckbox>{{ row.name }}</MpCheckbox>`) so
+  the box↔name gap is the single built-in **12px** (`rule/checkbox-gap-12`). *Don't:*
+  add a **separate column** whose only content is the checkbox; and don't render the
+  name as a **separate span with its own flex-gap** next to a label-less checkbox — the
+  checkbox's built-in trailing 12px **plus** the flex gap = 24px double-gap. **Why:** a
+  checkbox-only column wastes a full column and misaligns the header; the selector rides
+  with the row's identity cell at one consistent gap. **Lint:** review.
 - **`rule/table-cell-padding-align`** — *Do:* cell padding **8px top/bottom**; align
   **middle** — **unless** any column has ≥3 lines, then the **whole table** aligns
   **top**. **Why:** the golden padding/align rule (`docs/table-design.md`). **Lint:**
@@ -272,6 +415,81 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/table-merged-row-borders`** — *Do:* `rowspan`/merged cells get left/right
   borders on all columns, no double border, no outer border on edge columns. **Lint:**
   review.
+- **`rule/table-filter-bar-pagination`** — *Do:* an index/list table **always** has a
+  **filter bar** (the `#filters` slot — inline filters + All filters) **and pagination**
+  (both built into `ErpTablePage`). *Don't:* ship a bare list table with neither. **Why:**
+  every list is filterable and paged the same way. **Source:** `docs/patterns/ErpFilterBar.md`,
+  `docs/patterns/ErpPagination.md`. **Lint:** review.
+- **`rule/table-pagination-model`** — *Do:* use **regular pagination** (rows-per-page +
+  page controls) on **index pages**; use **progressive / infinite load** (auto-load next
+  10 on internal scroll) on **embedded detail line-item tables** only. *Don't:* mix them.
+  **Why:** index = paged; embedded lists = grow-on-scroll. **Source:**
+  `docs/patterns/ErpPagination.md`. **Lint:** review.
+- **`rule/table-outer-border-conditional`** — *Do:* an outer 1px border/panel appears
+  **only** on a **progressive** table that scrolls **vertically inside itself** (>~10
+  rows → contained panel, sticky header, "Showing N of M" footer inside). ≤10 rows →
+  **borderless**. A table that only scrolls **horizontally** stays **borderless** (sticky
+  separator, not a box). *Don't:* hard-code the bordered panel on, or box a horizontally-
+  scrolling table. **Why:** the border signals internal vertical scroll, nothing else.
+  When it IS shown, the outer border uses **`border.bold`** (not the subtle default).
+  **Source:** `docs/patterns/ErpPagination.md`. **Lint:** review.
+- **`rule/table-full-width`** — *Do:* a table is **full width (100%, the 12-col grid)** by
+  default. *Don't:* constrain a table's width unless the request explicitly says so. **Why:**
+  lists own the content width. **Lint:** review.
+- **`rule/table-bg-white`** — *Do:* table background is **always white**. The **only**
+  exception: in a **form table**, a cell that **cannot be edited** (read-only / calculated)
+  gets the **disabled** background. *Don't:* gray non-editable rows in a normal table, or
+  gray a merged/rowspan cell. **Why:** white is the resting surface; gray means "not
+  editable." **Lint:** review.
+- **`rule/table-cell-text-plain`** — *Do:* body-cell text is **always 14px / regular /
+  `text.default`** — the one exception is a **text-link** cell (link colour + underline on
+  hover, e.g. a transaction number/name). *Don't:* bold, semibold, or italicise cell text.
+  **Why:** emphasis in a data cell is noise; the header carries hierarchy. **Lint:** review.
+- **`rule/table-row-hover`** — *Do:* a data row highlights on hover with a **light cool
+  blue-gray** (`#f3f5f9`). *Don't:* use a green/brand or heavy hover. **Why:** subtle row
+  affordance. **Lint:** review.
+- **`rule/table-actions-column`** — *Do:* every index table has a **rightmost `[…]`
+  actions column** (kebab), kept **flush right by a flexible spacer column** and **sticky**
+  during horizontal scroll (built into `ErpTablePage` — `#actions` slot + `stickyActions`).
+  *Don't:* float actions elsewhere or let them scroll away. **Why:** row actions are always
+  in the same, reachable place. **Lint:** review.
+- **`rule/table-form-money-prefix`** — *Do:* a money input in a form-table cell carries a
+  **currency prefix addon** (`Rp`) — a gray, semibold segment flush to the left of the
+  input inside the same cell (the input has no border of its own). *Don't:* show a bare
+  number with no `Rp`. **Source:** `/expenses/new` (`NewExpensePage.vue`). **Lint:** review.
+- **`rule/table-form-row-controls`** — *Do:* an editable line-item table has a **drag
+  handle** (`drag` icon, `cursor: grab`) in a **44px first column** to reorder rows, and a
+  **remove `(–)`** button (`minus-circular`) in a **44px last column**. While dragging, the
+  **source row dims** (opacity 0.4) and the **drop target shows a 2px blue top line**
+  (`border.focused`) where the row will land. *Don't:* omit them, place them elsewhere, or
+  drag with no visible drop indicator. **Source:** `NewExpensePage.vue`. **Lint:** review.
+- **`rule/table-product-cell`** — *Do:* a product-name cell uses **`ProductCell`** — a
+  **40px** product photo (the Inventory-index thumbnail size) + the product name, with
+  an optional second line: the **SKU** (caption) **or** a **description clamped to 2
+  lines** with a **Show more / Show less** toggle. The cell aligns **top**. *Don't:*
+  hand-roll the photo+name, use a different photo size, or let the description run past
+  2 lines un-clamped. **Source:** `app/components/patterns/ProductCell.vue`. **Lint:**
+  review.
+- **`rule/table-header-uppercase`** — *Do:* table headers (`th`) are **UPPERCASE**, 12px
+  semibold, secondary colour, on the gray surface (`#f1f5f9`). *Don't:* sentence-case or
+  title-case a table header. **Why:** one header treatment across every table (built into
+  `ErpTablePage`; match it in any hand-rolled variant). **Lint:** review.
+- **`rule/table-header-height`** — *Do:* the header row is **28px** tall
+  (`var(--mp-sizes-7)`); body rows sit on a **40px** baseline. *Don't:* let the header
+  match the row height. **Why:** the compact header is a fixed ERP metric. **Lint:**
+  review.
+- **`rule/table-bulk-actions-bar`** — *Do:* when rows are selected, the **column headers
+  are replaced by a bulk-action bar** in the header row (`ErpTablePage` `#bulk-actions`
+  slot + `has-checkbox`; shows "N items selected" + actions). Buttons here are
+  **secondary sm** — the default is an **"Actions" dropdown** (secondary sm), never a
+  primary button (see `rule/btn-sm-secondary-only`). *Don't:* float a separate selection
+  toolbar above/below the table, or use a primary button in the bar. **Why:** selection
+  acts in place, over the same columns. **Lint:** review.
+- **`rule/table-sticky-first-col`** — *Do:* a wide table that scrolls horizontally pins
+  its **first column** (`position: sticky; left: 0`; opaque bg matching the row) while
+  the rest scroll; the sticky-right actions column stays flush (built into
+  `ErpTablePage`). *Don't:* let the identity column scroll out of view. **Why:** the row
+  identity must stay visible while reading far-right columns. **Lint:** review.
 
 ## Surfaces, cards & spacing — source: `docs/patterns/pixel-enterprise-overrides.md`
 
@@ -344,6 +562,10 @@ is the point: they *feel* normal, which is exactly why they slip through.
   review.
 - **`rule/type-14-default`** — *Do:* body/default text is **14px regular**; 12px is
   **captions only**. **Lint:** review.
+- **`rule/type-scale`** — *Do:* pick a **role**, not a raw px — **H1** `2xl`/24, **H2**
+  `xl`/20, **H3** `lg`/16, **p** `md`/14 (body default), **small** `sm`/12 (caption).
+  *Don't:* use **xsm/10px** (`xs`) in ERP product UI — 10px is below our minimum — or set
+  an off-scale size. **Why:** one type scale, mapped by role. **Lint:** review.
 - **`rule/type-no-italic`** — *Do:* de-emphasize with smaller size + secondary color;
   emphasize with weight. *Don't:* use **any** italic — no `font-style: italic`,
   `<i>`, or `<em>`, anywhere (notes, captions, hints, disclaimers). **Why:** italic

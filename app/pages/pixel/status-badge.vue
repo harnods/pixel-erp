@@ -1,25 +1,27 @@
 <script setup lang="ts">
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { MpBadge } from '@mekari/pixel3'
 import DemoHeader from '~/components/patterns/DemoHeader.vue'
 import DemoSection from '~/components/patterns/DemoSection.vue'
-useHead({ title: 'Status badge · Pixel 3 Enterprise' })
+useHead({ title: 'Status badge (deprecated) · Pixel 3 Enterprise' })
 </script>
 <template>
   <div>
-    <DemoHeader title="Status badge" tag="ErpStatusBadge" override="Use this for entity statuses, not a raw MpBadge."
-      lead="Maps a status string (paid, pending, approved…) to the correct MpBadge type + label, so the same status is always the same colour across modules."
-      :rules="['rule/badge-status-mapping']" />
-    <DemoSection title="By status"
-      desc="Pass status=&quot;…&quot;; the component picks colour + label. Override with type/label props only when a module needs different wording/colour."
-      :rules="['rule/badge-status-mapping']"
-      code="<ErpStatusBadge status=&quot;paid&quot; />
-<ErpStatusBadge status=&quot;pending&quot; />
-<ErpStatusBadge status=&quot;approved&quot; />
-<ErpStatusBadge status=&quot;draft&quot; />">
-      <ErpStatusBadge status="paid" />
-      <ErpStatusBadge status="pending" />
-      <ErpStatusBadge status="approved" />
-      <ErpStatusBadge status="draft" />
+    <DemoHeader title="Status badge" tag="ErpStatusBadge" :deprecated="true"
+      override="Deprecated — there is ONE badge: MpBadge. Use MpBadge directly (see Badge) and map the status to a type."
+      lead="ErpStatusBadge is deprecated. Don't add new usages. Everything is MpBadge with for=&quot;tableStatus&quot; + the mapped type. See the Badge page for the status→type mapping."
+      :rules="['rule/badge-single-mpbadge', 'rule/badge-status-mapping']" />
+
+    <DemoSection title="Migrate to MpBadge"
+      desc="Replace ErpStatusBadge with MpBadge and the mapped type/label."
+      :rules="['rule/badge-single-mpbadge']"
+      code="<!-- before -->
+<ErpStatusBadge status=&quot;paid&quot; />
+<!-- after -->
+<MpBadge for=&quot;tableStatus&quot; type=&quot;completed&quot;>Paid</MpBadge>">
+      <MpBadge for="tableStatus" type="completed">Paid</MpBadge>
+      <MpBadge for="tableStatus" type="warning">Pending</MpBadge>
+      <MpBadge for="tableStatus" type="information">Approved</MpBadge>
+      <MpBadge for="tableStatus" type="announcement">Draft</MpBadge>
     </DemoSection>
   </div>
 </template>

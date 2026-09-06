@@ -1,25 +1,8 @@
 <script setup lang="ts">
-import { watch, computed } from 'vue'
 import { MpBadge, MpToastManager } from '@mekari/pixel3'
-import { ruleMeaning, FOUNDATION_RULES } from '~/data/pixelRules'
 
 definePageMeta({ layout: false })
 useHead({ title: 'Pixel 3 · Enterprise components — Mekari ERP' })
-
-// Right rail: the rules governing the page currently open (set by each page's
-// DemoHeader). Clear on navigation so a page without rules shows an empty rail.
-const route = useRoute()
-const pageRules = usePixelRules()
-watch(() => route.path, () => { pageRules.value = [] })
-
-// Always show the rail; when a page declares no rules, fall back to the foundations.
-const railRules = computed(() => (pageRules.value.length ? pageRules.value : FOUNDATION_RULES))
-const railIsFoundation = computed(() => pageRules.value.length === 0)
-
-// Pattern pages (full-width layouts like the filter bar) get a wider content column
-// so they render the way a real full-width index page does — not the narrow gallery column.
-const WIDE_PAGES = ['/pixel/filter-bar']
-const isWide = computed(() => WIDE_PAGES.includes(route.path))
 
 // Sidebar nav — every component is its own page under /pixel/<slug>
 const sidebar = [
@@ -35,7 +18,7 @@ const sidebar = [
       { slug: 'input', label: 'Input' },
       { slug: 'input-group', label: 'Input group' },
       { slug: 'textarea', label: 'Textarea' },
-      { slug: 'select', label: 'Select' },
+      { slug: 'select', label: 'Select (deprecated)' },
       { slug: 'filter-select', label: 'Dropdown' },
       { slug: 'checkbox', label: 'Checkbox' },
       { slug: 'radio', label: 'Radio' },
@@ -51,7 +34,7 @@ const sidebar = [
   {
     label: 'Data display', items: [
       { slug: 'badge', label: 'Badge' },
-      { slug: 'status-badge', label: 'Status badge' },
+      { slug: 'status-badge', label: 'Status badge (deprecated)' },
       { slug: 'tag', label: 'Tag' },
       { slug: 'tag-list', label: 'Tag list' },
       { slug: 'avatar', label: 'Avatar' },
@@ -117,23 +100,10 @@ const sidebar = [
     </aside>
 
     <main class="pxmain">
-      <div class="pxcontent" :class="{ 'pxcontent--wide': isWide }">
+      <div class="pxcontent">
         <NuxtPage />
       </div>
     </main>
-
-    <aside class="pxrail">
-      <div class="pxrail__head">{{ railIsFoundation ? 'Foundations (apply to every component)' : 'Rules on this page' }}</div>
-      <table class="pxrail__table">
-        <tbody>
-          <tr v-for="r in railRules" :key="r">
-            <td class="pxrail__id"><code>{{ r }}</code></td>
-            <td class="pxrail__mean">{{ ruleMeaning(r) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <a class="pxrail__more" href="/pixel/overrides">Full registry → docs/design/RULES.md</a>
-    </aside>
 
     <MpToastManager />
   </div>
@@ -196,64 +166,8 @@ const sidebar = [
   font-weight: var(--mp-font-weights-semi-bold);
 }
 .pxmain { flex: 1 1 auto; min-width: 0; }
-.pxcontent { max-width: 52rem; margin: 0 auto; padding: var(--mp-spacing-8) var(--mp-spacing-8) var(--mp-spacing-9); }
-.pxcontent--wide { max-width: 72rem; } /* pattern pages (e.g. filter bar) — real page width, one line */
+.pxcontent { max-width: 52rem; margin: 0 auto; padding: var(--mp-spacing-8, 2rem) var(--mp-spacing-8, 2rem) var(--mp-spacing-9, 2.5rem); }
 
-/* Right rail — rules governing the current page */
-.pxrail {
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  width: 27rem;
-  flex: 0 0 27rem;
-  height: 100vh;
-  overflow-y: auto;
-  border-left: 1px solid var(--mp-border-subtle, #e5e7e7);
-  padding: var(--mp-spacing-8) var(--mp-spacing-6);
-  background: var(--mp-background-stage, #fff);
-}
-.pxrail__head {
-  font-size: var(--mp-font-sizes-sm, 0.875rem);
-  font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--mp-text-secondary);
-  margin-bottom: var(--mp-spacing-4);
-}
-.pxrail__table { width: 100%; border-collapse: collapse; }
-.pxrail__table tr { border-top: 1px solid var(--mp-border-subtle, #e5e7e7); }
-.pxrail__table tr:first-child { border-top: none; }
-.pxrail__id {
-  padding: var(--mp-spacing-2) var(--mp-spacing-6) var(--mp-spacing-2) 0; /* 8px top/bottom · 24px gap */
-  vertical-align: top;
-  width: 11rem;
-}
-.pxrail__id code {
-  font-family: var(--mp-font-families-mono, monospace);
-  font-size: var(--mp-font-sizes-sm, 0.875rem);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-link, #0a6e4e);
-  word-break: break-word;
-}
-.pxrail__mean {
-  padding: var(--mp-spacing-2) 0; /* 8px top/bottom */
-  vertical-align: top;
-  font-size: var(--mp-font-sizes-md, 0.9375rem);
-  color: var(--mp-text-default);
-  line-height: 1.6;
-}
-.pxrail__more {
-  display: inline-block;
-  margin-top: var(--mp-spacing-4);
-  font-size: var(--mp-font-sizes-sm, 0.875rem);
-  color: var(--mp-text-secondary);
-  text-decoration: none;
-}
-.pxrail__more:hover { color: var(--mp-text-default); }
-
-@media (max-width: 82rem) {
-  .pxrail { display: none; }
-}
 @media (max-width: 60rem) {
   .pxside { display: none; }
 }

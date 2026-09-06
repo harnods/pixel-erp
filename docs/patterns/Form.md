@@ -22,14 +22,26 @@
 
 ### Field widths (6-column grid)
 
-Within the 558px / 6-column form, fields take whole or half rows:
+Within the 558px / 6-column form, **the default is to stack every field vertically**
+(20px between rows). Fields are placed **side-by-side only when explicitly requested** —
+never auto-paired.
 
-- **Full-width (span 6)**: text inputs, textareas, and multi-select toggle lists
-  (Sources, Output).
-- **Half-width (span 3)**: selects (`Model`, `Schedule`, `Time`) and the
-  **`MpUpload` attachment field**. Two half-width fields share a row (e.g.
-  `Schedule` + `Time`); a lone half-width field (e.g. `Model`) sits on its own row
-  and must **not** be paired with an unrelated field beside it.
+- **Full-width (span 6)**: text inputs, textareas, and multi-select toggle lists.
+- **Half-width (span 3)**: **selects / `MpAutocomplete`** and the **`MpUpload`
+  attachment field** — a select renders at ~267px on **its own row** (stacked), NOT
+  stretched full-width. Do **not** pair two selects on one row unless asked.
+
+### Character counters
+
+- A **name** input has a **60-char counter** (`n/60`); a **description** textarea has a
+  **250-char counter** (`n/250`). The counter is right-aligned on the label row (see
+  `rule/input-char-counter`).
+
+### Toggle field
+
+- A single toggle is **label + `MpToggle` together** (small gap), not spread
+  space-between across the form. The bordered "multi-select toggle list" pattern below
+  is a different control (a list of options), not a lone toggle field.
 
 ### Multi-select toggle list (Sources / Output / …)
 
