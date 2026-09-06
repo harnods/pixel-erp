@@ -75,6 +75,12 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | A separate column just for a row checkbox | put it in the first data cell | `rule/table-checkbox-first-cell` |
 | Green/brand active segment, square segmented | pill + `#E2E8F0`/`#165082` active | `rule/segmented-control-pill` |
 | A calendar clipped by an overflow container | portal it (`AdvancedDateRangePicker`) | `rule/date-picker-no-clip` |
+| A hand-rolled preview/scenario FAB on an index page | shared `ScenarioFab` (black, settings icon) | `rule/index-scenario-fab` |
+| `Delete` in a table bulk-actions menu | non-destructive bulk ops only | `rule/bulk-actions-no-delete` |
+| A thumbnail rail beside a PDF preview | single-column PDF, no rail | `rule/pdf-preview-modal` |
+| Export wired to a silent download | open `ExportModal` | `rule/export-modal` |
+| Share-via-email as a form-only dialog | `ShareViaEmailModal` (form + PDF preview) | `rule/share-via-email-modal` |
+| Copy-link as a modal or silent toast | `CopyLinkDrawer` | `rule/copy-link-drawer` |
 
 ---
 
@@ -338,7 +344,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
   **not-yet-saved** jsPDF doc confirmed with **Print**, that's `PdfPreviewModal`.)
   **Why:** one consistent preview surface. **Source:** `FilePreviewModal.vue`. **Lint:** review.
 - **`rule/file-preview-download`** — *Do:* the preview footer is **ghost Close + primary
-  Download** (`left-icon="download"`), pinned right; Download saves the file under its
+  Download** (text-only — no icon, per `rule/btn-icon-add-only`), pinned right; Download saves the file under its
   filename, Close/× dismisses. It's a preview, not an editor — no other actions. *Don't:*
   add edit/print/share buttons or a second primary. **Why:** preview = look + take a copy.
   **Lint:** review.
@@ -868,6 +874,55 @@ Also governing the filter bar: `rule/filter-bar-search-export` (Search + Export
 always present), `rule/filter-bar-icon-group` (AI · column settings · export = ghost
 icon `MpButtonGroup` + tooltips), `rule/select-erpfilterselect` (filters use
 `ErpFilterSelect`, never a native `<select>`).
+
+## Index pages — scenario FAB, first-load skeleton, bulk actions
+
+Every list/index page shares the same demo scaffolding and bulk-bar rules.
+
+- **`rule/index-scenario-fab`** — *Do:* every index page renders the shared
+  **`ScenarioFab`** (`app/components/patterns/ScenarioFab.vue`) — a **black**
+  circular FAB fixed bottom-right with a **`settings`** icon that opens an
+  `MpPopover` of demo **scenarios**, bound with `v-model`. Every page has at least
+  **Default** and **Empty state**; add more per page as needed. *Don't:* hand-roll a
+  fixed preview/scenario FAB, use a non-black button, or a different icon. **Why:**
+  the prototype's scenario switcher must look and sit identically on every page.
+  **Lint:** review (grep `preview-fab` → should be zero; use `ScenarioFab`).
+- **`rule/index-first-load-skeleton`** — *Do:* on **first load** every index page
+  shows a **skeleton** (rows shimmer) before data appears — `ErpTablePage` renders
+  it from a `loading` flag the page holds true until the initial (mock) fetch
+  resolves. *Don't:* flash an empty table or a spinner-only screen on first paint.
+  **Why:** consistent perceived-performance across the app. **Lint:** review.
+- **`rule/bulk-actions-no-delete`** — *Do:* the table **bulk-actions** bar (the
+  secondary-sm "Actions" dropdown) lists non-destructive batch operations only.
+  *Don't:* put **Delete** (or any hard-destructive action) in the bulk menu.
+  **Why:** bulk delete from a multi-select is too easy to trigger by accident;
+  deletion stays a per-record action behind its own confirm. **Lint:** review
+  (grep bulk-actions slot for `Delete`).
+
+## Patterns — shared modals & drawers (print · share · copy link · export)
+
+These four surfaces recur across every transactional module. Each has ONE canonical
+component — reuse it, never rebuild.
+
+- **`rule/pdf-preview-modal`** — *Do:* print/preview a document with the shared
+  **`PdfPreviewModal`** — a single-column PDF `iframe`, **no thumbnail rail**. Footer
+  is **left: "Open template settings"** (secondary) · **right: "Print PDF"** (primary,
+  drives the browser print dialog — **not** a download). *Don't:* add a right-hand
+  thumbnail column, label the primary "Download"/"Print" only, or right-align both
+  buttons. **Why:** one print surface everywhere. **Source:** `PdfPreviewModal.vue`.
+- **`rule/share-via-email-modal`** — *Do:* "Share via email" opens the shared
+  **`ShareViaEmailModal`** — **two columns: left = the email form** (recipients,
+  subject, message), **right = a single-column PDF preview** (no thumbnail rail).
+  *Don't:* build a form-only dialog or add a thumbnail column. **Why:** one email-
+  share surface across modules. **Source:** `ShareViaEmailModal.vue`.
+- **`rule/copy-link-drawer`** — *Do:* "Copy link" opens the shared
+  **`CopyLinkDrawer`** (custom Teleport drawer shell per `rule/drawer-custom-shell`),
+  not a modal or a bare toast. *Don't:* copy silently or use a modal. **Why:** the
+  share-link surface is a drawer everywhere. **Source:** `CopyLinkDrawer.vue`.
+- **`rule/export-modal`** — *Do:* every **Export** action opens the shared
+  **`ExportModal`** (format + scope options), never an immediate silent download.
+  *Don't:* wire Export straight to a file download or put Export on the page title.
+  **Why:** one export surface, consistent options. **Source:** `ExportModal.vue`.
 
 ## Adding a rule
 

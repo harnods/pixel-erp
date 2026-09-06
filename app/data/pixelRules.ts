@@ -59,7 +59,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/import-modal': 'File import = MpModal (md) + title/description + shared ErpDropzone + Cancel/Upload footer (shown only once a file is staged); uploads only. Template-based spreadsheet import is a stepped page, not this modal.',
   'rule/import-modal-dropzone': 'Import body is always ErpDropzone (dashed drop area + accepted types/max size + removable staged-file rows); never a bespoke file input.',
   'rule/file-preview-modal': 'Preview a saved file = shared FilePreviewModal (MpModal xl); PDF → iframe, image → contained img; kind auto-detected. One component for all types (PdfPreviewModal is the jsPDF+Print variant).',
-  'rule/file-preview-download': 'Preview footer = ghost Close + primary Download (left-icon download); it is a preview, not an editor — no edit/print/share.',
+  'rule/file-preview-download': 'Preview footer = ghost Close + primary Download (text-only, no icon); it is a preview, not an editor — no edit/print/share.',
 
   // Tables
   'rule/table-use-erptablepage': 'Tables render via ErpTablePage — never hand-rolled.',
@@ -169,6 +169,15 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/copy-number-not-id': 'Label identifiers "… number", not "… ID".',
   'rule/copy-add-noun-only': 'Add buttons use the noun only (no "baru").',
   'rule/copy-id-translations': 'All strings live in translations.ts via t().',
+
+  // Index pages & shared modal/drawer patterns
+  'rule/index-scenario-fab': 'Every index page uses the shared ScenarioFab (black settings FAB, bottom-right) → MpPopover scenarios (Default, Empty state); never hand-roll the preview FAB.',
+  'rule/index-first-load-skeleton': 'Every index page shows a skeleton on first load (ErpTablePage loading flag) — never an empty flash or spinner-only.',
+  'rule/bulk-actions-no-delete': 'The bulk-actions "Actions" dropdown holds non-destructive ops only — never Delete (deletion stays a per-record confirm).',
+  'rule/pdf-preview-modal': 'Print/preview via shared PdfPreviewModal: single-column PDF, no thumbnail rail; footer = Open template settings (left) + Print PDF (right, prints not downloads).',
+  'rule/share-via-email-modal': 'Share via email = shared ShareViaEmailModal: left email form + right single-column PDF preview (no thumbnail).',
+  'rule/copy-link-drawer': 'Copy link = shared CopyLinkDrawer (custom Teleport drawer shell), never a modal or silent toast.',
+  'rule/export-modal': 'Export = shared ExportModal (format + scope), never an immediate silent download; never on the page title.',
 }
 
 export function ruleMeaning(id: string): string {
