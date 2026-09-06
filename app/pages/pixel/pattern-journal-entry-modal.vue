@@ -6,10 +6,11 @@ import DemoSection from '~/components/patterns/DemoSection.vue'
 useHead({ title: 'Journal entry modal · Pixel 3 Enterprise' })
 
 // Read-only Account / Debit / Credit rows — a balanced double-entry posting.
+// Account ALWAYS leads with its account number (chart-of-accounts code).
 const rows: JournalEntryRow[] = [
-  { account: 'Inventory — Furniture', debit: 13_500_000 },
-  { account: 'VAT In (PPN Masukan)', debit: 1_485_000 },
-  { account: 'Accounts Payable — PT Kayu Jati', credit: 14_985_000 },
+  { account: '1-10300 Inventory — Furniture', debit: 13_500_000 },
+  { account: '1-10400 VAT In (PPN Masukan)', debit: 1_485_000 },
+  { account: '2-10000 Accounts Payable — PT Kayu Jati', credit: 14_985_000 },
 ]
 
 const open = ref(false)
@@ -34,12 +35,12 @@ const open = ref(false)
     </DemoSection>
 
     <DemoSection title="Structure — Account · Debit · Credit + Total"
-      desc="Body = a heading (the source document) then a fixed 3-column table: Account (flex) + right-aligned Debit + Credit (180px each), and a bold-bordered Total row summing each side. Read-only; empty cells stay blank, amounts use IDR. Debits must equal credits — the Total row is where you eyeball that."
+      desc="Body = a heading (the source document) then a fixed 3-column table: Account (flex) + right-aligned Debit + Credit (180px each), and a bold-bordered Total row summing each side. The Account cell ALWAYS leads with its account number (chart-of-accounts code) then the name. Read-only; empty cells stay blank, amounts use IDR. Debits must equal credits — the Total row is where you eyeball that."
       :rules="['rule/journal-entry-structure', 'rule/table-header-uppercase']"
-      code="const rows: JournalEntryRow[] = [
-  { account: 'Inventory — Furniture', debit: 13_500_000 },
-  { account: 'VAT In (PPN Masukan)',  debit: 1_485_000 },
-  { account: 'Accounts Payable',      credit: 14_985_000 },
+      code="const rows: JournalEntryRow[] = [   // account ALWAYS leads with its account no.
+  { account: '1-10300 Inventory — Furniture', debit: 13_500_000 },
+  { account: '1-10400 VAT In (PPN Masukan)',  debit: 1_485_000 },
+  { account: '2-10000 Accounts Payable',      credit: 14_985_000 },
 ]  // Total row sums debit & credit — they must balance.">
       <a class="je-link" @click.prevent="open = true">Open the modal to see the table →</a>
     </DemoSection>

@@ -70,6 +70,9 @@ const sidebar = [
       { slug: 'pattern-activity-log-modal', label: 'Activity log modal' },
       { slug: 'pattern-journal-entry-modal', label: 'Journal entry modal' },
       { slug: 'pattern-approval-log-modal', label: 'Approval log modal' },
+      { slug: 'pattern-all-filters-drawer', label: 'All filters drawer' },
+      { slug: 'pattern-select-product-drawer', label: 'Select product drawer' },
+      { slug: 'pattern-import-modal', label: 'Import modal' },
     ],
   },
   {

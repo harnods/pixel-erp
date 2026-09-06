@@ -35,8 +35,8 @@ const open = ref(false)
 <template>
   <div>
     <DemoHeader title="Approval log modal" tag="pattern · detail / approval"
-      lead="The universal multi-stage approval timeline — same modal everywhere an approval chain exists (stock adjustment & other 'Awaiting approval' queues, transfer / SO / SA detail pages). One shared component — ApprovalLogModal.vue (MpModal size md) — renders 'Requested by …' then each stage: 'Everyone must approve' (all sign off) or 'Anyone can approve' (first wins). A single connecting rail runs down the left through every marker; each stage is a collapsible accordion, expanded by default."
-      :rules="['rule/approval-log-modal', 'rule/approval-log-structure', 'rule/approval-log-rail', 'rule/modal-use-mpmodal']" />
+      lead="The universal multi-stage approval timeline — same modal everywhere an approval chain exists (stock adjustment & other 'Awaiting approval' queues, transfer / SO / SA detail pages). One shared component — ApprovalLogModal.vue (MpModal size md) built on Pixel MpTimeline — renders 'Requested by …' then each stage as an MpTimelineAccordion: 'Everyone must approve' (all sign off) or 'Anyone can approve' (first wins). The rail, marker colour + icon (green check / amber pending) and alignment all come from the Timeline component; each stage is collapsible, expanded by default."
+      :rules="['rule/approval-log-modal', 'rule/approval-log-structure', 'rule/approval-log-timeline', 'rule/modal-use-mpmodal']" />
 
     <DemoSection title="Trigger — 'Approval log'"
       desc="Opened from the 'Approval log' action wherever a record carries an approval chain — e.g. Stock adjustment → Awaiting approval → Approval log. Bound with :is-open / @close. The modal is read-only; approving happens elsewhere."
@@ -62,11 +62,18 @@ const open = ref(false)
       <a class="ap-link" @click.prevent="open = true">Open to see the timeline →</a>
     </DemoSection>
 
-    <DemoSection title="The connecting rail"
-      desc="A single 1px line runs continuously down the left rail behind every marker (dot / check / clock / the stage chevron) — the rows are flattened into one list rather than nested per stage, so the line is trivial to draw and self-heals when a stage is collapsed. Don't rebuild this as nested lists with per-stage lines."
-      :rules="['rule/approval-log-rail']"
-      code="<!-- one flat row list; .al-rail::before draws the continuous line, markers sit on z-index:1 -->" >
-      <a class="ap-link" @click.prevent="open = true">Collapse a stage in the modal — the line stays intact →</a>
+    <DemoSection title="Built on MpTimeline"
+      desc="The rail, marker colour + icon, and marker↔text alignment all come from Pixel's MpTimeline — the request is an MpTimelineItem status='created', each stage an MpTimelineAccordion (#sub-content = rule caption + status badge), each approver an MpTimelineItem with status='approved' (green check) or status='need-approval' (amber). Never hand-roll the rail or a raw svg chevron."
+      :rules="['rule/approval-log-timeline', 'rule/icon-pixel-library']"
+      code="<MpTimeline>
+  <MpTimelineItem status=&quot;created&quot;>…Requested by…</MpTimelineItem>
+  <MpTimelineAccordion :label=&quot;stage.title&quot; :is-open=&quot;true&quot;>
+    <template #sub-content>…rule caption + status MpBadge…</template>
+    <MpTimelineItem status=&quot;approved&quot;>…Approved by…</MpTimelineItem>
+    <MpTimelineItem status=&quot;need-approval&quot;>…Awaiting approval from…</MpTimelineItem>
+  </MpTimelineAccordion>
+</MpTimeline>" >
+      <a class="ap-link" @click.prevent="open = true">Collapse a stage in the modal — the rail stays intact →</a>
     </DemoSection>
 
     <ApprovalLogModal :is-open="open" subject="Stock adjustment #00042" :log="log" @close="open = false" />

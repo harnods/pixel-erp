@@ -266,9 +266,11 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/journal-entry-structure`** — *Do:* body = a **heading** (the source document,
   e.g. "Expense #00042") then a fixed 3-column table **Account · Debit · Credit**
   (Account flex, Debit/Credit right-aligned 180px), closed by a **bold-bordered Total
-  row** summing each side; amounts in IDR, empty cells blank. *Don't:* add edit
-  controls (it's read-only) or drop the Total row — debits must visibly equal credits.
-  **Why:** the balance is the point. **Lint:** review.
+  row** summing each side; amounts in IDR, empty cells blank. The **Account** cell
+  **always leads with its account number** (chart-of-accounts code, e.g. "2-10000
+  Accounts Payable") — never a bare name. *Don't:* add edit controls (it's read-only),
+  drop the Total row (debits must visibly equal credits), or omit the account number.
+  **Why:** the balance is the point, and postings are read by account code. **Lint:** review.
 - **`rule/journal-entry-trigger`** — *Do:* open it from the **"View journal entry"**
   text link on the detail page (typically inside the posting banner). *Don't:* use a
   toolbar/page-title button. **Why:** the link names exactly what it opens. **Lint:** review.
@@ -288,11 +290,28 @@ is the point: they *feel* normal, which is exactly why they slip through.
   stage: **"Approved by {user}"** (green check) per approval and **"Awaiting approval
   from {name}"** (amber clock) per pending approver. *Don't:* reorder these or collapse
   stages by default. **Why:** the chain's state is legible at a glance. **Lint:** review.
-- **`rule/approval-log-rail`** — *Do:* draw **one continuous 1px rail** down the left
-  behind every marker (dot / check / clock / stage chevron) by **flattening** all rows
-  into a single list (`.al-rail::before` line, markers on `z-index:1`) — so the line
-  self-heals when a stage collapses. *Don't:* nest rows per stage with per-stage line
-  segments. **Why:** a single unbroken timeline. **Lint:** review.
+- **`rule/approval-log-timeline`** — *Do:* build it on the Pixel **`MpTimeline`**
+  component — the request is an `MpTimelineItem status="created"`, each stage an
+  **`MpTimelineAccordion`** (`:is-open="true"`, `#sub-content` = rule caption + status
+  `MpBadge`), each approver an `MpTimelineItem` (`status="approved"` green check /
+  `status="need-approval"` amber). The connecting rail, marker **colour + icon**, and
+  marker↔text **alignment** all come from the component (`status` drives the marker;
+  never green for a pending row). *Don't:* hand-roll the rail/markers or a raw `<svg>`
+  chevron — that's what drifts out of alignment and colour. **Why:** one on-brand
+  timeline, correct by construction. **Lint:** review.
+- **`rule/import-modal`** — *Do:* bringing files in uses the shared **file-drop import
+  modal** — `MpModal` size `md`, a **title** + one-line **description** of what's being
+  imported, the shared **`ErpDropzone`** body, and a **Cancel / Upload** footer that is
+  **hidden until at least one file is staged**. It only **uploads** — OCR / matching /
+  parsing happens later on the resulting rows. *Don't:* hand-roll an import modal, or
+  block the modal with processing. (A spreadsheet import with a **downloadable template**
+  is a stepped **page**, not this modal.) **Why:** one import surface. **Source:**
+  `ImportVendorInvoicesModal.vue`. **Lint:** review.
+- **`rule/import-modal-dropzone`** — *Do:* the body is always **`ErpDropzone`** — a
+  dashed drop area ("Drag & drop or browse", accepted types + max size) with each staged
+  file listed below as a **removable** row; drag-drop and click-to-browse both add files,
+  duplicate names are ignored. *Don't:* build a bespoke `<input type="file">` or file
+  list. **Why:** one dropzone everywhere. **Lint:** review.
 - **`rule/checkbox-multiline-top`** — *Do:* when a checkbox label wraps to >1 line,
   align the box to the **top** (`align-items: flex-start`). **Why:** box tracks the
   first line, not the vertical center of a paragraph. **Lint:** review.
@@ -411,11 +430,16 @@ ERP override wins.
 
 ## Data display — badge · tag · avatar · content list
 
-- **`rule/badge-single-mpbadge`** — *Do:* there is **one** badge — **`MpBadge`**. Use it
-  directly, choosing `for` (context) + `type` (colour). **`ErpStatusBadge` is
-  deprecated** — don't add new usages; migrate to `MpBadge` + the mapped type. *Don't:*
-  introduce a second badge wrapper. **Why:** one badge, mapped consistently, beats two
-  components that drift. **Lint:** review.
+- **`rule/badge-single-mpbadge`** — *Do:* there is **one** badge component —
+  **`MpBadge`**. For a **one-off / non-status** badge use `MpBadge` directly (`for` +
+  `type`). For an **entity status**, use **`ErpStatusBadge`** — the sanctioned *thin
+  mapper* that resolves a status string to the right `MpBadge` `for`/`type`/`label` from
+  the single central map (`ErpStatusBadge.vue` `statusConfig`); it **renders `MpBadge`**,
+  so it is **not** a second badge and is the correct choice (keeps every module's "paid /
+  overdue / …" identical). *Don't:* build **another** badge wrapper, or hand-map a status
+  to a colour inline (use the mapper so colours never drift). **Why:** one badge visual +
+  one status→colour map. **Reconciled:** supersedes the earlier "ErpStatusBadge
+  deprecated" wording — the wrapper is a mapper, not a duplicate. **Lint:** review.
 - **`rule/badge-for-context`** — *Do:* pick `for` by **where** the badge sits —
   `tableStatus` (table rows / status columns), `additionalInformation` (beside a
   page-title H1 or tab), `indicator` (bare dot). *Don't:* use `tableStatus` next to a
@@ -467,9 +491,11 @@ ERP override wins.
   checkbox-only column wastes a full column and misaligns the header; the selector rides
   with the row's identity cell at one consistent gap. **Lint:** review.
 - **`rule/table-cell-padding-align`** — *Do:* cell padding **8px top/bottom**; align
-  **middle** — **unless** any column has ≥3 lines, then the **whole table** aligns
-  **top**. **Why:** the golden padding/align rule (`docs/table-design.md`). **Lint:**
-  review.
+  **per row** — a **single-line** row aligns **middle**; a row that has a **multi-line**
+  cell (description / avatar / ≥3 lines) aligns **that row's** cells **top** (the actions
+  kebab stays middle). It's per-row, not whole-table — `ErpTablePage` toggles
+  `.erp-tr--align-top` on each measured tall row. **Why:** the golden padding/align rule
+  (`docs/table-design.md`). **Lint:** review.
 - **`rule/table-default-sort-alpha`** — *Do:* named-entity tables default to
   **alphabetical by name**. (Transactional logs may default newest-first.) **Why:**
   predictable scanning. **Lint:** review.
@@ -590,6 +616,42 @@ ERP override wins.
   the panel has **no box-shadow**. **Lint:** review.
 - **`rule/drawer-open-via-manage`** — *Do:* a drawer opens **only** via a **Manage**
   button; a section toggle must not auto-open it. **Lint:** review.
+- **`rule/filter-drawer-shell`** — *Do:* an **"All filters" drawer** (the overflow
+  filter surface for a list page) is the `rule/drawer-custom-shell` panel with header
+  **"All filters"**, opened from the filter bar's **All filters** button
+  (`rule/filter-bar-all-filters-drawer`). It edits a **local draft** and commits to the
+  parent **only on Apply** (re-syncs the draft from the applied value on every open); as
+  a form it **ignores the overlay click** — close only via ×, Cancel, or Apply.
+  *Don't:* mutate the parent's filter state live, or close-on-overlay-click and lose
+  input. **Why:** one predictable filter surface; edits are never half-applied or lost.
+  **Source:** `BillsFiltersDrawer.vue` (canonical; 15 across the ERP). **Lint:** review.
+- **`rule/filter-drawer-fields`** — *Do:* each filter is a **bold label above a reused
+  field control** from the shared vocabulary — **Keyword** (text + inline column-scope
+  `MpPopover`), **Date range** (`AdvancedDateRangePicker`, `direction="future"` for due
+  dates), **Status/checklist** (`MpCheckbox` list), **Amount** (`AmountComparatorField`
+  — operator prefix + value / min–max), **Tags** (comparator prefix + typeable chips).
+  Only the field *set* varies per page. *Don't:* invent a new field control or a native
+  `<select>` (`rule/select-erpfilterselect`). **Why:** every filter drawer reads the
+  same. **Lint:** review.
+- **`rule/filter-drawer-footer`** — *Do:* fixed footer, always three actions: a **ghost
+  "Reset filter"** pinned **left** (clears the draft to empty), then **ghost "Cancel"** +
+  **primary "Apply"** pinned **right**. Apply commits + closes; Cancel/× discards. *Don't:*
+  disable Apply, drop Reset, or reorder. **Why:** the filter footer is muscle-memory.
+  **Lint:** review.
+- **`rule/select-product-drawer`** — *Do:* picking line-item products (Purchase order,
+  Sales invoice, transfer, stock count …) uses the shared **`SelectProductDrawer.vue`** —
+  the `rule/drawer-custom-shell` panel (wide), header **"Select product"**, footer **ghost
+  Cancel + primary Save**. It seeds a **working selection** from the committed value on
+  open and commits **only on Save** (Cancel/× discards). *Don't:* hand-roll a product
+  picker or use a multi-select dropdown for this. **Why:** one add-products experience.
+  **Source:** `SelectProductDrawer.vue`. **Lint:** review.
+- **`rule/select-product-columns`** — *Do:* lay it out as **two columns — Available
+  ("Products") on the left, "Selected products (n)" on the right**, each with its **own
+  search** (by name/SKU) and an **Add all / Remove all** link. A row = 32px thumb + name +
+  SKU (+ optional min-stock); **clicking a left row moves it right (hover reveals a blue
+  `+`)**, **clicking a right row moves it back (hover reveals a `−`)**. *Don't:* use
+  checkboxes-in-one-list, or drop the per-column search / move-all. **Why:** the
+  left-add / right-remove model is the house pattern for building a selection. **Lint:** review.
 
 ## Detail pages — source: `docs/patterns/details-page-format.md`
 

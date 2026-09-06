@@ -25,6 +25,7 @@ import {
 } from '~/data'
 import type { SalesInvoice } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -137,6 +138,7 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 }
 
 const newRowSearch = ref('')
+function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
 function selectNewProduct(p: typeof products[number]) {
   items.value.push({
     _key: ++_seq,
@@ -540,9 +542,11 @@ function onSave() {
                     <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in productMatches(item.product)" :key="p.id" @click="selectProduct(item, p)">
-                          {{ p.name }}
+                          <ProductCell :name="p.name" :desc="p.code" />
                         </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(item.product).length" is-disabled>{{ t('No results') }}</MpPopoverListItem>
+                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(item.product)">
+                          {{ item.product ? `${t('Add')} "${item.product}" ${t('as a new product')}` : t('Add new product') }}
+                        </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -594,7 +598,7 @@ function onSave() {
 
                 <!-- Amount is derived (qty × price − discount), so it reads as a
                      value with the same prefix chrome rather than an input. -->
-                <td class="si-td si-td--border si-td--affix">
+                <td class="si-td si-td--border si-td--affix si-td--calc">
                   <div class="si-affix-cell">
                     <span class="si-affix">Rp</span>
                     <span class="si-affix-value">{{ fmtPlain(lineAmount(item)) }}</span>
@@ -627,9 +631,11 @@ function onSave() {
                     <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in productMatches(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
-                          {{ p.name }}
+                          <ProductCell :name="p.name" :desc="p.code" />
                         </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(newRowSearch).length" is-disabled>{{ t('No results') }}</MpPopoverListItem>
+                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(newRowSearch)">
+                          {{ newRowSearch ? `${t('Add')} "${newRowSearch}" ${t('as a new product')}` : t('Add new product') }}
+                        </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -648,14 +654,14 @@ function onSave() {
         <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
         <div class="si-notes-col">
           <MpFormControl id="f-message" class="si-note-field">
-            <MpFormLabel>{{ t('Message') }}</MpFormLabel>
-            <MpTextarea id="f-message-inp" v-model="message" is-full-width />
+            <div class="si-lbl-row"><MpFormLabel>{{ t('Message') }}</MpFormLabel><span class="si-counter">{{ message.length }}/250</span></div>
+            <MpTextarea id="f-message-inp" v-model="message" :maxlength="250" is-full-width />
             <span class="si-field-caption">{{ t('Visible to customer') }}</span>
           </MpFormControl>
 
           <MpFormControl id="f-memo" class="si-note-field">
-            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-            <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
+            <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
+            <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
             <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
           </MpFormControl>
 
@@ -748,9 +754,9 @@ function onSave() {
             <div v-for="wh in withholdingRows" :key="wh.id" class="si-wh-row">
               <div class="si-wh-toprow">
                 <MpFormControl :id="`f-wh-name-${wh.id}`" is-required :is-invalid="wh.nameError">
-                  <MpFormLabel>{{ t('Name') }}</MpFormLabel>
+                  <div class="si-lbl-row"><MpFormLabel>{{ t('Name') }}</MpFormLabel><span class="si-counter">{{ wh.name.length }}/60</span></div>
                   <MpInput
-                    :id="`f-wh-name-inp-${wh.id}`" v-model="wh.name" is-full-width
+                    :id="`f-wh-name-inp-${wh.id}`" v-model="wh.name" :maxlength="60" is-full-width
                     :is-invalid="wh.nameError" @update:model-value="wh.nameError = false"
                   />
                   <MpFormErrorMessage>{{ t('You must fill in name') }}</MpFormErrorMessage>
@@ -1022,7 +1028,7 @@ function onSave() {
 /* Rows carry BOTH a bottom border (row separator) and right borders (column
    dividers) — the Figma's Row has border-b and each cell border-r. */
 .si-td {
-  height: var(--mp-sizes-13, 52px);
+  height: var(--mp-sizes-10, 40px);
   padding: 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -1039,10 +1045,10 @@ function onSave() {
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
 .si-td--input :deep(.mp-input__root),
-.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-13, 52px); background: transparent; }
+.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
 .si-td--input :deep(.mp-input__control),
 .si-td--input :deep(.mp-select__control) {
-  height: var(--mp-sizes-13, 52px);
+  height: var(--mp-sizes-10, 40px);
   /* MpInput's control carries a hard min-width (88px). In the narrow Qty and
      Discount columns that overflows the cell and paints over the td's right
      border — and pushes the Discount "%" suffix out of view. */
@@ -1052,6 +1058,7 @@ function onSave() {
 }
 .si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
+.si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 
 /* Line-item validation — cell tint + inset red underline + tooltip, the same
    convention as NewExpensePage's .ex-td--error. */
@@ -1063,7 +1070,9 @@ function onSave() {
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
 .si-td--affix { padding: 0; }
-.si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-13, 52px); }
+/* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
+.si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: #f1f3f5; }
+.si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);
@@ -1093,6 +1102,9 @@ function onSave() {
 .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
 .si-note-field { display: flex; flex-direction: column; }
 .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+/* char-counter on the label row (rule/input-char-counter) */
+.si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
+.si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }
 
 /* Attachment: label→field gap is 4px, matching every MpFormLabel above it */
 .si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); width: var(--si-field-wide); }

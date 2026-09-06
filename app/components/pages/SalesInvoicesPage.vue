@@ -276,7 +276,6 @@ function confirmBulkDelete() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    has-ai-chat
     bulk-label="sales invoice"
     :search="search"
     filter-empty-label="sales invoice"

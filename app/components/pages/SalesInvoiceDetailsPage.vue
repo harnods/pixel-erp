@@ -7,6 +7,7 @@ import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
@@ -38,6 +39,12 @@ const router = useRouter()
 const invoice = computed(() => getSalesInvoiceDetail(props.orderId))
 
 const activityOpen = ref(false)
+// Destructive delete → confirm modal (rule/btn-danger-confirm)
+const deleteOpen = ref(false)
+function confirmDelete() {
+  toast.notify({ variant: 'success', title: t('Sales invoice deleted'), rootProps: { class: 'toast-enterprise' } })
+  router.push('/sales-invoices')
+}
 const taxDocDrawerOpen = ref(false)
 const cannotCreateTaxDocDrawerOpen = ref(false)
 const taxDocuments = computed(() => getTaxDocumentsForInvoice(invoice.value.id))
@@ -641,7 +648,7 @@ function receivePayment() { router.push('/sales-invoices') }
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -717,6 +724,14 @@ function receivePayment() { router.push('/sales-invoices') }
       :doc="taxDocDetailDoc"
       :invoice="invoice"
       :menu-items="taxDocDetailMenuItems"
+    />
+
+    <ConfirmModal
+      v-model:is-open="deleteOpen"
+      :title="t('Delete sales invoice?')"
+      :description="`${t('Sales Invoice')} #${invoice.number} ${t('will be permanently deleted. This cannot be undone.')}`"
+      :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
+      @confirm="confirmDelete"
     />
   </div>
 
