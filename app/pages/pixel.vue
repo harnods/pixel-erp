@@ -67,6 +67,9 @@ const sidebar = [
   {
     label: 'Patterns', items: [
       { slug: 'filter-bar', label: 'Filter bar' },
+      { slug: 'pattern-activity-log-modal', label: 'Activity log modal' },
+      { slug: 'pattern-journal-entry-modal', label: 'Journal entry modal' },
+      { slug: 'pattern-approval-log-modal', label: 'Approval log modal' },
     ],
   },
   {

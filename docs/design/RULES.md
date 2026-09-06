@@ -214,6 +214,75 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/modal-alert-top-align`** — *Do:* alert/confirm modals align to the **top**
   (`is-centered=false`; use `ConfirmModal.vue`). **Why:** house convention. **Lint:**
   review.
+- **`rule/activity-log-modal`** — *Do:* the record **audit trail** always uses the
+  shared **`ActivityLogModal.vue`** (`~/components/patterns/ActivityLogModal.vue`) —
+  an `MpModal` size **`xl`**, `is-close-on-overlay-click`, `:is-keep-alive="false"`,
+  header **"Activity log"** + `MpModalCloseButton`. Wire it from a detail page with
+  `:is-open` / `@close` and pass `:subject` (the record name) + `:entries`. *Don't:*
+  hand-roll an activity/history/audit modal, a timeline, or a drawer for this — reuse
+  the component. **Why:** one audit-trail surface, identical on every detail page.
+  **Source:** Figma *Modal / View / Activity log* (752:222). **Lint:** review.
+- **`rule/activity-log-trigger`** — *Do:* open the modal **only** from the
+  **"Created by {user} on {date}"** / **"Last updated by …"** text link that sits at
+  the **bottom of the detail summary** (the `.detail-updated` link, `@click.prevent`).
+  *Don't:* add a toolbar/page-title button, an icon, or a menu item for it. **Why:**
+  the provenance line *is* the affordance — click the thing it describes. **Lint:** review.
+- **`rule/activity-log-structure`** — *Do:* body = the record **subject** as an `h2`,
+  then a fixed 4-column table **DATE · USER · ACTIVITY · DETAILS** (uppercase sticky
+  header on the gray surface). **DETAILS** lists changed/created fields as label +
+  value; an **edit** renders **"old → new"**. A single event can carry **many**
+  fields — show the **first 3**, then a **"Show more (n)"** / "Show less" link that
+  reveals the rest **of that event**. *Don't:* reorder or rename the columns, cap an
+  event at 2, or expand all details by default. **Why:** the log reads the same every
+  time, and a busy event stays scannable. **Lint:** review.
+- **`rule/activity-log-progressive`** — *Do:* the rows use **progressive loading — 10
+  at a time** on scroll (IntersectionObserver + `MpSpinner` "Loading activities…") with
+  a **"Showing X of Y activities"** count; frame the table with the **bold** outer
+  border **only** when it's longer than one page (>10 rows) — a short log is
+  borderless (pairs with `rule/table-outer-border-conditional`). *Don't:* paginate, or
+  always draw the frame. **Why:** matches the embedded-table loading model. **Lint:** review.
+- **`rule/activity-log-entries`** — *Do:* build `entries` (an `ActivityEntry[]`,
+  **newest first**) from the **record's own data** so the trail is realistic and
+  consistent with what's on the page — there's no real audit store in the prototype.
+  *Don't:* fabricate unrelated users/timestamps or leave it empty (a bare record still
+  shows one **"Created"** entry). **Why:** the demo must stay internally coherent (see
+  the persist-and-coherent-mock convention). **Lint:** review.
+- **`rule/journal-entry-modal`** — *Do:* the read-only **double-entry posting** behind
+  a transaction uses the shared **`JournalEntryDrawer.vue`** (an **`MpModal` size `lg`**
+  despite the legacy *Drawer* filename), header **"Journal entry"**, bound with
+  **`v-model:is-open`**, given a `heading` + `rows`. It's generic — reuse it for any
+  transaction type (bills, transfers, invoices …). *Don't:* fork a per-type journal
+  modal, or render it as a real drawer. **Why:** one posting view everywhere. **Lint:** review.
+- **`rule/journal-entry-structure`** — *Do:* body = a **heading** (the source document,
+  e.g. "Expense #00042") then a fixed 3-column table **Account · Debit · Credit**
+  (Account flex, Debit/Credit right-aligned 180px), closed by a **bold-bordered Total
+  row** summing each side; amounts in IDR, empty cells blank. *Don't:* add edit
+  controls (it's read-only) or drop the Total row — debits must visibly equal credits.
+  **Why:** the balance is the point. **Lint:** review.
+- **`rule/journal-entry-trigger`** — *Do:* open it from the **"View journal entry"**
+  text link on the detail page (typically inside the posting banner). *Don't:* use a
+  toolbar/page-title button. **Why:** the link names exactly what it opens. **Lint:** review.
+- **`rule/approval-log-modal`** — *Do:* the **universal** multi-stage approval timeline
+  uses the shared **`ApprovalLogModal.vue`** (`MpModal` size `md`), header **"Approval
+  log"**, opened from an **"Approval log"** action (e.g. Stock adjustment → Awaiting
+  approval → Approval log), bound with `:is-open` / `@close` + a `:log`. Read-only —
+  approving happens elsewhere. *Don't:* build a bespoke approval history per module, or
+  a drawer/popover for the full log (a compact peek may use `ApprovalLogPopover`).
+  **Why:** every approval chain reads identically. **Source:** Figma *Modal / View /
+  Approval log* (754:912). **Lint:** review.
+- **`rule/approval-log-structure`** — *Do:* row 1 = **"Requested by {user}"** + timestamp
+  (blue submitted dot); then per **stage** a header with its title, the rule caption
+  (**"Everyone must approve (n of m)"** for `rule: 'everyone'` / **"Anyone can approve"**
+  for `'anyone'`) and a status **`MpBadge`** (green **Approved** / amber **Awaiting
+  approval**), collapsible via a chevron (**expanded by default**). Under an expanded
+  stage: **"Approved by {user}"** (green check) per approval and **"Awaiting approval
+  from {name}"** (amber clock) per pending approver. *Don't:* reorder these or collapse
+  stages by default. **Why:** the chain's state is legible at a glance. **Lint:** review.
+- **`rule/approval-log-rail`** — *Do:* draw **one continuous 1px rail** down the left
+  behind every marker (dot / check / clock / stage chevron) by **flattening** all rows
+  into a single list (`.al-rail::before` line, markers on `z-index:1`) — so the line
+  self-heals when a stage collapses. *Don't:* nest rows per stage with per-stage line
+  segments. **Why:** a single unbroken timeline. **Lint:** review.
 - **`rule/checkbox-multiline-top`** — *Do:* when a checkbox label wraps to >1 line,
   align the box to the **top** (`align-items: flex-start`). **Why:** box tracks the
   first line, not the vertical center of a paragraph. **Lint:** review.

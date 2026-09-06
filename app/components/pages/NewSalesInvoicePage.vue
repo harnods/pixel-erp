@@ -10,9 +10,9 @@
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
+  MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
-  MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
+  MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTextlink, toast, css,
@@ -186,6 +186,7 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
 const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
 
 // ── Totals ────────────────────────────────────────────────────────────────────
 const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
@@ -280,6 +281,7 @@ function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 function validate(): boolean {
   let ok = true
   if (!customerId.value) { customerError.value = true; ok = false }
+  noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
   items.value.forEach(it => {
@@ -315,14 +317,8 @@ function nextInvoiceId(): string {
 function onCancel() { router.push('/sales-invoices') }
 
 function onSave() {
-  if (!validate()) {
-    toast.notify({
-      variant: 'error',
-      title: items.value.length ? t('Check the highlighted fields') : t('Add at least one product'),
-      rootProps: { class: 'toast-enterprise' },
-    })
-    return
-  }
+  // Validation errors surface INLINE (per-field + the banner below), never as a toast.
+  if (!validate()) return
   const customer = customers.find(c => c.id === customerId.value)!
   const invoice: SalesInvoice = {
     id: nextInvoiceId(),
@@ -405,19 +401,17 @@ function onSave() {
         <div class="si-header2-col">
           <MpFormControl id="f-tx-date" class="si-field">
             <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-due-date" class="si-field">
             <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
-            <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-payment" class="si-field">
             <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-            <MpSelect id="f-payment-inp" v-model="paymentTerms" :placeholder="t('Select payment terms')" is-full-width>
-              <option v-for="opt in PAYMENT_TERMS" :key="opt" :value="opt">{{ opt }}</option>
-            </MpSelect>
+            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
 
@@ -425,7 +419,7 @@ function onSave() {
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
             <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
-            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-ship-via" class="si-field">
@@ -460,9 +454,7 @@ function onSave() {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpSelect id="f-warehouse-inp" v-model="warehouse" :placeholder="t('Select warehouse')" is-full-width>
-              <option v-for="opt in WAREHOUSES" :key="opt" :value="opt">{{ opt }}</option>
-            </MpSelect>
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
 
@@ -481,10 +473,10 @@ function onSave() {
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
 
-        <MpBanner v-if="hasLineItemErrors" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
+        <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -575,9 +567,7 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpSelect v-model="item.unit" is-full-width>
-                    <option v-for="opt in unitOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
+                  <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
                 </td>
 
                 <!-- Prefix box is a plain span, not MpInputLeftAddon — see
@@ -599,9 +589,7 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpSelect v-model="item.taxLabel" is-full-width>
-                    <option v-for="opt in taxOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
+                  <MpAutocomplete v-model="item.taxLabel" :data="taxOptions" use-portal is-full-width />
                 </td>
 
                 <!-- Amount is derived (qty × price − discount), so it reads as a
@@ -807,15 +795,12 @@ function onSave() {
               </MpFormControl>
 
               <div v-if="withholdingRows.length > 1" class="si-wh-remove">
-                <MpButton variant="textLink" size="sm" @click="removeWithholdingRow(wh.id)">{{ t('Remove') }}</MpButton>
+                <MpButton variant="textLink" @click="removeWithholdingRow(wh.id)">{{ t('Remove') }}</MpButton>
               </div>
             </div>
 
             <div class="si-wh-add">
-              <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="addWithholdingRow">
-                <MpIcon name="add" size="sm" />
-                {{ t('Add withholding') }}
-              </button>
+              <MpButton variant="secondary" left-icon="add" is-rounded @click="addWithholdingRow">{{ t('Add withholding') }}</MpButton>
             </div>
           </div>
 
@@ -857,42 +842,28 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Footer ── -->
-      <footer class="si-form-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">{{ t('Cancel') }}</button>
-
-        <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">{{ t('Save & close') }}</button>
-
-        <MpPopover id="si-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Save & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <MpButtonGroup class="erp-action-footer si-form-footer">
+        <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
 
         <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" :aria-label="t('More actions')">
-              <MpIcon name="menu-kebab" size="sm" />
-            </button>
+            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
+              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-      </footer>
+
+        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
+      </MpButtonGroup>
 
     </div><!-- /si-form-stage -->
 

@@ -40,6 +40,17 @@ export const RULE_MEANINGS: Record<string, string> = {
   // Modals
   'rule/modal-use-mpmodal': 'All modals use Pixel MpModal (ghost Cancel + pill confirm).',
   'rule/modal-alert-top-align': 'Alert / confirm modals align to the top.',
+  'rule/activity-log-modal': 'Audit trail = the shared ActivityLogModal (MpModal xl, header "Activity log") — never hand-roll it.',
+  'rule/activity-log-trigger': 'Open it only from the "Created / Last updated by … on <date>" link at the foot of the detail summary — no button.',
+  'rule/activity-log-structure': 'Body = subject h2 + DATE · USER · ACTIVITY · DETAILS table; a busy event shows first 3 details (Show more reveals the rest), edits render "old → new".',
+  'rule/activity-log-progressive': 'Rows load 10 at a time on scroll with "Showing X of Y"; bold outer frame only when longer than one page.',
+  'rule/activity-log-entries': 'Pass entries (newest first) built from the record\'s own data — no fabricated trail; a bare record still shows one "Created".',
+  'rule/journal-entry-modal': 'Read-only posting = shared JournalEntryDrawer (MpModal lg, v-model:is-open), heading + rows — reuse for any transaction type.',
+  'rule/journal-entry-structure': 'Body = heading + Account · Debit · Credit table with a bold Total row (debits must equal credits); IDR, read-only.',
+  'rule/journal-entry-trigger': 'Open from the "View journal entry" link on the detail page — no toolbar button.',
+  'rule/approval-log-modal': 'Universal approval timeline = shared ApprovalLogModal (MpModal md, "Approval log"), opened from an "Approval log" action; read-only.',
+  'rule/approval-log-structure': '"Requested by …" then per stage: rule caption (everyone n of m / anyone) + status badge; approved (green check) / awaiting (amber clock); expanded by default.',
+  'rule/approval-log-rail': 'One continuous left rail behind every marker — flatten rows into a single list so the line self-heals on collapse; never nest per-stage lines.',
 
   // Tables
   'rule/table-use-erptablepage': 'Tables render via ErpTablePage — never hand-rolled.',
@@ -49,12 +60,9 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/table-default-sort-alpha': 'Named-entity tables default to alphabetical by name.',
   'rule/table-sortable-columns': 'Every column is sortable via a hover-header menu.',
   'rule/table-name-link-span': 'A clickable row name is a styled span, not MpTextlink.',
-  'rule/table-accordion-row-click': 'An accordion row expands on click anywhere in the row.',
   'rule/accordion-row-click': 'An accordion row expands on click anywhere in the row.',
-  'rule/table-form-cell-no-border': 'Inputs in a cell have no own border — the cell provides it.',
-  'rule/table-nonform-bg-gray': 'Non-form columns get a subtle gray bg beside form columns.',
-  'rule/table-form-header-white': 'A form-table header has a white bg, no side borders.',
-  'rule/table-merged-row-borders': 'Merged (rowspan) cells get side borders, no double border.',
+  // table-accordion-row-click / -form-cell-no-border / -nonform-bg-gray / -form-header-white
+  // / -merged-row-borders: the detailed copies live in the table-rules block below.
 
   // Surfaces / drawers / detail
   'rule/surface-border-no-shadow': 'Cards use a 1px border, never a drop-shadow.',
