@@ -2,8 +2,8 @@
 import { type Ref } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpButton, MpTooltip, MpRadio, MpCheckbox,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpButton, MpButtonGroup, MpTooltip, MpRadio, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   css, toast,
 } from '@mekari/pixel3'
@@ -16,7 +16,11 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { generateBillAttachmentPreviewPdf } from '~/utils/billAttachmentPdf'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BillsFiltersDrawer, { emptyBillsFilters, type BillsFiltersValue } from '~/components/patterns/BillsFiltersDrawer.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
+import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { bills, deleteBills } from '~/data'
 import type { Bill, BillStatus } from '~/data'
@@ -131,10 +135,15 @@ type Row = Bill & {
 
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
 
+// Prototype preview toggle (ScenarioFab, bottom-right): data vs empty-state view
+const previewMode = ref<'data' | 'empty'>('data')
+
 const rows = computed<Row[]>(() =>
-  // Newest created on top by default (transactional log) — highest number first;
-  // newly-added bills (higher number) surface at the top automatically.
-  [...bills].sort((a, b) => b.number - a.number).map(bill => {
+  previewMode.value === 'empty'
+    ? []
+    // Newest created on top by default (transactional log) — highest number first;
+    // newly-added bills (higher number) surface at the top automatically.
+    : [...bills].sort((a, b) => b.number - a.number).map(bill => {
     const isOverdue = bill.status === 'unpaid' && new Date(bill.dueDate).getTime() < Date.now()
     const overdueLabel = isOverdue
       ? (() => {
@@ -262,9 +271,28 @@ const statusOptions = [
   { label: t('Paid'),    value: 'paid'    },
 ]
 
-const statusLabel = computed(
-  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
-)
+// ─── Copy link / Share via email (shared patterns) ─────────────────────────────
+const copyOpen = ref(false)
+const shareOpen = ref(false)
+const copyItems = ref<{ title: string; subtitle?: string; url: string }[]>([])
+const shareTitle = ref('')
+const shareSubject = ref('')
+const shareAttachment = ref('')
+function recordLink(id: string) { return `https://mkrierp.id/${id}` }
+function openCopyLinks(rows: Row[]) {
+  copyItems.value = rows.map(r => ({ title: `${t('Bill')} #${String(r.number).padStart(5, '0')}`, subtitle: r.beneficiaryName ?? r.beneficiary?.name, url: recordLink(r.id) }))
+  copyOpen.value = true
+}
+function openShare(r: Row) {
+  shareTitle.value = `${t('Bill')} #${String(r.number).padStart(5, '0')}`
+  shareSubject.value = shareTitle.value
+  shareAttachment.value = `BILL-${String(r.number).padStart(5, '0')}.pdf`
+  shareOpen.value = true
+}
+function openShareBulk(selectedRows: Set<number>) {
+  const rows = bulkSelectedBills(selectedRows)
+  if (rows.length) openShare(rows[0]!)
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -376,38 +404,21 @@ function confirmBulkDelete() {
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ selectedRows, deselectAll }">
-      <template v-if="allSelectedUnpaid(selectedRows as Set<number>)">
-        <MpPopover id="bills-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
-              {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="payWithMekariPay(selectedRows as Set<number>)">{{ t('Pay with Mekari Pay') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="printBulkPdf(selectedRows as Set<number>)">{{ t('Print PDF') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </template>
-      <button
-        v-else
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="printBulkPdf(selectedRows as Set<number>)"
-      >
-        {{ t('Print PDF') }}
-      </button>
-      <button
-        class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
-        @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)"
-      >
-        {{ t('Delete') }}
-      </button>
+    <template #bulk-actions="{ selectedRows }">
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
+      <MpPopover id="bills-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+        <MpPopoverTrigger>
+          <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent class="erp-dropdown-menu">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="allSelectedUnpaid(selectedRows as Set<number>)" @click="payWithMekariPay(selectedRows as Set<number>)">{{ t('Pay with Mekari Pay') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="printBulkPdf(selectedRows as Set<number>)">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(bulkSelectedBills(selectedRows as Set<number>))">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
 
     <!-- ── Stats section ── -->
@@ -469,39 +480,9 @@ function confirmBulkDelete() {
 
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: status single-select (mirrors ReceivingIndexPage's assignee filter) + All filters -->
+      <!-- Left: status single-select (ErpFilterSelect — MpPopover menu, never native) + All filters -->
       <div class="filter-left">
-        <MpPopover id="bills-status-filter" is-close-on-select>
-          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
-               value is picked → @clear resets to show-all. -->
-          <MpPopoverTrigger>
-            <MpSelect
-              id="bills-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <!-- min-width = MpSelect width (160px) so the dropdown matches the select;
-               width:max-content lets it hug/grow when an option is longer. -->
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="bills-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
 
         <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
@@ -511,31 +492,20 @@ function confirmBulkDelete() {
 
       <!-- Right: icon buttons + search -->
       <div class="filter-right">
-        <div class="filter-btn-group">
-          <!-- Airene -->
-          <MpTooltip id="tt-bills-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-                <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-              </svg>
-            </button>
+        <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip :label="t('Ask Airene')" placement="bottom">
+            <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
-          <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
-          <!-- Export -->
-          <MpTooltip id="bills-tt-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="openExportModal">
-              <MpIcon name="download" size="md" />
-            </button>
+          <MpTooltip :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="openExportModal" />
           </MpTooltip>
-        </div>
+        </MpButtonGroup>
 
-        <!-- Pill search -->
+        <!-- Pill search (sanctioned ErpFilterBar pill; icons are MpIcon) -->
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input
             v-model="search"
             class="filter-search-input"
@@ -543,9 +513,7 @@ function confirmBulkDelete() {
             :placeholder="t('Search...')"
           />
           <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-            </svg>
+            <MpIcon name="close" size="sm" />
           </button>
         </div>
       </div>
@@ -558,7 +526,7 @@ function confirmBulkDelete() {
 
     <!-- ── Cell: Number (text link → detail; erp.css .cell-link) ── -->
     <template #cell-number="{ value, row }">
-      <a class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ formatNumber(value as number) }}</a>
+      <span class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ formatNumber(value as number) }}</span>
     </template>
 
     <!-- ── Cell: Attachment icon (narrow column, no header) — same icons-cell
@@ -586,7 +554,7 @@ function confirmBulkDelete() {
 
     <!-- ── Cell: Beneficiary (text link → detail, where the file preview lives) ── -->
     <template #cell-beneficiaryName="{ value, row }">
-      <a class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ value }}</a>
+      <span class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ value }}</span>
     </template>
 
     <!-- ── Cell: Due Date ── -->
@@ -625,20 +593,19 @@ function confirmBulkDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`bill-row-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpButton class="row-kebab" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </MpButton>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+        <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
             <MpPopoverListItem @click="goDetail((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="(row as Row).status === 'unpaid'" @click="addPayment((row as Row).id)">{{ t('Add payment') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="showSetAsRecurring">{{ t('Set as recurring') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate((row as Row).id)">{{ t('Duplicate') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -777,9 +744,7 @@ function confirmBulkDelete() {
 
             <!-- Search -->
             <div class="export-col-search">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
+              <MpIcon name="search" size="sm" />
               <input
                 v-model="exportColumnSearch"
                 class="export-col-search__input"
@@ -787,9 +752,7 @@ function confirmBulkDelete() {
                 :placeholder="t('Search column')"
               />
               <MpButton v-if="exportColumnSearch" class="search-clear-btn" :aria-label="t('Clear search')" @click="exportColumnSearch = ''">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                </svg>
+                <MpIcon name="close" size="sm" />
               </MpButton>
             </div>
 
@@ -832,6 +795,22 @@ function confirmBulkDelete() {
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Copy link / Share via email (shared patterns) ── -->
+  <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
+  <ShareViaEmailModal
+    :open="shareOpen"
+    :title="shareTitle"
+    :subject="shareSubject"
+    :attachment-name="shareAttachment"
+    :attachment-size-k-b="128"
+    sender-email="rizal.candra@centralperk.co.id"
+    @close="shareOpen = false"
+    @send="shareOpen = false"
+  />
+
+  <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
+  <ScenarioFab v-model="previewMode" />
 </template>
 
 <style scoped>
@@ -1089,6 +1068,9 @@ function confirmBulkDelete() {
   display: flex;
   align-items: center;
 }
+/* icon buttons in the MpButtonGroup sit flush (0 gap) — rule/filter-bar-icon-group */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0; }
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {
   display: flex !important;
@@ -1107,7 +1089,7 @@ function confirmBulkDelete() {
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 
-.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px;
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: var(--filter-search-w, 248px);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
@@ -1129,7 +1111,7 @@ function confirmBulkDelete() {
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; }
-.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-illustration { width: var(--empty-illo-w, 288px); height: var(--empty-illo-h, 240px); object-fit: contain; }
 .empty-full-title {
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);

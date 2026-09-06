@@ -448,7 +448,7 @@ const exportColumns = computed(() => [
 }
 .empty-illustration {
   width: auto;
-  height: 240px;
+  height: var(--empty-illo-h, 240px);
   object-fit: contain;
   margin-bottom: 0;
 }
@@ -541,7 +541,7 @@ const exportColumns = computed(() => [
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 248px;
+  width: var(--filter-search-w, 248px);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
