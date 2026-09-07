@@ -2,11 +2,17 @@
   "name": "erp-app",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^22.19.0 || ^24.11.0 || >=26.0.0"
+  },
   "scripts": {
+    "prebuild": "node scripts/check-node.mjs",
     "build": "nuxt build",
+    "predev": "node scripts/check-node.mjs",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
+    "pretest": "node scripts/check-node.mjs",
     "test": "vitest run",
     "pixel:fix": "node scripts/pixel-fix.mjs",
     "pixel:fix:check": "node scripts/pixel-fix.mjs --check",
