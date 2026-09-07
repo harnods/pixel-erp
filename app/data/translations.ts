@@ -2117,4 +2117,30 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Delete contact?": "Hapus kontak?",
   "will be removed from your contact list.": "akan dihapus dari daftar kontak Anda.",
   "Clear": "Hapus filter",
+
+  // ── Mark as completed (sales order) ──
+  "This order has": "Pesanan ini memiliki",
+  "unprocessed product.": "produk belum diproses.",
+  "unprocessed products.": "produk belum diproses.",
+  "Completing it will close the transaction permanently. Any remaining quantities will not be invoiced or shipped.":
+    "Menyelesaikannya akan menutup transaksi secara permanen. Sisa jumlah tidak akan ditagih atau dikirim.",
+  "Processed qty": "Jumlah diproses",
+  "Unprocessed qty": "Jumlah belum diproses",
+  "Sales order marked as completed": "Pesanan penjualan ditandai selesai",
+
+  // ── Bulk delete (sales orders / deliveries) ──
+  "Delete sales orders?": "Hapus pesanan penjualan?",
+  "1 sales order will be permanently deleted. This cannot be undone.":
+    "1 pesanan penjualan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
+  "sales orders will be permanently deleted. This cannot be undone.":
+    "pesanan penjualan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
+  "1 sales order deleted": "1 pesanan penjualan dihapus",
+  "sales orders deleted": "pesanan penjualan dihapus",
+  "Delete sales deliveries?": "Hapus pengiriman penjualan?",
+  "1 sales delivery will be permanently deleted. This cannot be undone.":
+    "1 pengiriman penjualan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
+  "sales deliveries will be permanently deleted. This cannot be undone.":
+    "pengiriman penjualan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
+  "1 sales delivery deleted": "1 pengiriman penjualan dihapus",
+  "sales deliveries deleted": "pengiriman penjualan dihapus",
 }

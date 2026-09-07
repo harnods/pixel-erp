@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
@@ -16,8 +16,11 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesOrderFiltersDrawer, { emptySalesOrderFilters, type SalesOrderFiltersValue } from '~/components/patterns/SalesOrderFiltersDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesOrders, awaitingSalesOrders } from '~/data'
+import { salesOrderCompletionRows, type SalesOrderCompletionRow } from '~/data/salesOrders'
 import type { SalesOrder } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -206,6 +209,37 @@ const exportColumns = computed(() => [
   { key: 'message', label: t('Message') },
   { key: 'memo', label: t('Memo') },
 ])
+
+// ─── Mark as completed — only Open / Partially processed can be completed ───────
+// (Closed/Voided never show the menu item; see the kebab v-if.)
+function canMarkCompleted(status: string) { return status === 'open' || status === 'partially processed' }
+const markCompleteOpen = ref(false)
+const markCompleteNumber = ref<number | string>('')
+const markCompleteRows = ref<SalesOrderCompletionRow[]>([])
+function openMarkComplete(row: Row) {
+  markCompleteNumber.value = row.number
+  markCompleteRows.value = salesOrderCompletionRows(row)
+  markCompleteOpen.value = true
+}
+function confirmMarkComplete() {
+  toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
+}
+
+// ─── Bulk delete — Delete (with confirmation) from the bulk Actions menu ─────────
+const bulkDeleteOpen = ref(false)
+const bulkSelectedCount = ref(0)
+function openBulkDelete(count: number) {
+  bulkSelectedCount.value = count
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = bulkSelectedCount.value
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('1 sales order deleted') : `${n} ${t('sales orders deleted')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
 </script>
 
 <template>
@@ -231,7 +265,7 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ count }">
       <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary) -->
       <MpPopover id="so-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
@@ -239,11 +273,13 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Create sales delivery') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -352,7 +388,8 @@ const exportColumns = computed(() => [
             <MpPopoverListItem @click="viewDetails((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Create sales delivery') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Mark as completed') }}</MpPopoverListItem>
+            <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
+            <MpPopoverListItem v-if="canMarkCompleted((row as Row).status)" @click="openMarkComplete(row as Row)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
@@ -384,6 +421,23 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export sales orders')" entity-label="sales orders" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <MarkSalesOrderCompletedModal
+    v-model:is-open="markCompleteOpen"
+    :order-number="markCompleteNumber"
+    :rows="markCompleteRows"
+    @confirm="confirmMarkComplete"
+  />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="t('Delete sales orders?')"
+    :description="bulkSelectedCount === 1
+      ? t('1 sales order will be permanently deleted. This cannot be undone.')
+      : `${bulkSelectedCount} ${t('sales orders will be permanently deleted. This cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <ScenarioFab v-model="previewMode" />
 </template>

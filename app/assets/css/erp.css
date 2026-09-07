@@ -156,6 +156,17 @@
   background: var(--mp-colors-background-overlay, rgba(8, 13, 14, 0.55));
 }
 
+/* ── "Mark as completed" sales-order modal — 784px (Figma) ───────────────────
+ * MpModal size="lg" resolves to ~684px in this Pixel build; the Figma modal
+ * (Sales Orders / Mark As Completed, node 4502-37806) is 784px wide. Pixel sets
+ * the size width as an INLINE max-width on the contentChild, so !important is
+ * required to widen it. The marker class lands directly on the contentChild. */
+.mark-so-completed-content.mp-modal__contentChild,
+.mark-so-completed-content .mp-modal__contentChild {
+  max-width: 784px !important;
+  width: 784px !important;
+}
+
 /* ── Dropdown-button popover menu — fixed min-width 160px (ERP standard) ──────
  * Every MpPopover used as a button dropdown / split-button menu uses this class on
  * its MpPopoverContent. See rule/btn-dropdown-min-width. */

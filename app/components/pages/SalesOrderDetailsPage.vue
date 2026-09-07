@@ -9,8 +9,10 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
+import { salesOrderCompletionRows } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
@@ -44,6 +46,15 @@ const deleteOpen = ref(false)
 function confirmDelete() {
   toast.notify({ variant: 'success', title: t('Sales order deleted'), rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-orders')
+}
+
+// ─── Mark as completed — only Open / Partially processed can be completed ───────
+// (Closed/Voided never show the action item; see the Actions-dropdown v-if.)
+const canMarkCompleted = computed(() => order.value.status === 'open' || order.value.status === 'partially processed')
+const markCompleteOpen = ref(false)
+const markCompleteRows = computed(() => salesOrderCompletionRows(order.value))
+function confirmMarkComplete() {
+  toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
 }
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
@@ -456,6 +467,8 @@ function goBack() { router.push('/sales-orders') }
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem @click="handleCreateProductionRequest">{{ t('Create production request') }}</MpPopoverListItem>
+              <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
+              <MpPopoverListItem v-if="canMarkCompleted" @click="markCompleteOpen = true">{{ t('Mark as completed') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -486,6 +499,13 @@ function goBack() { router.push('/sales-orders') }
       :description="`${t('Sales Order')} #${order.number} ${t('will be permanently deleted. This cannot be undone.')}`"
       :confirm-label="`${t('Delete')} ${t('sales order')}`"
       @confirm="confirmDelete"
+    />
+
+    <MarkSalesOrderCompletedModal
+      v-model:is-open="markCompleteOpen"
+      :order-number="order.number"
+      :rows="markCompleteRows"
+      @confirm="confirmMarkComplete"
     />
   </div>
 </template>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
 } from '@mekari/pixel3'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -211,6 +212,22 @@ const exportColumns = computed(() => [
   { key: 'message', label: t('Message') },
   { key: 'memo', label: t('Memo') },
 ])
+
+// ─── Bulk delete — Delete (with confirmation) from the bulk Actions menu ─────────
+const bulkDeleteOpen = ref(false)
+const bulkSelectedCount = ref(0)
+function openBulkDelete(count: number) {
+  bulkSelectedCount.value = count
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = bulkSelectedCount.value
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('1 sales delivery deleted') : `${n} ${t('sales deliveries deleted')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
 </script>
 
 <template>
@@ -236,7 +253,7 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ count }">
       <MpPopover id="sd-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
@@ -246,6 +263,10 @@ const exportColumns = computed(() => [
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -390,6 +411,16 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export sales deliveries')" entity-label="sales deliveries" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="t('Delete sales deliveries?')"
+    :description="bulkSelectedCount === 1
+      ? t('1 sales delivery will be permanently deleted. This cannot be undone.')
+      : `${bulkSelectedCount} ${t('sales deliveries will be permanently deleted. This cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <ScenarioFab v-model="previewMode" />
 </template>
