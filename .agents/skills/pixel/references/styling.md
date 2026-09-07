@@ -1,25 +1,43 @@
 # Styling
 
-Use this file when deciding how to style Pixel components safely.
-
-## Priority
-
-1. Use CSS Props for `MpFlex`, `MpScrollbar`, `MpSkeleton`, and `Pixel.*`.
-2. Use `css()` only for components that do not expose the CSS Props you need.
-3. Use design tokens for color, spacing, and typography values.
+Use this when styling UI.
 
 ## Rules
 
-- Use full property names such as `alignItems`, `justifyContent`, and `flexGrow`.
-- Avoid shorthand style props when explicit properties are available.
-- Avoid inline styles for visual styling.
-- Avoid hardcoded visual values unless the surrounding code already relies on them.
+1. Use full property names such as `alignItems`, `justifyContent`, and `flexGrow` in CSS props
+2. Avoid inline styles, for example `<div style="margin-bottom: 8px">`
+3. Avoid hardcoded tokens, for example `MpFlex marginBottom="80x"`
+4. Avoid using the Vue `<style></style>` tag
+
+## Priority
+
+1. Use CSS props for `MpFlex`, `MpScrollbar`, `MpSkeleton`, and `Pixel.*`
+2. Use CSS function `css()` only when CSS props are unavailable and you need to apply custom styling to a component
+
+## Design Token
+
+Call `get-docs("design tokens 2.4")` or `get-docs("spacing tokens")` for the complete list of 2.4 tokens.
+
+Quick reference:
+
+| Need                    | Semantic             | Foundation            | Raw       |
+| ----------------------- | -------------------- | --------------------- | --------- |
+| Primary text            | `text.default`       | `colors.neutral.1000` | `#272B32` |
+| Secondary text          | `text.secondary`     | `colors.neutral.700`  | `#656F80` |
+| App shell background    | `background.surface` | -                     | `#F1F5F9` |
+| Content area background | `background.stage`   | `colors.white`        | `#FFFFFF` |
+| Default border          | `border.default`     | `colors.neutral.300`  | `#DCDFE4` |
 
 ## Correct Usage
 
 ```vue
-<MpFlex direction="column" gap="4" padding="6" backgroundColor="background.surface">
-  <MpText size="h3" color="text.primary">Title</MpText>
+<MpFlex
+  flexDirection="column"
+  gap="4"
+  padding="6"
+  backgroundColor="background.surface"
+>
+  <MpText size="h3" color="text.default">Title</MpText>
   <MpButton :class="css({ marginTop: '4' })">Submit</MpButton>
 </MpFlex>
 ```
@@ -31,9 +49,3 @@ Use this file when deciding how to style Pixel components safely.
   <MpText style="color: #1f2937">Title</MpText>
 </MpFlex>
 ```
-
-## Boundary Rules
-
-- Do not use `css()` on `MpFlex` or `Pixel.div` for layout that CSS Props already support.
-- Do not use shorthand border declarations when individual border properties are clearer.
-- Keep new styling aligned with the existing theme and token mode.
