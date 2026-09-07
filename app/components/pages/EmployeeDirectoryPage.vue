@@ -204,7 +204,6 @@ function initials(name: string): string {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     filter-empty-label="employee"
     :search="search"
     :has-active-filter="hasActiveFilter"

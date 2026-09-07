@@ -114,7 +114,6 @@ function onDrop(stage: TaskStage) {
         has-checkbox
         bulk-label="task"
         :loading="loading"
-        actions-width="52px"
         filter-empty-label="task"
         :search="search"
         :has-active-filter="hasActiveFilter"

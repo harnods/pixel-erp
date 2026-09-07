@@ -194,7 +194,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :loading="loading"
     :has-active-filter="hasActiveFilter"
     filter-empty-label="account"
-    actions-width="52px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -488,12 +487,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
 <style scoped>
 /* The Reconcile column is a second sticky-right column: it sits one kebab-width
-   (--erp-actions-width, 52px) in from the right so it lands immediately left of
+   (--erp-actions-width, 44px) in from the right so it lands immediately left of
    the sticky kebab. The shared ErpTablePage only pins the actions column at
    right:0, so nudge this one over here. */
 :deep(.erp-th[data-col="reconcile"]),
 :deep(.erp-td[data-col="reconcile"]) {
-  right: var(--erp-actions-width, 52px);
+  right: var(--erp-actions-width, 44px);
 }
 /* Keep a single separator at the left edge of the sticky group (on the Reconcile
    column) — drop the kebab's own inset border so they don't double up. */

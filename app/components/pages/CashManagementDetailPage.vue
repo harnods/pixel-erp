@@ -558,7 +558,6 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
               :search="txSearch"
               :loading="loading"
               has-checkbox
-              actions-width="52px"
               filter-empty-label="transaction"
               @page-change="txSetPage"
               @per-page-change="txSetPerPage"
@@ -674,7 +673,6 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
               :search="stmtSearch"
               :loading="loading"
               has-checkbox
-              actions-width="52px"
               filter-empty-label="transaction"
               @page-change="stmtSetPage"
               @per-page-change="stmtSetPerPage"

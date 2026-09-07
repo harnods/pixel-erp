@@ -539,10 +539,11 @@ ERP override wins.
   with the row's identity cell at one consistent gap. **Lint:** review.
 - **`rule/table-cell-padding-align`** — *Do:* cell padding **8px top/bottom**; align
   **per row** — a **single-line** row aligns **middle**; a row that has a **multi-line**
-  cell (description / avatar / ≥3 lines) aligns **that row's** cells **top** (the actions
-  kebab stays middle). It's per-row, not whole-table — `ErpTablePage` toggles
-  `.erp-tr--align-top` on each measured tall row. **Why:** the golden padding/align rule
-  (`docs/table-design.md`). **Lint:** review.
+  cell (description / avatar / ≥3 lines) aligns **that row's** cells **top**. The **`[…]`
+  actions cell is the exception — it ALWAYS aligns top** (never middle), on every row.
+  It's per-row, not whole-table — `ErpTablePage` toggles `.erp-tr--align-top` on each
+  measured tall row. **Why:** the golden padding/align rule (`docs/table-design.md`).
+  **Lint:** review.
 - **`rule/table-default-newest-first`** — *Do:* any table whose rows carry a
   **`date`** (every transactional index — invoices, orders, quotes, deliveries,
   requests, bills, …) defaults to **newest-first (date descending): the latest
@@ -611,8 +612,11 @@ ERP override wins.
 - **`rule/table-actions-column`** — *Do:* every index table has a **rightmost `[…]`
   actions column** (kebab), kept **flush right by a flexible spacer column** and **sticky**
   during horizontal scroll (built into `ErpTablePage` — `#actions` slot + `stickyActions`).
-  *Don't:* float actions elsewhere or let them scroll away. **Why:** row actions are always
-  in the same, reachable place. **Lint:** review.
+  Its width is **44px** — a single **38px** icon button with **3px** padding each side
+  (38 + 3 + 3 = 44) — and the button **always top-aligns**. A page overrides `actionsWidth`
+  **only** when the slot holds more than one button. *Don't:* float actions elsewhere, let
+  them scroll away, hardcode a per-page `actionsWidth="52px"`, or centre the button. **Why:**
+  one reachable, uniform action affordance. **Lint:** review.
 - **`rule/table-form-money-prefix`** — *Do:* a money input in a form-table cell carries a
   **currency prefix addon** (`Rp`) — a gray, semibold segment flush to the left of the
   input inside the same cell (the input has no border of its own). *Don't:* show a bare

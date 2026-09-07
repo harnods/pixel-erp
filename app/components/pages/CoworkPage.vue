@@ -2118,7 +2118,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-table { width: 100%; border-collapse: collapse; }
 .cw-table thead th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); white-space: nowrap; }
 .cw-table tbody td { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; }
-.cw-th-actions, .cw-td-actions { width: 52px; text-align: right; }
+.cw-th-actions, .cw-td-actions { width: 44px; text-align: right; }
 .cw-cell-link { color: var(--mp-text-link, #165082); cursor: pointer; font-weight: var(--mp-font-weights-regular); }
 .cw-cell-link:hover { text-decoration: underline; }
 .cw-cell-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }

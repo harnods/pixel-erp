@@ -389,7 +389,6 @@ function confirmBulkDelete() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     filter-empty-label="expense"
     bulk-label="expense"
     :search="search"
