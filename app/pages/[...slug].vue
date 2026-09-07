@@ -29,11 +29,15 @@ import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
+import { awaitingSalesOrdersCount } from '~/data/salesOrders'
+import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
 import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
+import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -115,6 +119,8 @@ const pageRegistry: Record<string, Component> = {
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Purchase requests': defineAsyncComponent(() => import('~/components/pages/PurchaseRequestsPage.vue')),
+  'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
+  'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
@@ -170,6 +176,13 @@ const pageRegistry: Record<string, Component> = {
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
+const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
+const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
+const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
+const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
+const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/PurchaseInvoiceDetailsPage.vue'))
+const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
+const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -351,6 +364,11 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
+const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
+const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
+const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
+const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -656,8 +674,73 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'delivery') {
     return { component: DeliveryTaskDetailsPage, id: segs[1] }
   }
+  // /sales-orders/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-orders' && segs[1] === 'new') {
+    return { component: NewSalesOrderPage, id: 'new' }
+  }
+  // /sales-orders/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-orders' && segs[2] === 'edit') {
+    return { component: NewSalesOrderPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /purchase-quotes/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes' && segs[1] === 'new') {
+    return { component: NewPurchaseQuotePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-quotes' && segs[2] === 'edit') {
+    return { component: NewPurchaseQuotePage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes') {
+    return { component: PurchaseQuoteDetailsPage, id: segs[1] }
+  }
+  // /purchase-deliveries/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries' && segs[1] === 'new') {
+    return { component: NewPurchaseDeliveryPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-deliveries' && segs[2] === 'edit') {
+    return { component: NewPurchaseDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries') {
+    return { component: PurchaseDeliveryDetailsPage, id: segs[1] }
+  }
+  // /purchase-requests/{new,:id} (index-only key otherwise renders the list)
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] === 'new') {
+    return { component: NewPurchaseRequestPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-requests' && segs[2] === 'edit') {
+    return { component: NewPurchaseRequestPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
+    return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices'
+      && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
+    return { component: PurchaseInvoiceDetailsPage, id: segs[1] }
+  }
+  // /sales-quotes/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-quotes' && segs[1] === 'new') {
+    return { component: NewSalesQuotePage, id: 'new' }
+  }
+  // /sales-quotes/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-quotes' && segs[2] === 'edit') {
+    return { component: NewSalesQuotePage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'sales-quotes') {
+    return { component: SalesQuoteDetailsPage, id: segs[1] }
+  }
+  // /sales-deliveries/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries' && segs[1] === 'new') {
+    return { component: NewSalesDeliveryPage, id: 'new' }
+  }
+  // /sales-deliveries/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-deliveries' && segs[2] === 'edit') {
+    return { component: NewSalesDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries') {
+    return { component: SalesDeliveryDetailsPage, id: segs[1] }
   }
   // /sales-invoices/new → New sales invoice form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
@@ -810,6 +893,9 @@ const pageTabs: Record<string, string[]> = {
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Sales invoices': ['All sales invoices', 'Awaiting approval'],
+  'Sales orders': ['All sales orders', 'Awaiting approval'],
+  'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -864,6 +950,16 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  // Sales modules — the Awaiting approval tab badges its own deterministic queue.
+  if (currentPageKey.value === 'Sales invoices') {
+    const n = awaitingSalesInvoicesCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales orders') {
+    const n = awaitingSalesOrdersCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales quotes') {
+    const n = awaitingSalesQuotesCount(); return n ? { 'Awaiting approval': n } : {}
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
@@ -1048,6 +1144,10 @@ const wmsOverviewTabComponents: Record<string, Component> = {
 const tabComponents: Record<string, Record<string, Component>> = {
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
+  // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
+  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
+  'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -1136,6 +1236,8 @@ const showNewWarehouseTransfer = computed(() =>
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
 function newSalesInvoice() { router.push('/sales-invoices/new') }
+// Sales-invoice Import ▸ dropdown → "Import from spreadsheet" opens the shared modal.
+const salesInvoiceImportOpen = ref(false)
 function newEmployee() { router.push('/employee-directory/new') }
 // Import dropdown: add new employees from a file, or bulk-update existing records.
 function importEmployees(mode: 'add' | 'update') {
@@ -1472,12 +1574,22 @@ function startResize(e: MouseEvent) {
           <MpButton class="page-actions-toggle" variant="primary" is-rounded right-icon="chevrons-down" @click.stop="titleActionsOpen = !titleActionsOpen">{{ t('Actions') }}</MpButton>
           <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
-            {{ t('Import') }}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <MpPopover id="si-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="salesInvoiceImportOpen = true">{{ t('Import from spreadsheet') }}</MpPopoverListItem>
+                <MpPopoverListItem>{{ t('Import from other applications') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1593,24 +1705,16 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/sales-quotes/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New sales quote
+            {{ t('New sales quote') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            {{ t('Import') }}
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New sales delivery
-          </button>
-        </div>
+        <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
+             sales order (fulfillment), never standalone. -->
+        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
           <!-- Secondary: "+ New account" -->
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
@@ -1918,6 +2022,18 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New purchase order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-quotes/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase quote') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase deliveries'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-deliveries/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase delivery') }}
           </button>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
@@ -2375,6 +2491,14 @@ function startResize(e: MouseEvent) {
     :description="uploadModalDesc"
     @close="uploadModalOpen = false"
     @upload="onUploadModalUpload"
+  />
+
+  <!-- Sales-invoice "Import from spreadsheet" (rule/import-modal) -->
+  <ImportSpreadsheetModal
+    :open="salesInvoiceImportOpen"
+    entity-label="sales invoices"
+    @close="salesInvoiceImportOpen = false"
+    @upload="salesInvoiceImportOpen = false"
   />
 </template>
 

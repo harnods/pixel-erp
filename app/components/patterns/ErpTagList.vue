@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * ErpTagList — tag chips clamped to 2 lines. When more tags overflow than fit in
- * two lines, a "View N more" link appears at the bottom-right; clicking it opens
- * a self-contained popover (header + close, scrollable full list, "Showing X of X
- * values" footer) listing every tag — same controlled-popover pattern as
- * ApprovalCommentPopover. Used in table tag cells across all index pages.
+ * ErpTagList — MpTag chips clamped to 2 lines (rule/tag-list-mptag /
+ * rule/tag-gray-only — chips are real MpTag, gray, md). When more tags
+ * overflow than fit in two lines, a "View N more" link appears at the
+ * bottom-right; clicking it opens a self-contained popover (header + close,
+ * scrollable full list, "Showing X of X values" footer) listing every tag —
+ * same controlled-popover pattern as ApprovalCommentPopover. Used in table
+ * tag cells across all index pages.
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, css } from '@mekari/pixel3'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpTag, css } from '@mekari/pixel3'
 
 let uid = 0
 
@@ -37,17 +40,23 @@ let resizeObserver: ResizeObserver | null = null
 function measure() {
   const el = rootEl.value
   if (!el) return
+  // Clamp to two chip rows based on the ACTUAL rendered chip height (MpTag ≠ 20px).
+  const chip = el.querySelector<HTMLElement>('.mp-tag__root, [class*="tag"]')
+  if (chip) {
+    const gap = parseFloat(getComputedStyle(el).rowGap || '4') || 4
+    el.style.maxHeight = `${chip.offsetHeight * 2 + gap}px`
+  }
   // chips on line 3+ are clipped by max-height/overflow → scrollHeight exceeds clientHeight
   overflowing.value = el.scrollHeight - el.clientHeight > 1
   if (!overflowing.value) { hiddenCount.value = 0; return }
   const maxHeight = el.clientHeight
-  const chips = Array.from(el.querySelectorAll<HTMLElement>('.erp-tag'))
+  const chips = Array.from(el.querySelectorAll<HTMLElement>('[id^="erp-tag-"]'))
   const visible = chips.filter((c) => c.offsetTop + c.offsetHeight <= maxHeight + 1).length
   hiddenCount.value = Math.max(0, chips.length - visible)
 }
 
 onMounted(() => {
-  measure()
+  nextTick(measure)
   resizeObserver = new ResizeObserver(() => measure())
   if (rootEl.value) resizeObserver.observe(rootEl.value)
 })
@@ -60,7 +69,7 @@ watch(() => props.tags, () => nextTick(measure))
 
 <template>
   <div v-if="tags?.length" ref="rootEl" class="erp-tags">
-    <span v-for="tag in tags" :key="tag" class="erp-tag">{{ tag }}</span>
+    <MpTag v-for="(tag, i) in tags" :id="`erp-tag-${i}`" :key="tag">{{ tag }}</MpTag>
 
     <MpPopover
       v-if="overflowing"
@@ -121,22 +130,8 @@ watch(() => props.tags, () => nextTick(measure))
   display: flex;
   flex-wrap: wrap;
   gap: var(--mp-spacing-1);
-  /* exactly two chip rows (chip 20px) + one row gap */
-  max-height: calc(var(--mp-sizes-5, 20px) * 2 + var(--mp-spacing-1));
-  overflow: hidden;
-  background: inherit;   /* so the "More" mask matches the row bg (incl. hover) */
-}
-
-.erp-tag {
-  display: inline-flex;
-  align-items: center;
-  background: var(--mp-background-neutral-subtle);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md);
-  padding: 0 var(--mp-spacing-1\.5);
-  height: var(--mp-sizes-5, 20px);
-  border-radius: var(--mp-radii-sm);
-  white-space: nowrap;
+  overflow: hidden;                /* max-height set at runtime = 2 chip rows + gap */
+  background: inherit;             /* so the "More" mask matches the row bg (incl. hover) */
 }
 
 /* "More" link masks the end of line 2; bg matches the row (inherits hover bg) */
@@ -146,7 +141,6 @@ watch(() => props.tags, () => nextTick(measure))
   bottom: 0;
   display: inline-flex;
   align-items: center;
-  height: var(--mp-sizes-5, 20px);
   padding-left: var(--mp-spacing-2);
   background: inherit;
   color: var(--mp-text-link);
@@ -164,7 +158,7 @@ watch(() => props.tags, () => nextTick(measure))
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-background-neutral-subtle, #f0f1f3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .etl-header-title {
   font-size: var(--mp-font-sizes-md);
@@ -178,7 +172,7 @@ watch(() => props.tags, () => nextTick(measure))
   border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
   flex-shrink: 0;
 }
-.etl-close-btn:hover { background: var(--mp-background-neutral-hovered); }
+.etl-close-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .etl-list {
   margin: 0;
@@ -191,7 +185,7 @@ watch(() => props.tags, () => nextTick(measure))
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .etl-list-item:last-child { border-bottom: none; }
 
@@ -200,7 +194,7 @@ watch(() => props.tags, () => nextTick(measure))
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
   background: var(--mp-background-neutral-subtle, #f0f1f3);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 /* ── 'card' variant (Figma "Popover / Values Info") — plain white surface,
@@ -228,7 +222,7 @@ watch(() => props.tags, () => nextTick(measure))
 
 .etl-card-table {
   height: 205px;
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
   overflow: hidden;
   display: flex;
@@ -248,7 +242,7 @@ watch(() => props.tags, () => nextTick(measure))
   align-items: center;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .etl-card-footer {
   flex-shrink: 0;
@@ -259,6 +253,6 @@ watch(() => props.tags, () => nextTick(measure))
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
   background: var(--mp-background-neutral, #fff);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 </style>

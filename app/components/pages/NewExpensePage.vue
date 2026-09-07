@@ -1305,14 +1305,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   gap: var(--mp-spacing-3);
   transition: border-color 0.1s, background 0.1s;
 }
-/* Focus state (Figma merges hover + click/keyboard focus into one): pale hovered
-   fill + green selected border, matching the primary-action emerald. Our static
-   border above wins over Pixel's own state rules (scoped-attribute specificity),
-   so restate hover/focus here. */
+/* Focus/hover state (Figma merges hover + click/keyboard focus into one): pale hovered
+   fill + neutral slate border (rule/form-focus-border-bold — never the brand-green Pixel
+   ships). Our static border above wins over Pixel's own state rules (scoped-attribute
+   specificity), so restate hover/focus here. */
 .ex-dropzone :deep(.mp-dropzone__wrapper:hover),
 .ex-dropzone :deep(.mp-dropzone__wrapper:focus),
 .ex-dropzone :deep(.mp-dropzone__wrapper:focus-within) {
-  border-color: var(--mp-border-selected, #029861);
+  border-color: var(--mp-colors-border-bold, #8c9596);
   background: var(--mp-background-neutral-hovered, #f8f9f9);
   outline: none;
 }
@@ -1607,7 +1607,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   bottom: -2px;
   width: calc(100% - 8px);
   height: var(--mp-sizes-0\.5, 2px);
-  background: var(--mp-colors-border-selected, #029861);
+  background: var(--mp-colors-border-selected);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */

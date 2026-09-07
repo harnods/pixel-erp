@@ -403,8 +403,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
   color: var(--mp-text-selected, var(--mp-text-information)) !important;
 }
 

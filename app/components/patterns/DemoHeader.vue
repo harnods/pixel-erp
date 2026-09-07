@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { MpTooltip } from '@mekari/pixel3'
 import { ruleMeaning } from '~/data/pixelRules'
 
-const props = defineProps<{
+defineProps<{
   title: string
   tag?: string
   /** overview / when-to-use paragraph */
@@ -15,10 +14,6 @@ const props = defineProps<{
   /** rule/* IDs governing this component */
   rules?: string[]
 }>()
-
-// Register this page's rules for the right-hand "Rules" rail in the /pixel shell.
-const pageRules = usePixelRules()
-onMounted(() => { pageRules.value = props.rules ?? [] })
 </script>
 
 <template>

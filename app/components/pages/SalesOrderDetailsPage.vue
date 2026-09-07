@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, toast, css,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
+import { salesOrderCompletionRows } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
@@ -38,6 +41,21 @@ function handleCreateProductionRequest() {
   router.push('/production-request')
 }
 const activityOpen = ref(false)
+// Destructive delete → confirm modal (rule/btn-danger-confirm)
+const deleteOpen = ref(false)
+function confirmDelete() {
+  toast.notify({ variant: 'success', title: t('Sales order deleted'), rootProps: { class: 'toast-enterprise' } })
+  router.push('/sales-orders')
+}
+
+// ─── Mark as completed — only Open / Partially processed can be completed ───────
+// (Closed/Voided never show the action item; see the Actions-dropdown v-if.)
+const canMarkCompleted = computed(() => order.value.status === 'open' || order.value.status === 'partially processed')
+const markCompleteOpen = ref(false)
+const markCompleteRows = computed(() => salesOrderCompletionRows(order.value))
+function confirmMarkComplete() {
+  toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
+}
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
   user: order.value.lastUpdatedBy,
@@ -146,7 +164,7 @@ function goBack() { router.push('/sales-orders') }
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Sales orders') }}</button>
+        <MpTextlink id="detail-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Sales orders') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Sales Order') }} #{{ order.number }}</h1>
           <ErpStatusBadge :status="order.status" badge-for="additionalInformation" size="md" />
@@ -154,11 +172,9 @@ function goBack() { router.push('/sales-orders') }
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -169,11 +185,9 @@ function goBack() { router.push('/sales-orders') }
                     type="text"
                     :placeholder="t('Search...')"
                   />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                    </svg>
-                  </button>
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                    <MpIcon name="close" size="sm" />
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
                   <button
@@ -196,14 +210,14 @@ function goBack() { router.push('/sales-orders') }
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
           <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Approval log')">
+            <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
           <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Comments')">
+            <MpButton class="detail-icon-btn" :aria-label="t('Comments')">
               <MpIcon name="comment" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
       </div>
     </header>
@@ -213,10 +227,7 @@ function goBack() { router.push('/sales-orders') }
 
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && order.banner" class="detail-banner">
-        <svg class="detail-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
+        <MpIcon class="detail-banner-icon" name="info" size="md" />
         <span class="detail-banner-text">{{ order.banner.message }}</span>
         <a class="detail-banner-link" @click.prevent>{{ order.banner.linkLabel }}</a>
       </div>
@@ -425,11 +436,9 @@ function goBack() { router.push('/sales-orders') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Print & share') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -449,17 +458,17 @@ function goBack() { router.push('/sales-orders') }
         <!-- Actions (primary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary">
+            <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem @click="handleCreateProductionRequest">{{ t('Create production request') }}</MpPopoverListItem>
+              <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
+              <MpPopoverListItem v-if="canMarkCompleted" @click="markCompleteOpen = true">{{ t('Mark as completed') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -467,7 +476,7 @@ function goBack() { router.push('/sales-orders') }
               <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -482,6 +491,21 @@ function goBack() { router.push('/sales-orders') }
       :updated-at="order.lastUpdatedAt"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <ConfirmModal
+      v-model:is-open="deleteOpen"
+      :title="t('Delete sales order?')"
+      :description="`${t('Sales Order')} #${order.number} ${t('will be permanently deleted. This cannot be undone.')}`"
+      :confirm-label="`${t('Delete')} ${t('sales order')}`"
+      @confirm="confirmDelete"
+    />
+
+    <MarkSalesOrderCompletedModal
+      v-model:is-open="markCompleteOpen"
+      :order-number="order.number"
+      :rows="markCompleteRows"
+      @confirm="confirmMarkComplete"
     />
   </div>
 </template>
@@ -570,7 +594,7 @@ function goBack() { router.push('/sales-orders') }
   outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); outline: none; }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -902,31 +926,6 @@ function goBack() { router.push('/sales-orders') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
-.detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.detail-btn--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
-}
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
-.detail-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.detail-btn--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+/* Footer buttons use the shared btn-enterprise--{secondary,primary} classes
+   (erp.css) — no page-local button styling / hardcoded brand colors. */
 </style>

@@ -3,7 +3,7 @@ import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpTextlink, MpFormControl, MpFormLabel, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
-  MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
+  MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTooltip,
   css,
@@ -358,9 +358,7 @@ function onSendToFulfillment() {
 
             <MpFormControl id="f-payment" class="po-field">
               <MpFormLabel>Payment terms</MpFormLabel>
-              <MpSelect id="f-payment-inp" v-model="paymentTerms" placeholder="Select payment terms" is-full-width>
-                <option v-for="opt in PAYMENT_TERMS" :key="opt" :value="opt">{{ opt }}</option>
-              </MpSelect>
+              <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width placeholder="Select payment terms" />
             </MpFormControl>
 
             <div class="po-field po-field--checkbox">
@@ -413,9 +411,7 @@ function onSendToFulfillment() {
           <div class="po-header2-col po-col-span-3">
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
-              <MpSelect id="f-warehouse-inp" v-model="warehouse" placeholder="Select warehouse" is-full-width>
-                <option v-for="opt in WAREHOUSES" :key="opt" :value="opt">{{ opt }}</option>
-              </MpSelect>
+              <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
             </MpFormControl>
 
             <MpFormControl id="f-tags" class="po-field">
@@ -480,10 +476,10 @@ function onSendToFulfillment() {
                 <tr class="pit-group-row">
                   <td class="pit-group-cell" :colspan="showDimensionsColumn ? 11 : 10">
                     <div class="pit-group-inner">
-                      <button type="button" class="pit-group-toggle" @click="toggleGroup(g)">
+                      <MpButton class="pit-group-toggle" @click="toggleGroup(g)">
                         <MpIcon name="caret-down" size="sm" class="pit-group-caret" :class="{ 'pit-group-caret--collapsed': g.collapsed }" />
                         Purchase Request #{{ g.prNumber }}
-                      </button>
+                      </MpButton>
                       <MpButton class="pit-group-remove" :aria-label="`Remove Purchase Request #${g.prNumber}`" @click="removeGroup(g.prId)">
                         <MpIcon name="minus-circular" size="sm" />
                       </MpButton>
@@ -531,10 +527,10 @@ function onSendToFulfillment() {
               <tbody>
                 <tr class="pit-add-row">
                   <td :colspan="showDimensionsColumn ? 11 : 10">
-                    <button type="button" class="pit-add-btn" @click="addPrOpen = true">
+                    <MpButton class="pit-add-btn" @click="addPrOpen = true">
                       <MpIcon name="add" size="sm" />
                       Add purchase request
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </tbody>
@@ -820,7 +816,7 @@ function onSendToFulfillment() {
 /* ── Title bar — canonical detail/form breadcrumb (verbatim from NewExpensePage) ── */
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -857,7 +853,7 @@ function onSendToFulfillment() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex;
@@ -868,7 +864,7 @@ function onSendToFulfillment() {
 /* ── Dashed section divider ── */
 .po-dashed-divider {
   padding-bottom: var(--mp-spacing-5);
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 
 /* ── 12-col grid utility — every field ≤ 3 cols, unused cols stay blank ── */
@@ -931,7 +927,7 @@ function onSendToFulfillment() {
 .po-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .po-items-header-row { display: flex; justify-content: flex-end; }
 
-.pit-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.pit-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .pit-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; font-size: var(--mp-font-sizes-md); }
 /* Sum of fixed column widths — the table stays this wide and pit-scroll scrolls,
    so no column (esp. DESCRIPTION) collapses on a narrow viewport. */
@@ -953,10 +949,10 @@ function onSendToFulfillment() {
 .pit-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .pit-th--num { text-align: right; }
@@ -970,13 +966,13 @@ function onSendToFulfillment() {
   height: var(--mp-sizes-10, 40px);
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
 }
-.pit-td--border { border-right: 1px solid var(--mp-border-default); }
+.pit-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .pit-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Read-only / calculated / locked cells (product, unit, requested, available, amount) */
-.pit-td--ro { background: var(--mp-background-neutral-subtle); }
+.pit-td--ro { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .pit-td--clip { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Editable cell */
 .pit-td--input { padding: 0; }
@@ -993,7 +989,7 @@ function onSendToFulfillment() {
 .pit-affix-cell { display: flex; align-items: stretch; height: var(--mp-sizes-10, 40px); }
 .pit-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
+  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
 .pit-affix-cell .pit-num-input { flex: 1; min-width: 0; }
@@ -1008,20 +1004,21 @@ function onSendToFulfillment() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.pit-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
+.pit-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger); }
 
 /* Accordion group header row */
 .pit-group-cell {
   padding: 0 var(--mp-spacing-2) 0 0;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   background: var(--mp-background-neutral, #fff);
 }
 .pit-group-inner { display: flex; align-items: center; }
 .pit-group-toggle {
-  flex: 1; display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
-  border: none; background: transparent; cursor: pointer; text-align: left;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+  flex: 1; display: inline-flex !important; align-items: center; justify-content: flex-start !important; gap: var(--mp-spacing-2);
+  height: var(--mp-sizes-10, 40px) !important; min-width: 0 !important; padding: 0 var(--mp-spacing-2) !important;
+  border: none !important; background: transparent !important; cursor: pointer; text-align: left;
+  border-radius: 0 !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold) !important; color: var(--mp-text-default);
 }
 .pit-group-caret { transition: transform 150ms ease; }
 .pit-group-caret--collapsed { transform: rotate(-90deg); }
@@ -1031,16 +1028,18 @@ function onSendToFulfillment() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.pit-group-remove:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-danger); }
+.pit-group-remove:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-danger); }
 
 /* Add purchase request row */
 .pit-add-row td { padding: var(--mp-spacing-2) 0; }
 .pit-add-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  border: none; background: transparent; cursor: pointer; padding: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
+  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
+  border: none !important; background: transparent !important; cursor: pointer;
+  min-width: 0 !important; height: auto !important; padding: var(--mp-spacing-2) !important;
+  border-radius: var(--mp-radii-sm) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular) !important; color: var(--mp-text-default);
 }
-.pit-add-btn:hover { background: var(--mp-background-neutral-hovered); border-radius: var(--mp-radii-sm); }
+.pit-add-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 
 /* ── Notes + Attachment + Totals — identical to NewSalesInvoicePage (si-*) ── */
@@ -1084,14 +1083,14 @@ function onSendToFulfillment() {
   padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone prefixed fields: MpInputGroup + MpInputLeftAddon, Rp/% switcher as a
    popover trigger inside the addon (verbatim from NewSalesInvoicePage). */
 .si-unit-field { width: 180px; flex-shrink: 0; }
 .si-unit-addon :deep(.mp-input-addon__root) {
-  padding: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md);
+  padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-md);
 }
 .si-unit-trigger {
   display: flex !important; align-items: center; gap: 4px;
@@ -1100,7 +1099,7 @@ function onSendToFulfillment() {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: var(--mp-radii-md) !important;
 }
-.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Footer — scrolls with content, not sticky ── */
@@ -1136,15 +1135,8 @@ function onSendToFulfillment() {
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
 
-.btn-enterprise--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse, #ffffff);
-}
-.btn-enterprise--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+/* Primary uses the shared .btn-enterprise--primary from erp.css (no page-local
+   brand colors). */
 
 .btn-enterprise--ghost {
   background: transparent;

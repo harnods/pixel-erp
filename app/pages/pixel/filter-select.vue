@@ -10,6 +10,9 @@ const a = ref<string | null>(null)
 const b = ref('')
 const c = ref<string | null>('Sent')
 const opts = ['Draft', 'Sent', 'Paid', 'Overdue', 'Void']
+const vendor = ref<string | null>(null)
+const vendors = ['Klasik Beans Cooperative', 'Sagaleh Coffee Supply', 'Gayo Highland Exporters', 'Toraja Sapan Estate']
+function onVendorAdd(search?: string) { /* open a create-vendor modal / drawer here */ void search }
 </script>
 
 <template>
@@ -40,6 +43,29 @@ const opts = ['Draft', 'Sent', 'Paid', 'Overdue', 'Void']
       code="<PopoverSelect id=&quot;x&quot; v-model=&quot;v&quot; :options=&quot;opts&quot; placeholder=&quot;Status&quot; />
 <!-- clear × appears on hover when v has a value -->">
       <PopoverSelect id="dd-clear" v-model="c" :options="opts" placeholder="Status" />
+    </DemoSection>
+
+    <DemoSection title="Quick add (create new)"
+      desc="When the value may not exist yet, use MpAutocomplete with is-show-button-action: an action sits at the BOTTOM of the popover. With no search it reads 'Add new vendor'; while typing a name it becomes 'Add “Name” as a new vendor'. @button-action opens the create flow (modal/drawer). Type a new name to see the label change."
+      :rules="['rule/select-quick-add', 'rule/select-erpfilterselect']"
+      code="<MpAutocomplete id=&quot;vendor&quot; v-model=&quot;vendor&quot; :data=&quot;vendors&quot;
+  is-searchable is-clearable use-portal is-full-width
+  is-show-button-action placeholder=&quot;Select vendor&quot; @button-action=&quot;onVendorAdd&quot;>
+  <template #buttonAction=&quot;{ currentSearch }&quot;>
+    {{ currentSearch ? `Add \&quot;${currentSearch}\&quot; as a new vendor` : 'Add new vendor' }}
+  </template>
+</MpAutocomplete>">
+      <div style="min-width:20rem">
+        <MpAutocomplete
+          id="dd-quickadd" v-model="vendor" :data="vendors"
+          is-searchable is-clearable use-portal is-full-width
+          is-show-button-action placeholder="Select vendor" @button-action="onVendorAdd"
+        >
+          <template #buttonAction="{ currentSearch }">
+            {{ currentSearch ? `Add "${currentSearch}" as a new vendor` : 'Add new vendor' }}
+          </template>
+        </MpAutocomplete>
+      </div>
     </DemoSection>
   </div>
 </template>

@@ -145,6 +145,12 @@ function iconForFile(name: string): string {
   border-radius: var(--mp-radii-md, 6px);
   background-color: transparent;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25' fill='none'%3E%3Crect width='100%25' height='100%25' rx='6' ry='6' stroke='%239AA4AC' stroke-width='1.5' stroke-dasharray='8 6'/%3E%3C/svg%3E");
+  /* Inset the SVG paint box by half the 1.5px stroke on every side, so the stroke
+     (centred on the rect path) sits FULLY inside the element — otherwise the outer
+     half of the bottom/right edge is clipped and vanishes at DPR ≥ 2 (Retina). */
+  background-repeat: no-repeat;
+  background-position: 0.75px 0.75px;
+  background-size: calc(100% - 1.5px) calc(100% - 1.5px);
   padding: var(--mp-spacing-8) var(--mp-spacing-4);
   cursor: pointer;
   transition: background-color 0.1s;

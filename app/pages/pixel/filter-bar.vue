@@ -109,6 +109,8 @@ const owners = ['Ana', 'Budi', 'Cici']
   flex-wrap: wrap;
 }
 .fb-group { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+/* icon buttons inside the group sit flush (no gap) */
+.fb-group :deep(.mp-pixel-button-group) { gap: 0; }
 /* Left group: filters ↔ filters and filters ↔ All filters are always 16px */
 .fb-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 /* Fixed width so the clear (×) appears inside without growing / wrapping the bar */
