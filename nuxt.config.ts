@@ -6,9 +6,11 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4321 },
 
-  // Server-only secret for the Cowork (AI) feature. Value comes from
-  // NUXT_GEMINI_API_KEY in .env.local (gitignored) — never hardcoded/committed.
-  // It's exposed ONLY to server routes (server/api/*), not the client bundle.
+  // Server-only secret for the Cowork (AI) + Dropbox OCR features. Value comes
+  // from NUXT_GEMINI_API_KEY in `.env` (gitignored) — never hardcoded/committed.
+  // `.env` is the file Nuxt loads by default; `.env.local` is NOT read, so a key
+  // put there silently leaves this empty. Exposed ONLY to server routes
+  // (server/api/*), never the client bundle. Empty = features use demo data.
   runtimeConfig: {
     geminiApiKey: "",
     geminiModel: "gemini-flash-latest",

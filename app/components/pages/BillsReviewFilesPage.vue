@@ -5,6 +5,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
+import { formatDate } from '~/utils/date'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -117,14 +118,11 @@ const classificationLabel = computed(
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-  }).format(new Date(iso))
-}
-
-function formatNumber(n: string | undefined) {
-  return n ?? '—'
+// OCR can come back empty for any field (unreadable document, or the extraction
+// route failing) while the row is still marked scanned — an empty cell reads as a
+// rendering bug, so every unread field falls back to the em dash.
+function orDash(v: string | undefined) {
+  return v?.trim() ? v : '—'
 }
 
 function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
@@ -391,14 +389,14 @@ function confirmBulkDelete() {
     <template #cell-number="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
       <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
-      <template v-else>{{ formatNumber(value as string | undefined) }}</template>
+      <template v-else>{{ orDash(value as string | undefined) }}</template>
     </template>
 
     <!-- ── Cell: Vendor ── -->
     <template #cell-beneficiaryName="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
       <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
-      <span v-else class="cell-text">{{ value }}</span>
+      <span v-else class="cell-text">{{ orDash(value as string | undefined) }}</span>
     </template>
 
     <!-- ── Cell: Confidence ── -->

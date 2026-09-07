@@ -24,6 +24,20 @@ interface OcrResult {
 
 const EMPTY: OcrResult = { number: '', vendorName: '', date: '', amount: 0, classification: 'unclassified', confidence: 0 }
 
+/** The prompt asks for YYYY-MM-DD, but a model can still answer '-' or a
+ *  free-form Indonesian date. Only a real calendar date leaves this route;
+ *  anything else becomes '' (the documented "unreadable" value) so no client
+ *  ever formats an Invalid Date. */
+function safeDate(raw: unknown): string {
+  const s = String(raw ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return ''
+  const d = new Date(`${s}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return ''
+  // Round-trip: JS rolls an out-of-range day over ('2026-02-30' → 2 Mar), and a
+  // silently wrong date is worse than none.
+  return d.toISOString().slice(0, 10) === s ? s : ''
+}
+
 function mimeFor(fileName: string, mime?: string): string {
   if (mime) return mime
   const ext = (fileName.split('.').pop() || '').toLowerCase()
@@ -88,7 +102,7 @@ export default defineEventHandler(async (event): Promise<OcrResult & { source: s
     return {
       number: String(parsed.number ?? '').trim(),
       vendorName: String(parsed.vendorName ?? '').trim(),
-      date: String(parsed.date ?? '').trim(),
+      date: safeDate(parsed.date),
       amount: Math.max(0, Math.round(Number(parsed.amount) || 0)),
       classification: cls,
       confidence: Math.max(0, Math.min(100, Math.round(Number(parsed.confidence) || 0))),
