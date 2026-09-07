@@ -83,6 +83,7 @@ const pageRegistry: Record<string, Component> = {
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork workspaces': defineAsyncComponent(() => import('~/components/pages/CoworkWorkspacesPage.vue')),
   // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
   'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
@@ -195,6 +196,8 @@ const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFo
 const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
 const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
+const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
 const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
 const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
@@ -442,6 +445,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cowork-skills/:id → Cowork skill detail (actions + definition).
   if (segs.length >= 2 && segs[0] === 'cowork-skills') {
     return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-workspaces/:id → workspace detail (own header + tabs).
+  if (segs.length >= 2 && segs[0] === 'cowork-workspaces') {
+    return { component: CoworkWorkspaceDetailPage, id: segs[1]! }
   }
   // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
   if (segs[0] === 'cowork-knowledge') {
@@ -1590,6 +1597,12 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cowork-agents/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             New agent
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork workspaces'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-workspaces', query: { new: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New workspace
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
