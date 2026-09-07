@@ -26,27 +26,28 @@ if (import.meta.client) {
 
 interface Child { name: string; to: string }
 interface Item { icon: string; name: string; to: string; children?: Child[] }
-// Two groups → the border-bottom between them is the divider before Settings.
+// Two groups → the border-bottom between them is the divider (Contacts | Activity logs).
 const navGroups: Item[][] = [
   [
-    { icon: 'pipeline',     name: 'Deals',     to: '/crm/deals' },
-    { icon: 'cart',         name: 'Orders',    to: '/crm/orders' },
-    { icon: 'productivity', name: 'Tasks',     to: '/crm/tasks' },
-    { icon: 'contact',      name: 'Customers', to: '/crm/customers', children: [
-      { name: 'Companies', to: '/crm/customers' },
-      { name: 'Contacts',  to: '/crm/contacts' },
-    ] },
-    { icon: 'products',     name: 'Products',  to: '/crm/products' },
+    { icon: 'pipeline', name: 'Deals',    to: '/crm/deals' },
+    { icon: 'reports',  name: 'Reports',  to: '/crm/reports' },
+    { icon: 'contact',  name: 'Contacts', to: '/crm/contacts' },
   ],
   [
-    { icon: 'settings', name: 'Settings', to: '/crm/settings' },
+    { icon: 'log',      name: 'Activity logs', to: '/crm/activity' },
+    { icon: 'settings', name: 'Settings',      to: '/crm/settings', children: [
+      { name: 'Company profile', to: '/crm/settings/company' },
+      { name: 'User & roles',    to: '/crm/settings/users' },
+      { name: 'Teams',           to: '/crm/settings/teams' },
+      { name: 'Custom views',    to: '/crm/settings/views' },
+      { name: 'Integrations',    to: '/crm/settings/integrations' },
+    ] },
   ],
 ]
 
 const activeItem = computed<string>(() => {
   if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
-  // Contacts is a level-2 sibling of Companies under the Customers parent.
-  if (route.path === '/crm/contacts' || route.path.startsWith('/crm/contacts/')) return 'Customers'
+  if (route.path === '/crm/settings' || route.path.startsWith('/crm/settings/')) return 'Settings'
   for (const g of navGroups) for (const it of g)
     if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   return 'Deals'

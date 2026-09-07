@@ -344,6 +344,8 @@ const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
+const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
 const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
 const CrmCustomerDetailPage = asyncPage(() => import('~/components/pages/CrmCustomerDetailPage.vue'))
@@ -419,6 +421,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
+    // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
+    if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
+    if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
+    if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
   // Contacts: /{customers|vendors|other-contacts}/new → create form,
