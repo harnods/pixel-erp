@@ -114,6 +114,8 @@ const ORDERS_SEED: CrmOrder[] = [
   { id: 'SO-5006', customer: 'Maxx Coffee Lippo Mall',   product: 'Roasted Beans Espresso Blend Dark', date: '2026-02-14', amount: 19_200_000, status: 'paid',             owner: 'Fajar Nugroho' },
   { id: 'SO-5007', customer: 'Coffee Cult Bali',         product: 'Green Beans Robusta Lampung',       date: '2026-02-10', amount: 14_400_000, status: 'cancelled',        owner: 'Fajar Nugroho' },
   { id: 'SO-5008', customer: 'Anomali Coffee',           product: 'Roasted Beans Single Origin Gayo',  date: '2026-02-07', amount: 18_000_000, status: 'fulfilled',        owner: 'Dewi Lestari' },
+  // Created this month by converting the Won deal DL-260909 → Sales Order.
+  { id: 'SO-5009', customer: 'Distributor Sentra Boga',  product: 'Green Beans Arabica Gayo Grade 1',  date: '2026-09-02', amount: 64_000_000, status: 'draft',            owner: 'Fajar Nugroho' },
 ]
 
 // ── Tasks (sales follow-ups, calls, tastings) ─────────────────────────────────
@@ -185,6 +187,126 @@ export const tasksDueTodayCount = computed(() => crmTasks.filter((t) => t.status
 export const activeCustomersCount = computed(() => crmCustomers.filter((c) => c.status === 'active').length)
 export const ordersThisMonthValue = computed(() =>
   crmOrders.filter((o) => o.date >= '2026-02-01' && o.status !== 'cancelled').reduce((n, o) => n + o.amount, 0))
+
+// ── Deals (the pipeline records behind the kanban + table) ────────────────────
+// One source of truth for the Deals module: the kanban board, the table view, the
+// metrics panel and the deal record page all read this. Customers mirror the ERP
+// account master (crmCustomers), owners are Central Perk sales staff (CRM_OWNERS),
+// and a Won deal converts into a real Sales Order (crmOrders) — that link is the
+// CRM ↔ ERP bridge the module is built around.
+export const DEAL_STAGES = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const
+export type DealStage = typeof DEAL_STAGES[number]
+export type DealPriority = 'low' | 'medium' | 'high' | 'critical'
+/** ERP conversion state — only meaningful once a deal is Won. `none` = not yet
+ *  converted, `converted` = a Sales Order exists (salesOrderId), `validation-failed`
+ *  = the convert attempt was blocked (conversionError explains why). */
+export type DealConversion = 'none' | 'converted' | 'validation-failed'
+
+export interface Deal {
+  id: string                  // 'DL-260901'
+  name: string
+  customerId: string          // crmCustomers id
+  company: string             // denormalised account name (matches crmCustomers.company)
+  stage: DealStage
+  owner: string               // CRM_OWNERS
+  value: number               // deal value, IDR
+  priority: DealPriority
+  expectedCloseDate: string   // ISO
+  createdAt: string           // ISO
+  lastActivity: string        // ISO
+  conversion: DealConversion
+  salesOrderId?: string       // crmOrders id when converted
+  conversionError?: string    // reason when conversion === 'validation-failed'
+  lostReason?: string         // when stage === 'Lost'
+}
+
+// The current review month + "today" (fixed, like the rest of the CRM mock) so the
+// metrics (closing this month / overdue / created this month) are deterministic.
+const DEAL_TODAY = '2026-09-07'
+const DEAL_MONTH = '2026-09'
+
+const DEALS_SEED: Deal[] = [
+  { id: 'DL-260901', name: 'Q4 green beans — wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260902', name: 'Office pantry — monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260903', name: 'Espresso blend — pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', lastActivity: '2026-09-03', conversion: 'none' },
+  { id: 'DL-260904', name: 'Hotel F&B annual contract',       customerId: 'C017', company: 'Santika Premiere Hotel',   stage: '1st meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     expectedCloseDate: '2026-09-30', createdAt: '2026-08-26', lastActivity: '2026-09-02', conversion: 'none' },
+  { id: 'DL-260905', name: 'Single-origin Gayo — proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260906', name: 'House blend — café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260907', name: 'Espresso beans — renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260908', name: 'Roastery supply — urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', lastActivity: '2026-09-01', conversion: 'none' },
+  { id: 'DL-260909', name: 'Bulk green beans — Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', lastActivity: '2026-09-02', conversion: 'converted', salesOrderId: 'SO-5009' },
+  { id: 'DL-260910', name: 'Café chain — espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', lastActivity: '2026-09-05', conversion: 'validation-failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
+  { id: 'DL-260911', name: 'Trial order — cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
+  { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
+]
+
+export const deals = reactive<Deal[]>(load('crm-deals-v1', DEALS_SEED))
+export function persistCrmDeals() { saveSnapshot('crm-deals-v1', deals) }
+
+export function isDealOpen(d: Deal): boolean { return d.stage !== 'Won' && d.stage !== 'Lost' }
+export function getDeal(id: string): Deal | undefined { return deals.find((d) => d.id === id) }
+export function dealsInStage(stage: DealStage): Deal[] { return deals.filter((d) => d.stage === stage) }
+
+/** Metrics panel numbers — all derived from `deals` (+ the linked crmOrders) so
+ *  the cards, the table and the board always agree. */
+export const dealMetrics = computed(() => {
+  const open = deals.filter(isDealOpen)
+  const closingThisMonth = open.filter((d) => d.expectedCloseDate.startsWith(DEAL_MONTH))
+  const overdue = open.filter((d) => d.expectedCloseDate < DEAL_TODAY)
+  const converted = deals.filter((d) => d.conversion === 'converted' && d.salesOrderId)
+  const soThisMonth = converted.filter((d) => {
+    const so = crmOrders.find((o) => o.id === d.salesOrderId)
+    return so ? so.date.startsWith(DEAL_MONTH) : false
+  })
+  const attention = deals.filter((d) => d.conversion === 'validation-failed')
+  return {
+    total: deals.length,
+    active: open.length,
+    totalValue: deals.reduce((n, d) => n + d.value, 0),
+    openValue: open.reduce((n, d) => n + d.value, 0),
+    closingThisMonthCount: closingThisMonth.length,
+    closingThisMonthValue: closingThisMonth.reduce((n, d) => n + d.value, 0),
+    overdueCount: overdue.length,
+    salesOrdersCreatedCount: soThisMonth.length,
+    conversionAttentionCount: attention.length,
+  }
+})
+
+/** Kanban drag/drop: move a deal to a new stage; leaving Won clears its conversion. */
+export function setDealStage(id: string, stage: DealStage): void {
+  const d = getDeal(id)
+  if (!d) return
+  d.stage = stage
+  if (stage !== 'Won') { d.conversion = 'none'; d.salesOrderId = undefined; d.conversionError = undefined }
+  persistCrmDeals()
+}
+
+/** Convert a Won deal into a real Sales Order (crmOrders) — the CRM ↔ ERP bridge.
+ *  Returns { ok:false, error } when a deal can't be converted (already-failed
+ *  validation stays failed until fixed; non-Won deals can't convert). */
+export function convertDealToSalesOrder(id: string): { ok: boolean; salesOrderId?: string; error?: string } {
+  const d = getDeal(id)
+  if (!d) return { ok: false, error: 'Deal not found.' }
+  if (d.stage !== 'Won') return { ok: false, error: 'Only a Won deal can be converted to a Sales Order.' }
+  if (d.conversion === 'converted' && d.salesOrderId) return { ok: true, salesOrderId: d.salesOrderId }
+  if (d.conversion === 'validation-failed') return { ok: false, error: d.conversionError ?? 'Conversion validation failed.' }
+  const cust = crmCustomers.find((c) => c.id === d.customerId)
+  const soId = `SO-${5000 + crmOrders.length + 1}`
+  crmOrders.push({
+    id: soId,
+    customer: d.company,
+    product: 'From deal ' + d.id,
+    date: DEAL_TODAY,
+    amount: d.value,
+    status: 'draft',
+    owner: cust?.owner ?? d.owner,
+  })
+  persistCrmOrders()
+  d.conversion = 'converted'
+  d.salesOrderId = soId
+  persistCrmDeals()
+  return { ok: true, salesOrderId: soId }
+}
 
 // Primary segment (industry) options for the create-customer form.
 export const CUSTOMER_SEGMENTS = ['Roastery', 'Café chain', 'Hotel', 'Distributor', 'Retail', 'Office'] as const

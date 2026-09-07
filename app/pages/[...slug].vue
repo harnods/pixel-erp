@@ -338,6 +338,7 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
@@ -414,6 +415,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/customers/new → create-company form (before the :id detail match).
     if (sub === 'customers' && id === 'new') return { component: NewCustomerPage, id: 'new' }
     // /crm/orders/:id, /crm/products/:id, /crm/customers/:id → CRM detail pages.
+    if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
