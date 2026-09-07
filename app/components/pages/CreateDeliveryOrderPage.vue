@@ -13,7 +13,7 @@ import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder 
 import { setWmsShipping } from '~/data/deliveryTasks'
 import { editOutboundOrder, proposeSkuReduction } from '~/data/outboundSync'
 import { orderSkuLines } from '~/data/inventory'
-import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask } from '~/data/pickingTasks'
+import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask, skusWithPickingTask } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
@@ -116,6 +116,9 @@ interface LineRow {
   /** Edit mode — qty already committed to a started picking task: can't remove this
    *  row or set qty below it (D7 AC#4). 0 = freely editable. */
   lockedQty: number
+  /** A picking task already exists for this SKU (even an Open one) — the product
+   *  is settled, so the combobox is locked. */
+  productLocked: boolean
   /** Edit mode — the SKU's qty on the order when editing began. Its reservation is
    *  already held, so only the INCREASE beyond it needs fresh Available (create = 0). */
   origQty: number
@@ -123,7 +126,7 @@ interface LineRow {
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0, productLocked: false }
 }
 
 /** Tooltip/error text for an invalid qty cell (edit mode included). */
@@ -133,6 +136,12 @@ function qtyErrorMsg(row: LineRow): string {
   return ''
 }
 function qtyInvalid(row: LineRow): boolean { return row.qtyInsufficient || row.qtyLocked }
+
+/** Tooltip text for the product cell — why it can't be edited, or what's wrong with it. */
+function productMsg(row: LineRow): string {
+  if (row.productLocked) return t('This SKU is already on a picking task and can\'t be changed')
+  return t('You must select product')
+}
 
 function availableQty(sku: string): number {
   if (!warehouseId.value) return Infinity
@@ -165,6 +174,9 @@ function onProductSearch(e: Event) {
 }
 
 function onProductSelect(row: LineRow, id: string) {
+  // The combobox is disabled for a locked row; belt-and-braces so a stray event
+  // can't rewrite a line a picking task is already pointing at.
+  if (row.productLocked) return
   productFilter.value = ''
   const p = CATALOG.find((c) => c.id === id)
   if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
@@ -198,6 +210,9 @@ function prefillFromOrder() {
   transactionDate.value = o.transactionDate ? toDisplayDate(o.transactionDate.slice(0, 10)) : todayDisplay
   estimatedDelivery.value = o.dueDate ? toDisplayDate(o.dueDate) : todayDisplay
   memo.value = o.memo ?? ''
+  // A line already on a picking list keeps its product, whatever that list's
+  // status — an Open task has already told a picker which SKU to fetch.
+  const taskedSkus = skusWithPickingTask(o.id)
   const lines = orderSkuLines(o).map((l) => {
     const cat = CATALOG.find((c) => c.sku === l.product.sku)
     return {
@@ -211,6 +226,7 @@ function prefillFromOrder() {
       unit: l.product.unit,
       qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false,
       lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
+      productLocked: taskedSkus.has(l.product.sku),
       origQty: l.qty,
     } as LineRow
   })
@@ -657,9 +673,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <td class="cr-td cr-td--input" :class="{ 'cr-td--prod-error': row.productError }">
                     <MpTooltip
-                      v-if="row.productError"
+                      v-if="row.productError || row.productLocked"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      :label="t('You must select product')"
+                      :label="productMsg(row)"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -671,6 +687,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         label-prop="name"
                         value-prop="id"
                         is-searchable is-clearable use-portal is-full-width is-manual-filter
+                        :is-disabled="row.productLocked"
                         @update:model-value="(v: string) => onProductSelect(row, v)"
                         @input="onProductSearch"
                       >
@@ -698,6 +715,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name"
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width is-manual-filter
+                      :is-disabled="row.productLocked"
                       @update:model-value="(v: string) => onProductSelect(row, v)"
                       @input="onProductSearch"
                     >

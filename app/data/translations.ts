@@ -646,6 +646,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Delivery not found.": "Pengiriman tidak ditemukan.",
   "Back to Shipping": "Kembali ke Pengiriman",
   "already in a picking task": "sudah ada di tugas pengambilan",
+  "This SKU is already on a picking task and can't be changed": "SKU ini sudah ada di tugas pengambilan dan tidak bisa diubah",
+  "This SKU is already on a receiving task and can't be changed": "SKU ini sudah ada di tugas penerimaan dan tidak bisa diubah",
   "Insufficient stock (only": "Stok tidak cukup (hanya",
   "available)": "tersedia)",
   "is already being picked and can't be removed": "sedang diambil dan tidak bisa dihapus",
