@@ -216,3 +216,132 @@ export function decisionTagCount(w: CoworkWorkspace, tag: DecisionTag): number {
 export function memberOf(w: CoworkWorkspace, userId: string): WorkspaceMember | undefined {
   return w.members.find((m) => m.userId === userId)
 }
+
+// ── Compile (WS-06) ───────────────────────────────────────────────────────────
+export type CompileScope = 'all' | 'selected' | 'tagged'
+export type CompileFormat = 'pdf' | 'pptx' | 'xlsx' | 'docx' | 'md' | 'html'
+export const COMPILE_SECTIONS = ['Summary', 'Decisions', 'Open questions', 'Action items', 'Risks', 'Sources'] as const
+export type CompileSection = (typeof COMPILE_SECTIONS)[number]
+
+export interface CompileOptions {
+  scope: CompileScope
+  /** Selected thread ids (scope='selected'). */
+  threadIds: string[]
+  format: CompileFormat
+  audience: string
+  /** Sections to include, in order. */
+  sections: CompileSection[]
+  /** Thread ids the requesting user can read — content is limited to these (WS-06). */
+  readableThreadIds: string[]
+  /** Editable artifact title. */
+  title: string
+}
+
+export interface CompileResult {
+  title: string
+  markdown: string
+  includedThreadIds: string[]
+  /** Threads that exist but the requester can't read — surfaced in Sources. */
+  excludedCount: number
+}
+
+/** Threads a member can read: their own + workspace-visible ones (WS-03). */
+export function readableThreads(w: CoworkWorkspace, userId: string): WorkspaceThread[] {
+  return w.threads.filter((t) => t.ownerUserId === userId || t.visibility === 'workspace')
+}
+
+/**
+ * Synthesise the compiled artifact markdown from the workspace's tagged decisions,
+ * scoped to what the requester can read. Grounded on real data (no API call) so the
+ * prototype is deterministic; the UI streams this in to feel agent-generated.
+ */
+export function compileWorkspaceMarkdown(w: CoworkWorkspace, opts: CompileOptions): CompileResult {
+  const readable = new Set(opts.readableThreadIds)
+  const inScope = (threadId: string) => {
+    if (!readable.has(threadId)) return false
+    if (opts.scope === 'selected') return opts.threadIds.includes(threadId)
+    return true // 'all' and 'tagged' span every readable thread
+  }
+  const includedThreadIds = w.threads.filter((t) => inScope(t.id)).map((t) => t.id)
+  const decisions = w.decisions.filter((d) => inScope(d.threadId))
+  const excludedCount = w.threads.length - w.threads.filter((t) => readable.has(t.id)).length
+
+  const threadTitle = (id: string) => w.threads.find((t) => t.id === id)?.title ?? 'thread'
+  const byTag = (tag: DecisionTag) => decisions.filter((d) => d.tag === tag)
+  const memberName = (id: string) => w.members.find((m) => m.userId === id)?.name ?? 'Unknown'
+
+  const out: string[] = []
+  out.push(`# ${opts.title}`)
+  if (opts.audience.trim()) out.push(`*Prepared for: ${opts.audience.trim()}*`)
+  out.push('')
+
+  const want = (s: CompileSection) => opts.sections.includes(s)
+
+  if (want('Summary')) {
+    out.push('## Summary')
+    out.push(
+      `${w.name} has ${decisions.length} tagged item${decisions.length === 1 ? '' : 's'} across ` +
+      `${includedThreadIds.length} thread${includedThreadIds.length === 1 ? '' : 's'}. ` +
+      `${byTag('Decision').length} decisions made, ${byTag('Action item').length} open action items, ` +
+      `${byTag('Risk').length} risk${byTag('Risk').length === 1 ? '' : 's'} flagged.`,
+    )
+    out.push('')
+  }
+  if (want('Decisions')) {
+    out.push('## Decisions')
+    const items = byTag('Decision')
+    if (items.length) items.forEach((d) => out.push(`- ${d.quote} — *${threadTitle(d.threadId)}*`))
+    else out.push('- No decisions tagged in scope.')
+    out.push('')
+  }
+  if (want('Open questions')) {
+    out.push('## Open questions')
+    const items = byTag('Question')
+    if (items.length) items.forEach((d) => out.push(`- ${d.quote} — *${threadTitle(d.threadId)}*`))
+    else out.push('- None.')
+    out.push('')
+  }
+  if (want('Action items')) {
+    out.push('## Action items')
+    const items = byTag('Action item')
+    if (items.length) items.forEach((d) => out.push(`- ${d.quote} *(owner: ${memberName(d.authorUserId)})*`))
+    else out.push('- None.')
+    out.push('')
+  }
+  if (want('Risks')) {
+    out.push('## Risks')
+    const items = byTag('Risk')
+    if (items.length) items.forEach((d) => out.push(`- ${d.quote} — *${threadTitle(d.threadId)}*`))
+    else out.push('- None flagged.')
+    out.push('')
+  }
+  if (want('Sources')) {
+    out.push('## Sources')
+    includedThreadIds.forEach((id) => out.push(`- ${threadTitle(id)}`))
+    if (excludedCount > 0) out.push(`- *${excludedCount} thread${excludedCount === 1 ? '' : 's'} excluded — no access.*`)
+    out.push('')
+  }
+
+  return { title: opts.title, markdown: out.join('\n').trim(), includedThreadIds, excludedCount }
+}
+
+/** Save a compiled artifact into the workspace's files + activity feed (WS-06). */
+export function saveCompiledArtifact(w: CoworkWorkspace, res: CompileResult, format: CompileFormat, actorUserId: string): WorkspaceFile {
+  const stamp = new Date().toISOString()
+  const file: WorkspaceFile = {
+    id: `wf-${Date.now()}`,
+    name: `${res.title}.${format}`,
+    kind: 'artifact',
+    origin: 'generated',
+    ext: format,
+    updatedAt: stamp,
+    provenance: `Compiled from ${res.includedThreadIds.length} thread${res.includedThreadIds.length === 1 ? '' : 's'}`,
+  }
+  w.files = [file, ...w.files]
+  w.activity = [
+    { id: `wa-${Date.now()}`, kind: 'artifact', text: `compiled “${res.title}” from ${res.includedThreadIds.length} threads`, actorUserId, at: stamp },
+    ...w.activity,
+  ]
+  persist()
+  return file
+}
