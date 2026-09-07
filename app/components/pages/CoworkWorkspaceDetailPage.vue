@@ -12,12 +12,15 @@
 import { ref, computed } from 'vue'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton, MpAvatar, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import {
   getWorkspace, workspaceAgents, memberOf, memberInitials, memberColor,
   type WorkspaceThread, type WorkspaceDecision, type DecisionTag,
 } from '~/data/coworkWorkspaces'
 import { coworkAgents, coworkTasks } from '~/data/cowork'
+import WorkspaceCompileModal from '~/components/patterns/WorkspaceCompileModal.vue'
+import type { WorkspaceFile } from '~/data/coworkWorkspaces'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -46,9 +49,20 @@ function fmt(iso: string): string {
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', ',')
 }
 
-function threadTo(_t: WorkspaceThread) { toast.notify({ variant: 'greeting', maxWidth: 'max-content', render: () => 'Opening threads is coming with Chat integration (Phase 2).' }) }
-function compile() { toast.notify({ variant: 'greeting', maxWidth: 'max-content', render: () => 'Compile rolls decisions across threads into one artifact — building next (Phase 2).' }) }
-function newThread() { toast.notify({ variant: 'greeting', maxWidth: 'max-content', render: () => 'New thread opens the workspace chat composer — building next (Phase 2).' }) }
+const compileOpen = ref(false)
+function compile() { compileOpen.value = true }
+function onCompiled(f: WorkspaceFile) {
+  toast.notify({ variant: 'success', title: `“${f.name}” saved to the workspace`, maxWidth: 'max-content' })
+  tab.value = 3 // jump to Files & artifacts so the new artifact is visible
+}
+// Open a thread → the workspace chat composer, with this thread's agent pre-picked.
+function threadTo(t: WorkspaceThread) {
+  router.push({ path: '/cowork-chats', query: { workspace: props.orderId, agent: t.agentId, thread: t.title } })
+}
+// New thread → pick a workspace agent, then start a fresh chat scoped to the workspace.
+function startThread(agentId: string) {
+  router.push({ path: '/cowork-chats', query: { workspace: props.orderId, agent: agentId } })
+}
 </script>
 
 <template>
@@ -73,10 +87,23 @@ function newThread() { toast.notify({ variant: 'greeting', maxWidth: 'max-conten
         <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="compile">
           <MpIcon name="magic" size="sm" /> Compile
         </button>
-        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" type="button" @click="newThread">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          New thread
-        </button>
+        <MpPopover id="wd-new-thread" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" type="button">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              New thread
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '220px' })">
+            <MpPopoverList>
+              <p class="wd-menu-hint">Chat with a workspace agent</p>
+              <MpPopoverListItem v-for="a in agents" :key="a.id" @click.stop="startThread(a.id)">
+                <span class="wd-menu-agent"><MpAvatar :src="a.avatar" :name="a.name" size="sm" /> {{ a.name }}</span>
+              </MpPopoverListItem>
+              <p v-if="!agents.length" class="wd-menu-hint">No agents in this workspace yet.</p>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </div>
     </header>
 
@@ -226,6 +253,8 @@ function newThread() { toast.notify({ variant: 'greeting', maxWidth: 'max-conten
         </MpTabPanels>
       </MpTabs>
     </div>
+
+    <WorkspaceCompileModal v-model:open="compileOpen" :workspace="ws" :current-user-id="currentUserId" @saved="onCompiled" />
   </template>
 
   <div v-else class="wd-missing">
@@ -299,6 +328,9 @@ button.wd-row:hover { border-color: var(--mp-colors-border-bold, #8c9596); backg
 .wd-feed__time { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-placeholder, #97a0af); }
 
 .wd-empty-line { font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-colors-text-secondary, #536062); padding: var(--mp-spacing-2, 8px) 0; }
+
+.wd-menu-hint { padding: 6px 12px 4px; margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--mp-colors-text-placeholder, #97a0af); }
+.wd-menu-agent { display: inline-flex; align-items: center; gap: 8px; }
 
 .wd-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-20, 80px); color: var(--mp-colors-text-secondary, #536062); }
 .wd-missing__icon { width: 40px !important; height: 40px !important; color: var(--mp-colors-icon-subtle, #97a0af); }
