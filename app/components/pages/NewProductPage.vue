@@ -24,9 +24,20 @@ const editingCustom = computed(() => isEdit.value ? customProducts.find(p => p.s
 
 const router = useRouter()
 
-// WMS doesn't deal in pricing/costing/accounting — those fields/sections are ERP-only.
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
+/**
+ * GL routing and commercial (buy/sell) setup are meaningless for a WMS-STANDALONE
+ * customer — they have no chart of accounts at all. Once WMS is connected to ERP,
+ * these fields are required: see PRD "WMS Conversion Balance Setup" Story 5 and
+ * FR2, which need an inventory account plus sell/buy setup per WMS product.
+ *
+ * This deliberately keys off WMS Standalone rather than "any WMS scenario" — the
+ * older `isWms` guard predated the WMS→ERP cutover and hid these fields from
+ * exactly the customers who now need them.
+ */
+const isWmsStandalone = computed(() => activeScenario.value === 'WMS Standalone')
 
 const NAME_MAX = 255
 const DESC_MAX = 6000
@@ -223,6 +234,15 @@ const nameError = ref('')
 const skuError = ref('')
 const categoryError = ref('')
 const unitError = ref('')
+
+/**
+ * Story 5 conditional-mandatory trios: with I Sell/I Buy on, Price + Account +
+ * Tax are all required — ERP previously required only the account.
+ *
+ * Enforced on CREATE only. Products saved under the older, looser rule must
+ * stay editable, so we never retro-invalidate them on edit.
+ */
+const commercialErrors = reactive<Record<string, string>>({})
 const isSaving = ref(false)
 const isSavingAndAdding = ref(false)
 
@@ -321,7 +341,23 @@ function validate(): boolean {
   if (!category.value) categoryError.value = t('You must select category')
   if (!unit.value) unitError.value = t('You must select base unit')
 
-  return !(nameError.value || skuError.value || categoryError.value || unitError.value)
+  // Story 5 trios — create-only, so pre-rule products stay saveable (see D3b).
+  Object.keys(commercialErrors).forEach((k) => delete commercialErrors[k])
+  if (!isEdit.value && !isWmsStandalone.value) {
+    if (doesSell.value) {
+      if (!salesPrice.value.trim()) commercialErrors.salesPrice = t('You must fill in default sales price')
+      if (!salesAccount.value) commercialErrors.salesAccount = t('You must select default sales account')
+      if (!salesTax.value) commercialErrors.salesTax = t('You must select default sales tax')
+    }
+    if (doesBuy.value) {
+      if (!purchaseCost.value.trim()) commercialErrors.purchaseCost = t('You must fill in default purchase cost')
+      if (!purchaseAccount.value) commercialErrors.purchaseAccount = t('You must select default purchase account')
+      if (!purchaseTax.value) commercialErrors.purchaseTax = t('You must select default purchase tax')
+    }
+  }
+
+  return !(nameError.value || skuError.value || categoryError.value || unitError.value
+    || Object.keys(commercialErrors).length)
 }
 
 function buildPayload(): Omit<Product, 'id'> {
@@ -595,7 +631,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
       <!-- ── Pricing & inventory info (WMS: "Inventory info" — no pricing) ── -->
       <div class="nw-form-group np-full">
         <div class="nw-section">
-          <h2 class="nw-section-title">{{ isWms ? t('Inventory info') : t('Pricing & inventory info') }}</h2>
+          <h2 class="nw-section-title">{{ isWmsStandalone ? t('Inventory info') : t('Pricing & inventory info') }}</h2>
           <div class="nw-section-spacer" />
 
           <div class="nw-fields">
@@ -623,7 +659,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
                     is-searchable use-portal is-full-width
                   />
                 </MpFormControl>
-                <MpFormControl v-if="!isWms" id="np-inventory-account" class="np-field-270" is-required>
+                <MpFormControl v-if="!isWmsStandalone" id="np-inventory-account" class="np-field-270" is-required>
                   <MpFormLabel>{{ t('Default inventory account') }}</MpFormLabel>
                   <MpAutocomplete
                     id="np-inventory-account-ac" v-model="inventoryAccount" :data="inventoryAccountOptions" label-prop="label" value-prop="value"
@@ -633,34 +669,38 @@ onUnmounted(() => { footerObserver?.disconnect() })
               </div>
             </div>
 
-            <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
-            <template v-if="!isWms">
+            <!-- I buy / I sell — hidden only for WMS Standalone (no chart of accounts).
+                 WMS-connected customers need these per PRD Story 5. -->
+            <template v-if="!isWmsStandalone">
               <div class="np-toggle-block">
                 <label class="np-checkbox-row">
                   <MpCheckbox id="np-does-buy" :is-checked="doesBuy" @change="doesBuy = !doesBuy" />
                   <span>{{ t('I buy this product') }}</span>
                 </label>
                 <div v-if="doesBuy" class="nw-row np-toggle-fields">
-                  <MpFormControl id="np-purchase-cost" class="np-field-270">
+                  <MpFormControl id="np-purchase-cost" class="np-field-270" is-required :is-invalid="!!commercialErrors.purchaseCost">
                     <MpFormLabel>{{ t('Default purchase cost') }}</MpFormLabel>
                     <div class="np-prefix-wrap">
                       <span class="np-prefix-chip">Rp</span>
                       <input id="np-purchase-cost-input" v-model="purchaseCost" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
                     </div>
+                    <MpFormErrorMessage>{{ commercialErrors.purchaseCost }}</MpFormErrorMessage>
                   </MpFormControl>
-                  <MpFormControl id="np-purchase-account" class="np-field-270" is-required>
+                  <MpFormControl id="np-purchase-account" class="np-field-270" is-required :is-invalid="!!commercialErrors.purchaseAccount">
                     <MpFormLabel>{{ t('Default purchase account') }}</MpFormLabel>
                     <MpAutocomplete
                       id="np-purchase-account-ac" v-model="purchaseAccount" :data="purchaseAccountOptions" label-prop="label" value-prop="value"
                       is-searchable use-portal is-full-width
                     />
+                    <MpFormErrorMessage>{{ commercialErrors.purchaseAccount }}</MpFormErrorMessage>
                   </MpFormControl>
-                  <MpFormControl id="np-purchase-tax" class="np-field-270">
+                  <MpFormControl id="np-purchase-tax" class="np-field-270" is-required :is-invalid="!!commercialErrors.purchaseTax">
                     <MpFormLabel>{{ t('Default purchase tax') }}</MpFormLabel>
                     <MpAutocomplete
                       id="np-purchase-tax-ac" v-model="purchaseTax" :data="taxOptions" label-prop="label" value-prop="value"
                       :placeholder="t('Select default purchase tax')" is-searchable use-portal is-full-width is-clearable
                     />
+                    <MpFormErrorMessage>{{ commercialErrors.purchaseTax }}</MpFormErrorMessage>
                   </MpFormControl>
                 </div>
               </div>
@@ -671,26 +711,29 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   <span>{{ t('I sell this product') }}</span>
                 </label>
                 <div v-if="doesSell" class="nw-row np-toggle-fields np-toggle-fields--wrap">
-                  <MpFormControl id="np-sales-price" class="np-field-270">
+                  <MpFormControl id="np-sales-price" class="np-field-270" is-required :is-invalid="!!commercialErrors.salesPrice">
                     <MpFormLabel>{{ t('Default sales price') }}</MpFormLabel>
                     <div class="np-prefix-wrap">
                       <span class="np-prefix-chip">Rp</span>
                       <input id="np-sales-price-input" v-model="salesPrice" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
                     </div>
+                    <MpFormErrorMessage>{{ commercialErrors.salesPrice }}</MpFormErrorMessage>
                   </MpFormControl>
-                  <MpFormControl id="np-sales-account" class="np-field-270" is-required>
+                  <MpFormControl id="np-sales-account" class="np-field-270" is-required :is-invalid="!!commercialErrors.salesAccount">
                     <MpFormLabel>{{ t('Default sales account') }}</MpFormLabel>
                     <MpAutocomplete
                       id="np-sales-account-ac" v-model="salesAccount" :data="salesAccountOptions" label-prop="label" value-prop="value"
                       is-searchable use-portal is-full-width
                     />
+                    <MpFormErrorMessage>{{ commercialErrors.salesAccount }}</MpFormErrorMessage>
                   </MpFormControl>
-                  <MpFormControl id="np-sales-tax" class="np-field-270">
+                  <MpFormControl id="np-sales-tax" class="np-field-270" is-required :is-invalid="!!commercialErrors.salesTax">
                     <MpFormLabel>{{ t('Default sales tax') }}</MpFormLabel>
                     <MpAutocomplete
                       id="np-sales-tax-ac" v-model="salesTax" :data="taxOptions" label-prop="label" value-prop="value"
                       :placeholder="t('Select default sales tax')" is-searchable use-portal is-full-width is-clearable
                     />
+                    <MpFormErrorMessage>{{ commercialErrors.salesTax }}</MpFormErrorMessage>
                   </MpFormControl>
                   <MpFormControl id="np-discount-account" class="np-field-270">
                     <MpFormLabel>{{ t('Default discount account') }}</MpFormLabel>
