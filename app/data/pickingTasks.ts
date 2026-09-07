@@ -732,6 +732,20 @@ export function lockedOutboundQtyForSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** SKUs on this order that a picking task already exists for — INCLUDING a task still
+ *  "open", where nothing has been picked yet. Once a picking list holds a line, that
+ *  line's PRODUCT is settled: swapping the SKU would send the picker to a bin for
+ *  goods the order no longer asks for. Quantity is a separate, softer rule (see
+ *  lockedOutboundQtyForSku). A canceled task releases its claim, so its SKUs unlock. */
+export function skusWithPickingTask(orderId: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    for (const l of pickingLinesOf(t)) if (l.orderId === orderId) out.add(l.sku);
+  }
+  return out;
+}
+
 /** One order+SKU's qty on each PENDING (open) picking task — the tasks a D7 reduction
  *  can drain from, per task (D7 allocation step). Started tasks are excluded (locked). */
 export function pendingPickingLinesForSku(orderId: string, sku: string): { taskId: string; taskNo: string; qty: number }[] {

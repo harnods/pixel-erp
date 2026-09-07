@@ -527,6 +527,22 @@ export function coverageForReceipt(receiptId: string): Set<string> {
   return covered;
 }
 
+/** SKUs on this receipt that a receiving task already exists for — INCLUDING a task
+ *  still "open", where nothing has been received yet. Once the warehouse holds a task
+ *  for a line, that line's PRODUCT is settled: swapping the SKU would leave the task
+ *  pointing at goods nobody agreed to receive, and the operator scanning against it
+ *  would have no way to know. Quantity is a separate, softer rule (see
+ *  lockedReceivingQtyForSku) — it can still move within what's been claimed.
+ *  A canceled task releases its claim, so its SKUs unlock. */
+export function skusWithReceivingTask(receiptId: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId || t.status === "canceled") continue;
+    for (const it of t.items) out.add(it.sku);
+  }
+  return out;
+}
+
 /** Per-SKU qty already spoken for on this receipt — either physically received
  *  by an ENDED task ("pending put-away"/"completed", its real receivedQty), or
  *  claimed by a still-open/in-progress task (its own planned targetQty, not
