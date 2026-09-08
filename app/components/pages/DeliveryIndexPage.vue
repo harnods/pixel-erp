@@ -123,6 +123,10 @@ function postingStateOf(row: { salesOrderId: string; status: string }): 'posted'
  *  Delivery here even for a Sales Order source (no costing, no JE, so an accounting
  *  document can't be the poster). */
 function deliveryDocOf(row: { salesOrderId: string; status: string; source: string }): DeliveryDocumentRef | undefined {
+  // The ROW must have shipped, not just its order: a partially-shipped order has a
+  // posted document for the delivery that went, and nothing for the ones still
+  // ready to ship.
+  if (row.status !== 'shipped') return undefined
   if (postingStateOf(row) !== 'posted') return undefined
   const order = outgoingOrders.find(o => o.id === row.salesOrderId)
   if (!order) return undefined

@@ -291,8 +291,14 @@ const router = useRouter()
 // Purchase Delivery in ERP-full; a direct receipt — and everything in the WMS
 // package, which has no costing or JE — posts a Stock In/Out. Only a task that has
 // actually received stock has one, so open tasks show an em dash.
-function receivingDoc(task: { id: string; purchaseNo?: string; receivedQty: number }) {
-  if (task.receivedQty <= 0) return undefined
+// Only a task whose receiving has ENDED has posted anything: "completed", and
+// "pending put-away" (received in full or short, now waiting to be put away — a
+// short close still ends here). An open or in-progress task has posted nothing,
+// whatever it has counted so far. There is no "partially completed" TASK status —
+// partial reception is a state of the receipt, and its task still ends completed.
+const RECEIVING_POSTED = new Set(['completed', 'pending put-away'])
+function receivingDoc(task: { id: string; purchaseNo?: string; receivedQty: number; status: string }) {
+  if (!RECEIVING_POSTED.has(task.status) || task.receivedQty <= 0) return undefined
   return bindSeededDocumentById(task.id, inboundPosterKindFor(!!task.purchaseNo))
 }
 const route = useRoute()

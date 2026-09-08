@@ -109,6 +109,13 @@ const columns: TableColumn[] = [
 // switched back on into an empty column.
 const hideAccount = computed(() => activeScenario.value.startsWith('WMS'))
 
+// The posted Stock Count, shown only on a COUNTED cycle count — a count that is
+// still Open or In progress has counted nothing to post.
+function countedDocFor(row: StockAdjustment) {
+  if (row.status !== 'counted') return undefined
+  return cycleCountDocumentFor(row.id)
+}
+
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on. "Last updated" is opt-in
 // (off by default); "Memo" is a settings-only toggle — not its own column, it
@@ -625,10 +632,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- Transaction document — the ERP Stock Count that approving this count posted. -->
     <template #cell-deliveryDoc="{ row }">
       <a
-        v-if="cycleCountDocumentFor((row as unknown as StockAdjustment).id)"
+        v-if="countedDocFor(row as unknown as StockAdjustment)"
         class="cell-link cell-text"
-        @click.stop="router.push(deliveryDocumentRoute(cycleCountDocumentFor((row as unknown as StockAdjustment).id)!))"
-      >{{ cycleCountDocumentFor((row as unknown as StockAdjustment).id)!.number }}</a>
+        @click.stop="router.push(deliveryDocumentRoute(countedDocFor(row as unknown as StockAdjustment)!))"
+      >{{ countedDocFor(row as unknown as StockAdjustment)!.number }}</a>
       <span v-else>—</span>
     </template>
 
