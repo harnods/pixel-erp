@@ -349,6 +349,10 @@ const ADVANCED_TOGGLES = [
         </button>
       </div>
 
+      <ContentList :label="t('Company logo')" class="cp-cl--logo">
+        <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
+      </ContentList>
+
       <div class="cp-grid">
         <ContentList :label="t('Company name')" value="PT Central Perk Indonesia" />
         <ContentList :label="t('Company address')">
@@ -365,11 +369,7 @@ const ADVANCED_TOGGLES = [
         <ContentList :label="t('Company ID')" value="676424" />
       </div>
 
-      <ContentList :label="t('Company logo')" class="cp-cl--logo">
-        <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
-      </ContentList>
-
-      <div class="cp-grid cp-grid--spaced">
+      <div class="cp-grid">
         <ContentList :label="t('Shipping address')">
           <span class="content-list__line">MidPlaza 2 Lantai 4</span>
           <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
@@ -938,10 +938,9 @@ const ADVANCED_TOGGLES = [
      column gap is set here. */
   column-gap: var(--mp-spacing-8);
 }
-.cp-grid--spaced { margin-top: var(--mp-spacing-3); }
 
-/* Company logo ContentList — keep the extra breathing room the old field had. */
-.cp-cl--logo { margin-top: var(--mp-spacing-3); }
+/* Company logo ContentList — first block in the section; 12px down to the grid. */
+.cp-cl--logo { margin-bottom: var(--mp-spacing-3); }
 
 .cp-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 .cp-field--logo { margin-top: var(--mp-spacing-5); }
