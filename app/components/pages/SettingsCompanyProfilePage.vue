@@ -422,7 +422,6 @@ const ADVANCED_TOGGLES = [
             <div class="cp-subhead cp-subhead--spaced">
               <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
             </div>
-            <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
             <div class="cp-grid">
               <ContentList :label="t('NPWP signee')">
                 <span class="content-list__line">{{ tax.signeeNpwp || '—' }}</span>

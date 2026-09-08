@@ -680,7 +680,6 @@ const deleteMessage = computed(() => {
 .kbp-filter-left { flex: 1; }
 .kbp-filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
-.filter-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
 .filter-search svg { flex: 0 0 auto; }
 .filter-search-input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-family: inherit; font-size: 14px; color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-subtle); }

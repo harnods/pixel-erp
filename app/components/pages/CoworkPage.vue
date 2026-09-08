@@ -2100,7 +2100,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
-.cw-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.cw-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .cw-search__input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
 .cw-search__input::placeholder { color: var(--mp-text-placeholder); }
 .cw-search__clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: 999px; }

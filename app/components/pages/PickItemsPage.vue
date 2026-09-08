@@ -1479,7 +1479,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px;
 }
-.pik-search-wrap:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.pik-search-wrap:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .pik-search { flex: 1; border: none; background: transparent; outline: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pik-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {

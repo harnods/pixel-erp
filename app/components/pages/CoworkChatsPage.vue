@@ -861,7 +861,7 @@ onBeforeUnmount(() => {
 /* Left panel — searchable list of saved chats. */
 .cwc-list { flex-shrink: 0; width: 280px; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--mp-border-default, #e3e7e9); padding: var(--mp-spacing-4) var(--mp-spacing-3); }
 .cwc-list__search { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); }
-.cwc-list__search:focus-within { border-color: var(--mp-border-bold, #8c9596); }
+.cwc-list__search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .cwc-list__search-icon { color: var(--mp-icon-default, #536062); flex: 0 0 auto; }
 .cwc-list__search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); padding: 0; }
 .cwc-list__search-input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }

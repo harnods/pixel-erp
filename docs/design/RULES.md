@@ -57,6 +57,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Secondary variant for a Cancel button | ghost | `rule/btn-cancel-ghost` |
 | `box-shadow` to lift a card | 1px border | `rule/surface-border-no-shadow` |
 | Italic for a note/caption/hint | smaller size + secondary color | `rule/type-no-italic` |
+| Regular-weight H1 / H2 / H3 heading | headings are always semibold | `rule/type-heading-semibold` |
 | Hardcoded `px` / hex color | `var(--mp-*)` tokens | `rule/token-no-hardcoded-*` |
 | Pixel `width` on a name/date/amount column | semantic `kind` | `rule/table-column-kind` |
 | `MpTextlink` for a clickable row name | `<span>` styled as link | `rule/table-name-link-span` |
@@ -830,8 +831,16 @@ ERP override wins.
   **captions only**. **Lint:** review.
 - **`rule/type-scale`** — *Do:* pick a **role**, not a raw px — **H1** `2xl`/24, **H2**
   `xl`/20, **H3** `lg`/16, **p** `md`/14 (body default), **small** `sm`/12 (caption).
+  All three heading roles are **semibold** (see `rule/type-heading-semibold`).
   *Don't:* use **xsm/10px** (`xs`) in ERP product UI — 10px is below our minimum — or set
   an off-scale size. **Why:** one type scale, mapped by role. **Lint:** review.
+- **`rule/type-heading-semibold`** — *Do:* headings **H1 / H2 / H3 are always
+  semibold** (`--mp-font-weights-semi-bold`) — pair the semibold weight with the role
+  size from `rule/type-scale` (24 / 20 / 16). Body (`p`/14) and captions (`sm`/12) stay
+  **regular**. *Don't:* render any heading at regular weight, or lean on size alone for
+  hierarchy. **Why:** headings carry the hierarchy through weight **and** size together;
+  a regular-weight heading reads as body text. **Source:**
+  `docs/patterns/pixel-enterprise-overrides.md`. **Lint:** review.
 - **`rule/type-no-italic`** — *Do:* de-emphasize with smaller size + secondary color;
   emphasize with weight. *Don't:* use **any** italic — no `font-style: italic`,
   `<i>`, or `<em>`, anywhere (notes, captions, hints, disclaimers). **Why:** italic

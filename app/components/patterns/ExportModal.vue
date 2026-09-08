@@ -283,8 +283,8 @@ function onExport() {
 /* Focus/active = neutral border-bold + 1px inset ring, never green
    (rule/form-focus-border-bold). :focus-within because the input is borderless. */
 .export-col-search:focus-within {
-  border-color: var(--mp-colors-border-bold, #8c9596);
-  box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596);
 }
 
 .export-col-search__input {

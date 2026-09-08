@@ -181,7 +181,7 @@ async function save() {
 .sad-divider { background: var(--mp-border-default); }
 /* Matches the table filter-bar search: border-default pill + neutral focus ring. */
 .sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
-.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
