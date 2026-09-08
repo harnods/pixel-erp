@@ -13,7 +13,7 @@
  * load), same pattern as employees.ts. Every CRM page reads from here so the Home
  * KPIs and the list pages never disagree.
  */
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { employees } from './employees'
 
@@ -195,13 +195,58 @@ export const ordersThisMonthValue = computed(() =>
 // account master (crmCustomers), owners are Central Perk sales staff (CRM_OWNERS),
 // and a Won deal converts into a real Sales Order (crmOrders) — that link is the
 // CRM ↔ ERP bridge the module is built around.
-export const DEAL_STAGES = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const
+// PRD stage identities (display labels). Open Lead → 1st Meeting → Proposal →
+// Negotiation are the ONGOING stages; Won is terminal (closed-won), Lost is
+// closed-lost and may be reopened to an ongoing stage. Labels use PRD casing.
+export const DEAL_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const
 export type DealStage = typeof DEAL_STAGES[number]
+/** Ongoing (non-closed) stages — used by metrics + the reopen picker. */
+export const ONGOING_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation'] as const
 export type DealPriority = 'low' | 'medium' | 'high' | 'critical'
-/** ERP conversion state — only meaningful once a deal is Won. `none` = not yet
- *  converted, `converted` = a Sales Order exists (salesOrderId), `validation-failed`
- *  = the convert attempt was blocked (conversionError explains why). */
-export type DealConversion = 'none' | 'converted' | 'validation-failed'
+/** ERP Conversion Status (PRD). `none` = Not converted, `processing` = queued,
+ *  `converted` = an ERP transaction exists (salesOrderId), `failed` = the attempt
+ *  was blocked (conversionError explains why). */
+export type DealConversion = 'none' | 'processing' | 'converted' | 'failed'
+export const CONVERSION_STATUS_LABEL: Record<DealConversion, string> = {
+  none: 'Not converted', processing: 'Processing', converted: 'Converted', failed: 'Failed',
+}
+
+/** ERP conversion target — one active target per company (PRD: Sales Quote OR
+ *  Sales Order). Drives the convert action label + the past-30-days metric label. */
+export type ConversionTarget = 'Sales Order' | 'Sales Quote'
+export const dealConversionTarget = ref<ConversionTarget>(
+  (loadSnapshot<ConversionTarget>('crm-deal-conv-target-v1')?.[0]) ?? 'Sales Order',
+)
+export function setDealConversionTarget(t: ConversionTarget) {
+  dealConversionTarget.value = t
+  saveSnapshot('crm-deal-conv-target-v1', [t])
+}
+
+/** Supported deal currencies (company base = IDR). */
+export const DEAL_CURRENCIES = ['IDR', 'USD', 'SGD', 'EUR'] as const
+export type DealCurrency = typeof DEAL_CURRENCIES[number]
+
+export type LineDiscountType = 'none' | 'percentage' | 'fixed'
+/** One Product List line — an SCM product snapshot + Deal-only commercial values.
+ *  Editing these NEVER mutates the SCM product master (PRD Product List rules). */
+export interface DealLineItem {
+  productId: string
+  productName: string         // display snapshot
+  unit: string
+  quantity: number
+  originalPrice: number       // Deal-only snapshot (seeded from SCM, editable)
+  discountType: LineDiscountType
+  discount: number            // % (0–100) or fixed amount
+}
+/** Read-only calculated price after the line discount. */
+export function lineDiscountedPrice(li: DealLineItem): number {
+  if (li.discountType === 'percentage') return Math.max(0, li.originalPrice * (1 - li.discount / 100))
+  if (li.discountType === 'fixed')      return Math.max(0, li.originalPrice - li.discount)
+  return li.originalPrice
+}
+export function lineSubtotal(li: DealLineItem): number { return Math.round(li.quantity * lineDiscountedPrice(li)) }
+
+export type AdjustmentType = 'percentage' | 'fixed'
 
 export interface Deal {
   id: string                  // 'DL-260901'
@@ -210,113 +255,272 @@ export interface Deal {
   company: string             // denormalised account name (matches crmCustomers.company)
   stage: DealStage
   owner: string               // CRM_OWNERS
-  value: number               // deal value, IDR
-  priority: DealPriority
-  expectedCloseDate: string   // ISO
+  value: number               // Expected Deal Value (override or calculated), in Deal currency
+  valueOverridden?: boolean   // true = `value` is a manual override, not the calc
+  priority: DealPriority       // non-PRD extra; kept for pipeline colour
+  referenceNumber?: string    // optional, searchable, duplicates allowed
+  description?: string         // optional, ≤500 chars
+  relatedPeople?: string[]     // 0–10 active Mekari users (informational only)
+  // Contact Information — owned by the Deal (prefilled from Company PIC, never writes back)
+  picName?: string
+  phones?: string[]
+  email?: string
+  // Products & commercial adjustments
+  products?: DealLineItem[]
+  taxType?: AdjustmentType
+  tax?: number
+  orderDiscountType?: AdjustmentType
+  orderDiscount?: number
+  shippingFee?: number
+  otherExpense?: number
+  currency: DealCurrency
+  exchangeRate: number        // 1 for base currency; positive for foreign
+  notes?: string              // optional, ≤2000 chars
+  expectedCloseDate: string   // Due Date (ISO)
   createdAt: string           // ISO
+  createdBy?: string
   lastActivity: string        // ISO
+  lastModifiedBy?: string
   conversion: DealConversion
-  salesOrderId?: string       // crmOrders id when converted
-  conversionError?: string    // reason when conversion === 'validation-failed'
+  salesOrderId?: string       // crmOrders id + type prefix when converted
+  convertedTarget?: ConversionTarget
+  conversionError?: string    // reason when conversion === 'failed'
   lostReason?: string         // when stage === 'Lost'
+  archived?: boolean          // hidden from active views + metrics; history preserved
 }
 
 // The current review month + "today" (fixed, like the rest of the CRM mock) so the
 // metrics (closing this month / overdue / created this month) are deterministic.
 const DEAL_TODAY = '2026-09-07'
 const DEAL_MONTH = '2026-09'
+/** ISO date `n` days before an ISO date (used by the trailing-30-days metric). */
+function daysBefore(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const t = Date.UTC(y!, m! - 1, d!) - n * 86_400_000
+  return new Date(t).toISOString().slice(0, 10)
+}
 
+// Default commercial defaults for a base-currency (IDR) deal.
+const B = { currency: 'IDR' as DealCurrency, exchangeRate: 1 }
 const DEALS_SEED: Deal[] = [
-  { id: 'DL-260901', name: 'Q4 green beans — wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260902', name: 'Office pantry — monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', lastActivity: '2026-09-04', conversion: 'none' },
-  { id: 'DL-260903', name: 'Espresso blend — pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', lastActivity: '2026-09-03', conversion: 'none' },
-  { id: 'DL-260904', name: 'Hotel F&B annual contract',       customerId: 'C017', company: 'Santika Premiere Hotel',   stage: '1st meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     expectedCloseDate: '2026-09-30', createdAt: '2026-08-26', lastActivity: '2026-09-02', conversion: 'none' },
-  { id: 'DL-260905', name: 'Single-origin Gayo — proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260906', name: 'House blend — café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260907', name: 'Espresso beans — renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260908', name: 'Roastery supply — urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', lastActivity: '2026-09-01', conversion: 'none' },
-  { id: 'DL-260909', name: 'Bulk green beans — Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', lastActivity: '2026-09-02', conversion: 'converted', salesOrderId: 'SO-5009' },
-  { id: 'DL-260910', name: 'Café chain — espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', lastActivity: '2026-09-05', conversion: 'validation-failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
-  { id: 'DL-260911', name: 'Trial order — cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
-  { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
+  { id: 'DL-260901', name: 'Q4 green beans — wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open Lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 15, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260902', name: 'Office pantry — monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open Lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260903', name: 'Espresso blend — pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   ...B, products: [{ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: 60, originalPrice: 320_000, discountType: 'percentage', discount: 5 }], shippingFee: 500_000, expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-03', conversion: 'none' },
+  { id: 'DL-260904', name: 'Hotel F&B annual contract',       customerId: 'C017', company: 'Santika Premiere Hotel',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-30', createdAt: '2026-08-26', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'none' },
+  { id: 'DL-260905', name: 'Single-origin Gayo — proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   ...B, expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260906', name: 'House blend — café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260907', name: 'Espresso beans — renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260908', name: 'Roastery supply — urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', ...B, expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', createdBy: 'Dewi Lestari', lastActivity: '2026-09-01', conversion: 'none' },
+  { id: 'DL-260909', name: 'Bulk green beans — Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     ...B, products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 20, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
+  { id: 'DL-260910', name: 'Café chain — espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
+  { id: 'DL-260911', name: 'Trial order — cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   ...B, expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
+  { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
 ]
 
 export const deals = reactive<Deal[]>(load('crm-deals-v1', DEALS_SEED))
+// Migrate snapshots that predate the model expansion: old stage casing, the
+// renamed 'validation-failed' status, and the currency/rate defaults.
+const STAGE_MIGRATE: Record<string, DealStage> = { 'Open lead': 'Open Lead', '1st meeting': '1st Meeting' }
+for (const d of deals) {
+  const migrated = STAGE_MIGRATE[d.stage as string]
+  if (migrated) d.stage = migrated
+  if ((d.conversion as string) === 'validation-failed') d.conversion = 'failed'
+  if (!d.currency) d.currency = 'IDR'
+  if (typeof d.exchangeRate !== 'number') d.exchangeRate = 1
+}
 export function persistCrmDeals() { saveSnapshot('crm-deals-v1', deals) }
 
-export function isDealOpen(d: Deal): boolean { return d.stage !== 'Won' && d.stage !== 'Lost' }
-export function getDeal(id: string): Deal | undefined { return deals.find((d) => d.id === id) }
-export function dealsInStage(stage: DealStage): Deal[] { return deals.filter((d) => d.stage === stage) }
+/** Related People options — active Mekari users (employees), names only. Max 10
+ *  chosen per deal (informational; grants no access). */
+export const crmRelatedPeopleOptions = computed(() =>
+  employees.filter((e) => e.status === 'active').map((e) => e.fullName),
+)
 
-/** Metrics panel numbers — all derived from `deals` (+ the linked crmOrders) so
- *  the cards, the table and the board always agree. */
+/** Ongoing = not Won/Lost. Active views + fixed metrics also exclude archived. */
+export function isDealOpen(d: Deal): boolean { return d.stage !== 'Won' && d.stage !== 'Lost' }
+export function isDealArchived(d: Deal): boolean { return d.archived === true }
+export function getDeal(id: string): Deal | undefined { return deals.find((d) => d.id === id) }
+export function dealsInStage(stage: DealStage): Deal[] { return deals.filter((d) => d.stage === stage && !d.archived) }
+
+// ── Commercial calculation (PRD provisional formula, TBC w/ ERP txn team) ──
+/** sum(line subtotals) + tax + shipping + other − order discount. */
+export function dealCalculatedValue(d: Pick<Deal, 'products' | 'taxType' | 'tax' | 'orderDiscountType' | 'orderDiscount' | 'shippingFee' | 'otherExpense'>): number {
+  const linesTotal = (d.products ?? []).reduce((n, li) => n + lineSubtotal(li), 0)
+  const adj = (type: AdjustmentType | undefined, amount: number | undefined, base: number): number => {
+    if (!amount) return 0
+    return type === 'percentage' ? Math.round(base * (amount / 100)) : amount
+  }
+  const tax = adj(d.taxType, d.tax, linesTotal)
+  const orderDiscount = adj(d.orderDiscountType, d.orderDiscount, linesTotal)
+  return Math.max(0, linesTotal + tax + (d.shippingFee ?? 0) + (d.otherExpense ?? 0) - orderDiscount)
+}
+/** Expected Deal Value = manual override when set, else the calculated value. */
+export function dealExpectedValue(d: Deal): number {
+  return d.valueOverridden ? d.value : ((d.products?.length) ? dealCalculatedValue(d) : d.value)
+}
+
+/** Fixed Deals metrics (PRD): 5 permission-aware cards. Ongoing = non-archived,
+ *  non-closed. Values use each deal's captured exchange rate → base currency.
+ *  Legacy props (active/openValue/overdueCount/conversionAttentionCount) are kept
+ *  for CrmReportsPage. */
 export const dealMetrics = computed(() => {
-  const open = deals.filter(isDealOpen)
+  const visible = deals.filter((d) => !d.archived)
+  const open = visible.filter(isDealOpen)
+  const inBase = (d: Deal) => dealExpectedValue(d) * (d.exchangeRate || 1)
   const closingThisMonth = open.filter((d) => d.expectedCloseDate.startsWith(DEAL_MONTH))
   const overdue = open.filter((d) => d.expectedCloseDate < DEAL_TODAY)
-  const converted = deals.filter((d) => d.conversion === 'converted' && d.salesOrderId)
-  const soThisMonth = converted.filter((d) => {
+  const converted = visible.filter((d) => d.conversion === 'converted' && d.salesOrderId)
+  // Sales Orders/Quotes created — trailing 30 days (PRD). Mock: linked order date.
+  const past30Start = daysBefore(DEAL_TODAY, 30)
+  const txnPast30 = converted.filter((d) => {
     const so = crmOrders.find((o) => o.id === d.salesOrderId)
-    return so ? so.date.startsWith(DEAL_MONTH) : false
+    return so ? so.date >= past30Start && so.date <= DEAL_TODAY : false
   })
-  const attention = deals.filter((d) => d.conversion === 'validation-failed')
+  const attention = visible.filter((d) => d.conversion === 'failed')
   return {
+    // PRD 5 fixed
+    totalOngoing: open.length,
+    totalOngoingValue: open.reduce((n, d) => n + inBase(d), 0),
+    closingThisMonthCount: closingThisMonth.length,
+    closingThisMonthValue: closingThisMonth.reduce((n, d) => n + inBase(d), 0),
+    overdueCount: overdue.length,
+    txnCreatedPast30Count: txnPast30.length,
+    // legacy aliases (reports)
     total: deals.length,
     active: open.length,
-    totalValue: deals.reduce((n, d) => n + d.value, 0),
-    openValue: open.reduce((n, d) => n + d.value, 0),
-    closingThisMonthCount: closingThisMonth.length,
-    closingThisMonthValue: closingThisMonth.reduce((n, d) => n + d.value, 0),
-    overdueCount: overdue.length,
-    salesOrdersCreatedCount: soThisMonth.length,
+    totalValue: visible.reduce((n, d) => n + inBase(d), 0),
+    openValue: open.reduce((n, d) => n + inBase(d), 0),
+    salesOrdersCreatedCount: txnPast30.length,
     conversionAttentionCount: attention.length,
   }
 })
 
-/** Kanban drag/drop: move a deal to a new stage; leaving Won clears its conversion. */
-export function setDealStage(id: string, stage: DealStage): void {
-  const d = getDeal(id)
-  if (!d) return
-  d.stage = stage
-  if (stage !== 'Won') { d.conversion = 'none'; d.salesOrderId = undefined; d.conversionError = undefined }
-  persistCrmDeals()
-}
+/** Result shape for stage moves / bulk ops — carries a safe reason on failure. */
+export interface DealOpResult { ok: boolean; error?: string }
 
-/** Convert a Won deal into a real Sales Order (crmOrders) — the CRM ↔ ERP bridge.
- *  Returns { ok:false, error } when a deal can't be converted (already-failed
- *  validation stays failed until fixed; non-Won deals can't convert). */
-export function convertDealToSalesOrder(id: string): { ok: boolean; salesOrderId?: string; error?: string } {
+/**
+ * Move a deal to a new stage, enforcing the PRD terminal/reopen rules:
+ *  • Won is terminal — no move off Won (any surface).
+ *  • → Lost requires a lostReason.
+ *  • Lost may reopen only to an ongoing stage.
+ * Callers own the confirmation UX (Won-irreversible warning, reopen confirm).
+ */
+export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?: string } = {}): DealOpResult {
   const d = getDeal(id)
   if (!d) return { ok: false, error: 'Deal not found.' }
-  if (d.stage !== 'Won') return { ok: false, error: 'Only a Won deal can be converted to a Sales Order.' }
-  if (d.conversion === 'converted' && d.salesOrderId) return { ok: true, salesOrderId: d.salesOrderId }
-  if (d.conversion === 'validation-failed') return { ok: false, error: d.conversionError ?? 'Conversion validation failed.' }
+  if (d.archived) return { ok: false, error: 'Restore this deal before changing its stage.' }
+  if (d.stage === stage) return { ok: true }
+  if (d.stage === 'Won') return { ok: false, error: 'Won is terminal — this deal cannot move to another stage.' }
+  if (d.stage === 'Lost' && !(ONGOING_STAGES as readonly string[]).includes(stage)) {
+    return { ok: false, error: 'A Lost deal can only be reopened to an ongoing stage.' }
+  }
+  if (stage === 'Lost' && !opts.lostReason?.trim()) return { ok: false, error: 'A Lost reason is required.' }
+  const from = d.stage
+  d.stage = stage
+  d.lastActivity = DEAL_TODAY
+  if (stage === 'Lost') d.lostReason = opts.lostReason!.trim()
+  if (from === 'Lost' && stage !== 'Lost') d.lostReason = undefined
+  persistCrmDeals()
+  return { ok: true }
+}
+/** Legacy kanban entry point — now routes through moveDealStage. Returns the result
+ *  so the board can surface the reason + revert a rejected drop. */
+export function setDealStage(id: string, stage: DealStage, opts: { lostReason?: string } = {}): DealOpResult {
+  return moveDealStage(id, stage, opts)
+}
+
+// ── Archive / restore (PRD: no permanent delete in V1) ──
+export function archiveDeal(id: string): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  d.archived = true; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
+}
+export function restoreDeal(id: string): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
+}
+
+// ── Bulk actions (per-record result; partial success retained) ──
+export interface BulkOutcome { id: string; ok: boolean; error?: string }
+export function bulkChangeOwner(ids: string[], owner: string): BulkOutcome[] {
+  const out = ids.map((id) => {
+    const d = getDeal(id)
+    if (!d) return { id, ok: false, error: 'Deal not found.' }
+    if (d.archived) return { id, ok: false, error: 'Archived deal.' }
+    d.owner = owner; d.lastActivity = DEAL_TODAY; return { id, ok: true }
+  })
+  persistCrmDeals(); return out
+}
+export function bulkChangeStage(ids: string[], stage: DealStage, opts: { lostReason?: string } = {}): BulkOutcome[] {
+  const out = ids.map((id) => ({ id, ...moveDealStage(id, stage, opts) }))
+  return out
+}
+
+/** Next deal id — DL-YYMMDD## style, monotonic over the current set. */
+function nextDealId(): string {
+  const max = deals.reduce((m, d) => Math.max(m, Number(d.id.replace(/\D/g, '')) || 0), 260900)
+  return `DL-${max + 1}`
+}
+export interface DealInput {
+  name: string; customerId: string; company: string; stage: DealStage; owner: string
+  value: number; valueOverridden?: boolean; priority?: DealPriority
+  referenceNumber?: string; description?: string; relatedPeople?: string[]
+  picName?: string; phones?: string[]; email?: string
+  products?: DealLineItem[]
+  taxType?: AdjustmentType; tax?: number; orderDiscountType?: AdjustmentType; orderDiscount?: number
+  shippingFee?: number; otherExpense?: number
+  currency: DealCurrency; exchangeRate: number; notes?: string; expectedCloseDate: string
+}
+export function createDeal(input: DealInput, author = 'You'): Deal {
+  const d: Deal = {
+    id: nextDealId(), ...input,
+    createdAt: DEAL_TODAY, createdBy: author, lastActivity: DEAL_TODAY, lastModifiedBy: author,
+    conversion: 'none', priority: input.priority ?? 'medium',
+  }
+  deals.unshift(d); persistCrmDeals(); return d
+}
+export function updateDeal(id: string, patch: Partial<DealInput>, author = 'You'): Deal | undefined {
+  const d = getDeal(id); if (!d) return undefined
+  Object.assign(d, patch, { lastActivity: DEAL_TODAY, lastModifiedBy: author })
+  persistCrmDeals(); return d
+}
+
+/**
+ * Manual ERP conversion (PRD). Creates exactly one ERP transaction of the active
+ * target (Sales Quote/Sales Order); available at any non-archived stage. A deal
+ * already converted returns its existing link; a failed deal stays failed until
+ * fixed. One Deal → at most one ERP transaction.
+ */
+export function convertDeal(id: string): { ok: boolean; salesOrderId?: string; target?: ConversionTarget; error?: string } {
+  const d = getDeal(id)
+  if (!d) return { ok: false, error: 'Deal not found.' }
+  if (d.archived) return { ok: false, error: 'Archived deals cannot be converted. Restore the deal first.' }
+  if (d.conversion === 'converted' && d.salesOrderId) return { ok: true, salesOrderId: d.salesOrderId, target: d.convertedTarget }
+  if (d.conversion === 'failed') return { ok: false, error: d.conversionError ?? 'Conversion validation failed.' }
+  if (!d.products?.length) return { ok: false, error: 'Add at least one product line before converting.' }
+  const target = dealConversionTarget.value
   const cust = crmCustomers.find((c) => c.id === d.customerId)
-  const soId = `SO-${5000 + crmOrders.length + 1}`
+  const prefix = target === 'Sales Quote' ? 'SQ' : 'SO'
+  const txnId = `${prefix}-${5000 + crmOrders.length + 1}`
   crmOrders.push({
-    id: soId,
-    customer: d.company,
-    product: 'From deal ' + d.id,
-    date: DEAL_TODAY,
-    amount: d.value,
-    status: 'draft',
-    owner: cust?.owner ?? d.owner,
+    id: txnId, customer: d.company, product: d.products[0]!.productName,
+    date: DEAL_TODAY, amount: dealExpectedValue(d), status: 'draft', owner: cust?.owner ?? d.owner,
   })
   persistCrmOrders()
-  d.conversion = 'converted'
-  d.salesOrderId = soId
+  d.conversion = 'converted'; d.salesOrderId = txnId; d.convertedTarget = target; d.lastActivity = DEAL_TODAY
   persistCrmDeals()
-  return { ok: true, salesOrderId: soId }
+  return { ok: true, salesOrderId: txnId, target }
 }
+/** Back-compat alias for the old SO-only convert entry point. */
+export const convertDealToSalesOrder = convertDeal
 
 // ── Teams (Settings → Teams) ──────────────────────────────────────────────────
 // A CRM team groups people (real employees) and grants access to CRM modules.
 // Members reference the employee master (employees.id === 'EMP-000x'); the count,
 // module chips, and last-updated line on the Teams table all read this store.
+// Only Deals is a permission-gated CRM module — Reports & Contacts are always
+// available, so they are NOT team-accessible-module options.
 export const CRM_TEAM_MODULES = [
-  { key: 'deals',    label: 'Deals'    },
-  { key: 'reports',  label: 'Reports'  },
-  { key: 'contacts', label: 'Contacts' },
+  { key: 'deals', label: 'Deals' },
 ] as const
 export type CrmTeamModule = typeof CRM_TEAM_MODULES[number]['key']
 
@@ -331,8 +535,8 @@ export interface CrmTeam {
 }
 
 const TEAMS_SEED: CrmTeam[] = [
-  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], modules: ['deals', 'reports', 'contacts'], updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
-  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        modules: ['reports', 'contacts'],            updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], modules: ['deals'], updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        modules: [],        updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
 ]
 
 export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v1', TEAMS_SEED))

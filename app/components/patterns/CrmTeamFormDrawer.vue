@@ -13,7 +13,7 @@
  * fields: Team name, Description, Accessible modules (Deals/Reports/Contacts
  * toggles) and Assign members.
  */
-import { MpIcon, MpButton, MpToggle, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpToggle, MpTooltip, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
 import { CRM_TEAM_MODULES, type CrmTeamModule } from '~/data/crm'
 
 export interface CrmTeamDraft {
@@ -108,25 +108,24 @@ function removeMember(id: string) {
               </ul>
             </div>
 
-            <!-- Assign members -->
+            <!-- Assign members — a secondary "+ Assign members" button that opens
+                 the two-pane picker; assigned members list downward, each with a
+                 (−) remove (always tooltip'd "Remove"). -->
             <div class="ctf-field">
-              <div class="ctf-members-head">
-                <span class="ctf-field-label">{{ t('Members') }}</span>
-                <button type="button" class="ctf-link" @click="emit('pick-members')">
-                  {{ draft.memberIds.length ? t('Edit members') : t('Assign members') }}
-                </button>
-              </div>
-              <div v-if="draft.memberIds.length" class="ctf-chips">
-                <span v-for="(name, i) in memberNames" :key="draft.memberIds[i]" class="ctf-chip">
-                  {{ name }}
-                  <button type="button" class="ctf-chip-remove" :aria-label="`${t('Remove')} ${name}`" @click="removeMember(draft.memberIds[i]!)">
-                    <MpIcon name="close" size="sm" />
-                  </button>
-                </span>
-              </div>
-              <button v-else type="button" class="ctf-members-empty" @click="emit('pick-members')">
+              <span class="ctf-field-label">{{ t('Members') }}</span>
+              <ul v-if="draft.memberIds.length" class="ctf-member-list">
+                <li v-for="(name, i) in memberNames" :key="draft.memberIds[i]" class="ctf-member-row">
+                  <span class="ctf-member-name">{{ name }}</span>
+                  <MpTooltip :id="`ctf-rm-${draft.memberIds[i]}`" :label="t('Remove')" placement="top" use-portal>
+                    <button type="button" class="ctf-member-remove" :aria-label="`${t('Remove')} ${name}`" @click="removeMember(draft.memberIds[i]!)">
+                      <MpIcon name="minus-circular" size="md" />
+                    </button>
+                  </MpTooltip>
+                </li>
+              </ul>
+              <button type="button" class="btn-enterprise btn-enterprise--secondary ctf-assign-btn" @click="emit('pick-members')">
                 <MpIcon name="add" size="sm" />
-                <span>{{ t('Assign members') }}</span>
+                {{ t('Assign members') }}
               </button>
             </div>
           </div>
@@ -214,30 +213,28 @@ function removeMember(id: string) {
 .ctf-toggle-row:last-child { border-bottom: none; }
 .ctf-toggle-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* Members */
-.ctf-members-head { display: flex; align-items: center; justify-content: space-between; }
-.ctf-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.ctf-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.ctf-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
-.ctf-chip {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
+/* Members — a vertical list (name + a tooltip'd (−) remove per row), then a
+   secondary "+ Assign members" button that opens the two-pane picker. */
+.ctf-member-list {
+  list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0;
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); overflow: hidden;
 }
-.ctf-chip-remove {
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; background: transparent; padding: 0; cursor: pointer; color: var(--mp-text-subtle);
+.ctf-member-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-bottom: 1px solid var(--mp-border-default);
 }
-.ctf-chip-remove:hover { color: var(--mp-text-default); }
-.ctf-members-empty {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2); align-self: flex-start;
-  margin-top: var(--mp-spacing-1); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px dashed var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
-  background: transparent; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+.ctf-member-row:last-child { border-bottom: none; }
+.ctf-member-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctf-member-remove {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0;
+  border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm);
+  color: var(--mp-text-secondary);
 }
-.ctf-members-empty:hover { background: var(--mp-background-neutral-subtle); }
+.ctf-member-remove:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #a8352d); }
+
+.ctf-assign-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 
 .ctf-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);

@@ -42,6 +42,7 @@ import { formatDate } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
+const router = useRouter()
 
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 
@@ -262,7 +263,7 @@ const integrations: Integration[] = [
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton v-if="section === 'users'" variant="primary" is-rounded @click="soon(t('Invite user'))">{{ t('Invite user') }}</MpButton>
+        <MpButton v-if="section === 'users'" variant="primary" is-rounded @click="router.push('/crm/settings/users/invite')">{{ t('Invite user') }}</MpButton>
         <MpButton v-else-if="section === 'teams'" variant="primary" is-rounded left-icon="add" @click="openNewTeam">{{ t('New team') }}</MpButton>
         <MpButton v-else-if="section === 'views'" variant="secondary" is-rounded @click="soon(t('Create view'))">{{ t('Create view') }}</MpButton>
       </div>
@@ -496,7 +497,7 @@ const integrations: Integration[] = [
     <SelectAccessDrawer
       :open="membersPickerOpen"
       :title="t('Select members')"
-      :list-title="t('Employees')"
+      :list-title="t('Members')"
       :options="crmTeamMemberOptions"
       :model-value="teamDraft.memberIds"
       :empty-title="t('No members selected')"
