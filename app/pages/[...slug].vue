@@ -109,6 +109,7 @@ const pageRegistry: Record<string, Component> = {
   'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
+  'Projects':           defineAsyncComponent(() => import('~/components/pages/ProjectsPage.vue')),
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
@@ -253,6 +254,9 @@ const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDet
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+// Project MTO — job costing for custom make-to-order work.
+const ProjectDetailsPage = asyncPage(() => import('~/components/pages/ProjectDetailsPage.vue'))
+const CreateProjectWorkOrderPage = asyncPage(() => import('~/components/pages/CreateProjectWorkOrderPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
@@ -406,7 +410,10 @@ const { trigger: triggerBuzz } = useBuzzActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
-const detailMatch = computed<{ component: Component; id: string } | null>(() => {
+// `props` carries any EXTRA props a detail page needs beyond `orderId` — used by
+// pages whose route has more than one identifying segment (e.g. a project work
+// package). Spread onto the rendered component alongside :order-id.
+const detailMatch = computed<{ component: Component; id: string; props?: Record<string, string> } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
@@ -566,6 +573,24 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
+  }
+  // ── Project MTO ──
+  // /projects/:id/work-packages/:wpId/work-orders/new → the two-step work-order
+  // budget gate. Must precede the /projects/:id detail branch below.
+  if (
+    segs.length >= 6 && segs[0] === 'projects' && segs[2] === 'work-packages'
+    && segs[4] === 'work-orders' && segs[5] === 'new'
+  ) {
+    return {
+      component: CreateProjectWorkOrderPage,
+      id: segs[1]!,
+      props: { projectId: segs[1]!, workPackageId: segs[3]! },
+    }
+  }
+  // /projects/:id → project detail (Structure + Budget tabs; ?tab= picks one).
+  // The bare /projects index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'projects') {
+    return { component: ProjectDetailsPage, id: segs[1]! }
   }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
@@ -1561,7 +1586,7 @@ function startResize(e: MouseEvent) {
     <div class="page-col">
 
       <!-- Detail routes own their entire layout (title bar + stage) -->
-      <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
+      <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" v-bind="detailMatch.props ?? {}" />
 
       <!-- Purchase Orders detail/form overlay — own layout, bypasses the title bar below -->
       <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" :purchase-request-ids="poFormPrIds" />
@@ -1771,6 +1796,14 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('New approval workflow') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Projects'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/projects/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New project') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">

@@ -79,6 +79,10 @@ export * from './wmsStockAdjustments'
 export * from './cycleCountRecommendations'
 export * from './warehouseTransfers'
 
+// ── Project MTO (job costing for custom make-to-order) ──────────────────────
+export * from './projects'
+export * from './projectBudgets'
+
 // ── Manufacturing (BOM / work orders / production requests) ─────────────────
 export * from './billOfMaterials'
 export * from './workOrders'

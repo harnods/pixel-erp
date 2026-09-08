@@ -78,6 +78,7 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
+  'Projects',
   'Work orders',
   'Bill of materials',
   'Company profile',
@@ -200,6 +201,17 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
   ],
   // ── Production ──
+  // Project MTO — the portfolio + project detail (Structure & Budget tabs) and
+  // the two-step work-order budget gate are built; the remaining project tabs
+  // (Cost tracking, Recognition & billing, Changes, Production & materials,
+  // Completion), the budget-setup module and the audit page are not.
+  'Projects': [
+    a('New', 'missing'), a('Details', 'built', 'Structure + Budget tabs only'),
+    a('Edit', 'partial', 'refusal reasons shown; edit drawers not built'),
+    a('Delete', 'partial', 'refusal reasons shown; delete not wired'),
+    a('Create work order', 'built', 'two-step budget gate'),
+    a('Export', 'missing'),
+  ],
   'Production request': [
     a('Details', 'partial', 'preview drawer, no /:id'), a('Create work order', 'built'),
     a('Reject', 'built'), a('Export', 'partial'),
@@ -382,6 +394,7 @@ export const SITEMAP: SitemapModule[] = [
   {
     module: 'Production',
     items: [
+      leaf('Projects'),
       leaf('Production plans'),
       leaf('Production request'),
       leaf('Work orders'),

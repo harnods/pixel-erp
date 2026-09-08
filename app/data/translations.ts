@@ -93,6 +93,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Delivery': 'Pengiriman',
   'Couriers': 'Kurir',
   // Production section
+  'Projects': 'Proyek',
   'Production plans': 'Rencana produksi',
   'Production request': 'Permintaan produksi',
   'Work orders': 'Perintah kerja',
@@ -2145,4 +2146,157 @@ export const ID_TRANSLATIONS: Record<string, string> = {
     "pengiriman penjualan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
   "1 sales delivery deleted": "1 pengiriman penjualan dihapus",
   "sales deliveries deleted": "pengiriman penjualan dihapus",
+
+  // ── Project MTO (job costing for custom make-to-order) ──
+  // Terminology notes: "Proyek" throughout (never "Job"); RAB/RAP/BAST stay as
+  // the Indonesian document names they already are; "Cost of production" is the
+  // ACCOUNT name (COGM stays prose only, per the PRD's terminology resolution).
+  "New project": "Proyek",
+  "No projects": "Tidak ada proyek",
+  "Projects will appear here.": "Proyek akan muncul di sini.",
+  "Project number": "Nomor proyek",
+  "Project name": "Nama proyek",
+  "Project manager": "Manajer proyek",
+  "Project not found": "Proyek tidak ditemukan",
+  "This project no longer exists, or you do not have access to it.":
+    "Proyek ini sudah tidak ada, atau Anda tidak memiliki akses.",
+  "Back to projects": "Kembali ke proyek",
+  "View structure": "Lihat struktur",
+  "Project structure": "Struktur proyek",
+  "Shape": "Jenis pekerjaan",
+  "Service": "Jasa",
+  "Recognition": "Pengakuan pendapatan",
+  "Recognition method": "Metode pengakuan pendapatan",
+  "% complete": "% selesai",
+  "Not set": "Belum diatur",
+  "Over budget": "Melebihi anggaran",
+  "Over budget only": "Hanya yang melebihi anggaran",
+  "WIP position": "Posisi WIP",
+  "Underbilled": "Kurang ditagih",
+  "Overbilled": "Lebih ditagih",
+  "Underbilled — contract asset": "Kurang ditagih — aset kontrak",
+  "Overbilled — contract liability": "Lebih ditagih — liabilitas kontrak",
+  "Change order exposure": "Eksposur perubahan pekerjaan",
+  "Contract value": "Nilai kontrak",
+  "Recognised revenue": "Pendapatan diakui",
+  "Billed to date": "Ditagih sampai saat ini",
+  "Escalation threshold": "Ambang eskalasi",
+  "Funding source": "Sumber pendanaan",
+  "Cost center": "Pusat biaya",
+  "Customer advance": "Uang muka pelanggan",
+  "Bank facility": "Fasilitas bank",
+  "Exposure": "Eksposur",
+
+  // Structure tab
+  "New phase": "Fase",
+  "New work package": "Paket pekerjaan",
+  "Edit phase": "Ubah fase",
+  "Delete phase": "Hapus fase",
+  "Edit work package": "Ubah paket pekerjaan",
+  "Delete work package": "Hapus paket pekerjaan",
+  "Phase options": "Opsi fase",
+  "Work package options": "Opsi paket pekerjaan",
+  "Work package": "Paket pekerjaan",
+  "Weight": "Bobot",
+  "Verified": "Terverifikasi",
+  "Not started": "Belum dimulai",
+  "In progress": "Sedang berjalan",
+  "Units": "Unit",
+  "Progress weight totals 100%.": "Total bobot progres 100%.",
+  "Progress weight totals": "Total bobot progres",
+  "Verification is blocked until it reaches 100%.":
+    "Verifikasi tidak dapat dilakukan sampai totalnya 100%.",
+  "This project has no phases. Adding one promotes it to a phased structure without moving any cost.":
+    "Proyek ini belum memiliki fase. Menambahkan fase mengubahnya menjadi struktur berfase tanpa memindahkan biaya.",
+  "Can't edit this phase — ": "Fase ini tidak dapat diubah — ",
+  "Can't delete this phase — ": "Fase ini tidak dapat dihapus — ",
+  "Can't edit this work package — ": "Paket pekerjaan ini tidak dapat diubah — ",
+  "Can't delete this work package — ": "Paket pekerjaan ini tidak dapat dihapus — ",
+
+  // Budget tab
+  "Budget detail": "Rincian anggaran",
+  "Production monitoring": "Pemantauan produksi",
+  "Baseline": "Dasar anggaran",
+  "Variance": "Selisih",
+  "Unbudgeted": "Di luar anggaran",
+  "Approved by": "Disetujui oleh",
+  "Source": "Sumber",
+  "Set-aside released": "Sisa anggaran dilepas",
+  "Estimate": "Estimasi",
+  "Read-only — the budget baseline is created and revised in the budget setup module.":
+    "Hanya baca — dasar anggaran dibuat dan direvisi di modul pengaturan anggaran.",
+  "Manage budget": "Kelola anggaran",
+  "Budget setup module is not available yet": "Modul pengaturan anggaran belum tersedia",
+  "Budget creation and revision will live there. This page stays read-only.":
+    "Pembuatan dan revisi anggaran akan berada di sana. Halaman ini tetap hanya baca.",
+  "Audit page is not available yet": "Halaman audit belum tersedia",
+  "It will open filtered to this project.": "Halaman ini akan terbuka terfilter ke proyek ini.",
+  "Budget not set. This project has no approved plan yet — link an approved RAB/RAP in the budget setup module.":
+    "Anggaran belum diatur. Proyek ini belum memiliki rencana yang disetujui — tautkan RAB/RAP yang sudah disetujui di modul pengaturan anggaran.",
+  "No work orders raised against this project yet.":
+    "Belum ada perintah kerja yang dibuat untuk proyek ini.",
+  "Baseline is the budget set aside on the work order, not its cost estimate — so variance reads actual against set-aside.":
+    "Dasar anggaran adalah anggaran yang disisihkan pada perintah kerja, bukan estimasi biayanya — sehingga selisih membandingkan realisasi dengan anggaran yang disisihkan.",
+  "Consumed by work orders — never counted again in an ordinary cost row":
+    "Dikonsumsi oleh perintah kerja — tidak dihitung lagi pada baris biaya biasa",
+
+  // Work-order budget gate
+  "Budget check": "Cek anggaran",
+  "Work order": "Perintah kerja",
+  "Total budget production": "Total anggaran produksi",
+  "Committed": "Dialokasikan",
+  "Available": "Tersedia",
+  "Budget for this work order": "Anggaran untuk perintah kerja ini",
+  "Budget set aside": "Anggaran disisihkan",
+  "Allocated to lines": "Dialokasikan ke baris",
+  "Consumed by other work orders, committed or posted":
+    "Dikonsumsi perintah kerja lain, baik yang dialokasikan maupun sudah dibukukan",
+  "Enter the budget to set aside for this work order.":
+    "Masukkan anggaran yang disisihkan untuk perintah kerja ini.",
+  "Within available budget.": "Masih dalam anggaran yang tersedia.",
+  "Remaining after this work order": "Sisa setelah perintah kerja ini",
+  "Over available by": "Melebihi anggaran tersedia sebesar",
+  "This is within the": "Nilai ini masih dalam",
+  "escalation threshold, so you may override it with a reason. The overage is recorded.":
+    "ambang eskalasi, sehingga Anda dapat melanjutkannya dengan alasan. Kelebihan ini dicatat.",
+  "above the": "di atas",
+  "escalation threshold.": "ambang eskalasi.",
+  "This work order is held for Finance sign-off instead of being created now.":
+    "Perintah kerja ini ditahan untuk persetujuan Finance, bukan dibuat sekarang.",
+  "Reason for the overage": "Alasan kelebihan anggaran",
+  "State why this work order needs more than the available budget.":
+    "Jelaskan mengapa perintah kerja ini memerlukan lebih dari anggaran yang tersedia.",
+  "Override and continue": "Lanjutkan dengan alasan",
+  "Submit for approval": "Ajukan persetujuan",
+  "Work order held for Finance sign-off": "Perintah kerja ditahan untuk persetujuan Finance",
+  "It appears in the Approvals inbox with the requested amount, the available budget and your reason.":
+    "Perintah kerja muncul di kotak persetujuan beserta nilai yang diminta, anggaran tersedia, dan alasan Anda.",
+  "Product components": "Komponen produk",
+  "Unit buy price": "Harga beli satuan",
+  "Group": "Kelompok",
+  "Estimate over budget by": "Estimasi melebihi anggaran sebesar",
+  "Estimate under budget by": "Estimasi di bawah anggaran sebesar",
+  "Matches the estimate": "Sesuai estimasi",
+  "No bill of materials is attached to this work package, so there are no lines to budget. Attach one from the structure tab first.":
+    "Paket pekerjaan ini belum memiliki bill of materials, sehingga tidak ada baris yang dianggarkan. Tautkan terlebih dahulu dari tab struktur.",
+  "Line budgets exceed the budget set aside by": "Anggaran baris melebihi anggaran yang disisihkan sebesar",
+  "Reduce a line budget, or go back and set aside more.":
+    "Kurangi anggaran salah satu baris, atau kembali dan sisihkan lebih banyak.",
+  "Over by": "Lebih sebesar",
+  "Estimated total production cost": "Estimasi total biaya produksi",
+  "Committed to Cost of production (budget set aside)":
+    "Dialokasikan ke Biaya produksi (anggaran disisihkan)",
+  "This project has no Cost of production baseline yet, so there is nothing to draw on. Set one in the budget setup module first.":
+    "Proyek ini belum memiliki dasar anggaran Biaya produksi, sehingga tidak ada yang bisa dipakai. Atur terlebih dahulu di modul pengaturan anggaran.",
+  "copied to this work package; changing it requires an engineering change.":
+    "disalin ke paket pekerjaan ini; mengubahnya memerlukan engineering change.",
+  "None attached": "Belum ada",
+  "This work package has no bill of materials attached, so there are no components to budget.":
+    "Paket pekerjaan ini belum memiliki bill of materials, sehingga tidak ada komponen yang dianggarkan.",
+  "No production cost lines on this bill of materials.":
+    "Tidak ada baris biaya produksi pada bill of materials ini.",
+  "Work package not found": "Paket pekerjaan tidak ditemukan",
+  "This work package no longer exists, or it belongs to another project.":
+    "Paket pekerjaan ini sudah tidak ada, atau milik proyek lain.",
+  "Project submitted for approval": "Proyek diajukan untuk persetujuan",
 }

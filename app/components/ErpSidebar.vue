@@ -523,7 +523,7 @@ const erpNavGroups: NavItem[][] = [
       name: 'Production', icon: 'fulfillment',
       expandOnClick: true,
       submenu: [
-        [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
+        [{ label: 'Projects' }, { label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
         [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },
