@@ -8,82 +8,24 @@
  * dropped — the CRM roles are listed directly, each explaining what it grants.
  * The ERP-only "List Manager authority" (master-data lists) is also dropped.
  */
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage,
-  MpInput, MpCheckbox, MpRadio, MpToggle, MpButton, MpButtonGroup,
+  MpInput, MpCheckbox, MpButton, MpButtonGroup,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import CrmPermissionMatrix from '~/components/patterns/CrmPermissionMatrix.vue'
+import { defaultPermMatrix } from '~/data/crm'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
 
-// ── CRM roles — grounded in the CRM modules (Deals · Contacts · Companies ·
-// Reports · Teams · Settings). One role per user, radio-selected. ──
-interface CrmRole {
-  key: string
-  name: string
-  desc: string
-  permissions: string[]
-  /** Optional "own records only" restriction (like the ERP access-restriction row). */
-  restriction?: string
-}
-const CRM_ROLES: CrmRole[] = [
-  {
-    key: 'admin',
-    name: 'Admin',
-    desc: 'Full access to every CRM module plus workspace settings.',
-    permissions: [
-      'Invite and manage users, roles, and teams',
-      'Configure pipelines, custom fields, and integrations',
-      'View, create, and edit all deals, contacts, and companies',
-      'Access every report',
-    ],
-  },
-  {
-    key: 'sales',
-    name: 'Sales',
-    desc: 'Works the deal pipeline and owns customer relationships.',
-    permissions: [
-      'Create and move deals across the pipeline',
-      'Add and edit contacts and companies',
-      'Log activities, notes, and tasks',
-      'View sales reports',
-    ],
-    restriction: 'Restrict to deals and records assigned to this user',
-  },
-  {
-    key: 'marketing',
-    name: 'Marketing',
-    desc: 'Manages leads and nurtures contacts into the pipeline.',
-    permissions: [
-      'View and manage contacts and companies',
-      'View the deal pipeline (read-only)',
-      'Track lead sources and campaign activity',
-      'View marketing and pipeline reports',
-    ],
-  },
-  {
-    key: 'viewer',
-    name: 'Viewer',
-    desc: 'View-only access to CRM data — cannot make changes.',
-    permissions: [
-      'View deals, contacts, and companies',
-      'View reports',
-      'No create, edit, or delete',
-    ],
-  },
-]
-
 // ── Form state ──
+// CRM has NO roles — access is a per-module permission matrix set here.
 const name = ref('')
 const email = ref('')
-const selectedRole = ref('')
-// Data permissions (beyond role) — set at invite time.
-const canExport = ref(false)
-const canViewReports = ref(true)
-const salesRestrict = ref(false)
+const perms = reactive(defaultPermMatrix())
 const setAccessTime = ref(false)
 const accessDays = ref('Weekdays')
 const accessHours = ref('08:00 – 17:00')
@@ -99,12 +41,10 @@ const emailError = computed(() => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) return 'Enter a valid email address'
   return ''
 })
-const roleError = computed(() => (submitted.value && !selectedRole.value ? 'You must select a role' : ''))
-
 function goBack() { router.push('/crm/settings/users') }
 function send() {
   submitted.value = true
-  if (nameError.value || emailError.value || roleError.value) return
+  if (nameError.value || emailError.value) return
   successToast(`Invitation sent to ${email.value.trim()}`)
   goBack()
 }
@@ -154,50 +94,11 @@ function send() {
           </div>
         </div>
 
-        <!-- Access role -->
-        <MpFormControl id="iu-role" class="iu-roles" :is-invalid="!!roleError">
-          <h2 class="iu-roles-title">{{ t('Access role') }}</h2>
-          <p class="iu-roles-lead">{{ t('Assign a role to define what this user can access.') }}</p>
-
-          <div class="iu-role-list">
-            <div v-for="role in CRM_ROLES" :key="role.key" class="iu-role" :class="{ 'iu-role--selected': selectedRole === role.key }">
-              <MpRadio :id="`iu-role-${role.key}`" class="iu-role-pick" :is-checked="selectedRole === role.key" @change="selectedRole = role.key">{{ role.name }}</MpRadio>
-              <div class="iu-role-body">
-                <p class="iu-role-desc">{{ role.desc }}</p>
-                <p class="iu-role-cap">{{ t('This role can:') }}</p>
-                <ul class="iu-perms">
-                  <li v-for="p in role.permissions" :key="p">{{ p }}</li>
-                </ul>
-                <div v-if="role.restriction && selectedRole === role.key" class="iu-restriction">
-                  <span class="iu-restriction-label">{{ t('Access restriction') }}</span>
-                  <MpCheckbox id="iu-sales-restrict" :is-checked="salesRestrict" @change="salesRestrict = !salesRestrict">{{ t(role.restriction) }}</MpCheckbox>
-                </div>
-              </div>
-            </div>
-          </div>
-          <MpFormErrorMessage>{{ t(roleError) }}</MpFormErrorMessage>
-        </MpFormControl>
-
-        <!-- Data permissions (beyond role) -->
+        <!-- Permissions — no roles; tick what this user can do per module -->
         <div class="iu-perms-block">
-          <h2 class="iu-roles-title">{{ t('Data permissions') }}</h2>
-          <p class="iu-roles-lead">{{ t('Extra access this user has, on top of their role.') }}</p>
-          <ul class="iu-perm-toggles">
-            <li class="iu-perm-toggle">
-              <span class="iu-perm-text">
-                <span class="iu-perm-title">{{ t('Export data') }}</span>
-                <span class="iu-perm-desc">{{ t('Allow this user to export CRM data to spreadsheet.') }}</span>
-              </span>
-              <MpToggle id="iu-export" :is-checked="canExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => (canExport = v)" />
-            </li>
-            <li class="iu-perm-toggle">
-              <span class="iu-perm-text">
-                <span class="iu-perm-title">{{ t('View reports') }}</span>
-                <span class="iu-perm-desc">{{ t('Allow this user to open the Reports page.') }}</span>
-              </span>
-              <MpToggle id="iu-reports" :is-checked="canViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => (canViewReports = v)" />
-            </li>
-          </ul>
+          <h2 class="iu-roles-title">{{ t('Permissions') }}</h2>
+          <p class="iu-roles-lead">{{ t('Tick what this user can do in each module.') }}</p>
+          <CrmPermissionMatrix :matrix="perms" />
         </div>
 
         <footer class="iu-footer">

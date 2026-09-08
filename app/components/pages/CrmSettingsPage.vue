@@ -20,7 +20,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle,
+  MpButton, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
@@ -33,10 +33,13 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmTeamFormDrawer, { type CrmTeamDraft } from '~/components/patterns/CrmTeamFormDrawer.vue'
+import CrmPermissionMatrix from '~/components/patterns/CrmPermissionMatrix.vue'
 import {
   CRM_OWNERS,
   crmTeams, CRM_TEAM_MODULES, type CrmTeam, type CrmTeamModule,
   crmTeamMemberOptions, teamMemberNames, upsertCrmTeam, deleteCrmTeam,
+  CRM_PERM_MODULES, type CrmPermMatrix, type CrmModulePerms,
+  fullPermMatrix, defaultPermMatrix, emptyPermMatrix, permSummary,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
 import { formatDate } from '~/utils/date'
@@ -63,34 +66,32 @@ function emailFor(name: string): string {
   return `${name.trim().toLowerCase().replace(/\s+/g, '.')}@centralperk.co.id`
 }
 
-// ── User & roles — a roster grounded in the CRM sales/marketing owners ──
+// ── User & roles — CRM has NO roles: access is a per-module permission matrix ──
 type CrmUser = {
-  id: string; name: string; email: string; role: string
+  id: string; name: string; email: string
   teams: string[]; accessDays: string; accessHours: string; status: string; joinDate: string
-  canExport: boolean; canViewReports: boolean
+  perms: CrmPermMatrix; accessLabel: string
 }
-const ROLES = ['Admin', 'Sales rep', 'Marketing', 'Viewer']
 
-// Per-user data permissions (beyond role): can export data / can view reports.
-// Default by role (Admin gets both); an override map persists inline toggles.
-function defaultPerms(role: string) {
-  return role === 'Admin' ? { canExport: true, canViewReports: true } : { canExport: false, canViewReports: true }
-}
-const PERMS_KEY = 'crm-user-perms-v1'
-const userPerms = reactive<Record<string, { canExport: boolean; canViewReports: boolean }>>(
+// Per-user permission matrices (persisted). The workspace owner (first user) gets
+// full access by default; everyone else the read+reports baseline.
+const PERMS_KEY = 'crm-user-perm-matrix-v1'
+const userPermMatrix = reactive<Record<string, CrmPermMatrix>>(
   import.meta.client ? (() => { try { return JSON.parse(localStorage.getItem(PERMS_KEY) || '{}') } catch { return {} } })() : {},
 )
-function permOf(id: string, role: string) { return userPerms[id] ?? defaultPerms(role) }
-function setPerm(id: string, role: string, key: 'canExport' | 'canViewReports', val: boolean) {
-  userPerms[id] = { ...(userPerms[id] ?? defaultPerms(role)), [key]: val }
-  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPerms)) } catch { /* ignore */ } }
+function permMatrixOf(id: string, i: number): CrmPermMatrix {
+  return userPermMatrix[id] ?? (i === 0 ? fullPermMatrix() : defaultPermMatrix())
 }
+function saveUserPerms(id: string, matrix: CrmPermMatrix) {
+  userPermMatrix[id] = matrix
+  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPermMatrix)) } catch { /* ignore */ } }
+}
+
 // A user can belong to MANY teams (multi-value cell).
 const TEAM_POOL = ['Sales', 'Marketing', 'Customer Success']
-// Access window = a day scope (Weekdays / Weekend / Every day) + working hours;
-// default hours are 08:00–17:00, "All day" = unrestricted (sepanjang hari).
+// Access window = a day scope (Weekdays / Weekend / Every day) + working hours.
 const ACCESS_WINDOWS = [
-  { days: 'Every day', hours: 'All day' },        // the admin
+  { days: 'Every day', hours: 'All day' },        // the owner
   { days: 'Weekdays', hours: '08:00 – 17:00' },
   { days: 'Weekend', hours: '08:00 – 17:00' },
   { days: 'Weekdays', hours: 'All day' },
@@ -100,59 +101,52 @@ const crmUsers = computed<CrmUser[]>(() =>
   CRM_OWNERS.map((name, i) => {
     const access = i === 0 ? ACCESS_WINDOWS[0]! : ACCESS_WINDOWS[1 + (i % 4)]!
     const id = `CU${String(i + 1).padStart(2, '0')}`
-    const role = i === 0 ? 'Admin' : ROLES[(i % 3) + 1]!   // first person is the Admin
-    const perms = permOf(id, role)
+    const perms = permMatrixOf(id, i)
     return {
       id,
       name,
       email: emailFor(name),
-      role,
       teams: i === 0 ? [...TEAM_POOL] : [TEAM_POOL[i % 3]!, TEAM_POOL[(i + 1) % 3]!],
       accessDays: access.days,
       accessHours: access.hours,
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
       // deterministic, coherent mock (no Date.now)
       joinDate: `202${4 + (i % 2)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 27)).padStart(2, '0')}`,
-      canExport: perms.canExport,
-      canViewReports: perms.canViewReports,
+      perms,
+      accessLabel: permSummary(perms),
     }
   }),
 )
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Name', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'role', label: 'Role', kind: 'status', sortType: 'text' },
   { key: 'teams', label: 'Team', kind: 'tags' },
-  { key: 'canExport', label: 'Export data', kind: 'status' },
-  { key: 'canViewReports', label: 'View reports', kind: 'status' },
+  { key: 'accessLabel', label: 'Permissions', kind: 'status', sortable: true, sortType: 'text' },
   { key: 'accessDays', label: 'Access time', sortType: 'text' },
   { key: 'status', label: 'Status', kind: 'status', sortType: 'text' },
   { key: 'joinDate', label: 'Join date', kind: 'date', sortType: 'date' },
 ]
 
-// Filters: Role + Status (left) + search (right). roleFilter is a 2nd filter fed
-// into useTableState's filterFn via closure (Vue tracks it as a dependency).
-const roleFilter = ref('')
+// Filters: Status (left) + search (right). (No roles → no role filter.)
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<CrmUser>(crmUsers, {
   filterFn: (row, s, status) =>
-    (!s || row.name.toLowerCase().includes(s) || row.email.toLowerCase().includes(s) || row.role.toLowerCase().includes(s))
-    && (!status || row.status === status)
-    && (!roleFilter.value || row.role === roleFilter.value),
+    (!s || row.name.toLowerCase().includes(s) || row.email.toLowerCase().includes(s))
+    && (!status || row.status === status),
 })
 sortKey.value = 'name'
-watch(roleFilter, () => setPage(1))
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
   { value: 'invited', label: 'Invited' },
   { value: 'inactive', label: 'Inactive' },
 ]
-const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.value || !!roleFilter.value)
-function clearUserFilters() { search.value = ''; statusFilter.value = ''; roleFilter.value = '' }
+const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.value)
+function clearUserFilters() { search.value = ''; statusFilter.value = '' }
 const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive' }
+const ACCESS_BADGE: Record<string, string> = { 'Full access': 'active', 'View only': 'invited', 'Custom access': 'pending', 'No access': 'inactive' }
 
 // Column settings (Name is locked visible)
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
@@ -160,26 +154,23 @@ const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disable
 const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
-// Row actions (demo)
+// Row actions
 function viewUser(u: CrmUser) { openEditUser(u) }
 function deleteUser(u: CrmUser) { soon(`${t('Delete')} — ${u.name}`) }
 
-// ── Edit user — a modal for role display + the two data-permission toggles ──
+// ── Edit user — the per-module permission matrix ──
 const editUserOpen = ref(false)
 const editingUser = ref<CrmUser | null>(null)
-const editCanExport = ref(false)
-const editCanViewReports = ref(false)
+const editMatrix = reactive<CrmPermMatrix>(emptyPermMatrix())
 function openEditUser(u: CrmUser) {
   editingUser.value = u
-  editCanExport.value = u.canExport
-  editCanViewReports.value = u.canViewReports
+  for (const mod of CRM_PERM_MODULES) editMatrix[mod] = { ...(u.perms[mod] as CrmModulePerms) }
   editUserOpen.value = true
 }
 function saveEditUser() {
   const u = editingUser.value
   if (!u) return
-  setPerm(u.id, u.role, 'canExport', editCanExport.value)
-  setPerm(u.id, u.role, 'canViewReports', editCanViewReports.value)
+  saveUserPerms(u.id, JSON.parse(JSON.stringify(editMatrix)))
   editUserOpen.value = false
   successToast(t('User updated'))
 }
@@ -337,16 +328,9 @@ const integrations: Integration[] = [
           @hide-column="hideColumn"
           @clear-filters="clearUserFilters"
         >
-          <!-- Filter bar: Role + Status (left) · column settings + search (right) -->
+          <!-- Filter bar: Status (left) · column settings + search (right) -->
           <template #filters>
             <div class="filter-left">
-              <ErpFilterSelect
-                id="cru-role-filter"
-                :model-value="roleFilter"
-                placeholder="Role"
-                :options="ROLES"
-                @update:model-value="(v: string) => (roleFilter = v)"
-              />
               <ErpFilterSelect
                 id="cru-status-filter"
                 :model-value="statusFilter"
@@ -375,12 +359,8 @@ const integrations: Integration[] = [
               <span class="cru-email">{{ (row as CrmUser).email }}</span>
             </div>
           </template>
-          <template #cell-role="{ value }">{{ value }}</template>
-          <template #cell-canExport="{ row }">
-            <ErpStatusBadge :status="(row as CrmUser).canExport ? 'active' : 'inactive'" :label="(row as CrmUser).canExport ? t('Eligible') : t('Not eligible')" />
-          </template>
-          <template #cell-canViewReports="{ row }">
-            <ErpStatusBadge :status="(row as CrmUser).canViewReports ? 'active' : 'inactive'" :label="(row as CrmUser).canViewReports ? t('Eligible') : t('Not eligible')" />
+          <template #cell-accessLabel="{ row }">
+            <ErpStatusBadge :status="ACCESS_BADGE[(row as CrmUser).accessLabel] ?? 'announcement'" :label="t((row as CrmUser).accessLabel)" />
           </template>
           <template #cell-teams="{ row }">
             <div v-if="(row as CrmUser).teams.length" class="cru-tags">
@@ -565,7 +545,7 @@ const integrations: Integration[] = [
     />
 
     <!-- ── Edit user — role + data permissions (Export data / View reports) ── -->
-    <MpModal id="crm-edit-user" :is-open="editUserOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="editUserOpen = false">
+    <MpModal id="crm-edit-user" :is-open="editUserOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="editUserOpen = false">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Edit user') }}
@@ -575,24 +555,13 @@ const integrations: Integration[] = [
           <div v-if="editingUser" class="eu-body">
             <div class="eu-field">
               <span class="eu-label">{{ t('Name') }}</span>
-              <span class="eu-value">{{ editingUser.name }} · {{ editingUser.role }}</span>
+              <span class="eu-value">{{ editingUser.name }} · {{ editingUser.email }}</span>
             </div>
-            <ul class="eu-perms">
-              <li class="eu-perm">
-                <span class="eu-perm-text">
-                  <span class="eu-perm-title">{{ t('Export data') }}</span>
-                  <span class="eu-perm-desc">{{ t('Allow this user to export CRM data to spreadsheet.') }}</span>
-                </span>
-                <MpToggle id="eu-export" :is-checked="editCanExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => (editCanExport = v)" />
-              </li>
-              <li class="eu-perm">
-                <span class="eu-perm-text">
-                  <span class="eu-perm-title">{{ t('View reports') }}</span>
-                  <span class="eu-perm-desc">{{ t('Allow this user to open the Reports page.') }}</span>
-                </span>
-                <MpToggle id="eu-reports" :is-checked="editCanViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => (editCanViewReports = v)" />
-              </li>
-            </ul>
+            <div class="eu-field">
+              <span class="eu-perm-title">{{ t('Permissions') }}</span>
+              <span class="eu-perm-desc">{{ t('Tick what this user can do in each module.') }}</span>
+            </div>
+            <CrmPermissionMatrix :matrix="editMatrix" />
           </div>
         </MpModalBody>
         <MpModalFooter>

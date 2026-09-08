@@ -766,6 +766,20 @@ const DEAL_PIPELINES_SEED: DealPipeline[] = [
 ]
 export const dealPipelines = reactive<DealPipeline[]>(load('crm-deal-pipelines-v1', DEAL_PIPELINES_SEED))
 export function persistDealPipelines() { saveSnapshot('crm-deal-pipelines-v1', dealPipelines) }
+
+/** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
+export const CRM_CURRENT_USER = 'Rizal Candra'
+/** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,
+ *  normalized to a DEAL_STAGES identity; falls back to Open Lead (PRD default). */
+export function defaultDealStage(): DealStage {
+  const def = dealPipelines[0]?.stages.find((s) => s.kind === 'open' && s.isDefault)
+  const match = def && DEAL_STAGES.find((s) => s.toLowerCase() === def.name.toLowerCase())
+  return (match as DealStage) ?? 'Open Lead'
+}
+/** Hand-off seed from the quick-create drawer to the full-detail form page
+ *  (/crm/deals/new). Set by "Add more details", read + cleared by the page. */
+export interface DealDraftSeed { name?: string; customerId?: string; stage?: DealStage; owner?: string }
+export const dealDraftSeed = ref<DealDraftSeed | null>(null)
 export function getCrmModule(id: string): CrmModule | undefined { return crmModules.find((m) => m.id === id) }
 export function persistCrmModule(m: CrmModule, author: string, now: string): void {
   m.updatedAt = now
@@ -853,6 +867,53 @@ const ACTIVITY_SEED: CrmActivityEntry[] = [
 ]
 
 export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1', ACTIVITY_SEED))
+
+// ── User permissions — NO roles: a per-module permission matrix ────────────────
+// A user's access is a matrix of module × action checkboxes, set at invite time
+// and editable per user. Actions per module: Read / Edit / Add / Delete / Export /
+// Reports.
+export const CRM_PERM_MODULES = ['Deals', 'Contacts', 'Companies'] as const
+export type CrmPermModule = typeof CRM_PERM_MODULES[number]
+export const CRM_PERM_ACTIONS = [
+  { key: 'read',    label: 'Read'    },
+  { key: 'edit',    label: 'Edit'    },
+  { key: 'add',     label: 'Add'     },
+  { key: 'delete',  label: 'Delete'  },
+  { key: 'export',  label: 'Export'  },
+  { key: 'reports', label: 'Reports' },
+] as const
+export type CrmPermAction = typeof CRM_PERM_ACTIONS[number]['key']
+export type CrmModulePerms = Record<CrmPermAction, boolean>
+export type CrmPermMatrix = Record<string, CrmModulePerms>
+
+function blankModulePerms(all = false): CrmModulePerms {
+  return { read: all, edit: all, add: all, delete: all, export: all, reports: all }
+}
+export function emptyPermMatrix(): CrmPermMatrix {
+  const m: CrmPermMatrix = {}
+  for (const mod of CRM_PERM_MODULES) m[mod] = blankModulePerms(false)
+  return m
+}
+export function fullPermMatrix(): CrmPermMatrix {
+  const m: CrmPermMatrix = {}
+  for (const mod of CRM_PERM_MODULES) m[mod] = blankModulePerms(true)
+  return m
+}
+/** Baseline for a new user: can Read + view Reports on every module. */
+export function defaultPermMatrix(): CrmPermMatrix {
+  const m = emptyPermMatrix()
+  for (const mod of CRM_PERM_MODULES) { m[mod].read = true; m[mod].reports = true }
+  return m
+}
+/** One-line summary of a matrix for the User & roles index. */
+export function permSummary(m: CrmPermMatrix): string {
+  const cells = CRM_PERM_MODULES.flatMap((mod) => CRM_PERM_ACTIONS.map((a) => m[mod]?.[a.key] ?? false))
+  const on = cells.filter(Boolean).length
+  if (on === 0) return 'No access'
+  if (on === cells.length) return 'Full access'
+  const readOnly = CRM_PERM_MODULES.every((mod) => m[mod] && !m[mod].edit && !m[mod].add && !m[mod].delete)
+  return readOnly ? 'View only' : 'Custom access'
+}
 
 // Primary segment (industry) options for the create-customer form.
 export const CUSTOMER_SEGMENTS = ['Roastery', 'Café chain', 'Hotel', 'Distributor', 'Retail', 'Office'] as const
