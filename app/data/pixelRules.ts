@@ -163,7 +163,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   // Patterns — Filter bar
   'rule/filter-bar-anatomy': 'Filter bar = left (filters + All filters) | right (icon tools then search), space-between.',
   'rule/filter-bar-left-gap': 'Left group gap is always 16px (filter↔filter and filter↔All filters).',
-  'rule/filter-bar-search-pill': 'Search is a rounded pill, rightmost, with a leading icon + clear (×).',
+  'rule/filter-bar-search-pill': 'Search is a rounded pill, rightmost, with a leading icon + clear (×); the pill box comes from erp.css .filter-search — never a bare borderless input.',
   'rule/filter-bar-all-filters-drawer': 'Overflow filters live behind an "All filters" button that opens the filters drawer.',
 
   // Copy
@@ -171,6 +171,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/copy-number-not-id': 'Label identifiers "… number", not "… ID".',
   'rule/copy-add-noun-only': 'Add buttons use the noun only (no "baru").',
   'rule/copy-id-translations': 'All strings live in translations.ts via t().',
+  'rule/no-page-description-subtitle': 'Never add a subtitle/lead paragraph under a page or section title describing what the page is for; go straight to content.',
 
   // Index pages & shared modal/drawer patterns
   'rule/index-scenario-fab': 'Every index page uses the shared ScenarioFab (black settings FAB, bottom-right) → MpPopover scenarios (Default, Empty state); never hand-roll the preview FAB.',

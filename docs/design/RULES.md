@@ -859,6 +859,16 @@ ERP override wins.
 - **`rule/copy-id-translations`** — *Do:* all strings live in
   `app/data/translations.ts` (English key → Indonesian value) via `t()`. **Lint:**
   review.
+- **`rule/no-page-description-subtitle`** — *Do:* a page (or section) shows its
+  **title** and goes straight to content. *Don't:* add a descriptive subtitle/lead
+  paragraph under the title that explains **what the page is for** (e.g. "Group
+  people to organise ownership and reporting.", "People with access to your CRM
+  workspace.", "Connect the tools your team already uses."). **Why:** the title +
+  the content already say what the page is; a "this page lets you…" blurb is filler
+  that never appears in the reference product and adds visual noise. Inline helper
+  text tied to a **specific field/control** is fine — this bans only the page/section
+  descriptor. **Lint:** review (grep for a lead `<p>` immediately under a page/section
+  title).
 
 ---
 
@@ -878,8 +888,16 @@ filters appear on the left.
   (`gap: var(--mp-spacing-4)`). **Lint:** review.
 - **`rule/filter-bar-search-pill`** — *Do:* the search field is a **rounded pill**,
   the **rightmost** element of the right group, with a leading search icon and a
-  clear (×) shown only when it has a value. *Don't:* use a square input or move it.
-  **Lint:** review.
+  clear (×) shown only when it has a value. Use the exact markup
+  `<div class="filter-search"><MpIcon name="search" size="sm"/><input class="filter-search-input"…>…</div>`.
+  The pill **box** (border + padding + 999px radius + 248px width) is now provided
+  **globally** by `erp.css .filter-search` — a hand-rolled `#filters` bar gets a
+  correct pill even if it forgets to copy the scoped CSS; the scoped copy (if any)
+  still wins. *Don't:* use a square input, move it, use `size="md"` for the icon, or
+  hand-roll a `.filter-search` that omits the border/radius (the recurring bug — a
+  **bare, borderless** search). **Why:** the search box broke repeatedly because the
+  container CSS lived only in each page's scoped `<style>` and got half-copied.
+  **Lint:** review (grep `.filter-search` markup; the box comes from erp.css).
 - **`rule/filter-bar-all-filters-drawer`** — *Do:* filters that don't fit as inline
   dropdowns live behind an **"All filters"** button (left group) that opens the
   filters **drawer** (`rule/drawer-custom-shell`, opened via this button per

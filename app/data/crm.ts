@@ -15,6 +15,7 @@
  */
 import { reactive, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { employees } from './employees'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -306,6 +307,75 @@ export function convertDealToSalesOrder(id: string): { ok: boolean; salesOrderId
   d.salesOrderId = soId
   persistCrmDeals()
   return { ok: true, salesOrderId: soId }
+}
+
+// ── Teams (Settings → Teams) ──────────────────────────────────────────────────
+// A CRM team groups people (real employees) and grants access to CRM modules.
+// Members reference the employee master (employees.id === 'EMP-000x'); the count,
+// module chips, and last-updated line on the Teams table all read this store.
+export const CRM_TEAM_MODULES = [
+  { key: 'deals',    label: 'Deals'    },
+  { key: 'reports',  label: 'Reports'  },
+  { key: 'contacts', label: 'Contacts' },
+] as const
+export type CrmTeamModule = typeof CRM_TEAM_MODULES[number]['key']
+
+export interface CrmTeam {
+  id: string
+  name: string
+  description: string
+  memberIds: string[]          // employees.id (EMP-000x)
+  modules: CrmTeamModule[]
+  updatedAt: string            // ISO datetime — drives the Last updated cell
+  updatedBy: string            // author name
+}
+
+const TEAMS_SEED: CrmTeam[] = [
+  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], modules: ['deals', 'reports', 'contacts'], updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        modules: ['reports', 'contacts'],            updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+]
+
+export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v1', TEAMS_SEED))
+export function persistCrmTeams() { saveSnapshot('crm-teams-v1', crmTeams) }
+
+/** Member picker options — active employees as { id, name, subtitle=jobPosition }. */
+export const crmTeamMemberOptions = computed(() =>
+  employees
+    .filter((e) => e.status === 'active')
+    .map((e) => ({ id: e.id, name: e.fullName, subtitle: e.jobPosition || undefined })),
+)
+export function teamMemberNames(ids: string[]): string[] {
+  return ids.map((id) => employees.find((e) => e.id === id)?.fullName ?? id)
+}
+
+/** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy. */
+export function upsertCrmTeam(
+  input: { id?: string; name: string; description: string; memberIds: string[]; modules: CrmTeamModule[] },
+  author: string,
+  now: string,
+): CrmTeam {
+  if (input.id) {
+    const t = crmTeams.find((x) => x.id === input.id)
+    if (t) {
+      Object.assign(t, { name: input.name, description: input.description, memberIds: [...input.memberIds], modules: [...input.modules], updatedAt: now, updatedBy: author })
+      persistCrmTeams()
+      return t
+    }
+  }
+  const nextNum = crmTeams.reduce((m, t) => Math.max(m, Number(t.id.replace('TEAM-', '')) || 0), 0) + 1
+  const created: CrmTeam = {
+    id: `TEAM-${String(nextNum).padStart(2, '0')}`,
+    name: input.name, description: input.description,
+    memberIds: [...input.memberIds], modules: [...input.modules],
+    updatedAt: now, updatedBy: author,
+  }
+  crmTeams.push(created)
+  persistCrmTeams()
+  return created
+}
+export function deleteCrmTeam(id: string): void {
+  const i = crmTeams.findIndex((t) => t.id === id)
+  if (i !== -1) { crmTeams.splice(i, 1); persistCrmTeams() }
 }
 
 // Primary segment (industry) options for the create-customer form.
