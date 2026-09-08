@@ -773,16 +773,23 @@ export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
 /** The document that posted (or will post) an outbound's stock movement out.
  *  `kind` decides both the label and where clicking it goes. */
 export interface DeliveryDocumentRef {
-  kind: "stock-in-out" | "sales-delivery";
+  /** Which document posted the movement. Outbound posts a Sales Delivery (ERP-SO)
+   *  or a Stock In/Out; inbound posts a Purchase Delivery (ERP-PO) or a Stock
+   *  In/Out; a cycle count posts a Stock Count. The WMS package only ever produces
+   *  the Stock In/Out and Stock Count ones — it has no costing and no JE. */
+  kind: "stock-in-out" | "sales-delivery" | "purchase-delivery" | "stock-count";
   /** record id, for the details route */
   id: string;
   /** display number, e.g. "Stock In/Out #20091" */
   number: string;
 }
 
-/** Where a delivery document's details live. */
+/** Where a delivery document's details live. Stock In/Out and Stock Count are both
+ *  stock-adjustment records, so they share that route. */
 export function deliveryDocumentRoute(doc: DeliveryDocumentRef): string {
-  return doc.kind === "sales-delivery" ? `/sales-deliveries/${doc.id}` : `/stock-adjustments/${doc.id}`;
+  if (doc.kind === "sales-delivery") return `/sales-deliveries/${doc.id}`;
+  if (doc.kind === "purchase-delivery") return `/purchase-deliveries/${doc.id}`;
+  return `/stock-adjustments/${doc.id}`;
 }
 
 /** Does WMS hold this outbound's delivery document for the source to trigger?

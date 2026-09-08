@@ -17,6 +17,8 @@ import {
 } from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { inboundPosterKindFor, bindSeededDocumentById } from '~/data/deliveryDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -44,6 +46,7 @@ const baseColumnItems: { key: string; label: string; disabled?: boolean; sortTyp
   { key: 'skuCount', label: 'Sku qty', sortType: 'number' },
   { key: 'expectedQty', label: 'Expected qty', sortType: 'number' },
   { key: 'receivedQty', label: 'Received qty', sortType: 'number' },
+  { key: 'deliveryDoc', label: 'Delivery document', sortType: 'text' },
   { key: 'status', label: 'Status', sortType: 'text' },
   { key: 'startDate', label: 'Start date', sortType: 'date' },
   { key: 'endDate', label: 'End date', sortType: 'date' },
@@ -282,6 +285,16 @@ function aging(t: ReceivingTask) {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+
+// ── Delivery document (design-consistent with the Shipping index) ──────────────
+// The posting document behind a receiving task. A purchase-order receipt posts a
+// Purchase Delivery in ERP-full; a direct receipt — and everything in the WMS
+// package, which has no costing or JE — posts a Stock In/Out. Only a task that has
+// actually received stock has one, so open tasks show an em dash.
+function receivingDoc(task: { id: string; purchaseNo?: string; receivedQty: number }) {
+  if (task.receivedQty <= 0) return undefined
+  return bindSeededDocumentById(task.id, inboundPosterKindFor(!!task.purchaseNo))
+}
 const route = useRoute()
 // Deep-link from WMS Overview: ?status=<task status> pre-filters the list.
 onMounted(() => {
@@ -428,6 +441,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <col v-if="colVis.skuCount" style="width: 100px" />
           <col v-if="colVis.expectedQty" style="width: 120px" />
           <col v-if="colVis.receivedQty" style="width: 100px" />
+          <col v-if="colVis.deliveryDoc" class="rcvg-col-doc" />
           <col v-if="colVis.status" style="width: 130px" />
           <col style="width: 100px" />
           <col v-if="colVis.startDate" style="width: 180px" />
@@ -485,6 +499,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">
               <span class="rcvg-th-inner"><span>{{ t('Received qty') }}</span><ErpColumnSortMenu col-key="receivedQty" :sort-type="sortTypeOf('receivedQty')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
             </th>
+            <th v-if="colVis.deliveryDoc" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Delivery document') }}</span><ErpColumnSortMenu col-key="deliveryDoc" :sort-type="sortTypeOf('deliveryDoc')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
             <th v-if="colVis.status" class="rcvg-th">
               <span class="rcvg-th-inner"><span>{{ t('Status') }}</span><ErpColumnSortMenu col-key="status" :sort-type="sortTypeOf('status')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
             </th>
@@ -528,6 +545,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <td v-if="colVis.skuCount" class="rcvg-td">{{ task.skuCount }}</td>
             <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(task)) }}</td>
             <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(task.receivedQty) }}</td>
+            <td v-if="colVis.deliveryDoc" class="rcvg-td">
+              <a
+                v-if="receivingDoc(task)"
+                class="cell-link cell-text"
+                @click.stop="router.push(deliveryDocumentRoute(receivingDoc(task)!))"
+              >{{ receivingDoc(task)!.number }}</a>
+              <span v-else>—</span>
+            </td>
             <td v-if="colVis.status" class="rcvg-td">
               <div class="rcvg-status-cell">
                 <ErpStatusBadge :status="task.status" />
@@ -656,6 +681,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+/* Column width as a class, not an inline style (Pixel Police: no hardcoded px inline). */
+.rcvg-col-doc { width: 190px; }
 .rcvg-page { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
 /* Filter bar */

@@ -1063,6 +1063,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Held": "Ditahan",
   "Sales Delivery": "Pengiriman penjualan",
   "Stock Movement Out": "Barang keluar",
+  "Purchase Delivery": "Penerimaan pembelian",
+  "Transaction document": "Dokumen transaksi",
   "Manual trigger delivery": "Pemicu manual dokumen pengiriman",
   "Task": "Tugas",
   "Edit count task": "Ubah tugas perhitungan",

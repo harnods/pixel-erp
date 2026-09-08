@@ -21,7 +21,9 @@
  * real: clicking through lands on a document that exists.
  */
 import { salesDeliveries } from "./salesDeliveries";
+import { purchaseDeliveries } from "./purchaseDeliveries";
 import { wmsStockAdjustments } from "./wmsStockAdjustments";
+import { stockAdjustments } from "./stockAdjustments";
 import { useScenario } from "~/composables/useScenario";
 import type { DeliveryDocumentRef, OutgoingOrder } from "./outgoing";
 
@@ -35,6 +37,14 @@ export function isWmsOnlyPackage(): boolean {
 export function posterKindFor(order: OutgoingOrder): DeliveryDocumentRef["kind"] {
   if (isWmsOnlyPackage()) return "stock-in-out";
   return order.source === "Sales Order" ? "sales-delivery" : "stock-in-out";
+}
+
+/** The inbound mirror: an ERP purchase order posts a Purchase Delivery, anything
+ *  else (direct receipt / external API) posts a Stock In/Out — and the WMS package
+ *  posts a Stock In/Out either way, for the same no-costing reason as outbound. */
+export function inboundPosterKindFor(hasPurchaseOrder: boolean): DeliveryDocumentRef["kind"] {
+  if (isWmsOnlyPackage()) return "stock-in-out";
+  return hasPurchaseOrder ? "purchase-delivery" : "stock-in-out";
 }
 
 /** Stable index into a seeded list from an order id, so the same order always binds
@@ -60,4 +70,38 @@ export function bindSeededDocument(
   if (!inOut.length) return undefined;
   const adj = inOut[hashOf(order.id) % inOut.length]!;
   return { kind, id: adj.id, number: adj.number };
+}
+
+/** Same binding, addressed by any record id — inbound tasks and cycle counts have
+ *  no OutgoingOrder to key off. */
+export function bindSeededDocumentById(
+  recordId: string,
+  kind: DeliveryDocumentRef["kind"],
+): DeliveryDocumentRef | undefined {
+  if (kind === "purchase-delivery") {
+    if (!purchaseDeliveries.length) return undefined;
+    const pd = purchaseDeliveries[hashOf(recordId) % purchaseDeliveries.length]!;
+    return { kind, id: pd.id, number: `Purchase Delivery #${pd.number}` };
+  }
+  if (kind === "sales-delivery") {
+    if (!salesDeliveries.length) return undefined;
+    const sd = salesDeliveries[hashOf(recordId) % salesDeliveries.length]!;
+    return { kind, id: sd.id, number: `Sales Delivery #${sd.number}` };
+  }
+  const inOut = wmsStockAdjustments.filter((a) => a.kind === "in-out");
+  if (!inOut.length) return undefined;
+  const adj = inOut[hashOf(recordId) % inOut.length]!;
+  return { kind: "stock-in-out", id: adj.id, number: adj.number };
+}
+
+/**
+ * The document a CYCLE COUNT posted — and unlike everything else here this one is
+ * a genuine link, not a binding: approving a WMS cycle count creates an ERP Stock
+ * Count that carries `linkedCycleCountId` back to it. Undefined until that exists,
+ * which is the honest answer for a count that hasn't been approved yet.
+ */
+export function cycleCountDocumentFor(cycleCountId: string): DeliveryDocumentRef | undefined {
+  const posted = stockAdjustments.find((a) => a.linkedCycleCountId === cycleCountId);
+  if (!posted) return undefined;
+  return { kind: "stock-count", id: posted.id, number: posted.number };
 }
