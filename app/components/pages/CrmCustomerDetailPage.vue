@@ -278,7 +278,7 @@ function orderBadge(status: string) {
                   <MpTextarea id="cd-comment-input" v-model="newComment" is-full-width :rows="3" placeholder="Add a note about this company…" @input="commentErr = ''" />
                   <span v-if="commentErr" class="cmt-err">{{ commentErr }}</span>
                   <div class="cmt-add-actions">
-                    <MpButton variant="primary" is-rounded @click="postComment">Add note</MpButton>
+                    <MpButton variant="secondary" is-rounded @click="postComment">Add note</MpButton>
                   </div>
                 </div>
                 <div v-if="myComments.length" class="cmt-list">
