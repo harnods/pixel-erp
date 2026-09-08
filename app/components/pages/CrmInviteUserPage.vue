@@ -11,7 +11,7 @@
 import { ref, computed } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage,
-  MpInput, MpCheckbox, MpRadio, MpButton, MpButtonGroup,
+  MpInput, MpCheckbox, MpRadio, MpToggle, MpButton, MpButtonGroup,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { successToast } from '~/utils/toasts'
@@ -80,6 +80,9 @@ const CRM_ROLES: CrmRole[] = [
 const name = ref('')
 const email = ref('')
 const selectedRole = ref('')
+// Data permissions (beyond role) — set at invite time.
+const canExport = ref(false)
+const canViewReports = ref(true)
 const salesRestrict = ref(false)
 const setAccessTime = ref(false)
 const accessDays = ref('Weekdays')
@@ -175,6 +178,28 @@ function send() {
           <MpFormErrorMessage>{{ t(roleError) }}</MpFormErrorMessage>
         </MpFormControl>
 
+        <!-- Data permissions (beyond role) -->
+        <div class="iu-perms-block">
+          <h2 class="iu-roles-title">{{ t('Data permissions') }}</h2>
+          <p class="iu-roles-lead">{{ t('Extra access this user has, on top of their role.') }}</p>
+          <ul class="iu-perm-toggles">
+            <li class="iu-perm-toggle">
+              <span class="iu-perm-text">
+                <span class="iu-perm-title">{{ t('Export data') }}</span>
+                <span class="iu-perm-desc">{{ t('Allow this user to export CRM data to spreadsheet.') }}</span>
+              </span>
+              <MpToggle id="iu-export" :is-checked="canExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => (canExport = v)" />
+            </li>
+            <li class="iu-perm-toggle">
+              <span class="iu-perm-text">
+                <span class="iu-perm-title">{{ t('View reports') }}</span>
+                <span class="iu-perm-desc">{{ t('Allow this user to open the Reports page.') }}</span>
+              </span>
+              <MpToggle id="iu-reports" :is-checked="canViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => (canViewReports = v)" />
+            </li>
+          </ul>
+        </div>
+
         <footer class="iu-footer">
           <MpButtonGroup class="erp-action-footer">
             <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
@@ -215,6 +240,14 @@ function send() {
 .iu-roles { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .iu-roles-title { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .iu-roles-lead { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
+
+/* Data permissions toggles */
+.iu-perm-toggles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); }
+.iu-perm-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.iu-perm-toggle:last-child { border-bottom: none; }
+.iu-perm-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.iu-perm-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.iu-perm-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 
 .iu-role-list { border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
 .iu-role { border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); padding: var(--mp-spacing-4); }

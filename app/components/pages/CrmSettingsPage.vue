@@ -21,6 +21,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpToggle,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import SettingsCompanyProfilePage from '~/components/pages/SettingsCompanyProfilePage.vue'
@@ -160,9 +161,28 @@ const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => colum
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // Row actions (demo)
-function viewUser(u: CrmUser) { soon(`${t('View details')} — ${u.name}`) }
-function editUser(u: CrmUser) { soon(`${t('Edit')} — ${u.name}`) }
+function viewUser(u: CrmUser) { openEditUser(u) }
 function deleteUser(u: CrmUser) { soon(`${t('Delete')} — ${u.name}`) }
+
+// ── Edit user — a modal for role display + the two data-permission toggles ──
+const editUserOpen = ref(false)
+const editingUser = ref<CrmUser | null>(null)
+const editCanExport = ref(false)
+const editCanViewReports = ref(false)
+function openEditUser(u: CrmUser) {
+  editingUser.value = u
+  editCanExport.value = u.canExport
+  editCanViewReports.value = u.canViewReports
+  editUserOpen.value = true
+}
+function saveEditUser() {
+  const u = editingUser.value
+  if (!u) return
+  setPerm(u.id, u.role, 'canExport', editCanExport.value)
+  setPerm(u.id, u.role, 'canViewReports', editCanViewReports.value)
+  editUserOpen.value = false
+  successToast(t('User updated'))
+}
 
 // ── Teams — a full ErpTablePage grounded in crmTeams (persisted) ──────────────
 // The signed-in user (shown in the top bar) authors every create/edit.
@@ -357,10 +377,10 @@ const integrations: Integration[] = [
           </template>
           <template #cell-role="{ value }">{{ value }}</template>
           <template #cell-canExport="{ row }">
-            <MpToggle :id="`perm-exp-${(row as CrmUser).id}`" :is-checked="(row as CrmUser).canExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => setPerm((row as CrmUser).id, (row as CrmUser).role, 'canExport', v)" />
+            <ErpStatusBadge :status="(row as CrmUser).canExport ? 'active' : 'inactive'" :label="(row as CrmUser).canExport ? t('Eligible') : t('Not eligible')" />
           </template>
           <template #cell-canViewReports="{ row }">
-            <MpToggle :id="`perm-rep-${(row as CrmUser).id}`" :is-checked="(row as CrmUser).canViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => setPerm((row as CrmUser).id, (row as CrmUser).role, 'canViewReports', v)" />
+            <ErpStatusBadge :status="(row as CrmUser).canViewReports ? 'active' : 'inactive'" :label="(row as CrmUser).canViewReports ? t('Eligible') : t('Not eligible')" />
           </template>
           <template #cell-teams="{ row }">
             <div v-if="(row as CrmUser).teams.length" class="cru-tags">
@@ -386,7 +406,7 @@ const integrations: Integration[] = [
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem @click="viewUser(row as CrmUser)">{{ t('View details') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="editUser(row as CrmUser)">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="openEditUser(row as CrmUser)">{{ t('Edit') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="deleteUser(row as CrmUser)">{{ t('Delete') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -543,6 +563,47 @@ const integrations: Integration[] = [
       @update:is-open="teamDeleteOpen = $event"
       @confirm="confirmDeleteTeam"
     />
+
+    <!-- ── Edit user — role + data permissions (Export data / View reports) ── -->
+    <MpModal id="crm-edit-user" :is-open="editUserOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="editUserOpen = false">
+      <MpModalContent>
+        <MpModalHeader>
+          {{ t('Edit user') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <div v-if="editingUser" class="eu-body">
+            <div class="eu-field">
+              <span class="eu-label">{{ t('Name') }}</span>
+              <span class="eu-value">{{ editingUser.name }} · {{ editingUser.role }}</span>
+            </div>
+            <ul class="eu-perms">
+              <li class="eu-perm">
+                <span class="eu-perm-text">
+                  <span class="eu-perm-title">{{ t('Export data') }}</span>
+                  <span class="eu-perm-desc">{{ t('Allow this user to export CRM data to spreadsheet.') }}</span>
+                </span>
+                <MpToggle id="eu-export" :is-checked="editCanExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => (editCanExport = v)" />
+              </li>
+              <li class="eu-perm">
+                <span class="eu-perm-text">
+                  <span class="eu-perm-title">{{ t('View reports') }}</span>
+                  <span class="eu-perm-desc">{{ t('Allow this user to open the Reports page.') }}</span>
+                </span>
+                <MpToggle id="eu-reports" :is-checked="editCanViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => (editCanViewReports = v)" />
+              </li>
+            </ul>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="editUserOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="saveEditUser">{{ t('Save changes') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
@@ -657,4 +718,17 @@ const integrations: Integration[] = [
   .set-grid { grid-template-columns: repeat(2, 1fr); }
   .set-cards { grid-template-columns: 1fr; }
 }
+
+/* ── Edit user modal ── */
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.eu-body { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.eu-field { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); }
+.eu-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.eu-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.eu-perms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.eu-perm { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.eu-perm:last-child { border-bottom: none; }
+.eu-perm-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.eu-perm-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.eu-perm-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>
