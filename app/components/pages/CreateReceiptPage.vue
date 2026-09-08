@@ -172,6 +172,12 @@ function onProductCreated(product: Product) {
   onProductSelect(row, product.id)
 }
 
+// WMS doesn't author product copy — a line's description is the product's own, read
+// from product details and shown as text. Only the ERP package, where a document
+// line can carry its own wording for the customer/vendor, keeps it editable.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function onProductSelect(row: LineRow, id: string) {
   // The combobox is disabled for a locked row; belt-and-braces so a stray event
   // can't rewrite a line a receiving task is already pointing at.
@@ -183,7 +189,9 @@ function onProductSelect(row: LineRow, id: string) {
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
-  if (!row.description) row.description = p.desc
+  // WMS mirrors the product, always. ERP only fills a blank, so a line the user
+  // has worded themselves survives a product change.
+  if (isWms.value || !row.description) row.description = p.desc
   row.unit = p.unit
   const last = rows.value[rows.value.length - 1]
   if (last && last.id === row.id) rows.value.push(makeRow())
@@ -730,7 +738,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Row has product: SKU + all input cols -->
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
-                    <td class="cr-td cr-td--input">
+                    <!-- Description: the product's own in WMS (not a field at all), the
+                         line's own in ERP. -->
+                    <td v-if="isWms" class="cr-td cr-td--desc">{{ row.description || '—' }}</td>
+                    <td v-else class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError || row.qtyLocked }">
@@ -827,6 +838,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 </template>
 
 <style scoped>
+.cr-td--desc { color: var(--mp-text-secondary); }
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 .detail-bar {
