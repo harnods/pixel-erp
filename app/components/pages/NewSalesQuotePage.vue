@@ -448,7 +448,7 @@ function onSave() {
                 @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)"
                 @drop="onDrop($event, idx)" @dragend="onDragEnd"
               >
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
 
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.productError }">
                   <MpTooltip
@@ -537,15 +537,17 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--del">
-                  <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </MpButton>
+                  <div class="si-cell-center">
+                    <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </div>
                 </td>
               </tr>
 
               <!-- Trailing "Select product" row — picking here appends a new line -->
               <tr class="si-tr">
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
@@ -734,7 +736,7 @@ function onSave() {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   align-items: center;
@@ -767,7 +769,7 @@ function onSave() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -778,7 +780,7 @@ function onSave() {
 
 .si-dashed-divider {
   padding-bottom: var(--mp-spacing-5);
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 
 /* ── Header section 1 ── */
@@ -851,7 +853,7 @@ function onSave() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .si-th--drag, .si-th--del { padding: 0; }
@@ -863,15 +865,20 @@ function onSave() {
   padding: 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  /* A taller Dimensions cell must not pull the row's other cells to its
+     vertical center — everything pins to the top instead. */
+  vertical-align: top;
 }
-.si-td--border { border-right: 1px solid var(--mp-border-default); }
+.si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
+/* Pins the drag/delete control to the first row's height instead of drifting
+   to the vertical center of a Dimensions-stretched row. */
+.si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
@@ -900,14 +907,18 @@ function onSave() {
 
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
-.si-td--affix { padding: 0; }
+.si-td--affix { padding: 0; position: relative; }
 /* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
 .si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
-.si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch then lets .si-affix (auto cross-size) grow
+   to match, while the input/value keep their own fixed height and simply
+   dock to the top (a flex item with a definite cross size doesn't stretch). */
+.si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
@@ -916,7 +927,7 @@ function onSave() {
    the Discount "%"). Target the rendered root, not just the class on MpInput. */
 .si-affix-input { flex: 1 1 0; min-width: 0; }
 .si-affix-cell :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; }
-.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
+.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: flex-end; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); white-space: nowrap; }
 
 .si-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -924,7 +935,7 @@ function onSave() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.si-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Notes + Attachment + Totals ── */
 .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
@@ -978,7 +989,7 @@ function onSave() {
   padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone (non-table) prefixed fields use MpInputGroup + MpInputLeftAddon,
@@ -987,7 +998,7 @@ function onSave() {
 .si-unit-field { width: 180px; flex-shrink: 0; }
 .si-unit-addon :deep(.mp-input-addon__root) {
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
 }
 .si-unit-trigger {
@@ -1002,7 +1013,7 @@ function onSave() {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md) !important;
 }
-.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Less: Withholding / Deposit ── */

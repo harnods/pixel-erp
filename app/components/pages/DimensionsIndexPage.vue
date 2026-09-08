@@ -128,6 +128,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 // ── Archive / activate (reversible — archiving asks for confirmation since it
 //    stops the dimension from being tagged on new transaction lines, mirroring
 //    ApprovalWorkflowsPage's "Turn off" confirmation pattern). ──
+const addQuotaModalOpen = ref(false)
+function closeAddQuotaModal() { addQuotaModalOpen.value = false }
+
 const archiveModalOpen = ref(false)
 const dimensionToArchive = ref<Dimension | null>(null)
 function handleToggleStatus(row: Dimension) {
@@ -236,11 +239,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </span>
           </div>
           <div v-if="effectiveLoading" class="dim-quota-bar-skeleton" />
-          <MpProgress v-else :color="quotaReached ? 'negative' : 'positive'" :value="String(quotaPct)" />
+          <MpProgress v-else color="positive" :value="String(quotaPct)" />
         </div>
         <p v-if="!effectiveLoading && quotaUsed > 0 && !quotaReached" class="dim-quota-hint">
           {{ t('Gain deeper insights with more dimensions.') }}
-          <a class="dim-quota-hint-link" @click="soon(t('Add quota'))">{{ t('Add quota') }}</a>
+          <a class="dim-quota-hint-link" @click="addQuotaModalOpen = true">{{ t('Add quota') }}</a>
         </p>
         <p v-else-if="!effectiveLoading && quotaReached" class="dim-quota-hint">{{ t('Quota reached. Archive a dimension to create a new one.') }}</p>
       </div>
@@ -307,6 +310,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         :title="`${(row as unknown as Dimension).name} ${t('values')}`"
         :id="`dim-values-${(row as unknown as Dimension).id}`"
         variant="card"
+        :max-visible="7"
+        more-label="Show"
       />
     </template>
 
@@ -474,6 +479,35 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Add quota modal — self-serve quota increases aren't supported yet;
+       points the user at their account manager / support instead. ── -->
+  <MpModal
+    id="dim-add-quota-modal"
+    :is-open="addQuotaModalOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeAddQuotaModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Add quota') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ t('Contact your account manager or email support-mekarierp@mekari.com to increase your quota.') }}
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeAddQuotaModal">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="closeAddQuotaModal">{{ t('Contact account manager') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -484,7 +518,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .dim-quota-row {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
   padding-bottom: var(--mp-spacing-6);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .dim-quota { width: 280px; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .dim-quota-label-row { display: flex; align-items: center; gap: var(--mp-spacing-4); }
@@ -493,7 +527,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .dim-quota-value-used { color: var(--mp-text-secondary); }
 .dim-quota-value-of { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 .dim-quota-value-total { color: var(--mp-text-default); }
-.dim-quota-bar-skeleton { width: 100%; height: 8px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-border-default); }
+.dim-quota-bar-skeleton { width: 100%; height: 8px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-border-default, #e3e7e9); }
 .dim-quota-hint { margin: 0; width: 336px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .dim-quota-hint-link { color: var(--mp-text-link); cursor: pointer; }
 
@@ -512,8 +546,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral); color: var(--mp-text-secondary);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-secondary);
   min-width: 200px;
 }
 .filter-search-input {
@@ -540,7 +574,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: 0; border: none; background: none;
   border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

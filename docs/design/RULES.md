@@ -184,7 +184,9 @@ is the point: they *feel* normal, which is exactly why they slip through.
   tool a raw `<button>`/square hover while the others are oval, add a `gap:0`
   override, use secondary/filled buttons, scatter them loose, or hand-roll the
   grouping. **Why:** one consistent tool cluster on every list page — every icon
-  the same shape and spacing. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
+  the same shape and spacing. Pairs with `rule/filter-bar-search-export`. **Source
+  (column visibility wiring):** `docs/patterns/ErpTablePage.md` § "Column
+  visibility (show/hide columns)". **Lint:** review.
 - **`rule/icon-pixel-library`** — *Do:* every icon is an **`MpIcon`** with a name from
   the **Pixel icon library** — verify the name via the `mekari-pixel` MCP
   (`get-icon-name`) before using it. *Don't:* use a raw `<svg>`, an emoji, an image, or

@@ -5,7 +5,7 @@ import {
   MpInputGroup, MpInputLeftAddon,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpTooltip,
+  MpIcon,
   css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -18,8 +18,9 @@ import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDr
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
 import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
 import { applicableDimensions } from '~/data/dimensions'
-import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
@@ -127,6 +128,14 @@ const allLines = computed<POLine[]>(() => fromPr.value ? groups.value.flatMap(g 
 
 function lineAmount(line: POLine) {
   return Math.round(line.qty * line.unitCost * (1 - line.discountPct / 100))
+}
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every line's dimensions (a dimension left blank in the
+// popover is a no-op, not a clear). Covers whichever mode (from-PR groups or
+// blank flat rows) is currently active.
+function onBulkDimensions(patch: Record<string, string>) {
+  allLines.value.forEach((line) => { line.dimensions = { ...line.dimensions, ...patch } })
 }
 
 function toggleGroup(g: POGroup) { g.collapsed = !g.collapsed }
@@ -462,11 +471,9 @@ function onSendToFulfillment() {
                   <th v-if="showDimensionsColumn" class="pit-th pit-th--dimensions">
                     <span class="pit-th-dim-label">
                       DIMENSIONS
-                      <MpTooltip id="po-dim-tt" label="Values may be restricted to specific users." placement="top" use-portal>
-                        <MpIcon name="security" size="sm" />
-                      </MpTooltip>
+                      <ErpDimensionsInfoPopover id="po-dim-info" />
                     </span>
-                    <a class="pit-th-dim-bulk" @click="infoToast('Bulk — coming soon')">Bulk</a>
+                    <ErpBulkDimensionsPopover id="po-dim-bulk" transaction-type="purchases" @apply="onBulkDimensions" />
                   </th>
                   <th class="pit-th pit-th--num">AMOUNT</th>
                 </tr>
@@ -564,11 +571,9 @@ function onSendToFulfillment() {
                   <th v-if="showDimensionsColumn" class="pit-th pit-th--dimensions">
                     <span class="pit-th-dim-label">
                       DIMENSIONS
-                      <MpTooltip id="po-fdim-tt" label="Values may be restricted to specific users." placement="top" use-portal>
-                        <MpIcon name="security" size="sm" />
-                      </MpTooltip>
+                      <ErpDimensionsInfoPopover id="po-fdim-info" />
                     </span>
-                    <a class="pit-th-dim-bulk" @click="infoToast('Bulk — coming soon')">Bulk</a>
+                    <ErpBulkDimensionsPopover id="po-fdim-bulk" transaction-type="purchases" @apply="onBulkDimensions" />
                   </th>
                   <th class="pit-th pit-th--num">AMOUNT</th>
                   <th class="pit-th pit-th--del" />
@@ -959,7 +964,6 @@ function onSendToFulfillment() {
 .pit-th--del { padding: 0; }
 .pit-th--dimensions { display: table-cell; }
 .pit-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
-.pit-th-dim-bulk { float: right; font-weight: var(--mp-font-weights-regular); text-transform: none; color: var(--mp-text-link); cursor: pointer; }
 
 /* Body cells — 40px baseline; editable cells own the focus ring (child borderless) */
 .pit-td {
@@ -970,7 +974,7 @@ function onSendToFulfillment() {
   vertical-align: top;
 }
 .pit-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
-.pit-td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.pit-td--num { text-align: right; font-variant-numeric: tabular-nums; position: relative; }
 /* Read-only / calculated / locked cells (product, unit, requested, available, amount) */
 .pit-td--ro { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .pit-td--clip { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -985,14 +989,27 @@ function onSendToFulfillment() {
 .pit-td--dimensions { padding: 0; }
 .pit-num-input :deep(input) { text-align: right; }
 
-/* Affix cell (Rp prefix / % suffix) fills the 40px cell height */
-.pit-affix-cell { display: flex; align-items: stretch; height: var(--mp-sizes-10, 40px); }
+/* Affix cell (Rp prefix / % suffix) — inset:0 (not height:100%) fills the full
+   — possibly Dimensions-stretched — row height. align-items:stretch so the
+   affix's gray background fills the WHOLE tall cell (not just its own text
+   line, which read as "cropped"), while its own internal
+   align-items:flex-start keeps the glyph pinned to the top of that now-tall
+   box. The input is the exception: align-self:flex-start + a fixed height
+   keep IT from also stretching, since a stretched MpInput centers its typed
+   value vertically instead of docking it top next to the affix. */
+.pit-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .pit-affix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.pit-affix-cell .pit-num-input { flex: 1; min-width: 0; }
+/* The class on MpInput lands on its INNER .mp-input__control (the <input>
+   itself), not the OUTER .mp-input__root — the actual flex child of
+   .pit-affix-cell. Sizing only .pit-num-input left .mp-input__root at its
+   inherited align-items:stretch, so the value still centered in the tall row
+   despite this rule. The flex/align-self/height that matter have to target
+   the root via :deep(). */
+.pit-affix-cell :deep(.mp-input__root) { flex: 1; min-width: 0; align-self: flex-start; height: var(--mp-sizes-10, 40px); }
 
 /* Delete button — the Dimensions column can make a row taller than the
    standard 40px; pin the button to the TOP of that taller row. */

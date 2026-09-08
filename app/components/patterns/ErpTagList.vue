@@ -8,7 +8,7 @@
  * same controlled-popover pattern as ApprovalCommentPopover. Used in table
  * tag cells across all index pages.
  */
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpTag, css } from '@mekari/pixel3'
 
 let uid = 0
@@ -25,11 +25,22 @@ const props = withDefaults(defineProps<{
    *  row table with every row divided (incl. the last). Opt-in per consumer so
    *  this doesn't reflow the popover on every other index page's tag column. */
   variant?: 'compact' | 'card'
-}>(), { title: undefined, id: undefined, variant: 'compact' })
+  /** Count-based overflow instead of the default 2-line wrap clamp — renders
+   *  at most this many chips, hiding the rest behind the "more" link. Opt-in
+   *  per consumer (e.g. Dimensions' Values column: max 7). */
+  maxVisible?: number
+  /** Text before the hidden count, e.g. "View 3 more" vs "Show 3 more".
+   *  Defaults to 'View' (wrap-clamp consumers); count-based consumers can
+   *  pass 'Show'. */
+  moreLabel?: string
+}>(), { title: undefined, id: undefined, variant: 'compact', maxVisible: undefined, moreLabel: 'View' })
 
 const { t } = useLocale()
 
 const popoverId = props.id ?? `erp-tags-more-${++uid}`
+
+const countBased = computed(() => typeof props.maxVisible === 'number')
+const visibleTags = computed(() => (countBased.value ? (props.tags ?? []).slice(0, props.maxVisible) : props.tags ?? []))
 
 const rootEl = ref<HTMLElement | null>(null)
 const overflowing = ref(false)
@@ -38,6 +49,12 @@ const open = ref(false)
 let resizeObserver: ResizeObserver | null = null
 
 function measure() {
+  if (countBased.value) {
+    const total = props.tags?.length ?? 0
+    overflowing.value = total > (props.maxVisible ?? total)
+    hiddenCount.value = Math.max(0, total - (props.maxVisible ?? total))
+    return
+  }
   const el = rootEl.value
   if (!el) return
   // Clamp to two chip rows based on the ACTUAL rendered chip height (MpTag ≠ 20px).
@@ -57,8 +74,10 @@ function measure() {
 
 onMounted(() => {
   nextTick(measure)
-  resizeObserver = new ResizeObserver(() => measure())
-  if (rootEl.value) resizeObserver.observe(rootEl.value)
+  if (!countBased.value) {
+    resizeObserver = new ResizeObserver(() => measure())
+    if (rootEl.value) resizeObserver.observe(rootEl.value)
+  }
 })
 onUnmounted(() => {
   resizeObserver?.disconnect()
@@ -68,8 +87,8 @@ watch(() => props.tags, () => nextTick(measure))
 </script>
 
 <template>
-  <div v-if="tags?.length" ref="rootEl" class="erp-tags">
-    <MpTag v-for="(tag, i) in tags" :id="`erp-tag-${i}`" :key="tag">{{ tag }}</MpTag>
+  <div v-if="tags?.length" ref="rootEl" class="erp-tags" :class="{ 'erp-tags--count-based': countBased }">
+    <MpTag v-for="(tag, i) in visibleTags" :id="`erp-tag-${i}`" :key="tag">{{ tag }}</MpTag>
 
     <MpPopover
       v-if="overflowing"
@@ -83,7 +102,7 @@ watch(() => props.tags, () => nextTick(measure))
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <a class="erp-tags-more" @click.stop="open = !open">{{ t('View') }} {{ hiddenCount }} {{ t('more') }}</a>
+        <a class="erp-tags-more" :class="{ 'erp-tags-more--label': countBased }" @click.stop="open = !open">{{ t(moreLabel) }} {{ hiddenCount }} {{ t('more') }}</a>
       </MpPopoverTrigger>
       <!-- 'compact' — every existing consumer's tinted header/footer, 260px popover. -->
       <MpPopoverContent
@@ -134,6 +153,13 @@ watch(() => props.tags, () => nextTick(measure))
   background: inherit;             /* so the "More" mask matches the row bg (incl. hover) */
 }
 
+/* Count-based overflow (maxVisible) doesn't clip via max-height, so the chips
+   never grow past their natural height — the "more" link sits inline instead
+   of needing to mask a clipped second line. */
+.erp-tags--count-based {
+  overflow: visible;
+}
+
 /* "More" link masks the end of line 2; bg matches the row (inherits hover bg) */
 .erp-tags-more {
   position: absolute;
@@ -148,6 +174,15 @@ watch(() => props.tags, () => nextTick(measure))
   line-height: 1;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* Count-based overflow: link flows after the visible chips (Label/Regular,
+   14px) instead of absolutely masking a clipped second line. */
+.erp-tags-more--label {
+  position: static;
+  padding-left: 0;
+  font-size: var(--mp-font-sizes-md, 14px);
+  font-weight: var(--mp-font-weights-regular, 400);
 }
 
 /* ── Popover — header/close, scrollable list, footer (ApprovalCommentPopover pattern) ── */

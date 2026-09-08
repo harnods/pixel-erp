@@ -163,6 +163,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Continue': 'Lanjutkan',
   'Done': 'Selesai',
   'View': 'Lihat',
+  'Show': 'Tampilkan',
   'View details': 'Lihat detail',
   'View product': 'Lihat produk',
   'Show more': 'Tampilkan lebih banyak',
@@ -2107,6 +2108,15 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "as a new dimension value": "sebagai nilai dimensi baru",
   "Bulk": "Massal",
   "Values may be restricted to specific users.": "Nilai mungkin dibatasi untuk pengguna tertentu.",
+  "Bulk select dimensions": "Pilih dimensi secara massal",
+  "You must select": "Anda harus memilih",
+  "This information will not appear on your printed invoices and is only visible to you and your team. To manage dimensions, go to Dimensions in Settings.": "Informasi ini tidak akan muncul di invoice yang dicetak dan hanya terlihat oleh Anda dan tim Anda. Untuk mengelola dimensi, buka Dimensi di Pengaturan.",
+  "Dimensions settings": "Pengaturan dimensi",
+  "No matching": "Tidak ditemukan",
+  "found": "yang cocok",
+  "Add value": "Tambah nilai",
+  "Value saved": "Nilai disimpan",
+  "You must fill in value": "Anda harus mengisi nilai",
 
   // ── Reports › Financials index (FinancialReportsIndexPage) ───────────────────
   "Profit & Loss": "Laba Rugi",

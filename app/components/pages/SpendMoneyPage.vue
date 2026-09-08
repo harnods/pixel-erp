@@ -396,7 +396,7 @@ function handleSave() {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -428,7 +428,7 @@ function handleSave() {
    measured at 1440px) rather than a grid fraction. */
 .ex-row-1 {
   display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
-  padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default);
+  padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 .ex-field-flex { width: 316px; flex-shrink: 0; min-width: 0; }
 .ex-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; padding: 20px 0; max-width: 620px; }
@@ -470,7 +470,7 @@ function handleSave() {
 }
 
 /* ── Line items table ─────────────────────────────────────────────────────── */
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-desc { width: auto; }
@@ -486,10 +486,10 @@ function handleSave() {
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .ex-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); }
@@ -498,7 +498,7 @@ function handleSave() {
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
@@ -506,11 +506,11 @@ function handleSave() {
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ex-td--del { padding: 0; text-align: center; }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 /* The Dimensions column can make a row taller than the standard row height —
    every other cell (del button) must pin to the TOP of that taller row. */
 .ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-13, 52px); }
-.ex-td--readonly { text-align: right; background: var(--mp-background-neutral-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ex-td--readonly { text-align: right; background: var(--mp-background-neutral-subtle, #f8f9f9); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Expense cell reads as a (disabled) MpSelect — same chevron affordance as the
    "Select expense" row's MpAutocomplete below it. */
@@ -518,14 +518,18 @@ function handleSave() {
 .sm-expense-chevron { flex-shrink: 0; color: var(--mp-text-secondary); }
 
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: 52px; border-bottom: 1px solid var(--mp-border-default); }
-.ex-lineitems-table .ex-td--amount { padding: 0; }
+.ex-lineitems-table .ex-td { height: 52px; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.ex-lineitems-table .ex-td--amount { padding: 0; position: relative; }
 
-.ex-amount-cell { display: flex; align-items: stretch; height: 52px; }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch then lets .ex-amount-prefix (auto cross-size)
+   grow to match, while the input keeps its own fixed height and simply docks
+   to the top (a flex item with a definite cross size doesn't stretch). */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: 52px; }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }
@@ -537,7 +541,7 @@ function handleSave() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.ex-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 .ex-del-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .ex-del-btn:disabled:hover { background: none; color: var(--mp-text-secondary); }
 

@@ -27,8 +27,9 @@ import type { SalesInvoice } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
 import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
 import { applicableDimensions } from '~/data/dimensions'
-import { infoToast } from '~/utils/toasts'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 
 const router = useRouter()
@@ -118,9 +119,25 @@ interface LineItem {
   qtyError: boolean
   /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
   dimensions: Record<string, string>
+  /** dimensionId -> whether that mandatory dimension is missing (set by validate()). */
+  dimensionErrors: Record<string, boolean>
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every line's dimensions (a dimension left blank in the
+// popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  items.value.forEach((item) => {
+    item.dimensions = { ...item.dimensions, ...patch }
+    for (const dimId of Object.keys(patch)) { if (patch[dimId]) item.dimensionErrors[dimId] = false }
+  })
+}
+function onItemDimensionsUpdate(item: LineItem, v: Record<string, string>) {
+  item.dimensions = v
+  for (const dimId of Object.keys(v)) { if (v[dimId]) item.dimensionErrors[dimId] = false }
+}
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
@@ -161,6 +178,7 @@ function selectNewProduct(p: typeof products[number]) {
     productError: false,
     qtyError: false,
     dimensions: {},
+    dimensionErrors: {},
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -196,7 +214,7 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
-const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError || Object.values(it.dimensionErrors).some(Boolean)))
 const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
 
 // ── Totals ────────────────────────────────────────────────────────────────────
@@ -298,6 +316,11 @@ function validate(): boolean {
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    if (showDimensionsColumn.value) {
+      applicableDimensions('sales').forEach((dim) => {
+        if (dim.mandatory && !it.dimensions[dim.id]) { it.dimensionErrors[dim.id] = true; ok = false }
+      })
+    }
   })
 
   if (lessWithholding.value) {
@@ -519,11 +542,9 @@ function onSave() {
                 <th v-if="showDimensionsColumn" class="si-th si-th--dimensions">
                   <span class="si-th-dim-label">
                     {{ t('Dimensions') }}
-                    <MpTooltip id="si-dim-tt" :label="t('Values may be restricted to specific users.')" placement="top" use-portal>
-                      <MpIcon name="security" size="sm" />
-                    </MpTooltip>
+                    <ErpDimensionsInfoPopover id="si-dim-info" />
                   </span>
-                  <a class="si-th-dim-bulk" @click="infoToast(`${t('Bulk')} — coming soon`)">{{ t('Bulk') }}</a>
+                  <ErpBulkDimensionsPopover id="si-dim-bulk" transaction-type="sales" @apply="onBulkDimensions" />
                 </th>
                 <th class="si-th">{{ t('Amount') }}</th>
                 <th class="si-th si-th--del" />
@@ -619,7 +640,8 @@ function onSave() {
                 <td v-if="showDimensionsColumn" class="si-td si-td--border si-td--dimensions">
                   <ErpLineDimensionsCell
                     :model-value="item.dimensions" transaction-type="sales" :id="`si-dim-${item._key}`"
-                    @update:model-value="(v) => item.dimensions = v"
+                    :errors="item.dimensionErrors"
+                    @update:model-value="(v) => onItemDimensionsUpdate(item, v)"
                   />
                 </td>
 
@@ -1055,10 +1077,8 @@ function onSave() {
 }
 .si-th--drag, .si-th--del { padding: 0; }
 .si-th--dimensions { display: table-cell; }
-.si-th--dimensions > .si-th-dim-label,
-.si-th--dimensions > .si-th-dim-bulk { display: inline-flex; align-items: center; }
+.si-th--dimensions > .si-th-dim-label { display: inline-flex; align-items: center; }
 .si-th-dim-label { gap: var(--mp-spacing-1); }
-.si-th-dim-bulk { float: right; font-weight: var(--mp-font-weights-regular); text-transform: none; color: var(--mp-text-link); cursor: pointer; }
 
 /* Rows carry BOTH a bottom border (row separator) and right borders (column
    dividers) — the Figma's Row has border-b and each cell border-r. */
@@ -1109,15 +1129,20 @@ function onSave() {
 
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
-.si-td--affix { padding: 0; }
+/* position:relative so .si-affix-cell (position:absolute;inset:0 below) sizes
+   against THIS cell — a <td> is one of the few elements a percentage/inset
+   height reliably resolves against, unlike a plain block ancestor. */
+.si-td--affix { padding: 0; position: relative; }
 /* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
 .si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
-/* Fixed height (not 100%/min-height) — a taller Dimensions row must NOT stretch
-   this box to fill it; it stays pinned to the top like every other cell. */
-.si-affix-cell { display: flex; align-items: stretch; height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch then lets .si-affix (auto cross-size) grow
+   to match, while the input/value keep their own fixed height and simply
+   dock to the top (a flex item with a definite cross size doesn't stretch). */
+.si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -1127,7 +1152,7 @@ function onSave() {
    the Discount "%"). Target the rendered root, not just the class on MpInput. */
 .si-affix-input { flex: 1 1 0; min-width: 0; }
 .si-affix-cell :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; }
-.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
+.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: flex-end; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); white-space: nowrap; }
 
 .si-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;

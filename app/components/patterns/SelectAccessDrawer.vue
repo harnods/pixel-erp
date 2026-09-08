@@ -8,7 +8,10 @@
  * SelectProductDrawer's working-copy pattern.
  */
 import { ref, computed, watch } from 'vue'
-import { MpIcon, MpButton, MpTooltip } from '@mekari/pixel3'
+import {
+  MpIcon, MpButton, MpTooltip,
+  MpAccordion, MpAccordionItem, MpAccordionHeader, MpAccordionIcon, MpAccordionPanel,
+} from '@mekari/pixel3'
 
 export interface AccessOption { id: string; name: string; subtitle?: string }
 
@@ -23,6 +26,11 @@ const props = defineProps<{
   modelValue: string[]
   emptyTitle: string
   emptyCaption: string
+  /** Names of the records this access selection applies to (e.g. dimension
+   *  values), shown as a collapsed-by-default "Applies to N value(s)"
+   *  accordion above the footer (Figma 5162-22892). Omit to skip it entirely
+   *  — most consumers (e.g. the Cash Account picker) have no such grouping. */
+  applyTo?: string[]
 }>()
 const emit = defineEmits<{
   'update:open': [boolean]
@@ -51,6 +59,12 @@ function add(id: string) { const s = new Set(sel.value); s.add(id); sel.value = 
 function remove(id: string) { const s = new Set(sel.value); s.delete(id); sel.value = s }
 function addAll() { const s = new Set(sel.value); for (const o of available.value) s.add(o.id); sel.value = s }
 function removeAll() { sel.value = new Set() }
+
+const { t } = useLocale()
+const applyToLabel = computed(() => {
+  const n = props.applyTo?.length ?? 0
+  return `${t('Applies to')} ${n} ${n === 1 ? t('value') : t('values')}`
+})
 
 const isSaving = ref(false)
 function close() { isSaving.value = false; emit('update:open', false) }
@@ -141,6 +155,23 @@ async function save() {
           </section>
         </div>
 
+        <!-- "Applies to N value(s)" — collapsed by default, sticky against the
+             footer with no gap (Figma 5162-22892). Only rendered when the
+             caller passes applyTo (e.g. the Dimensions bulk/per-value flow). -->
+        <MpAccordion v-if="applyTo?.length" is-allow-toggle class="sad-apply-accordion">
+          <MpAccordionItem id="sad-apply-to">
+            <MpAccordionHeader>
+              <MpAccordionIcon />
+              <span class="sad-apply-label">{{ applyToLabel }}</span>
+            </MpAccordionHeader>
+            <MpAccordionPanel>
+              <div class="sad-apply-tags">
+                <span v-for="name in applyTo" :key="name" class="sad-apply-tag">{{ name }}</span>
+              </div>
+            </MpAccordionPanel>
+          </MpAccordionItem>
+        </MpAccordion>
+
         <!-- Footer -->
         <footer class="sad-footer">
           <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
@@ -170,17 +201,17 @@ async function save() {
 .sad-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .sad-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.sad-close:hover { background: var(--mp-background-neutral-hovered); }
+.sad-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .sad-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .sad-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); }
-.sad-divider { background: var(--mp-border-default); }
+.sad-divider { background: var(--mp-border-default, #e3e7e9); }
 /* Matches the table filter-bar search: border-default pill + neutral focus ring. */
-.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
+.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
 .sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -191,7 +222,7 @@ async function save() {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* 20px between the search box and the list header (design-doc rule). */
 .sad-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-top: 20px; }
 /* H2 heading — Users / Roles / Selected … */
@@ -204,11 +235,11 @@ async function save() {
    (roles) land at 36px, two-line rows (user + role subtitle) at ~52px like Figma.
    min-height keeps single-line rows steady when the add/remove control appears. */
 .sad-item {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 36px; text-align: left;
+  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 36px; flex-shrink: 0; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-1); background: none; border: none; cursor: pointer;
-  border-bottom: 1px solid var(--mp-border-default); position: relative;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
-.sad-item:hover { background: var(--mp-background-neutral-subtle); }
+.sad-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sad-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sad-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -225,5 +256,19 @@ async function save() {
 .sad-empty-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-empty-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+
+/* "Applies to N value(s)" accordion — collapsed by default, sits flush above
+   the footer (no gap, same fixed/always-visible chrome as the footer itself)
+   rather than inside the scrolling body (Figma 5162-22892). */
+.sad-apply-accordion { flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f0f1f3); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.sad-apply-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sad-apply-tags { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
+.sad-apply-tag {
+  display: inline-flex; align-items: center; max-height: 28px;
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral, #fff);
+  border-radius: var(--mp-radii-sm, 4px);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
 </style>

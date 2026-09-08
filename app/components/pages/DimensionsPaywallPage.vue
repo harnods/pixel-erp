@@ -164,8 +164,8 @@ const thumbImg = css({
 })
 const stepText = css({ display: 'flex', flexDirection: 'column', gap: '1', minWidth: '260px', flex: 1 })
 const stepTitle = css({ margin: 0, fontSize: '20px', fontWeight: '600', lineHeight: '32px', color: 'text.default' })
-const orderedList = css({ paddingLeft: '5', listStyleType: 'decimal' })
-const bulletList = css({ paddingLeft: '5', listStyleType: 'disc' })
+const orderedList = css({ paddingLeft: '5', listStyleType: 'decimal', color: 'text.secondary' })
+const bulletList = css({ paddingLeft: '5', listStyleType: 'disc', color: 'text.secondary' })
 
 const ctaSection = css({
   display: 'flex', flexDirection: 'column', gap: '4',

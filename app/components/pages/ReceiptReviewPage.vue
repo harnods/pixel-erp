@@ -620,9 +620,11 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
                   </div>
                 </td>
                 <td class="ex-td ex-td--del">
-                  <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </MpButton>
+                  <div class="ex-cell-center">
+                    <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -757,7 +759,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.br-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-default); }
+.br-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-default); }
 
 /* ── Airene hints ─────────────────────────────────────────────────────────── */
 .br-ai-field { display: flex; flex-direction: column; }
@@ -790,7 +792,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 }
 /* Dashed rule between the vendor row and the date grid — 20px clear on each side */
 .ex-section-divider {
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-5, 20px);
   margin-bottom: calc(-1 * var(--mp-spacing-3));
 }
@@ -831,13 +833,13 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
 }
 .br-match-card {
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .br-match-head {
   display: flex; align-items: stretch; min-height: 60px;
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-head-col { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 1 1 0; min-width: 0; }
 .br-match-head-col--src { padding: var(--mp-spacing-2) var(--mp-spacing-3); }
@@ -880,7 +882,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
   flex: 1 1 0; min-width: 0;
   display: flex; flex-direction: column;
   padding: var(--mp-spacing-4) 38px var(--mp-spacing-4) var(--mp-spacing-6);
-  border-right: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-body-title {
   margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
@@ -917,7 +919,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 }
 
 /* ── Transactions table ───────────────────────────────────────────────────── */
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .rc-col-transaction { width: 240px; }
@@ -928,40 +930,50 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .ex-th--del { padding: 0; }
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  /* A taller cell (wrapped text, error tooltip, etc.) must not pull the row's
+     other cells to its vertical center — everything pins to the top instead. */
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--del { padding: 0; text-align: center; }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']) { background: transparent; }
 .rc-lineitems-table { min-width: 784px; margin-right: auto; }
-.rc-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
-.rc-lineitems-table .ex-td--amount { padding: 0; }
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+.rc-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.rc-lineitems-table .ex-td--amount { padding: 0; position: relative; }
+/* Pins the delete control to the first row's height instead of drifting to
+   the vertical center of a taller row. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly taller — row height.
+   align-items:stretch then lets .ex-amount-prefix (auto cross-size) grow to
+   match, while the static value keeps its own fixed height and simply docks
+   to the top (a flex item with a definite cross size doesn't stretch). */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }
 /* Balance due and Total mirror the matched invoice — read-only here */
 .rc-amount-static {
-  flex: 1; min-width: 0; display: flex; align-items: center;
-  padding: 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  flex: 1; min-width: 0; display: flex; align-items: flex-start;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .ex-amount-input { flex: 1; min-width: 0; }
 .ex-del-btn {
@@ -970,7 +982,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
+.ex-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger); }
 
 /* ── Bottom: notes (left) + totals (right) ────────────────────────────────── */
 .rv-bottom { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); flex-wrap: wrap; }
@@ -985,7 +997,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 .ex-total-label--strong, .ex-total-amt--strong {
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.ex-total-rule { border-top: 1px solid var(--mp-border-default); }
+.ex-total-rule { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 /* No gap — MpCheckbox renders its own 12px control-to-label gap internally */
 .rc-withholding-check {
   display: flex; align-items: center; gap: 0;

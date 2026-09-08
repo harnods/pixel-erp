@@ -11,13 +11,20 @@ import { bills } from './bills'
 import { stockAdjustments } from './stockAdjustments'
 
 /** The transaction modules a dimension can be tagged against. */
-export type DimensionTransactionType = 'sales' | 'purchases' | 'expenses' | 'stock-adjustment'
+export type DimensionTransactionType =
+  | 'sales' | 'purchases' | 'expenses'
+  | 'receive-money' | 'transfer-money' | 'general-journal'
+  | 'stock-adjustment' | 'fixed-assets'
 
 export const DIMENSION_TRANSACTION_TYPE_OPTIONS: { value: DimensionTransactionType; label: string }[] = [
   { value: 'sales',            label: 'Sales' },
   { value: 'purchases',        label: 'Purchases' },
   { value: 'expenses',         label: 'Expenses' },
+  { value: 'receive-money',    label: 'Receive money' },
+  { value: 'transfer-money',   label: 'Transfer money' },
+  { value: 'general-journal',  label: 'General journal' },
   { value: 'stock-adjustment', label: 'Stock adjustment' },
+  { value: 'fixed-assets',     label: 'Fixed assets' },
 ]
 
 export function transactionTypeLabel(type: DimensionTransactionType): string {

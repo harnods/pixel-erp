@@ -392,6 +392,7 @@ function save() {
     :model-value="userAccessSelected"
     :empty-title="t('No selected users')"
     :empty-caption="t('Selected users will appear here.')"
+    :apply-to="userAccessTargetNames"
     @save="onUserAccessSaved"
   />
 
@@ -445,10 +446,10 @@ function save() {
 .dfd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .dfd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
 
-.dfd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.dfd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .dfd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .dfd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); padding: 0; }
-.dfd-close:hover { background: var(--mp-background-neutral-hovered); }
+.dfd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* macOS overlay scrollbars auto-hide, which makes a drawer with a handful of
    values (short enough that the inner values box doesn't scroll on its own,
@@ -461,9 +462,9 @@ function save() {
   scrollbar-color: var(--mp-border-bold) var(--mp-background-neutral-subtle);
 }
 .dfd-body::-webkit-scrollbar { width: 10px; }
-.dfd-body::-webkit-scrollbar-track { background: var(--mp-background-neutral-subtle); }
-.dfd-body::-webkit-scrollbar-thumb { background: var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); border: 2px solid var(--mp-background-neutral-subtle); }
-.dfd-body::-webkit-scrollbar-thumb:hover { background: var(--mp-text-subtle); }
+.dfd-body::-webkit-scrollbar-track { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.dfd-body::-webkit-scrollbar-thumb { background: var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); border: 2px solid var(--mp-background-neutral-subtle, #f8f9f9); }
+.dfd-body::-webkit-scrollbar-thumb:hover { background: var(--mp-text-subtle, #656f80); }
 
 .dfd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 100%; }
 .dfd-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-2); }
@@ -478,17 +479,17 @@ function save() {
 .dfd-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 
 .dfd-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0; padding: 0; }
-.dfd-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.dfd-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 
 .dfd-type-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.dfd-type-item { display: flex; align-items: center; justify-content: space-between; height: 36px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
+.dfd-type-item { display: flex; align-items: center; justify-content: space-between; height: 36px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .dfd-type-item:last-child { border-bottom: none; }
 
 .dfd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); color: var(--mp-icon-default); }
 .dfd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .dfd-search-input::placeholder { color: var(--mp-text-placeholder); }
 
-.dfd-values-table { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); overflow: hidden; }
+.dfd-values-table { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); overflow: hidden; }
 .dfd-values-header { display: flex; background: var(--mp-background-surface, #f1f5f9); }
 .dfd-values-th { flex: 1; height: 28px; display: flex; align-items: center; padding: 0 var(--mp-spacing-4) 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default); }
 .dfd-values-th--check { flex: 0 0 40px; padding: 0; justify-content: center; }
@@ -496,12 +497,12 @@ function save() {
 
 /* Bulk selection bar — replaces .dfd-values-header while ≥1 value is checked,
    same convention as ErpTablePage's bulk bar (erp-bulk-bar). */
-.dfd-values-bulkbar { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: var(--mp-spacing-1) var(--mp-spacing-2); gap: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); }
+.dfd-values-bulkbar { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: var(--mp-spacing-1) var(--mp-spacing-2); gap: var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .dfd-values-bulkbar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-shrink: 0; }
 .dfd-values-bulkbar-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
 .dfd-values-bulkbar-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .dfd-values-bulkbar-right { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
-.dfd-values-bulkbar-kbd { display: inline-flex; align-items: center; justify-content: center; padding: 0 var(--mp-spacing-1); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); font-family: inherit; }
+.dfd-values-bulkbar-kbd { display: inline-flex; align-items: center; justify-content: center; padding: 0 var(--mp-spacing-1); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-sm); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); font-family: inherit; }
 
 .dfd-values-body { display: flex; flex-direction: column; }
 /* Only earns a fixed height + scrollbar once there's enough rows to need one
@@ -512,10 +513,10 @@ function save() {
   scrollbar-color: var(--mp-border-bold) var(--mp-background-neutral-subtle);
 }
 .dfd-values-body--scroll::-webkit-scrollbar { width: 10px; }
-.dfd-values-body--scroll::-webkit-scrollbar-track { background: var(--mp-background-neutral-subtle); }
-.dfd-values-body--scroll::-webkit-scrollbar-thumb { background: var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); border: 2px solid var(--mp-background-neutral-subtle); }
-.dfd-values-body--scroll::-webkit-scrollbar-thumb:hover { background: var(--mp-text-subtle); }
-.dfd-values-row { display: flex; align-items: center; min-height: 40px; padding: var(--mp-spacing-1\.5, 6px) 0; border-top: 1px solid var(--mp-border-default); }
+.dfd-values-body--scroll::-webkit-scrollbar-track { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.dfd-values-body--scroll::-webkit-scrollbar-thumb { background: var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); border: 2px solid var(--mp-background-neutral-subtle, #f8f9f9); }
+.dfd-values-body--scroll::-webkit-scrollbar-thumb:hover { background: var(--mp-text-subtle, #656f80); }
+.dfd-values-row { display: flex; align-items: center; min-height: 40px; padding: var(--mp-spacing-1\.5, 6px) 0; border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .dfd-values-row:first-child { border-top: none; }
 .dfd-values-row.is-selected { background: var(--mp-background-brand-subtle, #e8f5f0); }
 .dfd-values-cell { flex: 1; padding: 0 var(--mp-spacing-4) 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -529,8 +530,10 @@ function save() {
 .dfd-icon-btn--delete { visibility: hidden; }
 .dfd-values-row:hover .dfd-icon-btn--delete { visibility: visible; }
 .dfd-values-none { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.dfd-values-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); background: var(--mp-background-neutral, #fff); border-top: 1px solid var(--mp-border-default); }
-.dfd-values-loadmore { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link); cursor: pointer; }
+/* progressive pagination (load-more) row — see ErpPagination.md: link sits
+   right beside the count, not pushed to the far right. */
+.dfd-values-footer { display: flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); background: var(--mp-background-neutral, #fff); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.dfd-values-loadmore { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-link); cursor: pointer; }
 
 /* Transfer modal (bulk) — "merge selected values into…" */
 .dfd-transfer-hint { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -543,7 +546,7 @@ function save() {
 .dfd-values-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .dfd-values-empty-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.dfd-divider { height: 1px; background: var(--mp-border-default); }
+.dfd-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 .dfd-section-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .dfd-toggle-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
@@ -551,10 +554,10 @@ function save() {
 .dfd-toggle-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .dfd-toggle-caption { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.dfd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.dfd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .dfd-btn { height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); cursor: pointer; border: 1px solid transparent; }
 .dfd-btn--ghost { background: transparent; color: var(--mp-text-secondary); }
-.dfd-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
+.dfd-btn--ghost:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .dfd-btn--primary { background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-weight: var(--mp-font-weights-semi-bold); }
 .dfd-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 </style>

@@ -80,7 +80,10 @@ index pages (e.g. Sales Orders):
   <div class="filter-right">
     <div class="filter-btn-group">
       <button class="filter-icon-btn filter-icon-btn--airene" @click="toggleAirene?.()"><!-- Airene --></button>
-      <button class="filter-icon-btn"><!-- column settings --></button>
+      <!-- Column settings — the shared ColumnSettingsMenu, not a raw button.
+           See ErpTablePage.md § "Column visibility (show/hide columns)" for
+           the full visibleColumns/hideColumn wiring. -->
+      <ColumnSettingsMenu id="my-page-columns" :items="columnItems" :visibility="columnVisibility" />
       <button class="filter-icon-btn"><!-- export --></button>
     </div>
     <div class="filter-search">
