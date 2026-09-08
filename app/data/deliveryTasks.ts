@@ -2,8 +2,10 @@ import { reactive } from "vue";
 import { operatorForWarehouse } from "./warehouseTeam";
 import {
   outgoingOrders, isMarketplaceOrder, addOutgoing, isManualTriggerDelivery,
-  deliveryPostingStatusOf, setDeliveryPostingStatus, type OutgoingOrder,
+  deliveryPostingStatusOf, setDeliveryPostingStatus, setDeliveryDocument, type OutgoingOrder,
 } from "./outgoing";
+import { posterKindFor, bindSeededDocument } from "./deliveryDocuments";
+import { addWmsAdjustment } from "./wmsStockAdjustments";
 import { packingTasks, pickedLinesForPacking, getPackingTask, addPackingTask, startPacking, endPacking, type PackingTask } from "./packingTasks";
 import { addPickingTask, startPicking, endPicking } from "./pickingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
@@ -806,10 +808,39 @@ export function completeShipment(
  *  shipped delivery — "the single-poster rule" (D5 AC#10). The hold moves only WHEN
  *  this runs (ship event vs source trigger), never WHERE, so both paths land here. */
 function postDeliveryDocumentFor(t: DeliveryTask): void {
+  const lines: { sku: string; qty: number }[] = [];
   for (const [sku, qty] of shippedQtyBySku(t)) {
     if (qty <= 0) continue;
     applyStockInOut(t.warehouseId, [{ sku, qty: -qty }]);
     consumeReservation(t.salesOrderId, t.warehouseId, sku, qty);
+    lines.push({ sku, qty: -qty });
+  }
+  if (!lines.length) return;
+
+  // The document IS the posting, so record which one it was and let the Shipping
+  // index link straight to it. On the Stock In/Out path we create the real record
+  // (skipStockMutation: the movement above already happened, this must not deduct
+  // twice). The Sales-Delivery path has no creation pipeline in this prototype, so
+  // it binds a seeded document — see data/deliveryDocuments.ts.
+  const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+  if (!order || order.deliveryDocument) return;
+  const kind = posterKindFor(order);
+  if (kind === "stock-in-out") {
+    const adj = addWmsAdjustment({
+      kind: "in-out",
+      category: "General",
+      warehouseId: t.warehouseId,
+      warehouseName: t.warehouseName,
+      date: new Date().toISOString().slice(0, 10),
+      tags: [],
+      memo: `Stock movement out — outbound ${order.number} shipped (${t.taskNo}).`,
+      lines,
+      skipStockMutation: true,
+    });
+    setDeliveryDocument(order.id, { kind, id: adj.id, number: adj.number });
+  } else {
+    const doc = bindSeededDocument(order, kind);
+    if (doc) setDeliveryDocument(order.id, doc);
   }
 }
 

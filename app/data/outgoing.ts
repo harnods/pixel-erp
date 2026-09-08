@@ -65,6 +65,11 @@ export interface OutgoingOrder {
    *  event, today's behaviour. TRUE = WMS holds the posting at manifest completion
    *  and waits for the source (Omni / ERP SO) to trigger it (A7 AC#6). */
   manualTriggerDelivery?: boolean;
+  /** The delivery document that actually posted this outbound — what the Shipping
+   *  index links to. Stock In/Out is the WMS-package document; a Sales Delivery is
+   *  only ever the poster in ERP-full on a Sales Order source (see
+   *  deliveryDocumentFor). */
+  deliveryDocument?: DeliveryDocumentRef;
   /** D1 status-model point 4 — the delivery document's posting state, kept as its
    *  OWN field. Physical progress (`status`, `shippedQty`) and financial posting
    *  never collapse into one another: a held outbound still advances to Completed on
@@ -765,6 +770,21 @@ export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
   return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
 }
 
+/** The document that posted (or will post) an outbound's stock movement out.
+ *  `kind` decides both the label and where clicking it goes. */
+export interface DeliveryDocumentRef {
+  kind: "stock-in-out" | "sales-delivery";
+  /** record id, for the details route */
+  id: string;
+  /** display number, e.g. "Stock In/Out #20091" */
+  number: string;
+}
+
+/** Where a delivery document's details live. */
+export function deliveryDocumentRoute(doc: DeliveryDocumentRef): string {
+  return doc.kind === "sales-delivery" ? `/sales-deliveries/${doc.id}` : `/stock-adjustments/${doc.id}`;
+}
+
 /** Does WMS hold this outbound's delivery document for the source to trigger?
  *  (A6 param 13 — default FALSE, so an order without the flag posts as it does today.) */
 export function isManualTriggerDelivery(order: OutgoingOrder): boolean {
@@ -790,6 +810,14 @@ export function setDeliveryPostingStatus(orderId: string, status: "posted" | "he
   const order = outgoingOrders.find((o) => o.id === orderId);
   if (!order) return;
   order.deliveryPostingStatus = status;
+  persistOutgoing();
+}
+
+/** Attach the document that posted this outbound. */
+export function setDeliveryDocument(orderId: string, doc: DeliveryDocumentRef): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.deliveryDocument = doc;
   persistOutgoing();
 }
 

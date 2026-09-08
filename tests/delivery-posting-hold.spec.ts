@@ -16,6 +16,11 @@ import {
   setDeliveryPostingStatus, canCancelOutboundOrder,
 } from '~/data/outgoing'
 import { deliveryTasks, triggerDeliveryPosting } from '~/data/deliveryTasks'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { posterKindFor, bindSeededDocument } from '~/data/deliveryDocuments'
+import { useScenario } from '~/composables/useScenario'
+import { wmsStockAdjustments } from '~/data/wmsStockAdjustments'
+import { salesDeliveries } from '~/data/salesDeliveries'
 
 /** The seeded A6 demo: an ERP-SO outbound with the flag on. */
 const DEMO = 'out-demo-001'
@@ -126,5 +131,62 @@ describe('A7 AC#6 — the source trigger is the only path for a held outbound', 
 
     o.manualTriggerDelivery = wasFlag
     o.deliveryPostingStatus = wasPosting
+  })
+})
+
+describe('the poster is package-conditional (WMS-only has no Sales Delivery)', () => {
+  it('WMS package always posts a Stock In/Out, whatever the source', () => {
+    const { setScenario } = useScenario()
+    const erpSourced = outgoingOrders.find(o => o.source === 'Sales Order')
+    expect(erpSourced, 'seed has no ERP-SO outbound').toBeTruthy()
+
+    for (const s of ['WMS Standalone', 'WMS Ops', 'WMS Ops 2'] as const) {
+      setScenario(s)
+      // No costing and no JE in the WMS package, so an accounting document can
+      // never be the poster there — not even for a Sales Order source.
+      expect(posterKindFor(erpSourced!), s).toBe('stock-in-out')
+    }
+    setScenario('ERP')
+  })
+
+  it('ERP full posts a Sales Delivery for a Sales Order source, Stock In/Out otherwise', () => {
+    const { setScenario } = useScenario()
+    setScenario('ERP')
+
+    const erpSourced = outgoingOrders.find(o => o.source === 'Sales Order')!
+    expect(posterKindFor(erpSourced)).toBe('sales-delivery')
+
+    const other = outgoingOrders.find(o => o.source !== 'Sales Order')
+    expect(other, 'seed has no non-SO outbound').toBeTruthy()
+    expect(posterKindFor(other!)).toBe('stock-in-out')
+  })
+
+  it('every document it binds is a real record, reachable by its own route', () => {
+    const { setScenario } = useScenario()
+    const order = outgoingOrders.find(o => o.source === 'Sales Order')!
+
+    setScenario('WMS Standalone')
+    const io = bindSeededDocument(order, posterKindFor(order))!
+    expect(io.kind).toBe('stock-in-out')
+    expect(io.number).toMatch(/^Stock In\/Out #/)
+    expect(wmsStockAdjustments.some(a => a.id === io.id)).toBe(true)
+    expect(deliveryDocumentRoute(io)).toBe(`/stock-adjustments/${io.id}`)
+
+    setScenario('ERP')
+    const sd = bindSeededDocument(order, posterKindFor(order))!
+    expect(sd.kind).toBe('sales-delivery')
+    expect(sd.number).toMatch(/^Sales Delivery #/)
+    expect(salesDeliveries.some(d => d.id === sd.id)).toBe(true)
+    expect(deliveryDocumentRoute(sd)).toBe(`/sales-deliveries/${sd.id}`)
+  })
+
+  it('binds the same document for the same order every time', () => {
+    const { setScenario } = useScenario()
+    setScenario('WMS Standalone')
+    const order = outgoingOrders.find(o => o.source === 'Sales Order')!
+    const a = bindSeededDocument(order, 'stock-in-out')
+    const b = bindSeededDocument(order, 'stock-in-out')
+    expect(a).toEqual(b)
+    setScenario('ERP')
   })
 })

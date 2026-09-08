@@ -10,7 +10,8 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { deliveryTasksFor, DELIVERY_COURIERS, type DeliveryTask } from '~/data/deliveryTasks'
-import { outgoingOrders, deliveryPostingStatusOf } from '~/data/outgoing'
+import { outgoingOrders, deliveryPostingStatusOf, deliveryDocumentRoute, type DeliveryDocumentRef } from '~/data/outgoing'
+import { posterKindFor, bindSeededDocument } from '~/data/deliveryDocuments'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 import { assigneeDisplayName } from '~/data/users'
@@ -114,13 +115,25 @@ function postingStateOf(row: { salesOrderId: string; status: string }): 'posted'
   const order = outgoingOrders.find(o => o.id === row.salesOrderId)
   return order && deliveryPostingStatusOf(order) === 'posted' ? 'posted' : 'held'
 }
-/** What the Delivery document cell shows: the document that exists, or why it doesn't. */
+/** The delivery document behind a shipped row, when one posted.
+ *
+ *  Prefers what the poster actually recorded. Orders that shipped in the seed have
+ *  no record, so they fall back to a deterministic binding — the poster KIND is
+ *  still decided by the package, which is why WMS Standalone never shows a Sales
+ *  Delivery here even for a Sales Order source (no costing, no JE, so an accounting
+ *  document can't be the poster). */
+function deliveryDocOf(row: { salesOrderId: string; status: string; source: string }): DeliveryDocumentRef | undefined {
+  if (postingStateOf(row) !== 'posted') return undefined
+  const order = outgoingOrders.find(o => o.id === row.salesOrderId)
+  if (!order) return undefined
+  const recorded = order.deliveryDocument
+  // A document recorded under the other package is not this package's poster.
+  if (recorded && recorded.kind === posterKindFor(order)) return recorded
+  return bindSeededDocument(order, posterKindFor(order))
+}
+
+/** Fallback text when there is no document to link: why there isn't one. */
 function deliveryDocLabel(row: { salesOrderId: string; status: string; source: string }): string {
-  if (postingStateOf(row) === 'posted') {
-    // ERP Sales Order source posts a Sales Delivery; any other source posts a
-    // Stock Movement Out (D5 source-conditional poster).
-    return row.source === 'Sales Order' ? t('Sales Delivery') : t('Stock Movement Out')
-  }
   return row.status === 'shipped' ? t('Held') : '—'
 }
 const postingLabel = computed(() => {
@@ -517,7 +530,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Delivery document (D5) — the document if it posted, "Held" once shipped
          without one, an em dash before the ship event. ── -->
     <template #cell-deliveryDoc="{ row }">
-      <span :class="{ 'del-doc-held': postingStateOf(row as unknown as DeliveryRow) === 'held' && (row as unknown as DeliveryRow).status === 'shipped' }">
+      <a
+        v-if="deliveryDocOf(row as unknown as DeliveryRow)"
+        class="cell-link cell-text"
+        @click.stop="router.push(deliveryDocumentRoute(deliveryDocOf(row as unknown as DeliveryRow)!))"
+      >{{ deliveryDocOf(row as unknown as DeliveryRow)!.number }}</a>
+      <span v-else :class="{ 'del-doc-held': (row as unknown as DeliveryRow).status === 'shipped' }">
         {{ deliveryDocLabel(row as unknown as DeliveryRow) }}
       </span>
     </template>
