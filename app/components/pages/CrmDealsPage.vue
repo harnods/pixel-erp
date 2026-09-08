@@ -359,10 +359,15 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .crm-titlebar__right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
 /* ── Stage (scroll area) ── */
-.cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
+/* No top padding on the scrollport: it would sit between the clip edge and the
+   sticky .cc-filterbar's containing block, leaving a gap rows show through when
+   the bar is pinned. The 20px lives on .cc-stats (the first child) instead. */
+.cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: 0 var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
 /* ── Stats (Bills / Sales-invoices pattern) ── */
-.cc-stats { margin-bottom: var(--mp-spacing-10); }
+/* 20px of the old 40px gap moved onto .cc-filterbar's padding-top, so the
+   pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
+.cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
@@ -373,7 +378,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
 
 /* ── Filter bar (shared) ── */
-.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+/* The filter bar pins to the top of the scrolling stage. Left unpinned it scrolls
+   under the stage's clip edge and the search pill gets sliced mid-scroll (its top
+   border disappears while the rest is still visible); pinning also keeps search +
+   filters reachable on a long list instead of forcing a scroll back to the top.
+   Opaque stage background + z-index 3 so rows pass underneath, not through. */
+.cc-filterbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); /* the gap below is padding, not margin, so the pinned bar's opaque strip travels with it and rows never show through it */ background: var(--mp-background-stage, #fff); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-all-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); font-weight: var(--mp-font-weights-semi-bold); }

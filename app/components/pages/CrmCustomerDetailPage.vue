@@ -102,11 +102,16 @@ function onSegChange(data: DataInterface[]) {
 // ── Notes / comments ──
 const newComment = ref('')
 const myComments = computed(() => { void crmCompanyComments.length; return customer.value ? companyCommentsFor(customer.value.id) : [] })
+// The Add note button is never disabled (repo rule: form actions are always
+// present and enabled). Clicking it with an empty box explains what to do inline.
+const commentErr = ref('')
 function postComment() {
   const t = newComment.value.trim()
-  if (!t || !customer.value) return
+  if (!t) { commentErr.value = 'Write a note first, then click Add note.'; return }
+  if (!customer.value) return
   addCompanyComment(customer.value.id, t)
   newComment.value = ''
+  commentErr.value = ''
 }
 function removeComment(id: string) { deleteCompanyComment(id) }
 
@@ -270,9 +275,10 @@ function orderBadge(status: string) {
               <section class="cd-section">
                 <h2 class="cd-section-title">Notes</h2>
                 <div class="cmt-add">
-                  <MpTextarea id="cd-comment-input" v-model="newComment" is-full-width :rows="3" placeholder="Add a note about this company…" />
+                  <MpTextarea id="cd-comment-input" v-model="newComment" is-full-width :rows="3" placeholder="Add a note about this company…" @input="commentErr = ''" />
+                  <span v-if="commentErr" class="cmt-err">{{ commentErr }}</span>
                   <div class="cmt-add-actions">
-                    <MpButton variant="primary" is-rounded :is-disabled="!newComment.trim()" @click="postComment">Add note</MpButton>
+                    <MpButton variant="primary" is-rounded @click="postComment">Add note</MpButton>
                   </div>
                 </div>
                 <div v-if="myComments.length" class="cmt-list">
@@ -288,7 +294,6 @@ function orderBadge(status: string) {
                     </div>
                   </div>
                 </div>
-                <p v-else class="cd-muted">No notes yet.</p>
               </section>
             </div>
           </MpTabPanel>
@@ -473,6 +478,7 @@ function orderBadge(status: string) {
 /* Notes */
 .cmt-add { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 640px; }
 .cmt-add-actions { display: flex; justify-content: flex-end; }
+.cmt-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #e2483d); }
 .cmt-list { display: flex; flex-direction: column; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-4); max-width: 640px; }
 .cmt-item { display: flex; gap: var(--mp-spacing-3); }
 .cmt-body { flex: 1; min-width: 0; }
