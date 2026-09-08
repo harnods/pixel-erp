@@ -464,20 +464,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
       <template v-else>
           <!-- ════════ PIPELINE (Deals) ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel">
-            <div class="pipe-toolbar">
-              <MpFormControl id="pipe-select" class="pipe-select-field">
-                <MpFormLabel>{{ t('Pipeline') }}</MpFormLabel>
-                <ErpFilterSelect id="pipe-select-input" :model-value="selectedPipeId" placeholder="Pipeline" :options="pipeOptions" width="280px" @update:model-value="(v: string) => (selectedPipeId = v)" />
-              </MpFormControl>
-              <MpButton variant="secondary" is-rounded left-icon="add" class="pipe-new-btn" @click="createPipeline">{{ t('New pipeline') }}</MpButton>
-            </div>
-
             <template v-if="currentPipe">
-              <MpFormControl id="pipe-name">
-                <MpFormLabel>{{ t('Pipeline name') }}</MpFormLabel>
-                <MpInput id="pipe-name-input" v-model="currentPipe.name" is-full-width />
-              </MpFormControl>
-
               <!-- Flow stages (draggable) -->
               <section class="pipe-section">
                 <div class="pipe-section-head">
