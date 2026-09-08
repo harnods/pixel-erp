@@ -36,11 +36,10 @@ const navGroups: Item[][] = [
   [
     { icon: 'log',      name: 'Activity logs', to: '/crm/activity' },
     { icon: 'settings', name: 'Settings',      to: '/crm/settings', children: [
-      { name: 'Company profile', to: '/crm/settings/company' },
-      { name: 'User & roles',    to: '/crm/settings/users' },
-      { name: 'Teams',           to: '/crm/settings/teams' },
-      { name: 'Custom views',    to: '/crm/settings/views' },
-      { name: 'Integrations',    to: '/crm/settings/integrations' },
+      { name: 'Company profile',  to: '/crm/settings/company' },
+      { name: 'User & roles',     to: '/crm/settings/users' },
+      { name: 'Teams',            to: '/crm/settings/teams' },
+      { name: 'Modules settings', to: '/crm/settings/modules' },
     ] },
   ],
 ]

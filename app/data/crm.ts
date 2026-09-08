@@ -317,7 +317,7 @@ const DEALS_SEED: Deal[] = [
   { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
 ]
 
-export const deals = reactive<Deal[]>(load('crm-deals-v1', DEALS_SEED))
+export const deals = reactive<Deal[]>(load('crm-deals-v2', DEALS_SEED))
 // Migrate snapshots that predate the model expansion: old stage casing, the
 // renamed 'validation-failed' status, and the currency/rate defaults.
 const STAGE_MIGRATE: Record<string, DealStage> = { 'Open lead': 'Open Lead', '1st meeting': '1st Meeting' }
@@ -328,7 +328,7 @@ for (const d of deals) {
   if (!d.currency) d.currency = 'IDR'
   if (typeof d.exchangeRate !== 'number') d.exchangeRate = 1
 }
-export function persistCrmDeals() { saveSnapshot('crm-deals-v1', deals) }
+export function persistCrmDeals() { saveSnapshot('crm-deals-v2', deals) }
 
 /** Related People options — active Mekari users (employees), names only. Max 10
  *  chosen per deal (informational; grants no access). */
@@ -437,6 +437,13 @@ export function archiveDeal(id: string): DealOpResult {
 export function restoreDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
   d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
+}
+/** Permanently remove a deal from the store. (PRD V1 keeps only Archive/Restore;
+ *  Delete is a prototype affordance kept per product request.) */
+export function deleteDeal(id: string): DealOpResult {
+  const i = deals.findIndex((d) => d.id === id)
+  if (i === -1) return { ok: false, error: 'Deal not found.' }
+  deals.splice(i, 1); persistCrmDeals(); return { ok: true }
 }
 
 // ── Bulk actions (per-record result; partial success retained) ──
@@ -580,6 +587,133 @@ export function upsertCrmTeam(
 export function deleteCrmTeam(id: string): void {
   const i = crmTeams.findIndex((t) => t.id === id)
   if (i !== -1) { crmTeams.splice(i, 1); persistCrmTeams() }
+}
+
+// ── Modules (Settings → Modules settings) ─────────────────────────────────────
+// The "Customizable CRM Platform" surface (PRD: ERP - Customizable CRM Platform
+// and Deals V1). A module = a record type the company shapes itself: named fields
+// laid out in sections, saved List/Kanban views, and an optional ERP-transaction
+// conversion. Deals is the provisioned SYSTEM module; companies may add custom
+// modules. The Modules index lists them; Manage opens the module builder.
+export type CrmFieldType =
+  | 'text' | 'number' | 'currency' | 'date'
+  | 'pick-list' | 'radio' | 'customer' | 'product-list' | 'user'
+export const CRM_FIELD_TYPE_LABELS: Record<CrmFieldType, string> = {
+  text: 'Text', number: 'Number', currency: 'Currency', date: 'Date',
+  'pick-list': 'Pick list', radio: 'Radio', customer: 'CRM Customer',
+  'product-list': 'Product list', user: 'User',
+}
+
+export interface CrmModuleField {
+  id: string
+  label: string
+  type: CrmFieldType
+  required: boolean
+  /** Protected system field — repositionable but not removable while in use. */
+  system: boolean
+  /** Options for pick-list / radio. */
+  options?: string[]
+  /** Layout placement — which section + column (1|2); undefined section = Unused. */
+  section?: string
+  column?: 1 | 2
+  /** Primary Record Name (the module's title field). */
+  isPrimary?: boolean
+}
+
+export type CrmModuleViewType = 'list' | 'kanban'
+export type CrmModuleViewVisibility = 'private' | 'team' | 'everyone'
+export interface CrmModuleView {
+  id: string
+  name: string
+  type: CrmModuleViewType
+  /** Kanban only — a Pick List/Radio field id used as "Categorize by". */
+  categorizeBy?: string
+  visibility: CrmModuleViewVisibility
+}
+
+export type CrmModuleStatus = 'published' | 'draft' | 'incomplete'
+export type CrmConversionTarget = 'sales-quote' | 'sales-order' | 'expense' | null
+export const CRM_CONVERSION_LABELS: Record<Exclude<CrmConversionTarget, null>, string> = {
+  'sales-quote': 'Sales Quote', 'sales-order': 'Sales Order', expense: 'Expense',
+}
+
+export interface CrmModule {
+  id: string
+  name: string
+  /** Deals is the provisioned system module (can't be deleted). */
+  system: boolean
+  accessLevel: 'company' | 'team'
+  status: CrmModuleStatus
+  sections: string[]
+  fields: CrmModuleField[]
+  /** Optional single-choice field that drives conditional layout rules. */
+  layoutDriver?: string
+  views: CrmModuleView[]
+  conversionTarget: CrmConversionTarget
+  recordCount: number
+  updatedAt: string
+  updatedBy: string
+}
+
+const DEAL_STAGE_OPTIONS = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost']
+const MODULES_SEED: CrmModule[] = [
+  {
+    id: 'deals', name: 'Deals', system: true, accessLevel: 'company', status: 'published',
+    sections: ['Deal information', 'Products & value'],
+    fields: [
+      { id: 'name',     label: 'Deal name',          type: 'text',         required: true,  system: true, isPrimary: true, section: 'Deal information', column: 1 },
+      { id: 'customer', label: 'Customer',           type: 'customer',     required: true,  system: true,  section: 'Deal information', column: 1 },
+      { id: 'stage',    label: 'Stage',              type: 'pick-list',    required: true,  system: true,  options: DEAL_STAGE_OPTIONS, section: 'Deal information', column: 2 },
+      { id: 'owner',    label: 'Owner',              type: 'user',         required: true,  system: true,  section: 'Deal information', column: 2 },
+      { id: 'priority', label: 'Priority',           type: 'pick-list',    required: false, system: false, options: ['Low', 'Medium', 'High', 'Critical'], section: 'Deal information', column: 2 },
+      { id: 'products', label: 'Products',           type: 'product-list', required: false, system: true,  section: 'Products & value', column: 1 },
+      { id: 'value',    label: 'Value',              type: 'currency',     required: false, system: false, section: 'Products & value', column: 2 },
+      { id: 'closeDate',label: 'Expected close date',type: 'date',         required: false, system: false, section: 'Products & value', column: 2 },
+      { id: 'source',   label: 'Lead source',        type: 'radio',        required: false, system: false, options: ['Referral', 'Website', 'Outbound', 'Event'] }, // in Unused Fields (no section)
+    ],
+    layoutDriver: 'stage',
+    views: [
+      { id: 'all',  name: 'All deals',   type: 'list',   visibility: 'everyone' },
+      { id: 'mine', name: 'My pipeline', type: 'kanban', categorizeBy: 'stage', visibility: 'private' },
+    ],
+    conversionTarget: 'sales-order',
+    recordCount: 12,
+    updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra',
+  },
+  {
+    id: 'onboarding', name: 'Customer Onboarding', system: false, accessLevel: 'team', status: 'draft',
+    sections: ['Onboarding'],
+    fields: [
+      { id: 'name',   label: 'Account',   type: 'text',      required: true,  system: true, isPrimary: true, section: 'Onboarding', column: 1 },
+      { id: 'stage',  label: 'Step',      type: 'pick-list', required: true,  system: false, options: ['Kickoff', 'Setup', 'Training', 'Live'], section: 'Onboarding', column: 1 },
+      { id: 'owner',  label: 'CSM',       type: 'user',      required: true,  system: true, section: 'Onboarding', column: 2 },
+    ],
+    views: [{ id: 'all', name: 'All onboardings', type: 'list', visibility: 'everyone' }],
+    conversionTarget: null,
+    recordCount: 4,
+    updatedAt: '2026-08-30T11:05:00', updatedBy: 'Dewi Lestari',
+  },
+  {
+    id: 'service', name: 'Service Requests', system: false, accessLevel: 'company', status: 'incomplete',
+    sections: ['Request'],
+    fields: [
+      { id: 'name',  label: 'Subject',  type: 'text',      required: true, system: true, isPrimary: true, section: 'Request', column: 1 },
+      { id: 'type',  label: 'Type',     type: 'pick-list', required: true, system: false, options: ['Complaint', 'Question', 'Return'], section: 'Request', column: 1 },
+    ],
+    views: [{ id: 'all', name: 'All requests', type: 'list', visibility: 'everyone' }],
+    conversionTarget: 'expense',
+    recordCount: 0,
+    updatedAt: '2026-08-25T09:40:00', updatedBy: 'Rizal Candra',
+  },
+]
+
+export const crmModules = reactive<CrmModule[]>(load('crm-modules-v1', MODULES_SEED))
+export function persistCrmModules() { saveSnapshot('crm-modules-v1', crmModules) }
+export function getCrmModule(id: string): CrmModule | undefined { return crmModules.find((m) => m.id === id) }
+export function persistCrmModule(m: CrmModule, author: string, now: string): void {
+  m.updatedAt = now
+  m.updatedBy = author
+  persistCrmModules()
 }
 
 // Primary segment (industry) options for the create-customer form.
