@@ -6,7 +6,8 @@
  * PRD first-time default) or the Stage KANBAN.
  *
  * Everything reads the ONE `deals` dataset (app/data/crm.ts) so metrics, list and
- * board always agree. Create/Edit open CrmDealFormDrawer; Import/Export reuse the
+ * board always agree. New deal opens the quick-create drawer (full detail form is a
+ * page at /crm/deals/new); Edit navigates to /crm/deals/:id/edit. Import/Export reuse the
  * shared modals; stage moves go through moveDealStage (Won terminal, Lost reason,
  * reopen) so the kanban and the table enforce the same PRD rules; bulk owner/stage
  * update the selection. Per rule/bulk-actions-no-delete + the PRD "no permanent
@@ -25,7 +26,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
-import CrmDealFormDrawer from '~/components/patterns/CrmDealFormDrawer.vue'
+import CrmDealQuickCreateDrawer from '~/components/patterns/CrmDealQuickCreateDrawer.vue'
 import CrmDealPreviewDrawer from '~/components/CrmDealPreviewDrawer.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
 import CrmDealOwnerModal from '~/components/patterns/CrmDealOwnerModal.vue'
@@ -36,8 +37,8 @@ import { infoToast, successToast } from '~/utils/toasts'
 import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
-  dealConversionTarget, dealExpectedValue, isDealOpen, getDeal,
-  type Deal, type DealStage,
+  dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed,
+  type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
 const router = useRouter()
@@ -262,17 +263,13 @@ function reportBulk(res: { ok: boolean }[], what: string) {
   else infoToast(`${ok} updated, ${failed} skipped (${what})`)
 }
 
-// ── Create / Edit ──
-const formOpen = ref(false)
-const formMode = ref<'create' | 'edit'>('create')
-const editingDeal = ref<Deal | null>(null)
-function openCreate() { formMode.value = 'create'; editingDeal.value = null; formOpen.value = true }
-function openEdit(d: Deal) { formMode.value = 'edit'; editingDeal.value = d; formOpen.value = true }
-function onFormSaved(d: Deal) {
-  formOpen.value = false
-  successToast(formMode.value === 'edit' ? 'Deal saved' : 'Deal created')
-  if (formMode.value === 'create') goDetail(d.id)
-}
+// ── Create (quick drawer) / Edit (full-detail page) ──
+const quickOpen = ref(false)
+function openCreate() { quickOpen.value = true }
+function onQuickSaved(d: Deal) { quickOpen.value = false; successToast('Deal created'); goDetail(d.id) }
+function onQuickOpenFull(seed: DealDraftSeed) { dealDraftSeed.value = seed; quickOpen.value = false; router.push('/crm/deals/new') }
+// The detailed form is a PAGE (PRD) — Edit navigates there.
+function openEdit(d: Deal) { router.push(`/crm/deals/${d.id}/edit`) }
 
 // ── Archive / Restore / Delete + Convert (row menu) ──
 function onArchive(d: Deal) { archiveDeal(d.id); successToast('Deal archived') }
@@ -573,8 +570,8 @@ const toggleAirene = inject<() => void>('toggleAirene')
       </ErpTablePage>
     </div>
 
-    <!-- ── Create / Edit drawer ── -->
-    <CrmDealFormDrawer :open="formOpen" :mode="formMode" :deal="editingDeal" @cancel="formOpen = false" @saved="onFormSaved" />
+    <!-- ── Quick-create drawer (full detail form is a page → /crm/deals/new) ── -->
+    <CrmDealQuickCreateDrawer :open="quickOpen" @cancel="quickOpen = false" @saved="onQuickSaved" @open-full="onQuickOpenFull" />
 
     <!-- ── Quick preview drawer ── -->
     <CrmDealPreviewDrawer

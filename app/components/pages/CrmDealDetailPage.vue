@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
- * CRM (Qontak) — Deal record detail (/crm/deals/:id). Renders the effective PRD
- * layout in read mode (Deal overview · Contact information · Products and value ·
- * Notes · ERP conversion · System information) plus Activity and Related tabs.
+ * CRM (Qontak) — Deal record detail (/crm/deals/:id). Follows the Deals V1 PRD and
+ * the PM prototype record view: two tabs — "Deal details" (Deal overview incl. the
+ * Created date/author · Contact information · Products and value · Notes) and
+ * "Activity log". A "Last updated by … on …" link opens the activity-log modal,
+ * mirroring SalesInvoiceDetailsPage.
  *
- * Actions follow the PRD: Edit (drawer), Change stage (Won terminal, Lost reason,
- * reopen — all via CrmDealStageModal / ConfirmModal), manual ERP conversion at any
- * non-archived stage to the configured target (Sales Quote/Order) with Converted/
- * Failed status, and Archive / Restore — NEVER permanent delete (rule/
- * bulk-actions-no-delete + PRD "no permanent deletion in V1").
+ * Page-title actions match the prototype: primary "Create sales order" (ERP
+ * conversion to the configured target), and a "•••" options menu — Move to… (change
+ * stage via CrmDealStageModal), Edit (drawer), Archive, Delete. Archived deals show
+ * Restore instead. Won is terminal / Lost carries a reason (CrmDealStageModal +
+ * ConfirmModal).
  */
 import { ref, computed } from 'vue'
 import {
@@ -20,15 +22,15 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import CrmDealFormDrawer from '~/components/patterns/CrmDealFormDrawer.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
 import { formatMoney } from '~/utils/currency'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal, convertDeal,
-  dealConversionTarget, dealCalculatedValue, dealExpectedValue, lineDiscountedPrice, lineSubtotal,
-  crmCustomers, crmOrders, crmTasks,
+  dealConversionTarget, dealExpectedValue, lineDiscountedPrice, lineSubtotal,
+  crmCustomers,
   type Deal, type DealStage,
 } from '~/data/crm'
 
@@ -40,15 +42,31 @@ const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
 
 // ── Linked records ──
 const customer = computed(() => (deal.value ? crmCustomers.find((c) => c.id === deal.value!.customerId) : undefined))
-const linkedOrder = computed(() => (deal.value?.salesOrderId ? crmOrders.find((o) => o.id === deal.value!.salesOrderId) : undefined))
-const companyOrders = computed(() => (deal.value ? crmOrders.filter((o) => o.customer === deal.value!.company) : []))
-const followUps = computed(() => (deal.value ? crmTasks.filter((t) => t.relatedTo === deal.value!.company && t.status === 'open') : []))
+
+// ── Activity log (last-updated link + modal, mirroring SalesInvoiceDetailsPage) ──
+const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const d = deal.value
+  if (!d) return []
+  const entries: { date: string; user: string; activity: string; details: { label: string; value: string }[] }[] = []
+  if (isConverted.value && d.salesOrderId) {
+    entries.push({ date: d.lastActivity, user: d.lastModifiedBy || d.owner, activity: `Converted to ${convTarget.value} ${d.salesOrderId}`, details: [
+      { label: 'Deal', value: d.name }, { label: 'Customer', value: d.company },
+    ] })
+  }
+  entries.push({ date: d.lastActivity, user: d.lastModifiedBy || d.createdBy || 'System', activity: `Stage: ${d.stage}`, details: [
+    { label: 'Deal', value: d.name }, { label: 'Customer', value: d.company },
+  ] })
+  entries.push({ date: d.createdAt, user: d.createdBy || 'System', activity: 'Created', details: [
+    { label: 'Deal', value: d.name }, { label: 'Owner', value: d.owner },
+  ] })
+  return entries
+})
 
 // ── Conversion helpers ──
 const isConverted = computed(() => deal.value?.conversion === 'converted')
 const isFailed = computed(() => deal.value?.conversion === 'failed')
 const isArchived = computed(() => !!deal.value?.archived)
-const canConvert = computed(() => !!deal.value && !isArchived.value && deal.value.conversion === 'none' && !!deal.value.products?.length)
 const convTarget = computed(() => deal.value?.convertedTarget ?? dealConversionTarget.value)
 
 const activeTab = ref<number>(0)
@@ -59,8 +77,6 @@ const isLost = computed(() => deal.value?.stage === 'Lost')
 const currentStageIndex = computed(() => (deal.value ? FORWARD_STAGES.indexOf(deal.value.stage) : -1))
 
 // ── Edit drawer ──
-const editOpen = ref(false)
-function onEditSaved() { editOpen.value = false; successToast('Deal saved') }
 
 // ── Change stage ──
 const stageModalOpen = ref(false)
@@ -88,6 +104,13 @@ function confirmReopen() { if (pendingStage.value) commit(pendingStage.value); r
 const isConvertOpen = ref(false)
 const convertError = ref('')
 function openConvert() { convertError.value = ''; isConvertOpen.value = true }
+// Primary CTA: an already-converted deal opens its linked transaction; otherwise
+// the convert modal opens (and surfaces an inline error if validation fails — the
+// button is never disabled, per rule/no-disabled-buttons).
+function onCreateSalesOrder() {
+  if (isConverted.value && deal.value?.salesOrderId) { goOrder(deal.value.salesOrderId); return }
+  openConvert()
+}
 function closeConvert() { isConvertOpen.value = false }
 function confirmConvert() {
   const d = deal.value; if (!d) return
@@ -118,23 +141,6 @@ function dealStageBadge(stage: DealStage) {
   if (stage === 'Negotiation' || stage === 'Proposal') return { status: 'prospect', type: 'information' as const, label: stage }
   return { status: 'prospect', type: 'announcement' as const, label: stage }
 }
-function conversionBadge(c: string) {
-  if (c === 'converted') return { status: 'active', label: 'Converted' }
-  if (c === 'failed') return { status: 'churned', type: 'critical' as const, label: 'Failed' }
-  if (c === 'processing') return { status: 'prospect', type: 'information' as const, label: 'Processing' }
-  return { status: 'prospect', type: 'announcement' as const, label: 'Not converted' }
-}
-function orderBadge(status: string) {
-  if (status === 'paid' || status === 'fulfilled') return { status: 'active', label: status }
-  if (status === 'cancelled') return { status: 'churned', type: 'announcement' as const, label: status }
-  return { status: 'prospect', type: 'information' as const, label: status }
-}
-function taskBadge(stage: string) {
-  if (stage === 'Completed') return { status: 'active', label: stage }
-  if (stage === 'In progress') return { status: 'prospect', type: 'information' as const, label: stage }
-  return { status: 'prospect', type: 'announcement' as const, label: stage }
-}
-
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
 function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 </script>
@@ -152,24 +158,23 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         </div>
       </div>
       <div class="dd-bar-actions">
-        <MpButtonGroup>
-          <MpButton v-if="canConvert" variant="primary" is-rounded @click="openConvert">Create {{ dealConversionTarget }}</MpButton>
-          <MpButton v-else-if="isConverted" variant="secondary" is-rounded @click="goOrder(deal.salesOrderId!)">View {{ convTarget }} {{ deal.salesOrderId }}</MpButton>
-          <MpButton v-if="!deal.archived" variant="secondary" is-rounded @click="editOpen = true">Edit</MpButton>
-          <MpButton v-if="deal.archived" variant="secondary" is-rounded @click="onRestore">Restore</MpButton>
-          <MpPopover v-if="!deal.archived" id="dd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <template v-if="!deal.archived">
+          <MpButton variant="primary" is-rounded @click="onCreateSalesOrder">Create sales order</MpButton>
+          <MpPopover id="dd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <MpButton variant="primary" is-rounded right-icon="chevrons-down">Actions</MpButton>
+              <MpButton class="dd-kebab" is-rounded aria-label="More actions"><MpIcon name="menu-kebab" size="md" /></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="stageModalOpen = true">Change stage</MpPopoverListItem>
+                <MpPopoverListItem @click="stageModalOpen = true">Move to…</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">Edit</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">Archive</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-        </MpButtonGroup>
+        </template>
+        <MpButton v-else variant="secondary" is-rounded @click="onRestore">Restore</MpButton>
       </div>
     </header>
 
@@ -195,21 +200,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <span class="cd-metric-label">Currency</span>
           <span class="cd-metric-value cd-metric-value--sm">{{ deal.currency }}<template v-if="deal.currency !== 'IDR'"> · {{ deal.exchangeRate }}</template></span>
           <span class="cd-metric-sub">{{ deal.currency === 'IDR' ? 'Base currency' : 'Exchange rate' }}</span>
-        </div>
-        <div class="cd-metric cd-metric--wide">
-          <span class="cd-metric-label">ERP transaction</span>
-          <template v-if="isConverted">
-            <a class="cd-metric-value cd-metric-value--sm cell-link" @click="goOrder(deal.salesOrderId!)">{{ deal.salesOrderId }}</a>
-            <span class="cd-metric-sub">{{ convTarget }} · {{ linkedOrder ? linkedOrder.status : 'draft' }}</span>
-          </template>
-          <template v-else-if="isFailed">
-            <span class="cd-metric-value cd-metric-value--sm cd-owed">Conversion failed</span>
-            <span class="cd-metric-sub">See banner below</span>
-          </template>
-          <template v-else>
-            <span class="cd-metric-value cd-metric-value--sm cd-muted">Not converted</span>
-            <span class="cd-metric-sub">No {{ dealConversionTarget }} yet</span>
-          </template>
         </div>
       </section>
 
@@ -246,15 +236,17 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         </div>
       </section>
 
+      <!-- Last updated — opens the activity log (mirrors Sales Invoice detail) -->
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ deal.lastModifiedBy || deal.createdBy || 'System' }} on {{ formatDateTime(deal.lastActivity) }}</a>
+
       <MpTabs id="deal-detail-tabs" v-model="activeTab" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab>Overview</MpTab>
-          <MpTab>Activity</MpTab>
-          <MpTab>Related</MpTab>
+          <MpTab>Deal details</MpTab>
+          <MpTab>Activity log</MpTab>
         </MpTabList>
 
         <MpTabPanels>
-          <!-- ── Overview ── -->
+          <!-- ── Deal details ── -->
           <MpTabPanel>
             <div class="cd-panel">
               <!-- Deal overview -->
@@ -273,6 +265,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <ContentList label="Reference number" :value="deal.referenceNumber || '—'" />
                   <ContentList label="Due date" :value="deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—'" />
                   <ContentList v-if="isLost" label="Lost reason" :value="deal.lostReason || '—'" />
+                  <ContentList label="Created">
+                    <div class="dd-created">
+                      <span>{{ formatDateTime(deal.createdAt) }}</span>
+                      <span class="dd-created-by">{{ deal.createdBy || 'System' }}</span>
+                    </div>
+                  </ContentList>
                 </div>
                 <div v-if="deal.description" class="cd-desc">
                   <span class="cd-desc-label">Description</span>
@@ -310,15 +308,11 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
                 <p v-else class="cd-muted">No products on this deal.</p>
 
-                <div class="cd-valuegrid">
+                <div v-if="deal.tax || deal.orderDiscount || deal.shippingFee || deal.otherExpense" class="cd-valuegrid">
                   <ContentList v-if="deal.tax" label="Tax" :value="deal.taxType === 'percentage' ? `${deal.tax}%` : money(deal.tax)" />
                   <ContentList v-if="deal.orderDiscount" label="Order discount" :value="deal.orderDiscountType === 'percentage' ? `${deal.orderDiscount}%` : money(deal.orderDiscount)" />
                   <ContentList v-if="deal.shippingFee" label="Shipping fee" :value="money(deal.shippingFee)" />
                   <ContentList v-if="deal.otherExpense" label="Other expense" :value="money(deal.otherExpense)" />
-                  <ContentList label="Calculated value" :value="money(dealCalculatedValue(deal))" />
-                  <ContentList label="Expected deal value" :value="`${money(dealExpectedValue(deal))}${deal.valueOverridden ? ' (override)' : ''}`" />
-                  <ContentList label="Currency" :value="deal.currency" />
-                  <ContentList v-if="deal.currency !== 'IDR'" label="Exchange rate" :value="String(deal.exchangeRate)" />
                 </div>
               </section>
 
@@ -327,37 +321,14 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 <h2 class="cd-section-title">Notes</h2>
                 <p class="cd-desc-text">{{ deal.notes }}</p>
               </section>
-
-              <!-- ERP conversion -->
-              <section class="cd-section">
-                <h2 class="cd-section-title">ERP conversion</h2>
-                <div class="cd-grid">
-                  <ContentList label="Conversion status"><ErpStatusBadge v-bind="conversionBadge(deal.conversion)" /></ContentList>
-                  <ContentList label="Linked ERP transaction">
-                    <a v-if="isConverted" class="cell-link" @click="goOrder(deal.salesOrderId!)">{{ convTarget }} · {{ deal.salesOrderId }}</a>
-                    <span v-else class="cd-muted">—</span>
-                  </ContentList>
-                </div>
-              </section>
-
-              <!-- System information -->
-              <section class="cd-section">
-                <h2 class="cd-section-title">System information</h2>
-                <div class="cd-grid">
-                  <ContentList label="Created" :value="formatDate(deal.createdAt)" />
-                  <ContentList label="Created by" :value="deal.createdBy || '—'" />
-                  <ContentList label="Last modified" :value="formatDate(deal.lastActivity)" />
-                  <ContentList label="Last modified by" :value="deal.lastModifiedBy || deal.createdBy || '—'" />
-                </div>
-              </section>
             </div>
           </MpTabPanel>
 
-          <!-- ── Activity ── -->
+          <!-- ── Activity log ── -->
           <MpTabPanel>
             <div class="cd-panel">
               <section class="cd-section">
-                <h2 class="cd-section-title">Activity</h2>
+                <h2 class="cd-section-title">Activity log</h2>
                 <ol class="dd-timeline">
                   <li v-if="isConverted" class="dd-tl-item">
                     <span class="dd-tl-dot" />
@@ -384,56 +355,21 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </section>
             </div>
           </MpTabPanel>
-
-          <!-- ── Related ── -->
-          <MpTabPanel>
-            <div class="cd-panel">
-              <section class="cd-section cd-section--wide">
-                <h2 class="cd-section-title">Open follow-ups</h2>
-                <div v-if="followUps.length" class="dd-table">
-                  <div class="dd-thead dd-trow--tasks">
-                    <span>Task</span><span>Type</span><span>Due date</span><span>Owner</span><span>Stage</span>
-                  </div>
-                  <div v-for="t in followUps" :key="t.id" class="dd-trow dd-trow--tasks">
-                    <span class="cell-text">{{ t.title }}</span>
-                    <span>{{ t.type }}</span>
-                    <span>{{ formatDate(t.dueDate) }}</span>
-                    <span>{{ t.owner }}</span>
-                    <span><ErpStatusBadge v-bind="taskBadge(t.stage)" /></span>
-                  </div>
-                </div>
-                <p v-else class="cd-muted">No open follow-ups for this company.</p>
-              </section>
-
-              <section class="cd-section cd-section--wide">
-                <h2 class="cd-section-title">Sales orders</h2>
-                <div v-if="companyOrders.length" class="dd-table">
-                  <div class="dd-thead dd-trow--orders">
-                    <span>Order number</span><span>Product</span><span>Date</span><span class="dd-num">Amount</span><span>Status</span>
-                  </div>
-                  <div
-                    v-for="o in companyOrders"
-                    :key="o.id"
-                    class="dd-trow dd-trow--orders"
-                    :class="{ 'dd-trow--linked': o.id === deal.salesOrderId }"
-                  >
-                    <span><a class="cell-link cell-text" @click="goOrder(o.id)">{{ o.id }}</a></span>
-                    <span class="cd-muted">{{ o.product }}</span>
-                    <span>{{ formatDate(o.date) }}</span>
-                    <span class="dd-num">{{ formatMoney(o.amount, 'IDR') }}</span>
-                    <span><ErpStatusBadge v-bind="orderBadge(o.status)" /></span>
-                  </div>
-                </div>
-                <p v-else class="cd-muted">No sales orders for this company yet.</p>
-              </section>
-            </div>
-          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
     </div>
 
+    <!-- ── Activity log ── -->
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`${deal.name} · ${deal.id}`"
+      :updated-by="deal.lastModifiedBy || deal.createdBy || 'System'"
+      :updated-at="deal.lastActivity"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
+
     <!-- ── Edit drawer ── -->
-    <CrmDealFormDrawer :open="editOpen" mode="edit" :deal="deal" @cancel="editOpen = false" @saved="onEditSaved" />
 
     <!-- ── Change stage + confirms ── -->
     <CrmDealStageModal :open="stageModalOpen" :count="1" :allowed-stages="stageAllowed" @close="stageModalOpen = false" @confirm="onStageConfirm" />
@@ -525,10 +461,18 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .dd-id { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .dd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* "•••" options trigger — outlined button that pairs with the primary CTA. */
+.dd-kebab {
+  display: flex !important; align-items: center; justify-content: center;
+  padding: var(--mp-spacing-2\.5, 10px) !important; min-width: 0 !important;
+  border: 1px solid var(--mp-border-bold, #8c9596) !important;
+  background: transparent !important; color: var(--mp-text-default) !important;
+}
+.dd-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
-.cd-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--mp-spacing-6); align-items: stretch; }
+.cd-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--mp-spacing-6); align-items: stretch; }
 .cd-metric { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); padding-right: var(--mp-spacing-6); border-right: 1px solid var(--mp-border-default); min-width: 0; }
 .cd-metric:last-child { border-right: none; }
 .cd-metric-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); white-space: nowrap; }
@@ -565,6 +509,14 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .cd-desc-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cd-desc-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }
 
+/* Created content-list value: timestamp with the creator name beneath it. */
+.dd-created { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.dd-created-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Last-updated link — opens the activity log (mirrors Sales Invoice detail). */
+.detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* Activity timeline */
 .dd-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .dd-tl-item { display: flex; gap: var(--mp-spacing-3); padding-bottom: var(--mp-spacing-4); position: relative; }
@@ -577,13 +529,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 /* Related + line tables */
 .dd-table { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
 .dd-thead, .dd-trow { display: grid; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
-.dd-trow--tasks { grid-template-columns: 2fr 1fr 1fr 1.2fr 1fr; }
-.dd-trow--orders { grid-template-columns: 1fr 2fr 1fr 1fr 1fr; }
 .dd-trow--lines { grid-template-columns: 2fr 0.6fr 1fr 1fr 1fr; }
 .dd-thead { background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .dd-trow { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
 .dd-trow:last-child { border-bottom: none; }
-.dd-trow--linked { background: var(--mp-background-neutral-subtle); }
 .dd-num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .dd-modal-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }

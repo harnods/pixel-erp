@@ -38,8 +38,7 @@ import {
   CRM_OWNERS,
   crmTeams, CRM_TEAM_MODULES, type CrmTeam, type CrmTeamModule,
   crmTeamMemberOptions, teamMemberNames, upsertCrmTeam, deleteCrmTeam,
-  CRM_PERM_MODULES, type CrmPermMatrix, type CrmModulePerms,
-  fullPermMatrix, defaultPermMatrix, emptyPermMatrix, permSummary,
+  type CrmPermSet, fullPermSet, defaultPermSet, emptyPermSet, permSummary,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
 import { formatDate } from '~/utils/date'
@@ -70,21 +69,21 @@ function emailFor(name: string): string {
 type CrmUser = {
   id: string; name: string; email: string
   teams: string[]; accessDays: string; accessHours: string; status: string; joinDate: string
-  perms: CrmPermMatrix; accessLabel: string
+  perms: CrmPermSet; accessLabel: string
 }
 
-// Per-user permission matrices (persisted). The workspace owner (first user) gets
-// full access by default; everyone else the read+reports baseline.
-const PERMS_KEY = 'crm-user-perm-matrix-v1'
-const userPermMatrix = reactive<Record<string, CrmPermMatrix>>(
+// Per-user permission sets (persisted). The workspace owner (first user) gets full
+// access by default; everyone else the read-only baseline.
+const PERMS_KEY = 'crm-user-perm-set-v1'
+const userPermSet = reactive<Record<string, CrmPermSet>>(
   import.meta.client ? (() => { try { return JSON.parse(localStorage.getItem(PERMS_KEY) || '{}') } catch { return {} } })() : {},
 )
-function permMatrixOf(id: string, i: number): CrmPermMatrix {
-  return userPermMatrix[id] ?? (i === 0 ? fullPermMatrix() : defaultPermMatrix())
+function permSetOf(id: string, i: number): CrmPermSet {
+  return userPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
 }
-function saveUserPerms(id: string, matrix: CrmPermMatrix) {
-  userPermMatrix[id] = matrix
-  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPermMatrix)) } catch { /* ignore */ } }
+function saveUserPerms(id: string, set: CrmPermSet) {
+  userPermSet[id] = set
+  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPermSet)) } catch { /* ignore */ } }
 }
 
 // A user can belong to MANY teams (multi-value cell).
@@ -101,7 +100,7 @@ const crmUsers = computed<CrmUser[]>(() =>
   CRM_OWNERS.map((name, i) => {
     const access = i === 0 ? ACCESS_WINDOWS[0]! : ACCESS_WINDOWS[1 + (i % 4)]!
     const id = `CU${String(i + 1).padStart(2, '0')}`
-    const perms = permMatrixOf(id, i)
+    const perms = permSetOf(id, i)
     return {
       id,
       name,
@@ -161,16 +160,16 @@ function deleteUser(u: CrmUser) { soon(`${t('Delete')} — ${u.name}`) }
 // ── Edit user — the per-module permission matrix ──
 const editUserOpen = ref(false)
 const editingUser = ref<CrmUser | null>(null)
-const editMatrix = reactive<CrmPermMatrix>(emptyPermMatrix())
+const editPerms = reactive<CrmPermSet>(emptyPermSet())
 function openEditUser(u: CrmUser) {
   editingUser.value = u
-  for (const mod of CRM_PERM_MODULES) editMatrix[mod] = { ...(u.perms[mod] as CrmModulePerms) }
+  Object.assign(editPerms, emptyPermSet(), u.perms)
   editUserOpen.value = true
 }
 function saveEditUser() {
   const u = editingUser.value
   if (!u) return
-  saveUserPerms(u.id, JSON.parse(JSON.stringify(editMatrix)))
+  saveUserPerms(u.id, { ...editPerms })
   editUserOpen.value = false
   successToast(t('User updated'))
 }
@@ -561,7 +560,7 @@ const integrations: Integration[] = [
               <span class="eu-perm-title">{{ t('Permissions') }}</span>
               <span class="eu-perm-desc">{{ t('Tick what this user can do in each module.') }}</span>
             </div>
-            <CrmPermissionMatrix :matrix="editMatrix" />
+            <CrmPermissionMatrix :perms="editPerms" />
           </div>
         </MpModalBody>
         <MpModalFooter>

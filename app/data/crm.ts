@@ -868,51 +868,82 @@ const ACTIVITY_SEED: CrmActivityEntry[] = [
 
 export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1', ACTIVITY_SEED))
 
-// ── User permissions — NO roles: a per-module permission matrix ────────────────
-// A user's access is a matrix of module × action checkboxes, set at invite time
-// and editable per user. Actions per module: Read / Edit / Add / Delete / Export /
-// Reports.
-export const CRM_PERM_MODULES = ['Deals', 'Contacts', 'Companies'] as const
-export type CrmPermModule = typeof CRM_PERM_MODULES[number]
-export const CRM_PERM_ACTIONS = [
-  { key: 'read',    label: 'Read'    },
-  { key: 'edit',    label: 'Edit'    },
-  { key: 'add',     label: 'Add'     },
-  { key: 'delete',  label: 'Delete'  },
-  { key: 'export',  label: 'Export'  },
-  { key: 'reports', label: 'Reports' },
-] as const
-export type CrmPermAction = typeof CRM_PERM_ACTIONS[number]['key']
-export type CrmModulePerms = Record<CrmPermAction, boolean>
-export type CrmPermMatrix = Record<string, CrmModulePerms>
+// ── User permissions — NO roles: a grouped checklist ──────────────────────────
+// A user's access is a set of individually-tickable permissions, grouped by CRM
+// section. Each section has its OWN specific permission list (not a uniform grid).
+// The value is a flat map of permission-key → boolean; set at invite time and
+// editable per user.
+export interface CrmPermItem { key: string; label: string }
+export interface CrmPermGroup { group: string; items: CrmPermItem[] }
+export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
+  { group: 'Deals', items: [
+    { key: 'deals.readAll',   label: 'Read only all deals' },
+    { key: 'deals.readMine',  label: 'Read only deals assigned to you' },
+    { key: 'deals.create',    label: 'Can create deal' },
+    { key: 'deals.edit',      label: 'Can edit deal' },
+    { key: 'deals.comment',   label: 'Can comment' },
+    { key: 'deals.archive',   label: 'Can archive/delete' },
+    { key: 'deals.export',    label: 'Can export' },
+  ] },
+  { group: 'Customers', items: [
+    { key: 'customers.readAll',  label: 'Read only all customers' },
+    { key: 'customers.readMine', label: 'Read only my customer' },
+    { key: 'customers.create',   label: 'Can create' },
+    { key: 'customers.edit',     label: 'Can edit' },
+    { key: 'customers.comment',  label: 'Can comment' },
+    { key: 'customers.archive',  label: 'Can archive/delete' },
+    { key: 'customers.export',   label: 'Can export' },
+  ] },
+  { group: 'Reports', items: [
+    { key: 'reports.view', label: 'Can view report' },
+  ] },
+  { group: 'Activity log', items: [
+    { key: 'activity.view', label: 'Can view activity log' },
+  ] },
+  { group: 'Settings / User & Roles', items: [
+    { key: 'settingsUsers.view',   label: 'Can view users' },
+    { key: 'settingsUsers.invite', label: 'Can invite user' },
+    { key: 'settingsUsers.revoke', label: 'Can revoke user' },
+  ] },
+  { group: 'Settings / Teams', items: [
+    { key: 'settingsTeams.view',   label: 'Can view team' },
+    { key: 'settingsTeams.create', label: 'Can create' },
+    { key: 'settingsTeams.edit',   label: 'Can edit' },
+    { key: 'settingsTeams.delete', label: 'Can delete' },
+    { key: 'settingsTeams.assign', label: 'Can assign team member' },
+  ] },
+  { group: 'Settings / Deal', items: [
+    { key: 'settingsDeal.edit', label: 'Can edit' },
+  ] },
+  { group: 'Settings / Custom modules', items: [
+    { key: 'settingsModules.create',  label: 'Can create' },
+    { key: 'settingsModules.edit',    label: 'Can edit' },
+    { key: 'settingsModules.archive', label: 'Can archive/delete' },
+  ] },
+]
+export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))
+export type CrmPermSet = Record<string, boolean>
 
-function blankModulePerms(all = false): CrmModulePerms {
-  return { read: all, edit: all, add: all, delete: all, export: all, reports: all }
+export function emptyPermSet(): CrmPermSet {
+  return Object.fromEntries(CRM_PERM_KEYS.map((k) => [k, false]))
 }
-export function emptyPermMatrix(): CrmPermMatrix {
-  const m: CrmPermMatrix = {}
-  for (const mod of CRM_PERM_MODULES) m[mod] = blankModulePerms(false)
-  return m
+export function fullPermSet(): CrmPermSet {
+  return Object.fromEntries(CRM_PERM_KEYS.map((k) => [k, true]))
 }
-export function fullPermMatrix(): CrmPermMatrix {
-  const m: CrmPermMatrix = {}
-  for (const mod of CRM_PERM_MODULES) m[mod] = blankModulePerms(true)
-  return m
+/** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
+export function defaultPermSet(): CrmPermSet {
+  const s = emptyPermSet()
+  for (const k of ['deals.readAll', 'customers.readAll', 'reports.view', 'activity.view', 'settingsUsers.view', 'settingsTeams.view']) s[k] = true
+  return s
 }
-/** Baseline for a new user: can Read + view Reports on every module. */
-export function defaultPermMatrix(): CrmPermMatrix {
-  const m = emptyPermMatrix()
-  for (const mod of CRM_PERM_MODULES) { m[mod].read = true; m[mod].reports = true }
-  return m
-}
-/** One-line summary of a matrix for the User & roles index. */
-export function permSummary(m: CrmPermMatrix): string {
-  const cells = CRM_PERM_MODULES.flatMap((mod) => CRM_PERM_ACTIONS.map((a) => m[mod]?.[a.key] ?? false))
-  const on = cells.filter(Boolean).length
+/** One-line summary of a permission set for the User & roles index. */
+export function permSummary(s: CrmPermSet): string {
+  const on = CRM_PERM_KEYS.filter((k) => s[k]).length
   if (on === 0) return 'No access'
-  if (on === cells.length) return 'Full access'
-  const readOnly = CRM_PERM_MODULES.every((mod) => m[mod] && !m[mod].edit && !m[mod].add && !m[mod].delete)
-  return readOnly ? 'View only' : 'Custom access'
+  if (on === CRM_PERM_KEYS.length) return 'Full access'
+  const writeKeys = CRM_PERM_KEYS.filter((k) => /\.(create|edit|archive|delete|invite|revoke|assign)$/.test(k))
+  const anyWrite = writeKeys.some((k) => s[k])
+  return anyWrite ? 'Custom access' : 'View only'
 }
 
 // Primary segment (industry) options for the create-customer form.

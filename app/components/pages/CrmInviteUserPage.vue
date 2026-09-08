@@ -15,7 +15,7 @@ import {
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CrmPermissionMatrix from '~/components/patterns/CrmPermissionMatrix.vue'
-import { defaultPermMatrix } from '~/data/crm'
+import { defaultPermSet } from '~/data/crm'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -25,7 +25,7 @@ const router = useRouter()
 // CRM has NO roles — access is a per-module permission matrix set here.
 const name = ref('')
 const email = ref('')
-const perms = reactive(defaultPermMatrix())
+const perms = reactive(defaultPermSet())
 const setAccessTime = ref(false)
 const accessDays = ref('Weekdays')
 const accessHours = ref('08:00 – 17:00')
@@ -98,7 +98,7 @@ function send() {
         <div class="iu-perms-block">
           <h2 class="iu-roles-title">{{ t('Permissions') }}</h2>
           <p class="iu-roles-lead">{{ t('Tick what this user can do in each module.') }}</p>
-          <CrmPermissionMatrix :matrix="perms" />
+          <CrmPermissionMatrix :perms="perms" />
         </div>
 
         <footer class="iu-footer">
