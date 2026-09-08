@@ -18,10 +18,10 @@
  * • views         → illustrative saved views for Deals.
  * • integrations  → connection cards (WhatsApp, Email, Jurnal, Klikpajak, Marketplace).
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import {
   MpButton, MpIcon,
-  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import SettingsCompanyProfilePage from '~/components/pages/SettingsCompanyProfilePage.vue'
@@ -33,12 +33,11 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmTeamFormDrawer, { type CrmTeamDraft } from '~/components/patterns/CrmTeamFormDrawer.vue'
-import CrmPermissionMatrix from '~/components/patterns/CrmPermissionMatrix.vue'
 import {
   CRM_OWNERS,
-  crmTeams, CRM_TEAM_MODULES, type CrmTeam, type CrmTeamModule,
+  crmTeams, CRM_TEAM_MODULES, type CrmTeam,
   crmTeamMemberOptions, teamMemberNames, upsertCrmTeam, deleteCrmTeam,
-  type CrmPermSet, fullPermSet, defaultPermSet, emptyPermSet, permSummary,
+  type CrmPermSet, fullPermSet, defaultPermSet, permSummary,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
 import { formatDate } from '~/utils/date'
@@ -53,7 +52,7 @@ const section = computed(() => props.orderId || 'company')
 
 const TITLES: Record<string, string> = {
   company: 'Company profile',
-  users: 'User & roles',
+  users: 'Users',
   teams: 'Teams',
   views: 'Custom views',
   integrations: 'Integrations',
@@ -80,10 +79,6 @@ const userPermSet = reactive<Record<string, CrmPermSet>>(
 )
 function permSetOf(id: string, i: number): CrmPermSet {
   return userPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
-}
-function saveUserPerms(id: string, set: CrmPermSet) {
-  userPermSet[id] = set
-  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPermSet)) } catch { /* ignore */ } }
 }
 
 // A user can belong to MANY teams (multi-value cell).
@@ -120,7 +115,6 @@ const crmUsers = computed<CrmUser[]>(() =>
 const columns: TableColumn[] = [
   { key: 'name', label: 'Name', kind: 'name', sortable: true, sortType: 'text' },
   { key: 'teams', label: 'Team', kind: 'tags' },
-  { key: 'accessLabel', label: 'Permissions', kind: 'status', sortable: true, sortType: 'text' },
   { key: 'accessDays', label: 'Access time', sortType: 'text' },
   { key: 'status', label: 'Status', kind: 'status', sortType: 'text' },
   { key: 'joinDate', label: 'Join date', kind: 'date', sortType: 'date' },
@@ -145,34 +139,13 @@ const STATUS_OPTS = [
 const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.value)
 function clearUserFilters() { search.value = ''; statusFilter.value = '' }
 const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive' }
-const ACCESS_BADGE: Record<string, string> = { 'Full access': 'active', 'View only': 'invited', 'Custom access': 'pending', 'No access': 'inactive' }
 
 // Column settings (Name is locked visible)
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
-
-// Row actions
-function viewUser(u: CrmUser) { openEditUser(u) }
-function deleteUser(u: CrmUser) { soon(`${t('Delete')} — ${u.name}`) }
-
-// ── Edit user — the per-module permission matrix ──
-const editUserOpen = ref(false)
-const editingUser = ref<CrmUser | null>(null)
-const editPerms = reactive<CrmPermSet>(emptyPermSet())
-function openEditUser(u: CrmUser) {
-  editingUser.value = u
-  Object.assign(editPerms, emptyPermSet(), u.perms)
-  editUserOpen.value = true
-}
-function saveEditUser() {
-  const u = editingUser.value
-  if (!u) return
-  saveUserPerms(u.id, { ...editPerms })
-  editUserOpen.value = false
-  successToast(t('User updated'))
-}
+// Users (incl. invite/edit/permissions) are managed in the ERP — the CRM table is read-only.
 
 // ── Teams — a full ErpTablePage grounded in crmTeams (persisted) ──────────────
 // The signed-in user (shown in the top bar) authors every create/edit.
@@ -195,22 +168,18 @@ const teamColumns: TableColumn[] = [
   { key: 'updatedAt',   label: 'Last updated',      kind: 'date',   sortable: true, sortType: 'date'   },
 ]
 
-// Filter: Module (left) + search (right).
-const teamModuleFilter = ref('')
-const teamModuleOptions = CRM_TEAM_MODULES.map((m) => ({ value: m.key, label: m.label }))
+// Filter: search only.
 const {
   search: teamSearch, currentPage: teamPage, paginated: teamPaginated, total: teamTotal, perPage: teamPerPage,
   setPage: setTeamPage, setPerPage: setTeamPerPage, sortKey: teamSortKey, sortDir: teamSortDir,
   toggleSort: toggleTeamSort, setSort: setTeamSort,
 } = useTableState<TeamRow>(teamRows, {
   filterFn: (row, s) =>
-    (!s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s))
-    && (!teamModuleFilter.value || row.modules.includes(teamModuleFilter.value as CrmTeamModule)),
+    (!s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s)),
   defaultSort: { key: 'updatedAt', dir: 'desc' },
 })
-watch(teamModuleFilter, () => setTeamPage(1))
-const hasActiveTeamFilter = computed(() => !!teamSearch.value || !!teamModuleFilter.value)
-function clearTeamFilters() { teamSearch.value = ''; teamModuleFilter.value = '' }
+const hasActiveTeamFilter = computed(() => !!teamSearch.value)
+function clearTeamFilters() { teamSearch.value = '' }
 
 // Column settings (Team name locked visible).
 const teamColumnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(teamColumns.map((c) => [c.key, true])))
@@ -256,6 +225,18 @@ const membersPickerOpen = ref(false)
 function onPickMembers() { membersPickerOpen.value = true }
 function onMembersSaved(ids: string[]) { teamDraft.memberIds = ids; membersPickerOpen.value = false }
 
+// ── Members modal — click the "N members" cell to see the full roster ──
+const membersModalOpen = ref(false)
+const membersModalTeam = ref<TeamRow | null>(null)
+function openMembers(row: TeamRow) { membersModalTeam.value = row; membersModalOpen.value = true }
+const membersModalList = computed(() => {
+  const ids = membersModalTeam.value?.memberIds ?? []
+  return ids.map((id) => {
+    const m = crmTeamMemberOptions.value.find((o) => o.id === id)
+    return { id, name: m?.name ?? id, subtitle: m?.subtitle }
+  })
+})
+
 // ── Delete team ──
 const teamDeleteOpen = ref(false)
 const teamPendingDelete = ref<TeamRow | null>(null)
@@ -296,7 +277,8 @@ const integrations: Integration[] = [
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton v-if="section === 'users'" variant="primary" is-rounded @click="router.push('/crm/settings/users/invite')">{{ t('Invite user') }}</MpButton>
+        <!-- Users are managed in the ERP; Invite user opens the ERP flow (# placeholder here). -->
+        <a v-if="section === 'users'" href="#" class="btn-enterprise btn-enterprise--primary cru-invite">{{ t('Invite user') }}</a>
         <MpButton v-else-if="section === 'teams'" variant="primary" is-rounded left-icon="add" @click="openNewTeam">{{ t('New team') }}</MpButton>
         <MpButton v-else-if="section === 'views'" variant="secondary" is-rounded @click="soon(t('Create view'))">{{ t('Create view') }}</MpButton>
       </div>
@@ -320,6 +302,7 @@ const integrations: Integration[] = [
           filter-empty-label="user"
           :search="search"
           :has-active-filter="hasActiveUserFilter"
+          no-row-hover
           @page-change="setPage"
           @per-page-change="setPerPage"
           @sort="toggleSort"
@@ -351,15 +334,12 @@ const integrations: Integration[] = [
             </div>
           </template>
 
-          <!-- Name: name link + email caption (no avatar) -->
+          <!-- Name + email caption (read-only — users are managed in ERP) -->
           <template #cell-name="{ row }">
             <div class="cru-name">
-              <span class="cell-link cell-text" @click.stop="viewUser(row as CrmUser)">{{ (row as CrmUser).name }}</span>
+              <span class="cell-text">{{ (row as CrmUser).name }}</span>
               <span class="cru-email">{{ (row as CrmUser).email }}</span>
             </div>
-          </template>
-          <template #cell-accessLabel="{ row }">
-            <ErpStatusBadge :status="ACCESS_BADGE[(row as CrmUser).accessLabel] ?? 'announcement'" :label="t((row as CrmUser).accessLabel)" />
           </template>
           <template #cell-teams="{ row }">
             <div v-if="(row as CrmUser).teams.length" class="cru-tags">
@@ -375,22 +355,6 @@ const integrations: Integration[] = [
           </template>
           <template #cell-status="{ value }"><ErpStatusBadge :status="(value as string)" :label="STATUS_LABEL[value as string]" /></template>
           <template #cell-joinDate="{ value }">{{ formatDate(value as string) }}</template>
-
-          <!-- Actions: View details / Edit / Delete -->
-          <template #actions="{ row }">
-            <MpPopover :id="`cru-actions-${(row as CrmUser).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-              <MpPopoverTrigger>
-                <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-                <MpPopoverList>
-                  <MpPopoverListItem @click="viewUser(row as CrmUser)">{{ t('View details') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="openEditUser(row as CrmUser)">{{ t('Edit') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="deleteUser(row as CrmUser)">{{ t('Delete') }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </template>
         </ErpTablePage>
       </section>
 
@@ -413,18 +377,8 @@ const integrations: Integration[] = [
           @hide-column="hideTeamColumn"
           @clear-filters="clearTeamFilters"
         >
-          <!-- Filter bar: Module (left) · column settings + search (right) -->
+          <!-- Filter bar: column settings + search (right) -->
           <template #filters>
-            <div class="filter-left">
-              <ErpFilterSelect
-                id="cmt-module-filter"
-                :model-value="teamModuleFilter"
-                placeholder="Module"
-                :options="teamModuleOptions"
-                @update:model-value="(v: string) => (teamModuleFilter = v)"
-              />
-            </div>
-
             <div class="filter-right">
               <div class="filter-btn-group">
                 <ColumnSettingsMenu id="cmt-columns" :items="teamColumnItems" :visibility="teamColumnVisibility" />
@@ -529,7 +483,7 @@ const integrations: Integration[] = [
       :options="crmTeamMemberOptions"
       :model-value="teamDraft.memberIds"
       :empty-title="t('No members selected')"
-      :empty-caption="t('Pick employees from the list to add them to this team.')"
+      :empty-caption="t('Pick members from the list to add them to this team.')"
       @update:open="membersPickerOpen = $event"
       @save="onMembersSaved"
     />
@@ -543,31 +497,28 @@ const integrations: Integration[] = [
       @confirm="confirmDeleteTeam"
     />
 
-    <!-- ── Edit user — role + data permissions (Export data / View reports) ── -->
-    <MpModal id="crm-edit-user" :is-open="editUserOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="editUserOpen = false">
+    <!-- Members list — opened by clicking the "N members" cell -->
+    <MpModal
+      id="cmt-members-modal"
+      :is-open="membersModalOpen"
+      size="md"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="membersModalOpen = false"
+    >
       <MpModalContent>
-        <MpModalHeader>
-          {{ t('Edit user') }}
-          <MpModalCloseButton />
-        </MpModalHeader>
+        <MpModalHeader>{{ membersModalTeam?.name }} · {{ membersModalList.length }} {{ membersModalList.length !== 1 ? t('members') : t('member') }}</MpModalHeader>
         <MpModalBody>
-          <div v-if="editingUser" class="eu-body">
-            <div class="eu-field">
-              <span class="eu-label">{{ t('Name') }}</span>
-              <span class="eu-value">{{ editingUser.name }} · {{ editingUser.email }}</span>
-            </div>
-            <div class="eu-field">
-              <span class="eu-perm-title">{{ t('Permissions') }}</span>
-              <span class="eu-perm-desc">{{ t('Tick what this user can do in each module.') }}</span>
-            </div>
-            <CrmPermissionMatrix :perms="editPerms" />
-          </div>
+          <ul class="cmt-member-list">
+            <li v-for="m in membersModalList" :key="m.id" class="cmt-member-row">
+              <span class="cmt-member-name">{{ m.name }}</span>
+              <span v-if="m.subtitle" class="cmt-member-sub">{{ m.subtitle }}</span>
+            </li>
+          </ul>
         </MpModalBody>
         <MpModalFooter>
-          <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="editUserOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEditUser">{{ t('Save changes') }}</button>
-          </div>
+          <MpButton variant="ghost" is-rounded @click="membersModalOpen = false">{{ t('Close') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -576,6 +527,13 @@ const integrations: Integration[] = [
 </template>
 
 <style scoped>
+/* Members modal list */
+.cmt-member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cmt-member-row { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.cmt-member-row:last-child { border-bottom: none; }
+.cmt-member-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cmt-member-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 /* ── Shell (mirrors CrmCustomerDetailPage) ── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
@@ -583,6 +541,7 @@ const integrations: Integration[] = [
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.cru-invite { text-decoration: none; }
 
 /* padding-top (not border-top) so the first row sits INSIDE the scroll padding —
    a bordered control (e.g. the search pill) flush at an overflow:auto edge gets its
