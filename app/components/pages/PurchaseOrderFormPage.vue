@@ -3,7 +3,7 @@ import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpTextlink, MpFormControl, MpFormLabel, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
-  MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
+  MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon,
   css,
@@ -346,9 +346,7 @@ function onSendToFulfillment() {
 
             <MpFormControl id="f-payment" class="po-field">
               <MpFormLabel>Payment terms</MpFormLabel>
-              <MpSelect id="f-payment-inp" v-model="paymentTerms" placeholder="Select payment terms" is-full-width>
-                <option v-for="opt in PAYMENT_TERMS" :key="opt" :value="opt">{{ opt }}</option>
-              </MpSelect>
+              <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width placeholder="Select payment terms" />
             </MpFormControl>
 
             <div class="po-field po-field--checkbox">
@@ -401,9 +399,7 @@ function onSendToFulfillment() {
           <div class="po-header2-col po-col-span-3">
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
-              <MpSelect id="f-warehouse-inp" v-model="warehouse" placeholder="Select warehouse" is-full-width>
-                <option v-for="opt in WAREHOUSES" :key="opt" :value="opt">{{ opt }}</option>
-              </MpSelect>
+              <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
             </MpFormControl>
 
             <MpFormControl id="f-tags" class="po-field">
@@ -457,10 +453,10 @@ function onSendToFulfillment() {
                 <tr class="pit-group-row">
                   <td class="pit-group-cell" colspan="10">
                     <div class="pit-group-inner">
-                      <button type="button" class="pit-group-toggle" @click="toggleGroup(g)">
+                      <MpButton class="pit-group-toggle" @click="toggleGroup(g)">
                         <MpIcon name="caret-down" size="sm" class="pit-group-caret" :class="{ 'pit-group-caret--collapsed': g.collapsed }" />
                         Purchase Request #{{ g.prNumber }}
-                      </button>
+                      </MpButton>
                       <MpButton class="pit-group-remove" :aria-label="`Remove Purchase Request #${g.prNumber}`" @click="removeGroup(g.prId)">
                         <MpIcon name="minus-circular" size="sm" />
                       </MpButton>
@@ -502,10 +498,10 @@ function onSendToFulfillment() {
               <tbody>
                 <tr class="pit-add-row">
                   <td colspan="10">
-                    <button type="button" class="pit-add-btn" @click="addPrOpen = true">
+                    <MpButton class="pit-add-btn" @click="addPrOpen = true">
                       <MpIcon name="add" size="sm" />
                       Add purchase request
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </tbody>
@@ -963,10 +959,11 @@ function onSendToFulfillment() {
 }
 .pit-group-inner { display: flex; align-items: center; }
 .pit-group-toggle {
-  flex: 1; display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
-  border: none; background: transparent; cursor: pointer; text-align: left;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+  flex: 1; display: inline-flex !important; align-items: center; justify-content: flex-start !important; gap: var(--mp-spacing-2);
+  height: var(--mp-sizes-10, 40px) !important; min-width: 0 !important; padding: 0 var(--mp-spacing-2) !important;
+  border: none !important; background: transparent !important; cursor: pointer; text-align: left;
+  border-radius: 0 !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold) !important; color: var(--mp-text-default);
 }
 .pit-group-caret { transition: transform 150ms ease; }
 .pit-group-caret--collapsed { transform: rotate(-90deg); }
@@ -981,11 +978,13 @@ function onSendToFulfillment() {
 /* Add purchase request row */
 .pit-add-row td { padding: var(--mp-spacing-2) 0; }
 .pit-add-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  border: none; background: transparent; cursor: pointer; padding: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
+  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
+  border: none !important; background: transparent !important; cursor: pointer;
+  min-width: 0 !important; height: auto !important; padding: var(--mp-spacing-2) !important;
+  border-radius: var(--mp-radii-sm) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular) !important; color: var(--mp-text-default);
 }
-.pit-add-btn:hover { background: var(--mp-background-neutral-hovered); border-radius: var(--mp-radii-sm); }
+.pit-add-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 
 /* ── Notes + Attachment + Totals — identical to NewSalesInvoicePage (si-*) ── */
@@ -1081,15 +1080,8 @@ function onSendToFulfillment() {
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
 
-.btn-enterprise--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse, #ffffff);
-}
-.btn-enterprise--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+/* Primary uses the shared .btn-enterprise--primary from erp.css (no page-local
+   brand colors). */
 
 .btn-enterprise--ghost {
   background: transparent;

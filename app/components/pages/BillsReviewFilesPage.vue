@@ -249,7 +249,6 @@ function confirmBulkDelete() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     bulk-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"

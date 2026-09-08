@@ -93,7 +93,6 @@ const statusConfig: Record<string, StatusConfig> = {
   'awaiting invoice': { type: 'warning', label: 'Awaiting invoice' },
   inactive:   { type: 'announcement', label: 'Inactive'   },
   archived:   { type: 'announcement', label: 'Archived'   },
-  archived:   { type: 'announcement', label: 'Archived'   },
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },

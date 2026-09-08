@@ -254,7 +254,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
                   v-model="tagDraft"
                   class="bfd-tag-input"
                   type="text"
-                  :placeholder="draft.tags.length ? '' : 'Type a tag and press Enter'"
+                  placeholder=""
                   @keydown.enter.prevent="addTag"
                   @keydown.delete="onTagBackspace"
                 >

@@ -7,6 +7,7 @@ import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
@@ -38,6 +39,12 @@ const router = useRouter()
 const invoice = computed(() => getSalesInvoiceDetail(props.orderId))
 
 const activityOpen = ref(false)
+// Destructive delete → confirm modal (rule/btn-danger-confirm)
+const deleteOpen = ref(false)
+function confirmDelete() {
+  toast.notify({ variant: 'success', title: t('Sales invoice deleted'), rootProps: { class: 'toast-enterprise' } })
+  router.push('/sales-invoices')
+}
 const taxDocDrawerOpen = ref(false)
 const cannotCreateTaxDocDrawerOpen = ref(false)
 const taxDocuments = computed(() => getTaxDocumentsForInvoice(invoice.value.id))
@@ -225,7 +232,7 @@ function receivePayment() { router.push('/sales-invoices') }
 </script>
 
 <template>
-  <div class="detail-page">
+  <div v-if="invoice" class="detail-page">
 
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
@@ -239,9 +246,7 @@ function receivePayment() { router.push('/sales-invoices') }
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <MpButton class="detail-jump-chevron" :aria-label="t('Switch transaction')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <MpIcon name="chevrons-down" size="sm" />
               </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
@@ -254,9 +259,7 @@ function receivePayment() { router.push('/sales-invoices') }
                     :placeholder="t('Search...')"
                   />
                   <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" :aria-label="t('Clear search')" @click="jumpSearch = ''">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                    </svg>
+                    <MpIcon name="close" size="sm" />
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
@@ -297,10 +300,7 @@ function receivePayment() { router.push('/sales-invoices') }
 
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && invoice.banner" class="detail-banner">
-        <svg class="detail-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
+        <MpIcon name="information" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ invoice.banner.message }}</span>
         <a class="detail-banner-link" @click.prevent>{{ invoice.banner.linkLabel }}</a>
       </div>
@@ -571,11 +571,7 @@ function receivePayment() { router.push('/sales-invoices') }
                     <MpPopover :id="`taxdoc-row-actions-${doc.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <MpButton class="row-kebab" :aria-label="t('More actions')">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="12" cy="5" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="12" cy="19" r="2" />
-                          </svg>
+                          <MpIcon name="menu-kebab" size="sm" />
                         </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: taxDocMenuWidth, whiteSpace: 'nowrap' })">
@@ -616,9 +612,7 @@ function receivePayment() { router.push('/sales-invoices') }
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Print & share') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -640,9 +634,7 @@ function receivePayment() { router.push('/sales-invoices') }
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -656,7 +648,7 @@ function receivePayment() { router.push('/sales-invoices') }
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -671,9 +663,7 @@ function receivePayment() { router.push('/sales-invoices') }
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <MpIcon name="chevrons-down" size="sm" />
               </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -735,10 +725,31 @@ function receivePayment() { router.push('/sales-invoices') }
       :invoice="invoice"
       :menu-items="taxDocDetailMenuItems"
     />
+
+    <ConfirmModal
+      v-model:is-open="deleteOpen"
+      :title="t('Delete sales invoice?')"
+      :description="`${t('Sales Invoice')} #${invoice.number} ${t('will be permanently deleted. This cannot be undone.')}`"
+      :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
+      @confirm="confirmDelete"
+    />
+  </div>
+
+  <!-- Not-found reachable state: the id didn't resolve to an invoice -->
+  <div v-else class="detail-notfound">
+    <p class="detail-notfound-title">{{ t('Sales invoice not found') }}</p>
+    <p class="detail-notfound-desc">{{ t('This sales invoice may have been deleted or the link is invalid.') }}</p>
+    <MpButton variant="secondary" is-rounded @click="router.push('/sales-invoices')">{{ t('Back to sales invoices') }}</MpButton>
   </div>
 </template>
 
 <style scoped>
+.detail-notfound {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4);
+}
+.detail-notfound-title { font-size: var(--mp-font-sizes-lg, 1rem); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-notfound-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin-bottom: var(--mp-spacing-2); }
 .detail-page {
   height: 100%;
   display: flex;
@@ -824,7 +835,8 @@ function receivePayment() { router.push('/sales-invoices') }
   outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+/* search/select focus = neutral slate ring, never brand-green (rule/select-active-neutral) */
+.detail-jump-search:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); outline: none; }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex !important; align-items: center; justify-content: center;

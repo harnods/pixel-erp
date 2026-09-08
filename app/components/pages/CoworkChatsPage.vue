@@ -22,6 +22,7 @@ import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { getWorkspace } from '~/data/coworkWorkspaces'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -355,6 +356,7 @@ function newChat() {
   historyOpen.value = false
   kebabOpen.value = false
   inputText.value = ''
+  workspaceCtx.value = null
 }
 function openRoom(session: CoworkChatSession) {
   chat.loadSession(session)
@@ -398,6 +400,29 @@ function onOutsideClick(e: MouseEvent) {
   if (!kebabWrapperEl.value?.contains(e.target as Node)) kebabOpen.value = false
 }
 
+// ── Workspace context (Module 07) — a chat opened from a workspace thread ─────
+// The workspace detail routes here with ?workspace=<id>&agent=<agentId>[&thread=…]
+// to start a thread with a workspace agent. We show a context chip and pre-pick
+// the agent; the query is cleared so a refresh doesn't re-fire.
+const workspaceCtx = ref<{ id: string; name: string; thread?: string } | null>(null)
+function applyWorkspaceQuery() {
+  const wsId = typeof route.query.workspace === 'string' ? route.query.workspace : ''
+  if (!wsId) return
+  const w = getWorkspace(wsId)
+  if (!w) { router.replace({ path: '/cowork-chats', query: {} }); return }
+  const agentId = typeof route.query.agent === 'string' ? route.query.agent : ''
+  const threadTitle = typeof route.query.thread === 'string' ? route.query.thread : ''
+  chat.startNewChat()
+  goals.resetGoalMode()
+  const a = agentId ? getAgent(agentId) : undefined
+  if (a) chat.pickAgent(a)
+  workspaceCtx.value = { id: w.id, name: w.name, thread: threadTitle || undefined }
+  inputText.value = ''
+  router.replace({ path: '/cowork-chats', query: {} })
+}
+// Leaving the workspace context (e.g. New chat) clears the chip.
+watch(() => route.query.workspace, () => applyWorkspaceQuery())
+
 onMounted(() => {
   document.addEventListener('click', onOutsideClick)
   document.addEventListener('mousemove', onMouseMoveMascot)
@@ -412,6 +437,7 @@ onMounted(() => {
     const s = chat.sessions.value.find((x) => x.id === id)
     if (s) chat.loadSession(s)
   }
+  applyWorkspaceQuery()
   nextTick(scrollToBottom)
 })
 onBeforeUnmount(() => {
@@ -427,6 +453,10 @@ onBeforeUnmount(() => {
   <header class="cwc-bar">
     <div class="cwc-bar__left">
       <h1 class="cwc-title">Chats</h1>
+      <button v-if="workspaceCtx" class="cwc-ws-chip" type="button" @click="router.push(`/cowork-workspaces/${workspaceCtx.id}`)">
+        <MpIcon name="folder-close" size="sm" />
+        <span>{{ workspaceCtx.name }}<template v-if="workspaceCtx.thread"> · {{ workspaceCtx.thread }}</template></span>
+      </button>
     </div>
     <div class="cwc-actions">
       <!-- Only offer "New chat" while a conversation is open; the empty state IS a new chat. -->
@@ -817,8 +847,12 @@ onBeforeUnmount(() => {
 <style scoped>
 /* ── Title bar ─────────────────────────────────────────────────────────────── */
 .cwc-bar { flex-shrink: 0; min-height: 72px; box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
-.cwc-bar__left { display: flex; flex-direction: column; min-width: 0; }
+.cwc-bar__left { display: flex; flex-direction: column; min-width: 0; gap: 4px; }
 .cwc-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
+.cwc-ws-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 520px; padding: 3px 10px; border: 1px solid var(--mp-colors-border-default, #dcdfe4); border-radius: 999px; background: var(--mp-colors-background-neutral-subtle, #f7f8f8); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #536062); cursor: pointer; }
+.cwc-ws-chip:hover { border-color: var(--mp-colors-border-bold, #8c9596); color: var(--mp-colors-text-default, #1d1f24); }
+.cwc-ws-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cwc-ws-chip :deep(svg) { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .cwc-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* ── Stage · chat list (left) + content pane (right) ───────────────────────── */

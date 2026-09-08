@@ -94,8 +94,8 @@ const props = withDefaults(defineProps<{
   /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
    *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
   bulkLabelPlural?: string
-  /** Override the sticky actions column width (default 52px, fits a single kebab
-   *  button) — use when the #actions slot renders more than that (several buttons
+  /** Override the sticky actions column width (default 44px, fits a single 38px kebab
+   *  button + 3px each side) — use when the #actions slot renders more than that (several buttons
    *  in a row, or a kebab plus a labeled button like "Reconcile"). */
   actionsWidth?: string
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
@@ -111,6 +111,10 @@ const props = withDefaults(defineProps<{
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
   stickyActions?: boolean
+  /** Remove the row hover background. Use for a purely read-only table that has NO
+   *  row [...] actions and no clickable row — nothing to hover-target, so the grey
+   *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
+  noRowHover?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -444,9 +448,9 @@ const totalCols = computed(() =>
   (props.hasAiChat ? 1 : 0)
 )
 
-// Sticky actions column width — the actionsWidth prop, else the 52px default
+// Sticky actions column width — the actionsWidth prop, else the 44px default
 // (kept in script so the <col> inline style carries no hardcoded px).
-const actionsColWidth = computed(() => props.actionsWidth ?? '52px')
+const actionsColWidth = computed(() => props.actionsWidth ?? '44px')
 
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
@@ -457,7 +461,7 @@ const bulkCountLabel = computed(() => {
 </script>
 
 <template>
-  <div class="erp-table-page">
+  <div class="erp-table-page" :class="{ 'erp-table-page--no-row-hover': noRowHover }">
 
     <!-- ── Stats bar ── -->
     <div v-if="$slots.stats" class="erp-stats-bar">
@@ -951,7 +955,9 @@ const bulkCountLabel = computed(() => {
 .erp-cell-check {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
+  /* checkbox → cell content is 12px, same as MpCheckbox's built-in box→label gap
+     (rule/checkbox-gap-12) */
+  gap: var(--mp-spacing-3);
   width: 100%;
   min-width: 0;
 }
@@ -965,6 +971,19 @@ const bulkCountLabel = computed(() => {
    (and therefore "last") element child, so it wrongly inherits flex-shrink
    and gets crushed. Pin the checkbox to its natural size unconditionally. */
 .erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
+/* The row-select MpCheckbox carries no label, but its root still reserves the
+   built-in 12px box→label gap — combined with .erp-cell-check's own 12px that
+   doubled the box→content gap to 24px. Zero the empty checkbox's internal gap so
+   the single 12px comes only from .erp-cell-check (rule/checkbox-gap-12). */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { gap: 0; }
+.erp-cell-check > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
+
+/* Header select-all checkbox — same fix as the body cell: the empty label reserves
+   the built-in box→label gap, so zero it + hide the label; the single 12px between
+   the box and the column label then comes from .th-inner (8px) + 4px (rule/
+   checkbox-gap-12). */
+.th-inner > [data-pixel-component="MpCheckbox"] { gap: 0; flex: 0 0 auto; margin-right: var(--mp-spacing-1); }
+.th-inner > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -994,18 +1013,18 @@ const bulkCountLabel = computed(() => {
 }
 
 /* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop).
-   Default 52px (not --mp-sizes-11/44px) — matches the kebab-only pages that already
-   hardcode actions-width="52px" (BillsIndexPage, BillsReviewFilesPage), now the default
-   for every other kebab-only table too instead of each page redeclaring it.
+   Default 44px — a single 38px kebab button + 3px each side. Every kebab-only table
+   uses this default; a page only overrides actionsWidth when its #actions slot holds
+   more than one button.
    max-width pins this too: table-layout:fixed distributes any leftover table width
    (when column widths sum to less than the container, e.g. narrow tables like
    WarehousesPage) proportionally across EVERY column, including ones with an
    explicit width/min-width — without max-width the actions column silently grows
-   past 52px right along with the rest. */
+   past 44px right along with the rest. */
 .erp-th--actions {
-  width: var(--erp-actions-width, 52px);
-  min-width: var(--erp-actions-width, 52px);
-  max-width: var(--erp-actions-width, 52px);
+  width: var(--erp-actions-width, 44px);
+  min-width: var(--erp-actions-width, 44px);
+  max-width: var(--erp-actions-width, 44px);
 }
 
 /* Flexible spacer column — the only auto-width column, so table-layout:fixed
@@ -1094,6 +1113,11 @@ const bulkCountLabel = computed(() => {
 .erp-tr:hover .erp-td {
   background: var(--mp-background-neutral-hovered);
 }
+/* Read-only tables with no row actions opt out of the hover highlight
+   (rule/table-no-hover-no-actions). */
+.erp-table-page--no-row-hover .erp-tr:hover .erp-td {
+  background: transparent;
+}
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 
@@ -1113,11 +1137,6 @@ const bulkCountLabel = computed(() => {
    `.erp-tr--align-top` is toggled by JS that measures row height. */
 .erp-tr--align-top .erp-td {
   vertical-align: top;
-}
-/* ...except the actions cell — a single kebab/button reads oddly pinned to the top
-   of a tall row, so it stays vertically centred regardless of row height. */
-.erp-tr--align-top .erp-td--actions {
-  vertical-align: middle;
 }
 
 /* Right-aligned cells — flip padding */
@@ -1148,14 +1167,16 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
-   Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
+/* Actions cell — the 38px icon button sits in a 44px column: 3px left/right padding
+   (38 + 3 + 3 = 44), and the button ALWAYS top-aligns (top padding unchanged at 2px).
+   Width overridable via --erp-actions-width. */
 .erp-td--actions {
-  width: var(--erp-actions-width, 52px);
-  min-width: var(--erp-actions-width, 52px);
-  max-width: var(--erp-actions-width, 52px);
-  text-align: right;
-  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
+  width: var(--erp-actions-width, 44px);
+  min-width: var(--erp-actions-width, 44px);
+  max-width: var(--erp-actions-width, 44px);
+  text-align: center;
+  vertical-align: top;
+  padding: var(--mp-sizes-0\.5, 2px) 3px;
 }
 
 /* AI chat cell */
@@ -1329,6 +1350,8 @@ const bulkCountLabel = computed(() => {
   font-weight: var(--mp-font-weights-regular);
 }
 
+/* The bulk bar sits in the header row — it must NOT make the header taller. Keep it
+   at the 28px header height; the sm action button is constrained to fit (erp.css). */
 .erp-bulk-bar {
   display: flex;
   align-items: center;

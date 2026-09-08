@@ -8,6 +8,7 @@ import { MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalOverlay, Mp
 import { formatIDR } from '~/utils/currency'
 
 export interface JournalEntryRow {
+  /** Always lead with the account number (chart-of-accounts code), e.g. "2-10000 Accounts Payable". */
   account: string
   debit?: number
   credit?: number

@@ -1,9 +1,14 @@
 <script setup lang="ts">
 /**
- * ErpTagList — tag chips clamped to 2 lines. When more tags overflow than fit in
+ * ErpTagList — MpTag chips clamped to 2 lines. When more tags overflow than fit in
  * two lines, a "More" text-link appears at the bottom-right (use it to reveal the
  * rest, e.g. a popover). Used in table tag cells across all index pages.
+ *
+ * Chips are real MpTag (gray, md) — rule/tag-list-mptag / rule/tag-gray-only.
  */
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { MpTag } from '@mekari/pixel3'
+
 const props = defineProps<{ tags?: string[] }>()
 
 const rootEl = ref<HTMLElement | null>(null)
@@ -13,12 +18,18 @@ let resizeObserver: ResizeObserver | null = null
 function measure() {
   const el = rootEl.value
   if (!el) return
+  // Clamp to two chip rows based on the ACTUAL rendered chip height (MpTag ≠ 20px).
+  const chip = el.querySelector<HTMLElement>('.mp-tag__root, [class*="tag"]')
+  if (chip) {
+    const gap = parseFloat(getComputedStyle(el).rowGap || '4') || 4
+    el.style.maxHeight = `${chip.offsetHeight * 2 + gap}px`
+  }
   // chips on line 3+ are clipped by max-height/overflow → scrollHeight exceeds clientHeight
   overflowing.value = el.scrollHeight - el.clientHeight > 1
 }
 
 onMounted(() => {
-  measure()
+  nextTick(measure)
   resizeObserver = new ResizeObserver(() => measure())
   if (rootEl.value) resizeObserver.observe(rootEl.value)
 })
@@ -31,7 +42,7 @@ watch(() => props.tags, () => nextTick(measure))
 
 <template>
   <div v-if="tags?.length" ref="rootEl" class="erp-tags">
-    <span v-for="tag in tags" :key="tag" class="erp-tag">{{ tag }}</span>
+    <MpTag v-for="(tag, i) in tags" :id="`erp-tag-${i}`" :key="tag">{{ tag }}</MpTag>
     <a v-if="overflowing" class="erp-tags-more">More</a>
   </div>
 </template>
@@ -42,22 +53,8 @@ watch(() => props.tags, () => nextTick(measure))
   display: flex;
   flex-wrap: wrap;
   gap: var(--mp-spacing-1);
-  /* exactly two chip rows (chip 20px) + one row gap */
-  max-height: calc(var(--mp-sizes-5, 20px) * 2 + var(--mp-spacing-1));
-  overflow: hidden;
-  background: inherit;   /* so the "More" mask matches the row bg (incl. hover) */
-}
-
-.erp-tag {
-  display: inline-flex;
-  align-items: center;
-  background: var(--mp-background-neutral-subtle);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md);
-  padding: 0 var(--mp-spacing-1\.5);
-  height: var(--mp-sizes-5, 20px);
-  border-radius: var(--mp-radii-sm);
-  white-space: nowrap;
+  overflow: hidden;                /* max-height set at runtime = 2 chip rows + gap */
+  background: inherit;             /* so the "More" mask matches the row bg (incl. hover) */
 }
 
 /* "More" link masks the end of line 2; bg matches the row (inherits hover bg) */
@@ -67,7 +64,6 @@ watch(() => props.tags, () => nextTick(measure))
   bottom: 0;
   display: inline-flex;
   align-items: center;
-  height: var(--mp-sizes-5, 20px);
   padding-left: var(--mp-spacing-2);
   background: inherit;
   color: var(--mp-text-link);

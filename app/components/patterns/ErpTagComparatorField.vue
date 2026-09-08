@@ -14,9 +14,9 @@ import {
   MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
-type Comparator = 'isAnyOf' | 'isNoneOf'
-const COMPARATORS: Comparator[] = ['isAnyOf', 'isNoneOf']
-const COMPARATOR_LABELS: Record<Comparator, string> = { isAnyOf: 'Is any of', isNoneOf: 'Is none of' }
+export type TagComparator = 'isAnyOf' | 'isAllOf' | 'isNoneOf'
+type Comparator = TagComparator
+const COMPARATOR_LABELS: Record<Comparator, string> = { isAnyOf: 'Is any of', isAllOf: 'Is all of', isNoneOf: 'Is none of' }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -24,7 +24,12 @@ const props = withDefaults(defineProps<{
   values: string[]
   options: string[]
   placeholder?: string
-}>(), { placeholder: 'Type a name…' })
+  /** Which comparators to offer. Default keeps the original any/none set so existing
+   *  callers are unchanged; pass e.g. ['isAnyOf','isAllOf','isNoneOf'] to add "Is all of". */
+  comparators?: Comparator[]
+}>(), { placeholder: 'Type a name…', comparators: () => ['isAnyOf', 'isNoneOf'] })
+
+const COMPARATORS = computed<Comparator[]>(() => props.comparators)
 
 const emit = defineEmits<{
   (e: 'update:comparator', v: Comparator): void
@@ -130,23 +135,27 @@ const menuClass = css({ minWidth: '200px', maxHeight: '240px', overflowY: 'auto'
   min-width: 0 !important; padding: var(--mp-spacing-2, 6px) !important;
   background: var(--mp-background-neutral-subtle, #f0f1f3) !important;
   border: none !important; border-radius: var(--mp-radii-sm, 4px) 0 0 var(--mp-radii-sm, 4px) !important;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400);
   color: var(--mp-text-default); cursor: pointer; white-space: nowrap;
 }
 .etc-prefix:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 .etc-tags { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1); }
+/* Chip matches MpInputTag: small subtle chip; the remove (×) appears on hover only. */
 .etc-chip {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: 0 var(--mp-spacing-1) 0 var(--mp-spacing-2);
+  padding: 1px var(--mp-spacing-2, 8px);
   background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-sm, 4px);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); line-height: 1.5; color: var(--mp-text-default); white-space: nowrap;
 }
 .etc-chip-remove {
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; background: transparent; padding: 0; cursor: pointer; color: var(--mp-text-subtle);
+  display: none; align-items: center; justify-content: center;
+  border: none; background: transparent; padding: 0; margin-left: 2px; cursor: pointer; color: var(--mp-text-secondary);
 }
+.etc-chip:hover .etc-chip-remove { display: inline-flex; }
 .etc-chip-remove:hover { color: var(--mp-text-default); }
+/* keep the × visually in scale with the 12px chip text */
+.etc-chip-remove :deep(svg) { width: 12px; height: 12px; }
 .etc-input {
   flex: 1; min-width: var(--mp-sizes-20, 80px); height: var(--mp-sizes-5, 20px);
   border: none; outline: none; background: transparent; padding: 0;

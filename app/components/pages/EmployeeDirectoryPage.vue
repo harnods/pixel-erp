@@ -204,7 +204,6 @@ function initials(name: string): string {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     filter-empty-label="employee"
     :search="search"
     :has-active-filter="hasActiveFilter"
@@ -448,8 +447,8 @@ function initials(name: string): string {
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
   color: var(--mp-text-selected, var(--mp-text-information)) !important;
 }
 .filter-btn-group { display: flex; align-items: center; }

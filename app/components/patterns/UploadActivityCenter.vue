@@ -40,7 +40,10 @@ function viewAll() {
         <IconButton icon="desktop" :is-active="uploadCenterOpen" />
       </span>
     </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ width: '376px', padding: '0' })">
+    <MpPopoverContent
+      :class="css({ width: '376px', padding: '0' })"
+      @blur="uploadCenterOpen = false" @escape="uploadCenterOpen = false"
+    >
       <div class="ac">
         <!-- Tabs (visual — Import is the live one) -->
         <div class="ac-tabs">

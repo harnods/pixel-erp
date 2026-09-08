@@ -198,7 +198,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | Checkbox | — | — | Rendered **inside the first column's cell** via `has-checkbox`. Not a separate column. |
 | Attachment / icon | 40px | center | `noHeader: true`, `width: '40px'` |
 | Due date | use `kind: 'date'` | left | (a date → follows the `date` standard) |
-| Actions `[...]` | 52px (`actionsWidth`) | right | Sticky right kebab; auto-widen via `actionsWidth` only if the slot holds multiple buttons |
+| Actions `[...]` | 44px (default) | center, top | Sticky right kebab: a 38px icon button + 3px each side, always top-aligned. Override `actionsWidth` only if the slot holds multiple buttons |
 
 > Setting an explicit `width` on a **semantic** column is an escape hatch — avoid
 > it. If a column genuinely needs a different width, prefer adding/adjusting a
