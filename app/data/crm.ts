@@ -323,7 +323,7 @@ const DEALS_SEED: Deal[] = [
   { id: 'DL-260903', name: 'New outlet opening order',     customerId: 'C009', company: 'Maxx Coffee Lippo Mall',    stage: 'Open Lead', owner: 'Fajar Nugroho', value: 12_800_000, priority: 'medium', ...B, products: [P.espresso(40)], expectedCloseDate: '2026-09-24', createdAt: '2026-08-30', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'none' },
   { id: 'DL-260904', name: 'Bali cafe restock',            customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Open Lead', owner: 'Fajar Nugroho', value: 19_200_000, priority: 'medium', ...B, products: [P.robusta(8)],  expectedCloseDate: '2026-09-20', createdAt: '2026-08-25', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-29', conversion: 'none' },
   { id: 'DL-260905', name: 'Banquet coffee supply',        customerId: 'C017', company: 'Santika Premiere Hotel',    stage: 'Open Lead', owner: 'Rizal Candra',  value: 14_000_000, priority: 'medium', ...B, products: [P.house(50)],  expectedCloseDate: '2026-09-30', createdAt: '2026-08-10', createdBy: 'Rizal Candra',  lastActivity: '2026-08-24', conversion: 'none' },
-  { id: 'DL-260906', name: 'Green bean sourcing Q4',       customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Open Lead', owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',   ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for the Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [P.gayo(15)], expectedCloseDate: '2026-09-28', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-30', conversion: 'none' },
+  { id: 'DL-260906', name: 'Green bean sourcing Q4',       customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Open Lead', owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',   ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for the Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [P.gayo(15)], expectedCloseDate: '2026-09-05', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-30', conversion: 'none' },
   { id: 'DL-260907', name: 'Espresso beans pilot batch',   customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Open Lead', owner: 'Dewi Lestari',  value: 9_600_000,  priority: 'medium', ...B, products: [P.espresso(30)], expectedCloseDate: '2026-09-29', createdAt: '2026-09-06', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
   // ── 1st Meeting (5) ──
   { id: 'DL-260908', name: 'House blend cafe rollout',     customerId: 'C013', company: 'Excelso Grand Indonesia',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',   ...B, products: [P.house(100)], expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
@@ -338,7 +338,7 @@ const DEALS_SEED: Deal[] = [
   { id: 'DL-260916', name: 'Hotel F&B annual contract',    customerId: 'C017', company: 'Santika Premiere Hotel',    stage: 'Proposal', owner: 'Rizal Candra',  value: 25_200_000, priority: 'high',   ...B, products: [P.house(90)],  expectedCloseDate: '2026-09-30', createdAt: '2026-08-14', createdBy: 'Rizal Candra',  lastActivity: '2026-09-03', conversion: 'none' },
   // ── Negotiation (3) ──
   { id: 'DL-260917', name: 'Bulk green beans Q3',          customerId: 'C015', company: 'Distributor Sentra Boga',   stage: 'Negotiation', owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high', ...B, referenceNumber: 'RFQ-8790', picName: 'Hendra Wijaya', phones: ['+62 813 5550 015'], email: 'po@sentraboga.co.id', products: [P.gayo(20)], expectedCloseDate: '2026-09-12', createdAt: '2026-07-25', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260918', name: 'Espresso beans renewal',       customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Negotiation', owner: 'Dewi Lestari',  value: 16_000_000, priority: 'high', ...B, products: [P.espresso(50)], expectedCloseDate: '2026-09-10', createdAt: '2026-08-01', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260918', name: 'Espresso beans renewal',       customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Negotiation', owner: 'Dewi Lestari',  value: 16_000_000, priority: 'high', ...B, products: [P.espresso(50)], expectedCloseDate: '2026-09-04', createdAt: '2026-08-01', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
   { id: 'DL-260919', name: 'Roastery supply agreement',    customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Negotiation', owner: 'Fajar Nugroho', value: 36_000_000, priority: 'high', ...B, products: [P.toraja(10)], expectedCloseDate: '2026-09-14', createdAt: '2026-08-06', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
   // ── Won (3) ──
   { id: 'DL-260920', name: 'Green beans Q3 confirmed',     customerId: 'C015', company: 'Distributor Sentra Boga',   stage: 'Won', owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high', ...B, products: [P.gayo(20)], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
@@ -940,6 +940,177 @@ export function addCompanyComment(companyId: string, text: string, author = 'You
 export function deleteCompanyComment(id: string): void {
   const i = crmCompanyComments.findIndex((c) => c.id === id)
   if (i !== -1) { crmCompanyComments.splice(i, 1); persistComments() }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Customers domain (L1 "Customers" → L2 Contacts + Companies)
+//
+// First-class CONTACTS (people) and COMPANIES (orgs) with a many-to-many link:
+// one contact may be associated with multiple companies, and a company may have
+// multiple contacts of which exactly one is the primary. Seeded from the coffee
+// accounts in crmCustomers, plus a few extra relationships that exercise the M2M
+// + primary rules. Notes/comments attach to either entity.
+// ══════════════════════════════════════════════════════════════════════════════
+export interface CrmContactPerson {
+  id: string                 // 'CT-001'
+  name: string
+  jobTitle: string
+  email: string
+  phone: string
+  companyIds: string[]       // associated companies (M2M)
+  owner: string
+  createdAt: string
+  lastActivity: string
+}
+export interface CrmCompany {
+  id: string                 // 'CO-001'
+  name: string
+  industry: string           // segment (Roastery / Café chain / …)
+  email: string
+  phone: string
+  website: string
+  address: string            // street line
+  city: string
+  province: string
+  postalCode: string
+  owner: string
+  contactIds: string[]       // member contacts (M2M)
+  primaryContactId?: string  // required when the company has >1 contact
+  createdAt: string
+  lastActivity: string
+}
+
+const PROVINCE_BY_CITY: Record<string, string> = {
+  Jakarta: 'DKI Jakarta', Bekasi: 'Jawa Barat', Tangerang: 'Banten',
+  Semarang: 'Jawa Tengah', Bali: 'Bali', Bandung: 'Jawa Barat', Surabaya: 'Jawa Timur',
+}
+function provinceFor(city: string): string { return PROVINCE_BY_CITY[city] ?? 'DKI Jakarta' }
+function slugDomain(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '') }
+
+// Seed companies + their primary contacts from the coffee accounts.
+const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
+  id: `CO-${String(i + 1).padStart(3, '0')}`,
+  name: c.company,
+  industry: c.segment,
+  email: c.email,
+  phone: c.phone,
+  website: `https://www.${slugDomain(c.company)}.co.id`,
+  address: `Jl. Jenderal Sudirman No. ${12 + i}`,
+  city: c.city,
+  province: provinceFor(c.city),
+  postalCode: `${10000 + i * 110}`,
+  owner: c.owner,
+  contactIds: [`CT-${String(i + 1).padStart(3, '0')}`],
+  primaryContactId: `CT-${String(i + 1).padStart(3, '0')}`,
+  createdAt: '2026-01-05', lastActivity: c.lastActivity,
+}))
+const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
+  id: `CT-${String(i + 1).padStart(3, '0')}`,
+  name: c.contact,
+  jobTitle: jobTitleFor(c.contact),
+  email: c.email,
+  phone: c.phone,
+  companyIds: [`CO-${String(i + 1).padStart(3, '0')}`],
+  owner: c.owner,
+  createdAt: '2026-01-05', lastActivity: c.lastActivity,
+}))
+// Extra relationships that exercise the rules:
+//  • CT-100 is a group buyer associated with TWO companies (M2M).
+//  • CO-001 gains a second contact (CT-100) — CT-001 stays primary (multi-contact company).
+_contactSeed.push({
+  id: 'CT-100', name: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
+  email: 'bagus.prasetyo@centralperk.co.id', phone: '021-5550100',
+  companyIds: ['CO-001', 'CO-002'], owner: 'Fajar Nugroho', createdAt: '2026-02-01', lastActivity: '2026-02-27',
+})
+if (_companySeed[0]) _companySeed[0].contactIds = ['CT-001', 'CT-100']
+if (_companySeed[1]) _companySeed[1].contactIds = ['CT-002', 'CT-100']
+
+export const crmContactPeople = reactive<CrmContactPerson[]>(load('crm-contact-people-v1', _contactSeed))
+export const crmCompanies = reactive<CrmCompany[]>(load('crm-companies-v1', _companySeed))
+export function persistCrmContactPeople() { saveSnapshot('crm-contact-people-v1', crmContactPeople) }
+export function persistCrmCompanies() { saveSnapshot('crm-companies-v1', crmCompanies) }
+
+export function getContactPerson(id: string): CrmContactPerson | undefined { return crmContactPeople.find((c) => c.id === id) }
+export function getCompany(id: string): CrmCompany | undefined { return crmCompanies.find((c) => c.id === id) }
+export function companyName(id: string): string { return getCompany(id)?.name ?? id }
+export function contactName(id: string): string { return getContactPerson(id)?.name ?? id }
+/** Companies a contact belongs to. */
+export function companiesOfContact(id: string): CrmCompany[] {
+  return crmCompanies.filter((co) => co.contactIds.includes(id))
+}
+/** Contacts of a company (primary first). */
+export function contactsOfCompany(id: string): CrmContactPerson[] {
+  const co = getCompany(id)
+  if (!co) return []
+  const list = co.contactIds.map(getContactPerson).filter(Boolean) as CrmContactPerson[]
+  return list.sort((a, b) => (a.id === co.primaryContactId ? -1 : b.id === co.primaryContactId ? 1 : 0))
+}
+export function isPrimaryContact(companyId: string, contactId: string): boolean {
+  return getCompany(companyId)?.primaryContactId === contactId
+}
+/** Deals linked to a company (matched by account name). */
+export function dealsForCompany(companyId: string): Deal[] {
+  const name = companyName(companyId)
+  return deals.filter((d) => d.company === name)
+}
+
+function nextId(prefix: string, list: { id: string }[]): string {
+  const n = list.reduce((m, x) => Math.max(m, Number(x.id.replace(`${prefix}-`, '')) || 0), 0) + 1
+  return `${prefix}-${String(n).padStart(3, '0')}`
+}
+export function addCrmContactPerson(input: { name: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string }, now: string): CrmContactPerson {
+  const person: CrmContactPerson = { id: nextId('CT', crmContactPeople), ...input, companyIds: [...input.companyIds], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10) }
+  crmContactPeople.push(person)
+  // keep the reverse link + primary rule coherent
+  for (const cid of person.companyIds) {
+    const co = getCompany(cid)
+    if (co && !co.contactIds.includes(person.id)) {
+      co.contactIds.push(person.id)
+      if (!co.primaryContactId) co.primaryContactId = person.id
+    }
+  }
+  persistCrmContactPeople(); persistCrmCompanies()
+  return person
+}
+export function addCrmCompany(input: { name: string; industry: string; email: string; phone: string; website: string; address: string; city: string; province: string; postalCode: string; owner: string; contactIds: string[] }, now: string): CrmCompany {
+  const co: CrmCompany = {
+    id: nextId('CO', crmCompanies), ...input, contactIds: [...input.contactIds],
+    primaryContactId: input.contactIds[0], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10),
+  }
+  crmCompanies.push(co)
+  for (const cid of co.contactIds) {
+    const p = getContactPerson(cid)
+    if (p && !p.companyIds.includes(co.id)) p.companyIds.push(co.id)
+  }
+  persistCrmCompanies(); persistCrmContactPeople()
+  return co
+}
+export function setPrimaryContact(companyId: string, contactId: string): void {
+  const co = getCompany(companyId)
+  if (co && co.contactIds.includes(contactId)) { co.primaryContactId = contactId; persistCrmCompanies() }
+}
+
+// ── Notes / comments — attach to a contact OR a company (unified store) ──
+export type CrmNoteEntity = 'contact' | 'company'
+export interface CrmNote { id: string; entityType: CrmNoteEntity; entityId: string; author: string; text: string; at: string }
+const NOTES_SEED: CrmNote[] = [
+  { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation.', at: '2026-02-20T10:15:00' },
+  { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Rizal Candra',  text: 'Credit terms approved: NET 30.', at: '2026-02-22T14:00:00' },
+  { id: 'NT-003', entityType: 'contact', entityId: 'CT-001', author: 'Dewi Lestari',  text: 'Prefers WhatsApp over email for quotes.', at: '2026-02-21T09:30:00' },
+]
+export const crmNotes = reactive<CrmNote[]>(load('crm-notes-v1', NOTES_SEED))
+export function notesFor(entityType: CrmNoteEntity, entityId: string): CrmNote[] {
+  return crmNotes.filter((n) => n.entityType === entityType && n.entityId === entityId).slice().sort((a, b) => b.at.localeCompare(a.at))
+}
+export function addCrmNote(entityType: CrmNoteEntity, entityId: string, text: string, author: string, at: string): CrmNote {
+  const note: CrmNote = { id: nextId('NT', crmNotes), entityType, entityId, author, text: text.trim(), at }
+  crmNotes.push(note)
+  saveSnapshot('crm-notes-v1', crmNotes)
+  return note
+}
+export function deleteCrmNote(id: string): void {
+  const i = crmNotes.findIndex((n) => n.id === id)
+  if (i !== -1) { crmNotes.splice(i, 1); saveSnapshot('crm-notes-v1', crmNotes) }
 }
 
 // ── Per-customer deals (open pipeline) — synthetic & deterministic so the count

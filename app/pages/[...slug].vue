@@ -349,6 +349,12 @@ const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
+const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
+const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
+const CrmContactRecordPage = asyncPage(() => import('~/components/pages/CrmContactRecordPage.vue'))
+const CrmCompanyRecordPage = asyncPage(() => import('~/components/pages/CrmCompanyRecordPage.vue'))
+const NewCrmContactPage = asyncPage(() => import('~/components/pages/NewCrmContactPage.vue'))
+const NewCrmCompanyPage = asyncPage(() => import('~/components/pages/NewCrmCompanyPage.vue'))
 const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
 const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
 const CrmCustomerDetailPage = asyncPage(() => import('~/components/pages/CrmCustomerDetailPage.vue'))
@@ -417,17 +423,26 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     const id = segs[2]
     // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.
     if (sub === 'contacts') return id ? { component: CrmContactDetailPage, id } : { component: CrmContactsPage, id: '' }
-    // /crm/customers/new → create-company form (before the :id detail match).
-    if (sub === 'customers' && id === 'new') return { component: NewCustomerPage, id: 'new' }
-    // /crm/orders/:id, /crm/products/:id, /crm/customers/:id → CRM detail pages.
+    // /crm/customers → L2 [Contacts, Companies] (first-class contacts/companies, M2M).
+    if (sub === 'customers' && id === 'contacts') {
+      if (segs[3] === 'new') return { component: NewCrmContactPage, id: 'new' }
+      return segs[3] ? { component: CrmContactRecordPage, id: segs[3] } : { component: CrmContactsListPage, id: '' }
+    }
+    if (sub === 'customers' && id === 'companies') {
+      if (segs[3] === 'new') return { component: NewCrmCompanyPage, id: 'new' }
+      return segs[3] ? { component: CrmCompanyRecordPage, id: segs[3] } : { component: CrmCompaniesListPage, id: '' }
+    }
+    if (sub === 'customers') return { component: CrmContactsListPage, id: '' } // bare → Contacts
+    // /crm/orders/:id, /crm/products/:id → CRM detail pages.
     if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
-    if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
     // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
     if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
+    // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
+    if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }

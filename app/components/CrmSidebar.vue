@@ -31,7 +31,10 @@ const navGroups: Item[][] = [
   [
     { icon: 'pipeline', name: 'Deals',    to: '/crm/deals' },
     { icon: 'reports',  name: 'Reports',  to: '/crm/reports' },
-    { icon: 'contact',  name: 'Contacts', to: '/crm/contacts' },
+    { icon: 'contact',  name: 'Customers', to: '/crm/customers', children: [
+      { name: 'Contacts',  to: '/crm/customers/contacts' },
+      { name: 'Companies', to: '/crm/customers/companies' },
+    ] },
   ],
   [
     { icon: 'log',      name: 'Activity logs', to: '/crm/activity' },
@@ -39,6 +42,7 @@ const navGroups: Item[][] = [
       { name: 'Company profile',  to: '/crm/settings/company' },
       { name: 'User & roles',     to: '/crm/settings/users' },
       { name: 'Teams',            to: '/crm/settings/teams' },
+      { name: 'Deals',            to: '/crm/settings/deals' },
       { name: 'Modules settings', to: '/crm/settings/modules' },
     ] },
   ],
@@ -46,6 +50,7 @@ const navGroups: Item[][] = [
 
 const activeItem = computed<string>(() => {
   if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
+  if (route.path === '/crm/customers' || route.path.startsWith('/crm/customers/')) return 'Customers'
   if (route.path === '/crm/settings' || route.path.startsWith('/crm/settings/')) return 'Settings'
   for (const g of navGroups) for (const it of g)
     if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
