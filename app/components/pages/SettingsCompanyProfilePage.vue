@@ -865,7 +865,7 @@ const ADVANCED_TOGGLES = [
 
     <!-- ── Demo scenario FAB — switch whether this company's SSO ID is already
          registered in Klikpajak, to preview both Tax info onboarding states ──── -->
-    <MpPopover id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
+    <MpPopover v-if="!props.embedded" id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
         <button class="demo-fab" :aria-label="t('Change scenario state')">
           <MpIcon name="sliders" size="md" color="icon.inverse" />
