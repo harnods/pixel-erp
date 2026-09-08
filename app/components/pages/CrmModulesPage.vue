@@ -28,8 +28,10 @@ function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
+// Deals (the system module) has its own "Deals" settings menu — Modules settings
+// lists only the CUSTOM modules.
 const rows = computed<ModuleRow[]>(() =>
-  crmModules.map((m) => ({
+  crmModules.filter((m) => !m.system).map((m) => ({
     ...m,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
@@ -164,7 +166,7 @@ watch(statusFilter, () => setPage(1))
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="manage(row as unknown as ModuleRow)">{{ t('Manage') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="!(row as unknown as ModuleRow).system" class="cru-action--danger" @click="soon(t('Delete module'))">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!(row as unknown as ModuleRow).system" @click="soon(t('Delete module'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

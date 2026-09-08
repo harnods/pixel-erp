@@ -39,7 +39,7 @@ const columns: TableColumn[] = [
   { key: 'contactsLabel', label: 'Contacts',    sortable: true, sortType: 'text' },
   { key: 'city',         label: 'City',         sortable: true, sortType: 'text' },
   { key: 'owner',        label: 'Owner',        sortable: true, sortType: 'text' },
-  { key: 'openDeals',    label: 'Open deals',   kind: 'number', sortable: true, sortType: 'number' },
+  { key: 'openDeals',    label: 'Deals',        kind: 'number', sortable: true, sortType: 'number' },
   { key: 'lastActivity', label: 'Last updated', kind: 'date', sortable: true, sortType: 'date' },
 ]
 
@@ -152,7 +152,7 @@ watch([industryFilter, ownerFilter], () => setPage(1))
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="open(row as unknown as CompanyRow)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem class="cru-action--danger" @click="soon(t('Delete company'))">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="soon(t('Delete company'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

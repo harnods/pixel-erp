@@ -12,7 +12,6 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
-import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import { crmContactPeople, companiesOfContact, CRM_OWNERS, type CrmContactPerson } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
@@ -22,14 +21,20 @@ const router = useRouter()
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 function open(row: ContactRow) { router.push(`/crm/customers/contacts/${row.id}`) }
 
-type ContactRow = CrmContactPerson & { companyNames: string[] }
+// One row per contact↔company association: a contact linked to two companies
+// shows as TWO rows (one per company). Contacts with no company show one row.
+type ContactRow = CrmContactPerson & { rowKey: string; companyId: string; companyName: string }
 const rows = computed<ContactRow[]>(() =>
-  crmContactPeople.map((c) => ({ ...c, companyNames: companiesOfContact(c.id).map((co) => co.name) })),
+  crmContactPeople.flatMap((c) => {
+    const cos = companiesOfContact(c.id)
+    if (!cos.length) return [{ ...c, rowKey: `${c.id}-`, companyId: '', companyName: '' }]
+    return cos.map((co) => ({ ...c, rowKey: `${c.id}-${co.id}`, companyId: co.id, companyName: co.name }))
+  }),
 )
 
 const columns: TableColumn[] = [
   { key: 'name',         label: 'Name',         kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'companyNames', label: 'Companies',    kind: 'tags' },
+  { key: 'company',      label: 'Company',      kind: 'name', sortable: true, sortType: 'text' },
   { key: 'email',        label: 'Email',        sortable: true, sortType: 'text' },
   { key: 'phone',        label: 'Phone' },
   { key: 'owner',        label: 'Owner',        sortable: true, sortType: 'text' },
@@ -45,7 +50,7 @@ const {
     && (!s
       || row.name.toLowerCase().includes(s)
       || row.email.toLowerCase().includes(s)
-      || row.companyNames.some((n) => n.toLowerCase().includes(s))),
+      || row.companyName.toLowerCase().includes(s)),
   defaultSort: { key: 'name', dir: 'asc' },
 })
 const hasActiveFilter = computed(() => !!search.value || !!ownerFilter.value)
@@ -119,8 +124,9 @@ watch(ownerFilter, () => setPage(1))
             <span class="cru-email">{{ (row as unknown as ContactRow).jobTitle }}</span>
           </div>
         </template>
-        <template #cell-companyNames="{ row }">
-          <ErpTagList :tags="(row as unknown as ContactRow).companyNames" />
+        <template #cell-company="{ row }">
+          <span v-if="(row as unknown as ContactRow).companyId" class="cell-link cell-text" @click.stop="router.push(`/crm/customers/companies/${(row as unknown as ContactRow).companyId}`)">{{ (row as unknown as ContactRow).companyName }}</span>
+          <span v-else class="cell-text cru-email">—</span>
         </template>
         <template #cell-email="{ row }"><span class="cell-text">{{ (row as unknown as ContactRow).email }}</span></template>
         <template #cell-phone="{ row }"><span class="cell-text">{{ (row as unknown as ContactRow).phone }}</span></template>
@@ -131,14 +137,14 @@ watch(ownerFilter, () => setPage(1))
 
         <!-- Actions: View details / Delete -->
         <template #actions="{ row }">
-          <MpPopover :id="`cc-actions-${(row as unknown as ContactRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopover :id="`cc-actions-${(row as unknown as ContactRow).rowKey}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
               <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="open(row as unknown as ContactRow)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem class="cru-action--danger" @click="soon(t('Delete contact'))">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="soon(t('Delete contact'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

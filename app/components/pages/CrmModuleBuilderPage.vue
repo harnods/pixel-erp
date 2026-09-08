@@ -15,8 +15,7 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpButton, MpIcon, MpToggle, MpInput, MpRadio,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -26,8 +25,10 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS,
+  dealPipelines, persistDealPipelines,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
+  type DealPipeline, type DealPipelineStage,
 } from '~/data/crm'
 import { successToast } from '~/utils/toasts'
 
@@ -73,7 +74,84 @@ const STATUS_BADGE: Record<string, { status: string; label: string }> = {
 const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ?? STATUS_BADGE.draft!)
 
 // ── Tabs (v-model = index) ───────────────────────────────────────────────────
-const activeTab = ref(0)
+// Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
+const isDeals = computed(() => !!mod.value?.system)
+const tabs = computed(() => isDeals.value
+  ? [{ key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
+  : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
+const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'pipeline' : 'fields')
+const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
+
+// ── Pipeline config (deals only) — a local editable clone; Save changes applies it. ──
+const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(dealPipelines)))
+const selectedPipeId = ref<string>(pipeDraft.value[0]?.id ?? 'default')
+const currentPipe = computed<DealPipeline | undefined>(() => pipeDraft.value.find((p) => p.id === selectedPipeId.value) ?? pipeDraft.value[0])
+const pipeOptions = computed(() => pipeDraft.value.map((p) => ({ value: p.id, label: p.name })))
+const openStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages.filter((s) => s.kind === 'open') ?? [])
+const wonStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'won'))
+const lostStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'lost'))
+let stageSeq = 100
+const newStageId = () => `s-new-${stageSeq++}`
+
+// Keep the array ordered: open stages first (their own order), then won, then lost.
+function normalize(pipe: DealPipeline) {
+  const open = pipe.stages.filter((s) => s.kind === 'open')
+  const won = pipe.stages.filter((s) => s.kind === 'won')
+  const lost = pipe.stages.filter((s) => s.kind === 'lost')
+  if (!open.some((s) => s.isDefault) && open[0]) open[0].isDefault = true
+  pipe.stages = [...open, ...won, ...lost]
+}
+
+// Drag-reorder the OPEN stages (won/lost stay pinned in the swimlane).
+const dragSrc = ref<number | null>(null)
+const dragOver = ref<number | null>(null)
+function onStageDragStart(i: number, e: DragEvent) { dragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
+function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; dragOver.value = i }
+function onStageDrop(i: number) {
+  const pipe = currentPipe.value
+  if (!pipe || dragSrc.value === null || dragSrc.value === i) { dragOver.value = null; return }
+  const open = [...openStages.value]
+  const [m] = open.splice(dragSrc.value, 1)
+  open.splice(i, 0, m!)
+  pipe.stages = [...open, ...pipe.stages.filter((s) => s.kind !== 'open')]
+  dragSrc.value = null; dragOver.value = null
+}
+function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
+
+function setDefaultStage(id: string) { currentPipe.value?.stages.forEach((s) => { s.isDefault = s.kind === 'open' && s.id === id }) }
+function addStage() {
+  const pipe = currentPipe.value; if (!pipe) return
+  pipe.stages.push({ id: newStageId(), name: 'New stage', kind: 'open' })
+  normalize(pipe)
+}
+function removeStage(id: string) {
+  const pipe = currentPipe.value; if (!pipe) return
+  pipe.stages = pipe.stages.filter((s) => s.id !== id)
+  normalize(pipe)
+}
+// Mark a stage as the pipeline's Won / Lost ending (only one of each) — demotes the
+// previous holder back to an open flow stage.
+function markAs(id: string, kind: 'won' | 'lost') {
+  const pipe = currentPipe.value; if (!pipe) return
+  pipe.stages.forEach((s) => { if (s.kind === kind) s.kind = 'open' })
+  const target = pipe.stages.find((s) => s.id === id); if (!target) return
+  target.kind = kind; delete target.isDefault
+  normalize(pipe)
+}
+function createPipeline() {
+  const n = pipeDraft.value.length + 1
+  const id = `pipe-${n}-${stageSeq++}`
+  pipeDraft.value.push({
+    id, name: `Pipeline ${n}`,
+    stages: [
+      { id: newStageId(), name: 'New', kind: 'open', isDefault: true },
+      { id: newStageId(), name: 'Won', kind: 'won' },
+      { id: newStageId(), name: 'Lost', kind: 'lost' },
+    ],
+  })
+  selectedPipeId.value = id
+  activeTab.value = 'pipeline'
+}
 
 // ── Field type options + labels ──────────────────────────────────────────────
 const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldType, string][])
@@ -336,6 +414,11 @@ function saveView() {
 function saveChanges() {
   const m = mod.value
   if (!m) return
+  // Deals: persist the pipeline config too.
+  if (m.system) {
+    dealPipelines.splice(0, dealPipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
+    persistDealPipelines()
+  }
   Object.assign(m, {
     sections: [...draft.sections],
     fields: clone(draft.fields),
@@ -344,27 +427,30 @@ function saveChanges() {
   })
   if (!m.system) m.name = draft.name.trim() || m.name
   persistCrmModule(m, AUTHOR, nowStamp())
-  successToast(t('Module saved'))
+  successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
-function cancel() { router.push('/crm/settings/modules') }
+// Deals is its own settings menu; custom modules live under Modules settings.
+function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/crm/settings/modules') }
 </script>
 
 <template>
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <NuxtLink class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules settings') }}</NuxtLink>
+        <NuxtLink v-if="mod && !mod.system" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules settings') }}</NuxtLink>
         <div class="detail-titlerow-left">
           <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <ErpStatusBadge v-if="mod" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" size="md" />
         </div>
       </div>
-      <div class="cd-bar-actions">
-        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
-      </div>
     </header>
+
+    <!-- Section tabs — OUTSIDE the white stage (rule/erp-tabs-pattern: section tabs
+         sit on the neutral-subtle bar below the title, not as MpTabs in the stage). -->
+    <div v-if="mod" class="page-tabs-bar">
+      <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="activeTab = tab.key">{{ t(tab.label) }}</button>
+    </div>
 
     <div class="detail-stage">
       <!-- ── Module not found ── -->
@@ -375,15 +461,81 @@ function cancel() { router.push('/crm/settings/modules') }
         <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules settings') }}</MpButton>
       </div>
 
-      <MpTabs v-else id="cmb-tabs" v-model="activeTab" is-manual variant-color="green" class="builder-tabs">
-        <MpTabList>
-          <MpTab id="cmb-tab-fields" value="fields">{{ t('Fields & layout') }}</MpTab>
-          <MpTab id="cmb-tab-views" value="views">{{ t('Views') }}</MpTab>
-        </MpTabList>
+      <template v-else>
+          <!-- ════════ PIPELINE (Deals) ════════ -->
+          <div v-show="activeTab === 'pipeline'" class="builder-panel">
+            <div class="pipe-toolbar">
+              <MpFormControl id="pipe-select" class="pipe-select-field">
+                <MpFormLabel>{{ t('Pipeline') }}</MpFormLabel>
+                <ErpFilterSelect id="pipe-select-input" :model-value="selectedPipeId" placeholder="Pipeline" :options="pipeOptions" width="280px" @update:model-value="(v: string) => (selectedPipeId = v)" />
+              </MpFormControl>
+              <MpButton variant="secondary" is-rounded left-icon="add" class="pipe-new-btn" @click="createPipeline">{{ t('New pipeline') }}</MpButton>
+            </div>
 
-        <MpTabPanels>
-          <!-- ════════ FIELDS & LAYOUT ════════ -->
-          <MpTabPanel value="fields">
+            <template v-if="currentPipe">
+              <MpFormControl id="pipe-name">
+                <MpFormLabel>{{ t('Pipeline name') }}</MpFormLabel>
+                <MpInput id="pipe-name-input" v-model="currentPipe.name" is-full-width />
+              </MpFormControl>
+
+              <!-- Flow stages (draggable) -->
+              <section class="pipe-section">
+                <div class="pipe-section-head">
+                  <span class="pipe-section-title">{{ t('Stages') }}</span>
+                  <span class="pipe-section-caption">{{ t('Drag to reorder. A new deal enters the stage you set as default.') }}</span>
+                </div>
+                <ul class="pipe-stagelist">
+                  <li
+                    v-for="(s, i) in openStages" :key="s.id"
+                    class="pipe-stage" :class="{ 'pipe-stage--over': dragOver === i }"
+                    draggable="true"
+                    @dragstart="onStageDragStart(i, $event)" @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)" @dragend="onStageDragEnd"
+                  >
+                    <span class="pipe-drag" aria-hidden="true"><MpIcon name="drag" size="md" /></span>
+                    <MpInput :id="`stage-${s.id}`" v-model="s.name" class="pipe-stage-name" :aria-label="t('Stage name')" />
+                    <label class="pipe-default">
+                      <MpRadio :id="`default-${s.id}`" :is-checked="!!s.isDefault" @change="setDefaultStage(s.id)" />
+                      <span>{{ t('New deals enter here') }}</span>
+                    </label>
+                    <MpPopover :id="`stage-menu-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <MpButton class="builder-kebab" :aria-label="t('Stage options')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '176px', width: 'max-content' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="markAs(s.id, 'won')">{{ t('Mark as Won stage') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="markAs(s.id, 'lost')">{{ t('Mark as Lost stage') }}</MpPopoverListItem>
+                          <MpPopoverListItem v-if="openStages.length > 1" @click="removeStage(s.id)">{{ t('Remove stage') }}</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </li>
+                </ul>
+                <MpButton variant="secondary" is-rounded left-icon="add" @click="addStage">{{ t('Add stage') }}</MpButton>
+              </section>
+
+              <!-- Won / Lost swimlane — the two endings (no aging) -->
+              <section class="pipe-swimlane">
+                <div class="pipe-section-head">
+                  <span class="pipe-section-title">{{ t('Endings') }}</span>
+                  <span class="pipe-section-caption">{{ t('How a deal closes. One Won and one Lost per pipeline — endings carry no aging.') }}</span>
+                </div>
+                <div class="pipe-endings">
+                  <div class="pipe-ending pipe-ending--won">
+                    <span class="pipe-ending-tag">{{ t('Won') }}</span>
+                    <MpInput v-if="wonStage" :id="`won-${wonStage.id}`" v-model="wonStage.name" class="pipe-stage-name" :aria-label="t('Won stage name')" />
+                  </div>
+                  <div class="pipe-ending pipe-ending--lost">
+                    <span class="pipe-ending-tag">{{ t('Lost') }}</span>
+                    <MpInput v-if="lostStage" :id="`lost-${lostStage.id}`" v-model="lostStage.name" class="pipe-stage-name" :aria-label="t('Lost stage name')" />
+                  </div>
+                </div>
+              </section>
+            </template>
+          </div>
+
+          <!-- ════════ LAYOUT / FIELDS ════════ -->
+          <div v-show="isLayoutTab" class="builder-panel">
             <!-- Layout driver -->
             <div class="builder-driver">
               <div class="builder-driver-text">
@@ -411,7 +563,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   <MpPopoverContent :class="css({ minWidth: '160px' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="openRenameSection(section)">{{ t('Rename section') }}</MpPopoverListItem>
-                      <MpPopoverListItem class="builder-item--danger" @click="deleteSection(section)">{{ t('Delete section') }}</MpPopoverListItem>
+                      <MpPopoverListItem @click="deleteSection(section)">{{ t('Delete section') }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -471,10 +623,10 @@ function cancel() { router.push('/crm/settings/modules') }
                 </li>
               </ul>
             </div>
-          </MpTabPanel>
+          </div>
 
           <!-- ════════ VIEWS ════════ -->
-          <MpTabPanel value="views">
+          <div v-show="activeTab === 'views'" class="builder-panel">
             <ul class="builder-viewlist">
               <li v-for="v in draft.views" :key="v.id" class="builder-viewrow">
                 <div class="builder-view-main">
@@ -495,10 +647,17 @@ function cancel() { router.push('/crm/settings/modules') }
             <div class="builder-add-section">
               <MpButton variant="secondary" is-rounded left-icon="add" @click="openAddView">{{ t('Add view') }}</MpButton>
             </div>
-          </MpTabPanel>
-        </MpTabPanels>
-      </MpTabs>
+          </div>
+      </template>
     </div>
+
+    <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Save changes -->
+    <footer v-if="mod" class="builder-footer">
+      <MpButtonGroup class="erp-action-footer">
+        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+      </MpButtonGroup>
+    </footer>
 
     <!-- ════════ Field modal ════════ -->
     <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">
@@ -695,8 +854,52 @@ function cancel() { router.push('/crm/settings/modules') }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
-.builder-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5); }
-.builder-tabs :deep([data-pixel-component="MpTabPanel"]) { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+/* Section tabs — neutral-subtle bar below the title, OUTSIDE the white stage
+   (rule/erp-tabs-pattern; mirrors the .page-tab pattern in [...slug].vue). */
+.page-tabs-bar { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); flex-shrink: 0; }
+.page-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; padding: var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); white-space: nowrap; }
+.page-tab:not(.page-tab--active):hover { color: var(--mp-text-default); }
+.page-tab--active { color: var(--mp-text-selected, #0f6d4d); font-weight: var(--mp-font-weights-semi-bold); }
+.page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-border-selected, #029861); }
+
+/* Each tab panel stacks its rows with the standard 20px gap. */
+.builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+
+/* ── Pipeline tab ── */
+.pipe-toolbar { display: flex; align-items: flex-end; gap: var(--mp-spacing-4); }
+.pipe-select-field { flex: 0 0 auto; }
+.pipe-new-btn { flex-shrink: 0; }
+.pipe-section, .pipe-swimlane { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.pipe-section-head { display: flex; flex-direction: column; gap: 2px; }
+.pipe-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-section-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+
+.pipe-stagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.pipe-stage {
+  display: flex; align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px);
+  background: var(--mp-colors-background-neutral, #fff);
+}
+.pipe-stage--over { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
+.pipe-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; }
+.pipe-stage-name { flex: 1; min-width: 0; }
+.pipe-default { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); cursor: pointer; white-space: nowrap; }
+
+/* Won / Lost swimlane — a distinct band with the two endings side by side. */
+.pipe-endings { display: flex; gap: var(--mp-spacing-4); }
+.pipe-ending {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 10px); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+}
+.pipe-ending--won { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
+.pipe-ending--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
+.pipe-ending-tag { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
+.pipe-ending--won .pipe-ending-tag { color: var(--mp-colors-text-success, #186f4a); }
+.pipe-ending--lost .pipe-ending-tag { color: var(--mp-colors-text-danger, #a8352d); }
+
+/* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
+.builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 
 /* ── Module not found ── */
 .builder-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; color: var(--mp-text-secondary); }

@@ -18,6 +18,7 @@ import { formatDate } from '~/utils/date'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   getCompany, contactsOfCompany, isPrimaryContact, setPrimaryContact, dealsForCompany,
+  isDealOpen, crmCustomers,
 } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
@@ -33,6 +34,14 @@ const activeTab = ref(0)
 const primaryTick = ref(0)
 const contacts = computed(() => { void primaryTick.value; return company.value ? contactsOfCompany(company.value.id) : [] })
 const companyDeals = computed(() => (company.value ? dealsForCompany(company.value.id) : []))
+
+// Stats bar (adapted to a single company). Deal counts/values come from the linked
+// deals; billed/outstanding from the matching ERP account (crmCustomers by name).
+const openDeals = computed(() => companyDeals.value.filter(isDealOpen))
+const pipelineValue = computed(() => openDeals.value.reduce((n, d) => n + d.value, 0))
+const account = computed(() => crmCustomers.find((c) => c.company === company.value?.name))
+const billed = computed(() => account.value?.lifetimeValue ?? 0)
+const outstanding = computed(() => account.value?.outstanding ?? 0)
 
 function isPrimary(contactId: string): boolean {
   void primaryTick.value
@@ -84,6 +93,32 @@ function makePrimary(contactId: string) {
         </ContentList>
       </section>
 
+      <!-- Stats bar (adapted to the company) -->
+      <div class="cr-stats">
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Deals') }}</div>
+          <div class="stat-period">{{ t('This account') }}</div>
+          <div class="stat-amount">{{ companyDeals.length }}</div>
+          <span class="stat-link">{{ openDeals.length }} {{ t('open') }}</span>
+        </div>
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('In the pipeline') }}</div>
+          <div class="stat-period">{{ t('Open deals') }}</div>
+          <div class="stat-amount">{{ formatIDR(pipelineValue) }}</div>
+          <span class="stat-link">{{ openDeals.length }} {{ openDeals.length !== 1 ? t('deals') : t('deal') }}</span>
+        </div>
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Billed') }}</div>
+          <div class="stat-period">{{ t('Total to date') }}</div>
+          <div class="stat-amount">{{ formatIDR(billed) }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">{{ t('Outstanding') }}</div>
+          <div class="stat-period">{{ t('Invoiced, not yet paid') }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--danger': outstanding > 0 }">{{ formatIDR(outstanding) }}</div>
+        </div>
+      </div>
+
       <MpTabs id="cr-detail-tabs" v-model="activeTab" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab>{{ t('Contacts') }} ({{ contacts.length }})</MpTab>
@@ -99,9 +134,9 @@ function makePrimary(contactId: string) {
                 <div v-for="c in contacts" :key="c.id" class="cr-contact">
                   <div class="cr-contact-main">
                     <a class="cell-link cr-contact-name" @click="router.push(`/crm/customers/contacts/${c.id}`)">{{ c.name }}</a>
-                    <span class="cr-contact-title">{{ c.jobTitle }}</span>
+                    <span class="cr-contact-title">{{ c.email }}</span>
                   </div>
-                  <ErpStatusBadge v-if="isPrimary(c.id)" status="active" :label="t('Primary')" />
+                  <ErpStatusBadge v-if="isPrimary(c.id)" status="active" :label="t('Primary contact')" />
                   <a v-else class="cell-link cr-set-primary" @click="makePrimary(c.id)">{{ t('Set as primary') }}</a>
                 </div>
               </div>
@@ -171,6 +206,16 @@ function makePrimary(contactId: string) {
 
 /* Summary key/value grid */
 .cr-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-2); max-width: 900px; }
+
+/* Stats bar (shared stat-card idiom) */
+.cr-stats { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--danger { color: var(--mp-text-danger); }
+.stat-link { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); white-space: nowrap; }
 
 .cr-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-6); padding-top: var(--mp-spacing-5); max-width: 860px; }
 .cr-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

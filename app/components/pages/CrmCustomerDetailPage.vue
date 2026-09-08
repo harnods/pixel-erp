@@ -186,7 +186,7 @@ function orderBadge(status: string) {
                 <MpPopoverListItem @click="soon('New deal')">New deal</MpPopoverListItem>
                 <MpPopoverListItem @click="soon('Log activity')">Log activity</MpPopoverListItem>
                 <MpPopoverListItem @click="soon('Add contact')">Add contact</MpPopoverListItem>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete company')">Delete</MpPopoverListItem>
+                <MpPopoverListItem @click="soon('Delete company')">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
