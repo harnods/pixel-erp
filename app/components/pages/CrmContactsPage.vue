@@ -356,7 +356,12 @@ const deleteDescription = computed(() =>
 .page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-text-selected); border-radius: var(--mp-radii-sm, 2px) var(--mp-radii-sm, 2px) 0 0; }
 
 /* Filter bar (mirrors the Companies page). */
-.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
+/* The filter bar pins to the top of the scrolling stage. Left unpinned it scrolls
+   under the stage's clip edge and the search pill gets sliced mid-scroll (its top
+   border disappears while the rest is still visible); pinning also keeps search +
+   filters reachable on a long list instead of forcing a scroll back to the top.
+   Opaque stage background + z-index 3 so rows pass underneath, not through. */
+.cc-filterbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); /* the gap below is padding, not margin, so the pinned bar's opaque strip travels with it and rows never show through it */ background: var(--mp-background-stage, #fff); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-btn-group { display: flex; align-items: center; }
