@@ -303,17 +303,17 @@ function daysBefore(iso: string, n: number): string {
 // Default commercial defaults for a base-currency (IDR) deal.
 const B = { currency: 'IDR' as DealCurrency, exchangeRate: 1 }
 const DEALS_SEED: Deal[] = [
-  { id: 'DL-260901', name: 'Q4 green beans — wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open Lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 15, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260902', name: 'Office pantry — monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open Lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04', conversion: 'none' },
-  { id: 'DL-260903', name: 'Espresso blend — pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   ...B, products: [{ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: 60, originalPrice: 320_000, discountType: 'percentage', discount: 5 }], shippingFee: 500_000, expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-03', conversion: 'none' },
+  { id: 'DL-260901', name: 'Q4 green beans wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open Lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 15, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260902', name: 'Office pantry monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open Lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260903', name: 'Espresso blend pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   ...B, products: [{ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: 60, originalPrice: 320_000, discountType: 'percentage', discount: 5 }], shippingFee: 500_000, expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-03', conversion: 'none' },
   { id: 'DL-260904', name: 'Hotel F&B annual contract',       customerId: 'C017', company: 'Santika Premiere Hotel',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-30', createdAt: '2026-08-26', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'none' },
-  { id: 'DL-260905', name: 'Single-origin Gayo — proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   ...B, expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260906', name: 'House blend — café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260907', name: 'Espresso beans — renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260908', name: 'Roastery supply — urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', ...B, expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', createdBy: 'Dewi Lestari', lastActivity: '2026-09-01', conversion: 'none' },
-  { id: 'DL-260909', name: 'Bulk green beans — Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     ...B, products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 20, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
-  { id: 'DL-260910', name: 'Café chain — espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
-  { id: 'DL-260911', name: 'Trial order — cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   ...B, expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
+  { id: 'DL-260905', name: 'Single-origin Gayo proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   ...B, expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260906', name: 'House blend café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260907', name: 'Espresso beans renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260908', name: 'Roastery supply urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', ...B, expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', createdBy: 'Dewi Lestari', lastActivity: '2026-09-01', conversion: 'none' },
+  { id: 'DL-260909', name: 'Bulk green beans Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     ...B, products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 20, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
+  { id: 'DL-260910', name: 'Café chain espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
+  { id: 'DL-260911', name: 'Trial order cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   ...B, expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
   { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
 ]
 
@@ -715,6 +715,75 @@ export function persistCrmModule(m: CrmModule, author: string, now: string): voi
   m.updatedBy = author
   persistCrmModules()
 }
+
+// ── Activity logs (CRM) ───────────────────────────────────────────────────────
+// A company-wide audit trail (PRD LD-44 "Audit History"), rendered as the ERP
+// Activity logs table (Other Lists Figma) contextualised for CRM: features are
+// CRM features (Deal / Customer / Company / Task / Sales order / Module / Team /
+// View), numbers use CRM formats (DL-2609xx, C0xx, SO-50xx, TSK-90xx), and an
+// EDIT detail always reads old → new. A busy edit carries many detail lines; the
+// page shows the first 3 with View more/less (rule/activity-log-structure).
+export const CRM_ACTIONS = ['Create', 'Update', 'Delete', 'Convert', 'Send email', 'Recurring', 'Login'] as const
+export type CrmAction = typeof CRM_ACTIONS[number]
+// CRM top-level features that generate activity (matches the CRM nav areas).
+export const CRM_ACTIVITY_FEATURES = ['Deals', 'Contacts', 'Settings'] as const
+
+/** One detail line: a plain `text`, or a labelled `from → to` edit. */
+export interface CrmActivityDetail { label?: string; from?: string; to?: string; text?: string }
+export interface CrmActivityEntry {
+  id: string
+  date: string            // ISO datetime
+  user: string            // actor, or 'System'
+  action: CrmAction
+  feature: string         // '' when N/A (e.g. Login)
+  recordLabel?: string    // NUMBER column, e.g. 'Deal DL-260907'
+  recordLink?: string     // route to the record, when linkable
+  details: CrmActivityDetail[]
+}
+
+const ACTIVITY_SEED: CrmActivityEntry[] = [
+  { id: 'AL-0001', date: '2026-09-07T09:15:00', user: 'Rizal Candra',  action: 'Login',      feature: '',            details: [] },
+  { id: 'AL-0002', date: '2026-09-06T16:40:00', user: 'Dewi Lestari',  action: 'Update',     feature: 'Deals',        recordLabel: 'Deal #10007', recordLink: '/crm/deals/DL-260907',
+    details: [{ label: 'Stage', from: 'Proposal', to: 'Negotiation' }] },
+  { id: 'AL-0003', date: '2026-09-06T14:05:00', user: 'Dewi Lestari',  action: 'Update',     feature: 'Deals',        recordLabel: 'Deal #10005', recordLink: '/crm/deals/DL-260905',
+    details: [
+      { label: 'Stage', from: 'Open lead', to: 'Proposal' },
+      { label: 'Owner', from: 'Fajar Nugroho', to: 'Dewi Lestari' },
+      { label: 'Value', from: 'Rp18.000.000', to: 'Rp24.000.000' },
+      { label: 'Priority', from: 'Low', to: 'Medium' },
+      { label: 'Expected close date', from: '30/09/2026', to: '18/09/2026' },
+    ] },
+  { id: 'AL-0004', date: '2026-09-05T11:30:00', user: 'Fajar Nugroho', action: 'Convert',    feature: 'Deals',        recordLabel: 'Deal #10009', recordLink: '/crm/deals/DL-260909',
+    details: [{ text: 'Converted to Sales order #50009' }] },
+  { id: 'AL-0005', date: '2026-09-05T10:10:00', user: 'Fajar Nugroho', action: 'Update',     feature: 'Deals',        recordLabel: 'Deal #10010', recordLink: '/crm/deals/DL-260910',
+    details: [{ label: 'Stage', from: 'Negotiation', to: 'Won' }] },
+  { id: 'AL-0006', date: '2026-09-04T15:20:00', user: 'Dewi Lestari',  action: 'Send email', feature: 'Deals',        recordLabel: 'Deal #10006', recordLink: '/crm/deals/DL-260906',
+    details: [{ label: 'Sent to', text: 'purchasing@excelso.com' }] },
+  { id: 'AL-0007', date: '2026-09-04T09:00:00', user: 'System',        action: 'Recurring',  feature: 'Deals',        recordLabel: 'Task #90010',
+    details: [{ text: '1 task created' }] },
+  { id: 'AL-0008', date: '2026-09-03T17:45:00', user: 'Fajar Nugroho', action: 'Update',     feature: 'Contacts',    recordLabel: 'Customer #10013', recordLink: '/crm/contacts/customers',
+    details: [
+      { label: 'Owner', from: 'Dewi Lestari', to: 'Fajar Nugroho' },
+      { label: 'Segments', from: 'Café chain', to: 'Café chain, Key account' },
+    ] },
+  { id: 'AL-0009', date: '2026-09-03T11:05:00', user: 'Rizal Candra',  action: 'Update',     feature: 'Settings',        recordLabel: 'Sales',
+    details: [{ label: 'No. of members', from: '2', to: '3' }] },
+  { id: 'AL-0010', date: '2026-09-02T14:30:00', user: 'Rizal Candra',  action: 'Update',     feature: 'Settings',      recordLabel: 'Deals',
+    details: [{ label: 'Status', from: 'Draft', to: 'Published' }, { label: 'Field added', text: 'Priority (Pick list)' }] },
+  { id: 'AL-0011', date: '2026-09-02T09:40:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Deals',        recordLabel: 'Deal #10002', recordLink: '/crm/deals/DL-260902',
+    details: [{ text: 'Draft created' }] },
+  { id: 'AL-0012', date: '2026-09-01T16:15:00', user: 'Fajar Nugroho', action: 'Delete',     feature: 'Deals',        recordLabel: 'Task #90002',
+    details: [] },
+  { id: 'AL-0013', date: '2026-09-01T10:20:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Contacts',    recordLabel: 'Customer #10014', recordLink: '/crm/contacts/customers',
+    details: [{ text: 'Customer created' }] },
+  { id: 'AL-0014', date: '2026-08-31T13:30:00', user: 'Fajar Nugroho', action: 'Update',     feature: 'Deals',        recordLabel: 'Deal #10008', recordLink: '/crm/deals/DL-260908',
+    details: [{ label: 'Value', from: 'Rp12.000.000', to: 'Rp15.000.000' }] },
+  { id: 'AL-0015', date: '2026-08-31T08:05:00', user: 'Dewi Lestari',  action: 'Login',      feature: '',            details: [] },
+  { id: 'AL-0016', date: '2026-08-30T11:05:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Settings',        recordLabel: 'Marketing',
+    details: [{ text: 'Team created' }] },
+]
+
+export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1', ACTIVITY_SEED))
 
 // Primary segment (industry) options for the create-customer form.
 export const CUSTOMER_SEGMENTS = ['Roastery', 'Café chain', 'Hotel', 'Distributor', 'Retail', 'Office'] as const

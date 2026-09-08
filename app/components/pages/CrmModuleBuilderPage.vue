@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle,
+  MpButton, MpIcon, MpToggle, MpInput,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
@@ -353,10 +353,10 @@ function cancel() { router.push('/crm/settings/modules') }
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="router.push('/crm/settings/modules')">{{ t('Modules settings') }}</button>
+        <NuxtLink class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules settings') }}</NuxtLink>
         <div class="detail-titlerow-left">
           <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
-          <input v-else v-model="draft.name" class="builder-title-input" type="text" :aria-label="t('Module name')" />
+          <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
           <ErpStatusBadge v-if="mod" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" size="md" />
         </div>
       </div>
@@ -508,7 +508,7 @@ function cancel() { router.push('/crm/settings/modules') }
           <div class="builder-form">
             <MpFormControl id="cmb-field-label-fc" :is-invalid="!!fieldLabelError">
               <MpFormLabel>{{ t('Label') }}</MpFormLabel>
-              <input v-model="fieldForm.label" class="builder-input" type="text" @input="fieldLabelError = ''" />
+              <MpInput id="cmb-field-label" v-model="fieldForm.label" is-full-width @update:model-value="fieldLabelError = ''" />
               <MpFormErrorMessage v-if="fieldLabelError">{{ fieldLabelError }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -541,13 +541,11 @@ function cancel() { router.push('/crm/settings/modules') }
               <ul v-if="fieldForm.options.length" class="builder-option-list">
                 <li v-for="(opt, i) in fieldForm.options" :key="`${opt}-${i}`" class="builder-option-row">
                   <span class="builder-option-name">{{ opt }}</span>
-                  <button type="button" class="builder-option-remove" :aria-label="`${t('Remove')} ${opt}`" @click="removeOption(i)">
-                    <MpIcon name="close" size="sm" />
-                  </button>
+                  <MpButton class="builder-option-remove" variant="ghost" is-rounded left-icon="close" :aria-label="`${t('Remove')} ${opt}`" @click="removeOption(i)" />
                 </li>
               </ul>
               <div class="builder-option-add">
-                <input v-model="newOption" class="builder-input" type="text" :aria-label="t('New option')" @input="optionError = ''" @keydown.enter.prevent="addOption" />
+                <MpInput id="cmb-new-option" v-model="newOption" is-full-width :aria-label="t('New option')" @update:model-value="optionError = ''" @keydown.enter.prevent="addOption" />
                 <MpButton variant="secondary" is-rounded @click="addOption">{{ t('Add') }}</MpButton>
               </div>
               <span v-if="optionError" class="builder-inline-error">{{ optionError }}</span>
@@ -598,7 +596,7 @@ function cancel() { router.push('/crm/settings/modules') }
           <div class="builder-form">
             <MpFormControl id="cmb-section-name-fc" :is-invalid="!!sectionNameError">
               <MpFormLabel>{{ t('Section name') }}</MpFormLabel>
-              <input v-model="sectionNameInput" class="builder-input" type="text" @input="sectionNameError = ''" @keydown.enter.prevent="saveSection" />
+              <MpInput id="cmb-section-name" v-model="sectionNameInput" is-full-width @update:model-value="sectionNameError = ''" @keydown.enter.prevent="saveSection" />
               <MpFormErrorMessage v-if="sectionNameError">{{ sectionNameError }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
@@ -621,7 +619,7 @@ function cancel() { router.push('/crm/settings/modules') }
           <div class="builder-form">
             <MpFormControl id="cmb-view-name-fc" :is-invalid="!!viewNameError">
               <MpFormLabel>{{ t('Name') }}</MpFormLabel>
-              <input v-model="viewForm.name" class="builder-input" type="text" @input="viewNameError = ''" />
+              <MpInput id="cmb-view-name" v-model="viewForm.name" is-full-width @update:model-value="viewNameError = ''" />
               <MpFormErrorMessage v-if="viewNameError">{{ viewNameError }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -693,8 +691,6 @@ function cancel() { router.push('/crm/settings/modules') }
   border: 1px solid transparent; border-radius: var(--mp-radii-md); background: transparent;
   padding: 0 var(--mp-spacing-2); max-width: 420px;
 }
-.builder-title-input:hover { border-color: var(--mp-border-default); }
-.builder-title-input:focus { outline: none; border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px #8c9596; background: var(--mp-background-neutral); }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
@@ -769,21 +765,9 @@ function cancel() { router.push('/crm/settings/modules') }
 .builder-form-field--toggle { flex-direction: row; align-items: center; gap: 12px; }
 .builder-form-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-form-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.builder-input {
-  width: 100%; box-sizing: border-box; height: 36px; padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
-}
-.builder-input:focus { outline: none; border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px #8c9596; }
-
 .builder-option-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle); }
+.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle); }
 .builder-option-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.builder-option-remove {
-  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
-  border: none; background: transparent; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
-}
-.builder-option-remove:hover { color: var(--mp-text-default); background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .builder-option-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.builder-option-add .builder-input { flex: 1; }
+.builder-option-add :deep([data-pixel-component="MpInput"]) { flex: 1; }
 </style>

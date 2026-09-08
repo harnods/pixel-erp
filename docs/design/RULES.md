@@ -352,9 +352,15 @@ is the point: they *feel* normal, which is exactly why they slip through.
   filename, Close/× dismisses. It's a preview, not an editor — no other actions. *Don't:*
   add edit/print/share buttons or a second primary. **Why:** preview = look + take a copy.
   **Lint:** review.
-- **`rule/checkbox-multiline-top`** — *Do:* when a checkbox label wraps to >1 line,
-  align the box to the **top** (`align-items: flex-start`). **Why:** box tracks the
-  first line, not the vertical center of a paragraph. **Lint:** review.
+- **`rule/checkbox-multiline-top`** — *Do:* whenever a checkbox/radio label is more
+  than one line — whether it **wraps** or is a deliberate **title + caption** (a bold
+  title over a secondary caption) — align the **box to the top**, level with the first
+  line. The label lives **inside** `MpCheckbox`/`MpRadio` (`rule/checkbox-gap-12`), so
+  top-align it on the component's own root: `:deep(.mp-checkbox__root) { align-items:
+  flex-start }` (radio: `.mp-radio__root`). *Don't:* let the box vertically-centre
+  against the block, or move the label out into a separate span with its own flex.
+  **Why:** the box tracks the first line, not the vertical centre of a paragraph.
+  **Lint:** review.
 
 ## Selects, filters & inputs — source: `docs/patterns/ErpFilterBar.md`
 
@@ -528,6 +534,13 @@ ERP override wins.
 - **`rule/table-no-outer-border`** — *Do:* no outer border box; wrapper is
   `overflow-x: auto` only. **Why:** ERP tables are borderless-outer. **Lint:**
   review.
+- **`rule/table-no-hover-no-actions`** — *Do:* a purely read-only table with **no
+  row `[...]` actions and no clickable/navigable row** removes the row hover
+  background — pass **`no-row-hover`** to `ErpTablePage` (or otherwise render
+  `.erp-tr:hover .erp-td` transparent). *Don't:* keep the grey hover highlight when
+  there is nothing to hover-target (e.g. the Activity logs page). **Why:** the hover
+  highlight signals "this row is actionable"; on a static log it's misleading noise.
+  **Lint:** review.
 - **`rule/table-checkbox-first-cell`** — *Do:* a row-selection checkbox lives
   **inside the first data cell** (before its content), sharing that cell — and the row
   name is the checkbox's **own label** (`<MpCheckbox>{{ row.name }}</MpCheckbox>`) so
