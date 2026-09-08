@@ -302,22 +302,54 @@ function daysBefore(iso: string, n: number): string {
 
 // Default commercial defaults for a base-currency (IDR) deal.
 const B = { currency: 'IDR' as DealCurrency, exchangeRate: 1 }
+// Product-line snapshot builders (SCM catalog) — Subtotal = qty × price, so each
+// deal's seeded `value` equals the calculated value (no discount unless noted).
+const P = {
+  gayo:     (q: number): DealLineItem => ({ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: q, originalPrice: 3_200_000, discountType: 'none', discount: 0 }),
+  toraja:   (q: number): DealLineItem => ({ productId: 'p03', productName: 'Green Beans Arabica Toraja Sapan', unit: 'Sack', quantity: q, originalPrice: 3_600_000, discountType: 'none', discount: 0 }),
+  robusta:  (q: number): DealLineItem => ({ productId: 'p02', productName: 'Green Beans Robusta Lampung', unit: 'Sack', quantity: q, originalPrice: 2_400_000, discountType: 'none', discount: 0 }),
+  house:    (q: number): DealLineItem => ({ productId: 'p09', productName: 'Roasted Beans House Blend Medium', unit: 'Bag', quantity: q, originalPrice: 280_000, discountType: 'none', discount: 0 }),
+  espresso: (q: number): DealLineItem => ({ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: q, originalPrice: 320_000, discountType: 'none', discount: 0 }),
+  single:   (q: number): DealLineItem => ({ productId: 'p11', productName: 'Roasted Beans Single Origin Gayo', unit: 'Bag', quantity: q, originalPrice: 450_000, discountType: 'none', discount: 0 }),
+}
+// A real pipeline is a funnel — most deals sit in the early stages and thin out
+// toward the close. Distribution: Open Lead 7 · 1st Meeting 5 · Proposal 4 ·
+// Negotiation 3 · Won 3 · Lost 2. Values, customers, owners and dates are coherent
+// with the coffee catalog + account master. createdAt is spread so aging varies.
 const DEALS_SEED: Deal[] = [
-  { id: 'DL-260901', name: 'Q4 green beans wholesale',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Open Lead',   owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',     ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 15, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-28', createdAt: '2026-09-01', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260902', name: 'Office pantry monthly supply',  customerId: 'C014', company: 'GoWork Office Tower',      stage: 'Open Lead',   owner: 'Dewi Lestari',  value: 12_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04', conversion: 'none' },
-  { id: 'DL-260903', name: 'Espresso blend pilot',          customerId: 'C009', company: 'Maxx Coffee Lippo Mall',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 22_000_000, priority: 'medium',   ...B, products: [{ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: 60, originalPrice: 320_000, discountType: 'percentage', discount: 5 }], shippingFee: 500_000, expectedCloseDate: '2026-09-24', createdAt: '2026-08-28', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-03', conversion: 'none' },
-  { id: 'DL-260904', name: 'Hotel F&B annual contract',       customerId: 'C017', company: 'Santika Premiere Hotel',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-30', createdAt: '2026-08-26', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'none' },
-  { id: 'DL-260905', name: 'Single-origin Gayo proposal',   customerId: 'C003', company: 'Hotel Mulia Senayan',      stage: 'Proposal',    owner: 'Dewi Lestari',  value: 24_000_000, priority: 'medium',   ...B, expectedCloseDate: '2026-09-18', createdAt: '2026-08-22', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260906', name: 'House blend café rollout',      customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Proposal',    owner: 'Fajar Nugroho', value: 40_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
-  { id: 'DL-260907', name: 'Espresso beans renewal',        customerId: 'C006', company: 'Kopi Kenangan Pusat',      stage: 'Negotiation', owner: 'Dewi Lestari',  value: 48_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-12', createdAt: '2026-08-15', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
-  { id: 'DL-260908', name: 'Roastery supply urgent restock', customerId: 'C001', company: 'Anomali Coffee',          stage: 'Negotiation', owner: 'Dewi Lestari',  value: 12_000_000, priority: 'critical', ...B, expectedCloseDate: '2026-09-04', createdAt: '2026-08-10', createdBy: 'Dewi Lestari', lastActivity: '2026-09-01', conversion: 'none' },
-  { id: 'DL-260909', name: 'Bulk green beans Q3',           customerId: 'C015', company: 'Distributor Sentra Boga',  stage: 'Won',         owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high',     ...B, products: [{ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: 20, originalPrice: 3_200_000, discountType: 'none', discount: 0 }], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
-  { id: 'DL-260910', name: 'Café chain espresso volume',    customerId: 'C013', company: 'Excelso Grand Indonesia',  stage: 'Won',         owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',     ...B, expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
-  { id: 'DL-260911', name: 'Trial order cold brew',         customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost',        owner: 'Fajar Nugroho', value: 14_800_000, priority: 'medium',   ...B, expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
-  { id: 'DL-260912', name: 'Roastery equipment upgrade',      customerId: 'C002', company: 'Tanamera Coffee Roastery', stage: 'Lost',        owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',      ...B, expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
+  // ── Open Lead (7) ──
+  { id: 'DL-260901', name: 'Cold brew concentrate trial',  customerId: 'C001', company: 'Anomali Coffee',           stage: 'Open Lead', owner: 'Dewi Lestari',  value: 9_000_000,  priority: 'medium', ...B, products: [P.single(20)], expectedCloseDate: '2026-09-30', createdAt: '2026-09-05', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260902', name: 'Office pantry monthly supply', customerId: 'C014', company: 'GoWork Office Tower',       stage: 'Open Lead', owner: 'Dewi Lestari',  value: 8_400_000,  priority: 'low',    ...B, products: [P.house(30)],  expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260903', name: 'New outlet opening order',     customerId: 'C009', company: 'Maxx Coffee Lippo Mall',    stage: 'Open Lead', owner: 'Fajar Nugroho', value: 12_800_000, priority: 'medium', ...B, products: [P.espresso(40)], expectedCloseDate: '2026-09-24', createdAt: '2026-08-30', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'none' },
+  { id: 'DL-260904', name: 'Bali cafe restock',            customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Open Lead', owner: 'Fajar Nugroho', value: 19_200_000, priority: 'medium', ...B, products: [P.robusta(8)],  expectedCloseDate: '2026-09-20', createdAt: '2026-08-25', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-29', conversion: 'none' },
+  { id: 'DL-260905', name: 'Banquet coffee supply',        customerId: 'C017', company: 'Santika Premiere Hotel',    stage: 'Open Lead', owner: 'Rizal Candra',  value: 14_000_000, priority: 'medium', ...B, products: [P.house(50)],  expectedCloseDate: '2026-09-30', createdAt: '2026-08-10', createdBy: 'Rizal Candra',  lastActivity: '2026-08-24', conversion: 'none' },
+  { id: 'DL-260906', name: 'Green bean sourcing Q4',       customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Open Lead', owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',   ...B, referenceNumber: 'RFQ-8801', description: 'Wholesale green bean volume for the Q4 roasting season.', picName: 'Agus Priyanto', phones: ['+62 812 5550 002'], email: 'order@tanameracoffee.com', relatedPeople: ['Dewi Lestari'], products: [P.gayo(15)], expectedCloseDate: '2026-09-28', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-30', conversion: 'none' },
+  { id: 'DL-260907', name: 'Espresso beans pilot batch',   customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Open Lead', owner: 'Dewi Lestari',  value: 9_600_000,  priority: 'medium', ...B, products: [P.espresso(30)], expectedCloseDate: '2026-09-29', createdAt: '2026-09-06', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
+  // ── 1st Meeting (5) ──
+  { id: 'DL-260908', name: 'House blend cafe rollout',     customerId: 'C013', company: 'Excelso Grand Indonesia',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 28_000_000, priority: 'high',   ...B, products: [P.house(100)], expectedCloseDate: '2026-09-26', createdAt: '2026-08-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260909', name: 'Single origin for lounge',     customerId: 'C003', company: 'Hotel Mulia Senayan',       stage: '1st Meeting', owner: 'Dewi Lestari',  value: 18_000_000, priority: 'medium', ...B, products: [P.single(40)], expectedCloseDate: '2026-09-18', createdAt: '2026-08-18', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260910', name: 'Wholesale robusta volume',     customerId: 'C015', company: 'Distributor Sentra Boga',   stage: '1st Meeting', owner: 'Fajar Nugroho', value: 48_000_000, priority: 'high',   ...B, products: [P.robusta(20)], expectedCloseDate: '2026-09-25', createdAt: '2026-08-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-01', conversion: 'none' },
+  { id: 'DL-260911', name: 'Seasonal blend launch',        customerId: 'C009', company: 'Maxx Coffee Lippo Mall',    stage: '1st Meeting', owner: 'Fajar Nugroho', value: 8_000_000,  priority: 'low',    ...B, products: [P.espresso(25)], expectedCloseDate: '2026-09-22', createdAt: '2026-08-28', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-03', conversion: 'none' },
+  { id: 'DL-260912', name: 'Toraja single origin trial',   customerId: 'C001', company: 'Anomali Coffee',            stage: '1st Meeting', owner: 'Dewi Lestari',  value: 21_600_000, priority: 'medium', ...B, products: [P.toraja(6)],  expectedCloseDate: '2026-09-20', createdAt: '2026-08-22', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-02', conversion: 'none' },
+  // ── Proposal (4) ──
+  { id: 'DL-260913', name: 'Annual espresso contract',     customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Proposal', owner: 'Dewi Lestari',  value: 19_200_000, priority: 'high',   ...B, referenceNumber: 'RFQ-8815', description: 'Twelve-month espresso bean supply across all outlets.', picName: 'Ratna Sari', phones: ['+62 811 5550 006'], email: 'buyer@kopikenangan.com', products: [P.espresso(60)], expectedCloseDate: '2026-09-15', createdAt: '2026-08-05', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260914', name: 'Premium single origin supply', customerId: 'C003', company: 'Hotel Mulia Senayan',       stage: 'Proposal', owner: 'Dewi Lestari',  value: 22_500_000, priority: 'medium', ...B, products: [P.single(50)], expectedCloseDate: '2026-09-18', createdAt: '2026-08-12', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-05', conversion: 'none' },
+  { id: 'DL-260915', name: 'Multi-outlet bean supply',     customerId: 'C013', company: 'Excelso Grand Indonesia',   stage: 'Proposal', owner: 'Fajar Nugroho', value: 38_400_000, priority: 'high',   ...B, products: [P.gayo(12)],  expectedCloseDate: '2026-09-22', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-04', conversion: 'none' },
+  { id: 'DL-260916', name: 'Hotel F&B annual contract',    customerId: 'C017', company: 'Santika Premiere Hotel',    stage: 'Proposal', owner: 'Rizal Candra',  value: 25_200_000, priority: 'high',   ...B, products: [P.house(90)],  expectedCloseDate: '2026-09-30', createdAt: '2026-08-14', createdBy: 'Rizal Candra',  lastActivity: '2026-09-03', conversion: 'none' },
+  // ── Negotiation (3) ──
+  { id: 'DL-260917', name: 'Bulk green beans Q3',          customerId: 'C015', company: 'Distributor Sentra Boga',   stage: 'Negotiation', owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high', ...B, referenceNumber: 'RFQ-8790', picName: 'Hendra Wijaya', phones: ['+62 813 5550 015'], email: 'po@sentraboga.co.id', products: [P.gayo(20)], expectedCloseDate: '2026-09-12', createdAt: '2026-07-25', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260918', name: 'Espresso beans renewal',       customerId: 'C006', company: 'Kopi Kenangan Pusat',       stage: 'Negotiation', owner: 'Dewi Lestari',  value: 16_000_000, priority: 'high', ...B, products: [P.espresso(50)], expectedCloseDate: '2026-09-10', createdAt: '2026-08-01', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
+  { id: 'DL-260919', name: 'Roastery supply agreement',    customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Negotiation', owner: 'Fajar Nugroho', value: 36_000_000, priority: 'high', ...B, products: [P.toraja(10)], expectedCloseDate: '2026-09-14', createdAt: '2026-08-06', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'none' },
+  // ── Won (3) ──
+  { id: 'DL-260920', name: 'Green beans Q3 confirmed',     customerId: 'C015', company: 'Distributor Sentra Boga',   stage: 'Won', owner: 'Fajar Nugroho', value: 64_000_000, priority: 'high', ...B, products: [P.gayo(20)], expectedCloseDate: '2026-09-02', createdAt: '2026-08-05', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-02', conversion: 'converted', convertedTarget: 'Sales Order', salesOrderId: 'SO-5009' },
+  { id: 'DL-260921', name: 'Espresso volume order',        customerId: 'C013', company: 'Excelso Grand Indonesia',   stage: 'Won', owner: 'Fajar Nugroho', value: 19_200_000, priority: 'high', ...B, products: [P.espresso(60)], expectedCloseDate: '2026-09-05', createdAt: '2026-08-08', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05', conversion: 'failed', conversionError: 'A product on this deal has no selling price set in the item master. Set a price, then convert again.' },
+  { id: 'DL-260922', name: 'Outlet expansion supply',      customerId: 'C009', company: 'Maxx Coffee Lippo Mall',    stage: 'Won', owner: 'Fajar Nugroho', value: 11_200_000, priority: 'medium', ...B, products: [P.house(40)], expectedCloseDate: '2026-09-06', createdAt: '2026-08-18', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-06', conversion: 'none' },
+  // ── Lost (2) ──
+  { id: 'DL-260923', name: 'Cold brew trial',              customerId: 'C012', company: 'Coffee Cult Bali',         stage: 'Lost', owner: 'Fajar Nugroho', value: 14_400_000, priority: 'medium', ...B, products: [P.robusta(6)], expectedCloseDate: '2026-08-20', createdAt: '2026-07-20', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-20', conversion: 'none', lostReason: 'Chose a competitor' },
+  { id: 'DL-260924', name: 'Equipment upgrade bundle',     customerId: 'C002', company: 'Tanamera Coffee Roastery',  stage: 'Lost', owner: 'Fajar Nugroho', value: 18_000_000, priority: 'low',    ...B, expectedCloseDate: '2026-08-15', createdAt: '2026-07-15', createdBy: 'Fajar Nugroho', lastActivity: '2026-08-15', conversion: 'none', lostReason: 'Budget on hold' },
 ]
 
-export const deals = reactive<Deal[]>(load('crm-deals-v2', DEALS_SEED))
+export const deals = reactive<Deal[]>(load('crm-deals-v3', DEALS_SEED))
 // Migrate snapshots that predate the model expansion: old stage casing, the
 // renamed 'validation-failed' status, and the currency/rate defaults.
 const STAGE_MIGRATE: Record<string, DealStage> = { 'Open lead': 'Open Lead', '1st meeting': '1st Meeting' }
@@ -328,7 +360,7 @@ for (const d of deals) {
   if (!d.currency) d.currency = 'IDR'
   if (typeof d.exchangeRate !== 'number') d.exchangeRate = 1
 }
-export function persistCrmDeals() { saveSnapshot('crm-deals-v2', deals) }
+export function persistCrmDeals() { saveSnapshot('crm-deals-v3', deals) }
 
 /** Related People options — active Mekari users (employees), names only. Max 10
  *  chosen per deal (informational; grants no access). */
@@ -771,16 +803,28 @@ const ACTIVITY_SEED: CrmActivityEntry[] = [
   { id: 'AL-0010', date: '2026-09-02T14:30:00', user: 'Rizal Candra',  action: 'Update',     feature: 'Settings',      recordLabel: 'Deals',
     details: [{ label: 'Status', from: 'Draft', to: 'Published' }, { label: 'Field added', text: 'Priority (Pick list)' }] },
   { id: 'AL-0011', date: '2026-09-02T09:40:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Deals',        recordLabel: 'Deal #10002', recordLink: '/crm/deals/DL-260902',
-    details: [{ text: 'Draft created' }] },
+    details: [
+      { label: 'Name', text: 'Office pantry — monthly supply' },
+      { label: 'Customer', text: 'GoWork Office Tower' },
+      { label: 'Stage', text: 'Open lead' },
+      { label: 'Value', text: 'Rp12.000.000' },
+    ] },
   { id: 'AL-0012', date: '2026-09-01T16:15:00', user: 'Fajar Nugroho', action: 'Delete',     feature: 'Deals',        recordLabel: 'Task #90002',
     details: [] },
   { id: 'AL-0013', date: '2026-09-01T10:20:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Contacts',    recordLabel: 'Customer #10014', recordLink: '/crm/contacts/customers',
-    details: [{ text: 'Customer created' }] },
+    details: [
+      { label: 'Company', text: 'GoWork Office Tower' },
+      { label: 'Segment', text: 'Office' },
+      { label: 'Owner', text: 'Dewi Lestari' },
+    ] },
   { id: 'AL-0014', date: '2026-08-31T13:30:00', user: 'Fajar Nugroho', action: 'Update',     feature: 'Deals',        recordLabel: 'Deal #10008', recordLink: '/crm/deals/DL-260908',
     details: [{ label: 'Value', from: 'Rp12.000.000', to: 'Rp15.000.000' }] },
   { id: 'AL-0015', date: '2026-08-31T08:05:00', user: 'Dewi Lestari',  action: 'Login',      feature: '',            details: [] },
   { id: 'AL-0016', date: '2026-08-30T11:05:00', user: 'Dewi Lestari',  action: 'Create',     feature: 'Settings',        recordLabel: 'Marketing',
-    details: [{ text: 'Team created' }] },
+    details: [
+      { label: 'Description', text: 'Generates and nurtures new leads' },
+      { label: 'Members', text: '1' },
+    ] },
 ]
 
 export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1', ACTIVITY_SEED))

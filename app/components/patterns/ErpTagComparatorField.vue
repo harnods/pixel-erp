@@ -14,9 +14,9 @@ import {
   MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
-type Comparator = 'isAnyOf' | 'isNoneOf'
-const COMPARATORS: Comparator[] = ['isAnyOf', 'isNoneOf']
-const COMPARATOR_LABELS: Record<Comparator, string> = { isAnyOf: 'Is any of', isNoneOf: 'Is none of' }
+export type TagComparator = 'isAnyOf' | 'isAllOf' | 'isNoneOf'
+type Comparator = TagComparator
+const COMPARATOR_LABELS: Record<Comparator, string> = { isAnyOf: 'Is any of', isAllOf: 'Is all of', isNoneOf: 'Is none of' }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -24,7 +24,12 @@ const props = withDefaults(defineProps<{
   values: string[]
   options: string[]
   placeholder?: string
-}>(), { placeholder: 'Type a name…' })
+  /** Which comparators to offer. Default keeps the original any/none set so existing
+   *  callers are unchanged; pass e.g. ['isAnyOf','isAllOf','isNoneOf'] to add "Is all of". */
+  comparators?: Comparator[]
+}>(), { placeholder: 'Type a name…', comparators: () => ['isAnyOf', 'isNoneOf'] })
+
+const COMPARATORS = computed<Comparator[]>(() => props.comparators)
 
 const emit = defineEmits<{
   (e: 'update:comparator', v: Comparator): void
