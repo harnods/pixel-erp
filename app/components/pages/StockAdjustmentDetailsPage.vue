@@ -472,7 +472,7 @@ const activityEntries = computed(() => {
       { label: t('Transaction date'), value: formatDateLong(a.date) },
       { label: t('Warehouse'), value: a.warehouseName },
       ...(a.kind !== 'count' ? [{ label: t('Category'), value: a.category }] : []),
-      ...(!isWmsRecord.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
+      ...(!hideCosting.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
       ...(isWmsCount.value && a.assignee ? [{ label: t('Assignee'), value: a.assignee }] : []),
       ...(isWmsCount.value && a.startDate ? [{ label: t('Start date'), value: formatDateTimeLong(a.startDate) }] : []),
       ...(isWmsCount.value && a.endDate ? [{ label: t('End date'), value: formatDateTimeLong(a.endDate) }] : []),
@@ -730,7 +730,7 @@ onUnmounted(() => {
         <template v-else>
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(adjustment.date)" />
-            <ContentList v-if="!isWmsRecord" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
+            <ContentList v-if="!hideCosting" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="adjustment.number" />
@@ -1172,7 +1172,7 @@ onUnmounted(() => {
                 <th class="detail-th">{{ t('Date') }}</th>
                 <th class="detail-th">{{ t('Warehouse') }}</th>
                 <th class="detail-th">{{ t('Category') }}</th>
-                <th class="detail-th">{{ t('Account') }}</th>
+                <th v-if="!hideCosting" class="detail-th">{{ t('Account') }}</th>
                 <th class="detail-th">{{ t('Status') }}</th>
               </tr>
             </thead>
@@ -1184,7 +1184,7 @@ onUnmounted(() => {
                 <td class="detail-td">{{ formatDateLong(linkedStockCount.date) }}</td>
                 <td class="detail-td">{{ linkedStockCount.warehouseName }}</td>
                 <td class="detail-td">{{ linkedStockCount.category }}</td>
-                <td class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
+                <td v-if="!hideCosting" class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
                 <td class="detail-td"><ErpStatusBadge :status="linkedStockCount.status" /></td>
               </tr>
             </tbody>

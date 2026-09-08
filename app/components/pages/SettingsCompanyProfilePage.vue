@@ -7,8 +7,16 @@ import {
   MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
+
+/**
+ * `embedded` = rendered inside the CRM Settings shell (not the ERP Settings page).
+ * In that mode we hide every Edit button and drop the Advanced settings section —
+ * the CRM surface is read-only for these fields. Default (ERP) keeps everything.
+ */
+const props = defineProps<{ embedded?: boolean }>()
 
 const { t } = useLocale()
 const { amountDisplay: amountDisplaySetting, setAmountDisplay } = useCurrencySettings()
@@ -331,6 +339,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
+          v-if="!props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
@@ -340,62 +349,36 @@ const ADVANCED_TOGGLES = [
         </button>
       </div>
 
-      <div class="cp-grid">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company name') }}</span>
-          <span class="cp-value">PT Central Perk Indonesia</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company address') }}</span>
-          <span class="cp-value">
-            MidPlaza 2 Lantai 4<br>
-            Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
-            Jakarta Pusat, DKI Jakarta 10220
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Email') }}</span>
-          <span class="cp-value">rizal.candra@centralperk.co.id</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Phone') }}</span>
-          <span class="cp-value">+628129209988</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Account owner') }}</span>
-          <span class="cp-value">
-            Rizal Candra<br>
-            <span class="cp-value-subtle">rizal.candra@centralperk.co.id</span>
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company ID') }}</span>
-          <span class="cp-value">676424</span>
-        </div>
-      </div>
-
-      <div class="cp-field cp-field--logo">
-        <span class="cp-label">{{ t('Company logo') }}</span>
+      <ContentList :label="t('Company logo')" class="cp-cl--logo">
         <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
+      </ContentList>
+
+      <div class="cp-grid">
+        <ContentList :label="t('Company name')" value="PT Central Perk Indonesia" />
+        <ContentList :label="t('Company address')">
+          <span class="content-list__line">MidPlaza 2 Lantai 4</span>
+          <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
+          <span class="content-list__line">Jakarta Pusat, DKI Jakarta 10220</span>
+        </ContentList>
+        <ContentList :label="t('Email')" value="rizal.candra@centralperk.co.id" />
+        <ContentList :label="t('Phone')" value="+628129209988" />
+        <ContentList :label="t('Account owner')">
+          <span class="content-list__line">Rizal Candra</span>
+          <span class="content-list__line cp-value-subtle">rizal.candra@centralperk.co.id</span>
+        </ContentList>
+        <ContentList :label="t('Company ID')" value="676424" />
       </div>
 
-      <div class="cp-grid cp-grid--spaced">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Shipping address') }}</span>
-          <span class="cp-value">
-            MidPlaza 2 Lantai 4<br>
-            Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
-            Jakarta Pusat, DKI Jakarta 10220
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Fax') }}</span>
-          <span class="cp-value">+62215559999</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Website') }}</span>
+      <div class="cp-grid">
+        <ContentList :label="t('Shipping address')">
+          <span class="content-list__line">MidPlaza 2 Lantai 4</span>
+          <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
+          <span class="content-list__line">Jakarta Pusat, DKI Jakarta 10220</span>
+        </ContentList>
+        <ContentList :label="t('Fax')" value="+62215559999" />
+        <ContentList :label="t('Website')">
           <a href="https://centralperk.co.id" class="cp-link" target="_blank" rel="noopener">https://centralperk.co.id</a>
-        </div>
+        </ContentList>
       </div>
     </section>
 
@@ -409,7 +392,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
-          v-if="editing !== 'tax'"
+          v-if="editing !== 'tax' && !props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
           @click="startEdit('tax')"
         >
@@ -420,10 +403,7 @@ const ADVANCED_TOGGLES = [
 
       <!-- Read mode -->
       <template v-if="editing !== 'tax'">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company type') }}</span>
-          <span class="cp-value">{{ tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)') }}</span>
-        </div>
+        <ContentList :label="t('Company type')" :value="tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)')" />
         <div class="cp-subhead cp-subhead--spaced">
           <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
           <MpBadge for="tableStatus" :type="tax.npwpValidated ? 'completed' : 'announcement'" size="sm">
@@ -432,14 +412,8 @@ const ADVANCED_TOGGLES = [
         </div>
         <p class="cp-subhead-desc">{{ t('NPWP details') }}</p>
         <div class="cp-grid">
-          <div class="cp-field">
-            <span class="cp-label">NPWP</span>
-            <span class="cp-value">{{ tax.npwp || '—' }}</span>
-          </div>
-          <div class="cp-field">
-            <span class="cp-label">NITKU</span>
-            <span class="cp-value">{{ tax.nitku || '—' }}</span>
-          </div>
+          <ContentList label="NPWP" :value="tax.npwp || '—'" />
+          <ContentList label="NITKU" :value="tax.nitku || '—'" />
         </div>
         <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
              and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
@@ -450,14 +424,14 @@ const ADVANCED_TOGGLES = [
             </div>
             <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
             <div class="cp-grid">
-              <div class="cp-field">
-                <span class="cp-label">{{ t('NPWP signee') }}</span>
-                <span class="cp-value">{{ tax.signeeNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.signee || '—' }}</span></span>
-              </div>
-              <div class="cp-field">
-                <span class="cp-label">{{ t('NPWP PIC') }}</span>
-                <span class="cp-value">{{ tax.picNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.pic || '—' }}</span></span>
-              </div>
+              <ContentList :label="t('NPWP signee')">
+                <span class="content-list__line">{{ tax.signeeNpwp || '—' }}</span>
+                <span class="content-list__line cp-value-subtle">{{ tax.signee || '—' }}</span>
+              </ContentList>
+              <ContentList :label="t('NPWP PIC')">
+                <span class="content-list__line">{{ tax.picNpwp || '—' }}</span>
+                <span class="content-list__line cp-value-subtle">{{ tax.pic || '—' }}</span>
+              </ContentList>
             </div>
           </template>
           <p v-else class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
@@ -621,7 +595,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
-          v-if="editing !== 'payment'"
+          v-if="editing !== 'payment' && !props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
           @click="startEdit('payment')"
         >
@@ -632,12 +606,12 @@ const ADVANCED_TOGGLES = [
 
       <!-- Read mode -->
       <div v-if="editing !== 'payment'" class="cp-grid">
-        <div class="cp-field"><span class="cp-label">{{ t('Bank name') }}</span><span class="cp-value">{{ payment.bankName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Branch') }}</span><span class="cp-value">{{ payment.branch || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Branch address') }}</span><span class="cp-value">{{ payment.branchAddress || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Account no.') }}</span><span class="cp-value">{{ payment.accountNo || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Account name') }}</span><span class="cp-value">{{ payment.accountName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('SWIFT code') }}</span><span class="cp-value">{{ payment.swift || '—' }}</span></div>
+        <ContentList :label="t('Bank name')" :value="payment.bankName || '—'" />
+        <ContentList :label="t('Branch')" :value="payment.branch || '—'" />
+        <ContentList :label="t('Branch address')" :value="payment.branchAddress || '—'" />
+        <ContentList :label="t('Account no.')" :value="payment.accountNo || '—'" />
+        <ContentList :label="t('Account name')" :value="payment.accountName || '—'" />
+        <ContentList :label="t('SWIFT code')" :value="payment.swift || '—'" />
       </div>
 
       <!-- Edit mode -->
@@ -680,10 +654,10 @@ const ADVANCED_TOGGLES = [
       </div>
     </section>
 
-    <div class="cp-divider" />
+    <div v-if="!props.embedded" class="cp-divider" />
 
-    <!-- ── Advanced settings ────────────────────────────────────────────────── -->
-    <section class="cp-section">
+    <!-- ── Advanced settings (hidden in the CRM-embedded surface) ───────────── -->
+    <section v-if="!props.embedded" class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
@@ -857,7 +831,7 @@ const ADVANCED_TOGGLES = [
 
     <!-- ── Demo scenario FAB — switch whether this company's SSO ID is already
          registered in Klikpajak, to preview both Tax info onboarding states ──── -->
-    <MpPopover id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
+    <MpPopover v-if="!props.embedded" id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
         <button class="demo-fab" :aria-label="t('Change scenario state')">
           <MpIcon name="sliders" size="md" color="icon.inverse" />
@@ -960,9 +934,13 @@ const ADVANCED_TOGGLES = [
 .cp-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--mp-spacing-5) var(--mp-spacing-8);
+  /* Row rhythm is owned by ContentList's own 8px top/bottom padding; only the
+     column gap is set here. */
+  column-gap: var(--mp-spacing-8);
 }
-.cp-grid--spaced { margin-top: var(--mp-spacing-5); }
+
+/* Company logo ContentList — first block in the section; 12px down to the grid. */
+.cp-cl--logo { margin-bottom: var(--mp-spacing-3); }
 
 .cp-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 .cp-field--logo { margin-top: var(--mp-spacing-5); }

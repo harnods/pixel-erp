@@ -41,7 +41,7 @@ const contact = computed(() => getCrmContact(props.orderId))
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="soon('Edit contact')">Edit</MpPopoverListItem>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="soon('Delete contact')">Delete</MpPopoverListItem>
+                <MpPopoverListItem @click="soon('Delete contact')">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

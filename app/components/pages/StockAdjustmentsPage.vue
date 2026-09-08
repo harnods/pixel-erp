@@ -96,6 +96,12 @@ const columns: TableColumn[] = [
   { key: 'status',        label: 'Status',       kind: 'status', sortType: 'text' },
 ]
 
+// WMS Standalone has no costing and no journal entry, so an adjustment there posts
+// to no account at all — Account isn't a column the user can fill in, it's ERP-only
+// data. Hidden from the table AND from the column-settings menu, so it can't be
+// switched back on into an empty column.
+const hideAccount = computed(() => activeScenario.value.startsWith('WMS'))
+
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on. "Last updated" is opt-in
 // (off by default); "Memo" is a settings-only toggle — not its own column, it
@@ -108,7 +114,7 @@ const colVis = reactive<Record<string, boolean>>({
 const visibleColumns = computed(() =>
   columns.filter(c =>
     colVis[c.key]
-    && !(kindFilter.value && c.key === 'account')
+    && !((kindFilter.value || hideAccount.value) && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
     && !(kindFilter.value === 'count' && c.key === 'tags')
     && !(kindFilter.value === 'count' && !isAwaiting.value && c.key === 'date')
@@ -118,11 +124,13 @@ const visibleColumns = computed(() =>
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
-const columnItems = [
+const columnItems = computed(() => [
   { key: 'number', label: 'Number', disabled: true },
   { key: 'memo', label: 'Memo' },
-  ...columns.slice(1).map(c => ({ key: c.key, label: c.label })),
-]
+  ...columns.slice(1)
+    .filter(c => !(hideAccount.value && c.key === 'account'))
+    .map(c => ({ key: c.key, label: c.label })),
+])
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────

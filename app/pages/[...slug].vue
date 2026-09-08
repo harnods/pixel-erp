@@ -85,6 +85,7 @@ const pageRegistry: Record<string, Component> = {
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork workspaces': defineAsyncComponent(() => import('~/components/pages/CoworkWorkspacesPage.vue')),
   // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
   'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
@@ -201,6 +202,8 @@ const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFo
 const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
 const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
+const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
 const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
 const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
@@ -341,11 +344,24 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
+const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
+const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
+const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
+const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
+const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
+const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
+const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
+const CrmContactRecordPage = asyncPage(() => import('~/components/pages/CrmContactRecordPage.vue'))
+const CrmCompanyRecordPage = asyncPage(() => import('~/components/pages/CrmCompanyRecordPage.vue'))
+const NewCrmContactPage = asyncPage(() => import('~/components/pages/NewCrmContactPage.vue'))
+const NewCrmCompanyPage = asyncPage(() => import('~/components/pages/NewCrmCompanyPage.vue'))
 const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
 const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
 const CrmCustomerDetailPage = asyncPage(() => import('~/components/pages/CrmCustomerDetailPage.vue'))
@@ -417,12 +433,32 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     const id = segs[2]
     // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.
     if (sub === 'contacts') return id ? { component: CrmContactDetailPage, id } : { component: CrmContactsPage, id: '' }
-    // /crm/customers/new → create-company form (before the :id detail match).
-    if (sub === 'customers' && id === 'new') return { component: NewCustomerPage, id: 'new' }
-    // /crm/orders/:id, /crm/products/:id, /crm/customers/:id → CRM detail pages.
+    // /crm/customers → L2 [Contacts, Companies] (first-class contacts/companies, M2M).
+    if (sub === 'customers' && id === 'contacts') {
+      if (segs[3] === 'new') return { component: NewCrmContactPage, id: 'new' }
+      return segs[3] ? { component: CrmContactRecordPage, id: segs[3] } : { component: CrmContactsListPage, id: '' }
+    }
+    if (sub === 'customers' && id === 'companies') {
+      if (segs[3] === 'new') return { component: NewCrmCompanyPage, id: 'new' }
+      return segs[3] ? { component: CrmCompanyRecordPage, id: segs[3] } : { component: CrmCompaniesListPage, id: '' }
+    }
+    if (sub === 'customers') return { component: CrmContactsListPage, id: '' } // bare → Contacts
+    // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
+    if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
+    if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
+    // /crm/orders/:id, /crm/products/:id → CRM detail pages.
+    if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
-    if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
+    // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
+    if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
+    if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
+    if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
+    // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
+    if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
+    if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
+    if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
+    if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
   // Contacts: /{customers|vendors|other-contacts}/new → create form,
@@ -451,6 +487,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cowork-skills/:id → Cowork skill detail (actions + definition).
   if (segs.length >= 2 && segs[0] === 'cowork-skills') {
     return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-workspaces/:id → workspace detail (own header + tabs).
+  if (segs.length >= 2 && segs[0] === 'cowork-workspaces') {
+    return { component: CoworkWorkspaceDetailPage, id: segs[1]! }
   }
   // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
   if (segs[0] === 'cowork-knowledge') {
@@ -1607,6 +1647,12 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cowork-agents/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             New agent
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork workspaces'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-workspaces', query: { new: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New workspace
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">

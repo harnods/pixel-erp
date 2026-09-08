@@ -117,6 +117,10 @@ const props = withDefaults(defineProps<{
    *  line. Off by default (see DimensionsIndexPage.vue for the one table that
    *  opts in). */
   actionsAlignTop?: boolean
+  /** Remove the row hover background. Use for a purely read-only table that has NO
+   *  row [...] actions and no clickable row — nothing to hover-target, so the grey
+   *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
+  noRowHover?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -464,7 +468,7 @@ const bulkCountLabel = computed(() => {
 </script>
 
 <template>
-  <div class="erp-table-page">
+  <div class="erp-table-page" :class="{ 'erp-table-page--no-row-hover': noRowHover }">
 
     <!-- ── Stats bar ── -->
     <div v-if="$slots.stats" class="erp-stats-bar">
@@ -981,6 +985,13 @@ const bulkCountLabel = computed(() => {
 .erp-cell-check > [data-pixel-component="MpCheckbox"] { gap: 0; }
 .erp-cell-check > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
 
+/* Header select-all checkbox — same fix as the body cell: the empty label reserves
+   the built-in box→label gap, so zero it + hide the label; the single 12px between
+   the box and the column label then comes from .th-inner (8px) + 4px (rule/
+   checkbox-gap-12). */
+.th-inner > [data-pixel-component="MpCheckbox"] { gap: 0; flex: 0 0 auto; margin-right: var(--mp-spacing-1); }
+.th-inner > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
+
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
   display: inline-block;        /* honour the cell's text-align (right/center cols) */
@@ -1108,6 +1119,11 @@ const bulkCountLabel = computed(() => {
 }
 .erp-tr:hover .erp-td {
   background: var(--mp-background-neutral-hovered, #eef0f3);
+}
+/* Read-only tables with no row actions opt out of the hover highlight
+   (rule/table-no-hover-no-actions). */
+.erp-table-page--no-row-hover .erp-tr:hover .erp-td {
+  background: transparent;
 }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */

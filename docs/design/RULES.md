@@ -354,9 +354,15 @@ is the point: they *feel* normal, which is exactly why they slip through.
   filename, Close/× dismisses. It's a preview, not an editor — no other actions. *Don't:*
   add edit/print/share buttons or a second primary. **Why:** preview = look + take a copy.
   **Lint:** review.
-- **`rule/checkbox-multiline-top`** — *Do:* when a checkbox label wraps to >1 line,
-  align the box to the **top** (`align-items: flex-start`). **Why:** box tracks the
-  first line, not the vertical center of a paragraph. **Lint:** review.
+- **`rule/checkbox-multiline-top`** — *Do:* whenever a checkbox/radio label is more
+  than one line — whether it **wraps** or is a deliberate **title + caption** (a bold
+  title over a secondary caption) — align the **box to the top**, level with the first
+  line. The label lives **inside** `MpCheckbox`/`MpRadio` (`rule/checkbox-gap-12`), so
+  top-align it on the component's own root: `:deep(.mp-checkbox__root) { align-items:
+  flex-start }` (radio: `.mp-radio__root`). *Don't:* let the box vertically-centre
+  against the block, or move the label out into a separate span with its own flex.
+  **Why:** the box tracks the first line, not the vertical centre of a paragraph.
+  **Lint:** review.
 
 ## Selects, filters & inputs — source: `docs/patterns/ErpFilterBar.md`
 
@@ -530,6 +536,21 @@ ERP override wins.
 - **`rule/table-no-outer-border`** — *Do:* no outer border box; wrapper is
   `overflow-x: auto` only. **Why:** ERP tables are borderless-outer. **Lint:**
   review.
+- **`rule/table-outer-border-bold`** — *Do:* when a table (or table-like key/value
+  grid) **does** carry a full outer border box — e.g. a bordered mini-table inside a
+  drawer / modal / detail card, not the main index table — that outer border is
+  **`--mp-border-bold`** (not `--mp-border-default`). Inner row dividers stay
+  `--mp-border-default`. *Don't:* box a table in a faint default-weight border. **Why:**
+  a bordered table reads as a contained object; the bold edge defines it while the
+  lighter inner rules keep the rows quiet. **Source:** the deal quick-preview product
+  table. **Lint:** review.
+- **`rule/table-no-hover-no-actions`** — *Do:* a purely read-only table with **no
+  row `[...]` actions and no clickable/navigable row** removes the row hover
+  background — pass **`no-row-hover`** to `ErpTablePage` (or otherwise render
+  `.erp-tr:hover .erp-td` transparent). *Don't:* keep the grey hover highlight when
+  there is nothing to hover-target (e.g. the Activity logs page). **Why:** the hover
+  highlight signals "this row is actionable"; on a static log it's misleading noise.
+  **Lint:** review.
 - **`rule/table-checkbox-first-cell`** — *Do:* a row-selection checkbox lives
   **inside the first data cell** (before its content), sharing that cell — and the row
   name is the checkbox's **own label** (`<MpCheckbox>{{ row.name }}</MpCheckbox>`) so
@@ -861,6 +882,16 @@ ERP override wins.
 - **`rule/copy-id-translations`** — *Do:* all strings live in
   `app/data/translations.ts` (English key → Indonesian value) via `t()`. **Lint:**
   review.
+- **`rule/no-page-description-subtitle`** — *Do:* a page (or section) shows its
+  **title** and goes straight to content. *Don't:* add a descriptive subtitle/lead
+  paragraph under the title that explains **what the page is for** (e.g. "Group
+  people to organise ownership and reporting.", "People with access to your CRM
+  workspace.", "Connect the tools your team already uses."). **Why:** the title +
+  the content already say what the page is; a "this page lets you…" blurb is filler
+  that never appears in the reference product and adds visual noise. Inline helper
+  text tied to a **specific field/control** is fine — this bans only the page/section
+  descriptor. **Lint:** review (grep for a lead `<p>` immediately under a page/section
+  title).
 
 ---
 
@@ -880,8 +911,16 @@ filters appear on the left.
   (`gap: var(--mp-spacing-4)`). **Lint:** review.
 - **`rule/filter-bar-search-pill`** — *Do:* the search field is a **rounded pill**,
   the **rightmost** element of the right group, with a leading search icon and a
-  clear (×) shown only when it has a value. *Don't:* use a square input or move it.
-  **Lint:** review.
+  clear (×) shown only when it has a value. Use the exact markup
+  `<div class="filter-search"><MpIcon name="search" size="sm"/><input class="filter-search-input"…>…</div>`.
+  The pill **box** (border + padding + 999px radius + 248px width) is now provided
+  **globally** by `erp.css .filter-search` — a hand-rolled `#filters` bar gets a
+  correct pill even if it forgets to copy the scoped CSS; the scoped copy (if any)
+  still wins. *Don't:* use a square input, move it, use `size="md"` for the icon, or
+  hand-roll a `.filter-search` that omits the border/radius (the recurring bug — a
+  **bare, borderless** search). **Why:** the search box broke repeatedly because the
+  container CSS lived only in each page's scoped `<style>` and got half-copied.
+  **Lint:** review (grep `.filter-search` markup; the box comes from erp.css).
 - **`rule/filter-bar-all-filters-drawer`** — *Do:* filters that don't fit as inline
   dropdowns live behind an **"All filters"** button (left group) that opens the
   filters **drawer** (`rule/drawer-custom-shell`, opened via this button per

@@ -36,7 +36,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/form-actions-always-present': 'Footer Cancel + primary are always rendered.',
   'rule/form-errors-inline': 'Validation errors render inline, never as a toast.',
   'rule/form-edit-save-changes': 'Edit form primary = "Save changes"; create = "Save".',
-  'rule/checkbox-multiline-top': 'A multi-line checkbox label keeps the box top-aligned.',
+  'rule/checkbox-multiline-top': 'Multi-line checkbox/radio label (wrap OR title+caption): box top-aligns to the first line — label inside the component, :deep(.mp-checkbox__root){align-items:flex-start}.',
   'rule/select-erpfilterselect': 'Dropdown = MpAutocomplete (omit is-searchable = select); its menu is a popover, never the native OS <select>.',
   'rule/select-active-neutral': 'Select/search focus = neutral slate ring, never green.',
   'rule/form-focus-border-bold': 'Every form field focus/active = neutral border-bold (#8c9596) + 1px ring, never brand green; a hand-rolled input must set this itself.',
@@ -66,6 +66,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/table-use-erptablepage': 'Tables render via ErpTablePage — never hand-rolled.',
   'rule/table-column-kind': 'Set each column kind; never hardcode a width on a semantic column.',
   'rule/table-no-outer-border': 'No outer border box; wrapper is overflow-x only.',
+  'rule/table-no-hover-no-actions': 'A read-only table with no row [...] actions and no clickable row removes the row hover background (ErpTablePage no-row-hover).',
   'rule/table-cell-padding-align': 'Cell padding 8px; per-row align — single-line row = middle, a multi-line row = top; the [...] actions cell ALWAYS aligns top.',
   'rule/table-default-newest-first': 'Dated/transactional tables default to newest-first (date desc, latest on top) — auto-applied by useTableState.',
   'rule/table-default-sort-alpha': 'Named-entity tables (no date column) default to alphabetical by name; dated tables use table-default-newest-first.',
@@ -163,7 +164,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   // Patterns — Filter bar
   'rule/filter-bar-anatomy': 'Filter bar = left (filters + All filters) | right (icon tools then search), space-between.',
   'rule/filter-bar-left-gap': 'Left group gap is always 16px (filter↔filter and filter↔All filters).',
-  'rule/filter-bar-search-pill': 'Search is a rounded pill, rightmost, with a leading icon + clear (×).',
+  'rule/filter-bar-search-pill': 'Search is a rounded pill, rightmost, with a leading icon + clear (×); the pill box comes from erp.css .filter-search — never a bare borderless input.',
   'rule/filter-bar-all-filters-drawer': 'Overflow filters live behind an "All filters" button that opens the filters drawer.',
 
   // Copy
@@ -171,6 +172,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/copy-number-not-id': 'Label identifiers "… number", not "… ID".',
   'rule/copy-add-noun-only': 'Add buttons use the noun only (no "baru").',
   'rule/copy-id-translations': 'All strings live in translations.ts via t().',
+  'rule/no-page-description-subtitle': 'Never add a subtitle/lead paragraph under a page or section title describing what the page is for; go straight to content.',
 
   // Index pages & shared modal/drawer patterns
   'rule/index-scenario-fab': 'Every index page uses the shared ScenarioFab (black settings FAB, bottom-right) → MpPopover scenarios (Default, Empty state); never hand-roll the preview FAB.',

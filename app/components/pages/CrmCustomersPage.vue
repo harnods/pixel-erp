@@ -489,7 +489,10 @@ function confirmDelete() {
 
 <style scoped>
 .crm { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
+/* No top padding on the scrollport: it would sit between the clip edge and the
+   sticky .cc-filterbar's containing block, leaving a gap rows show through when
+   the bar is pinned. The 20px lives on .cc-stats (the first child) instead. */
+.cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: 0 var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
 /* ── View tabs ── */
 .cc-viewtabs { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); }
@@ -505,8 +508,15 @@ function confirmDelete() {
 .cc-add-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 
 /* Shared toolbar spacing (mirrors ErpTablePage internal .erp-stats-bar / .erp-filter-bar) */
-.cc-stats { margin-bottom: var(--mp-spacing-10); }
-.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+/* 20px of the old 40px gap moved onto .cc-filterbar's padding-top, so the
+   pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
+.cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
+/* The filter bar pins to the top of the scrolling stage. Left unpinned it scrolls
+   under the stage's clip edge and the search pill gets sliced mid-scroll (its top
+   border disappears while the rest is still visible); pinning also keeps search +
+   filters reachable on a long list instead of forcing a scroll back to the top.
+   Opaque stage background + z-index 3 so rows pass underneath, not through. */
+.cc-filterbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); /* the gap below is padding, not margin, so the pinned bar's opaque strip travels with it and rows never show through it */ background: var(--mp-background-stage, #fff); }
 @media (max-width: 640px) {
   .cc-filterbar { flex-wrap: wrap; }
   .cc-filterbar > :last-child { flex: 1 1 100%; }

@@ -285,6 +285,35 @@
   box-shadow: 0 0 0 1px #8c9596;
 }
 
+/* Base filter-bar search PILL box — global so a hand-rolled `#filters` bar can
+   never render a bare, borderless search (a recurring miss). A page's scoped
+   `.filter-search` still wins (its [data-v] attr raises specificity), so this only
+   fills in when a page forgot to copy the box. Width overridable via
+   `--filter-search-w`. Ring is added by the :focus-within rule above.
+   rule/filter-bar-search-pill */
+.filter-search {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  gap: var(--mp-spacing-2, 8px);
+  width: var(--filter-search-w, 248px);
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  background: var(--mp-colors-background-neutral, #fff);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-full, 999px);
+  color: var(--mp-colors-text-subtle, #79818b);
+}
+.filter-search .filter-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--mp-font-sizes-md, 14px);
+  color: var(--mp-colors-text-default, #080d0e);
+}
+.filter-search .filter-search-input::placeholder { color: var(--mp-colors-text-placeholder, #97a0af); }
+
 /* ── Pixel @latest atomic-CSS gap remediation ─────────────────────────────────
  * package.json pins @mekari/pixel3* to "latest" with no lockfile, so the pulled
  * build emits component recipe classes + token vars but NOT the runtime atomic
