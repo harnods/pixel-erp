@@ -15,7 +15,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  MpIcon, MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
+  MpIcon, MpButton, MpInput, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -99,7 +99,7 @@ function openFull() { emit('open-full', seed()) }
           <div class="cqd-body">
             <MpFormControl id="cqd-name-fc" :is-invalid="!!errors.name">
               <MpFormLabel>Deal name</MpFormLabel>
-              <input v-model="name" class="cqd-input" :class="{ 'cqd-input--invalid': !!errors.name }" type="text" maxlength="120" @input="errors.name = ''">
+              <MpInput id="cqd-name" v-model="name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
               <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
             </MpFormControl>
 

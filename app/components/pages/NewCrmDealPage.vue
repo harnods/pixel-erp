@@ -11,7 +11,7 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import {
-  MpIcon, MpButton, MpButtonGroup, MpInputTag, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpIcon, MpButton, MpButtonGroup, MpInput, MpTextarea, MpInputTag, MpFormControl, MpFormLabel, MpFormErrorMessage,
   type DataInterface,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -143,7 +143,7 @@ const ADJ_TYPES = [{ value: 'percentage', label: 'Percentage (%)' }, { value: 'f
 // ── Commercial calculation ──
 const calculated = computed(() => dealCalculatedValue(f))
 function syncCalcValue() { if (!f.valueOverridden) f.value = calculated.value }
-function overrideValue(e: Event) { f.valueOverridden = true; f.value = Math.max(0, Number((e.target as HTMLInputElement).value) || 0) }
+function overrideValue(v: unknown) { f.valueOverridden = true; f.value = Math.max(0, Number(v) || 0) }
 function resetCalculated() { f.valueOverridden = false; f.value = calculated.value }
 const money = (n: number) => formatMoney(n, f.currency)
 
@@ -245,7 +245,7 @@ function cancel() {
           <h2 class="cdf-section-title">Deal overview</h2>
           <MpFormControl id="cdf-name-fc" :is-invalid="!!errors.name">
             <MpFormLabel>Deal name</MpFormLabel>
-            <input v-model="f.name" class="cdf-input" :class="{ 'cdf-input--invalid': !!errors.name }" type="text" maxlength="120" @input="errors.name = ''">
+            <MpInput id="cdf-name" v-model="f.name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
             <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
           </MpFormControl>
 
@@ -269,7 +269,7 @@ function cancel() {
             <ErpFilterSelect id="cdf-customer" :model-value="f.customerId" placeholder="Select a company" :options="customerOptions" :is-clearable="false" width="100%" @update:model-value="selectCustomer" />
             <span v-if="errors.customer" class="cdf-err">{{ errors.customer }}</span>
             <div v-if="showNewCustomer" class="cdf-quickcreate">
-              <input v-model="newCustomerName" class="cdf-input" type="text" aria-label="New customer name" @input="newCustomerError = ''" @keydown.enter.prevent="createQuickCustomer">
+              <MpInput id="cdf-newcust" v-model="newCustomerName" is-full-width aria-label="New customer name" @update:model-value="newCustomerError = ''" @keydown.enter="createQuickCustomer" />
               <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="createQuickCustomer">Create</button>
               <span v-if="newCustomerError" class="cdf-err cdf-err--block">{{ newCustomerError }}</span>
             </div>
@@ -285,11 +285,11 @@ function cancel() {
           <div class="cdf-row">
             <div class="cdf-field">
               <span class="cdf-label">Reference number <span class="cdf-opt">Optional</span></span>
-              <input v-model="f.referenceNumber" class="cdf-input" type="text" maxlength="100">
+              <MpInput id="cdf-ref" v-model="f.referenceNumber" is-full-width maxlength="100" />
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Due date <span class="cdf-opt">Optional</span></span>
-              <input v-model="f.expectedCloseDate" class="cdf-input" type="date">
+              <MpInput id="cdf-due" v-model="f.expectedCloseDate" type="date" is-full-width />
             </div>
           </div>
 
@@ -301,7 +301,7 @@ function cancel() {
 
           <div class="cdf-field">
             <span class="cdf-label">Description <span class="cdf-opt">Optional</span></span>
-            <textarea v-model="f.description" class="cdf-textarea" rows="2" maxlength="500" @input="errors.description = ''" />
+            <MpTextarea id="cdf-desc" v-model="f.description" is-full-width :rows="2" maxlength="500" :is-invalid="!!errors.description" @update:model-value="errors.description = ''" />
             <span v-if="errors.description" class="cdf-err">{{ errors.description }}</span>
           </div>
         </section>
@@ -312,12 +312,12 @@ function cancel() {
           <p class="cdf-section-help">Prefilled from the customer’s Company PIC. Edits stay on this deal and never change the customer.</p>
           <div class="cdf-field">
             <span class="cdf-label">PIC name <span class="cdf-opt">Optional</span></span>
-            <input v-model="f.picName" class="cdf-input" type="text">
+            <MpInput id="cdf-pic" v-model="f.picName" is-full-width />
           </div>
           <div class="cdf-row">
             <div class="cdf-field">
               <span class="cdf-label">Email <span class="cdf-opt">Optional</span></span>
-              <input v-model="f.email" class="cdf-input" type="email">
+              <MpInput id="cdf-email" v-model="f.email" type="email" is-full-width />
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Phone numbers <span class="cdf-opt">Up to 5</span></span>
@@ -335,11 +335,11 @@ function cancel() {
             </div>
             <div v-for="(li, i) in f.products" :key="i" class="cdf-linerow">
               <span class="cdf-linename">{{ li.productName }}<span class="cdf-lineunit">{{ li.unit }}</span></span>
-              <input v-model.number="li.quantity" class="cdf-input cdf-input--num" type="number" min="0" aria-label="Quantity" @input="syncCalcValue">
-              <input v-model.number="li.originalPrice" class="cdf-input cdf-input--num" type="number" min="0" aria-label="Original price" @input="syncCalcValue">
+              <MpInput :id="`cdf-qty-${i}`" type="number" :model-value="li.quantity" is-full-width class="cdf-num-input" aria-label="Quantity" @update:model-value="(v) => { li.quantity = Number(v); syncCalcValue() }" />
+              <MpInput :id="`cdf-price-${i}`" type="number" :model-value="li.originalPrice" is-full-width class="cdf-num-input" aria-label="Original price" @update:model-value="(v) => { li.originalPrice = Number(v); syncCalcValue() }" />
               <div class="cdf-linediscount">
                 <ErpFilterSelect :id="`cdf-disc-${i}`" :model-value="li.discountType" placeholder="Discount" :options="DISCOUNT_TYPES" :is-clearable="false" width="130px" @update:model-value="(v: string) => { li.discountType = v as any; syncCalcValue() }" />
-                <input v-if="li.discountType !== 'none'" v-model.number="li.discount" class="cdf-input cdf-input--num cdf-input--disc" type="number" min="0" aria-label="Discount amount" @input="syncCalcValue">
+                <MpInput v-if="li.discountType !== 'none'" :id="`cdf-discamt-${i}`" type="number" :model-value="li.discount" is-full-width class="cdf-num-input cdf-num-input--disc" aria-label="Discount amount" @update:model-value="(v) => { li.discount = Number(v); syncCalcValue() }" />
               </div>
               <span class="cdf-num cdf-subtotal">{{ money(lineSubtotal(li)) }}</span>
               <button type="button" class="cdf-line-remove" aria-label="Remove line" @click="removeProductLine(i)"><MpIcon name="delete" size="sm" /></button>
@@ -357,23 +357,23 @@ function cancel() {
               <span class="cdf-label">Tax</span>
               <div class="cdf-adjrow">
                 <ErpFilterSelect id="cdf-taxtype" :model-value="f.taxType" placeholder="Type" :options="ADJ_TYPES" :is-clearable="false" width="150px" @update:model-value="(v: string) => (f.taxType = v as AdjustmentType)" />
-                <input v-model.number="f.tax" class="cdf-input cdf-input--num" type="number" min="0" aria-label="Tax amount">
+                <MpInput id="cdf-tax" type="number" :model-value="f.tax" is-full-width class="cdf-num-input" aria-label="Tax amount" @update:model-value="(v) => (f.tax = Number(v))" />
               </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Order discount</span>
               <div class="cdf-adjrow">
                 <ErpFilterSelect id="cdf-odtype" :model-value="f.orderDiscountType" placeholder="Type" :options="ADJ_TYPES" :is-clearable="false" width="150px" @update:model-value="(v: string) => (f.orderDiscountType = v as AdjustmentType)" />
-                <input v-model.number="f.orderDiscount" class="cdf-input cdf-input--num" type="number" min="0" aria-label="Order discount amount">
+                <MpInput id="cdf-od" type="number" :model-value="f.orderDiscount" is-full-width class="cdf-num-input" aria-label="Order discount amount" @update:model-value="(v) => (f.orderDiscount = Number(v))" />
               </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Shipping fee</span>
-              <input v-model.number="f.shippingFee" class="cdf-input cdf-input--num" type="number" min="0">
+              <MpInput id="cdf-ship" type="number" :model-value="f.shippingFee" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.shippingFee = Number(v))" />
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Other expense</span>
-              <input v-model.number="f.otherExpense" class="cdf-input cdf-input--num" type="number" min="0">
+              <MpInput id="cdf-other" type="number" :model-value="f.otherExpense" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.otherExpense = Number(v))" />
             </div>
             <div class="cdf-field">
               <span class="cdf-label">Currency</span>
@@ -381,7 +381,7 @@ function cancel() {
             </div>
             <div v-if="f.currency !== 'IDR'" class="cdf-field">
               <span class="cdf-label">Exchange rate</span>
-              <input v-model.number="f.exchangeRate" class="cdf-input cdf-input--num" type="number" min="0" step="0.0001">
+              <MpInput id="cdf-rate" type="number" :model-value="f.exchangeRate" is-full-width class="cdf-num-input" :is-invalid="!!errors.rate" @update:model-value="(v) => (f.exchangeRate = Number(v))" />
               <span v-if="errors.rate" class="cdf-err">{{ errors.rate }}</span>
             </div>
           </div>
@@ -400,7 +400,7 @@ function cancel() {
               <span>Expected deal value
                 <button v-if="f.valueOverridden" type="button" class="cdf-link cdf-reset" @click="resetCalculated">Reset to calculated</button>
               </span>
-              <input class="cdf-input cdf-input--num cdf-input--value" type="number" min="0" :value="f.value" aria-label="Expected deal value" @input="overrideValue">
+              <MpInput id="cdf-expected" type="number" :model-value="f.value" class="cdf-num-input cdf-num-input--value" aria-label="Expected deal value" @update:model-value="overrideValue" />
             </div>
           </div>
         </section>
@@ -408,7 +408,7 @@ function cancel() {
         <!-- ── Notes ── -->
         <section class="cdf-section">
           <h2 class="cdf-section-title">Notes</h2>
-          <textarea v-model="f.notes" class="cdf-textarea" rows="3" maxlength="2000" />
+          <MpTextarea id="cdf-notes" v-model="f.notes" is-full-width :rows="3" maxlength="2000" :is-invalid="!!errors.notes" />
           <span v-if="errors.notes" class="cdf-err">{{ errors.notes }}</span>
         </section>
 
@@ -445,12 +445,11 @@ function cancel() {
 .cdf-label-row { display: flex; align-items: center; justify-content: space-between; }
 .cdf-opt { font-weight: var(--mp-font-weights-regular); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.cdf-input, .cdf-textarea { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
-.cdf-input { height: var(--mp-sizes-10, 40px); }
-.cdf-textarea { resize: vertical; min-height: 60px; line-height: var(--mp-line-heights-md); font-family: inherit; }
-.cdf-input:focus, .cdf-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
-.cdf-input--invalid { border-color: var(--mp-border-danger, #e2483d); }
-.cdf-input--num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Numeric MpInput cells — right-align the value (Pixel MpInput ships its own
+   border/height/focus, so no border overrides here — rule/token-no-raw-html). */
+.cdf-num-input :deep(input) { text-align: right; font-variant-numeric: tabular-nums; }
+.cdf-num-input--disc { width: 84px; }
+.cdf-num-input--value { width: 180px; }
 
 .cdf-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
 .cdf-err--block { display: block; margin-top: var(--mp-spacing-1); }

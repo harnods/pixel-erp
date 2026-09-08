@@ -193,7 +193,8 @@ each row = name (with a secondary subtitle line beneath it, e.g. the user's role
 
 - Both panes carry a search box; **20px gap** from the search box to the list
   header below it.
-- List headers are **`<h2>`** (20px semibold): left = the noun (`Users` / `Roles`)
+- List headers are **`<h3>`** (20px semibold) — the drawer title is the `<h2>`, so
+  the two column headers sit one level below it: left = the noun (`Users` / `Roles`)
   with an `Add all` link; right = `Selected users (n)` / `Selected roles (n)` with
   a `Remove all` link. Right pane shows the illustration empty state until
   something is selected.

@@ -87,7 +87,7 @@ async function save() {
               </button>
             </div>
             <div class="sad-col-head">
-              <h2 class="sad-col-title">{{ listTitle }}</h2>
+              <h3 class="sad-col-title">{{ listTitle }}</h3>
               <button class="sad-link" type="button" @click="addAll">Add all</button>
             </div>
             <div class="sad-list">
@@ -117,7 +117,7 @@ async function save() {
                 </button>
               </div>
               <div class="sad-col-head">
-                <h2 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h2>
+                <h3 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h3>
                 <button class="sad-link" type="button" @click="removeAll">Remove all</button>
               </div>
               <div class="sad-list">
@@ -195,7 +195,8 @@ async function save() {
 /* 20px between the search box and the list header (design-doc rule). */
 .sad-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-top: 20px; }
 /* H2 heading — Users / Roles / Selected … */
-.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
+/* H3 = 16px / semibold (the drawer title is the 20px h2 above). */
+.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .sad-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .sad-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
