@@ -664,6 +664,20 @@ export function getReceivingTask(taskId: string): ReceivingTask | undefined {
 }
 
 /** Operator starts receiving → In progress + start timestamp; PO follows to In progress. */
+/** Hand this task to someone else — the escape hatch for a task still held by
+ *  someone who has lost access to the company. Only while the task is Open or
+ *  In Progress: past that the assignee is a record of who did the work, not who
+ *  owes it. Access is gated in the UI (useLineManagerAccess); this only refuses
+ *  states where a handover would be meaningless. */
+export function reassignReceivingTask(taskId: string, assignee: string): boolean {
+  const t = getReceivingTask(taskId);
+  if (!t || (t.status !== "open" && t.status !== "in progress")) return false;
+  if (!assignee.trim() || assignee === t.assignee) return false;
+  t.assignee = assignee;
+  persistTasks();
+  return true;
+}
+
 export function startReceiving(taskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t || t.status !== "open") return;

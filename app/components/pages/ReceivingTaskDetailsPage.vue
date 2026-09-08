@@ -8,6 +8,8 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
@@ -17,6 +19,7 @@ import {
   taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask, acknowledgeCanceledReceipt,
   acknowledgeReceivingRearrangement,
   type ReceivingTask,
+  reassignReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -52,6 +55,15 @@ const poSkuQty = computed(() => poReceipt.value?.skuQty ?? 0)
 // refs that drive the view. Saving updates these (instant re-render) and also the
 // underlying task + override store (so a remount after navigation stays in sync).
 const localStatus   = ref<TaskStatus>('open')
+
+// Change assignee — manager-only escape hatch, Open / In Progress only.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(localStatus.value))
+function applyReassign(assignee: string) {
+  if (!reassignReceivingTask(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `${t('Assignee changed to')} ${assignee}`, maxWidth: 'max-content' })
+}
 const localEndDate  = ref<string | null>(null)
 const localReceived = ref<Record<string, number>>({})
 
@@ -681,6 +693,10 @@ function goBack() {
 
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), and only while the
+           task is still Open / In Progress. -->
+      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
       <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">{{ t('Print receiving slip') }}</button>
       <!-- Cancel task is an order-level action → it lives in the primary action's
            split-button dropdown, never as a standalone "Cancel" footer button. -->
@@ -853,6 +869,14 @@ function goBack() {
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
   />
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="task?.taskNo ?? ''"
+      :current-assignee="task?.assignee ?? ''"
+      :warehouse-id="task?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>

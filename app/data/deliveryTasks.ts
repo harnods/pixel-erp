@@ -683,6 +683,31 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
   };
 }
 
+/** Hand a shipment document to someone else — the escape hatch for one still held by
+ *  someone who has lost access to the company.
+ *
+ *  A shipment isn't its own record: it's the deliveries that share a shipment no.,
+ *  and getShipment() reports the FIRST one's assignee. So reassigning has to move
+ *  every delivery in the batch, or the shipment would keep showing whoever happens
+ *  to sort first. Only while the shipment doc is still open — once completed, the
+ *  assignee is the record of who took it out. Canceled deliveries are left alone;
+ *  they're pending acknowledgement, not work anyone owes. */
+export function reassignShipment(shipmentSeq: string, assignee: string): boolean {
+  const shipment = getShipment(shipmentSeq);
+  if (!shipment || shipment.status !== "open") return false;
+  if (!assignee.trim()) return false;
+  const live = shipment.deliveries.filter((d) => d.status !== "canceled");
+  if (!live.length) return false;
+  let changed = false;
+  for (const d of live) {
+    if (d.assignee === assignee) continue;
+    d.assignee = assignee;
+    changed = true;
+  }
+  if (changed) persistDelivery();
+  return changed;
+}
+
 /** Every shipment batch (one row per shipment no.), scoped to warehouses when
  *  given — for the "Shipped" tab, which lists shipments rather than deliveries. */
 export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
