@@ -26,7 +26,7 @@ if (import.meta.client) {
 
 interface Child { name: string; to: string }
 interface Item { icon: string; name: string; to: string; children?: Child[] }
-// Two groups → the border-bottom between them is the divider (Contacts | Activity logs).
+// Two groups → the border-bottom between them is the divider (Customers | Settings).
 const navGroups: Item[][] = [
   [
     { icon: 'pipeline', name: 'Deals',    to: '/crm/deals' },
@@ -37,7 +37,6 @@ const navGroups: Item[][] = [
     ] },
   ],
   [
-    { icon: 'log',      name: 'Activity logs', to: '/crm/activity' },
     { icon: 'settings', name: 'Settings',      to: '/crm/settings', children: [
       { name: 'Company profile',  to: '/crm/settings/company' },
       { name: 'User & roles',     to: '/crm/settings/users' },
