@@ -688,7 +688,7 @@ const ADVANCED_TOGGLES = [
       </div>
     </section>
 
-    <div class="cp-divider" />
+    <div v-if="!props.embedded" class="cp-divider" />
 
     <!-- ── Advanced settings (hidden in the CRM-embedded surface) ───────────── -->
     <section v-if="!props.embedded" class="cp-section">
