@@ -1055,6 +1055,15 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "This person no longer has access to the company. Reassign the task to keep it moving.": "Orang ini sudah tidak punya akses ke perusahaan. Tugaskan ulang agar tugas ini tetap berjalan.",
   "No other operator is on this warehouse team yet.": "Belum ada operator lain di tim gudang ini.",
   "Line manager access": "Akses line manager",
+
+  // ── Delivery document posting (A6 manual_trigger_delivery / D5 AC#10) ──────
+  "Delivery document": "Dokumen pengiriman",
+  "Not yet posted": "Belum diposting",
+  "Posted": "Sudah diposting",
+  "Held": "Ditahan",
+  "Sales Delivery": "Pengiriman penjualan",
+  "Stock Movement Out": "Barang keluar",
+  "Manual trigger delivery": "Pemicu manual dokumen pengiriman",
   "Task": "Tugas",
   "Edit count task": "Ubah tugas perhitungan",
   "Count task updated": "Tugas perhitungan berhasil diperbarui",

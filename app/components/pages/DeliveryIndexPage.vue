@@ -10,7 +10,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { deliveryTasksFor, DELIVERY_COURIERS, type DeliveryTask } from '~/data/deliveryTasks'
-import { outgoingOrders } from '~/data/outgoing'
+import { outgoingOrders, deliveryPostingStatusOf } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 import { assigneeDisplayName } from '~/data/users'
@@ -63,6 +63,10 @@ const columns: TableColumn[] = [
   { key: 'skuQty',        label: 'SKU qty',     align: 'right', sortType: 'number' },
   { key: 'orderQty',      label: 'Order qty',   align: 'right', sortType: 'number' },
   { key: 'toShipQty',     label: 'To ship',     align: 'right', sortType: 'number' },
+  // D5 "Delivery Document Details" — a WH manager needs to see WHICH shipped
+  // outbound already has its Sales Delivery / Stock Movement Out, and which is
+  // still holded waiting for the source to trigger it (A6 manual_trigger_delivery).
+  { key: 'deliveryDoc',   label: 'Delivery document', kind: 'name', sortType: 'text' },
   { key: 'status',        label: 'Status',      kind: 'status', sortType: 'text' },
   { key: 'shippedDate',   label: 'Ship date',   kind: 'date', sortType: 'date' },
 ]
@@ -94,6 +98,42 @@ onMounted(() => {
   }
 })
 const courierFilter = ref<string[]>([])
+
+// ─── Delivery-document posting filter (D5) — "which shipping task already has a
+// delivery document, and which is not yet (holded)". Physical status and posting
+// status are separate fields (D1 AC#8), so this is its own filter rather than
+// another Status value. ─────────────────────────────────────────────────────────
+const postingFilter = ref<string[]>([])
+const postingOptions = [
+  { value: 'posted', label: t('Posted') },
+  { value: 'held', label: t('Not yet posted') },
+]
+/** A shipping task's posting state, read from the outbound it belongs to. Only a
+ *  SHIPPED task can have posted — nothing posts before the ship event. */
+function postingStateOf(row: { salesOrderId: string; status: string }): 'posted' | 'held' {
+  const order = outgoingOrders.find(o => o.id === row.salesOrderId)
+  return order && deliveryPostingStatusOf(order) === 'posted' ? 'posted' : 'held'
+}
+/** What the Delivery document cell shows: the document that exists, or why it doesn't. */
+function deliveryDocLabel(row: { salesOrderId: string; status: string; source: string }): string {
+  if (postingStateOf(row) === 'posted') {
+    // ERP Sales Order source posts a Sales Delivery; any other source posts a
+    // Stock Movement Out (D5 source-conditional poster).
+    return row.source === 'Sales Order' ? t('Sales Delivery') : t('Stock Movement Out')
+  }
+  return row.status === 'shipped' ? t('Held') : '—'
+}
+const postingLabel = computed(() => {
+  const n = postingFilter.value.length
+  if (!n) return ''
+  if (n === 1) return postingOptions.find(o => o.value === postingFilter.value[0])?.label ?? ''
+  return `${n} ${t('selected')}`
+})
+function togglePosting(v: string) {
+  const idx = postingFilter.value.indexOf(v)
+  if (idx >= 0) postingFilter.value = postingFilter.value.filter(x => x !== v)
+  else postingFilter.value = [...postingFilter.value, v]
+}
 
 const baseTasks = computed<DeliveryRow[]>(() =>
   demoState.value === 'data'
@@ -171,13 +211,14 @@ const {
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
     const matchesCourier   = !courierFilter.value.length || courierFilter.value.includes(row.courier ?? '')
-    return matchesSearch && matchesWarehouse && matchesStatus && matchesCourier
+    const matchesPosting   = !postingFilter.value.length || postingFilter.value.includes(postingStateOf(row))
+    return matchesSearch && matchesWarehouse && matchesStatus && matchesCourier && matchesPosting
   },
 })
-watch([warehouseFilter, statusFilter, courierFilter], () => setPage(1))
+watch([warehouseFilter, statusFilter, courierFilter, postingFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0 || courierFilter.value.length > 0)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = []; courierFilter.value = [] }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0 || courierFilter.value.length > 0 || postingFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = []; courierFilter.value = []; postingFilter.value = [] }
 
 // ─── Create shipment for every ready-to-ship delivery under one courier — lets the
 // user filter to a courier and hand the whole batch over without ticking rows one
@@ -370,6 +411,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <!-- Delivery document (D5) — posted vs not yet (holded). Separate from
+             Status: physical progress and posting never collapse (D1 AC#8). -->
+        <MpPopover id="del-posting-filter" use-portal :is-keep-alive="false" placement="bottom-start">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="del-posting-select" :placeholder="t('Delivery document')" :model-value="postingFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="postingFilter = []"
+            >
+              <option v-if="postingFilter.length" value="set">{{ postingLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content' })">
+            <div class="checkbox-filter-list">
+              <div v-for="opt in postingOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`del-posting-${opt.value}`"
+                  :is-checked="postingFilter.includes(opt.value)"
+                  @change="togglePosting(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </div>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
         <button
           v-if="courierShipmentSameWarehouse"
           class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
@@ -446,6 +514,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Assignee ── -->
     <template #cell-assignee="{ value }">{{ assigneeDisplayName(value as string) || t('Unassigned') }}</template>
 
+    <!-- ── Delivery document (D5) — the document if it posted, "Held" once shipped
+         without one, an em dash before the ship event. ── -->
+    <template #cell-deliveryDoc="{ row }">
+      <span :class="{ 'del-doc-held': postingStateOf(row as unknown as DeliveryRow) === 'held' && (row as unknown as DeliveryRow).status === 'shipped' }">
+        {{ deliveryDocLabel(row as unknown as DeliveryRow) }}
+      </span>
+    </template>
+
     <!-- ── Numeric cells ── -->
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
     <template #cell-orderQty="{ value }">{{ formatNum(value as number) }}</template>
@@ -510,6 +586,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+.del-doc-held { color: var(--mp-text-warning); }
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
