@@ -1,342 +1,285 @@
 <script setup lang="ts">
 /**
- * CRM (Qontak) — Deal quick-preview drawer. Opens from a kanban card click.
- * Mirrors the Qontak "Preview" drawer layout (View record / Actions, deal summary
- * + quick-action row, collapsible "About this deal", activities, contacts,
- * companies) on the ERP floating-drawer shell (Teleport overlay + right panel +
- * slide transition — same as WorkOrderPreviewDrawer).
+ * CrmDealPreviewDrawer — quick-preview a Deal from a kanban card. Read-only
+ * snapshot of the record's key fields (ContentList key/values + a Product List
+ * table), with a **View details** action plus a "…" menu (Move to… / Edit /
+ * Archive / Delete). Reads the live Deal from the store. Hand-rolled Teleport
+ * overlay shell (Pixel MpDrawer has no structural CSS in this build — see
+ * CLAUDE.md); overlay click closes it (read-only preview, not a form).
  */
-import { ref, reactive, computed, onMounted, onUnmounted, h } from 'vue'
-import { infoToast } from '~/utils/toasts'
-import { MpText, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
-import { employees } from '~/data'
-import { crmCustomers } from '~/data/crm'
+import { computed, ref } from 'vue'
+import {
+  MpIcon, MpButton,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
+import { formatMoney } from '~/utils/currency'
+import { formatDate, formatDateTime } from '~/utils/date'
+import { CATALOG } from '~/data/catalog'
+import {
+  crmCustomers, dealExpectedValue, lineSubtotal, skuFor, DEAL_STAGES,
+  dealComments, addDealComment,
+  type Deal, type DealStage,
+} from '~/data/crm'
 
-export interface DealPreviewCtx {
-  code: string
-  company: string
-  owner: string
-  priority?: string
-  stage: string
-  amount: string
-  amountValue: number
-  closeDate: string
+const props = defineProps<{ open: boolean; deal: Deal | null }>()
+const emit = defineEmits<{
+  close: []; 'view-details': [id: string]; edit: [deal: Deal]
+  'move-stage': [deal: Deal, stage: DealStage]; archive: [deal: Deal]; delete: [deal: Deal]
+}>()
+
+// Product photo + real SKU come from the shared CATALOG, keyed by product id.
+const catalogById = new Map<string, (typeof CATALOG)[number]>()
+for (const c of CATALOG) catalogById.set(c.id, c)
+function productPhoto(id: string): string | undefined { return catalogById.get(id)?.img }
+function productSku(name: string, id: string): string { return catalogById.get(id)?.sku ?? skuFor(name) }
+
+// "…" actions popover — swaps between the main menu and an inline stage picker
+// (Move to…) so changing stage needs no modal.
+const actionsOpen = ref(false)
+const moveView = ref<'menu' | 'stages'>('menu')
+function toggleActions() { actionsOpen.value = !actionsOpen.value; if (actionsOpen.value) moveView.value = 'menu' }
+function act(name: 'edit' | 'archive' | 'delete') { actionsOpen.value = false; if (d.value) emit(name, d.value) }
+function pickStage(s: DealStage) { actionsOpen.value = false; moveView.value = 'menu'; if (d.value) emit('move-stage', d.value, s) }
+const moveStages = computed<DealStage[]>(() => DEAL_STAGES.filter((s) => s !== d.value?.stage))
+
+// ── Notes / comments ──
+const comments = computed(() => (d.value ? dealComments(d.value.id) : []))
+const noteText = ref('')
+function addNote() {
+  const t = noteText.value.trim()
+  if (!t || !d.value) return
+  addDealComment(d.value.id, t)
+  noteText.value = ''
 }
 
-const props = defineProps<{ open: boolean; ctx: DealPreviewCtx | null }>()
-const emit = defineEmits<{ close: [] }>()
+const d = computed(() => props.deal)
+const money = (n: number) => formatMoney(n, d.value?.currency ?? 'IDR')
+const customer = computed(() => (d.value ? crmCustomers.find((c) => c.id === d.value!.customerId) : undefined))
+const productCount = computed(() => d.value?.products?.length ?? 0)
+const contactEmail = computed(() => d.value?.email || customer.value?.email || '')
+const contactPhone = computed(() => (d.value?.phones?.length ? d.value.phones.join(', ') : (customer.value?.phone || '')))
 
-function soon(what: string) { infoToast(`${what} — coming soon`) }
-
-function ownerPhoto(name: string): string | undefined { return employees.find((e) => e.fullName === name)?.photo }
-function initials(name: string): string { return name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() }
-const prioLabel = (p?: string) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : '—')
-
-// Collapsible sections (open by default, like the reference).
-const openSections = reactive<Record<string, boolean>>({ about: true, recent: true, upcoming: true, contacts: true, companies: true })
-function toggle(k: string) { openSections[k] = !openSections[k] }
-
-// Quick-action row (icon + label).
-const ActionIcon = (props: { d: string }) =>
-  h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true' }, [
-    h('path', { d: props.d, stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
-  ])
-const ACTIONS = [
-  { label: 'Note',    d: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z' },
-  { label: 'Email',   d: 'M4 6h16v12H4zM4 7l8 6 8-6' },
-  { label: 'Call',    d: 'M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6A19.8 19.8 0 012 4.2 2 2 0 014 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.6a2 2 0 01-.5 2.1L8 9.5a16 16 0 006 6l1.1-1.1a2 2 0 012.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0122 16.9z' },
-  { label: 'Task',    d: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11' },
-  { label: 'Meeting', d: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z' },
-  { label: 'More',    d: 'M12 12h.01M18 12h.01M6 12h.01' },
-]
-
-// Deterministic per-deal seed so every generated value is stable per card.
-const seed = computed(() => parseInt((props.ctx?.code ?? '').replace(/\D/g, ''), 10) || 1)
-const customer = computed(() => crmCustomers.find((c) => c.company === props.ctx?.company))
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr']
-const pad = (x: number) => String(x).padStart(2, '0')
-function feb(dayOffset: number, h = 9): string {
-  const d = 27 - (dayOffset % 20)
-  return `${pad(Math.max(1, d))} Feb 2026, ${pad(h)}:${pad((seed.value * 7) % 60)} GMT+7`
+function stageBadge(stage: DealStage) {
+  if (stage === 'Won') return { status: 'active', type: 'completed' as const, label: 'Won' }
+  if (stage === 'Lost') return { status: 'churned', type: 'announcement' as const, label: 'Lost' }
+  if (stage === 'Negotiation' || stage === 'Proposal') return { status: 'prospect', type: 'warning' as const, label: stage }
+  return { status: 'prospect', type: 'information' as const, label: stage }
 }
-function mar(dayOffset: number): string {
-  const d = 1 + (dayOffset % 20)
-  return `${pad(d)} ${MONTHS[1 + (dayOffset % 2)]} 2026`
+function ownerInitials(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
 }
-
-const usd = computed(() => `$${Math.round((props.ctx?.amountValue ?? 0) / 15900).toLocaleString('en-US')}`)
-const dealType = computed(() => ['New business', 'Existing business', 'Upsell', 'Renewal'][seed.value % 4])
-const lastContacted = computed(() => feb(seed.value, 8 + (seed.value % 8)))
-const closedLostReason = computed(() =>
-  props.ctx?.stage === 'Lost' ? ['Price too high', 'Chose a competitor', 'Budget on hold', 'No decision made'][seed.value % 4] : 'Not applicable')
-
-const fields = computed(() => {
-  const c = props.ctx
-  if (!c) return []
-  return [
-    { label: 'Amount', value: c.amount },
-    { label: 'Amount in dollar', value: usd.value },
-    { label: 'Deal Stage', value: `${c.stage} (Sales pipeline)` },
-    { label: 'Close Date', value: `${c.closeDate}, ${pad(8 + (seed.value % 8))}:${pad((seed.value * 7) % 60)} GMT+7` },
-    { label: 'Deal owner', value: c.owner, owner: true },
-    { label: 'Last Contacted', value: lastContacted.value },
-    { label: 'Deal Type', value: dealType.value },
-    { label: 'Priority', value: prioLabel(c.priority) },
-    { label: 'Closed Lost Reason', value: closedLostReason.value },
-  ]
-})
-
-// Contacts — the customer's PIC (always at least one).
-const contacts = computed(() => {
-  const cu = customer.value
-  return cu ? [{ name: cu.contact, email: cu.email, role: 'Purchasing' }] : [{ name: 'Procurement Team', email: '—', role: 'Buyer' }]
-})
-// Companies — always the deal's company.
-const companies = computed(() => {
-  const cu = customer.value
-  return [{ name: props.ctx?.company ?? '', sub: cu ? `${cu.segment} · ${cu.city}` : 'Company' }]
-})
-
-// Recent + upcoming activities (generated, so no section is ever empty).
-const recentActivities = computed(() => {
-  const c = props.ctx; if (!c) return []
-  const who = c.owner.split(' ')[0]
-  const pic = contacts.value[0]!.name
-  return [
-    { icon: 'M4 6h16v12H4zM4 7l8 6 8-6', text: `${who} sent an email — wholesale price list`, when: feb(seed.value + 1, 10) },
-    { icon: 'M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6A19.8 19.8 0 012 4.2 2 2 0 014 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.6a2 2 0 01-.5 2.1L8 9.5a16 16 0 006 6l1.1-1.1a2 2 0 012.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0122 16.9z', text: `${who} logged a call with ${pic}`, when: feb(seed.value + 4, 14) },
-    { icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z', text: 'Note added — sample roast approved', when: feb(seed.value + 8, 11) },
-  ]
-})
-const upcomingActivities = computed(() => {
-  const c = props.ctx; if (!c) return []
-  const pic = contacts.value[0]!.name
-  return [
-    { icon: 'M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6A19.8 19.8 0 012 4.2 2 2 0 014 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.6a2 2 0 01-.5 2.1L8 9.5a16 16 0 006 6l1.1-1.1a2 2 0 012.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0122 16.9z', text: `Follow-up call with ${pic}`, when: mar(seed.value) },
-    { icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', text: 'Send updated quotation', when: mar(seed.value + 6) },
-  ]
-})
-const initialsOf = (name: string) => name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
-const ActivityIcon = (props: { d: string }) =>
-  h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true' }, [
-    h('path', { d: props.d, stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
-  ])
-
-function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) emit('close') }
-onMounted(() => window.addEventListener('keydown', onEsc))
-onUnmounted(() => window.removeEventListener('keydown', onEsc))
+function ownerAvatarStyle(name: string): { background: string; color: string } {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  const hue = h % 360
+  return { background: `hsl(${hue} 62% 86%)`, color: `hsl(${hue} 55% 30%)` }
+}
+function dealNo(id: string): string {
+  const n = parseInt(id.replace(/\D/g, ''), 10)
+  return `Deal #${Number.isNaN(n) ? id : String(n).padStart(5, '0')}`
+}
+function stampTime(id: string): string {
+  const n = parseInt(id.replace(/\D/g, ''), 10) || 0
+  const hh = 8 + (n % 9)
+  const mm = (n * 7) % 60
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="dpd">
-      <div v-if="open && ctx" class="dpd-overlay" @click.self="emit('close')">
-        <aside class="dpd-panel" role="dialog" aria-label="Deal preview">
-          <!-- Header -->
-          <header class="dpd-header">
-            <MpText weight="semiBold">Preview</MpText>
-            <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" aria-label="Close" @click="emit('close')"><MpIcon name="close" size="md" /></button>
+    <Transition name="cdp">
+      <div v-if="open && d" class="cdp-overlay" @click.self="emit('close')">
+        <div class="cdp-panel" role="dialog" aria-label="Deal preview">
+          <header class="cdp-header">
+            <div class="cdp-header-main">
+              <span class="cdp-number">{{ dealNo(d.id) }}</span>
+              <h2 class="cdp-title">{{ d.name }}</h2>
+            </div>
+            <MpButton class="cdp-close" aria-label="Close" @click="emit('close')"><MpIcon name="close" size="md" /></MpButton>
           </header>
 
-          <!-- View record / Actions -->
-          <div class="dpd-subbar">
-            <a class="dpd-link" @click.prevent="soon('View record')">View record</a>
-            <MpPopover id="dpd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <div class="cdp-body">
+            <!-- Overview -->
+            <section class="cdp-section">
+              <h3 class="cdp-section-title">Overview</h3>
+              <div class="cdp-grid">
+                <ContentList label="Expected deal value" :value="money(dealExpectedValue(d))" />
+                <ContentList label="Deal owner">
+                  <span class="cdp-owner">
+                    <span class="cdp-avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
+                    {{ d.owner }}
+                  </span>
+                </ContentList>
+                <ContentList label="Customer" :value="d.company" />
+                <ContentList label="Stage"><ErpStatusBadge v-bind="stageBadge(d.stage)" /></ContentList>
+                <ContentList label="Created" :value="`${formatDate(d.createdAt)}, ${stampTime(d.id)}`" />
+                <ContentList label="Due date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
+                <ContentList label="Reference number" :value="d.referenceNumber || '—'" />
+                <ContentList v-if="d.stage === 'Lost'" label="Lost reason" :value="d.lostReason || '—'" />
+              </div>
+            </section>
+
+            <!-- Contact -->
+            <section class="cdp-section">
+              <h3 class="cdp-section-title">Contact</h3>
+              <div class="cdp-grid">
+                <ContentList label="Primary contact" :value="d.picName || customer?.contact || '—'" />
+                <ContentList label="Email">
+                  <a v-if="contactEmail" class="cdp-link" :href="`mailto:${contactEmail}`">{{ contactEmail }}</a>
+                  <span v-else>—</span>
+                </ContentList>
+                <ContentList label="Phone">
+                  <a v-if="contactPhone" class="cdp-link" :href="`tel:${contactPhone.replace(/\s/g, '')}`">{{ contactPhone }}</a>
+                  <span v-else>—</span>
+                </ContentList>
+              </div>
+            </section>
+
+            <!-- Products -->
+            <section class="cdp-section">
+              <h3 class="cdp-section-title">Products <span class="cdp-count">{{ productCount }}</span></h3>
+              <div v-if="productCount" class="cdp-ptable">
+                <div class="cdp-phead">
+                  <span>Product</span><span class="cdp-num">Qty</span><span>Unit</span><span class="cdp-num">Amount</span>
+                </div>
+                <div v-for="(li, i) in d.products" :key="i" class="cdp-prow">
+                  <div class="cdp-pname-cell">
+                    <span class="cdp-pthumb">
+                      <img v-if="productPhoto(li.productId)" :src="productPhoto(li.productId)" :alt="li.productName" class="cdp-pimg">
+                      <MpIcon v-else name="img" size="sm" />
+                    </span>
+                    <div class="cdp-pname-wrap">
+                      <span class="cdp-pname">{{ li.productName }}</span>
+                      <span class="cdp-psku">SKU {{ productSku(li.productName, li.productId) }}</span>
+                    </div>
+                  </div>
+                  <span class="cdp-num">{{ li.quantity }}</span>
+                  <span>{{ li.unit }}</span>
+                  <span class="cdp-num">{{ money(lineSubtotal(li)) }}</span>
+                </div>
+              </div>
+              <p v-else class="cdp-empty">No products on this deal.</p>
+            </section>
+
+            <!-- Notes / comments -->
+            <section class="cdp-section">
+              <h3 class="cdp-section-title">Notes <span v-if="comments.length" class="cdp-count">{{ comments.length }}</span></h3>
+              <div class="cdp-note-add">
+                <textarea v-model="noteText" class="cdp-note-input" rows="2" aria-label="Add a note" @keydown.meta.enter="addNote" @keydown.ctrl.enter="addNote" />
+                <button class="btn-enterprise btn-enterprise--secondary cdp-note-btn" type="button" @click="addNote">Add note</button>
+              </div>
+              <ul v-if="comments.length" class="cdp-notes">
+                <li v-for="c in comments" :key="c.id" class="cdp-note">
+                  <span class="cdp-avatar cdp-note-avatar" :style="ownerAvatarStyle(c.author)">{{ ownerInitials(c.author) }}</span>
+                  <div class="cdp-note-body">
+                    <div class="cdp-note-head">
+                      <span class="cdp-note-author">{{ c.author }}</span>
+                      <span class="cdp-note-time">{{ formatDateTime(c.at) }}</span>
+                    </div>
+                    <p class="cdp-note-text">{{ c.text }}</p>
+                  </div>
+                </li>
+              </ul>
+              <p v-else class="cdp-empty">No notes yet.</p>
+            </section>
+          </div>
+
+          <footer class="cdp-footer">
+            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="emit('view-details', d.id)">View details</button>
+            <MpPopover
+              id="cdp-actions"
+              is-manual
+              :is-open="actionsOpen"
+              use-portal
+              :is-keep-alive="false"
+              placement="top-end"
+              @close="actionsOpen = false"
+            >
               <MpPopoverTrigger>
-                <button class="btn-enterprise btn-enterprise--secondary" type="button">Actions
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <MpButton variant="secondary" left-icon="menu-kebab" aria-label="More actions" is-rounded @click="toggleActions" />
               </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-                <MpPopoverList>
-                  <MpPopoverListItem @click="soon('Edit deal')">Edit deal</MpPopoverListItem>
-                  <MpPopoverListItem @click="soon('Change stage')">Change stage</MpPopoverListItem>
-                  <MpPopoverListItem @click="soon('Delete deal')">Delete deal</MpPopoverListItem>
+              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                <MpPopoverList v-if="moveView === 'menu'">
+                  <MpPopoverListItem @click="moveView = 'stages'">Move to…</MpPopoverListItem>
+                  <MpPopoverListItem @click="act('edit')">Edit</MpPopoverListItem>
+                  <MpPopoverListItem @click="act('archive')">Archive</MpPopoverListItem>
+                  <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="act('delete')">Delete</MpPopoverListItem>
+                </MpPopoverList>
+                <MpPopoverList v-else>
+                  <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
+                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ s }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
-          </div>
-
-          <div class="dpd-body">
-            <!-- Summary card -->
-            <div class="dpd-summary">
-              <div class="dpd-summary-top">
-                <span class="dpd-summary-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                </span>
-                <h2 class="dpd-summary-title">{{ ctx.company }}</h2>
-              </div>
-              <dl class="dpd-summary-meta">
-                <div><dt>Amount:</dt><dd>{{ ctx.amount }}</dd></div>
-                <div><dt>Close Date:</dt><dd>{{ ctx.closeDate }}</dd></div>
-                <div><dt>Pipeline:</dt><dd>Sales pipeline</dd></div>
-                <div><dt>Deal Stage:</dt><dd>{{ ctx.stage }}</dd></div>
-              </dl>
-              <div class="dpd-quick">
-                <button v-for="a in ACTIONS" :key="a.label" class="btn-enterprise btn-enterprise--plain dpd-quick-tile" type="button" @click="soon(a.label)">
-                  <span class="dpd-quick-ic"><ActionIcon :d="a.d" /></span>
-                  <span class="dpd-quick-label">{{ a.label }}</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- About this deal -->
-            <section class="dpd-section">
-              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('about')" @keydown.enter="toggle('about')" @keydown.space.prevent="toggle('about')">
-                <svg class="dpd-chevron" :class="{ 'is-open': openSections.about }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span class="dpd-section-title">About this deal</span>
-              </div>
-              <div v-show="openSections.about" class="dpd-section-body">
-                <div v-for="f in fields" :key="f.label" class="dpd-field">
-                  <span class="dpd-field-label">{{ f.label }}</span>
-                  <span v-if="f.owner" class="dpd-owner">
-                    <span class="dpd-owner-avatar">
-                      <img v-if="ownerPhoto(f.value)" :src="ownerPhoto(f.value)" :alt="f.value">
-                      <template v-else>{{ initials(f.value) }}</template>
-                    </span>
-                    {{ f.value }}
-                  </span>
-                  <span v-else class="dpd-field-value">{{ f.value }}</span>
-                </div>
-              </div>
-            </section>
-
-            <!-- Recent / Upcoming activities -->
-            <section class="dpd-section">
-              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('recent')" @keydown.enter="toggle('recent')" @keydown.space.prevent="toggle('recent')">
-                <svg class="dpd-chevron" :class="{ 'is-open': openSections.recent }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span class="dpd-section-title">Recent activities</span>
-              </div>
-              <div v-show="openSections.recent" class="dpd-section-body">
-                <div v-for="(a, i) in recentActivities" :key="i" class="dpd-activity">
-                  <span class="dpd-activity-ic"><ActivityIcon :d="a.icon" /></span>
-                  <div class="dpd-activity-main"><p class="dpd-activity-text">{{ a.text }}</p><p class="dpd-activity-when">{{ a.when }}</p></div>
-                </div>
-              </div>
-            </section>
-            <section class="dpd-section">
-              <div class="dpd-section-head" role="button" tabindex="0" @click="toggle('upcoming')" @keydown.enter="toggle('upcoming')" @keydown.space.prevent="toggle('upcoming')">
-                <svg class="dpd-chevron" :class="{ 'is-open': openSections.upcoming }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span class="dpd-section-title">Upcoming activities</span>
-              </div>
-              <div v-show="openSections.upcoming" class="dpd-section-body">
-                <div v-for="(a, i) in upcomingActivities" :key="i" class="dpd-activity">
-                  <span class="dpd-activity-ic"><ActivityIcon :d="a.icon" /></span>
-                  <div class="dpd-activity-main"><p class="dpd-activity-text">{{ a.text }}</p><p class="dpd-activity-when">{{ a.when }}</p></div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Contacts -->
-            <section class="dpd-section">
-              <div class="dpd-section-head dpd-section-head--static">
-                <div class="dpd-section-toggle" role="button" tabindex="0" @click="toggle('contacts')" @keydown.enter="toggle('contacts')" @keydown.space.prevent="toggle('contacts')">
-                  <svg class="dpd-chevron" :class="{ 'is-open': openSections.contacts }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span class="dpd-section-title">Contacts ({{ contacts.length }})</span>
-                </div>
-                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="soon('Add contact')">+ Add</button>
-              </div>
-              <div v-show="openSections.contacts" class="dpd-section-body">
-                <div v-for="ct in contacts" :key="ct.name" class="dpd-company">
-                  <span class="dpd-company-avatar">{{ initialsOf(ct.name) }}</span>
-                  <span class="dpd-contact-main"><span class="dpd-company-name">{{ ct.name }}</span><span class="dpd-contact-sub">{{ ct.role }} · {{ ct.email }}</span></span>
-                </div>
-              </div>
-            </section>
-
-            <!-- Companies -->
-            <section class="dpd-section">
-              <div class="dpd-section-head dpd-section-head--static">
-                <div class="dpd-section-toggle" role="button" tabindex="0" @click="toggle('companies')" @keydown.enter="toggle('companies')" @keydown.space.prevent="toggle('companies')">
-                  <svg class="dpd-chevron" :class="{ 'is-open': openSections.companies }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span class="dpd-section-title">Companies (1)</span>
-                </div>
-                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="soon('Add company')">+ Add</button>
-              </div>
-              <div v-show="openSections.companies" class="dpd-section-body">
-                <div v-for="co in companies" :key="co.name" class="dpd-company">
-                  <span class="dpd-company-avatar">{{ initialsOf(co.name) }}</span>
-                  <span class="dpd-contact-main"><span class="dpd-company-name">{{ co.name }}</span><span class="dpd-contact-sub">{{ co.sub }}</span></span>
-                </div>
-              </div>
-            </section>
-          </div>
-        </aside>
+          </footer>
+        </div>
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
-.dpd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.dpd-panel {
-  margin: var(--mp-spacing-3);
-  width: min(440px, calc(100% - 24px)); height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px); overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); /* pixel-police-allow-shadow */
-}
-/* Header — ERP drawer pattern: white, semibold title, ghost close, bottom rule. */
-.dpd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.dpd-subbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.dpd-link { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); cursor: pointer; text-decoration: underline; }
+.cdp-enter-active, .cdp-leave-active { transition: background-color 250ms ease; }
+.cdp-enter-from, .cdp-leave-to { background-color: transparent; }
+.cdp-enter-active .cdp-panel { transition: transform 350ms ease-out; }
+.cdp-leave-active .cdp-panel { transition: transform 250ms ease-in; }
+.cdp-enter-from .cdp-panel, .cdp-leave-to .cdp-panel { transform: translateX(calc(100% + 12px)); }
 
-.dpd-body { flex: 1; min-height: 0; overflow-y: auto; }
+.cdp-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
+.cdp-panel { margin: var(--mp-spacing-3); width: min(560px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
 
-/* Summary card */
-.dpd-summary { padding: var(--mp-spacing-4); border-bottom: 8px solid var(--mp-background-neutral-subtle, #f1f3f4); }
-.dpd-summary-top { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; }
-.dpd-summary-icon { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-secondary); }
-.dpd-summary-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
-.dpd-summary-meta { margin: var(--mp-spacing-3) 0 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.dpd-summary-meta div { display: flex; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); }
-.dpd-summary-meta dt { margin: 0; color: var(--mp-text-secondary); }
-.dpd-summary-meta dd { margin: 0; color: var(--mp-text-default); }
-.dpd-quick { display: flex; justify-content: space-between; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
-.dpd-quick-tile { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); flex: 1; }
-.dpd-quick-ic { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--mp-border-default); color: var(--mp-text-secondary); }
-.dpd-quick-tile:hover .dpd-quick-ic { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
-.dpd-quick-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cdp-header { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-5); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.cdp-header-main { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.cdp-number { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md, 20px); }
+.cdp-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg, 24px); }
+.cdp-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.cdp-close:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Sections */
-.dpd-section { border-bottom: 8px solid var(--mp-background-neutral-subtle, #f1f3f4); }
-.dpd-section:last-child { border-bottom: none; }
-.dpd-section-head { width: 100%; display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4); background: none; border: none; cursor: pointer; text-align: left; }
-.dpd-section-head--static { cursor: default; justify-content: space-between; }
-.dpd-section-toggle { display: flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; padding: 0; }
-.dpd-section-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.dpd-chevron { flex-shrink: 0; color: var(--mp-text-secondary); transition: transform 150ms; }
-.dpd-chevron.is-open { transform: rotate(90deg); }
-.dpd-section-body { padding: 0 var(--mp-spacing-4) var(--mp-spacing-4); }
+.cdp-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5); padding: var(--mp-spacing-5); }
 
-.dpd-field { display: flex; flex-direction: column; gap: 2px; padding: var(--mp-spacing-2) 0; }
-.dpd-field-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.dpd-field-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.dpd-owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.dpd-owner-avatar { flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: var(--mp-background-nav-stack-hovered, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-size: 11px; }
-.dpd-owner-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.dpd-empty { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.cdp-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.cdp-section-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.cdp-count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full, 999px); padding: 0 var(--mp-spacing-2); }
 
-/* Activities */
-.dpd-activity { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; }
-.dpd-activity + .dpd-activity { border-top: 1px solid var(--mp-border-default); }
-.dpd-activity-ic { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #f1f3f4); color: var(--mp-text-secondary); }
-.dpd-activity-main { min-width: 0; }
-.dpd-activity-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.dpd-activity-when { margin: 2px 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cdp-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-1); }
 
-.dpd-company { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.dpd-contact-main { display: flex; flex-direction: column; min-width: 0; }
-.dpd-contact-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.dpd-company-avatar { flex-shrink: 0; width: 32px; height: 32px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--mp-background-nav-stack-hovered, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); font-size: var(--mp-font-sizes-sm); }
-.dpd-company-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cdp-owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cdp-avatar { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); flex-shrink: 0; }
 
-/* Transition — overlay fades, panel slides in from the right (ERP pattern). */
-.dpd-enter-active, .dpd-leave-active { transition: background-color 250ms ease; }
-.dpd-enter-from, .dpd-leave-to { background-color: transparent; }
-.dpd-enter-active .dpd-panel { transition: transform 350ms ease-out; }
-.dpd-leave-active .dpd-panel { transition: transform 250ms ease-in; }
-.dpd-enter-from .dpd-panel, .dpd-leave-to .dpd-panel { transform: translateX(calc(100% + 12px)); }
+.cdp-link { color: var(--mp-text-link); }
+.cdp-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Product table — an outer-bordered table uses border-bold (rule/table-outer-border-bold). */
+.cdp-ptable { border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
+.cdp-phead, .cdp-prow { display: grid; grid-template-columns: 1fr 48px 64px 110px; gap: var(--mp-spacing-3); align-items: center; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
+.cdp-phead { background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.cdp-prow { border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cdp-prow:last-child { border-bottom: none; }
+.cdp-num { text-align: right; font-variant-numeric: tabular-nums; }
+.cdp-pname-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.cdp-pthumb { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--mp-radii-md, 6px); background: var(--mp-background-neutral-subtle); color: var(--mp-icon-subtle, #97a0af); flex-shrink: 0; overflow: hidden; border: 1px solid var(--mp-border-default); }
+.cdp-pimg { width: 100%; height: 100%; object-fit: cover; }
+.cdp-pname-wrap { display: flex; flex-direction: column; min-width: 0; }
+.cdp-pname { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdp-psku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
+.cdp-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+
+/* Notes / comments */
+.cdp-note-add { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); }
+.cdp-note-input { flex: 1; min-width: 0; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 40px; line-height: var(--mp-line-heights-md); font-family: inherit; }
+.cdp-note-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.cdp-note-btn { flex-shrink: 0; }
+.cdp-notes { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.cdp-note { display: flex; gap: var(--mp-spacing-2); }
+.cdp-note-avatar { width: 28px; height: 28px; margin-top: 2px; }
+.cdp-note-body { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
+.cdp-note-head { display: flex; align-items: baseline; gap: var(--mp-spacing-2); }
+.cdp-note-author { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cdp-note-time { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cdp-note-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: pre-wrap; word-break: break-word; }
+
+.cdp-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
 </style>

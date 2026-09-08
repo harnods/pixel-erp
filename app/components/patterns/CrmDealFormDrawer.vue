@@ -123,11 +123,13 @@ function replaceContact() { f.customerId = pendingCustomer.value; prefillFrom(pe
 function keepContact() { f.customerId = pendingCustomer.value; pendingCustomer.value = '' }
 
 // ── Related people + phones (MpInputTag) ──
-const relatedData = computed<DataInterface[]>(() => f.relatedPeople.map((n) => ({ id: n, text: n, value: n })))
-const relatedSuggestions = computed<DataInterface[]>(() =>
-  crmRelatedPeopleOptions.value.map((n) => ({ id: n, text: n, value: n })))
+function toTagData(arr: string[]): DataInterface[] {
+  return arr.map((s) => ({ id: s, text: s, value: s, isInvalid: false, isReadOnly: false }))
+}
+const relatedData = computed<DataInterface[]>(() => toTagData(f.relatedPeople))
+const relatedSuggestions = computed<string[]>(() => crmRelatedPeopleOptions.value)
 function onRelatedChange(data: DataInterface[]) { f.relatedPeople = data.map((d) => String(d.value ?? d.text)).slice(0, 10) }
-const phoneData = computed<DataInterface[]>(() => f.phones.map((p) => ({ id: p, text: p, value: p })))
+const phoneData = computed<DataInterface[]>(() => toTagData(f.phones))
 function onPhoneChange(data: DataInterface[]) { f.phones = data.map((d) => String(d.value ?? d.text)).slice(0, 5) }
 
 // ── Products ──

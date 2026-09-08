@@ -89,14 +89,14 @@ const HOUR_OPTIONS = ['08:00 – 17:00', 'All day']
 
 // ── Validation (inline, never disable the button) ──
 const submitted = ref(false)
-const nameError = computed(() => (submitted.value && !name.value.trim() ? 'Enter the invitee’s name' : ''))
+const nameError = computed(() => (submitted.value && !name.value.trim() ? 'You must fill in a name' : ''))
 const emailError = computed(() => {
   if (!submitted.value) return ''
-  if (!email.value.trim()) return 'Enter an email address'
+  if (!email.value.trim()) return 'You must fill in an email address'
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) return 'Enter a valid email address'
   return ''
 })
-const roleError = computed(() => (submitted.value && !selectedRole.value ? 'Select a role for this user' : ''))
+const roleError = computed(() => (submitted.value && !selectedRole.value ? 'You must select a role' : ''))
 
 function goBack() { router.push('/crm/settings/users') }
 function send() {
@@ -117,31 +117,28 @@ function send() {
     </header>
 
     <div class="detail-stage">
-      <form class="iu-form" @submit.prevent="send">
+      <form class="iu-form" novalidate @submit.prevent="send">
         <!-- Name -->
         <MpFormControl id="iu-name" is-required :is-invalid="!!nameError">
           <MpFormLabel>{{ t('Name') }}</MpFormLabel>
-          <MpInput id="iu-name-input" v-model="name" is-full-width :placeholder="t('Full name')" />
+          <MpInput id="iu-name-input" v-model="name" is-full-width />
           <MpFormErrorMessage v-if="nameError">{{ t(nameError) }}</MpFormErrorMessage>
         </MpFormControl>
 
         <!-- Email -->
         <MpFormControl id="iu-email" is-required :is-invalid="!!emailError">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInput id="iu-email-input" v-model="email" is-full-width placeholder="name@company.com" />
+          <MpInput id="iu-email-input" v-model="email" is-full-width />
           <MpFormErrorMessage v-if="emailError">{{ t(emailError) }}</MpFormErrorMessage>
           <MpFormHelpText v-else>{{ t('This email will be used to sign in.') }}</MpFormHelpText>
         </MpFormControl>
 
-        <!-- Set access time -->
+        <!-- Set access time — label lives inside MpCheckbox (built-in 12px gap; no extra) -->
         <div class="iu-accesstime">
-          <label class="iu-check">
-            <MpCheckbox id="iu-set-access" :is-checked="setAccessTime" @change="setAccessTime = !setAccessTime" />
-            <span class="iu-check-text">
-              <span class="iu-check-title">{{ t('Set access time') }}</span>
-              <span class="iu-check-desc">{{ t('Limit user access by day and time.') }}</span>
-            </span>
-          </label>
+          <MpCheckbox id="iu-set-access" class="iu-set-access" :is-checked="setAccessTime" @change="setAccessTime = !setAccessTime">
+            <span class="iu-check-title">{{ t('Set access time') }}</span>
+            <span class="iu-check-desc">{{ t('Limit user access by day and time.') }}</span>
+          </MpCheckbox>
           <div v-if="setAccessTime" class="iu-accesstime-fields">
             <MpFormControl id="iu-access-days" class="iu-at-field">
               <MpFormLabel>{{ t('Days') }}</MpFormLabel>
@@ -161,10 +158,7 @@ function send() {
 
           <div class="iu-role-list">
             <div v-for="role in CRM_ROLES" :key="role.key" class="iu-role" :class="{ 'iu-role--selected': selectedRole === role.key }">
-              <label class="iu-role-pick">
-                <MpRadio :id="`iu-role-${role.key}`" :is-checked="selectedRole === role.key" @change="selectedRole = role.key" />
-                <span class="iu-role-name">{{ role.name }}</span>
-              </label>
+              <MpRadio :id="`iu-role-${role.key}`" class="iu-role-pick" :is-checked="selectedRole === role.key" @change="selectedRole = role.key">{{ role.name }}</MpRadio>
               <div class="iu-role-body">
                 <p class="iu-role-desc">{{ role.desc }}</p>
                 <p class="iu-role-cap">{{ t('This role can:') }}</p>
@@ -173,10 +167,7 @@ function send() {
                 </ul>
                 <div v-if="role.restriction && selectedRole === role.key" class="iu-restriction">
                   <span class="iu-restriction-label">{{ t('Access restriction') }}</span>
-                  <label class="iu-check iu-check--sm">
-                    <MpCheckbox id="iu-sales-restrict" :is-checked="salesRestrict" @change="salesRestrict = !salesRestrict" />
-                    <span class="iu-check-text"><span class="iu-check-desc">{{ t(role.restriction) }}</span></span>
-                  </label>
+                  <MpCheckbox id="iu-sales-restrict" :is-checked="salesRestrict" @change="salesRestrict = !salesRestrict">{{ t(role.restriction) }}</MpCheckbox>
                 </div>
               </div>
             </div>
@@ -209,10 +200,11 @@ function send() {
 .iu-form { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); max-width: 560px; }
 
 /* Set access time */
-.iu-check { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); cursor: pointer; }
-.iu-check-text { display: flex; flex-direction: column; gap: 2px; }
-.iu-check-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.iu-check-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+/* Two-line checkbox label sits INSIDE MpCheckbox (12px gap built in). Box top-aligns
+   to the first line (rule/checkbox-multiline-top); no extra gap (rule/checkbox-gap-12). */
+.iu-set-access :deep(.mp-checkbox__root) { align-items: flex-start; }
+.iu-check-title { display: block; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.iu-check-desc { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .iu-accesstime { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 /* Days + Hours split the row 50 / 50 — each select fills its half (no empty gap). */
 .iu-accesstime-fields { display: flex; gap: var(--mp-spacing-4); padding-left: 32px; }
@@ -228,8 +220,8 @@ function send() {
 .iu-role { border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); padding: var(--mp-spacing-4); }
 .iu-role:last-child { border-bottom: none; }
 .iu-role--selected { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); }
-.iu-role-pick { display: flex; align-items: center; gap: var(--mp-spacing-3); cursor: pointer; }
-.iu-role-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+/* Role name is the MpRadio label (built-in 12px gap; no extra) — just make it semibold. */
+.iu-role-pick :deep(.mp-radio__label) { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .iu-role-body { padding: var(--mp-spacing-2) 0 0 32px; }
 .iu-role-desc { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .iu-role-cap { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
@@ -238,7 +230,6 @@ function send() {
 
 .iu-restriction { margin-top: var(--mp-spacing-3); padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .iu-restriction-label { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.iu-check--sm .iu-check-desc { color: var(--mp-colors-text-default, #080d0e); }
 
 .iu-footer { margin-top: var(--mp-spacing-2); }
 </style>

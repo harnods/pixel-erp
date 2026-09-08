@@ -534,6 +534,14 @@ ERP override wins.
 - **`rule/table-no-outer-border`** — *Do:* no outer border box; wrapper is
   `overflow-x: auto` only. **Why:** ERP tables are borderless-outer. **Lint:**
   review.
+- **`rule/table-outer-border-bold`** — *Do:* when a table (or table-like key/value
+  grid) **does** carry a full outer border box — e.g. a bordered mini-table inside a
+  drawer / modal / detail card, not the main index table — that outer border is
+  **`--mp-border-bold`** (not `--mp-border-default`). Inner row dividers stay
+  `--mp-border-default`. *Don't:* box a table in a faint default-weight border. **Why:**
+  a bordered table reads as a contained object; the bold edge defines it while the
+  lighter inner rules keep the rows quiet. **Source:** the deal quick-preview product
+  table. **Lint:** review.
 - **`rule/table-no-hover-no-actions`** — *Do:* a purely read-only table with **no
   row `[...]` actions and no clickable/navigable row** removes the row hover
   background — pass **`no-row-hover`** to `ErpTablePage` (or otherwise render

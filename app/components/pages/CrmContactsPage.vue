@@ -257,7 +257,7 @@ const deleteDescription = computed(() =>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="openAssociate(selectedCompanyIds(selectedRows as Set<number>), deselectAll)">Associate to</MpPopoverListItem>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="openDelete(selectedCompanyIds(selectedRows as Set<number>), deselectAll)">Delete</MpPopoverListItem>
+                <MpPopoverListItem @click="openDelete(selectedCompanyIds(selectedRows as Set<number>), deselectAll)">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -295,7 +295,7 @@ const deleteDescription = computed(() =>
                 <MpPopoverListItem @click="openAssociate([(row as CrmContact).companyId])">Associate to</MpPopoverListItem>
                 <div class="con-menu-divider" role="separator" />
                 <MpPopoverListItem @click="soon('Archive contact')">Archive</MpPopoverListItem>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="openDelete([(row as CrmContact).companyId])">Delete</MpPopoverListItem>
+                <MpPopoverListItem @click="openDelete([(row as CrmContact).companyId])">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

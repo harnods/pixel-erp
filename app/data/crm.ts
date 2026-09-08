@@ -741,6 +741,31 @@ const MODULES_SEED: CrmModule[] = [
 
 export const crmModules = reactive<CrmModule[]>(load('crm-modules-v1', MODULES_SEED))
 export function persistCrmModules() { saveSnapshot('crm-modules-v1', crmModules) }
+
+// ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
+// A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
+// one Won and one Lost "ending" stage (the special swimlane). Won/Lost carry no
+// aging. A new deal enters the OPEN stage flagged `isDefault`.
+export type DealStageKind = 'open' | 'won' | 'lost'
+export interface DealPipelineStage { id: string; name: string; kind: DealStageKind; isDefault?: boolean }
+export interface DealPipeline { id: string; name: string; stages: DealPipelineStage[] }
+
+const DEAL_PIPELINES_SEED: DealPipeline[] = [
+  {
+    id: 'default',
+    name: 'Default deal pipeline',
+    stages: [
+      { id: 's-open-lead',   name: 'Open lead',   kind: 'open', isDefault: true },
+      { id: 's-1st-meeting', name: '1st meeting', kind: 'open' },
+      { id: 's-proposal',    name: 'Proposal',    kind: 'open' },
+      { id: 's-negotiation', name: 'Negotiation', kind: 'open' },
+      { id: 's-won',  name: 'Won',  kind: 'won' },
+      { id: 's-lost', name: 'Lost', kind: 'lost' },
+    ],
+  },
+]
+export const dealPipelines = reactive<DealPipeline[]>(load('crm-deal-pipelines-v1', DEAL_PIPELINES_SEED))
+export function persistDealPipelines() { saveSnapshot('crm-deal-pipelines-v1', dealPipelines) }
 export function getCrmModule(id: string): CrmModule | undefined { return crmModules.find((m) => m.id === id) }
 export function persistCrmModule(m: CrmModule, author: string, now: string): void {
   m.updatedAt = now
@@ -940,6 +965,20 @@ export function addCompanyComment(companyId: string, text: string, author = 'You
 export function deleteCompanyComment(id: string): void {
   const i = crmCompanyComments.findIndex((c) => c.id === id)
   if (i !== -1) { crmCompanyComments.splice(i, 1); persistComments() }
+}
+
+// ── Deal notes / comments (per-deal timeline, newest first) ──
+export interface CrmDealComment { id: string; dealId: string; author: string; text: string; at: string }
+export const crmDealComments = reactive<CrmDealComment[]>(loadSnapshot<CrmDealComment>('crm-deal-comments-v1') ?? [])
+function persistDealComments() { saveSnapshot('crm-deal-comments-v1', crmDealComments) }
+export function dealComments(dealId: string): CrmDealComment[] {
+  return crmDealComments.filter((c) => c.dealId === dealId).slice().sort((a, b) => b.at.localeCompare(a.at))
+}
+export function addDealComment(dealId: string, text: string, author = 'You'): CrmDealComment {
+  const c: CrmDealComment = { id: `dcmt-${Date.now()}`, dealId, author, text: text.trim(), at: new Date().toISOString() }
+  crmDealComments.push(c)
+  persistDealComments()
+  return c
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

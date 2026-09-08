@@ -20,7 +20,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import {
-  MpButton, MpIcon,
+  MpButton, MpIcon, MpToggle,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import SettingsCompanyProfilePage from '~/components/pages/SettingsCompanyProfilePage.vue'
@@ -66,8 +66,24 @@ function emailFor(name: string): string {
 type CrmUser = {
   id: string; name: string; email: string; role: string
   teams: string[]; accessDays: string; accessHours: string; status: string; joinDate: string
+  canExport: boolean; canViewReports: boolean
 }
 const ROLES = ['Admin', 'Sales rep', 'Marketing', 'Viewer']
+
+// Per-user data permissions (beyond role): can export data / can view reports.
+// Default by role (Admin gets both); an override map persists inline toggles.
+function defaultPerms(role: string) {
+  return role === 'Admin' ? { canExport: true, canViewReports: true } : { canExport: false, canViewReports: true }
+}
+const PERMS_KEY = 'crm-user-perms-v1'
+const userPerms = reactive<Record<string, { canExport: boolean; canViewReports: boolean }>>(
+  import.meta.client ? (() => { try { return JSON.parse(localStorage.getItem(PERMS_KEY) || '{}') } catch { return {} } })() : {},
+)
+function permOf(id: string, role: string) { return userPerms[id] ?? defaultPerms(role) }
+function setPerm(id: string, role: string, key: 'canExport' | 'canViewReports', val: boolean) {
+  userPerms[id] = { ...(userPerms[id] ?? defaultPerms(role)), [key]: val }
+  if (import.meta.client) { try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPerms)) } catch { /* ignore */ } }
+}
 // A user can belong to MANY teams (multi-value cell).
 const TEAM_POOL = ['Sales', 'Marketing', 'Customer Success']
 // Access window = a day scope (Weekdays / Weekend / Every day) + working hours;
@@ -82,17 +98,22 @@ const ACCESS_WINDOWS = [
 const crmUsers = computed<CrmUser[]>(() =>
   CRM_OWNERS.map((name, i) => {
     const access = i === 0 ? ACCESS_WINDOWS[0]! : ACCESS_WINDOWS[1 + (i % 4)]!
+    const id = `CU${String(i + 1).padStart(2, '0')}`
+    const role = i === 0 ? 'Admin' : ROLES[(i % 3) + 1]!   // first person is the Admin
+    const perms = permOf(id, role)
     return {
-      id: `CU${String(i + 1).padStart(2, '0')}`,
+      id,
       name,
       email: emailFor(name),
-      role: i === 0 ? 'Admin' : ROLES[(i % 3) + 1]!,   // first person is the Admin
+      role,
       teams: i === 0 ? [...TEAM_POOL] : [TEAM_POOL[i % 3]!, TEAM_POOL[(i + 1) % 3]!],
       accessDays: access.days,
       accessHours: access.hours,
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
       // deterministic, coherent mock (no Date.now)
       joinDate: `202${4 + (i % 2)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 27)).padStart(2, '0')}`,
+      canExport: perms.canExport,
+      canViewReports: perms.canViewReports,
     }
   }),
 )
@@ -101,6 +122,8 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Name', kind: 'name', sortable: true, sortType: 'text' },
   { key: 'role', label: 'Role', kind: 'status', sortType: 'text' },
   { key: 'teams', label: 'Team', kind: 'tags' },
+  { key: 'canExport', label: 'Export data', kind: 'status' },
+  { key: 'canViewReports', label: 'View reports', kind: 'status' },
   { key: 'accessDays', label: 'Access time', sortType: 'text' },
   { key: 'status', label: 'Status', kind: 'status', sortType: 'text' },
   { key: 'joinDate', label: 'Join date', kind: 'date', sortType: 'date' },
@@ -333,6 +356,12 @@ const integrations: Integration[] = [
             </div>
           </template>
           <template #cell-role="{ value }">{{ value }}</template>
+          <template #cell-canExport="{ row }">
+            <MpToggle :id="`perm-exp-${(row as CrmUser).id}`" :is-checked="(row as CrmUser).canExport" :aria-label="t('Export data')" @update:is-checked="(v: boolean) => setPerm((row as CrmUser).id, (row as CrmUser).role, 'canExport', v)" />
+          </template>
+          <template #cell-canViewReports="{ row }">
+            <MpToggle :id="`perm-rep-${(row as CrmUser).id}`" :is-checked="(row as CrmUser).canViewReports" :aria-label="t('View reports')" @update:is-checked="(v: boolean) => setPerm((row as CrmUser).id, (row as CrmUser).role, 'canViewReports', v)" />
+          </template>
           <template #cell-teams="{ row }">
             <div v-if="(row as CrmUser).teams.length" class="cru-tags">
               <span v-for="tm in (row as CrmUser).teams" :key="tm" class="erp-tag">{{ tm }}</span>
@@ -358,7 +387,7 @@ const integrations: Integration[] = [
                 <MpPopoverList>
                   <MpPopoverListItem @click="viewUser(row as CrmUser)">{{ t('View details') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="editUser(row as CrmUser)">{{ t('Edit') }}</MpPopoverListItem>
-                  <MpPopoverListItem class="cru-action--danger" @click="deleteUser(row as CrmUser)">{{ t('Delete') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="deleteUser(row as CrmUser)">{{ t('Delete') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
@@ -443,7 +472,7 @@ const integrations: Integration[] = [
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem @click="openEditTeam(row as unknown as TeamRow)">{{ t('Edit') }}</MpPopoverListItem>
-                  <MpPopoverListItem class="cru-action--danger" @click="askDeleteTeam(row as unknown as TeamRow)">{{ t('Delete') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="askDeleteTeam(row as unknown as TeamRow)">{{ t('Delete') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
@@ -526,7 +555,10 @@ const integrations: Integration[] = [
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* padding-top (not border-top) so the first row sits INSIDE the scroll padding —
+   a bordered control (e.g. the search pill) flush at an overflow:auto edge gets its
+   top border shaved otherwise. */
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* The embedded Company profile page is a bare 12-col grid (no title bar, no own
    padding) — it sits naturally inside the padded .detail-stage, matching how the
