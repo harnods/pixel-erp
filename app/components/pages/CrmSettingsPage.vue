@@ -21,7 +21,7 @@
 import { computed, reactive, ref } from 'vue'
 import {
   MpButton, MpIcon,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import SettingsCompanyProfilePage from '~/components/pages/SettingsCompanyProfilePage.vue'
@@ -36,7 +36,7 @@ import CrmTeamFormDrawer, { type CrmTeamDraft } from '~/components/patterns/CrmT
 import {
   CRM_OWNERS,
   crmTeams, CRM_TEAM_MODULES, type CrmTeam,
-  crmTeamMemberOptions, teamMemberNames, upsertCrmTeam, deleteCrmTeam,
+  crmTeamMemberOptions, teamMemberNames, teamNamesForPerson, upsertCrmTeam, deleteCrmTeam,
   type CrmPermSet, fullPermSet, defaultPermSet, permSummary,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
@@ -81,8 +81,8 @@ function permSetOf(id: string, i: number): CrmPermSet {
   return userPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
 }
 
-// A user can belong to MANY teams (multi-value cell).
-const TEAM_POOL = ['Sales', 'Marketing', 'Customer Success']
+// A user can belong to MANY teams — resolved from the real Teams store
+// (teamNamesForPerson), so this column always matches the Teams index.
 // Access window = a day scope (Weekdays / Weekend / Every day) + working hours.
 const ACCESS_WINDOWS = [
   { days: 'Every day', hours: 'All day' },        // the owner
@@ -100,7 +100,7 @@ const crmUsers = computed<CrmUser[]>(() =>
       id,
       name,
       email: emailFor(name),
-      teams: i === 0 ? [...TEAM_POOL] : [TEAM_POOL[i % 3]!, TEAM_POOL[(i + 1) % 3]!],
+      teams: teamNamesForPerson(name),
       accessDays: access.days,
       accessHours: access.hours,
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
@@ -220,10 +220,32 @@ function saveTeam() {
   successToast(isEdit ? t('Team updated') : t('Team created'))
 }
 
-// ── Member picker (SelectAccessDrawer) — opens on top of the form drawer ──
+// ── Member picker (SelectAccessDrawer) — opens on top of the form drawer, OR
+// directly from the row "Assign members" action (persists immediately then). ──
 const membersPickerOpen = ref(false)
+const directAssignTeam = ref<TeamRow | null>(null)
 function onPickMembers() { membersPickerOpen.value = true }
-function onMembersSaved(ids: string[]) { teamDraft.memberIds = ids; membersPickerOpen.value = false }
+// Row action → skip the form, load the team and open the picker straight away.
+function assignMembers(tm: TeamRow) {
+  directAssignTeam.value = tm
+  editingTeamId.value = tm.id
+  Object.assign(teamDraft, { name: tm.name, description: tm.description, modules: [...tm.modules], memberIds: [...tm.memberIds] })
+  membersPickerOpen.value = true
+}
+function onMembersSaved(ids: string[]) {
+  teamDraft.memberIds = ids
+  membersPickerOpen.value = false
+  // Direct assign (no form open) → persist the team's members right away.
+  if (directAssignTeam.value) {
+    const tm = directAssignTeam.value
+    upsertCrmTeam(
+      { id: tm.id, name: tm.name, description: tm.description, memberIds: ids, modules: tm.modules },
+      CURRENT_USER, nowStamp(),
+    )
+    successToast(t('Members updated'))
+    directAssignTeam.value = null
+  }
+}
 
 // ── Members modal — click the "N members" cell to see the full roster ──
 const membersModalOpen = ref(false)
@@ -400,7 +422,12 @@ const integrations: Integration[] = [
           </template>
 
           <template #cell-memberCount="{ row }">
-            {{ (row as unknown as TeamRow).memberCount }} {{ (row as unknown as TeamRow).memberCount !== 1 ? t('members') : t('member') }}
+            <span
+              v-if="(row as unknown as TeamRow).memberCount"
+              class="cell-link cell-text"
+              @click.stop="openMembers(row as unknown as TeamRow)"
+            >{{ (row as unknown as TeamRow).memberCount }} {{ (row as unknown as TeamRow).memberCount !== 1 ? t('members') : t('member') }}</span>
+            <span v-else class="cmt-muted">{{ t('No members') }}</span>
           </template>
 
           <!-- Accessible modules — tag chips -->
@@ -425,6 +452,7 @@ const integrations: Integration[] = [
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem @click="openEditTeam(row as unknown as TeamRow)">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="assignMembers(row as unknown as TeamRow)">{{ t('Assign members') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="askDeleteTeam(row as unknown as TeamRow)">{{ t('Delete') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -508,7 +536,10 @@ const integrations: Integration[] = [
       @close="membersModalOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>{{ membersModalTeam?.name }} · {{ membersModalList.length }} {{ membersModalList.length !== 1 ? t('members') : t('member') }}</MpModalHeader>
+        <MpModalHeader>
+          {{ membersModalTeam?.name }} · {{ membersModalList.length }} {{ membersModalList.length !== 1 ? t('members') : t('member') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
         <MpModalBody>
           <ul class="cmt-member-list">
             <li v-for="m in membersModalList" :key="m.id" class="cmt-member-row">
@@ -517,9 +548,6 @@ const integrations: Integration[] = [
             </li>
           </ul>
         </MpModalBody>
-        <MpModalFooter>
-          <MpButton variant="ghost" is-rounded @click="membersModalOpen = false">{{ t('Close') }}</MpButton>
-        </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
@@ -592,7 +620,9 @@ const integrations: Integration[] = [
 
 /* ── Filter bar (same classes as the index pages; erp.css owns :focus-within) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
-.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* margin-left:auto keeps the column-settings + search group right-aligned even when
+   it's the only child of the space-between filter bar (Teams has no left filter). */
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 .filter-btn-group { display: flex; align-items: center; }
 /* Search = rounded pill (rule/filter-bar-search-pill): leading icon + input + clear. */
 .filter-search {

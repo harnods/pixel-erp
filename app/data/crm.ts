@@ -590,6 +590,14 @@ export const crmTeamMemberOptions = computed(() =>
 export function teamMemberNames(ids: string[]): string[] {
   return ids.map((id) => employees.find((e) => e.id === id)?.fullName ?? id)
 }
+/** Team names a given person belongs to — resolved from real crmTeams membership
+ *  (matches the employee master by name), so the Users list stays in sync with the
+ *  Teams index. Returns [] when the person is on no team. */
+export function teamNamesForPerson(name: string): string[] {
+  const emp = employees.find((e) => e.fullName === name)
+  if (!emp) return []
+  return crmTeams.filter((t) => t.memberIds.includes(emp.id)).map((t) => t.name)
+}
 
 /** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy. */
 export function upsertCrmTeam(
