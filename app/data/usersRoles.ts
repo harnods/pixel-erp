@@ -36,6 +36,13 @@ export interface SystemRole {
   accessLimitation?: string
   /** Owner/Ultimate can't be time-limited (see ACCESS_TIME_LIMIT_NOTE). */
   supportsTimeLimit: boolean
+  /**
+   * Role only exists for tenants that bought the Project Accounting billing
+   * component — same gate as the matching authority feature and the Approval
+   * workflows "Applies to: Project Action" condition. Gated roles are omitted
+   * from the picker entirely, not shown-disabled.
+   */
+  requiresProjectAccounting?: boolean
 }
 
 export const SYSTEM_ROLES: SystemRole[] = [
@@ -156,6 +163,21 @@ export const SYSTEM_ROLES: SystemRole[] = [
     supportsTimeLimit: true,
   },
   {
+    id: 'project-manager',
+    name: 'Project Manager',
+    requiresProjectAccounting: true,
+    permissions: [
+      'Create and set up projects, including budget and milestones.',
+      'View and record project costs.',
+      'View and submit revenue recognition and project billing.',
+      'Create and submit variation orders and other change requests.',
+      'View all project health and profitability reports.',
+      'Edit and delete project data if ticking List manager.',
+    ],
+    accessLimitation: 'Restrict this user to projects they are assigned to',
+    supportsTimeLimit: true,
+  },
+  {
     id: 'warehouse',
     name: 'Warehouse',
     permissions: [
@@ -171,6 +193,15 @@ export const SYSTEM_ROLES: SystemRole[] = [
 
 export function getSystemRole(id: string): SystemRole | undefined {
   return SYSTEM_ROLES.find((r) => r.id === id)
+}
+
+/**
+ * The existing roles this tenant can actually assign. Pass whether the Project
+ * Accounting billing component is installed (useApprovalWorkflowScenario) —
+ * without it, Project Manager is dropped from the picker.
+ */
+export function systemRolesFor(hasProjectAccounting: boolean): SystemRole[] {
+  return SYSTEM_ROLES.filter((r) => !r.requiresProjectAccounting || hasProjectAccounting)
 }
 
 /** Shown under the "Apply access time limits" checkbox. */
@@ -405,24 +436,6 @@ export const customRoles = reactive<CustomRole[]>([
     updatedBy: 'Evelyn Bellinda',
   },
   {
-    id: 'cr-4',
-    name: 'Project Manager',
-    description: 'Owns a project end to end: setup, cost tracking, recognition and billing, change management, and project health.',
-    // Full authority over the whole Project Accounting feature — what ticking the
-    // feature row in the matrix produces. Trim individual cells in the drawer if a
-    // PM shouldn't, say, delete recognition entries.
-    grants: {
-      'project-accounting.project-setup': ['view', 'create', 'edit', 'delete'],
-      'project-accounting.cost-tracking': ['view', 'create', 'edit', 'delete'],
-      'project-accounting.recognition-and-billing': ['view', 'create', 'edit', 'delete'],
-      'project-accounting.change-management': ['view', 'create', 'edit', 'delete'],
-      'project-accounting.project-health': ['view', 'create', 'edit', 'delete'],
-    },
-    assignedUsers: 0,
-    updatedAt: '2026-09-08T10:20:00+07:00',
-    updatedBy: 'Rizal Candra',
-  },
-  {
     id: 'cr-3',
     name: 'Tax reviewer',
     description: 'Read-only across sales, purchases and tax reporting for the monthly review.',
@@ -622,6 +635,18 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
+  },
+  {
+    id: 'au-11',
+    name: 'Ali Imran',
+    email: 'ali.imran@mekari.com',
+    isOwner: false,
+    systemRoleIds: ['project-manager'],
+    customRoleIds: [],
+    isListManager: true,
+    timeLimit: null,
+    status: 'active',
+    lastActiveAt: '2026-09-08T09:05:00+07:00',
   },
 ])
 

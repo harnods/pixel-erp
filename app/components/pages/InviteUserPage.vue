@@ -25,7 +25,7 @@ import { successToast } from '~/utils/toasts'
 import {
   ACCESS_DAY_OPTIONS, ACCESS_HOUR_OPTIONS, ACCESS_TIME_LIMIT_NOTE, ROLE_SELECTION_TERMS,
   SYSTEM_ROLES, customRoles, emptyAccessTimeLimit, getAccountUser,
-  addAccountUser, updateAccountUser, grantedFeatureCount,
+  addAccountUser, updateAccountUser, grantedFeatureCount, systemRolesFor,
   type AccessTimeLimit, type SystemRole,
 } from '~/data/usersRoles'
 
@@ -35,6 +35,12 @@ const isEdit = computed(() => !!props.orderId && props.orderId !== 'invite')
 
 const router = useRouter()
 const { t } = useLocale()
+
+// Project Manager is a billing-component role — a tenant without Project
+// Accounting never sees it in the picker (same gate as the matching authority
+// feature and the Approval workflows "Applies to: Project Action" condition).
+const { projectAccountingEnabled } = useApprovalWorkflowScenario()
+const existingRoles = computed(() => systemRolesFor(projectAccountingEnabled.value))
 
 // ─── Form state ─────────────────────────────────────────────────────────────
 const name = ref('')
@@ -292,7 +298,7 @@ function goBack() { router.push('/users-and-roles') }
                 <!-- ── Existing roles ── -->
                 <MpTabPanel value="existing">
                   <ul class="inv-roles">
-                    <li v-for="role in SYSTEM_ROLES" :key="role.id" class="inv-role">
+                    <li v-for="role in existingRoles" :key="role.id" class="inv-role">
                       <div class="inv-role-head">
                         <MpButton
                           variant="ghost"

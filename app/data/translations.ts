@@ -2171,6 +2171,20 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "all": "semua",
   // Project Accounting authority (billing component)
   "Project Accounting": "Project Accounting",
+  "Project Manager": "Project Manager",
+  "Create and set up projects, including budget and milestones.":
+    "Membuat dan menyiapkan proyek, termasuk anggaran dan milestone.",
+  "View and record project costs.": "Melihat dan mencatat biaya proyek.",
+  "View and submit revenue recognition and project billing.":
+    "Melihat dan mengirim pengakuan pendapatan dan penagihan proyek.",
+  "Create and submit variation orders and other change requests.":
+    "Membuat dan mengirim variation order dan permintaan perubahan lainnya.",
+  "View all project health and profitability reports.":
+    "Melihat semua laporan kesehatan dan profitabilitas proyek.",
+  "Edit and delete project data if ticking List manager.":
+    "Mengubah dan menghapus data proyek jika mencentang List manager.",
+  "Restrict this user to projects they are assigned to":
+    "Batasi pengguna ini hanya pada proyek yang ditugaskan kepadanya",
   "Project setup": "Penyiapan proyek",
   "Cost tracking": "Pelacakan biaya",
   "Recognition and billing": "Pengakuan dan penagihan",

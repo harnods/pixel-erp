@@ -8,8 +8,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  AUTHORITY_ACTIONS, AUTHORITY_FEATURES, authorityActionsFor, authorityFeaturesFor,
-  authorityRowKeys, customRoles, getCustomRole, grantedFeatureCount,
+  AUTHORITY_ACTIONS, AUTHORITY_FEATURES, SYSTEM_ROLES, accountUsers,
+  authorityActionsFor, authorityFeaturesFor, authorityRowKeys, customRoles,
+  getCustomRole, getSystemRole, systemRolesFor, userRoleNames, userRoleTypes,
 } from '~/data/usersRoles'
 
 describe('authority feature catalogue', () => {
@@ -62,20 +63,57 @@ describe('Project Accounting is gated on the billing component', () => {
   })
 })
 
-describe('seeded custom roles', () => {
-  it('grants the Project Manager full authority over Project Accounting', () => {
-    const pm = customRoles.find((r) => r.name === 'Project Manager')
-    expect(pm).toBeDefined()
+describe('Project Manager is a predefined (existing) role', () => {
+  const pm = getSystemRole('project-manager')
 
-    const feature = AUTHORITY_FEATURES.find((f) => f.id === 'project-accounting')!
-    const expectedKeys = authorityRowKeys(feature)
-    expect(Object.keys(pm!.grants).sort()).toEqual([...expectedKeys].sort())
-    for (const key of expectedKeys) {
-      expect(pm!.grants[key]).toEqual(['view', 'create', 'edit', 'delete'])
-    }
-    expect(grantedFeatureCount(pm!.grants)).toBe(1)
+  it('lives in the existing-role catalogue, not in custom roles', () => {
+    expect(pm).toBeDefined()
+    expect(pm!.name).toBe('Project Manager')
+    expect(customRoles.some((r) => r.name === 'Project Manager')).toBe(false)
   })
 
+  it('describes what it can do and can be access-limited and time-limited', () => {
+    expect(pm!.permissions.length).toBeGreaterThan(0)
+    for (const line of pm!.permissions) expect(line).toMatch(/\.$/) // sentence case, full stop
+    expect(pm!.accessLimitation).toBeTruthy()
+    expect(pm!.supportsTimeLimit).toBe(true)
+  })
+
+  it('is offered only when the tenant has the Project Accounting component', () => {
+    expect(systemRolesFor(true).map((r) => r.id)).toContain('project-manager')
+    expect(systemRolesFor(false).map((r) => r.id)).not.toContain('project-manager')
+    expect(systemRolesFor(false).length).toBe(SYSTEM_ROLES.length - 1)
+  })
+
+  it('reads as an Existing role — not Custom — on a user who holds it', () => {
+    const holder = accountUsers.find((u) => u.systemRoleIds.includes('project-manager'))
+    expect(holder, 'no seeded user carries the role, so the list never shows it').toBeDefined()
+    expect(userRoleNames(holder!)).toContain('Project Manager')
+    expect(userRoleTypes(holder!)).toContain('existing')
+    expect(userRoleTypes(holder!)).not.toContain('custom')
+  })
+})
+
+describe('role catalogues', () => {
+  it('has unique system-role ids that all resolve', () => {
+    const ids = SYSTEM_ROLES.map((r) => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids) expect(getSystemRole(id)).toBeDefined()
+  })
+
+  it('never leaves a user pointing at a role that no longer exists', () => {
+    for (const user of accountUsers) {
+      for (const id of user.systemRoleIds) {
+        expect(getSystemRole(id), `${user.name} → unknown system role "${id}"`).toBeDefined()
+      }
+      for (const id of user.customRoleIds) {
+        expect(getCustomRole(id), `${user.name} → unknown custom role "${id}"`).toBeDefined()
+      }
+    }
+  })
+})
+
+describe('seeded custom roles', () => {
   it('only grants row keys the matrix actually renders', () => {
     const known = new Set(AUTHORITY_FEATURES.flatMap(authorityRowKeys))
     for (const role of customRoles) {
