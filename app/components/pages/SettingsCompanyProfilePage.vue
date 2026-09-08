@@ -10,6 +10,13 @@ import {
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
 
+/**
+ * `embedded` = rendered inside the CRM Settings shell (not the ERP Settings page).
+ * In that mode we hide every Edit button and drop the Advanced settings section —
+ * the CRM surface is read-only for these fields. Default (ERP) keeps everything.
+ */
+const props = defineProps<{ embedded?: boolean }>()
+
 const { t } = useLocale()
 const { amountDisplay: amountDisplaySetting, setAmountDisplay } = useCurrencySettings()
 
@@ -331,6 +338,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
+          v-if="!props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
@@ -409,7 +417,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
-          v-if="editing !== 'tax'"
+          v-if="editing !== 'tax' && !props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
           @click="startEdit('tax')"
         >
@@ -621,7 +629,7 @@ const ADVANCED_TOGGLES = [
           <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
-          v-if="editing !== 'payment'"
+          v-if="editing !== 'payment' && !props.embedded"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
           @click="startEdit('payment')"
         >
@@ -682,8 +690,8 @@ const ADVANCED_TOGGLES = [
 
     <div class="cp-divider" />
 
-    <!-- ── Advanced settings ────────────────────────────────────────────────── -->
-    <section class="cp-section">
+    <!-- ── Advanced settings (hidden in the CRM-embedded surface) ───────────── -->
+    <section v-if="!props.embedded" class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>

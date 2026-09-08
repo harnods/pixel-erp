@@ -101,7 +101,7 @@ function initials(name: string): string {
     <div class="detail-stage">
       <!-- ── Company profile — reuse the ERP page verbatim ── -->
       <section v-if="section === 'company'" class="set-embed">
-        <SettingsCompanyProfilePage />
+        <SettingsCompanyProfilePage embedded />
       </section>
 
       <!-- ── User & roles ── -->
