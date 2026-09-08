@@ -746,11 +746,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
-                    <!-- Description: the product's own in WMS (not a field at all), the
-                         line's own in ERP. -->
-                    <td v-if="isWms" class="cr-td cr-td--desc">{{ row.description || '—' }}</td>
-                    <td v-else class="cr-td cr-td--input">
-                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                    <!-- Description: the product's own in WMS — disabled rather than
+                         removed, so the column keeps its width and the cell still
+                         reads as the field it is. Editable in ERP, where a document
+                         line legitimately carries its own wording. -->
+                    <td class="cr-td cr-td--input">
+                      <MpInput
+                        :id="`cr-desc-${row.id}`"
+                        v-model="row.description"
+                        :is-disabled="isWms"
+                        is-full-width
+                      />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': qtyInvalid(row) }">
                       <MpTooltip
@@ -841,7 +847,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 </template>
 
 <style scoped>
-.cr-td--desc { color: var(--mp-text-secondary); }
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 .detail-bar {
