@@ -5,8 +5,8 @@
  *
  * Benchmarked on Jurnal's Invite user page. ERP deviations from that mockup, all
  * driven by RULES.md (the rule beats the mockup — see the authority hierarchy):
- *  • Jurnal's native <select> for Days / Start hour / End hour → ErpFilterSelect
- *    (rule/select-erpfilterselect).
+ *  • Jurnal's native select element for Days / Start hour / End hour becomes an
+ *    ErpFilterSelect (rule/select-erpfilterselect).
  *  • The Invite button is never disabled while preconditions are unmet — an
  *    unsatisfied requirement surfaces inline (rule/btn-no-disabled-validation,
  *    rule/form-errors-inline, rule/form-actions-always-present).
@@ -169,7 +169,7 @@ function goBack() { router.push('/users-and-roles') }
     <!-- ── Page title bar (breadcrumb directly above the title, gap 0) ── -->
     <div class="inv-titlebar">
       <div class="inv-titlebar-left">
-        <button class="inv-breadcrumb" @click="goBack">{{ t('Users & roles') }}</button>
+        <MpButton variant="textLink" class="inv-breadcrumb" @click="goBack">{{ t('Users & roles') }}</MpButton>
         <h1 class="inv-title">{{ isEdit ? t('Edit user access') : t('Invite user') }}</h1>
       </div>
     </div>
@@ -294,14 +294,14 @@ function goBack() { router.push('/users-and-roles') }
                   <ul class="inv-roles">
                     <li v-for="role in SYSTEM_ROLES" :key="role.id" class="inv-role">
                       <div class="inv-role-head">
-                        <button
+                        <MpButton
+                          variant="ghost"
                           class="inv-role-toggle"
+                          :left-icon="expanded[role.id] ? 'caret-down' : 'caret-right'"
                           :aria-label="expanded[role.id] ? t('Collapse') : t('Expand')"
                           :aria-expanded="expanded[role.id]"
                           @click="expanded[role.id] = !expanded[role.id]"
-                        >
-                          <MpIcon :name="expanded[role.id] ? 'caret-down' : 'caret-right'" size="sm" />
-                        </button>
+                        />
                         <MpCheckbox
                           :id="`inv-role-${role.id}`"
                           :is-checked="isSystemRoleOn(role.id)"
@@ -400,7 +400,7 @@ function goBack() { router.push('/users-and-roles') }
           </section>
 
           <!-- ── Footer actions — always present, never disabled by validation ── -->
-          <div class="inv-actions">
+          <div class="inv-actions erp-action-footer">
             <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
             <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
               {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Invite')) }}
@@ -411,10 +411,14 @@ function goBack() { router.push('/users-and-roles') }
         <!-- ── Side card: terms for selecting roles ── -->
         <aside class="inv-aside">
           <div class="inv-terms">
-            <button class="inv-terms-head" :aria-expanded="termsOpen" @click="termsOpen = !termsOpen">
+            <MpButton
+              variant="ghost" class="inv-terms-head"
+              :right-icon="termsOpen ? 'caret-down' : 'caret-right'"
+              :aria-expanded="termsOpen"
+              @click="termsOpen = !termsOpen"
+            >
               <span class="inv-terms-title">{{ t('Terms for selecting roles') }}</span>
-              <MpIcon :name="termsOpen ? 'caret-down' : 'caret-right'" size="sm" />
-            </button>
+            </MpButton>
             <ul v-if="termsOpen" class="inv-terms-list">
               <li v-for="term in ROLE_SELECTION_TERMS" :key="term">{{ t(term) }}</li>
             </ul>
@@ -436,13 +440,15 @@ function goBack() { router.push('/users-and-roles') }
   padding: 0 var(--mp-spacing-6);
 }
 .inv-titlebar-left { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
+/* Breadcrumb — a textLink MpButton stripped of Pixel's atomic button box so it
+   sits flush above the title with gap 0 (rule/detail-breadcrumb-no-gap). */
 .inv-breadcrumb {
-  background: none; border: none; cursor: pointer; padding: 0;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular);
+  height: auto !important; min-width: 0 !important; padding: 0 !important;
+  font-size: var(--mp-font-sizes-sm) !important;
+  font-weight: var(--mp-font-weights-regular) !important;
   line-height: var(--mp-line-heights-md); color: var(--mp-text-link);
-  font-family: inherit; white-space: nowrap;
+  white-space: nowrap;
 }
-.inv-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .inv-title {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold);
@@ -506,9 +512,9 @@ function goBack() { router.push('/users-and-roles') }
 .inv-role:last-child { border-bottom: none; }
 .inv-role-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .inv-role-toggle {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px);
-  border: none; background: none; padding: 0; cursor: pointer; color: var(--mp-icon-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important;
+  min-width: 0 !important; padding: 0 !important; color: var(--mp-icon-default);
 }
 .inv-role-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
@@ -549,9 +555,11 @@ function goBack() { router.push('/users-and-roles') }
   background: var(--mp-background-neutral);
 }
 .inv-terms-head {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
-  width: 100%; padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border: none; background: none; cursor: pointer; font-family: inherit; text-align: left;
+  display: flex !important; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-3);
+  width: 100% !important; height: auto !important;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4) !important;
+  text-align: left;
 }
 .inv-terms-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
@@ -568,8 +576,8 @@ function goBack() { router.push('/users-and-roles') }
   color: var(--mp-text-secondary);
 }
 
-/* ── Actions ── */
-.inv-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); }
+/* ── Actions — alignment + the ≤640px stacked/full-width behaviour come from the
+   global .erp-action-footer (rule/btn-responsive-footer). ── */
 
 /* ── Not found ── */
 .inv-notfound { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10, 40px) 0; }
@@ -583,6 +591,5 @@ function goBack() { router.push('/users-and-roles') }
 }
 @media (max-width: 640px) {
   .inv-field-row { flex-direction: column; }
-  .inv-actions { flex-direction: column-reverse; align-items: stretch; }
 }
 </style>

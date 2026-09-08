@@ -229,6 +229,14 @@ export interface AuthorityFeature {
   subfeatures: { id: string; label: string }[]
   /** Report-style features are view-only — their create/edit/delete cells are omitted. */
   viewOnly?: boolean
+  /**
+   * Feature only exists for tenants that bought the Project Accounting billing
+   * component — the same gate the Approval workflows "Applies to: Project
+   * Action" condition uses (useApprovalWorkflowScenario). Gated features are
+   * omitted from the matrix entirely, not shown-disabled: a tenant without the
+   * component can't grant authority over a module they don't have.
+   */
+  requiresProjectAccounting?: boolean
 }
 
 /** Mirrors the ERP sidebar, not Jurnal's module list. */
@@ -291,6 +299,18 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
       { id: 'bill-of-materials', label: 'Bill of materials' },
     ],
   },
+  {
+    id: 'project-accounting',
+    label: 'Project Accounting',
+    requiresProjectAccounting: true,
+    subfeatures: [
+      { id: 'project-setup', label: 'Project setup' },
+      { id: 'cost-tracking', label: 'Cost tracking' },
+      { id: 'recognition-and-billing', label: 'Recognition and billing' },
+      { id: 'change-management', label: 'Change management' },
+      { id: 'project-health', label: 'Project health' },
+    ],
+  },
   { id: 'contacts', label: 'Contacts', subfeatures: [] },
   { id: 'business-overview-report', label: 'Business overview report', subfeatures: [], viewOnly: true },
   { id: 'sales-report', label: 'Sales report', subfeatures: [], viewOnly: true },
@@ -306,6 +326,15 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
  * sub-features, or `"<featureId>.<subfeatureId>"`. A missing key = no access.
  */
 export type AuthorityGrants = Record<string, AuthorityAction[]>
+
+/**
+ * The features this tenant can actually grant. Pass whether the Project
+ * Accounting billing component is installed (useApprovalWorkflowScenario) —
+ * without it, that feature is dropped from the matrix.
+ */
+export function authorityFeaturesFor(hasProjectAccounting: boolean): AuthorityFeature[] {
+  return AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting || hasProjectAccounting)
+}
 
 /** Row keys the matrix renders for one feature (itself, or one per sub-feature). */
 export function authorityRowKeys(feature: AuthorityFeature): string[] {
@@ -374,6 +403,24 @@ export const customRoles = reactive<CustomRole[]>([
     assignedUsers: 2,
     updatedAt: '2026-08-11T16:40:00+07:00',
     updatedBy: 'Evelyn Bellinda',
+  },
+  {
+    id: 'cr-4',
+    name: 'Project Manager',
+    description: 'Owns a project end to end: setup, cost tracking, recognition and billing, change management, and project health.',
+    // Full authority over the whole Project Accounting feature — what ticking the
+    // feature row in the matrix produces. Trim individual cells in the drawer if a
+    // PM shouldn't, say, delete recognition entries.
+    grants: {
+      'project-accounting.project-setup': ['view', 'create', 'edit', 'delete'],
+      'project-accounting.cost-tracking': ['view', 'create', 'edit', 'delete'],
+      'project-accounting.recognition-and-billing': ['view', 'create', 'edit', 'delete'],
+      'project-accounting.change-management': ['view', 'create', 'edit', 'delete'],
+      'project-accounting.project-health': ['view', 'create', 'edit', 'delete'],
+    },
+    assignedUsers: 0,
+    updatedAt: '2026-09-08T10:20:00+07:00',
+    updatedBy: 'Rizal Candra',
   },
   {
     id: 'cr-3',

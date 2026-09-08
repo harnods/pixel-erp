@@ -15,13 +15,13 @@
  * per docs/patterns/FormTable.md — ErpTablePage's pagination/sort/skeleton
  * behaviour is for index tables and does not apply here.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea } from '@mekari/pixel3'
 import { successToast } from '~/utils/toasts'
 import {
-  AUTHORITY_ACTIONS, AUTHORITY_FEATURES, DESCRIPTION_MAX, ROLE_NAME_MAX,
-  addCustomRole, authorityActionsFor, authorityRowKeys, getCustomRole,
-  grantedFeatureCount, updateCustomRole,
+  AUTHORITY_ACTIONS, DESCRIPTION_MAX, ROLE_NAME_MAX,
+  addCustomRole, authorityActionsFor, authorityFeaturesFor, authorityRowKeys,
+  getCustomRole, grantedFeatureCount, updateCustomRole,
   type AuthorityAction, type AuthorityFeature, type AuthorityGrants,
 } from '~/data/usersRoles'
 
@@ -37,11 +37,17 @@ const { t } = useLocale()
 
 const isEdit = computed(() => !!props.roleId)
 
+// Project Accounting is a billing component, not a standard module — a tenant
+// without it never sees its authority rows (same gate as the Approval workflows
+// "Applies to: Project Action" condition).
+const { projectAccountingEnabled } = useApprovalWorkflowScenario()
+const features = computed(() => authorityFeaturesFor(projectAccountingEnabled.value))
+
 // ─── Draft state ────────────────────────────────────────────────────────────
 const name = ref('')
 const description = ref('')
 const grants = reactive<AuthorityGrants>({})
-const activeFeatureId = ref(AUTHORITY_FEATURES[0]!.id)
+const activeFeatureId = ref(features.value[0]!.id)
 
 const nameError = ref('')
 const authorityError = ref('')
@@ -53,7 +59,7 @@ watch(() => props.isOpen, (open) => {
   nameError.value = ''
   authorityError.value = ''
   isSaving.value = false
-  activeFeatureId.value = AUTHORITY_FEATURES[0]!.id
+  activeFeatureId.value = features.value[0]!.id
   for (const key of Object.keys(grants)) delete grants[key]
 
   const role = props.roleId ? getCustomRole(props.roleId) : undefined
@@ -63,13 +69,23 @@ watch(() => props.isOpen, (open) => {
     for (const [key, actions] of Object.entries(role.grants)) grants[key] = [...actions]
     // Open on the first feature that already has something granted — the user
     // almost always wants to continue where the role's authority actually is.
-    const first = AUTHORITY_FEATURES.find((f) => authorityRowKeys(f).some((k) => grants[k]?.length))
+    const first = features.value.find((f) => authorityRowKeys(f).some((k) => grants[k]?.length))
     if (first) activeFeatureId.value = first.id
   }
+  // The rail scrolls independently, so an active feature further down the list
+  // would otherwise open off-screen with the grid showing rows the user can't
+  // see the source of.
+  nextTick(() => {
+    railEl.value
+      ?.querySelector('.crd-rail-item--active')
+      ?.scrollIntoView({ block: 'nearest' })
+  })
 }, { immediate: true })
 
+const railEl = ref<HTMLElement | null>(null)
+
 const activeFeature = computed<AuthorityFeature>(
-  () => AUTHORITY_FEATURES.find((f) => f.id === activeFeatureId.value) ?? AUTHORITY_FEATURES[0]!,
+  () => features.value.find((f) => f.id === activeFeatureId.value) ?? features.value[0]!,
 )
 
 /** Rows of the right-hand grid: one per sub-feature, or one for the feature itself. */
@@ -242,9 +258,9 @@ watch(() => props.isOpen, (open) => {
                   <div class="crd-grid-head crd-rail-head">
                     {{ t('Feature') }} ({{ featureCount }})
                   </div>
-                  <ul class="crd-rail-list">
+                  <ul ref="railEl" class="crd-rail-list">
                     <li
-                      v-for="feature in AUTHORITY_FEATURES"
+                      v-for="feature in features"
                       :key="feature.id"
                       class="crd-rail-item"
                       :class="{ 'crd-rail-item--active': feature.id === activeFeatureId }"
@@ -321,7 +337,7 @@ watch(() => props.isOpen, (open) => {
             </section>
           </div>
 
-          <footer class="crd-footer">
+          <footer class="crd-footer erp-action-footer">
             <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
             <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
               {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
@@ -422,7 +438,9 @@ watch(() => props.isOpen, (open) => {
   text-transform: uppercase; text-align: left; color: var(--mp-text-default);
   white-space: nowrap; vertical-align: middle;
 }
-.crd-th--subfeature { white-space: normal; }
+/* Extra right padding keeps the wrapped label off the View column's select-all
+   box when the panel is wide enough for the header to sit on two lines. */
+.crd-th--subfeature { white-space: normal; padding-right: var(--mp-spacing-4); }
 
 .crd-rail {
   flex: 0 0 208px; display: flex; flex-direction: column;
@@ -452,7 +470,10 @@ watch(() => props.isOpen, (open) => {
 }
 
 .crd-grid { flex: 1; min-width: 0; overflow-x: auto; }
-.crd-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* min-width floors the sub-feature column: below it the grid scrolls horizontally
+   instead of squeezing, which would let the wrapped header text overflow its cell
+   and collide with the View column. */
+.crd-table { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; }
 .crd-th--subfeature { width: auto; }
 /* Action columns stay left-aligned: header and body checkboxes then share the
    cell's left padding, so every body box sits exactly under its column's
@@ -473,17 +494,16 @@ watch(() => props.isOpen, (open) => {
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
 .crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered); }
 
-/* ── Footer — ghost Cancel + one primary, right aligned ── */
+/* ── Footer — ghost Cancel + one primary. Alignment and the ≤640px stacked,
+   full-width, primary-on-top behaviour come from the global .erp-action-footer
+   (rule/btn-responsive-footer); this only adds the drawer's own chrome. ── */
 .crd-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end;
-  gap: var(--mp-spacing-2);
+  flex-shrink: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
 }
 
 @media (max-width: 640px) {
-  /* Stacked, primary on top — the responsive footer behaviour. */
-  .crd-footer { flex-direction: column-reverse; align-items: stretch; }
   .crd-rail { flex-basis: 160px; }
 }
 </style>

@@ -11,7 +11,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpButton, css,
+  MpButton, MpButtonGroup, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import CustomRoleDrawer from '~/components/patterns/CustomRoleDrawer.vue'
@@ -102,25 +102,30 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #filters>
       <div class="filter-left" />
       <div class="filter-right">
-        <div class="filter-btn-group">
+        <!-- Tool icons: ghost icon-only MpButtons in one group (rule/filter-bar-icon-group),
+             each tooltipped and aria-labelled (rule/btn-icon-tooltip). -->
+        <MpButtonGroup class="filter-btn-group">
           <MpTooltip id="tt-cr-columns" :label="t('Column settings')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Column settings')">
-              <MpIcon name="table-view-column" size="md" />
-            </button>
+            <MpButton
+              variant="ghost" class="filter-icon-btn"
+              left-icon="table-view-column" :aria-label="t('Column settings')"
+            />
           </MpTooltip>
           <MpTooltip id="tt-cr-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Export')">
-              <MpIcon name="download" size="md" />
-            </button>
+            <MpButton
+              variant="ghost" class="filter-icon-btn"
+              left-icon="download" :aria-label="t('Export')"
+            />
           </MpTooltip>
-        </div>
+        </MpButtonGroup>
 
         <div class="filter-search">
           <MpIcon name="search" size="md" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
-          <button v-if="search" class="filter-search-clear" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton
+            v-if="search" variant="ghost" class="filter-search-clear"
+            left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
+          />
         </div>
       </div>
     </template>
@@ -154,9 +159,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
-            <MpIcon name="menu-kebab" size="md" />
-          </button>
+          <MpButton variant="ghost" class="row-kebab" left-icon="menu-kebab" :aria-label="t('More actions')" />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -223,17 +226,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 
 .filter-btn-group { display: flex; align-items: center; }
+/* Ghost MpButton squared off to the 36x36 filter-bar tool size. The !important
+   overrides are Pixel's own atomic min-width/padding on .mp-button. */
 .filter-icon-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  padding: var(--mp-spacing-2); border: none; background: transparent;
-  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important;
+  min-width: 0 !important; padding: var(--mp-spacing-2) !important;
+  color: var(--mp-text-default);
 }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
@@ -245,10 +249,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 .filter-search-clear {
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; background: none; padding: 0; cursor: pointer; color: var(--mp-text-subtle);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important;
+  min-width: 0 !important; padding: 0 !important; color: var(--mp-text-subtle);
 }
-.filter-search-clear:hover { color: var(--mp-text-default); }
 
 /* ── Cells ── */
 .cr-wrap { white-space: normal; }
@@ -262,13 +266,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+/* Kebab — 20px tall so the actions cell stays within the 40px baseline row. */
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
-  margin-left: auto; border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-5, 20px) !important;
+  min-width: 0 !important; padding: 0 !important;
+  margin-left: auto; color: var(--mp-text-secondary);
 }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

@@ -2169,6 +2169,13 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Not available for this feature": "Tidak tersedia untuk fitur ini",
   "All authority": "Semua wewenang",
   "all": "semua",
+  // Project Accounting authority (billing component)
+  "Project Accounting": "Project Accounting",
+  "Project setup": "Penyiapan proyek",
+  "Cost tracking": "Pelacakan biaya",
+  "Recognition and billing": "Pengakuan dan penagihan",
+  "Change management": "Manajemen perubahan",
+  "Project health": "Kesehatan proyek",
   "Pick a feature on the left, then grant what this role can do with it.":
     "Pilih fitur di sebelah kiri, lalu tentukan yang bisa dilakukan peran ini.",
 
