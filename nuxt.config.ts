@@ -27,6 +27,19 @@ export default defineNuxtConfig({
     }
   },
 
+  // Cache policy (fixes "blank page until reload" after a rebuild/redeploy).
+  // This is an SPA (ssr:false) with hashed, code-split page chunks. If the browser
+  // heuristically caches index.html (it sends no cache-control by default), a tab
+  // keeps the OLD shell whose chunk hashes 404 after the next deploy → the lazy
+  // page import fails and the app renders blank until a manual reload.
+  //   • HTML must always be revalidated  → no-cache (browser re-checks every load)
+  //   • /_nuxt/* is content-hashed        → immutable (new build = new URL, safe)
+  // Applied to both the node preview and Vercel (routeRules is portable).
+  routeRules: {
+    "/_nuxt/**": { headers: { "cache-control": "public, max-age=31536000, immutable" } },
+    "/**": { headers: { "cache-control": "no-cache" } },
+  },
+
   build: {
     transpile: ['@ds/proto-review'],
   },

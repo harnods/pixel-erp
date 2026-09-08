@@ -13,7 +13,7 @@
  * fields: Team name, Description, Accessible modules (Deals/Reports/Contacts
  * toggles) and Assign members.
  */
-import { MpIcon, MpButton, MpToggle, MpTooltip, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpInput, MpTextarea, MpToggle, MpTooltip, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
 import { CRM_TEAM_MODULES, type CrmTeamModule } from '~/data/crm'
 
 export interface CrmTeamDraft {
@@ -42,6 +42,10 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
+// Character caps (rule/input-char-counter): show n/max + native maxlength.
+const NAME_MAX = 25
+const DESC_MAX = 60
+
 function hasModule(key: CrmTeamModule) { return props.draft.modules.includes(key) }
 function toggleModule(key: CrmTeamModule, on: boolean) {
   props.draft.modules = on
@@ -66,28 +70,36 @@ function removeMember(id: string) {
           </header>
 
           <div class="ctf-body">
-            <!-- Team name -->
+            <!-- Team name — char-counter variant (rule/input-char-counter): n/max
+                 top-right of the label row, capped by native maxlength. -->
             <MpFormControl :id="'ctf-name-fc'" :is-invalid="!!nameError">
-              <MpFormLabel>{{ t('Team name') }}</MpFormLabel>
-              <input
+              <div class="ctf-label-row">
+                <MpFormLabel>{{ t('Team name') }}</MpFormLabel>
+                <span class="ctf-counter">{{ draft.name.length }} / {{ NAME_MAX }}</span>
+              </div>
+              <MpInput
+                id="ctf-name-input"
                 v-model="draft.name"
-                class="ctf-input"
-                :class="{ 'ctf-input--invalid': !!nameError }"
-                type="text"
-                :placeholder="t('e.g. Sales')"
+                :maxlength="NAME_MAX"
+                is-full-width
+                :is-invalid="!!nameError"
                 @input="emit('clear-name-error')"
-              >
+              />
               <MpFormErrorMessage v-if="nameError">{{ nameError }}</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Description -->
             <div class="ctf-field">
-              <span class="ctf-field-label">{{ t('Description') }}</span>
-              <textarea
+              <div class="ctf-label-row">
+                <span class="ctf-field-label">{{ t('Description') }}</span>
+                <span class="ctf-counter">{{ draft.description.length }} / {{ DESC_MAX }}</span>
+              </div>
+              <MpTextarea
+                id="ctf-desc-input"
                 v-model="draft.description"
-                class="ctf-textarea"
-                rows="3"
-                :placeholder="t('What this team is responsible for')"
+                :maxlength="DESC_MAX"
+                :rows="3"
+                is-full-width
               />
             </div>
 
@@ -188,21 +200,12 @@ function removeMember(id: string) {
 .ctf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctf-field-help { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Inputs — match the ERP form field (border-form, brand focus ring). */
-.ctf-input, .ctf-textarea {
-  width: 100%; box-sizing: border-box;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral, #fff);
-  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
-  border-radius: var(--mp-radii-md, 6px);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  outline: none;
-}
-.ctf-input { height: var(--mp-sizes-10, 40px); }
-.ctf-textarea { resize: vertical; min-height: 72px; line-height: var(--mp-line-heights-md); font-family: inherit; }
-.ctf-input:focus, .ctf-textarea:focus { border-color: var(--mp-border-brand, #4b61dc); }
-.ctf-input--invalid { border-color: var(--mp-border-danger, #e2483d); }
-.ctf-input::placeholder, .ctf-textarea::placeholder { color: var(--mp-text-placeholder); }
+/* Inputs use Pixel MpInput / MpTextarea (correct bold focus border ships with the
+   component — do not re-style, per rule/form-input-focus). */
+
+/* Label row + char counter (rule/input-char-counter). */
+.ctf-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-2); }
+.ctf-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Module toggles */
 .ctf-toggle-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; display: flex; flex-direction: column; }
@@ -217,11 +220,10 @@ function removeMember(id: string) {
    secondary "+ Assign members" button that opens the two-pane picker. */
 .ctf-member-list {
   list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); overflow: hidden;
 }
 .ctf-member-row {
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) 0;
   border-bottom: 1px solid var(--mp-border-default);
 }
 .ctf-member-row:last-child { border-bottom: none; }

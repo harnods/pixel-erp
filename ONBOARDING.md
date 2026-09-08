@@ -32,7 +32,7 @@ wrong.
 
 Everything below is committed, so a fresh clone gets it automatically:
 
-- **Skill `pixel-erp-design`** (`.claude/skills/`) — the routing entry point. Invoke
+- **Skill `pixel-erp-design`** (`.agents/skills/`) — the routing entry point. Invoke
   `/pixel-erp-design`, or just start UI work and Claude routes to the right rules.
   (`erp-table-page` is the table-specific skill.)
 - **`pixel-police` hook** (`.claude/settings.json` + `.claude/scripts/pixel-police.sh`)
