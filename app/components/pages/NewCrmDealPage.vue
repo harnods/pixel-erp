@@ -67,7 +67,7 @@ const shipVia        = ref('')
 const paymentTerms   = ref('')
 const trackingNo     = ref('')
 const referenceNo    = ref('')
-const warehouse      = ref('')
+const warehouse      = ref('Default warehouse')
 const tagsList       = ref<DataInterface[]>([])
 
 // ── Transaction no. settings (auto-numbering) — shared global component ────────
@@ -77,7 +77,7 @@ const txNoFormats = [{ label: t('Auto'), value: 'auto' }]
 function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = false }
 
 // Both default on so the form opens in the state the design documents.
-const requiresShipping = ref(true)
+const requiresShipping = ref(false)
 const shipToDifferent  = ref(true)
 const priceIncludesTax = ref(false)
 
@@ -236,9 +236,8 @@ function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 function validate(): boolean {
   let ok = true
   if (!customerId.value) { customerError.value = true; ok = false }
-  noItemsError.value = !items.value.length
-  if (!items.value.length) ok = false
-
+  // Products are optional on a deal — only validate rows the user actually added.
+  noItemsError.value = false
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
