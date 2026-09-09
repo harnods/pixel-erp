@@ -382,7 +382,7 @@ const baseColumns: TableColumn[] = [
   { key: 'company', label: t('Customer'),  kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'stage',   label: t('Stage'),     kind: 'status',  sortable: true, sortType: 'text'   },
   { key: 'owner',   label: t('Deal owner'), kind: 'name',   sortable: true, sortType: 'text'   },
-  { key: 'value',   label: t('Value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'value',   label: t('Deal value'), kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
   { key: 'expectedCloseDate', label: t('Due date'),     kind: 'date',    sortable: true, sortType: 'text' },

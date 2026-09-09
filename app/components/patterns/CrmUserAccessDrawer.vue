@@ -26,7 +26,6 @@ const emit = defineEmits<{ cancel: []; save: [] }>()
 
 const { t } = useLocale()
 
-const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive' }
 </script>
 
 <template>
@@ -44,26 +43,6 @@ const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invit
           </header>
 
           <div class="cua-body">
-            <!-- Read-only context: who this access applies to -->
-            <div v-if="user" class="cua-context">
-              <div class="cua-field">
-                <span class="cua-label">{{ t('User identity') }}</span>
-                <span class="cua-value">{{ user.name }}</span>
-              </div>
-              <div class="cua-field">
-                <span class="cua-label">{{ t('Email') }}</span>
-                <span class="cua-value">{{ user.email }}</span>
-              </div>
-              <div class="cua-field">
-                <span class="cua-label">{{ t('ERP role') }}</span>
-                <span class="cua-value">{{ t(user.role) }}</span>
-              </div>
-              <div class="cua-field">
-                <span class="cua-label">{{ t('Status') }}</span>
-                <span class="cua-value">{{ t(STATUS_LABEL[user.status] ?? user.status) }}</span>
-              </div>
-            </div>
-
             <CrmPermissionMatrix :perms="perms" />
           </div>
 

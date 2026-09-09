@@ -38,7 +38,7 @@ export function emptyCrmDealsFilters(): CrmDealsFiltersValue {
 import { reactive, ref, computed, watch } from 'vue'
 import { MpIcon, MpButton, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
-import TagsComparatorField from '~/components/patterns/TagsComparatorField.vue'
+import ErpTagComparatorField from '~/components/patterns/ErpTagComparatorField.vue'
 
 const props = defineProps<{
   id: string
@@ -122,29 +122,31 @@ const keywordColumnLabel = computed(() =>
             />
           </div>
 
-          <!-- Deal owner — is any of / all of / none of. -->
+          <!-- Deal owner — comparator prefix + typeable tag input (Is any of / none of). -->
           <div class="cdf-field">
             <span class="cdf-field-label">Deal owner</span>
-            <TagsComparatorField
+            <ErpTagComparatorField
               :id="`${id}-owner`"
               :comparator="draft.ownerComparator"
-              :tags="draft.owners"
+              :values="draft.owners"
               :options="ownerOptions"
+              placeholder="Type an owner…"
               @update:comparator="draft.ownerComparator = $event"
-              @update:tags="draft.owners = $event"
+              @update:values="draft.owners = $event"
             />
           </div>
 
-          <!-- Customer — is any of / all of / none of. -->
+          <!-- Customer — comparator prefix + typeable tag input (Is any of / none of). -->
           <div class="cdf-field">
             <span class="cdf-field-label">Customer</span>
-            <TagsComparatorField
+            <ErpTagComparatorField
               :id="`${id}-customer`"
               :comparator="draft.customerComparator"
-              :tags="draft.customers"
+              :values="draft.customers"
               :options="customerOptions"
+              placeholder="Type a customer…"
               @update:comparator="draft.customerComparator = $event"
-              @update:tags="draft.customers = $event"
+              @update:values="draft.customers = $event"
             />
           </div>
         </div>

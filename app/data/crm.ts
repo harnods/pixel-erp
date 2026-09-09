@@ -1300,18 +1300,21 @@ export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1
 // The value is a flat map of permission-key → boolean; set at invite time and
 // editable per user.
 export interface CrmPermItem { key: string; label: string }
-export interface CrmPermGroup { group: string; items: CrmPermItem[] }
+/** A "record" group is a coherent access tier (view-scope radio + capability radio)
+ *  rather than a flat checklist. `prefix` is the permission-key namespace used to
+ *  read/write the underlying `<prefix>.readAll|readMine|create|edit|…` flags. */
+export interface CrmPermGroup { group: string; items: CrmPermItem[]; tooltip?: string; kind?: 'record'; prefix?: string }
 export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
-  { group: 'Deals', items: [
-    { key: 'deals.readAll',   label: 'Read only all deals' },
-    { key: 'deals.readMine',  label: 'Read only deals assigned to you' },
-    { key: 'deals.create',    label: 'Can create deal' },
-    { key: 'deals.edit',      label: 'Can edit deal' },
+  { group: 'Records', kind: 'record', prefix: 'deals', tooltip: 'Deals and custom module records.', items: [
+    { key: 'deals.readAll',   label: 'Read only all records' },
+    { key: 'deals.readMine',  label: 'Read only records assigned to you' },
+    { key: 'deals.create',    label: 'Can create record' },
+    { key: 'deals.edit',      label: 'Can edit record' },
     { key: 'deals.comment',   label: 'Can comment' },
     { key: 'deals.archive',   label: 'Can archive/delete' },
     { key: 'deals.export',    label: 'Can export' },
   ] },
-  { group: 'Customers', items: [
+  { group: 'Customers', kind: 'record', prefix: 'customers', items: [
     { key: 'customers.readAll',  label: 'Read only all customers' },
     { key: 'customers.readMine', label: 'Read only my customer' },
     { key: 'customers.create',   label: 'Can create' },
