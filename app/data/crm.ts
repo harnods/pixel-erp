@@ -19,6 +19,8 @@ import { employees } from './employees'
 import type { ContactBank } from './contacts'
 import { formatMoney } from '~/utils/currency'
 import { CATALOG } from './catalog'
+import { salesOrders } from './salesOrders'
+import type { SalesOrder } from './types'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -480,6 +482,58 @@ for (const d of deals) {
     const extra = EXTRA_CONTACTS[d.id]
     if (extra) d.contacts.push(...extra)
   }
+}
+
+// ── Link converted deals to a real ERP sales order ──────────────────────────────
+// A converted deal's Sales orders tab shows the actual ERP sales order (same table
+// as the ERP Sales Orders index). Seeds that point at a stale id (or none) get a
+// freshly built ERP order appended to `salesOrders` and linked back.
+let _dealOrderSeq = salesOrders.reduce((m, o) => Math.max(m, o.number), 10089)
+function buildOrderFromDeal(d: Deal): SalesOrder {
+  _dealOrderSeq += 1
+  const number = _dealOrderSeq
+  const t = dealTotals(d)
+  return {
+    id: `SO${String(number - 9999).padStart(3, '0')}`,   // beyond the seeded SO001–SO100
+    number,
+    customer: { id: d.customerId, name: d.company },
+    date: d.lastActivity || d.createdAt,
+    dueDate: d.expectedCloseDate,
+    status: 'open',
+    balanceDue: t.total,
+    total: t.total,
+    tags: d.tags ? [...d.tags] : [],
+    items: (d.products ?? []).map((li) => ({
+      product: li.productName, sku: li.sku ?? '', description: li.description ?? '',
+      qty: li.quantity, unit: li.unit, unitPrice: li.originalPrice,
+      discountPct: li.discountType === 'percentage' ? li.discount : 0,
+      amount: lineSubtotal(li),
+    })),
+    globalDiscount: t.globalDiscount,
+    shippingFee: t.shippingFee,
+  }
+}
+for (const d of deals) {
+  if (d.conversion !== 'converted') continue
+  if (d.salesOrderId && salesOrders.some((o) => o.id === d.salesOrderId)) continue
+  const so = buildOrderFromDeal(d)
+  salesOrders.unshift(so)
+  d.salesOrderId = so.id
+  d.convertedTarget = d.convertedTarget ?? 'Sales Order'
+}
+
+/** The ERP sales order a converted deal is linked to (from `salesOrders`). */
+export function getDealSalesOrder(d: Deal): SalesOrder | undefined {
+  return d.salesOrderId ? salesOrders.find((o) => o.id === d.salesOrderId) : undefined
+}
+/** Link a deal to a just-created ERP sales order (drawer conversion flow). */
+export function linkDealSalesOrder(id: string, order: { id: string }): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  d.conversion = 'converted'
+  d.convertedTarget = 'Sales Order'
+  d.salesOrderId = order.id
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
 }
 
 /** Days a Deal has spent in its current stage (mock: since its last activity;

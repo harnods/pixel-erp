@@ -35,19 +35,19 @@ import {
   getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
-  lineSubtotal, crmCustomers, crmOrders,
+  getDealSalesOrder, linkDealSalesOrder,
+  lineSubtotal, crmCustomers,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
 
 const currentUser = 'Rizal Candra'
 
-// Sales order status → ErpStatusBadge (mirrors the Sales orders index).
+// ERP sales-order status → ErpStatusBadge (mirrors the ERP Sales Orders index).
 const ORDER_STATUS: Record<string, { label: string; type: 'completed' | 'warning' | 'information' | 'announcement' }> = {
-  draft: { label: 'Draft', type: 'announcement' },
-  'awaiting-payment': { label: 'Awaiting payment', type: 'warning' },
-  paid: { label: 'Paid', type: 'completed' },
-  fulfilled: { label: 'Fulfilled', type: 'information' },
-  cancelled: { label: 'Cancelled', type: 'announcement' },
+  open: { label: 'Open', type: 'information' },
+  'partially processed': { label: 'Partially processed', type: 'warning' },
+  closed: { label: 'Closed', type: 'completed' },
+  voided: { label: 'Voided', type: 'announcement' },
 }
 
 const props = defineProps<{ orderId: string }>()
@@ -61,7 +61,7 @@ void lineSubtotal
 
 // ── Linked records ──
 const customer = computed(() => (deal.value ? crmCustomers.find((c) => c.id === deal.value!.customerId) : undefined))
-const linkedOrder = computed(() => (deal.value?.salesOrderId ? crmOrders.find((o) => o.id === deal.value!.salesOrderId) : undefined))
+const linkedOrder = computed(() => (deal.value ? getDealSalesOrder(deal.value) : undefined))
 
 // ── State flags ──
 const isConverted = computed(() => deal.value?.conversion === 'converted')
@@ -143,7 +143,13 @@ function onCreateSalesOrder() {
   if (isConverted.value && deal.value?.salesOrderId) { goOrder(deal.value.salesOrderId); return }
   openSoDrawer()
 }
-function onTxCreated() { txDrawerOpen.value = false }
+function onTxCreated(payload?: { id?: string }) {
+  txDrawerOpen.value = false
+  // A created sales order links back to the deal so the Sales orders tab shows it.
+  if (txDrawerKind.value === 'sales-order' && payload?.id && deal.value) {
+    linkDealSalesOrder(deal.value.id, { id: payload.id })
+  }
+}
 
 // ── Archive / restore / delete ──
 const archiveConfirmOpen = ref(false)
