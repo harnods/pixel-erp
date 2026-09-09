@@ -98,17 +98,21 @@ function ownerCaption(g: CrmPermGroup): string {
 
         <div class="pm-sub">
           <span class="pm-sub-label">{{ t('Permission') }}</span>
-          <div class="pm-choices">
+          <div class="pm-choices pm-choices--stacked">
             <label class="pm-choice">
               <MpRadio :id="`${g.prefix}-cap-view`" :name="`${g.prefix}-cap`" :is-checked="capabilityOf(g.prefix) === 'view'" @change="setCapability(g.prefix, 'view')" />
               <span>{{ t('View only') }}</span>
             </label>
-            <label class="pm-choice">
-              <MpRadio :id="`${g.prefix}-cap-edit`" :name="`${g.prefix}-cap`" :is-checked="capabilityOf(g.prefix) === 'edit'" @change="setCapability(g.prefix, 'edit')" />
-              <span>{{ t('Can create & edit') }}</span>
-            </label>
+            <div class="pm-choice-block">
+              <label class="pm-choice">
+                <MpRadio :id="`${g.prefix}-cap-edit`" :name="`${g.prefix}-cap`" :is-checked="capabilityOf(g.prefix) === 'edit'" @change="setCapability(g.prefix, 'edit')" />
+                <span>{{ t('Can create & edit') }}</span>
+              </label>
+              <!-- caption sits directly under "Can create & edit" — only for the
+                   "Only my records" scope (new records are owned by you) -->
+              <p v-if="capabilityOf(g.prefix) === 'edit' && accessOf(g.prefix) === 'mine'" class="pm-caption">{{ ownerCaption(g) }}</p>
+            </div>
           </div>
-          <p v-if="capabilityOf(g.prefix) === 'edit'" class="pm-caption">{{ ownerCaption(g) }}</p>
         </div>
       </div>
 
@@ -140,8 +144,11 @@ function ownerCaption(g: CrmPermGroup): string {
 .pm-sub { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .pm-sub-label { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .pm-choices { display: flex; align-items: center; gap: var(--mp-spacing-6); flex-wrap: wrap; }
+.pm-choices--stacked { flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-2); }
+.pm-choice-block { display: flex; flex-direction: column; }
 .pm-choice { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pm-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* caption aligns under the radio's label text (control 20px + built-in 12px gap) */
+.pm-caption { margin: 2px 0 0; padding-left: calc(var(--mp-sizes-5, 20px) + var(--mp-spacing-3)); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Checklist */
 .pm-items { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-2) var(--mp-spacing-6); }

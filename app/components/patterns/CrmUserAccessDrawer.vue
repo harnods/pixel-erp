@@ -15,9 +15,10 @@ import { MpIcon, MpButton, MpTooltip } from '@mekari/pixel3'
 import CrmPermissionMatrix from '~/components/patterns/CrmPermissionMatrix.vue'
 import { type CrmPermSet } from '~/data/crm'
 
-const props = defineProps<{
+defineProps<{
   open: boolean
-  user: { id: string; name: string; email: string; role: string; status: string } | null
+  /** Passed by the parent (subject of the access edit); no longer rendered here. */
+  user?: { id: string; name: string; email: string; role: string; status: string } | null
   /** Reactive working copy owned by the parent (mutated by the matrix). */
   perms: CrmPermSet
   readOnly?: boolean
