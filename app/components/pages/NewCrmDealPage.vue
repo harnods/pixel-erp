@@ -23,11 +23,13 @@ import {
 } from '~/data'
 import {
   crmCustomers, crmProducts, createDeal, updateDeal, getDeal,
+  addDealAttachment, addCrmCustomer,
   defaultDealStage, CRM_OWNERS,
-  type CrmProduct, type DealInput, type DealLineItem,
+  type CrmProduct, type DealInput, type DealLineItem, type CrmCompany,
 } from '~/data/crm'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import CrmCompanyFormDrawer from '~/components/patterns/CrmCompanyFormDrawer.vue'
 
 // Standalone page: orderId = 'new' (create) or an existing deal id (edit via
 // /crm/deals/:id/edit).
@@ -55,7 +57,31 @@ function toTagData(values: string[]): DataInterface[] {
 // ── Header fields ─────────────────────────────────────────────────────────────
 const customerId      = ref('')
 const customerError   = ref(false)
-const customerOptions = crmCustomers.map(c => ({ id: c.id, name: c.company }))
+const customerOptions = computed(() => crmCustomers.map(c => ({ id: c.id, name: c.company })))
+
+// ── Quick-add customer (reuse the company drawer) ─────────────────────────────
+const quickCompanyOpen = ref(false)
+const quickCompanyName = ref('')
+function openQuickCompany(search?: string) {
+  quickCompanyName.value = (search || '').trim()
+  quickCompanyOpen.value = true
+}
+function onCompanyCreated(company: CrmCompany) {
+  const cu = addCrmCustomer({
+    company: company.name,
+    contact: '',
+    email: company.email || '',
+    phone: company.phone || '',
+    city: company.city || '',
+    segment: '',
+    owner: CRM_OWNERS[0] ?? 'You',
+    lifecycle: 'Opportunity',
+  })
+  customerId.value = cu.id
+  customerError.value = false
+  if (cu.email && !emailTags.value.length) emailTags.value = toTagData([cu.email])
+  quickCompanyOpen.value = false
+}
 
 const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
@@ -191,18 +217,28 @@ const noItemsError = ref(false)   // set on save attempt with zero line items (i
 const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
 const discountTotal = computed(() => items.value.reduce((s, it) => s + Math.round(it.qty * it.unitPrice * it.discountPct / 100), 0))
 
+const TAX_RATE = 0.11
 const globalDiscountType  = ref<'%' | 'Rp'>('%')
 const globalDiscountValue = ref(0)
-const globalDiscountAmount = computed(() =>
-  globalDiscountType.value === '%'
-    ? Math.round((subtotal.value - discountTotal.value) * (globalDiscountValue.value / 100))
-    : globalDiscountValue.value,
-)
+// Whether the global discount comes off the base BEFORE tax or off the grand
+// total AFTER tax — toggled by the swap button in the discount gutter.
+const discountBeforeTax = ref(true)
 
-const taxBase     = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value)
-const taxAmount   = computed(() => Math.round(taxBase.value * 0.11))
 const shippingFee = ref(0)
-const total       = computed(() => taxBase.value + taxAmount.value + shippingFee.value)
+
+const lineNet = computed(() => subtotal.value - discountTotal.value)          // after per-line discounts
+const globalDiscountAmount = computed(() => globalDiscountType.value === '%'
+  ? Math.round(lineNet.value * (globalDiscountValue.value / 100))
+  : globalDiscountValue.value)
+const taxableBase = computed(() => discountBeforeTax.value ? lineNet.value - globalDiscountAmount.value : lineNet.value)
+const taxAmount = computed(() => priceIncludesTax.value
+  ? Math.round(taxableBase.value - taxableBase.value / (1 + TAX_RATE))   // tax portion already inside prices
+  : Math.round(taxableBase.value * TAX_RATE))
+const total = computed(() => {
+  const afterTax = priceIncludesTax.value ? taxableBase.value : taxableBase.value + taxAmount.value
+  const afterGlobal = discountBeforeTax.value ? afterTax : afterTax - globalDiscountAmount.value
+  return afterGlobal + shippingFee.value
+})
 
 // The header figure is the deal total.
 const orderTotal = computed(() => total.value)
@@ -309,12 +345,19 @@ function onSave() {
     notes: memo.value || undefined,
     referenceNumber: referenceNo.value || undefined,
   }
+  const nowISO = new Date().toISOString()
   if (isEdit.value) {
     updateDeal(props.orderId, input)
+    for (const a of attachments.value) {
+      addDealAttachment(props.orderId, { name: a.name, sizeKB: a.sizeKB, uploadedBy: 'You', uploadedAt: nowISO })
+    }
     toast.notify({ variant: 'success', title: t('Deal updated'), rootProps: { class: 'toast-enterprise' } })
     router.push(`/crm/deals/${props.orderId}`)
   } else {
     const d = createDeal(input)
+    for (const a of attachments.value) {
+      addDealAttachment(d.id, { name: a.name, sizeKB: a.sizeKB, uploadedBy: 'You', uploadedAt: nowISO })
+    }
     toast.notify({ variant: 'success', title: t('Deal created'), rootProps: { class: 'toast-enterprise' } })
     router.push(`/crm/deals/${d.id}`)
   }
@@ -343,8 +386,14 @@ function onSave() {
             id="f-customer-inp" v-model="customerId" :data="customerOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
             :placeholder="t('Select customer')" :is-invalid="customerError"
+            is-show-button-action
             @update:model-value="onCustomerChange"
-          />
+            @button-action="openQuickCompany"
+          >
+            <template #buttonAction="{ currentSearch }">
+              {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new customer')}` : t('Add new customer') }}
+            </template>
+          </MpAutocomplete>
           <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
         </MpFormControl>
 
@@ -650,9 +699,19 @@ function onSave() {
 
           <!-- Discount block — the swap affordance sits in the gutter, as designed -->
           <div class="si-discount-block">
-            <MpButton class="si-discount-swap" :aria-label="t('Switch discount mode')">
-              <MpIcon name="sort-default" size="sm" />
-            </MpButton>
+            <MpTooltip
+              id="si-discount-swap-tt"
+              :label="discountBeforeTax ? t('Discount applied before tax') : t('Discount applied after tax')"
+              placement="top" use-portal
+            >
+              <MpButton
+                class="si-discount-swap"
+                :aria-label="`${t('Switch discount mode')} — ${discountBeforeTax ? t('Discount applied before tax') : t('Discount applied after tax')}`"
+                @click="discountBeforeTax = !discountBeforeTax"
+              >
+                <MpIcon name="sort-default" size="sm" />
+              </MpButton>
+            </MpTooltip>
             <div class="si-discount-rows">
               <div class="si-totals-row">
                 <span>{{ t('Discount per line') }}</span>
@@ -684,11 +743,14 @@ function onSave() {
                 </span>
                 <span class="si-deduction">({{ fmt(globalDiscountAmount) }})</span>
               </div>
+              <p class="si-discount-mode-caption">
+                {{ discountBeforeTax ? t('Discount applied before tax') : t('Discount applied after tax') }}
+              </p>
             </div>
           </div>
 
           <div class="si-totals-row">
-            <span>PPN 11%</span>
+            <span>PPN 11%{{ priceIncludesTax ? ` (${t('included')})` : '' }}</span>
             <span>{{ fmt(taxAmount) }}</span>
           </div>
           <div class="si-totals-row">
@@ -723,6 +785,14 @@ function onSave() {
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+
+    <CrmCompanyFormDrawer
+      :is-open="quickCompanyOpen"
+      :initial-name="quickCompanyName"
+      show-contact-select
+      @update:is-open="quickCompanyOpen = $event"
+      @created="onCompanyCreated"
     />
   </div>
 </template>
@@ -991,6 +1061,7 @@ function onSave() {
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
 .si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
+.si-discount-mode-caption { margin: 0; padding: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone (non-table) prefixed fields use MpInputGroup + MpInputLeftAddon,

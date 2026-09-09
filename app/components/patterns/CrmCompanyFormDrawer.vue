@@ -12,7 +12,7 @@ import { MpButton, MpIcon } from '@mekari/pixel3'
 import CrmCompanyForm from '~/components/patterns/CrmCompanyForm.vue'
 import { type CrmCompany } from '~/data/crm'
 
-const props = defineProps<{ isOpen: boolean; initialName?: string }>()
+const props = defineProps<{ isOpen: boolean; initialName?: string; showContactSelect?: boolean }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'created', v: CrmCompany): void
@@ -42,7 +42,7 @@ function save() {
 
           <div class="ccd-body">
             <!-- key on isOpen so the form remounts fresh (and re-reads initialName) each open -->
-            <CrmCompanyForm :key="String(isOpen)" ref="formRef" :show-contact-select="false" :initial-name="initialName" />
+            <CrmCompanyForm :key="String(isOpen)" ref="formRef" :show-contact-select="showContactSelect" :initial-name="initialName" />
           </div>
 
           <footer class="ccd-footer">

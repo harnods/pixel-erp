@@ -13,7 +13,7 @@
  * update the selection. Per rule/bulk-actions-no-delete + the PRD "no permanent
  * delete in V1", the only lifecycle action is Archive / Restore.
  */
-import { ref, computed, inject, onMounted } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted } from 'vue'
 import {
   MpButton, MpButtonGroup, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -27,6 +27,8 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CrmDealQuickCreateDrawer from '~/components/patterns/CrmDealQuickCreateDrawer.vue'
+import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import CrmDealPreviewDrawer from '~/components/CrmDealPreviewDrawer.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
 import CrmDealOwnerModal from '~/components/patterns/CrmDealOwnerModal.vue'
@@ -38,6 +40,7 @@ import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed,
+  CRM_OWNERS, crmCustomers,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
@@ -128,7 +131,34 @@ function matchesView(d: Deal): boolean {
 }
 const viewSortKey = computed<keyof Deal>(() => (savedView.value === 'Recently modified' ? 'lastActivity' : 'createdAt'))
 
-// ── Table state (search + Stage filter + saved view + metric + sort + pagination) ──
+// ── "All filters" drawer ──
+const filtersOpen = ref(false)
+const appliedFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
+const keywordColumns = [
+  { key: 'name',            label: t('Deal name') },
+  { key: 'id',              label: t('Deal number') },
+  { key: 'company',         label: t('Customer') },
+  { key: 'owner',           label: t('Deal owner') },
+  { key: 'referenceNumber', label: t('Reference number') },
+]
+const ownerOptions = [...CRM_OWNERS]
+const customerOptions = computed(() => [...new Set(deals.map((d) => d.company))].sort())
+function applyDrawerFilters(v: CrmDealsFiltersValue) { Object.assign(appliedFilters, v) }
+// "gt"/"lt" use the single value; "between" uses min/max.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+function matchesTagComparator(rowValue: string, comparator: string, picked: string[]): boolean {
+  if (picked.length === 0) return true
+  if (comparator === 'isNoneOf') return !picked.includes(rowValue)
+  return picked.includes(rowValue)   // isAnyOf / isAllOf collapse to membership for a single-value field
+}
+
+// ── Table state (search + Stage filter + saved view + metric + drawer + sort) ──
 const source = computed<Deal[]>(() => deals.filter((d) => matchesView(d) && matchesMetric(d)))
 const {
   search, statusFilter, currentPage, perPage, sortKey, sortDir, total, paginated,
@@ -139,12 +169,42 @@ const {
   filterFn: (row, s, status) => {
     const matchesStage = !status || row.stage === status
     const matchesSearch = !s || [row.name, row.id, row.company, row.owner, row.referenceNumber].join(' ').toLowerCase().includes(s)
-    return matchesStage && matchesSearch
+
+    // ── "All filters" drawer (independent of the toolbar search / Stage select) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const colText: Record<string, string> = {
+      name: row.name, id: dealNo(row.id), company: row.company, owner: row.owner, referenceNumber: row.referenceNumber ?? '',
+    }
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? Object.values(colText).join(' ').toLowerCase().includes(kw)
+        : (colText[f.keywordColumn] ?? '').toLowerCase().includes(kw)
+    )
+    const matchesValue = matchesAmountFilter(dealExpectedValue(row), f.valueComparator, f.value, f.valueMin, f.valueMax)
+    const matchesOwner = matchesTagComparator(row.owner, f.ownerComparator, f.owners)
+    const matchesCustomer = matchesTagComparator(row.company, f.customerComparator, f.customers)
+
+    return matchesStage && matchesSearch && matchesKeyword && matchesValue && matchesOwner && matchesCustomer
   },
 })
+watch(appliedFilters, () => setPage(1))
 
-const hasActiveFilter = computed(() => !!statusFilter.value || !!metricFilter.value || savedView.value !== 'All records')
-function clearFilters() { search.value = ''; statusFilter.value = ''; metricFilter.value = ''; savedView.value = 'All records' }
+const drawerFilterCount = computed(() => {
+  const f = appliedFilters
+  let n = 0
+  if (f.keyword) n++
+  if (f.value !== '' || f.valueMin !== '' || f.valueMax !== '') n++
+  if (f.owners.length > 0) n++
+  if (f.customers.length > 0) n++
+  return n
+})
+
+const hasActiveFilter = computed(() => !!statusFilter.value || !!metricFilter.value || savedView.value !== 'All records' || drawerFilterCount.value > 0)
+function clearFilters() {
+  search.value = ''; statusFilter.value = ''; metricFilter.value = ''; savedView.value = 'All records'
+  Object.assign(appliedFilters, emptyCrmDealsFilters())
+}
 
 // ── Board columns (respect saved view + stage filter + search + metric) ──
 interface BoardColumn { stage: DealStage; cards: Deal[]; total: number }
@@ -404,6 +464,11 @@ const toggleAirene = inject<() => void>('toggleAirene')
             :options="[...DEAL_STAGES]"
             @update:model-value="(v: string) => (statusFilter = v)"
           />
+          <MpButton
+            variant="secondary" left-icon="filter" is-rounded
+            class="filter-all-btn" :class="{ 'filter-all-btn--active': drawerFilterCount > 0 }"
+            @click="filtersOpen = true"
+          >{{ t('All filters') }}{{ drawerFilterCount > 0 ? ` (${drawerFilterCount})` : '' }}</MpButton>
         </div>
 
         <div class="filter-right">
@@ -574,6 +639,17 @@ const toggleAirene = inject<() => void>('toggleAirene')
     <!-- ── Quick-create drawer (full detail form is a page → /crm/deals/new) ── -->
     <CrmDealQuickCreateDrawer :open="quickOpen" @cancel="quickOpen = false" @saved="onQuickSaved" @open-full="onQuickOpenFull" />
 
+    <!-- ── All filters drawer ── -->
+    <CrmDealsFiltersDrawer
+      id="deal-filters"
+      v-model:is-open="filtersOpen"
+      :model-value="appliedFilters"
+      :columns="keywordColumns"
+      :owner-options="ownerOptions"
+      :customer-options="customerOptions"
+      @apply="applyDrawerFilters"
+    />
+
     <!-- ── Quick preview drawer ── -->
     <CrmDealPreviewDrawer
       :open="previewOpen"
@@ -675,6 +751,22 @@ const toggleAirene = inject<() => void>('toggleAirene')
 /* Scrolls with the list (not pinned) — the bar moves out of view as the user
    scrolls the deals table, per product direction. */
 .cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
+/* "All filters" button (mirrors the ERP Sales Orders index). */
+.filter-all-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-bold, #8c9596);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
+  cursor: pointer; white-space: nowrap;
+}
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.filter-all-btn--active {
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  color: var(--mp-text-default);
+}
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 /* Icon tools (Airene · Column settings · Export) sit in one MpButtonGroup at the
