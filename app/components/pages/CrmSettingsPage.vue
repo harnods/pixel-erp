@@ -119,7 +119,7 @@ const crmUsers = computed<CrmUser[]>(() =>
       name,
       email: emailFor(name),
       empId,
-      role: i === 0 ? 'Company Owner' : ERP_ROLE_CYCLE[(i - 1) % ERP_ROLE_CYCLE.length]!,
+      role: i === 0 ? 'Business owner' : ERP_ROLE_CYCLE[(i - 1) % ERP_ROLE_CYCLE.length]!,
       teams: teamNamesForPerson(name),
       modules: modulesForUser(empId, perms),
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),

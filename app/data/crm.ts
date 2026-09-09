@@ -1300,57 +1300,51 @@ export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1
 // The value is a flat map of permission-key → boolean; set at invite time and
 // editable per user.
 export interface CrmPermItem { key: string; label: string }
-/** A "record" group is a coherent access tier (view-scope radio + capability radio)
- *  rather than a flat checklist. `prefix` is the permission-key namespace used to
- *  read/write the underlying `<prefix>.readAll|readMine|create|edit|…` flags. */
-export interface CrmPermGroup { group: string; items: CrmPermItem[]; tooltip?: string; kind?: 'record'; prefix?: string }
+/** A permission group is a collapsible section (title + optional subtitle) made of
+ *  one or more CONTROLS, per Figma "Manage permissions":
+ *   • access     — a "Record access" radio (All vs Only mine), backed by two keys.
+ *   • permission — a "Permission" radio (View only vs a capability), backed by the
+ *                  capability keys (view = all off).
+ *   • checkbox   — a single checkbox (optionally under its own sub-label, e.g. Export). */
+export type CrmPermControl =
+  | { type: 'access'; label: string; allLabel: string; mineLabel: string; allKey: string; mineKey: string }
+  | { type: 'permission'; label: string; capabilityLabel: string; capabilityKeys: string[] }
+  | { type: 'checkbox'; label: string; key: string; sublabel?: string }
+export interface CrmPermGroup { group: string; subtitle?: string; controls: CrmPermControl[] }
+
 export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
-  { group: 'Records', kind: 'record', prefix: 'deals', tooltip: 'Deals and custom module records.', items: [
-    { key: 'deals.readAll',   label: 'Read only all records' },
-    { key: 'deals.readMine',  label: 'Read only records assigned to you' },
-    { key: 'deals.create',    label: 'Can create record' },
-    { key: 'deals.edit',      label: 'Can edit record' },
-    { key: 'deals.comment',   label: 'Can comment' },
-    { key: 'deals.archive',   label: 'Can archive/delete' },
-    { key: 'deals.export',    label: 'Can export' },
+  { group: 'Records', subtitle: 'Deals and custom module records', controls: [
+    { type: 'access',     label: 'Record access', allLabel: 'All records', mineLabel: 'Only my records', allKey: 'deals.readAll', mineKey: 'deals.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['deals.create', 'deals.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export records', key: 'deals.export' },
   ] },
-  { group: 'Customers', kind: 'record', prefix: 'customers', items: [
-    { key: 'customers.readAll',  label: 'Read only all customers' },
-    { key: 'customers.readMine', label: 'Read only my customer' },
-    { key: 'customers.create',   label: 'Can create' },
-    { key: 'customers.edit',     label: 'Can edit' },
-    { key: 'customers.comment',  label: 'Can comment' },
-    { key: 'customers.archive',  label: 'Can archive/delete' },
-    { key: 'customers.export',   label: 'Can export' },
+  { group: 'Customers', subtitle: 'Contact person and company records', controls: [
+    { type: 'access',     label: 'Record access', allLabel: 'All customers', mineLabel: 'Only my customers', allKey: 'customers.readAll', mineKey: 'customers.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['customers.create', 'customers.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export records', key: 'customers.export' },
   ] },
-  { group: 'Reports', items: [
-    { key: 'reports.view', label: 'Can view report' },
+  { group: 'Reports', controls: [
+    { type: 'checkbox', label: 'Can view report', key: 'reports.view' },
   ] },
-  { group: 'Activity log', items: [
-    { key: 'activity.view', label: 'Can view activity log' },
+  { group: 'Settings / Company profile', controls: [
+    { type: 'checkbox', label: 'Can view company profile', key: 'settingsCompany.view' },
   ] },
-  { group: 'Settings / User & Roles', items: [
-    { key: 'settingsUsers.view',   label: 'Can view users' },
-    { key: 'settingsUsers.invite', label: 'Can invite user' },
-    { key: 'settingsUsers.revoke', label: 'Can revoke user' },
+  { group: 'Settings / Users', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can invite & edit permissions', capabilityKeys: ['settingsUsers.invite', 'settingsUsers.revoke'] },
   ] },
-  { group: 'Settings / Teams', items: [
-    { key: 'settingsTeams.view',   label: 'Can view team' },
-    { key: 'settingsTeams.create', label: 'Can create' },
-    { key: 'settingsTeams.edit',   label: 'Can edit' },
-    { key: 'settingsTeams.delete', label: 'Can delete' },
-    { key: 'settingsTeams.assign', label: 'Can assign team member' },
+  { group: 'Settings / Teams', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit', 'settingsTeams.delete', 'settingsTeams.assign'] },
   ] },
-  { group: 'Settings / Deal', items: [
-    { key: 'settingsDeal.edit', label: 'Can edit' },
+  { group: 'Settings / Deals', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit', capabilityKeys: ['settingsDeal.edit'] },
   ] },
-  { group: 'Settings / Custom modules', items: [
-    { key: 'settingsModules.create',  label: 'Can create' },
-    { key: 'settingsModules.edit',    label: 'Can edit' },
-    { key: 'settingsModules.archive', label: 'Can archive/delete' },
+  { group: 'Settings / Custom module', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsCustom.create', 'settingsCustom.edit'] },
   ] },
 ]
-export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))
+export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.controls.flatMap((c) =>
+  c.type === 'access' ? [c.allKey, c.mineKey] : c.type === 'permission' ? c.capabilityKeys : [c.key],
+))
 export type CrmPermSet = Record<string, boolean>
 
 export function emptyPermSet(): CrmPermSet {
@@ -1362,7 +1356,8 @@ export function fullPermSet(): CrmPermSet {
 /** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
 export function defaultPermSet(): CrmPermSet {
   const s = emptyPermSet()
-  for (const k of ['deals.readAll', 'customers.readAll', 'reports.view', 'activity.view', 'settingsUsers.view', 'settingsTeams.view']) s[k] = true
+  // Read-only baseline: sees all records + customers, no create/edit/export.
+  for (const k of ['deals.readAll', 'customers.readAll']) s[k] = true
   return s
 }
 /** One-line summary of a permission set for the User & roles index. */
