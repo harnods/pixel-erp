@@ -671,13 +671,10 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stat-amount--danger { color: var(--mp-text-danger); }
 .stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
 
-/* ── Filter bar (pinned) ── */
-/* The filter bar pins to the top of the scrolling stage. Left unpinned it scrolls
-   under the stage's clip edge and the search pill gets sliced mid-scroll (its top
-   border disappears while the rest is still visible); pinning also keeps search +
-   filters reachable on a long list instead of forcing a scroll back to the top.
-   Opaque stage background + z-index 3 so rows pass underneath, not through. */
-.cc-filterbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
+/* ── Filter bar ── */
+/* Scrolls with the list (not pinned) — the bar moves out of view as the user
+   scrolls the deals table, per product direction. */
+.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 /* Icon tools (Airene · Column settings · Export) sit in one MpButtonGroup at the

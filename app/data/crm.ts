@@ -17,6 +17,8 @@ import { reactive, computed, ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { employees } from './employees'
 import type { ContactBank } from './contacts'
+import { formatMoney } from '~/utils/currency'
+import { CATALOG } from './catalog'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -233,6 +235,9 @@ export type LineDiscountType = 'none' | 'percentage' | 'fixed'
 export interface DealLineItem {
   productId: string
   productName: string         // display snapshot
+  sku?: string                // SCM item code snapshot (shown under the product name)
+  description?: string        // free-text line description (SO-style)
+  image?: string              // product photo (from the SCM catalog)
   unit: string
   quantity: number
   originalPrice: number       // Deal-only snapshot (seeded from SCM, editable)
@@ -248,6 +253,14 @@ export function lineDiscountedPrice(li: DealLineItem): number {
 export function lineSubtotal(li: DealLineItem): number { return Math.round(li.quantity * lineDiscountedPrice(li)) }
 
 export type AdjustmentType = 'percentage' | 'fixed'
+
+/** A contact person on the Deal (SO-style multi-contact block). Prefilled from the
+ *  Company PIC; never writes back to the Company record. */
+export interface DealContact { name: string; email?: string; phone?: string }
+/** A file attached to the Deal (shown under the Files tab). `src` is set for files
+ *  uploaded in-session (object URL) so they can be previewed/downloaded; seeded
+ *  files have none (preview falls back to a placeholder). */
+export interface DealAttachment { name: string; sizeKB: number; uploadedBy?: string; uploadedAt?: string; src?: string }
 
 export interface Deal {
   id: string                  // 'DL-260901'
@@ -266,6 +279,19 @@ export interface Deal {
   picName?: string
   phones?: string[]
   email?: string
+  contacts?: DealContact[]    // multi-contact block (derived from PIC + company)
+  // Logistics / references (SO-style detail fields; mock, non-PRD — populated on load)
+  billingAddress?: string
+  shipTo?: string
+  transactionDate?: string    // ISO; falls back to createdAt
+  shipDate?: string           // ISO
+  shipVia?: string
+  trackingNo?: string
+  warehouse?: string
+  paymentTerms?: string
+  tags?: string[]
+  attachments?: DealAttachment[]
+  stageHistory?: { stage: DealStage; at: string }[]   // real per-stage entry log (drives accurate aging)
   // Products & commercial adjustments
   products?: DealLineItem[]
   taxType?: AdjustmentType
@@ -306,18 +332,20 @@ const B = { currency: 'IDR' as DealCurrency, exchangeRate: 1 }
 // Product-line snapshot builders (SCM catalog) — Subtotal = qty × price, so each
 // deal's seeded `value` equals the calculated value (no discount unless noted).
 const P = {
-  gayo:     (q: number): DealLineItem => ({ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: q, originalPrice: 3_200_000, discountType: 'none', discount: 0 }),
-  toraja:   (q: number): DealLineItem => ({ productId: 'p03', productName: 'Green Beans Arabica Toraja Sapan', unit: 'Sack', quantity: q, originalPrice: 3_600_000, discountType: 'none', discount: 0 }),
-  robusta:  (q: number): DealLineItem => ({ productId: 'p02', productName: 'Green Beans Robusta Lampung', unit: 'Sack', quantity: q, originalPrice: 2_400_000, discountType: 'none', discount: 0 }),
-  house:    (q: number): DealLineItem => ({ productId: 'p09', productName: 'Roasted Beans House Blend Medium', unit: 'Bag', quantity: q, originalPrice: 280_000, discountType: 'none', discount: 0 }),
-  espresso: (q: number): DealLineItem => ({ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: q, originalPrice: 320_000, discountType: 'none', discount: 0 }),
-  single:   (q: number): DealLineItem => ({ productId: 'p11', productName: 'Roasted Beans Single Origin Gayo', unit: 'Bag', quantity: q, originalPrice: 450_000, discountType: 'none', discount: 0 }),
+  gayo:     (q: number): DealLineItem => ({ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', sku: 'GB-ARB-GAYO', description: 'Grade 1 washed Arabica, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 3_200_000, discountType: 'none', discount: 0 }),
+  toraja:   (q: number): DealLineItem => ({ productId: 'p03', productName: 'Green Beans Arabica Toraja Sapan', sku: 'GB-ARB-TRJ', description: 'Sapan highland washed Arabica, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 3_600_000, discountType: 'none', discount: 0 }),
+  robusta:  (q: number): DealLineItem => ({ productId: 'p02', productName: 'Green Beans Robusta Lampung', sku: 'GB-ROB-LMP', description: 'Lampung natural Robusta, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 2_400_000, discountType: 'none', discount: 0 }),
+  house:    (q: number): DealLineItem => ({ productId: 'p09', productName: 'Roasted Beans House Blend Medium', sku: 'RB-HOUSE-MED', description: 'Medium roast house blend, whole bean', unit: 'Bag', quantity: q, originalPrice: 280_000, discountType: 'none', discount: 0 }),
+  espresso: (q: number): DealLineItem => ({ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', sku: 'RB-ESP-DARK', description: 'Dark roast espresso blend, whole bean', unit: 'Bag', quantity: q, originalPrice: 320_000, discountType: 'none', discount: 0 }),
+  single:   (q: number): DealLineItem => ({ productId: 'p11', productName: 'Roasted Beans Single Origin Gayo', sku: 'RB-SO-GAYO', description: 'Single origin Gayo, light-medium roast', unit: 'Bag', quantity: q, originalPrice: 450_000, discountType: 'none', discount: 0 }),
 }
 // A real pipeline is a funnel — most deals sit in the early stages and thin out
 // toward the close. Distribution: Open Lead 7 · 1st Meeting 5 · Proposal 4 ·
 // Negotiation 3 · Won 3 · Lost 2. Values, customers, owners and dates are coherent
 // with the coffee catalog + account master. createdAt is spread so aging varies.
 const DEALS_SEED: Deal[] = [
+  // ── New lead with NO products yet (just created, product not added) ──
+  { id: 'DL-260898', name: 'Cold brew kiosk pilot', customerId: 'C001', company: 'Anomali Coffee', stage: 'Open Lead', owner: 'Dewi Lestari', value: 6_000_000, valueOverridden: true, priority: 'low', ...B, referenceNumber: 'RFQ-9001', expectedCloseDate: '2026-10-10', createdAt: '2026-09-07', createdBy: 'Dewi Lestari', lastActivity: '2026-09-07', conversion: 'none' },
   // ── Open Lead (7) ──
   { id: 'DL-260901', name: 'Cold brew concentrate trial',  customerId: 'C001', company: 'Anomali Coffee',           stage: 'Open Lead', owner: 'Dewi Lestari',  value: 9_000_000,  priority: 'medium', ...B, products: [P.single(20)], expectedCloseDate: '2026-09-30', createdAt: '2026-09-05', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
   { id: 'DL-260902', name: 'Office pantry monthly supply', customerId: 'C014', company: 'GoWork Office Tower',       stage: 'Open Lead', owner: 'Dewi Lestari',  value: 8_400_000,  priority: 'low',    ...B, products: [P.house(30)],  expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-04', conversion: 'none' },
@@ -354,12 +382,265 @@ export const deals = reactive<Deal[]>(load('crm-deals-v3', DEALS_SEED))
 // Migrate snapshots that predate the model expansion: old stage casing, the
 // renamed 'validation-failed' status, and the currency/rate defaults.
 const STAGE_MIGRATE: Record<string, DealStage> = { 'Open lead': 'Open Lead', '1st meeting': '1st Meeting' }
+// Product-line meta (sku + description) keyed by productId — backfills line items
+// that predate the DealLineItem model expansion (persisted snapshots).
+const LINE_META: Record<string, { sku: string; description: string }> = {
+  p01: { sku: 'GB-ARB-GAYO', description: 'Grade 1 washed Arabica, 60 kg sack' },
+  p03: { sku: 'GB-ARB-TRJ', description: 'Sapan highland washed Arabica, 60 kg sack' },
+  p02: { sku: 'GB-ROB-LMP', description: 'Lampung natural Robusta, 60 kg sack' },
+  p09: { sku: 'RB-HOUSE-MED', description: 'Medium roast house blend, whole bean' },
+  p10: { sku: 'RB-ESP-DARK', description: 'Dark roast espresso blend, whole bean' },
+  p11: { sku: 'RB-SO-GAYO', description: 'Single origin Gayo, light-medium roast' },
+}
+// Build a plausible street address for a customer city (mock; keeps every Deal
+// detail page complete without per-record seeding).
+const CITY_ADDRESS: Record<string, string> = {
+  Jakarta: 'Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta',
+  Bekasi: 'Jl. Ahmad Yani No. 1, Bekasi Selatan, 17141, Jawa Barat',
+  Bandung: 'Jl. Asia Afrika No. 8, Sumur Bandung, 40111, Jawa Barat',
+  Surabaya: 'Jl. Basuki Rahmat No. 2, Genteng, 60271, Jawa Timur',
+  Bali: 'Jl. Sunset Road No. 88, Kuta, 80361, Bali',
+  Denpasar: 'Jl. Teuku Umar No. 120, Denpasar, 80114, Bali',
+}
+// A handful of deals get a second contact person so the multi-contact block has a
+// live example (Contact person supports N contacts side by side).
+const EXTRA_CONTACTS: Record<string, DealContact[]> = {
+  'DL-260907': [{ name: 'Linayanti', email: 'lina@kopikenangan.com', phone: '+62 811 8044 222' }],
+  'DL-260906': [{ name: 'Sri Wahyuni', email: 'finance@tanameracoffee.com', phone: '+62 812 5550 010' }],
+  'DL-260913': [{ name: 'Bagus Prakoso', email: 'ap@kopikenangan.com', phone: '+62 811 8044 190' }],
+  'DL-260917': [{ name: 'Yulia Kartika', email: 'finance@sentraboga.co.id', phone: '+62 813 5550 020' }],
+}
+
+// Example files so the Files tab has a populated table (name · size · uploader · when).
+const SEED_ATTACHMENTS: Record<string, DealAttachment[]> = {
+  'DL-260920': [
+    { name: 'Proposal - Green beans Q3.pdf', sizeKB: 248.4, uploadedBy: 'Fajar Nugroho', uploadedAt: '2026-08-06T10:12:00' },
+    { name: 'Price agreement.xlsx', sizeKB: 52.1, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-08-10T14:03:00' },
+    { name: 'Company profile.png', sizeKB: 890.7, uploadedBy: 'Rizal Candra', uploadedAt: '2026-08-12T09:20:00' },
+  ],
+  'DL-260907': [
+    { name: 'Espresso roast notes.pdf', sizeKB: 120.6, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-09-06T11:00:00' },
+  ],
+}
+
+/** Seed a plausible stage-entry history for a deal that predates the stageHistory
+ *  field: a normal progression Open Lead → current stage, dates spread from
+ *  createdAt to lastActivity. Interactive moves append real entries on top. */
+function synthStageHistory(d: Deal): { stage: DealStage; at: string }[] {
+  const forward: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
+  const path: DealStage[] =
+    d.stage === 'Lost' ? ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Lost']
+    : forward.slice(0, forward.indexOf(d.stage) + 1)
+  const start = Date.parse(d.createdAt)
+  const end = Math.max(Date.parse(d.lastActivity || d.createdAt), start)
+  const n = path.length
+  return path.map((stage, i) => ({
+    stage,
+    at: n <= 1 ? d.createdAt : new Date(start + ((end - start) * i) / (n - 1)).toISOString().slice(0, 10),
+  }))
+}
 for (const d of deals) {
   const migrated = STAGE_MIGRATE[d.stage as string]
   if (migrated) d.stage = migrated
   if ((d.conversion as string) === 'validation-failed') d.conversion = 'failed'
   if (!d.currency) d.currency = 'IDR'
   if (typeof d.exchangeRate !== 'number') d.exchangeRate = 1
+  // Line-item meta backfill (persisted snapshots)
+  for (const li of d.products ?? []) {
+    const m = LINE_META[li.productId]
+    if (m && !li.description) li.description = m.description
+    // Align to the SCM catalog (sku + photo) so the table and the Select product
+    // drawer share one identity (drawer keys on sku).
+    const cat = CATALOG.find((c) => c.id === li.productId)
+    if (cat) { li.sku = cat.sku; if (!li.image) li.image = cat.img }
+  }
+  // SO-style logistics / commercial mock fields — populate any that are missing so
+  // every Deal detail page renders the full transaction layout.
+  const c = crmCustomers.find((x) => x.id === d.customerId)
+  const addr = (c && CITY_ADDRESS[c.city]) || (c ? `${c.city}, Indonesia` : '—')
+  if (!d.billingAddress) d.billingAddress = addr
+  if (!d.shipTo) d.shipTo = addr
+  if (!d.transactionDate) d.transactionDate = d.createdAt
+  if (!d.shipDate) d.shipDate = d.expectedCloseDate
+  if (!d.shipVia) d.shipVia = 'Sentral Cargo'
+  if (!d.warehouse) d.warehouse = 'Default location'
+  if (!d.paymentTerms) d.paymentTerms = 'Net 30'
+  if (!d.tags && c?.segments?.length) d.tags = [...c.segments]
+  // Commercial adjustments only make sense once the deal has products.
+  if (d.products?.length) {
+    if (d.taxType == null && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
+    if (d.shippingFee == null) d.shippingFee = 100_000
+  }
+  if (!d.stageHistory) d.stageHistory = synthStageHistory(d)
+  if (!d.attachments) d.attachments = (SEED_ATTACHMENTS[d.id] ?? []).map((a) => ({ ...a }))
+  if (!d.contacts) {
+    const name = d.picName || c?.contact
+    d.contacts = name ? [{ name, email: d.email || c?.email, phone: d.phones?.[0] || c?.phone }] : []
+    // Some deals carry a second narahubung (multi-contact example).
+    const extra = EXTRA_CONTACTS[d.id]
+    if (extra) d.contacts.push(...extra)
+  }
+}
+
+/** Days a Deal has spent in its current stage (mock: since its last activity;
+ *  used for the "5d" duration under the active stepper segment). */
+export function dealDaysInStage(d: Deal): number {
+  const from = new Date(d.lastActivity || d.createdAt).getTime()
+  const now = new Date(DEAL_TODAY).getTime()
+  return Math.max(0, Math.round((now - from) / 86_400_000))
+}
+
+/** Compact aging label — 45 → "1m", 10 → "1w", 3 → "3d". */
+export function formatAging(days: number): string {
+  if (days >= 30) return `${Math.round(days / 30)}m`
+  if (days >= 7) return `${Math.round(days / 7)}w`
+  return `${Math.max(0, days)}d`
+}
+
+/** Per-stage aging (days) for the pipeline stepper, computed from the REAL stage
+ *  history: each stage's aging = time until the next transition (or today for the
+ *  current stage). Only stages actually entered get an entry — a deal that jumped
+ *  Open Lead → Won shows aging for those two, NOT the skipped stages in between. */
+export function dealStageAgingDays(d: Deal): Record<string, number> {
+  const forwardSet = new Set<DealStage>(['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won'])
+  const hist = d.stageHistory?.length ? d.stageHistory : synthStageHistory(d)
+  const today = Date.parse(DEAL_TODAY)
+  const out: Record<string, number> = {}
+  for (let i = 0; i < hist.length; i++) {
+    const cur = hist[i]!
+    if (!forwardSet.has(cur.stage)) continue   // Lost node carries no aging label
+    const startMs = Date.parse(cur.at)
+    const endMs = hist[i + 1] ? Date.parse(hist[i + 1]!.at) : today
+    out[cur.stage] = Math.max(0, Math.round((endMs - startMs) / 86_400_000))
+  }
+  return out
+}
+
+// ── Activity log ───────────────────────────────────────────────────────────────
+export interface DealActivityDetail { label: string; value: string }
+export interface DealActivityEntry { date: string; user: string; activity: string; details: DealActivityDetail[] }
+
+/** ISO datetime `n` days (+ `hour`) after an ISO date — deterministic (no Date.now). */
+function isoAt(iso: string, days: number, hour = 9): string {
+  const [y, m, dd] = iso.split('-').map(Number)
+  const t = Date.UTC(y!, m! - 1, dd!, hour) + days * 86_400_000
+  return new Date(t).toISOString()
+}
+
+/**
+ * Full activity log for a Deal (newest first). No real audit trail in the demo, so
+ * a realistic, deterministic timeline is synthesised from the record's own data:
+ * created → stage moves → a field edit (old → new) → conversion/lost/archive. Each
+ * event carries a DETAILS list; edits render "old → new". Consumed by
+ * ActivityLogTable (Deal "Activity" tab), which shows the first 3 details + more/less.
+ */
+export function dealActivityLog(d: Deal): DealActivityEntry[] {
+  const forward: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
+  const money = (n: number) => formatMoney(n, d.currency)
+  const otherOwner = CRM_OWNERS.find((o) => o !== d.owner) ?? 'Dewi Lestari'
+  const closeIndex = d.stage === 'Lost' ? 3 : forward.indexOf(d.stage === 'Won' ? 'Negotiation' : d.stage)
+  const total = dealTotals(d).total
+  const created = d.createdBy || 'System'
+  const editor = d.lastModifiedBy || d.owner
+
+  const events: DealActivityEntry[] = []
+
+  // 1. Created — many fields (triggers Show more).
+  events.push({
+    date: isoAt(d.createdAt, 0, 9), user: created, activity: 'Created deal',
+    details: [
+      { label: 'Deal name', value: d.name },
+      { label: 'Deal number', value: `Deal #${d.id.replace(/^DL-/, '')}` },
+      { label: 'Customer', value: d.company },
+      { label: 'Deal owner', value: d.owner },
+      { label: 'Stage', value: 'Open Lead' },
+      { label: 'Deal value', value: money(total) },
+      { label: 'Currency', value: d.currency },
+      { label: 'Due date', value: d.expectedCloseDate },
+      { label: 'Reference no.', value: d.referenceNumber || '—' },
+    ],
+  })
+
+  // 2. Stage moves — one event per forward transition up to the close index.
+  for (let i = 1; i <= closeIndex && i < forward.length; i++) {
+    events.push({
+      date: isoAt(d.createdAt, i, 11), user: d.owner, activity: 'Stage updated',
+      details: [{ label: 'Stage', value: `${forward[i - 1]} → ${forward[i]}` }],
+    })
+  }
+
+  // 3. A field edit (old → new) — demonstrates change tracking + Show more.
+  events.push({
+    date: isoAt(d.createdAt, closeIndex + 1, 14), user: editor, activity: 'Updated deal',
+    details: [
+      { label: 'Deal value', value: `${money(Math.round(total * 0.9))} → ${money(total)}` },
+      { label: 'Deal owner', value: `${otherOwner} → ${d.owner}` },
+      { label: 'Payment terms', value: `Net 14 → ${d.paymentTerms || 'Net 30'}` },
+      { label: 'Due date', value: `${isoAt(d.expectedCloseDate, -14, 0).slice(0, 10)} → ${d.expectedCloseDate}` },
+    ],
+  })
+
+  // 4. Terminal / conversion events.
+  if (d.stage === 'Won') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 15), user: editor, activity: 'Marked as Won',
+      details: [{ label: 'Stage', value: 'Negotiation → Won' }],
+    })
+  }
+  if (d.stage === 'Lost') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 15), user: editor, activity: 'Marked as Lost',
+      details: [
+        { label: 'Stage', value: 'Negotiation → Lost' },
+        { label: 'Lost reason', value: d.lostReason || '—' },
+      ],
+    })
+  }
+  if (d.conversion === 'converted' && d.salesOrderId) {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 16), user: editor,
+      activity: `Converted to ${d.convertedTarget ?? 'Sales Order'}`,
+      details: [
+        { label: 'Deal', value: d.name },
+        { label: 'Customer', value: d.company },
+        { label: d.convertedTarget ?? 'Sales Order', value: d.salesOrderId },
+      ],
+    })
+  }
+  if (d.conversion === 'failed') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 16), user: editor, activity: 'Conversion failed',
+      details: [{ label: 'Reason', value: d.conversionError || '—' }],
+    })
+  }
+  if (d.archived) {
+    events.push({
+      date: isoAt(d.lastActivity, 1, 10), user: editor, activity: 'Archived deal',
+      details: [{ label: 'Deal', value: d.name }],
+    })
+  }
+
+  // Newest first.
+  return events.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+/** Full totals breakdown for the detail page (Subtotal → Total), matching the
+ *  Deals detail mockup: subtotal = gross (before line discounts). */
+export function dealTotals(d: Deal) {
+  const lines = d.products ?? []
+  const subtotal = lines.reduce((n, li) => n + li.quantity * li.originalPrice, 0)     // gross, before line discounts
+  const afterLine = lines.reduce((n, li) => n + lineSubtotal(li), 0)
+  const discountPerLine = subtotal - afterLine
+  const globalDiscount = d.orderDiscount
+    ? (d.orderDiscountType === 'percentage' ? Math.round(afterLine * (d.orderDiscount / 100)) : d.orderDiscount)
+    : 0
+  const taxBase = Math.max(0, afterLine - globalDiscount)
+  const taxAmount = d.tax ? (d.taxType === 'percentage' ? Math.round(taxBase * (d.tax / 100)) : d.tax) : 0
+  const taxLabel = d.tax ? (d.taxType === 'percentage' ? `PPN ${d.tax}%` : 'Tax') : ''
+  const shippingFee = d.shippingFee ?? 0
+  const otherExpense = d.otherExpense ?? 0
+  const total = Math.max(0, taxBase + taxAmount + shippingFee + otherExpense)
+  return { subtotal, discountPerLine, globalDiscount, taxAmount, taxLabel, shippingFee, otherExpense, total }
 }
 export function persistCrmDeals() { saveSnapshot('crm-deals-v3', deals) }
 
@@ -453,6 +734,9 @@ export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?:
   d.lastActivity = DEAL_TODAY
   if (stage === 'Lost') d.lostReason = opts.lostReason!.trim()
   if (from === 'Lost' && stage !== 'Lost') d.lostReason = undefined
+  // Record the real transition so aging reflects only stages actually entered.
+  if (!d.stageHistory) d.stageHistory = synthStageHistory({ ...d, stage: from })
+  d.stageHistory.push({ stage, at: DEAL_TODAY })
   persistCrmDeals()
   return { ok: true }
 }
@@ -471,6 +755,46 @@ export function restoreDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
   d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
 }
+/** SCM catalog → PickerProduct list for the "Add product" drawer (keyed by sku,
+ *  matching SelectProductDrawer's PickerProduct). */
+export const dealProductPicker = CATALOG.map((c) => ({ sku: c.sku, name: c.name, img: c.img, desc: c.desc, unit: c.unit }))
+
+function catalogLineBySku(sku: string): DealLineItem | null {
+  const c = CATALOG.find((x) => x.sku === sku)
+  if (!c) return null
+  return { productId: c.id, productName: c.name, sku: c.sku, description: c.desc, image: c.img, unit: c.unit, quantity: 1, originalPrice: c.price, discountType: 'none', discount: 0 }
+}
+
+/** Reconcile a deal's products to the given catalog skus (from the Select product
+ *  drawer): keep existing lines (qty etc.), add new ones, drop removed. */
+export function setDealProducts(id: string, skus: string[]): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  const existing = new Map((d.products ?? []).map((li) => [li.sku, li]))
+  d.products = skus.map((sku) => existing.get(sku) ?? catalogLineBySku(sku)).filter((li): li is DealLineItem => !!li)
+  // A product-less deal carries no commercial adjustments; add defaults once it has products.
+  if (d.products.length) {
+    if (d.taxType == null && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
+    if (d.shippingFee == null) d.shippingFee = 100_000
+  }
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
+}
+
+/** Attach a file to a deal (Files tab upload / drag-drop). */
+export function addDealAttachment(id: string, file: DealAttachment): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  if (!d.attachments) d.attachments = []
+  d.attachments.unshift(file)
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
+}
+/** Remove a file from a deal by index. */
+export function removeDealAttachment(id: string, index: number): DealOpResult {
+  const d = getDeal(id); if (!d?.attachments) return { ok: false, error: 'Deal not found.' }
+  d.attachments.splice(index, 1)
+  persistCrmDeals(); return { ok: true }
+}
+
 /** Permanently remove a deal from the store. (PRD V1 keeps only Archive/Restore;
  *  Delete is a prototype affordance kept per product request.) */
 export function deleteDeal(id: string): DealOpResult {
@@ -515,6 +839,7 @@ export function createDeal(input: DealInput, author = 'You'): Deal {
     id: nextDealId(), ...input,
     createdAt: DEAL_TODAY, createdBy: author, lastActivity: DEAL_TODAY, lastModifiedBy: author,
     conversion: 'none', priority: input.priority ?? 'medium',
+    stageHistory: [{ stage: input.stage, at: DEAL_TODAY }],
   }
   deals.unshift(d); persistCrmDeals(); return d
 }
@@ -1302,9 +1627,16 @@ export function deleteCrmCompany(id: string): void {
 }
 
 // ── Notes / comments — attach to a contact OR a company (unified store) ──
-export type CrmNoteEntity = 'contact' | 'company'
+export type CrmNoteEntity = 'contact' | 'company' | 'deal'
 export interface CrmNote { id: string; entityType: CrmNoteEntity; entityId: string; author: string; text: string; at: string }
 const NOTES_SEED: CrmNote[] = [
+  // Deal DL-260920 — a thread from several teammates (Rizal's are editable by "me").
+  { id: 'NT-101', entityType: 'deal', entityId: 'DL-260920', author: 'Fajar Nugroho', text: 'Client confirmed the Q3 volume at 20 sacks. Locking the price before month-end.', at: '2026-08-28T09:15:00' },
+  { id: 'NT-102', entityType: 'deal', entityId: 'DL-260920', author: 'Dewi Lestari',  text: 'Finance approved NET 30 terms. Good to move to the order.', at: '2026-08-30T13:40:00' },
+  { id: 'NT-103', entityType: 'deal', entityId: 'DL-260920', author: 'Rizal Candra',  text: 'Drafted the sales order — waiting on the signed PO to confirm.', at: '2026-09-01T16:05:00' },
+  // Deal DL-260907
+  { id: 'NT-104', entityType: 'deal', entityId: 'DL-260907', author: 'Dewi Lestari',  text: 'Sent the espresso blend samples. Follow up after their cupping session next week.', at: '2026-09-06T10:30:00' },
+  { id: 'NT-105', entityType: 'deal', entityId: 'DL-260907', author: 'Rizal Candra',  text: 'PIC (Ratna) prefers WhatsApp for quick updates.', at: '2026-09-06T15:10:00' },
   // Company CO-001 — mix of authors so avatar colours differ; Rizal's are editable by "me".
   { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation before sending the quote.', at: '2026-02-20T10:15:00' },
   { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Fajar Nugroho', text: 'Procurement lead prefers a fixed price for the whole quarter. Flagging for margin review.', at: '2026-02-21T16:40:00' },

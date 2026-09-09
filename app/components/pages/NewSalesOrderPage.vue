@@ -26,6 +26,13 @@ import {
 import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+
+// Embedded mode: the form is rendered inside a full-screen drawer (e.g. from a CRM
+// Deal). It hides its own title bar and, instead of routing on cancel/save, emits
+// so the host drawer can close and react. `prefill` seeds the fields (all editable).
+const props = withDefaults(defineProps<{ embedded?: boolean; prefill?: SalesFormPrefill | null }>(), { embedded: false, prefill: null })
+const emit = defineEmits<{ cancel: []; created: [order: SalesOrder] }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -249,7 +256,45 @@ function nextOrderId(): string {
   return `SO${String(n).padStart(3, '0')}`
 }
 
-function onCancel() { router.push('/sales-orders') }
+function onCancel() {
+  if (props.embedded) { emit('cancel'); return }
+  router.push('/sales-orders')
+}
+
+// Seed fields from a prefill payload (embedded Deal → sales order). Everything stays
+// editable afterwards.
+function applyPrefill(p: SalesFormPrefill) {
+  if (p.customerId && customers.some(c => c.id === p.customerId)) { customerId.value = p.customerId }
+  if (p.emails?.length) emailTags.value = toTagData(p.emails)
+  if (p.billingAddress) billingAddress.value = p.billingAddress
+  if (p.shipTo) { shipTo.value = p.shipTo; shipToDifferent.value = true }
+  if (p.txDate) txDate.value = isoToDMY(p.txDate)
+  if (p.dueDate) dueDate.value = isoToDMY(p.dueDate)
+  if (p.shipDate) { shipDate.value = isoToDMY(p.shipDate); requiresShipping.value = true }
+  if (p.shipVia) shipVia.value = p.shipVia
+  if (p.paymentTerms) paymentTerms.value = p.paymentTerms
+  if (p.trackingNo) trackingNo.value = p.trackingNo
+  if (p.referenceNo) referenceNo.value = p.referenceNo
+  if (p.warehouse) warehouse.value = p.warehouse
+  if (p.tags?.length) tagsList.value = toTagData(p.tags)
+  if (typeof p.shippingFee === 'number') shippingFee.value = p.shippingFee
+  if (p.items?.length) {
+    items.value = p.items.map(it => ({
+      _key: ++_seq,
+      product: it.product,
+      sku: it.sku ?? '',
+      description: it.description ?? '',
+      qty: it.qty,
+      unit: it.unit,
+      unitPrice: it.unitPrice,
+      discountPct: it.discountPct ?? 0,
+      taxLabel: it.taxLabel ?? 'PPN 11%',
+      productError: false,
+      qtyError: false,
+    }))
+  }
+}
+onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
 
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
@@ -276,6 +321,7 @@ function onSave() {
   }
   salesOrders.push(order)
   toast.notify({ variant: 'success', title: t('Sales order created'), rootProps: { class: 'toast-enterprise' } })
+  if (props.embedded) { emit('created', order); return }
   router.push(`/sales-orders/${order.id}`)
 }
 </script>
@@ -283,8 +329,8 @@ function onSave() {
 <template>
   <div class="si-form-page">
 
-    <!-- ── Fixed header bar ── -->
-    <header class="si-form-bar">
+    <!-- ── Fixed header bar (hidden when embedded — the host drawer supplies it) ── -->
+    <header v-if="!embedded" class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales orders') }}</MpTextlink>
         <h1 class="si-form-h1">{{ t('New sales order') }}</h1>
@@ -741,7 +787,7 @@ function onSave() {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   align-items: center;
@@ -774,7 +820,7 @@ function onSave() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -785,7 +831,7 @@ function onSave() {
 
 .si-dashed-divider {
   padding-bottom: var(--mp-spacing-5);
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 
 /* ── Header section 1 ── */
@@ -858,7 +904,7 @@ function onSave() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .si-th--drag, .si-th--del { padding: 0; }
@@ -870,10 +916,10 @@ function onSave() {
   padding: 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
-.si-td--border { border-right: 1px solid var(--mp-border-default); }
+.si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
@@ -914,7 +960,7 @@ function onSave() {
 .si-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
@@ -931,7 +977,7 @@ function onSave() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.si-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Notes + Attachment + Totals ── */
 .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
@@ -985,7 +1031,7 @@ function onSave() {
   padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone (non-table) prefixed fields use MpInputGroup + MpInputLeftAddon,
@@ -994,7 +1040,7 @@ function onSave() {
 .si-unit-field { width: 180px; flex-shrink: 0; }
 .si-unit-addon :deep(.mp-input-addon__root) {
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
 }
 .si-unit-trigger {
@@ -1009,7 +1055,7 @@ function onSave() {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md) !important;
 }
-.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Less: Withholding / Deposit ── */

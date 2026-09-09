@@ -12,7 +12,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import {
   MpIcon, MpButton, MpInput, MpTextarea, MpInputTag, MpDatePicker, MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpAutocomplete,
+  MpAutocomplete, MpTooltip,
   type DataInterface,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -143,6 +143,9 @@ function syncCalcValue() { if (!f.valueOverridden) f.value = calculated.value }
 function overrideValue(v: unknown) { f.valueOverridden = true; f.value = Math.max(0, Number(v) || 0) }
 function resetCalculated() { f.valueOverridden = false; f.value = calculated.value }
 const money = (n: number) => formatMoney(n, f.currency)
+// Currency prefix segment for money inputs (rule/table-form-money-prefix): "Rp" for
+// IDR, otherwise the ISO code so the number always reads with its unit.
+const currencyPrefix = computed(() => (f.currency === 'IDR' ? 'Rp' : f.currency))
 
 // ── Currency change (destructive confirm) ──
 const pendingCurrency = ref<DealCurrency | ''>('')
@@ -169,7 +172,7 @@ function validate(): boolean {
   const e: Record<string, string> = {}
   const name = f.name.trim()
   if (!name) e.name = t('Deal name is required.')
-  else if (name.length > 100) e.name = t('Deal name must be 100 characters or fewer.')
+  else if (name.length > 60) e.name = t('Deal name must be 60 characters or fewer.')
   if (!f.customerId) e.customer = t('Select a customer.')
   if (!f.owner) e.owner = t('Assign a deal owner.')
   if (f.description.length > 500) e.description = t('Description must be 500 characters or fewer.')
@@ -231,86 +234,98 @@ function cancel() {
 
     <div class="detail-stage">
       <div class="cdf-form">
-        <!-- ── Deal overview ── -->
+        <!-- ── Deal overview ── (order mirrors the deal-details page) -->
         <section class="cdf-section">
           <h2 class="cdf-section-title">{{ t('Deal overview') }}</h2>
-          <MpFormControl id="cdf-name-fc" :is-invalid="!!errors.name">
-            <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
-            <MpInput id="cdf-name" v-model="f.name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
-            <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
-          </MpFormControl>
+          <div class="cdf-fields">
+            <!-- Deal name — char-counter variant (rule/input-char-counter): n/60. -->
+            <MpFormControl id="cdf-name-fc" :is-invalid="!!errors.name">
+              <div class="cdf-label-row">
+                <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
+                <span class="cdf-counter">{{ f.name.length }} / 60</span>
+              </div>
+              <MpInput id="cdf-name" v-model="f.name" is-full-width maxlength="60" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
+              <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
+            </MpFormControl>
 
-          <div class="cdf-row">
             <div class="cdf-field">
-              <span class="cdf-label">{{ t('Stage') }}</span>
-              <ErpFilterSelect id="cdf-stage" :model-value="f.stage" :placeholder="t('Stage')" :options="[...DEAL_STAGES]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (f.stage = v as DealStage)" />
-            </div>
-            <div class="cdf-field">
-              <span class="cdf-label">{{ t('Deal owner') }}</span>
-              <ErpFilterSelect id="cdf-owner" :model-value="f.owner" :placeholder="t('Deal owner')" :options="[...CRM_OWNERS]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (f.owner = v)" />
-              <span v-if="errors.owner" class="cdf-err">{{ errors.owner }}</span>
-            </div>
-          </div>
-
-          <div class="cdf-field">
-            <span class="cdf-label">{{ t('Customer') }}</span>
-            <MpAutocomplete
-              id="cdf-customer-inp"
-              :model-value="f.customerId"
-              :data="customerOptions"
-              label-prop="label" value-prop="value"
-              is-searchable is-clearable use-portal is-full-width
-              is-show-button-action
-              :placeholder="t('Select a company')"
-              @update:model-value="selectCustomer"
-              @button-action="onCustomerAdd"
-            >
-              <template #buttonAction="{ currentSearch }">
-                {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new customer')}` : t('Add new customer') }}
-              </template>
-            </MpAutocomplete>
-            <span v-if="errors.customer" class="cdf-err">{{ errors.customer }}</span>
-            <div v-if="pendingCustomer" class="cdf-inline-confirm">
-              <span>{{ t('Replace contact information from this customer’s PIC?') }}</span>
-              <div class="cdf-inline-actions">
-                <button type="button" class="cdf-link" @click="keepContact">{{ t('Keep existing') }}</button>
-                <button type="button" class="cdf-link cdf-link--strong" @click="replaceContact">{{ t('Replace') }}</button>
+              <span class="cdf-label">{{ t('Customer') }}</span>
+              <MpAutocomplete
+                id="cdf-customer-inp"
+                :model-value="f.customerId"
+                :data="customerOptions"
+                label-prop="label" value-prop="value"
+                is-searchable is-clearable use-portal is-full-width
+                is-show-button-action
+                :placeholder="t('Select a company')"
+                @update:model-value="selectCustomer"
+                @button-action="onCustomerAdd"
+              >
+                <template #buttonAction="{ currentSearch }">
+                  {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new customer')}` : t('Add new customer') }}
+                </template>
+              </MpAutocomplete>
+              <span v-if="errors.customer" class="cdf-err">{{ errors.customer }}</span>
+              <div v-if="pendingCustomer" class="cdf-inline-confirm">
+                <span>{{ t('Replace contact information from this customer’s PIC?') }}</span>
+                <div class="cdf-inline-actions">
+                  <button type="button" class="cdf-link" @click="keepContact">{{ t('Keep existing') }}</button>
+                  <button type="button" class="cdf-link cdf-link--strong" @click="replaceContact">{{ t('Replace') }}</button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="cdf-row">
+            <!-- Select fields sit half-width on their own row (rule/form-select-half). -->
+            <div class="cdf-field cdf-half">
+              <span class="cdf-label">{{ t('Stage') }}</span>
+              <ErpFilterSelect id="cdf-stage" :model-value="f.stage" :placeholder="t('Stage')" :options="[...DEAL_STAGES]" :is-clearable="false" width="267px" @update:model-value="(v: string) => (f.stage = v as DealStage)" />
+            </div>
+
+            <div class="cdf-field cdf-half">
+              <span class="cdf-label">{{ t('Deal owner') }}</span>
+              <ErpFilterSelect id="cdf-owner" :model-value="f.owner" :placeholder="t('Deal owner')" :options="[...CRM_OWNERS]" :is-clearable="false" width="267px" @update:model-value="(v: string) => (f.owner = v)" />
+              <span v-if="errors.owner" class="cdf-err">{{ errors.owner }}</span>
+            </div>
+
+            <div class="cdf-field">
+              <span class="cdf-label">{{ t('Related people') }} <span class="cdf-opt">{{ t('Up to 10') }}</span></span>
+              <MpInputTag id="cdf-related" :data="relatedData" :suggestions="relatedSuggestions" :is-show-suggestions="true" :is-enable-create-new-tag="false" :is-show-icon-chevron-down="true" @change="onRelatedChange" />
+              <span v-if="errors.related" class="cdf-err">{{ errors.related }}</span>
+            </div>
+
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Reference number') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
               <MpInput id="cdf-ref" v-model="f.referenceNumber" is-full-width maxlength="100" />
             </div>
-            <div class="cdf-field">
+
+            <!-- Date is half-width on its own row (rule/form-select-half). -->
+            <div class="cdf-field cdf-half">
               <span class="cdf-label">{{ t('Due date') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
-              <MpDatePicker id="cdf-due" v-model="f.expectedCloseDate" format="DD/MM/YYYY" value-type="format" use-portal is-full-width />
+              <div class="cdf-half-control">
+                <MpDatePicker id="cdf-due" v-model="f.expectedCloseDate" format="DD/MM/YYYY" value-type="format" use-portal is-full-width />
+              </div>
             </div>
-          </div>
 
-          <div class="cdf-field">
-            <span class="cdf-label">{{ t('Related people') }} <span class="cdf-opt">{{ t('Up to 10') }}</span></span>
-            <MpInputTag id="cdf-related" :data="relatedData" :suggestions="relatedSuggestions" :is-show-suggestions="true" :is-enable-create-new-tag="false" :is-show-icon-chevron-down="true" @change="onRelatedChange" />
-            <span v-if="errors.related" class="cdf-err">{{ errors.related }}</span>
-          </div>
-
-          <div class="cdf-field">
-            <span class="cdf-label">{{ t('Description') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
-            <MpTextarea id="cdf-desc" v-model="f.description" is-full-width :rows="2" maxlength="500" :is-invalid="!!errors.description" @update:model-value="errors.description = ''" />
-            <span v-if="errors.description" class="cdf-err">{{ errors.description }}</span>
+            <!-- Description — char-counter variant (rule/input-char-counter): n/250. -->
+            <div class="cdf-field">
+              <div class="cdf-label-row">
+                <span class="cdf-label">{{ t('Description') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
+                <span class="cdf-counter">{{ f.description.length }} / 250</span>
+              </div>
+              <MpTextarea id="cdf-desc" v-model="f.description" is-full-width :rows="2" maxlength="250" :is-invalid="!!errors.description" @update:model-value="errors.description = ''" />
+              <span v-if="errors.description" class="cdf-err">{{ errors.description }}</span>
+            </div>
           </div>
         </section>
 
         <!-- ── Contact information ── -->
         <section class="cdf-section">
           <h2 class="cdf-section-title">{{ t('Contact information') }}</h2>
-          <div class="cdf-field">
-            <span class="cdf-label">{{ t('PIC name') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
-            <MpInput id="cdf-pic" v-model="f.picName" is-full-width />
-          </div>
-          <div class="cdf-row">
+          <div class="cdf-fields">
+            <div class="cdf-field">
+              <span class="cdf-label">{{ t('PIC name') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
+              <MpInput id="cdf-pic" v-model="f.picName" is-full-width />
+            </div>
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Email') }} <span class="cdf-opt">{{ t('Optional') }}</span></span>
               <MpInput id="cdf-email" v-model="f.email" type="email" is-full-width />
@@ -322,8 +337,8 @@ function cancel() {
           </div>
         </section>
 
-        <!-- ── Products and value ── -->
-        <section class="cdf-section">
+        <!-- ── Products and value ── (wide: the line-item table needs the room) -->
+        <section class="cdf-section cdf-section--wide">
           <h2 class="cdf-section-title">{{ t('Products and value') }}</h2>
           <div v-if="f.products.length" class="cdf-linetable">
             <div class="cdf-linehead">
@@ -332,13 +347,21 @@ function cancel() {
             <div v-for="(li, i) in f.products" :key="i" class="cdf-linerow">
               <span class="cdf-linename">{{ li.productName }}<span class="cdf-lineunit">{{ li.unit }}</span></span>
               <MpInput :id="`cdf-qty-${i}`" type="number" :model-value="li.quantity" is-full-width class="cdf-num-input" :aria-label="t('Quantity')" @update:model-value="(v) => { li.quantity = Number(v); syncCalcValue() }" />
-              <MpInput :id="`cdf-price-${i}`" type="number" :model-value="li.originalPrice" is-full-width class="cdf-num-input" :aria-label="t('Original price')" @update:model-value="(v) => { li.originalPrice = Number(v); syncCalcValue() }" />
+              <div class="cdf-money">
+                <span class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                <MpInput :id="`cdf-price-${i}`" type="number" :model-value="li.originalPrice" is-full-width class="cdf-num-input" :aria-label="t('Original price')" @update:model-value="(v) => { li.originalPrice = Number(v); syncCalcValue() }" />
+              </div>
               <div class="cdf-linediscount">
                 <ErpFilterSelect :id="`cdf-disc-${i}`" :model-value="li.discountType" :placeholder="t('Discount')" :options="DISCOUNT_TYPES" :is-clearable="false" width="130px" @update:model-value="(v: string) => { li.discountType = v as any; syncCalcValue() }" />
-                <MpInput v-if="li.discountType !== 'none'" :id="`cdf-discamt-${i}`" type="number" :model-value="li.discount" is-full-width class="cdf-num-input cdf-num-input--disc" :aria-label="t('Discount amount')" @update:model-value="(v) => { li.discount = Number(v); syncCalcValue() }" />
+                <div v-if="li.discountType !== 'none'" class="cdf-money cdf-money--disc">
+                  <span v-if="li.discountType === 'fixed'" class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                  <MpInput :id="`cdf-discamt-${i}`" type="number" :model-value="li.discount" is-full-width class="cdf-num-input cdf-num-input--disc" :aria-label="t('Discount amount')" @update:model-value="(v) => { li.discount = Number(v); syncCalcValue() }" />
+                </div>
               </div>
               <span class="cdf-num cdf-subtotal">{{ money(lineSubtotal(li)) }}</span>
-              <button type="button" class="cdf-line-remove" :aria-label="t('Remove line')" @click="removeProductLine(i)"><MpIcon name="delete" size="sm" /></button>
+              <MpTooltip :id="`cdf-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
+                <button type="button" class="cdf-line-remove" :aria-label="t('Remove line')" @click="removeProductLine(i)"><MpIcon name="minus-circular" size="sm" /></button>
+              </MpTooltip>
             </div>
           </div>
           <p v-else class="cdf-empty-lines">{{ t('No products yet. Add a line to build the deal value.') }}</p>
@@ -353,23 +376,35 @@ function cancel() {
               <span class="cdf-label">{{ t('Tax') }}</span>
               <div class="cdf-adjrow">
                 <ErpFilterSelect id="cdf-taxtype" :model-value="f.taxType" :placeholder="t('Type')" :options="ADJ_TYPES" :is-clearable="false" width="150px" @update:model-value="(v: string) => (f.taxType = v as AdjustmentType)" />
-                <MpInput id="cdf-tax" type="number" :model-value="f.tax" is-full-width class="cdf-num-input" :aria-label="t('Tax amount')" @update:model-value="(v) => (f.tax = Number(v))" />
+                <div class="cdf-money">
+                  <span v-if="f.taxType === 'fixed'" class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                  <MpInput id="cdf-tax" type="number" :model-value="f.tax" is-full-width class="cdf-num-input" :aria-label="t('Tax amount')" @update:model-value="(v) => (f.tax = Number(v))" />
+                </div>
               </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Order discount') }}</span>
               <div class="cdf-adjrow">
                 <ErpFilterSelect id="cdf-odtype" :model-value="f.orderDiscountType" :placeholder="t('Type')" :options="ADJ_TYPES" :is-clearable="false" width="150px" @update:model-value="(v: string) => (f.orderDiscountType = v as AdjustmentType)" />
-                <MpInput id="cdf-od" type="number" :model-value="f.orderDiscount" is-full-width class="cdf-num-input" :aria-label="t('Order discount amount')" @update:model-value="(v) => (f.orderDiscount = Number(v))" />
+                <div class="cdf-money">
+                  <span v-if="f.orderDiscountType === 'fixed'" class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                  <MpInput id="cdf-od" type="number" :model-value="f.orderDiscount" is-full-width class="cdf-num-input" :aria-label="t('Order discount amount')" @update:model-value="(v) => (f.orderDiscount = Number(v))" />
+                </div>
               </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Shipping fee') }}</span>
-              <MpInput id="cdf-ship" type="number" :model-value="f.shippingFee" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.shippingFee = Number(v))" />
+              <div class="cdf-money">
+                <span class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                <MpInput id="cdf-ship" type="number" :model-value="f.shippingFee" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.shippingFee = Number(v))" />
+              </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Other expense') }}</span>
-              <MpInput id="cdf-other" type="number" :model-value="f.otherExpense" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.otherExpense = Number(v))" />
+              <div class="cdf-money">
+                <span class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                <MpInput id="cdf-other" type="number" :model-value="f.otherExpense" is-full-width class="cdf-num-input" @update:model-value="(v) => (f.otherExpense = Number(v))" />
+              </div>
             </div>
             <div class="cdf-field">
               <span class="cdf-label">{{ t('Currency') }}</span>
@@ -396,7 +431,10 @@ function cancel() {
               <span>{{ t('Expected deal value') }}
                 <button v-if="f.valueOverridden" type="button" class="cdf-link cdf-reset" @click="resetCalculated">{{ t('Reset to calculated') }}</button>
               </span>
-              <MpInput id="cdf-expected" type="number" :model-value="f.value" class="cdf-num-input cdf-num-input--value" :aria-label="t('Expected deal value')" @update:model-value="overrideValue" />
+              <div class="cdf-money cdf-money--value">
+                <span class="cdf-money-prefix">{{ currencyPrefix }}</span>
+                <MpInput id="cdf-expected" type="number" :model-value="f.value" is-full-width class="cdf-num-input" :aria-label="t('Expected deal value')" @update:model-value="overrideValue" />
+              </div>
             </div>
           </div>
         </section>
@@ -434,22 +472,49 @@ function cancel() {
 }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); }
-.cdf-form { max-width: 720px; display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.cdf-form { max-width: none; display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
-.cdf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.cdf-section-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); padding-bottom: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+/* A section is the 6-col form width (558px) by default; the products section opts
+   into --wide so its line-item table has the room (rule/form-field-stacking). */
+.cdf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); max-width: 558px; }
+.cdf-section--wide { max-width: none; }
+.cdf-section-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cdf-section-help { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.cdf-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
+/* Fields stack full-width, 20px apart (rule/form-field-stacking); 12px title→content
+   comes from the section's own gap (spacing-3). */
+.cdf-fields { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .cdf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
+/* Half-width row: selects + date pickers read at ~267px (rule/form-select-half). */
+.cdf-half-control { max-width: 267px; }
 .cdf-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cdf-opt { font-weight: var(--mp-font-weights-regular); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Label row + char counter (rule/input-char-counter): n/max at top-right. */
+.cdf-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-2); }
+.cdf-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Numeric MpInput cells — right-align the value (Pixel MpInput ships its own
    border/height/focus, so no border overrides here — rule/token-no-raw-html). */
 .cdf-num-input :deep(input) { text-align: right; font-variant-numeric: tabular-nums; }
 .cdf-num-input--disc { width: 84px; }
-.cdf-num-input--value { width: 180px; }
+
+/* Money input: a gray, semibold currency segment flush to the left of the input,
+   inside the same cell (rule/table-form-money-prefix). The MpInput keeps its own
+   border; the prefix reads as its unit. */
+.cdf-money { display: inline-flex; align-items: stretch; min-width: 0; }
+.cdf-money .cdf-num-input { flex: 1; min-width: 0; }
+.cdf-money-prefix {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-right: none;
+  border-radius: var(--mp-radii-md, 8px) 0 0 var(--mp-radii-md, 8px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.cdf-money--disc { width: 84px; }
+.cdf-money--value { width: 180px; }
 
 .cdf-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
 .cdf-err--block { display: block; margin-top: var(--mp-spacing-1); }
@@ -470,8 +535,6 @@ function cancel() {
 .cdf-linename { display: flex; flex-direction: column; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); min-width: 0; }
 .cdf-lineunit { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cdf-linediscount { display: flex; align-items: center; gap: var(--mp-spacing-1); }
-.cdf-input--disc { width: 72px; height: 36px; }
-.cdf-linerow .cdf-input--num { height: 36px; }
 .cdf-subtotal { font-weight: var(--mp-font-weights-semi-bold); }
 .cdf-line-remove { display: inline-flex; align-items: center; justify-content: center; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); padding: 0; }
 .cdf-line-remove:hover { color: var(--mp-text-danger, #c9372c); }
@@ -480,14 +543,13 @@ function cancel() {
 
 .cdf-adjgrid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-3) var(--mp-spacing-4); }
 .cdf-adjrow { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cdf-adjrow .cdf-input--num { flex: 1; min-width: 0; }
+.cdf-adjrow .cdf-money { flex: 1; min-width: 0; }
 
 .cdf-valuebox { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-md); }
 .cdf-valrow { display: flex; align-items: center; justify-content: space-between; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cdf-valrow--expected { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 .cdf-valrow--expected > span { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .cdf-reset { font-weight: var(--mp-font-weights-regular); }
-.cdf-input--value { width: 180px; height: 36px; }
 
 .cdf-form-error { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger, #c9372c); }
 .cdf-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
