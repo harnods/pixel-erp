@@ -1553,6 +1553,7 @@ export interface CrmContactPerson {
   phone: string
   companyIds: string[]       // associated companies (M2M)
   owner: string
+  archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
   createdAt: string
   lastActivity: string
 }
@@ -1574,6 +1575,7 @@ export interface CrmCompany {
   banks?: ContactBank[]      // bank accounts (shown on the company detail)
   note?: string
   owner: string
+  archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
   contactIds: string[]       // member contacts (M2M)
   primaryContactId?: string  // required when the company has >1 contact
   createdAt: string
@@ -1643,13 +1645,13 @@ export function companyName(id: string): string { return getCompany(id)?.name ??
 export function contactName(id: string): string { return getContactPerson(id)?.name ?? id }
 /** Companies a contact belongs to. */
 export function companiesOfContact(id: string): CrmCompany[] {
-  return crmCompanies.filter((co) => co.contactIds.includes(id))
+  return crmCompanies.filter((co) => !co.archived && co.contactIds.includes(id))
 }
-/** Contacts of a company (primary first). */
+/** Active contacts of a company (primary first; archived excluded). */
 export function contactsOfCompany(id: string): CrmContactPerson[] {
   const co = getCompany(id)
   if (!co) return []
-  const list = co.contactIds.map(getContactPerson).filter(Boolean) as CrmContactPerson[]
+  const list = co.contactIds.map(getContactPerson).filter((c) => c && !c.archived) as CrmContactPerson[]
   return list.sort((a, b) => (a.id === co.primaryContactId ? -1 : b.id === co.primaryContactId ? 1 : 0))
 }
 export function isPrimaryContact(companyId: string, contactId: string): boolean {
@@ -1726,6 +1728,84 @@ export function deleteCrmCompany(id: string): void {
     if (j !== -1) p.companyIds.splice(j, 1)
   }
   persistCrmCompanies(); persistCrmContactPeople()
+}
+
+// ── Archive / restore (PRD §345-368: soft, no permanent delete in V1) ──
+// Soft-archive keeps relationships intact; archived records drop out of active
+// lists + selectors and can be restored.
+export function archiveCrmContactPerson(id: string): void {
+  const c = getContactPerson(id); if (!c) return
+  c.archived = true; c.lastActivity = nowDate(); persistCrmContactPeople()
+}
+export function restoreCrmContactPerson(id: string): void {
+  const c = getContactPerson(id); if (!c) return
+  c.archived = false; c.lastActivity = nowDate(); persistCrmContactPeople()
+}
+export function archiveCrmCompany(id: string): void {
+  const co = getCompany(id); if (!co) return
+  co.archived = true; co.lastActivity = nowDate(); persistCrmCompanies()
+}
+export function restoreCrmCompany(id: string): void {
+  const co = getCompany(id); if (!co) return
+  co.archived = false; co.lastActivity = nowDate(); persistCrmCompanies()
+}
+
+function nowDate(): string { return new Date().toISOString().slice(0, 10) }
+
+// ── Edit (patch) — update a record + keep reverse links coherent ──
+export function updateCrmContactPerson(id: string, patch: Partial<Pick<CrmContactPerson, 'name' | 'fullName' | 'jobTitle' | 'email' | 'phone' | 'owner' | 'companyIds'>>): void {
+  const c = getContactPerson(id); if (!c) return
+  if (patch.companyIds) {
+    const next = patch.companyIds
+    for (const co of crmCompanies) {
+      const inNext = next.includes(co.id)
+      const j = co.contactIds.indexOf(id)
+      if (!inNext && j !== -1) { co.contactIds.splice(j, 1); if (co.primaryContactId === id) co.primaryContactId = co.contactIds[0] }
+      if (inNext && j === -1) { co.contactIds.push(id); if (!co.primaryContactId) co.primaryContactId = id }
+    }
+    c.companyIds = [...next]
+  }
+  const { companyIds: _c, ...rest } = patch
+  Object.assign(c, rest)
+  c.lastActivity = nowDate()
+  persistCrmContactPeople(); persistCrmCompanies()
+}
+export function updateCrmCompany(id: string, patch: Partial<CrmCompany>): void {
+  const co = getCompany(id); if (!co) return
+  if (patch.contactIds) {
+    const next = patch.contactIds
+    for (const p of crmContactPeople) {
+      const inNext = next.includes(p.id)
+      const j = p.companyIds.indexOf(id)
+      if (!inNext && j !== -1) p.companyIds.splice(j, 1)
+      if (inNext && j === -1) p.companyIds.push(id)
+    }
+    if (co.primaryContactId && !next.includes(co.primaryContactId)) co.primaryContactId = next[0]
+  }
+  const { id: _i, ...rest } = patch
+  Object.assign(co, rest)
+  co.lastActivity = nowDate()
+  persistCrmCompanies(); persistCrmContactPeople()
+}
+
+/** Same-name CRM contacts (active + archived) excluding one id — duplicate warning (PRD §263). */
+export function contactsSameName(name: string, excludeId?: string): CrmContactPerson[] {
+  const n = name.trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!n) return []
+  return crmContactPeople.filter((c) => c.id !== excludeId && c.name.trim().replace(/\s+/g, ' ').toLowerCase() === n)
+}
+/** True if another company already uses this normalized name — Company name is blocked (PRD §310). */
+export function companyNameTaken(name: string, excludeId?: string): boolean {
+  const n = name.trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!n) return false
+  return crmCompanies.some((c) => c.id !== excludeId && c.name.trim().replace(/\s+/g, ' ').toLowerCase() === n)
+}
+/** Companies sharing a normalized domain/website host — duplicate-domain warning (PRD §311). */
+export function companiesSameDomain(website: string, excludeId?: string): CrmCompany[] {
+  const host = (website || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/\.$/, '')
+  if (!host) return []
+  const norm = (w?: string) => (w || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/\.$/, '')
+  return crmCompanies.filter((c) => c.id !== excludeId && norm(c.website) === host)
 }
 
 // ── Notes / comments — attach to a contact OR a company (unified store) ──

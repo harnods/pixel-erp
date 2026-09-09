@@ -11,14 +11,14 @@
  * — Keyword (scoped to a column) + Owner + Industry (Is any of / Is none of).
  * Bulk select with a Delete action (confirmed via ConfirmModal).
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmCompaniesFiltersDrawer, { emptyCompaniesFilters, type CompaniesFiltersValue } from '~/components/patterns/CrmCompaniesFiltersDrawer.vue'
-import { crmCompanies, contactsOfCompany, dealsForCompany, deleteCrmCompany, can, CRM_CURRENT_USER, CRM_OWNERS, type CrmCompany } from '~/data/crm'
+import { crmCompanies, contactsOfCompany, dealsForCompany, archiveCrmCompany, restoreCrmCompany, can, CRM_CURRENT_USER, CRM_OWNERS, type CrmCompany } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -28,6 +28,10 @@ const router = useRouter()
 const canCreate = computed(() => can('companies.create'))
 const canEdit = computed(() => can('companies.edit'))
 const canViewAll = computed(() => can('companies.readAll'))
+
+// Active vs Archived view (PRD §241/§633 — no permanent delete, soft archive).
+const showArchived = ref(false)
+watch(showArchived, () => setPage(1))
 
 function open(row: CompanyRow) { router.push(`/crm/customers/companies/${row.id}`) }
 function soon(what: string) { infoToast(`${what} — coming soon`) }
@@ -74,6 +78,8 @@ function onApplyFilters(f: CompaniesFiltersValue) { companyFilters.value = f; fi
 
 const toolbarFiltered = computed<CompanyRow[]>(() => rows.value.filter((r) => {
   const cf = companyFilters.value
+  // Active vs Archived view.
+  if (!!r.archived !== showArchived.value) return false
   // "Only my companies" access → hide records not owned by the signed-in user.
   if (!canViewAll.value && r.owner !== CRM_CURRENT_USER) return false
   if (cf.owners.length) {
@@ -116,31 +122,38 @@ const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => colum
 const drawerColumns = computed(() => visibleColumns.value.filter((c) => c.key !== 'lastActivity').map((c) => ({ key: c.key, label: c.label })))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
-// ── Bulk / row delete (confirmed) ──
-const deleteOpen = ref(false)
-const deleteTargets = ref<string[]>([])
-let deleteDeselect: (() => void) | null = null
+// ── Bulk / row Archive · Restore (confirmed; soft — no permanent delete) ──
+const archiveOpen = ref(false)
+const archiveTargets = ref<string[]>([])
+let archiveDeselect: (() => void) | null = null
 function selectedCompanyIds(sel: Set<number>): string[] {
   return [...new Set([...sel].map((i) => (paginated.value[i] as CompanyRow | undefined)?.id).filter(Boolean) as string[])]
 }
-function openDelete(ids: string[], deselect?: () => void) {
+function openArchive(ids: string[], deselect?: () => void) {
   if (!ids.length) return
-  deleteTargets.value = ids
-  deleteDeselect = deselect ?? null
-  deleteOpen.value = true
+  archiveTargets.value = ids
+  archiveDeselect = deselect ?? null
+  archiveOpen.value = true
 }
-function confirmDelete() {
-  const n = deleteTargets.value.length
-  deleteTargets.value.forEach((id) => deleteCrmCompany(id))
-  deleteDeselect?.()
-  deleteDeselect = null
-  toast.notify({ variant: 'success', title: n === 1 ? t('Company deleted') : t('Companies deleted'), maxWidth: 'max-content' })
+function confirmArchive() {
+  const n = archiveTargets.value.length
+  const restoring = showArchived.value
+  archiveTargets.value.forEach((id) => (restoring ? restoreCrmCompany(id) : archiveCrmCompany(id)))
+  archiveDeselect?.()
+  archiveDeselect = null
+  toast.notify({ variant: 'success', title: restoring
+    ? (n === 1 ? t('Company restored') : t('Companies restored'))
+    : (n === 1 ? t('Company archived') : t('Companies archived')), maxWidth: 'max-content' })
 }
-const deleteDescription = computed(() =>
-  deleteTargets.value.length === 1
-    ? t('This company will be permanently deleted.')
-    : t('The selected companies will be permanently deleted.'),
-)
+const archiveTitle = computed(() => showArchived.value ? t('Restore company') : t('Archive company'))
+const archiveConfirmLabel = computed(() => showArchived.value ? t('Restore') : t('Archive'))
+const archiveDescription = computed(() => {
+  const n = archiveTargets.value.length
+  if (showArchived.value) {
+    return n === 1 ? t('This company will be restored to the active list.') : t('The selected companies will be restored to the active list.')
+  }
+  return n === 1 ? t('This company will be archived. You can restore it later.') : t('The selected companies will be archived. You can restore them later.')
+})
 </script>
 
 <template>
@@ -152,7 +165,7 @@ const deleteDescription = computed(() =>
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton v-if="canCreate" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/companies/new')">{{ t('New company') }}</MpButton>
+        <MpButton v-if="canCreate && !showArchived" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/companies/new')">{{ t('New company') }}</MpButton>
       </div>
     </header>
 
@@ -180,6 +193,10 @@ const deleteDescription = computed(() =>
       >
         <template #filters>
           <div class="filter-left">
+            <div class="view-toggle" role="tablist" :aria-label="t('View')">
+              <button class="view-toggle-btn" type="button" role="tab" :aria-selected="!showArchived" :class="{ 'is-active': !showArchived }" @click="showArchived = false">{{ t('Active') }}</button>
+              <button class="view-toggle-btn" type="button" role="tab" :aria-selected="showArchived" :class="{ 'is-active': showArchived }" @click="showArchived = true">{{ t('Archived') }}</button>
+            </div>
             <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="openFilters">
               <MpIcon name="filter" size="sm" />
               {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
@@ -197,12 +214,12 @@ const deleteDescription = computed(() =>
           </div>
         </template>
 
-        <!-- Bulk actions: Delete -->
+        <!-- Bulk actions: Archive / Restore -->
         <template #bulk-actions="{ selectedRows, deselectAll }">
           <MpButton
             variant="secondary" size="sm" is-rounded
-            @click="openDelete(selectedCompanyIds(selectedRows as Set<number>), deselectAll)"
-          >{{ t('Delete') }}</MpButton>
+            @click="openArchive(selectedCompanyIds(selectedRows as Set<number>), deselectAll)"
+          >{{ showArchived ? t('Restore') : t('Archive') }}</MpButton>
         </template>
 
         <!-- Company name + industry caption -->
@@ -216,7 +233,7 @@ const deleteDescription = computed(() =>
           <LastUpdatedCell :at="(row as unknown as CompanyRow).lastActivity" :by="(row as unknown as CompanyRow).owner" />
         </template>
 
-        <!-- Actions: View details / Delete -->
+        <!-- Actions: View details / Edit / Archive · Restore -->
         <template #actions="{ row }">
           <MpPopover :id="`co-actions-${(row as unknown as CompanyRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
@@ -225,8 +242,8 @@ const deleteDescription = computed(() =>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="open(row as unknown as CompanyRow)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="canEdit" @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="canEdit" @click="openDelete([(row as unknown as CompanyRow).id])">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit && !showArchived" @click="router.push(`/crm/customers/companies/${(row as unknown as CompanyRow).id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="openArchive([(row as unknown as CompanyRow).id])">{{ showArchived ? t('Restore') : t('Archive') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -245,13 +262,14 @@ const deleteDescription = computed(() =>
       @apply="onApplyFilters"
     />
 
-    <!-- Delete confirmation -->
+    <!-- Archive / Restore confirmation (soft, non-destructive) -->
     <ConfirmModal
-      v-model:is-open="deleteOpen"
-      :title="t('Delete company')"
-      :description="deleteDescription"
-      :confirm-label="t('Delete')"
-      @confirm="confirmDelete"
+      v-model:is-open="archiveOpen"
+      :title="archiveTitle"
+      :description="archiveDescription"
+      :confirm-label="archiveConfirmLabel"
+      :is-danger="false"
+      @confirm="confirmArchive"
     />
   </div>
 </template>
@@ -286,6 +304,12 @@ const deleteDescription = computed(() =>
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-btn-group { display: flex; align-items: center; }
 .filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); font-weight: var(--mp-font-weights-semi-bold); }
+
+/* Active / Archived segmented view toggle. */
+.view-toggle { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); }
+.view-toggle-btn { appearance: none; border: 1px solid transparent; background: none; cursor: pointer; padding: var(--mp-spacing-1) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); line-height: var(--mp-line-heights-md); color: var(--mp-text-subtle, #536062); }
+.view-toggle-btn:hover:not(.is-active) { color: var(--mp-colors-text-default, #080d0e); }
+.view-toggle-btn.is-active { background: var(--mp-background-stage, #ffffff); color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold); border-color: var(--mp-border-default, #e3e7e9); }
 .search-clear-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;

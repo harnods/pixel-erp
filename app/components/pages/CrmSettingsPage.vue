@@ -80,8 +80,10 @@ type CrmUser = {
 // Per-user permission sets (persisted). The workspace owner (first user) gets full
 // access by default; everyone else the read-only baseline.
 // Per-user perms live in the shared store (crm.ts) so the whole CRM enforces them.
-function permSetOf(id: string, i: number): CrmPermSet {
-  return crmUserPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
+// Rizal Candra is the signed-in workspace owner → full access by default;
+// everyone else starts on the read-only baseline (until edited via the drawer).
+function permSetOf(id: string, isOwner: boolean): CrmPermSet {
+  return crmUserPermSet[id] ?? (isOwner ? fullPermSet() : defaultPermSet())
 }
 
 // ERP role — sourced from the ERP account (read-only here). The workspace owner is
@@ -111,7 +113,7 @@ function modulesForUser(empId: string, perms: CrmPermSet): string[] {
 const crmUsers = computed<CrmUser[]>(() =>
   CRM_OWNERS.map((name, i) => {
     const id = `CU${String(i + 1).padStart(2, '0')}`
-    const perms = permSetOf(id, i)
+    const perms = permSetOf(id, name === 'Rizal Candra')
     const empId = empIdByName(name) ?? ''
     return {
       id,
