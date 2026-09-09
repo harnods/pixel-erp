@@ -102,7 +102,8 @@ function isOwn(author: string): boolean { return author === currentUser.value }
 </template>
 
 <style scoped>
-.notes { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* Cap to the 6-col form width so notes don't stretch the full stage. */
+.notes { display: flex; flex-direction: column; gap: var(--mp-spacing-6); width: 100%; max-width: 558px; }
 .notes-compose { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 640px; }
 .notes-compose-actions { display: flex; justify-content: flex-end; }
 
