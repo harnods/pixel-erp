@@ -33,9 +33,9 @@ const { t } = useLocale()
   <Teleport to="body">
     <Transition name="cua">
       <div v-if="open" class="cua-overlay">
-        <div class="cua-panel" role="dialog" :aria-label="t('Manage permissions')">
+        <div class="cua-panel" role="dialog" :aria-label="t('Manage CRM access')">
           <header class="cua-header">
-            <span class="cua-title">{{ t('Manage permissions') }}</span>
+            <span class="cua-title">{{ t('Manage CRM access') }}</span>
             <MpTooltip id="cua-close-tip" :label="t('Close')" placement="bottom" use-portal>
               <MpButton class="cua-close" :aria-label="t('Close')" @click="emit('cancel')">
                 <MpIcon name="close" size="md" />

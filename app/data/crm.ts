@@ -1318,19 +1318,21 @@ export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
     { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['deals.create', 'deals.edit'] },
     { type: 'checkbox',   sublabel: 'Export', label: 'Can export records', key: 'deals.export' },
   ] },
-  { group: 'Customers', subtitle: 'Contact person and company records', controls: [
-    { type: 'access',     label: 'Record access', allLabel: 'All customers', mineLabel: 'Only my customers', allKey: 'customers.readAll', mineKey: 'customers.readMine' },
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['customers.create', 'customers.edit'] },
-    { type: 'checkbox',   sublabel: 'Export', label: 'Can export records', key: 'customers.export' },
+  { group: 'Contacts', controls: [
+    { type: 'access',     label: 'Contact access', allLabel: 'All contacts', mineLabel: 'Only my contacts', allKey: 'contacts.readAll', mineKey: 'contacts.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['contacts.create', 'contacts.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export contacts data', key: 'contacts.export' },
+  ] },
+  { group: 'Companies', controls: [
+    { type: 'access',     label: 'Company access', allLabel: 'All companies', mineLabel: 'Only my companies', allKey: 'companies.readAll', mineKey: 'companies.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['companies.create', 'companies.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export companies data', key: 'companies.export' },
   ] },
   { group: 'Reports', controls: [
     { type: 'checkbox', label: 'Can view report', key: 'reports.view' },
   ] },
   { group: 'Settings / Company profile', controls: [
     { type: 'checkbox', label: 'Can view company profile', key: 'settingsCompany.view' },
-  ] },
-  { group: 'Settings / Users', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can invite & edit permissions', capabilityKeys: ['settingsUsers.invite', 'settingsUsers.revoke'] },
   ] },
   { group: 'Settings / Teams', controls: [
     { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit', 'settingsTeams.delete', 'settingsTeams.assign'] },
@@ -1356,8 +1358,8 @@ export function fullPermSet(): CrmPermSet {
 /** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
 export function defaultPermSet(): CrmPermSet {
   const s = emptyPermSet()
-  // Read-only baseline: sees all records + customers, no create/edit/export.
-  for (const k of ['deals.readAll', 'customers.readAll']) s[k] = true
+  // Read-only baseline: sees all records + contacts + companies, no create/edit/export.
+  for (const k of ['deals.readAll', 'contacts.readAll', 'companies.readAll']) s[k] = true
   return s
 }
 /** One-line summary of a permission set for the User & roles index. */
