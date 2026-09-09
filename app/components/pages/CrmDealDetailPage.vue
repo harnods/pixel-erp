@@ -27,16 +27,16 @@ import CrmCreateTransactionDrawer from '~/components/patterns/CrmCreateTransacti
 import ActivityLogTable from '~/components/patterns/ActivityLogTable.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
-import SelectProductDrawer from '~/components/patterns/SelectProductDrawer.vue'
+import CrmEditProductsDrawer from '~/components/patterns/CrmEditProductsDrawer.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
-  dealActivityLog, addDealAttachment, removeDealAttachment, dealProductPicker, setDealProducts,
+  dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   lineSubtotal, crmCustomers, crmOrders,
-  type DealStage, type DealLineItem, type DealAttachment,
+  type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
 
 const currentUser = 'Rizal Candra'
@@ -117,7 +117,10 @@ const pendingStage = ref<DealStage | null>(null)
 function onStageConfirm(payload: { stage: DealStage; lostReason?: string }) {
   stageModalOpen.value = false
   const d = deal.value; if (!d) return
-  if (d.stage === 'Lost' && payload.stage !== 'Lost') { pendingStage.value = payload.stage; reopenConfirmOpen.value = true; return }
+  // Moving a CLOSED deal (Won/Lost) back to an ongoing stage → confirm first.
+  if ((d.stage === 'Lost' || d.stage === 'Won') && payload.stage !== 'Lost') {
+    pendingStage.value = payload.stage; reopenConfirmOpen.value = true; return
+  }
   const r = moveDealStage(d.id, payload.stage, { lostReason: payload.lostReason })
   if (r.ok) successToast(`${t('Stage changed to')} ${payload.stage}`)
   else infoToast(r.error ?? t('Could not change stage'))
@@ -181,10 +184,10 @@ const visibleProducts = computed(() => {
   return q ? list.filter((li) => li.productName.toLowerCase().includes(q) || (li.sku ?? '').toLowerCase().includes(q)) : list
 })
 const productDrawerOpen = ref(false)
-const selectedProductSkus = computed(() => deal.value?.products?.map((li) => li.sku).filter((s): s is string => !!s) ?? [])
-function onProductsSaved(skus: string[]) {
+function onProductsSaved(payload: DealProductsPayload) {
   const d = deal.value; if (!d) return
-  setDealProducts(d.id, skus)
+  setDealProductsFull(d.id, payload)
+  productDrawerOpen.value = false
   successToast(t('Products updated'))
 }
 
@@ -295,29 +298,38 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <!-- Won: view or create the linked transaction -->
-        <button v-else-if="!isArchived && isWon" class="btn-enterprise btn-enterprise--primary" @click="onCreateSalesOrder">
-          {{ isConverted ? t('View sales order') : t('Create sales order') }}
-        </button>
+        <!-- Won (not yet converted): create the sales order. A converted Won deal has
+             no primary — its sales order lives in the Sales orders tab. -->
+        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openSoDrawer">{{ t('Create sales order') }}</button>
         <!-- Lost: reopen -->
         <button v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</button>
         <!-- Archived: restore -->
-        <button v-else class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</button>
+        <button v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</button>
 
         <!-- Kebab -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton class="detail-icon-btn" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList v-if="!isArchived">
-              <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <MpPopoverList v-else>
-              <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
+          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <template v-if="isArchived">
+              <MpPopoverList>
+                <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </template>
+            <template v-else>
+              <!-- A Won deal can be moved back to an earlier stage, or marked Lost. -->
+              <MpPopoverList v-if="isWon">
+                <MpPopoverListItem @click="openReopen">{{ t('Move to stage…') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
+              </MpPopoverList>
+              <div v-if="isWon" :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </template>
           </MpPopoverContent>
         </MpPopover>
       </div>
@@ -558,7 +570,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <input v-model="fileSearch" class="filter-search-input" type="text" :placeholder="t('Search files…')" />
                   <button v-if="fileSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="fileSearch = ''"><MpIcon name="close" size="sm" /></button>
                 </div>
-                <MpButton variant="tertiary" is-rounded left-icon="upload" @click="pickFiles">{{ t('Upload file') }}</MpButton>
+                <MpButton variant="tertiary" is-rounded @click="pickFiles">{{ t('Upload file') }}</MpButton>
                 <input ref="fileInput" type="file" multiple class="deal-files-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.doc,.docx" @change="onFileInput" />
               </div>
             </div>
@@ -663,9 +675,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
     />
     <ConfirmModal
       v-model:is-open="reopenConfirmOpen"
-      :title="t('Reopen this lost deal?')"
-      :description="t('The deal returns to an active ongoing stage and rejoins the pipeline.')"
-      :confirm-label="t('Reopen deal')"
+      :title="t('Move this deal back to an ongoing stage?')"
+      :description="t('The deal reopens into an active ongoing stage and rejoins the pipeline.')"
+      :confirm-label="t('Move deal')"
       :is-danger="false"
       @confirm="confirmReopen"
     />
@@ -695,11 +707,11 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @created="onTxCreated"
     />
 
-    <!-- ── Add products (shared Select product drawer) ── -->
-    <SelectProductDrawer
-      v-model:open="productDrawerOpen"
-      :products="dealProductPicker"
-      :model-value="selectedProductSkus"
+    <!-- ── Add / edit products (full-screen line-items + totals editor) ── -->
+    <CrmEditProductsDrawer
+      :open="productDrawerOpen"
+      :deal="deal"
+      @close="productDrawerOpen = false"
       @save="onProductsSaved"
     />
 

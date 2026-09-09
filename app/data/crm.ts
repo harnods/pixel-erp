@@ -724,9 +724,9 @@ export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?:
   if (!d) return { ok: false, error: 'Deal not found.' }
   if (d.archived) return { ok: false, error: 'Restore this deal before changing its stage.' }
   if (d.stage === stage) return { ok: true }
-  if (d.stage === 'Won') return { ok: false, error: 'Won is terminal — this deal cannot move to another stage.' }
-  if (d.stage === 'Lost' && !(ONGOING_STAGES as readonly string[]).includes(stage)) {
-    return { ok: false, error: 'A Lost deal can only be reopened to an ongoing stage.' }
+  // A closed deal (Won/Lost) can be moved back to an ongoing stage, or Won → Lost.
+  if ((d.stage === 'Won' || d.stage === 'Lost') && !(ONGOING_STAGES as readonly string[]).includes(stage) && stage !== 'Lost') {
+    return { ok: false, error: 'A closed deal can only be moved back to an ongoing stage.' }
   }
   if (stage === 'Lost' && !opts.lostReason?.trim()) return { ok: false, error: 'A Lost reason is required.' }
   const from = d.stage
@@ -755,27 +755,39 @@ export function restoreDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
   d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
 }
-/** SCM catalog → PickerProduct list for the "Add product" drawer (keyed by sku,
- *  matching SelectProductDrawer's PickerProduct). */
-export const dealProductPicker = CATALOG.map((c) => ({ sku: c.sku, name: c.name, img: c.img, desc: c.desc, unit: c.unit }))
-
-function catalogLineBySku(sku: string): DealLineItem | null {
-  const c = CATALOG.find((x) => x.sku === sku)
-  if (!c) return null
-  return { productId: c.id, productName: c.name, sku: c.sku, description: c.desc, image: c.img, unit: c.unit, quantity: 1, originalPrice: c.price, discountType: 'none', discount: 0 }
+/** Payload from the Deal "Add product" full-screen editor (the embedded sales-order
+ *  line-items + totals form). */
+export interface DealProductsPayload {
+  items: { product: string; sku: string; description: string; qty: number; unit: string; unitPrice: number; discountPct: number }[]
+  globalDiscountType: '%' | 'Rp'
+  globalDiscountValue: number
+  shippingFee: number
+  priceIncludesTax: boolean
 }
 
-/** Reconcile a deal's products to the given catalog skus (from the Select product
- *  drawer): keep existing lines (qty etc.), add new ones, drop removed. */
-export function setDealProducts(id: string, skus: string[]): DealOpResult {
+/** Write the edited products + commercial totals back onto a deal. Line items map by
+ *  catalog sku (for productId + photo); PPN stays 11% (the form's fixed tax). */
+export function setDealProductsFull(id: string, p: DealProductsPayload): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
-  const existing = new Map((d.products ?? []).map((li) => [li.sku, li]))
-  d.products = skus.map((sku) => existing.get(sku) ?? catalogLineBySku(sku)).filter((li): li is DealLineItem => !!li)
-  // A product-less deal carries no commercial adjustments; add defaults once it has products.
-  if (d.products.length) {
-    if (d.taxType == null && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
-    if (d.shippingFee == null) d.shippingFee = 100_000
-  }
+  d.products = p.items.map((it) => {
+    const cat = CATALOG.find((c) => c.sku === it.sku)
+    return {
+      productId: cat?.id ?? it.sku,
+      productName: it.product,
+      sku: it.sku || undefined,
+      description: it.description || undefined,
+      image: cat?.img,
+      unit: it.unit,
+      quantity: it.qty,
+      originalPrice: it.unitPrice,
+      discountType: it.discountPct ? 'percentage' : 'none',
+      discount: it.discountPct,
+    }
+  })
+  d.orderDiscountType = p.globalDiscountType === 'Rp' ? 'fixed' : 'percentage'
+  d.orderDiscount = p.globalDiscountValue
+  d.shippingFee = p.shippingFee
+  if (d.products.length && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
   d.lastActivity = DEAL_TODAY
   persistCrmDeals(); return { ok: true }
 }

@@ -33,6 +33,9 @@ export interface SalesFormPrefill {
   warehouse?: string
   tags?: string[]
   shippingFee?: number
+  globalDiscountType?: '%' | 'Rp'
+  globalDiscountValue?: number
+  priceIncludesTax?: boolean
   items?: SalesFormPrefillItem[]
 }
 
@@ -56,6 +59,8 @@ export function dealToSalesPrefill(d: Deal): SalesFormPrefill {
     warehouse: d.warehouse,
     tags: d.tags ? [...d.tags] : [],
     shippingFee: d.shippingFee,
+    globalDiscountType: d.orderDiscountType === 'fixed' ? 'Rp' : '%',
+    globalDiscountValue: d.orderDiscount ?? 0,
     items: (d.products ?? []).map((li) => ({
       product: li.productName,
       sku: li.sku,
