@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import {
-  MpToggle, MpIcon, MpInput, MpSelect, MpRadio, MpBadge, MpSpinner, toast,
+  MpToggle, MpIcon, MpInput, MpRadio, MpBadge, MpSpinner, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody,
   MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
-import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
 
 /**
  * `embedded` = rendered inside the CRM Settings shell (not the ERP Settings page).
@@ -107,6 +107,9 @@ const AMOUNT_DISPLAY_OPTIONS = [
   { value: 'abbreviated', label: t('Abbreviated'), example: 'Rp2 jt' },
 ]
 const CURRENCY_OPTIONS = [{ value: 'idr', label: t('Indonesian Rupiah (Rp)') }]
+const baseCurrencyLabel = computed(
+  () => CURRENCY_OPTIONS.find((c) => c.value === draftAdvanced.baseCurrency)?.label ?? '—',
+)
 const amountDisplayLabel = computed(
   () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === advanced.amountDisplay)?.label ?? '—',
 )
@@ -336,16 +339,14 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ t('Company info') }}</h2>
-          <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
           v-if="!props.embedded"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
+          class="btn-enterprise btn-enterprise--secondary"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
         >
           {{ t('Edit') }}
-          <img :src="shortcutIcon" class="cp-shortcut-icon" alt="" />
         </button>
       </div>
 
@@ -389,14 +390,12 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'tax' ? t('Edit tax info') : t('Tax info') }}</h2>
-          <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
           v-if="editing !== 'tax' && !props.embedded"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('tax')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
@@ -404,20 +403,14 @@ const ADVANCED_TOGGLES = [
       <!-- Read mode -->
       <template v-if="editing !== 'tax'">
         <ContentList :label="t('Company type')" :value="tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)')" />
-        <div class="cp-subhead cp-subhead--spaced">
-          <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-          <MpBadge for="tableStatus" :type="tax.npwpValidated ? 'completed' : 'announcement'" size="sm">
-            {{ tax.npwpValidated ? t('Validated') : t('Not validated') }}
-          </MpBadge>
-        </div>
-        <p class="cp-subhead-desc">{{ t('NPWP details') }}</p>
         <div class="cp-grid">
           <ContentList label="NPWP" :value="tax.npwp || '—'" />
           <ContentList label="NITKU" :value="tax.nitku || '—'" />
         </div>
         <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
-             and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
-        <template v-if="tax.npwpValidated">
+             and only for PKP businesses — Non-PKP companies don't issue e-Faktur.
+             Excluded from the CRM (embedded) surface per the CRM Settings PRD §5.2.2. -->
+        <template v-if="tax.npwpValidated && !props.embedded">
           <template v-if="tax.companyType === 'pkp'">
             <div class="cp-subhead cp-subhead--spaced">
               <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
@@ -460,7 +453,7 @@ const ADVANCED_TOGGLES = [
 
           <div class="cp-subhead cp-subhead--spaced">
             <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-            <MpBadge for="tableStatus" :type="draftTax.npwpValidated ? 'completed' : 'announcement'" size="sm">
+            <MpBadge for="additionalInformation" :type="draftTax.npwpValidated ? 'completed' : 'announcement'">
               {{ draftTax.npwpValidated ? t('Validated') : t('Not validated') }}
             </MpBadge>
           </div>
@@ -591,14 +584,12 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'payment' ? t('Edit payment info') : t('Payment info') }}</h2>
-          <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
           v-if="editing !== 'payment' && !props.embedded"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('payment')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
@@ -660,14 +651,12 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
-          <p class="cp-section-desc">{{ t('System-wide settings for transactions, approvals, and currencies.') }}</p>
         </div>
         <button
           v-if="editing !== 'advanced'"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('advanced')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
@@ -709,16 +698,20 @@ const ADVANCED_TOGGLES = [
       <div v-else class="cp-form cp-form--currency">
         <MpFormControl id="cp-base-currency" class="cp-form-field--half">
           <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
-          <MpSelect id="cp-base-currency-select" :model-value="draftAdvanced.baseCurrency" :is-disabled="true">
-            <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-          </MpSelect>
+          <MpInput id="cp-base-currency-input" :model-value="baseCurrencyLabel" is-full-width is-disabled />
           <span class="cp-help">{{ t('Base currency cannot be changed after it is used in transactions') }}</span>
         </MpFormControl>
         <MpFormControl id="cp-amount-display" class="cp-form-field--half">
           <MpFormLabel>{{ t('Amount display') }}</MpFormLabel>
-          <MpSelect id="cp-amount-display-select" :model-value="draftAdvanced.amountDisplay" @change="(_e: Event, v: string) => (draftAdvanced.amountDisplay = v)">
-            <option v-for="o in AMOUNT_DISPLAY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </MpSelect>
+          <ErpFilterSelect
+            id="cp-amount-display-select"
+            :model-value="draftAdvanced.amountDisplay"
+            :placeholder="t('Amount display')"
+            :options="AMOUNT_DISPLAY_OPTIONS"
+            :is-clearable="false"
+            width="288px"
+            @update:model-value="(v: string) => (draftAdvanced.amountDisplay = v)"
+          />
           <span class="cp-help">{{ t('e.g.') }} {{ draftAmountDisplayExample }}</span>
         </MpFormControl>
         <div class="cp-action-bar">
@@ -738,9 +731,15 @@ const ADVANCED_TOGGLES = [
         <MpModalBody>
           <MpFormControl id="cp-mc-base-currency" is-required class="cp-mc-currency">
             <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
-            <MpSelect id="cp-mc-base-currency-select" :model-value="mcBaseCurrency" @change="(_e: Event, v: string) => (mcBaseCurrency = v)">
-              <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-            </MpSelect>
+            <ErpFilterSelect
+              id="cp-mc-base-currency-select"
+              :model-value="mcBaseCurrency"
+              :placeholder="t('Base currency')"
+              :options="CURRENCY_OPTIONS"
+              :is-clearable="false"
+              width="288px"
+              @update:model-value="(v: string) => (mcBaseCurrency = v)"
+            />
           </MpFormControl>
           <h3 class="cp-mc-terms-title">{{ t('Activation terms') }}</h3>
           <ol class="cp-mc-terms">
@@ -905,13 +904,8 @@ const ADVANCED_TOGGLES = [
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.cp-section-desc {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
-}
 
-.cp-divider { grid-column: 1 / -1; height: 1px; background: var(--mp-border-default); }
+.cp-divider { grid-column: 1 / -1; height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 /* ─── Sub-headings (Tax identity / Coretax info) ───────────────────────────── */
 .cp-subhead { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -965,7 +959,6 @@ const ADVANCED_TOGGLES = [
 .cp-logo-img { display: block; height: var(--mp-sizes-6); width: auto; margin-top: var(--mp-spacing-1); }
 
 /* Shortcut arrow (↗) on the Company info Edit button — same asset as the sidebar */
-.cp-shortcut-icon { width: var(--mp-sizes-4); height: var(--mp-sizes-4); }
 
 /* ─── Forms ─────────────────────────────────────────────────────────────────── */
 .cp-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }

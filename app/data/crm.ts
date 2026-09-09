@@ -563,23 +563,30 @@ export const CRM_TEAM_MODULES = [
 ] as const
 export type CrmTeamModule = typeof CRM_TEAM_MODULES[number]['key']
 
+export type CrmTeamStatus = 'active' | 'inactive'
+
 export interface CrmTeam {
   id: string
   name: string
   description: string
   memberIds: string[]          // employees.id (EMP-000x)
+  adminIds: string[]           // Team Admins — always a subset of memberIds
   modules: CrmTeamModule[]
+  status: CrmTeamStatus        // Active / Inactive (no hard delete in V1)
+  createdAt: string            // ISO datetime — drives the Created time cell
+  createdBy: string            // author who created the team
   updatedAt: string            // ISO datetime — drives the Last updated cell
   updatedBy: string            // author name
 }
 
 const TEAMS_SEED: CrmTeam[] = [
-  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], modules: ['deals'], updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
-  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        modules: [],        updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], adminIds: ['EMP-0001'], modules: ['deals'], status: 'active', createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        adminIds: ['EMP-0005'], modules: [],        status: 'active', createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
 ]
 
-export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v1', TEAMS_SEED))
-export function persistCrmTeams() { saveSnapshot('crm-teams-v1', crmTeams) }
+// Storage key bumped to v2 — the Team shape gained status/adminIds/createdAt.
+export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v2', TEAMS_SEED))
+export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
 
 /** Member picker options — active employees as { id, name, subtitle=jobPosition }. */
 export const crmTeamMemberOptions = computed(() =>
@@ -599,16 +606,31 @@ export function teamNamesForPerson(name: string): string[] {
   return crmTeams.filter((t) => t.memberIds.includes(emp.id)).map((t) => t.name)
 }
 
-/** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy. */
+/** Case-insensitive team-name uniqueness within the company (PRD §5.6/§5.8). */
+export function crmTeamNameExists(name: string, excludeId?: string): boolean {
+  const n = name.trim().toLowerCase()
+  return crmTeams.some((t) => t.id !== excludeId && t.name.trim().toLowerCase() === n)
+}
+
+/** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy; sets
+ *  createdAt/createdBy on create. adminIds are always coerced to a subset of
+ *  memberIds (a Team Admin must be a member — PRD §5.8). */
 export function upsertCrmTeam(
-  input: { id?: string; name: string; description: string; memberIds: string[]; modules: CrmTeamModule[] },
+  input: { id?: string; name: string; description: string; memberIds: string[]; adminIds: string[]; modules: CrmTeamModule[]; status?: CrmTeamStatus },
   author: string,
   now: string,
 ): CrmTeam {
+  const memberIds = [...input.memberIds]
+  const adminIds = input.adminIds.filter((id) => memberIds.includes(id))
   if (input.id) {
     const t = crmTeams.find((x) => x.id === input.id)
     if (t) {
-      Object.assign(t, { name: input.name, description: input.description, memberIds: [...input.memberIds], modules: [...input.modules], updatedAt: now, updatedBy: author })
+      Object.assign(t, {
+        name: input.name, description: input.description,
+        memberIds, adminIds, modules: [...input.modules],
+        status: input.status ?? t.status,
+        updatedAt: now, updatedBy: author,
+      })
       persistCrmTeams()
       return t
     }
@@ -617,16 +639,20 @@ export function upsertCrmTeam(
   const created: CrmTeam = {
     id: `TEAM-${String(nextNum).padStart(2, '0')}`,
     name: input.name, description: input.description,
-    memberIds: [...input.memberIds], modules: [...input.modules],
+    memberIds, adminIds, modules: [...input.modules],
+    status: input.status ?? 'active',
+    createdAt: now, createdBy: author,
     updatedAt: now, updatedBy: author,
   }
   crmTeams.push(created)
   persistCrmTeams()
   return created
 }
-export function deleteCrmTeam(id: string): void {
-  const i = crmTeams.findIndex((t) => t.id === id)
-  if (i !== -1) { crmTeams.splice(i, 1); persistCrmTeams() }
+
+/** Activate / deactivate a team (reversible lifecycle — no hard delete in V1). */
+export function setCrmTeamStatus(id: string, status: CrmTeamStatus, author: string, now: string): void {
+  const t = crmTeams.find((x) => x.id === id)
+  if (t) { t.status = status; t.updatedAt = now; t.updatedBy = author; persistCrmTeams() }
 }
 
 // ── Modules (Settings → Modules settings) ─────────────────────────────────────
@@ -1093,6 +1119,7 @@ export function addDealComment(dealId: string, text: string, author = 'You'): Cr
 export interface CrmContactPerson {
   id: string                 // 'CT-001'
   name: string
+  fullName: string           // legal / full name (Display name is the short label)
   jobTitle: string
   email: string
   phone: string
@@ -1112,6 +1139,10 @@ export interface CrmCompany {
   city: string
   province: string
   postalCode: string
+  country?: string
+  billingAddress?: string    // full billing address (composed); shown on detail
+  shippingAddress?: string
+  fax?: string
   owner: string
   contactIds: string[]       // member contacts (M2M)
   primaryContactId?: string  // required when the company has >1 contact
@@ -1138,6 +1169,7 @@ const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
   city: c.city,
   province: provinceFor(c.city),
   postalCode: `${10000 + i * 110}`,
+  billingAddress: `Jl. Jenderal Sudirman No. ${12 + i}, ${c.city}, ${provinceFor(c.city)} ${10000 + i * 110}`,
   owner: c.owner,
   contactIds: [`CT-${String(i + 1).padStart(3, '0')}`],
   primaryContactId: `CT-${String(i + 1).padStart(3, '0')}`,
@@ -1146,6 +1178,7 @@ const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
 const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
   id: `CT-${String(i + 1).padStart(3, '0')}`,
   name: c.contact,
+  fullName: c.contact,
   jobTitle: jobTitleFor(c.contact),
   email: c.email,
   phone: c.phone,
@@ -1157,7 +1190,7 @@ const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
 //  • CT-100 is a group buyer associated with TWO companies (M2M).
 //  • CO-001 gains a second contact (CT-100) — CT-001 stays primary (multi-contact company).
 _contactSeed.push({
-  id: 'CT-100', name: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
+  id: 'CT-100', name: 'Bagus Prasetyo', fullName: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
   email: 'bagus.prasetyo@centralperk.co.id', phone: '021-5550100',
   companyIds: ['CO-001', 'CO-002'], owner: 'Fajar Nugroho', createdAt: '2026-02-01', lastActivity: '2026-02-27',
 })
@@ -1197,7 +1230,7 @@ function nextId(prefix: string, list: { id: string }[]): string {
   const n = list.reduce((m, x) => Math.max(m, Number(x.id.replace(`${prefix}-`, '')) || 0), 0) + 1
   return `${prefix}-${String(n).padStart(3, '0')}`
 }
-export function addCrmContactPerson(input: { name: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string }, now: string): CrmContactPerson {
+export function addCrmContactPerson(input: { name: string; fullName: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string }, now: string): CrmContactPerson {
   const person: CrmContactPerson = { id: nextId('CT', crmContactPeople), ...input, companyIds: [...input.companyIds], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10) }
   crmContactPeople.push(person)
   // keep the reverse link + primary rule coherent
@@ -1227,6 +1260,37 @@ export function addCrmCompany(input: { name: string; industry: string; email: st
 export function setPrimaryContact(companyId: string, contactId: string): void {
   const co = getCompany(companyId)
   if (co && co.contactIds.includes(contactId)) { co.primaryContactId = contactId; persistCrmCompanies() }
+}
+
+/**
+ * Delete a contact person and strip it out of every company's reverse link.
+ * When the deleted contact was a company's primary, promote the next remaining
+ * contact (or clear it if none left).
+ */
+export function deleteCrmContactPerson(id: string): void {
+  const i = crmContactPeople.findIndex((c) => c.id === id)
+  if (i === -1) return
+  crmContactPeople.splice(i, 1)
+  for (const co of crmCompanies) {
+    const j = co.contactIds.indexOf(id)
+    if (j !== -1) co.contactIds.splice(j, 1)
+    if (co.primaryContactId === id) co.primaryContactId = co.contactIds[0]
+  }
+  persistCrmContactPeople(); persistCrmCompanies()
+}
+
+/**
+ * Delete a company and strip it out of every contact's reverse link.
+ */
+export function deleteCrmCompany(id: string): void {
+  const i = crmCompanies.findIndex((c) => c.id === id)
+  if (i === -1) return
+  crmCompanies.splice(i, 1)
+  for (const p of crmContactPeople) {
+    const j = p.companyIds.indexOf(id)
+    if (j !== -1) p.companyIds.splice(j, 1)
+  }
+  persistCrmCompanies(); persistCrmContactPeople()
 }
 
 // ── Notes / comments — attach to a contact OR a company (unified store) ──

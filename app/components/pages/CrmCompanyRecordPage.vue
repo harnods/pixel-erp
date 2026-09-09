@@ -10,11 +10,13 @@ import { MpIcon, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
+import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
+import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   getCompany, contactsOfCompany, isPrimaryContact, setPrimaryContact, dealsForCompany,
@@ -53,6 +55,37 @@ function makePrimary(contactId: string) {
   primaryTick.value++
   successToast(t('Primary contact updated'))
 }
+
+// ── Activity log (shared modal, rule/activity-log-modal) ──
+const activityOpen = ref(false)
+const lastUpdatedDisplay = computed(() => {
+  if (!company.value) return ''
+  const { at, by } = lastUpdatedFor(company.value.id)
+  const d = new Date(at)
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return `${t('Last updated by')} ${by} ${t('on')} ${date}, ${time} (GMT+7)`
+})
+const activityEntries = computed<ActivityEntry[]>(() => {
+  const co = company.value
+  if (!co) return []
+  const upd = lastUpdatedFor(co.id)
+  const created: ActivityEntry = {
+    date: new Date(co.createdAt).toISOString(), user: co.owner || upd.by, activity: 'Created',
+    details: [
+      { label: t('Company name'), value: co.name },
+      { label: t('Industry'), value: co.industry || '—' },
+      { label: t('Email'), value: co.email || '—' },
+      { label: t('Phone'), value: co.phone || '—' },
+      { label: t('Website'), value: co.website || '—' },
+    ],
+  }
+  const updated: ActivityEntry = {
+    date: upd.at, user: upd.by, activity: 'Updated',
+    details: [{ label: t('Company'), value: co.name }],
+  }
+  return [updated, created]
+})
 </script>
 
 <template>
@@ -176,7 +209,17 @@ function makePrimary(contactId: string) {
           </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
+
+      <a class="cd-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
     </div>
+
+    <!-- Activity log (shared audit-trail modal) -->
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="company.name"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
   </div>
 
   <div v-else class="cr-missing">
@@ -193,7 +236,7 @@ function makePrimary(contactId: string) {
 .detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); text-decoration: none; }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -202,7 +245,7 @@ function makePrimary(contactId: string) {
 .detail-title-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .cr-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* Summary key/value grid */
 .cr-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-2); max-width: 900px; }
@@ -210,7 +253,7 @@ function makePrimary(contactId: string) {
 /* Stats bar (shared stat-card idiom) */
 .cr-stats { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
-.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
 .stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
@@ -221,8 +264,8 @@ function makePrimary(contactId: string) {
 .cr-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* Contacts list */
-.cr-list { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
-.cr-contact { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.cr-list { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
+.cr-contact { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cr-contact:last-child { border-bottom: none; }
 .cr-contact-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .cr-contact-name { font-weight: var(--mp-font-weights-medium, 500); }
@@ -230,10 +273,10 @@ function makePrimary(contactId: string) {
 .cr-set-primary { font-size: var(--mp-font-sizes-sm); }
 
 /* Deals list */
-.cr-deals { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
+.cr-deals { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
 .cr-deals-head, .cr-deal-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
-.cr-deals-head { background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
-.cr-deal-row { border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cr-deals-head { background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.cr-deal-row { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cr-deal-row:last-child { border-bottom: none; }
 .cr-deal-name { display: flex; flex-direction: column; min-width: 0; }
 .cr-deal-name .cell-link { font-weight: var(--mp-font-weights-medium, 500); }
@@ -242,6 +285,9 @@ function makePrimary(contactId: string) {
 
 .cell-link { color: var(--mp-text-link); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.cd-updated { align-self: flex-start; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
+.cd-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .cr-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: 80px; color: var(--mp-text-secondary); }
 </style>

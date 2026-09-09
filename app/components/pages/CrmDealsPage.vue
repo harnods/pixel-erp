@@ -41,6 +41,7 @@ import {
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
+const { t } = useLocale()
 const router = useRouter()
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
@@ -88,7 +89,7 @@ const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const m = dealMetrics
-const convTargetShort = computed(() => (dealConversionTarget.value === 'Sales Quote' ? 'Sales Quotes' : 'Sales Orders'))
+const convTargetShort = computed(() => (dealConversionTarget.value === 'Sales Quote' ? t('Sales Quotes') : t('Sales Orders')))
 
 // ── Saved views (PRD system views) ──
 const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently modified', 'Won', 'Lost', 'Archived'] as const
@@ -98,8 +99,8 @@ const savedView = ref<SavedView>('All records')
 // ── View toggle (list default per PRD) ──
 const view = ref<'table' | 'board'>('table')
 const viewOptions = [
-  { value: 'table', icon: 'table-view-list', label: 'List view' },
-  { value: 'board', icon: 'table-view-column', label: 'Board view' },
+  { value: 'table', icon: 'table-view-list', label: t('List view') },
+  { value: 'board', icon: 'table-view-column', label: t('Board view') },
 ]
 
 // ── Metric click-through filter ──
@@ -182,7 +183,7 @@ const reopenConfirmOpen = ref(false)
 function requestStageMove(id: string, stage: DealStage) {
   const d = getDeal(id)
   if (!d || d.stage === stage) return
-  if (d.stage === 'Won') { infoToast('Won is terminal — this deal cannot change stage.'); return }
+  if (d.stage === 'Won') { infoToast(t('Won is terminal — this deal cannot change stage.')); return }
   pendingMove.value = { id, stage }
   if (stage === 'Lost') { openStageModalForLost([id]) }
   else if (stage === 'Won') { wonConfirmOpen.value = true }
@@ -191,8 +192,8 @@ function requestStageMove(id: string, stage: DealStage) {
 }
 function commitMove(id: string, stage: DealStage, lostReason?: string) {
   const r = moveDealStage(id, stage, { lostReason })
-  if (r.ok) successToast(`Deal moved to ${stage}`)
-  else infoToast(r.error ?? 'Could not change stage')
+  if (r.ok) successToast(`${t('Deal moved to')} ${stage}`)
+  else infoToast(r.error ?? t('Could not change stage'))
   pendingMove.value = null
 }
 function confirmWon() { const p = pendingMove.value; if (p) commitMove(p.id, 'Won'); wonConfirmOpen.value = false }
@@ -215,7 +216,7 @@ function onStageModalConfirm(payload: { stage: DealStage; lostReason?: string })
     commitMove(ids[0]!, payload.stage, payload.lostReason)
   } else {
     const res = bulkChangeStage(ids, payload.stage, { lostReason: payload.lostReason })
-    reportBulk(res, `stage → ${payload.stage}`)
+    reportBulk(res, `${t('stage')} → ${payload.stage}`)
   }
   stageModalOpen.value = false
 }
@@ -234,9 +235,9 @@ function openPreview(d: Deal) { previewDeal.value = d; previewOpen.value = true 
  *  → Lost move carries a default reason (editable later on the detail page). */
 function onPreviewMove(d: Deal, stage: DealStage) {
   previewOpen.value = false
-  const r = moveDealStage(d.id, stage, stage === 'Lost' ? { lostReason: 'Marked as lost' } : {})
-  if (r.ok) successToast(`Deal moved to ${stage}`)
-  else infoToast(r.error ?? 'Could not change stage')
+  const r = moveDealStage(d.id, stage, stage === 'Lost' ? { lostReason: t('Marked as lost') } : {})
+  if (r.ok) successToast(`${t('Deal moved to')} ${stage}`)
+  else infoToast(r.error ?? t('Could not change stage'))
 }
 
 // ── Bulk actions ──
@@ -253,79 +254,79 @@ function openBulkStage(selected: Set<number>) {
 }
 function onBulkOwner(owner: string) {
   const res = bulkChangeOwner(bulkIds.value, owner)
-  reportBulk(res, `owner → ${owner}`)
+  reportBulk(res, `${t('owner')} → ${owner}`)
   ownerModalOpen.value = false
 }
 function reportBulk(res: { ok: boolean }[], what: string) {
   const ok = res.filter((r) => r.ok).length
   const failed = res.length - ok
-  if (failed === 0) successToast(`${ok} ${ok === 1 ? 'deal' : 'deals'} updated (${what})`)
-  else infoToast(`${ok} updated, ${failed} skipped (${what})`)
+  if (failed === 0) successToast(`${ok} ${ok === 1 ? t('deal') : t('deals')} ${t('updated')} (${what})`)
+  else infoToast(`${ok} ${t('updated')}, ${failed} ${t('skipped')} (${what})`)
 }
 
 // ── Create (quick drawer) / Edit (full-detail page) ──
 const quickOpen = ref(false)
 function openCreate() { quickOpen.value = true }
-function onQuickSaved(d: Deal) { quickOpen.value = false; successToast('Deal created'); goDetail(d.id) }
+function onQuickSaved(d: Deal) { quickOpen.value = false; successToast(t('Deal created')); goDetail(d.id) }
 function onQuickOpenFull(seed: DealDraftSeed) { dealDraftSeed.value = seed; quickOpen.value = false; router.push('/crm/deals/new') }
 // The detailed form is a PAGE (PRD) — Edit navigates there.
 function openEdit(d: Deal) { router.push(`/crm/deals/${d.id}/edit`) }
 
 // ── Archive / Restore / Delete + Convert (row menu) ──
-function onArchive(d: Deal) { archiveDeal(d.id); successToast('Deal archived') }
-function onRestore(d: Deal) { restoreDeal(d.id); successToast('Deal restored') }
+function onArchive(d: Deal) { archiveDeal(d.id); successToast(t('Deal archived')) }
+function onRestore(d: Deal) { restoreDeal(d.id); successToast(t('Deal restored')) }
 const deleteConfirmOpen = ref(false)
 const deleteTarget = ref<Deal | null>(null)
 function askDelete(d: Deal) { deleteTarget.value = d; deleteConfirmOpen.value = true }
 function confirmDelete() {
-  if (deleteTarget.value) { deleteDeal(deleteTarget.value.id); successToast('Deal deleted') }
+  if (deleteTarget.value) { deleteDeal(deleteTarget.value.id); successToast(t('Deal deleted')) }
   deleteConfirmOpen.value = false; deleteTarget.value = null
 }
 function onConvert(d: Deal) {
   const r = convertDeal(d.id)
-  if (r.ok) successToast(`${r.target} ${r.salesOrderId} created`)
-  else infoToast(r.error ?? 'Conversion could not start')
+  if (r.ok) successToast(`${r.target} ${r.salesOrderId} ${t('created')}`)
+  else infoToast(r.error ?? t('Conversion could not start'))
 }
 
 // ── Import / Export ──
 const importOpen = ref(false)
 function onImportUpload(files: File[]) {
   importOpen.value = false
-  successToast(`${files.length} file${files.length === 1 ? '' : 's'} queued for import`)
+  successToast(`${files.length} ${files.length === 1 ? t('file') : t('files')} ${t('queued for import')}`)
 }
 const exportOpen = ref(false)
 const exportColumns = [
-  { key: 'name', label: 'Deal name' }, { key: 'stage', label: 'Stage' }, { key: 'company', label: 'Customer' },
-  { key: 'owner', label: 'Deal owner' }, { key: 'value', label: 'Expected deal value' }, { key: 'currency', label: 'Currency' },
-  { key: 'expectedCloseDate', label: 'Due date' }, { key: 'conversion', label: 'Conversion status' },
-  { key: 'salesOrderId', label: 'Linked ERP transaction' }, { key: 'lastActivity', label: 'Last updated' },
+  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
+  { key: 'owner', label: t('Deal owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
+  { key: 'expectedCloseDate', label: t('Due date') }, { key: 'conversion', label: t('Conversion status') },
+  { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
-function onExport() { exportOpen.value = false; successToast('Export ready — check your downloads') }
+function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
 
 // ── Badges ──
 function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'; label: string } {
   switch (stage) {
-    case 'Won':         return { type: 'completed',   label: 'Won' }
-    case 'Lost':        return { type: 'announcement', label: 'Lost' }
-    case 'Negotiation': return { type: 'warning',     label: 'Negotiation' }
-    case 'Proposal':    return { type: 'warning',     label: 'Proposal' }
-    case '1st Meeting': return { type: 'information',  label: '1st Meeting' }
-    default:            return { type: 'information',  label: 'Open Lead' }
+    case 'Won':         return { type: 'completed',   label: t('Won') }
+    case 'Lost':        return { type: 'announcement', label: t('Lost') }
+    case 'Negotiation': return { type: 'warning',     label: t('Negotiation') }
+    case 'Proposal':    return { type: 'warning',     label: t('Proposal') }
+    case '1st Meeting': return { type: 'information',  label: t('1st Meeting') }
+    default:            return { type: 'information',  label: t('Open Lead') }
   }
 }
 // ── Columns — the 6 defaults, plus optional PRD columns hidden by default and
 // toggleable from Column settings. ──
 const baseColumns: TableColumn[] = [
-  { key: 'id',      label: 'Number',    kind: 'default', sortable: true, sortType: 'text'   },
-  { key: 'name',    label: 'Deal name', kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'company', label: 'Customer',  kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'stage',   label: 'Stage',     kind: 'status',  sortable: true, sortType: 'text'   },
-  { key: 'owner',   label: 'Deal owner', kind: 'name',   sortable: true, sortType: 'text'   },
-  { key: 'value',   label: 'Value',     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'id',      label: t('Number'),    kind: 'default', sortable: true, sortType: 'text'   },
+  { key: 'name',    label: t('Deal name'), kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'company', label: t('Customer'),  kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'stage',   label: t('Stage'),     kind: 'status',  sortable: true, sortType: 'text'   },
+  { key: 'owner',   label: t('Deal owner'), kind: 'name',   sortable: true, sortType: 'text'   },
+  { key: 'value',   label: t('Value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
-  { key: 'expectedCloseDate', label: 'Due date',     kind: 'date',    sortable: true, sortType: 'text' },
-  { key: 'lastActivity',      label: 'Last updated', kind: 'default', sortable: true, sortType: 'text' },
+  { key: 'expectedCloseDate', label: t('Due date'),     kind: 'date',    sortable: true, sortType: 'text' },
+  { key: 'lastActivity',      label: t('Last updated'), kind: 'default', sortable: true, sortType: 'text' },
 ]
 const allCols: TableColumn[] = [...baseColumns, ...optionalColumns]
 const columnVisibility = reactive<Record<string, boolean>>(
@@ -343,12 +344,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
     <!-- ── Title bar ── -->
     <header class="crm-titlebar">
       <div class="crm-titlebar__left">
-        <h1 class="crm-title">Deals</h1>
+        <h1 class="crm-title">{{ t('Deals') }}</h1>
       </div>
       <div class="crm-titlebar__right">
         <MpButtonGroup>
-          <MpButton variant="secondary" is-rounded @click="importOpen = true">Import</MpButton>
-          <MpButton variant="primary" is-rounded left-icon="add" @click="openCreate">New deal</MpButton>
+          <MpButton variant="secondary" is-rounded @click="importOpen = true">{{ t('Import') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="openCreate">{{ t('New deal') }}</MpButton>
         </MpButtonGroup>
       </div>
     </header>
@@ -358,29 +359,29 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <div class="cc-stats">
         <div class="stats-section">
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
-            <div class="stat-title">Total ongoing deals</div>
+            <div class="stat-title">{{ t('Total ongoing deals') }}</div>
             <div class="stat-amount">{{ m.totalOngoing }}</div>
-            <div class="stat-sub">In the pipeline</div>
+            <div class="stat-sub">{{ t('In the pipeline') }}</div>
           </button>
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
-            <div class="stat-title">Total deal value</div>
+            <div class="stat-title">{{ t('Total deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.totalOngoingValue, 'IDR') }}</div>
-            <div class="stat-sub">Ongoing, base currency</div>
+            <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
           </button>
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
-            <div class="stat-title">Closing this month</div>
+            <div class="stat-title">{{ t('Closing this month') }}</div>
             <div class="stat-amount">{{ m.closingThisMonthCount }}</div>
             <div class="stat-sub">{{ formatMoney(m.closingThisMonthValue, 'IDR') }}</div>
           </button>
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
-            <div class="stat-title">Overdue</div>
+            <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
-            <div class="stat-sub">Past due date</div>
+            <div class="stat-sub">{{ t('Past due date') }}</div>
           </button>
           <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
-            <div class="stat-title">{{ convTargetShort }} created</div>
+            <div class="stat-title">{{ convTargetShort }} {{ t('created') }}</div>
             <div class="stat-amount">{{ m.txnCreatedPast30Count }}</div>
-            <div class="stat-sub">Past 30 days</div>
+            <div class="stat-sub">{{ t('Past 30 days') }}</div>
           </button>
         </div>
       </div>
@@ -391,7 +392,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <ErpFilterSelect
             id="deal-saved-view"
             :model-value="savedView"
-            placeholder="View"
+            :placeholder="t('View')"
             :options="[...SAVED_VIEWS]"
             :is-clearable="false"
             @update:model-value="(v: string) => (savedView = v as SavedView)"
@@ -399,7 +400,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <ErpFilterSelect
             id="deal-stage-filter"
             :model-value="statusFilter"
-            placeholder="Stage"
+            :placeholder="t('Stage')"
             :options="[...DEAL_STAGES]"
             @update:model-value="(v: string) => (statusFilter = v)"
           />
@@ -408,18 +409,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
         <div class="filter-right">
           <ErpIconSegmented id="deal-view-switch" v-model="view" :options="viewOptions" />
           <MpButtonGroup class="filter-btn-group">
-            <MpTooltip label="Ask Airene" placement="bottom">
-              <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" aria-label="Ask Airene" is-rounded @click="toggleAirene?.()" />
+            <MpTooltip :label="t('Ask Airene')" placement="bottom">
+              <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
             </MpTooltip>
             <ColumnSettingsMenu v-if="view === 'table'" id="deal-columns" :items="columnItems" :visibility="columnVisibility" />
-            <MpTooltip label="Export" placement="bottom">
-              <MpButton variant="ghost" left-icon="download" aria-label="Export" is-rounded @click="exportOpen = true" />
+            <MpTooltip :label="t('Export')" placement="bottom">
+              <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
             </MpTooltip>
           </MpButtonGroup>
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" placeholder="Search deals…" />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search deals…')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
           </div>
         </div>
       </div>
@@ -447,7 +448,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
                 class="deal"
                 :class="{ 'deal--dragging': draggingId === d.id, 'deal--locked': d.stage === 'Won' }"
                 role="button" tabindex="0" :draggable="d.stage !== 'Won'"
-                :aria-label="`${d.name}. Press M to move stage, Enter to preview.`"
+                :aria-label="`${d.name}. ${t('Press M to move stage, Enter to preview.')}`"
                 @dragstart="onDragStart(d)"
                 @dragend="onDragEnd"
                 @click="openPreview(d)"
@@ -463,13 +464,13 @@ const toggleAirene = inject<() => void>('toggleAirene')
                     <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
                   </span>
-                  <span v-if="isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`Open for ${agingDays(d)} days`">{{ agingDays(d) }}d</span>
+                  <span v-if="isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
                 </div>
               </article>
-              <p v-if="!col.cards.length" class="kcol__empty">No deals</p>
+              <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
             <footer class="kcol__foot">
-              <span class="kcol__total-k">Total:</span>
+              <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>
           </section>
@@ -489,9 +490,9 @@ const toggleAirene = inject<() => void>('toggleAirene')
         :loading="loading"
         :search="search"
         :has-active-filter="hasActiveFilter"
-        filter-empty-label="deal"
+        :filter-empty-label="t('deal')"
         has-checkbox
-        bulk-label="deal"
+        :bulk-label="t('deal')"
         @page-change="setPage"
         @per-page-change="setPerPage"
         @sort="toggleSort"
@@ -505,7 +506,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
         <template #cell-name="{ row }">
           <span class="cell-link cell-text" @click.stop="goDetail(asDeal(row).id)">{{ asDeal(row).name }}</span>
-          <span v-if="asDeal(row).archived" class="cc-sub cell-text">Archived</span>
+          <span v-if="asDeal(row).archived" class="cc-sub cell-text">{{ t('Archived') }}</span>
         </template>
 
         <template #cell-company="{ row }">
@@ -530,41 +531,41 @@ const toggleAirene = inject<() => void>('toggleAirene')
         <template #actions="{ row }">
           <MpPopover :id="`deal-actions-${asDeal(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <MpButton variant="ghost" left-icon="menu-kebab" aria-label="More actions" is-rounded />
+              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
               <MpPopoverList>
-                <MpPopoverListItem @click="goDetail(asDeal(row).id)">View details</MpPopoverListItem>
+                <MpPopoverListItem @click="goDetail(asDeal(row).id)">{{ t('View details') }}</MpPopoverListItem>
                 <template v-if="!asDeal(row).archived">
-                  <MpPopoverListItem @click="openEdit(asDeal(row))">Edit</MpPopoverListItem>
-                  <MpPopoverListItem @click="openStageModal(asDeal(row))">Change stage</MpPopoverListItem>
+                  <MpPopoverListItem @click="openEdit(asDeal(row))">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="openStageModal(asDeal(row))">{{ t('Change stage') }}</MpPopoverListItem>
                   <MpPopoverListItem
                     v-if="asDeal(row).conversion === 'none' && asDeal(row).products?.length"
                     @click="onConvert(asDeal(row))"
-                  >Create {{ dealConversionTarget }}</MpPopoverListItem>
+                  >{{ t('Create') }} {{ dealConversionTarget }}</MpPopoverListItem>
                 </template>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem v-if="asDeal(row).archived" @click="onRestore(asDeal(row))">Restore</MpPopoverListItem>
-                <MpPopoverListItem v-else @click="onArchive(asDeal(row))">Archive</MpPopoverListItem>
-                <MpPopoverListItem @click="askDelete(asDeal(row))">Delete</MpPopoverListItem>
+                <MpPopoverListItem v-if="asDeal(row).archived" @click="onRestore(asDeal(row))">{{ t('Restore') }}</MpPopoverListItem>
+                <MpPopoverListItem v-else @click="onArchive(asDeal(row))">{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="askDelete(asDeal(row))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </template>
 
         <template #bulk-actions="{ selectedRows }">
-          <button type="button" class="erp-bulk-action" @click="openBulkOwner(selectedRows as Set<number>)">Change owner</button>
-          <button type="button" class="erp-bulk-action" @click="openBulkStage(selectedRows as Set<number>)">Change stage</button>
+          <button type="button" class="erp-bulk-action" @click="openBulkOwner(selectedRows as Set<number>)">{{ t('Change owner') }}</button>
+          <button type="button" class="erp-bulk-action" @click="openBulkStage(selectedRows as Set<number>)">{{ t('Change stage') }}</button>
         </template>
 
         <template #empty>
           <div class="cc-empty">
             <img :src="'/illustrations/empty-folder.png'" alt="" class="cc-empty-illustration" width="288" height="240" />
-            <p class="cc-empty-title">No deals</p>
-            <p class="cc-empty-desc">Create a deal to start tracking an opportunity.</p>
-            <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">New deal</MpButton>
+            <p class="cc-empty-title">{{ t('No deals') }}</p>
+            <p class="cc-empty-desc">{{ t('Create a deal to start tracking an opportunity.') }}</p>
+            <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">{{ t('New deal') }}</MpButton>
           </div>
         </template>
       </ErpTablePage>
@@ -597,34 +598,34 @@ const toggleAirene = inject<() => void>('toggleAirene')
     <CrmDealOwnerModal :open="ownerModalOpen" :count="bulkIds.length" @close="ownerModalOpen = false" @confirm="onBulkOwner" />
     <ConfirmModal
       v-model:is-open="wonConfirmOpen"
-      title="Mark this deal as Won?"
-      description="Won is a terminal stage — once set, the deal can’t move to another stage."
-      confirm-label="Mark as Won"
+      :title="t('Mark this deal as Won?')"
+      :description="t('Won is a terminal stage — once set, the deal can’t move to another stage.')"
+      :confirm-label="t('Mark as Won')"
       :is-danger="false"
       @confirm="confirmWon"
     />
     <ConfirmModal
       v-model:is-open="reopenConfirmOpen"
-      title="Reopen this lost deal?"
-      description="The deal returns to an active ongoing stage and rejoins the pipeline."
-      confirm-label="Reopen deal"
+      :title="t('Reopen this lost deal?')"
+      :description="t('The deal returns to an active ongoing stage and rejoins the pipeline.')"
+      :confirm-label="t('Reopen deal')"
       :is-danger="false"
       @confirm="confirmReopen"
     />
     <ConfirmModal
       v-model:is-open="deleteConfirmOpen"
-      title="Delete this deal?"
-      description="This permanently removes the deal and its history. This can’t be undone."
-      confirm-label="Delete deal"
+      :title="t('Delete deal?')"
+      :description="t('Deleted deal cannot be restored.')"
+      :confirm-label="t('Delete deal')"
       @confirm="confirmDelete"
     />
 
     <!-- ── Import / Export ── -->
-    <ImportSpreadsheetModal :open="importOpen" title="Import deals" @close="importOpen = false" @upload="onImportUpload" />
+    <ImportSpreadsheetModal :open="importOpen" :title="t('Import deals')" @close="importOpen = false" @upload="onImportUpload" />
     <ExportModal
       :open="exportOpen"
-      title="Export deals"
-      entity-label="deals"
+      :title="t('Export deals')"
+      :entity-label="t('deals')"
       :columns="exportColumns"
       :total="source.length"
       @close="exportOpen = false"
@@ -662,7 +663,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
-.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-card:hover .stat-title { color: var(--mp-text-link); }
 .stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
 .stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
@@ -679,12 +680,10 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .cc-filterbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-/* Icon tools (Airene · Column settings · Export) form a flush toolbar — no gap.
-   `.filter-btn-group` is passed onto the MpButtonGroup root, so it lands on the
-   SAME element as `.mp-pixel-button-group` (not a descendant) — the gap override
-   must target this element directly, not a `:deep()` child. */
-.filter-btn-group { display: flex; align-items: center; gap: 0 !important; }
-.filter-btn-group :deep(.mp-pixel-button-group) { gap: 0 !important; }
+/* Icon tools (Airene · Column settings · Export) sit in one MpButtonGroup at the
+   group's default 8px gap (rule/filter-bar-icon-group + rule/btn-group-gap-8 — no
+   flush/gap:0 override). */
+.filter-btn-group { display: flex; align-items: center; }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 @media (max-width: 640px) {
   .cc-filterbar { flex-wrap: wrap; }
@@ -692,11 +691,11 @@ const toggleAirene = inject<() => void>('toggleAirene')
 }
 
 /* Pill search */
-.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
 .search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-full, 999px); }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-icon-default, #536062); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-icon-default, #536062); }
 
 /* ── Table cell helpers ── */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -709,12 +708,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 /* Bulk-bar action buttons (sm secondary look — bulk bar only) */
 .erp-bulk-action { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
-.erp-bulk-action:hover { background: var(--mp-background-neutral-hovered); }
+.erp-bulk-action:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Kanban board (swimlanes fill the stage height) ── */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }
 .kanban__board { display: flex; gap: var(--mp-spacing-4); align-items: stretch; min-height: 100%; height: 100%; }
-.kcol { flex: 0 0 288px; width: 288px; display: flex; flex-direction: column; min-height: 0; background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default); border-radius: 12px; transition: background 0.12s ease, border-color 0.12s ease; }
+.kcol { flex: 0 0 288px; width: 288px; display: flex; flex-direction: column; min-height: 0; background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 12px; transition: background 0.12s ease, border-color 0.12s ease; }
 .kcol--over { background: var(--mp-background-brand-subtle, #e8f5f0); border-color: var(--mp-border-brand, #0a6e4e); }
 .kcol__head { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-2); }
 .kcol__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -726,7 +725,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .kcol__total-v { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
 /* ── Deal card ── */
-.deal { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: 8px; cursor: pointer; }
+.deal { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; cursor: pointer; }
 .deal:hover { border-color: var(--mp-border-bold, #8c9596); }
 .deal:focus-visible { outline: 2px solid var(--mp-border-brand, #0a6e4e); outline-offset: 1px; }
 .deal--locked { cursor: pointer; }

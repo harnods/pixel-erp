@@ -15,7 +15,6 @@
 import { ref, computed } from 'vue'
 import {
   MpIcon, MpButton, MpButtonGroup, css, toast,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
@@ -36,6 +35,7 @@ import {
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const deal = computed(() => getDeal(props.orderId))
 const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
@@ -69,7 +69,6 @@ const isFailed = computed(() => deal.value?.conversion === 'failed')
 const isArchived = computed(() => !!deal.value?.archived)
 const convTarget = computed(() => deal.value?.convertedTarget ?? dealConversionTarget.value)
 
-const activeTab = ref<number>(0)
 
 // ── Stage progress ──
 const FORWARD_STAGES: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
@@ -94,8 +93,8 @@ function onStageConfirm(payload: { stage: DealStage; lostReason?: string }) {
 function commit(stage: DealStage, lostReason?: string) {
   const d = deal.value; if (!d) return
   const r = moveDealStage(d.id, stage, { lostReason })
-  if (r.ok) successToast(`Stage changed to ${stage}`)
-  else infoToast(r.error ?? 'Could not change stage')
+  if (r.ok) successToast(`${t('Stage changed to')} ${stage}`)
+  else infoToast(r.error ?? t('Could not change stage'))
 }
 function confirmWon() { if (pendingStage.value) commit('Won'); wonConfirmOpen.value = false; pendingStage.value = null }
 function confirmReopen() { if (pendingStage.value) commit(pendingStage.value); reopenConfirmOpen.value = false; pendingStage.value = null }
@@ -119,19 +118,19 @@ function confirmConvert() {
     isConvertOpen.value = false
     successToast(`${result.target} created`)
   } else {
-    convertError.value = result.error ?? 'Conversion validation failed.'
+    convertError.value = result.error ?? t('Conversion validation failed.')
   }
 }
 
 // ── Archive / restore / delete ──
 const archiveConfirmOpen = ref(false)
-function confirmArchive() { const d = deal.value; if (d) { archiveDeal(d.id); successToast('Deal archived') } archiveConfirmOpen.value = false }
-function onRestore() { const d = deal.value; if (d) { restoreDeal(d.id); successToast('Deal restored') } }
+function confirmArchive() { const d = deal.value; if (d) { archiveDeal(d.id); successToast(t('Deal archived')) } archiveConfirmOpen.value = false }
+function onRestore() { const d = deal.value; if (d) { restoreDeal(d.id); successToast(t('Deal restored')) } }
 const deleteConfirmOpen = ref(false)
 function confirmDelete() {
   const d = deal.value
   deleteConfirmOpen.value = false
-  if (d) { deleteDeal(d.id); successToast('Deal deleted'); router.push('/crm') }
+  if (d) { deleteDeal(d.id); successToast(t('Deal deleted')); router.push('/crm') }
 }
 
 // ── Badges ──
@@ -149,7 +148,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
   <div class="detail-page" v-if="deal">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="router.push('/crm')">Deals</button>
+        <button class="detail-breadcrumb" type="button" @click="router.push('/crm')">{{ t('Deals') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ deal.name }}</h1>
           <ErpStatusBadge v-bind="dealStageBadge(deal.stage)" />
@@ -158,23 +157,23 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         </div>
       </div>
       <div class="dd-bar-actions">
-        <template v-if="!deal.archived">
-          <MpButton variant="primary" is-rounded @click="onCreateSalesOrder">Create sales order</MpButton>
+        <MpButtonGroup v-if="!deal.archived">
           <MpPopover id="dd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <MpButton class="dd-kebab" is-rounded aria-label="More actions"><MpIcon name="menu-kebab" size="md" /></MpButton>
+              <MpButton class="dd-kebab" is-rounded :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="stageModalOpen = true">Move to…</MpPopoverListItem>
-                <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">Edit</MpPopoverListItem>
-                <MpPopoverListItem @click="archiveConfirmOpen = true">Archive</MpPopoverListItem>
-                <MpPopoverListItem @click="deleteConfirmOpen = true">Delete</MpPopoverListItem>
+                <MpPopoverListItem @click="stageModalOpen = true">{{ t('Move to…') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-        </template>
-        <MpButton v-else variant="secondary" is-rounded @click="onRestore">Restore</MpButton>
+          <MpButton variant="primary" is-rounded @click="onCreateSalesOrder">{{ t('Create sales order') }}</MpButton>
+        </MpButtonGroup>
+        <MpButton v-else variant="secondary" is-rounded @click="onRestore">{{ t('Restore') }}</MpButton>
       </div>
     </header>
 
@@ -182,31 +181,31 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <!-- ── Summary metrics ── -->
       <section class="cd-summary">
         <div class="cd-metric">
-          <span class="cd-metric-label">Expected value</span>
+          <span class="cd-metric-label">{{ t('Expected value') }}</span>
           <span class="cd-metric-value">{{ money(dealExpectedValue(deal)) }}</span>
-          <span class="cd-metric-sub">{{ deal.valueOverridden ? 'Manual override' : 'Calculated' }}</span>
+          <span class="cd-metric-sub">{{ deal.valueOverridden ? t('Manual override') : t('Calculated') }}</span>
         </div>
         <div class="cd-metric">
-          <span class="cd-metric-label">Due date</span>
+          <span class="cd-metric-label">{{ t('Due date') }}</span>
           <span class="cd-metric-value cd-metric-value--sm">{{ deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—' }}</span>
-          <span class="cd-metric-sub">Expected close</span>
+          <span class="cd-metric-sub">{{ t('Expected close') }}</span>
         </div>
         <div class="cd-metric">
-          <span class="cd-metric-label">Deal owner</span>
+          <span class="cd-metric-label">{{ t('Deal owner') }}</span>
           <span class="cd-metric-value cd-metric-value--sm">{{ deal.owner }}</span>
-          <span class="cd-metric-sub">Deal owner</span>
+          <span class="cd-metric-sub">{{ t('Deal owner') }}</span>
         </div>
         <div class="cd-metric">
-          <span class="cd-metric-label">Currency</span>
+          <span class="cd-metric-label">{{ t('Currency') }}</span>
           <span class="cd-metric-value cd-metric-value--sm">{{ deal.currency }}<template v-if="deal.currency !== 'IDR'"> · {{ deal.exchangeRate }}</template></span>
-          <span class="cd-metric-sub">{{ deal.currency === 'IDR' ? 'Base currency' : 'Exchange rate' }}</span>
+          <span class="cd-metric-sub">{{ deal.currency === 'IDR' ? t('Base currency') : t('Exchange rate') }}</span>
         </div>
       </section>
 
       <!-- Archived banner -->
       <div v-if="isArchived" class="dd-banner dd-banner--muted">
         <MpIcon name="info" size="md" variant="fill" />
-        <span>This deal is archived — hidden from active views and metrics. Restore it to edit, change stage, or convert.</span>
+        <span>{{ t('This deal is archived — hidden from active views and metrics. Restore it to edit, change stage, or convert.') }}</span>
       </div>
       <!-- Failed-conversion banner -->
       <div v-if="isFailed" class="dd-banner dd-banner--warn">
@@ -216,7 +215,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <!-- Post-conversion notice -->
       <div v-if="isConverted" class="dd-banner dd-banner--muted">
         <MpIcon name="info" size="md" variant="fill" />
-        <span>This deal is linked to {{ convTarget }} {{ deal.salesOrderId }}. Editing the deal does not update the ERP transaction.</span>
+        <span>{{ t('This deal is linked to') }} {{ convTarget }} {{ deal.salesOrderId }}. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
       </div>
 
       <!-- Stage progress -->
@@ -232,40 +231,33 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         </div>
         <div v-if="isLost" class="dd-step dd-step--lost">
           <span class="dd-step-dot" />
-          <span class="dd-step-label">Lost</span>
+          <span class="dd-step-label">{{ t('Lost') }}</span>
         </div>
       </section>
 
       <!-- Last updated — opens the activity log (mirrors Sales Invoice detail) -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ deal.lastModifiedBy || deal.createdBy || 'System' }} on {{ formatDateTime(deal.lastActivity) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ deal.lastModifiedBy || deal.createdBy || 'System' }} {{ t('on') }} {{ formatDateTime(deal.lastActivity) }}</a>
 
-      <MpTabs id="deal-detail-tabs" v-model="activeTab" is-manual variant-color="green" class="detail-tabs">
-        <MpTabList>
-          <MpTab>Deal details</MpTab>
-          <MpTab>Activity log</MpTab>
-        </MpTabList>
-
-        <MpTabPanels>
-          <!-- ── Deal details ── -->
-          <MpTabPanel>
-            <div class="cd-panel">
+      <!-- Deal details (the audit trail lives in ActivityLogModal, opened from the
+           "Last updated by…" link above — rule/activity-log-modal + activity-log-trigger). -->
+      <div class="cd-panel">
               <!-- Deal overview -->
               <section class="cd-section">
-                <h2 class="cd-section-title">Deal overview</h2>
+                <h2 class="cd-section-title">{{ t('Deal overview') }}</h2>
                 <div class="cd-grid">
-                  <ContentList label="Deal name" :value="deal.name" />
-                  <ContentList label="Deal number" :value="deal.id" />
-                  <ContentList label="Customer">
+                  <ContentList :label="t('Deal name')" :value="deal.name" />
+                  <ContentList :label="t('Deal number')" :value="deal.id" />
+                  <ContentList :label="t('Customer')">
                     <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
                     <span v-else>{{ deal.company }}</span>
                   </ContentList>
-                  <ContentList label="Stage"><ErpStatusBadge v-bind="dealStageBadge(deal.stage)" /></ContentList>
-                  <ContentList label="Deal owner" :value="deal.owner" />
-                  <ContentList label="Related people" :value="deal.relatedPeople?.length ? deal.relatedPeople.join(', ') : '—'" />
-                  <ContentList label="Reference number" :value="deal.referenceNumber || '—'" />
-                  <ContentList label="Due date" :value="deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—'" />
-                  <ContentList v-if="isLost" label="Lost reason" :value="deal.lostReason || '—'" />
-                  <ContentList label="Created">
+                  <ContentList :label="t('Stage')"><ErpStatusBadge v-bind="dealStageBadge(deal.stage)" /></ContentList>
+                  <ContentList :label="t('Deal owner')" :value="deal.owner" />
+                  <ContentList :label="t('Related people')" :value="deal.relatedPeople?.length ? deal.relatedPeople.join(', ') : '—'" />
+                  <ContentList :label="t('Reference number')" :value="deal.referenceNumber || '—'" />
+                  <ContentList :label="t('Due date')" :value="deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '—'" />
+                  <ContentList v-if="isLost" :label="t('Lost reason')" :value="deal.lostReason || '—'" />
+                  <ContentList :label="t('Created')">
                     <div class="dd-created">
                       <span>{{ formatDateTime(deal.createdAt) }}</span>
                       <span class="dd-created-by">{{ deal.createdBy || 'System' }}</span>
@@ -273,18 +265,18 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   </ContentList>
                 </div>
                 <div v-if="deal.description" class="cd-desc">
-                  <span class="cd-desc-label">Description</span>
+                  <span class="cd-desc-label">{{ t('Description') }}</span>
                   <p class="cd-desc-text">{{ deal.description }}</p>
                 </div>
               </section>
 
               <!-- Contact information -->
               <section class="cd-section">
-                <h2 class="cd-section-title">Contact information</h2>
+                <h2 class="cd-section-title">{{ t('Contact information') }}</h2>
                 <div class="cd-grid">
-                  <ContentList label="PIC name" :value="deal.picName || customer?.contact || '—'" />
-                  <ContentList label="Phone numbers" :value="deal.phones?.length ? deal.phones.join(', ') : (customer?.phone || '—')" />
-                  <ContentList label="Email">
+                  <ContentList :label="t('PIC name')" :value="deal.picName || customer?.contact || '—'" />
+                  <ContentList :label="t('Phone numbers')" :value="deal.phones?.length ? deal.phones.join(', ') : (customer?.phone || '—')" />
+                  <ContentList :label="t('Email')">
                     <a v-if="deal.email || customer?.email" class="cell-link" :href="`mailto:${deal.email || customer?.email}`">{{ deal.email || customer?.email }}</a>
                     <span v-else>—</span>
                   </ContentList>
@@ -293,10 +285,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 
               <!-- Products and value -->
               <section class="cd-section cd-section--wide">
-                <h2 class="cd-section-title">Products and value</h2>
+                <h2 class="cd-section-title">{{ t('Products and value') }}</h2>
                 <div v-if="deal.products?.length" class="dd-table">
                   <div class="dd-thead dd-trow--lines">
-                    <span>Product</span><span class="dd-num">Qty</span><span class="dd-num">Original price</span><span class="dd-num">Discounted</span><span class="dd-num">Subtotal</span>
+                    <span>{{ t('Product') }}</span><span class="dd-num">{{ t('Qty') }}</span><span class="dd-num">{{ t('Original price') }}</span><span class="dd-num">{{ t('Discounted') }}</span><span class="dd-num">{{ t('Subtotal') }}</span>
                   </div>
                   <div v-for="(li, i) in deal.products" :key="i" class="dd-trow dd-trow--lines">
                     <span class="cell-text">{{ li.productName }} <span class="cd-muted">· {{ li.unit }}</span></span>
@@ -306,57 +298,22 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                     <span class="dd-num">{{ money(lineSubtotal(li)) }}</span>
                   </div>
                 </div>
-                <p v-else class="cd-muted">No products on this deal.</p>
+                <p v-else class="cd-muted">{{ t('No products on this deal.') }}</p>
 
                 <div v-if="deal.tax || deal.orderDiscount || deal.shippingFee || deal.otherExpense" class="cd-valuegrid">
-                  <ContentList v-if="deal.tax" label="Tax" :value="deal.taxType === 'percentage' ? `${deal.tax}%` : money(deal.tax)" />
-                  <ContentList v-if="deal.orderDiscount" label="Order discount" :value="deal.orderDiscountType === 'percentage' ? `${deal.orderDiscount}%` : money(deal.orderDiscount)" />
-                  <ContentList v-if="deal.shippingFee" label="Shipping fee" :value="money(deal.shippingFee)" />
-                  <ContentList v-if="deal.otherExpense" label="Other expense" :value="money(deal.otherExpense)" />
+                  <ContentList v-if="deal.tax" :label="t('Tax')" :value="deal.taxType === 'percentage' ? `${deal.tax}%` : money(deal.tax)" />
+                  <ContentList v-if="deal.orderDiscount" :label="t('Order discount')" :value="deal.orderDiscountType === 'percentage' ? `${deal.orderDiscount}%` : money(deal.orderDiscount)" />
+                  <ContentList v-if="deal.shippingFee" :label="t('Shipping fee')" :value="money(deal.shippingFee)" />
+                  <ContentList v-if="deal.otherExpense" :label="t('Other expense')" :value="money(deal.otherExpense)" />
                 </div>
               </section>
 
               <!-- Notes -->
               <section v-if="deal.notes" class="cd-section">
-                <h2 class="cd-section-title">Notes</h2>
+                <h2 class="cd-section-title">{{ t('Notes') }}</h2>
                 <p class="cd-desc-text">{{ deal.notes }}</p>
               </section>
-            </div>
-          </MpTabPanel>
-
-          <!-- ── Activity log ── -->
-          <MpTabPanel>
-            <div class="cd-panel">
-              <section class="cd-section">
-                <h2 class="cd-section-title">Activity log</h2>
-                <ol class="dd-timeline">
-                  <li v-if="isConverted" class="dd-tl-item">
-                    <span class="dd-tl-dot" />
-                    <div class="dd-tl-body">
-                      <span class="dd-tl-title">Converted to {{ convTarget }} {{ deal.salesOrderId }}</span>
-                      <span class="dd-tl-time">{{ formatDateTime(deal.lastActivity) }}</span>
-                    </div>
-                  </li>
-                  <li class="dd-tl-item">
-                    <span class="dd-tl-dot" />
-                    <div class="dd-tl-body">
-                      <span class="dd-tl-title">Stage: {{ deal.stage }}</span>
-                      <span class="dd-tl-time">{{ formatDateTime(deal.lastActivity) }}</span>
-                    </div>
-                  </li>
-                  <li class="dd-tl-item">
-                    <span class="dd-tl-dot" />
-                    <div class="dd-tl-body">
-                      <span class="dd-tl-title">Deal created by {{ deal.createdBy || 'system' }}</span>
-                      <span class="dd-tl-time">{{ formatDateTime(deal.createdAt) }}</span>
-                    </div>
-                  </li>
-                </ol>
-              </section>
-            </div>
-          </MpTabPanel>
-        </MpTabPanels>
-      </MpTabs>
+      </div>
     </div>
 
     <!-- ── Activity log ── -->
@@ -375,33 +332,33 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
     <CrmDealStageModal :open="stageModalOpen" :count="1" :allowed-stages="stageAllowed" @close="stageModalOpen = false" @confirm="onStageConfirm" />
     <ConfirmModal
       v-model:is-open="wonConfirmOpen"
-      title="Mark this deal as Won?"
-      description="Won is a terminal stage — once set, the deal can’t move to another stage."
-      confirm-label="Mark as Won"
+      :title="t('Mark this deal as Won?')"
+      :description="t('Won is a terminal stage — once set, the deal can’t move to another stage.')"
+      :confirm-label="t('Mark as Won')"
       :is-danger="false"
       @confirm="confirmWon"
     />
     <ConfirmModal
       v-model:is-open="reopenConfirmOpen"
-      title="Reopen this lost deal?"
-      description="The deal returns to an active ongoing stage and rejoins the pipeline."
-      confirm-label="Reopen deal"
+      :title="t('Reopen this lost deal?')"
+      :description="t('The deal returns to an active ongoing stage and rejoins the pipeline.')"
+      :confirm-label="t('Reopen deal')"
       :is-danger="false"
       @confirm="confirmReopen"
     />
     <ConfirmModal
       v-model:is-open="archiveConfirmOpen"
-      title="Archive this deal?"
-      description="It will be hidden from active views and metrics. History and any ERP link are preserved, and you can restore it later."
-      confirm-label="Archive deal"
+      :title="t('Archive this deal?')"
+      :description="t('It will be hidden from active views and metrics. History and any ERP link are preserved, and you can restore it later.')"
+      :confirm-label="t('Archive deal')"
       :is-danger="false"
       @confirm="confirmArchive"
     />
     <ConfirmModal
       v-model:is-open="deleteConfirmOpen"
-      title="Delete this deal?"
-      description="This permanently removes the deal and its history. This can’t be undone."
-      confirm-label="Delete deal"
+      :title="t('Delete deal?')"
+      :description="t('Deleted deal cannot be restored.')"
+      :confirm-label="t('Delete deal')"
       @confirm="confirmDelete"
     />
 
@@ -416,12 +373,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @close="closeConvert"
     >
       <MpModalContent>
-        <MpModalHeader>Create {{ dealConversionTarget }}?</MpModalHeader>
+        <MpModalHeader>{{ t('Create') }} {{ dealConversionTarget }}?</MpModalHeader>
         <MpModalBody>
           <p class="dd-modal-text">
-            This creates a draft {{ dealConversionTarget }} for <strong>{{ deal.company }}</strong> worth
-            <strong>{{ money(dealExpectedValue(deal)) }}</strong>, owned by <strong>{{ deal.owner }}</strong>.
-            The deal keeps one linked transaction — you can’t convert it again.
+            {{ t('This creates a draft') }} {{ dealConversionTarget }} {{ t('for') }} <strong>{{ deal.company }}</strong> {{ t('worth') }}
+            <strong>{{ money(dealExpectedValue(deal)) }}</strong>, {{ t('owned by') }} <strong>{{ deal.owner }}</strong>.
+            {{ t('The deal keeps one linked transaction — you can’t convert it again.') }}
           </p>
           <div v-if="convertError" class="dd-banner dd-banner--error">
             <MpIcon name="info" size="md" variant="fill" />
@@ -430,8 +387,8 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         </MpModalBody>
         <MpModalFooter>
           <MpButtonGroup>
-            <MpButton variant="ghost" is-rounded @click="closeConvert">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmConvert">Create {{ dealConversionTarget }}</MpButton>
+            <MpButton variant="ghost" is-rounded @click="closeConvert">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmConvert">{{ t('Create') }} {{ dealConversionTarget }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -441,19 +398,15 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 
   <div v-else class="cd-missing">
     <MpIcon name="document" size="lg" />
-    <p>Deal not found.</p>
-    <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm')">Back to Deals</button>
+    <p>{{ t('Deal not found.') }}</p>
+    <MpButton variant="secondary" is-rounded @click="router.push('/crm')">{{ t('Back to Deals') }}</MpButton>
   </div>
 </template>
 
 <style scoped>
-.detail-tabs { margin-top: 0; }
-.detail-tabs :deep(.mp-tab--isSelected_true), .detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
-.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
-.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -470,10 +423,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 }
 .dd-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 .cd-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--mp-spacing-6); align-items: stretch; }
-.cd-metric { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); padding-right: var(--mp-spacing-6); border-right: 1px solid var(--mp-border-default); min-width: 0; }
+.cd-metric { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); padding-right: var(--mp-spacing-6); border-right: 1px solid var(--mp-border-default, #e3e7e9); min-width: 0; }
 .cd-metric:last-child { border-right: none; }
 .cd-metric-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); white-space: nowrap; }
 .cd-metric-value { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -483,14 +436,14 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .dd-banner { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
 .dd-banner--warn { background: var(--mp-background-warning-subtle, #fef6e7); border: 1px solid var(--mp-border-warning, #f5c26b); color: var(--mp-text-warning, #b54708); }
 .dd-banner--error { background: var(--mp-background-danger-subtle, #fdecec); border: 1px solid var(--mp-border-danger, #f0a3a3); color: var(--mp-text-danger, #c9372c); margin-top: var(--mp-spacing-4); }
-.dd-banner--muted { background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default); color: var(--mp-text-secondary); }
+.dd-banner--muted { background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default, #e3e7e9); color: var(--mp-text-secondary); }
 
 /* Stage progress */
 .dd-progress { display: flex; align-items: flex-start; gap: 0; }
 .dd-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); position: relative; }
-.dd-step::before { content: ''; position: absolute; top: 6px; left: -50%; width: 100%; height: 2px; background: var(--mp-border-default); z-index: 0; }
+.dd-step::before { content: ''; position: absolute; top: 6px; left: -50%; width: 100%; height: 2px; background: var(--mp-border-default, #e3e7e9); z-index: 0; }
 .dd-step:first-child::before { display: none; }
-.dd-step-dot { width: 14px; height: 14px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #eef0f3); border: 2px solid var(--mp-border-default); position: relative; z-index: 1; }
+.dd-step-dot { width: 14px; height: 14px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #eef0f3); border: 2px solid var(--mp-border-default, #e3e7e9); position: relative; z-index: 1; }
 .dd-step-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
 .dd-step--done .dd-step-dot { background: var(--mp-border-selected, #029861); border-color: var(--mp-border-selected, #029861); }
 .dd-step--done .dd-step-label { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
@@ -517,21 +470,13 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* Activity timeline */
-.dd-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.dd-tl-item { display: flex; gap: var(--mp-spacing-3); padding-bottom: var(--mp-spacing-4); position: relative; }
-.dd-tl-item:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 14px; bottom: 0; width: 2px; background: var(--mp-border-default); }
-.dd-tl-dot { width: 12px; height: 12px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-border-selected, #029861); flex-shrink: 0; margin-top: 2px; position: relative; z-index: 1; }
-.dd-tl-body { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.dd-tl-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
-.dd-tl-time { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Related + line tables */
-.dd-table { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
+.dd-table { border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
 .dd-thead, .dd-trow { display: grid; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .dd-trow--lines { grid-template-columns: 2fr 0.6fr 1fr 1fr 1fr; }
-.dd-thead { background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
-.dd-trow { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
+.dd-thead { background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
+.dd-trow { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .dd-trow:last-child { border-bottom: none; }
 .dd-num { text-align: right; font-variant-numeric: tabular-nums; }
 

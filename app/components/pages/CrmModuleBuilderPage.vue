@@ -441,7 +441,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <div class="detail-titlerow-left">
           <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
         </div>
       </div>
     </header>
@@ -480,10 +480,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                   >
                     <span class="pipe-drag" aria-hidden="true"><MpIcon name="drag" size="md" /></span>
                     <MpInput :id="`stage-${s.id}`" v-model="s.name" class="pipe-stage-name" :aria-label="t('Stage name')" />
-                    <label class="pipe-default">
-                      <MpRadio :id="`default-${s.id}`" :is-checked="!!s.isDefault" @change="setDefaultStage(s.id)" />
-                      <span>{{ t('New deals enter here') }}</span>
-                    </label>
+                    <MpRadio :id="`default-${s.id}`" class="pipe-default" :is-checked="!!s.isDefault" @change="setDefaultStage(s.id)">{{ t('New deals enter here') }}</MpRadio>
                     <MpPopover :id="`stage-menu-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <MpButton class="builder-kebab" :aria-label="t('Stage options')"><MpIcon name="menu-kebab" size="md" /></MpButton>
@@ -577,8 +574,8 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                       <p v-if="removeErrors[f.id]" class="builder-inline-error">{{ removeErrors[f.id] }}</p>
                     </div>
                     <div class="builder-field-actions">
-                      <MpButton variant="ghost" is-rounded size="sm" @click="openEditField(f)">{{ t('Edit') }}</MpButton>
-                      <MpButton variant="ghost" is-rounded size="sm" @click="removeFieldFromLayout(f)">{{ t('Remove') }}</MpButton>
+                      <MpButton variant="ghost" is-rounded @click="openEditField(f)">{{ t('Edit') }}</MpButton>
+                      <MpButton variant="ghost" is-rounded @click="removeFieldFromLayout(f)">{{ t('Remove') }}</MpButton>
                     </div>
                   </div>
                 </div>
@@ -605,7 +602,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                   </div>
                   <span class="builder-chip">{{ t(typeLabel(f.type)) }}</span>
                   <div class="builder-unused-action">
-                    <MpButton variant="secondary" is-rounded size="sm" @click="openEditField(f)">{{ t('Add to layout') }}</MpButton>
+                    <MpButton variant="secondary" is-rounded @click="openEditField(f)">{{ t('Add to layout') }}</MpButton>
                   </div>
                 </li>
               </ul>
@@ -625,8 +622,8 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                   <span v-if="v.type === 'kanban'" class="builder-view-caption">{{ t('Categorized by') }} {{ fieldLabelOf(v.categorizeBy) }}</span>
                 </div>
                 <div class="builder-field-actions">
-                  <MpButton variant="ghost" is-rounded size="sm" @click="openEditView(v)">{{ t('Edit') }}</MpButton>
-                  <MpButton variant="ghost" is-rounded size="sm" @click="removeView(v)">{{ t('Remove') }}</MpButton>
+                  <MpButton variant="ghost" is-rounded @click="openEditView(v)">{{ t('Edit') }}</MpButton>
+                  <MpButton variant="ghost" is-rounded @click="removeView(v)">{{ t('Remove') }}</MpButton>
                 </div>
               </li>
             </ul>
@@ -727,7 +724,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="fieldModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveField">{{ fieldModalMode === 'edit' ? t('Save changes') : t('Add field') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveField">{{ fieldModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -750,7 +747,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="sectionModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveSection">{{ sectionModalMode === 'rename' ? t('Save changes') : t('Add section') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveSection">{{ sectionModalMode === 'rename' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -813,7 +810,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="viewModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveView">{{ viewModalMode === 'edit' ? t('Save changes') : t('Add view') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveView">{{ viewModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -825,7 +822,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 <style scoped>
 /* ── Shell (mirrors CrmSettingsPage / CrmCustomerDetailPage) ── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -839,11 +836,11 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* Section tabs — neutral-subtle bar below the title, OUTSIDE the white stage
    (rule/erp-tabs-pattern; mirrors the .page-tab pattern in [...slug].vue). */
-.page-tabs-bar { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); flex-shrink: 0; }
+.page-tabs-bar { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle, #f8f9f9); flex-shrink: 0; }
 .page-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; padding: var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); white-space: nowrap; }
 .page-tab:not(.page-tab--active):hover { color: var(--mp-text-default); }
 .page-tab--active { color: var(--mp-text-selected, #0f6d4d); font-weight: var(--mp-font-weights-semi-bold); }
@@ -894,18 +891,18 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Layout driver ── */
-.builder-driver { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-driver { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-driver-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .builder-driver-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-driver-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Section card ── */
-.builder-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .builder-section-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-4); }
 .builder-column { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.builder-field { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle); }
+.builder-field { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-field-main { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .builder-field-labelrow { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .builder-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -915,22 +912,22 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-field-actions { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
 .builder-section-foot { display: flex; }
 
-.builder-chip { display: inline-flex; align-items: center; background: var(--mp-background-neutral); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-sm); white-space: nowrap; }
-.builder-chip--soft { background: var(--mp-background-neutral-subtle); border: none; }
+.builder-chip { display: inline-flex; align-items: center; background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-sm); white-space: nowrap; }
+.builder-chip--soft { background: var(--mp-background-neutral-subtle, #f8f9f9); border: none; }
 
 .builder-add-section { display: flex; }
 
 /* ── Unused fields ── */
-.builder-unused { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-unused { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-unused-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-unused-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .builder-unused-list { list-style: none; margin: var(--mp-spacing-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.builder-unused-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle); }
+.builder-unused-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-unused-action { margin-left: auto; }
 
 /* ── Views ── */
-.builder-viewlist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
-.builder-viewrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.builder-viewlist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
+.builder-viewrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .builder-viewrow:last-child { border-bottom: none; }
 .builder-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .builder-view-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -956,7 +953,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-form-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-form-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .builder-option-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle); }
+.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-option-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .builder-option-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .builder-option-add :deep([data-pixel-component="MpInput"]) { flex: 1; }
