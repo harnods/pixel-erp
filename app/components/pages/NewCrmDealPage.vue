@@ -708,26 +708,9 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <!-- ── Footer ── ghost Cancel · primary Save ── -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
-
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
         <MpButton variant="primary" is-rounded @click="onSave">{{ isEdit ? t('Save changes') : t('Save') }}</MpButton>
       </MpButtonGroup>
 
