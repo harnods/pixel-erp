@@ -126,6 +126,10 @@ const pageRegistry: Record<string, Component> = {
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
+  // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
+  // The page itself is served by its tabs (User list / Custom role) — this entry
+  // keeps the key resolvable before a tab is picked.
+  'Users and roles':    defineAsyncComponent(() => import('~/components/pages/UsersListPage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
@@ -272,6 +276,12 @@ const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
+const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
+// The "New custom role" title-bar button lives here, but the drawer it opens is
+// rendered inside CustomRolesPage — the two talk through this shared intent.
+const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
+const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -614,6 +624,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateApprovalWorkflowPage, id: 'new' }
     if (segs.length >= 3 && segs[2] === 'edit') return { component: CreateApprovalWorkflowPage, id: segs[1]! }
   }
+  // /users-and-roles/invite → invite form; /:id/edit → edit access (same page).
+  // The bare index falls through to the tabbed User list / Custom role pages.
+  if (segs.length >= 2 && segs[0] === 'users-and-roles') {
+    if (segs[1] === 'invite') return { component: InviteUserPage, id: 'invite' }
+    if (segs.length >= 3 && segs[2] === 'edit') return { component: InviteUserPage, id: segs[1]! }
+  }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
@@ -923,6 +939,8 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
+  'Users and roles':   ['User list', 'Custom role'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1223,6 +1241,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  'Users and roles': {
+    'User list': UsersListPage,
+    'Custom role': CustomRolesPage,
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
@@ -1795,6 +1817,19 @@ function startResize(e: MouseEvent) {
             </svg>
             {{ t('New approval workflow') }}
           </button>
+        </div>
+        <!-- Settings → Users & roles: the create action follows the active tab. -->
+        <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
+          <MpButton
+            v-if="activeTab === 'Custom role'"
+            variant="primary" is-rounded left-icon="add"
+            @click="openCustomRoleCreate()"
+          >{{ t('New custom role') }}</MpButton>
+          <MpButton
+            v-else
+            variant="primary" is-rounded left-icon="add"
+            @click="router.push('/users-and-roles/invite')"
+          >{{ t('Invite user') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
