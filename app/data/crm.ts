@@ -1386,8 +1386,7 @@ export function setUserPermSet(id: string, perms: CrmPermSet) {
   if (import.meta.client) { try { localStorage.setItem(CRM_PERMS_KEY, JSON.stringify(crmUserPermSet)) } catch { /* ignore */ } }
 }
 
-/** The signed-in CRM user (demo). Their permissions gate every CRM action. */
-export const CRM_CURRENT_USER = 'Rizal Candra'
+/** currentUserPerms uses CRM_CURRENT_USER (declared once above). */
 export function currentUserPerms(): CrmPermSet { return permSetForUser(CRM_CURRENT_USER) }
 /** Can the signed-in user do `key` (a permission flag)? Reactive — re-reads the
  *  shared store, so gated buttons update the moment access is changed. */

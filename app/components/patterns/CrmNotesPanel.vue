@@ -15,7 +15,7 @@ import {
 import { notesFor, addCrmNote, updateCrmNote, deleteCrmNote, type CrmNoteEntity } from '~/data/crm'
 import { formatDateTime } from '~/utils/date'
 
-const props = defineProps<{ entityType: CrmNoteEntity; entityId: string; author?: string }>()
+const props = defineProps<{ entityType: CrmNoteEntity; entityId: string; author?: string; readOnly?: boolean }>()
 const { t } = useLocale()
 
 const currentUser = computed(() => props.author ?? 'Rizal Candra')
@@ -51,8 +51,8 @@ function isOwn(author: string): boolean { return author === currentUser.value }
 
 <template>
   <div class="notes">
-    <!-- Composer -->
-    <div class="notes-compose">
+    <!-- Composer (hidden for read-only access) -->
+    <div v-if="!readOnly" class="notes-compose">
       <MpTextarea id="crm-note-input" v-model="draft" :placeholder="t('Add a note…')" :rows="3" is-full-width />
       <div class="notes-compose-actions">
         <MpButton variant="secondary" is-rounded @click="submit">{{ t('Add note') }}</MpButton>
@@ -82,7 +82,7 @@ function isOwn(author: string): boolean { return author === currentUser.value }
 
         <!-- Own note → [⋯] menu (Edit · Delete) on the right -->
         <MpPopover
-          v-if="isOwn(n.author) && editingId !== n.id"
+          v-if="isOwn(n.author) && !readOnly && editingId !== n.id"
           :id="`note-menu-${n.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
         >
           <MpPopoverTrigger>

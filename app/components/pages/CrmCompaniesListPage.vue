@@ -18,11 +18,16 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmCompaniesFiltersDrawer, { emptyCompaniesFilters, type CompaniesFiltersValue } from '~/components/patterns/CrmCompaniesFiltersDrawer.vue'
-import { crmCompanies, contactsOfCompany, dealsForCompany, deleteCrmCompany, CRM_OWNERS, type CrmCompany } from '~/data/crm'
+import { crmCompanies, contactsOfCompany, dealsForCompany, deleteCrmCompany, can, CRM_CURRENT_USER, CRM_OWNERS, type CrmCompany } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
+
+// ── Permission gates (signed-in user) ──
+const canCreate = computed(() => can('companies.create'))
+const canEdit = computed(() => can('companies.edit'))
+const canViewAll = computed(() => can('companies.readAll'))
 
 function open(row: CompanyRow) { router.push(`/crm/customers/companies/${row.id}`) }
 function soon(what: string) { infoToast(`${what} — coming soon`) }
@@ -69,6 +74,8 @@ function onApplyFilters(f: CompaniesFiltersValue) { companyFilters.value = f; fi
 
 const toolbarFiltered = computed<CompanyRow[]>(() => rows.value.filter((r) => {
   const cf = companyFilters.value
+  // "Only my companies" access → hide records not owned by the signed-in user.
+  if (!canViewAll.value && r.owner !== CRM_CURRENT_USER) return false
   if (cf.owners.length) {
     const has = cf.owners.includes(r.owner)
     if (cf.ownerComparator === 'isAnyOf' && !has) return false
@@ -145,7 +152,7 @@ const deleteDescription = computed(() =>
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/companies/new')">{{ t('New company') }}</MpButton>
+        <MpButton v-if="canCreate" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/companies/new')">{{ t('New company') }}</MpButton>
       </div>
     </header>
 
@@ -158,7 +165,7 @@ const deleteDescription = computed(() =>
         :per-page="perPage"
         :sort-key="sortKey"
         :sort-dir="sortDir"
-        has-checkbox
+        :has-checkbox="canEdit"
         bulk-label="company"
         bulk-label-plural="companies"
         filter-empty-label="company"
@@ -218,8 +225,8 @@ const deleteDescription = computed(() =>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="open(row as unknown as CompanyRow)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="openDelete([(row as unknown as CompanyRow).id])">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="openDelete([(row as unknown as CompanyRow).id])">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

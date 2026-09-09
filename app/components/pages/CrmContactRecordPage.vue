@@ -18,13 +18,14 @@ import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
-import { getContactPerson, companiesOfContact, deleteCrmContactPerson } from '~/data/crm'
+import { getContactPerson, companiesOfContact, deleteCrmContactPerson, can } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 
+const canEdit = computed(() => can('contacts.edit'))
 const contact = computed(() => getContactPerson(props.orderId))
 const companies = computed(() => (contact.value ? companiesOfContact(contact.value.id) : []))
 // A CRM contact belongs to one company; prefer the one it's primary of, else the first.
@@ -90,7 +91,7 @@ function confirmDelete() {
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpPopover id="ct-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopover v-if="canEdit" id="ct-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
           </MpPopoverTrigger>
@@ -142,7 +143,7 @@ function confirmDelete() {
         <!-- ── Note ── -->
         <section class="cd-section cd-section--last">
           <h2 class="cd-section-title">{{ t('Note') }}</h2>
-          <CrmNotesPanel entity-type="contact" :entity-id="contact.id" />
+          <CrmNotesPanel entity-type="contact" :entity-id="contact.id" :read-only="!canEdit" />
         </section>
       </div>
 
