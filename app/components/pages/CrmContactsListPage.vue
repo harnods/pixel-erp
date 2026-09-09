@@ -41,7 +41,7 @@ const columns: TableColumn[] = [
   { key: 'name',         label: 'Name',         kind: 'name', sortable: true, sortType: 'text' },
   { key: 'company',      label: 'Company',      kind: 'name', sortable: true, sortType: 'text' },
   { key: 'email',        label: 'Email',        sortable: true, sortType: 'text' },
-  { key: 'phone',        label: 'Phone' },
+  { key: 'phone',        label: 'Mobile' },
   { key: 'owner',        label: 'Owner',        sortable: true, sortType: 'text' },
   { key: 'lastActivity', label: 'Last updated', kind: 'date', sortable: true, sortType: 'date' },
 ]

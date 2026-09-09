@@ -27,7 +27,7 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
   getCompany, contactsOfCompany, dealsForCompany, isDealOpen,
-  deleteCrmCompany, deleteCrmContactPerson, crmCustomers, DEAL_STAGES, type Deal,
+  deleteCrmCompany, deleteCrmContactPerson, DEAL_STAGES, type Deal,
 } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
@@ -43,12 +43,15 @@ const contacts = computed(() => { void refreshTick.value; return company.value ?
 const companyDeals = computed(() => (company.value ? dealsForCompany(company.value.id) : []))
 const banks = computed(() => company.value?.banks ?? [])
 
-// ── Deals-tab stats (from the matching ERP account) ──
-const account = computed(() => crmCustomers.find((c) => c.company === company.value?.name))
-const billed = computed(() => account.value?.lifetimeValue ?? 0)
-const outstanding = computed(() => account.value?.outstanding ?? 0)
+// ── Deals-tab stats — derived from THIS company's deals so they always match the
+// table below (rule: coherent per stage). Open (ongoing) → In flight; Won → Billed;
+// a Won deal not yet settled into a Sales Order (conversion ≠ 'converted') →
+// Outstanding. A prospect with only early-stage deals shows Rp0 billed/outstanding.
 const openDeals = computed(() => companyDeals.value.filter(isDealOpen))
+const wonDeals = computed(() => companyDeals.value.filter((d) => d.stage === 'Won'))
 const pipelineValue = computed(() => openDeals.value.reduce((n, d) => n + d.value, 0))
+const billed = computed(() => wonDeals.value.reduce((n, d) => n + d.value, 0))
+const outstanding = computed(() => wonDeals.value.filter((d) => d.conversion !== 'converted').reduce((n, d) => n + d.value, 0))
 
 // ── Contact person table (search) ──
 const contactSearch = ref('')
@@ -270,7 +273,7 @@ function confirmDelete() {
                 <div class="stat-card stat-card--bordered">
                   <div class="stat-title">{{ t('Billed to date') }}</div>
                   <div class="stat-amount">{{ formatIDR(billed) }}</div>
-                  <a class="stat-link" role="button" tabindex="0" @click="soon(t('Invoices'))">{{ t('View invoices') }}</a>
+                  <a class="stat-link" role="button" tabindex="0" @click="soon(t('Invoices'))">{{ wonDeals.length }} {{ wonDeals.length !== 1 ? t('invoices') : t('invoice') }}</a>
                 </div>
                 <div class="stat-card">
                   <div class="stat-title">{{ t('In flight') }}</div>
@@ -301,7 +304,7 @@ function confirmDelete() {
                     <ErpFilterSelect id="cr-deal-stage" :model-value="dealStage" :placeholder="t('Status')" :options="dealStageOptions" @update:model-value="(v: string) => (dealStage = v)" />
                   </div>
                   <div class="filter-right">
-                    <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="soon(t('Export'))"><MpIcon name="export" size="md" /></button>
+                    <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="soon(t('Export'))"><MpIcon name="download" size="md" /></button>
                     <div class="filter-search">
                       <MpIcon name="search" size="sm" />
                       <input v-model="dealSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
@@ -369,7 +372,8 @@ function confirmDelete() {
 .cr-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cr-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
-.cr-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; }
+/* Tab strip: no gray baseline border — only the active tab's green underline. */
+.cr-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; }
 .cr-tabs :deep(.mp-tab--isSelected_true), .cr-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .cr-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 
@@ -400,9 +404,9 @@ function confirmDelete() {
 .cp-actions-col { display: flex; align-items: center; justify-content: flex-end; }
 .cp-empty { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* Bank info — 2 columns */
-.cr-banks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); }
-.cr-bank-col { display: flex; flex-direction: column; }
+/* Bank info — 6-col grid; each bank account spans 3 columns (half). */
+.cr-banks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-6); }
+.cr-bank-col { grid-column: span 3; display: flex; flex-direction: column; }
 .cr-bank-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
 .cr-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
