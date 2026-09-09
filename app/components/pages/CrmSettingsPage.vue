@@ -72,7 +72,7 @@ function emailFor(name: string): string {
 // (ERP role is a separate, read-only column sourced from the ERP account.) ──
 type CrmUser = {
   id: string; name: string; email: string; empId: string
-  role: string; teams: string[]; modules: string[]; status: string; joinDate: string
+  role: string; teams: string[]; modules: string[]; status: string; joinDate: string; lastUpdated: string
   perms: CrmPermSet; accessLabel: string
 }
 
@@ -126,6 +126,7 @@ const crmUsers = computed<CrmUser[]>(() =>
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
       // deterministic, coherent mock (no Date.now)
       joinDate: `202${4 + (i % 2)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 27)).padStart(2, '0')}`,
+      lastUpdated: `2026-0${1 + (i % 9)}-${String(1 + ((i * 7) % 27)).padStart(2, '0')}`,
       perms,
       accessLabel: permSummary(perms),
     }
@@ -141,8 +142,8 @@ const columns: TableColumn[] = [
   { key: 'role', label: 'ERP role', sortable: true, sortType: 'text' },
   { key: 'status', label: 'Status', kind: 'status', sortType: 'text' },
   { key: 'teams', label: 'Team', kind: 'tags' },
-  { key: 'modules', label: 'Modules', kind: 'tags' },
   { key: 'joinDate', label: 'Join date', kind: 'date', sortType: 'date' },
+  { key: 'lastUpdated', label: 'Last updated', kind: 'date', sortType: 'date' },
 ]
 
 // Filters: ERP role + Status + Team (multi-select) (left) + search (right). No
@@ -177,8 +178,9 @@ const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.valu
 function clearUserFilters() { search.value = ''; statusFilter.value = ''; roleFilter.value = ''; teamFilter.value = [] }
 const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive' }
 
-// Column settings (Name is locked visible)
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
+// Column settings (Name is locked visible). "Last updated" is hidden by default —
+// turn it on from Column settings.
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -549,12 +551,8 @@ const integrations: Integration[] = [
             <ErpTagList v-else-if="(row as CrmUser).teams.length" :tags="(row as CrmUser).teams" />
             <span v-else>—</span>
           </template>
-          <!-- Modules — effective, read-only -->
-          <template #cell-modules="{ row }">
-            <ErpTagList v-if="(row as CrmUser).modules.length" :tags="(row as CrmUser).modules.map((m: string) => t(m))" />
-            <span v-else class="cmt-muted">{{ t('No module access') }}</span>
-          </template>
           <template #cell-joinDate="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-lastUpdated="{ value }">{{ formatDate(value as string) }}</template>
 
           <!-- Row actions: Manage CRM access (the redundant enabled/disabled column
                was removed — everyone in this list already has CRM access). -->
