@@ -27,13 +27,19 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
   getCompany, contactsOfCompany, dealsForCompany, isDealOpen,
-  deleteCrmCompany, deleteCrmContactPerson, DEAL_STAGES, type Deal,
+  deleteCrmCompany, deleteCrmContactPerson, can, DEAL_STAGES, type Deal,
 } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 function soon(what: string) { infoToast(`${what} — coming soon`) }
+
+// ── Permission gates (signed-in user) ──
+const canEditCompany = computed(() => can('companies.edit'))
+const canCreateContact = computed(() => can('contacts.create'))
+const canEditContact = computed(() => can('contacts.edit'))
+const canCreateDeal = computed(() => can('deals.create'))
 
 const company = computed(() => getCompany(props.orderId))
 const activeTab = ref(0)
@@ -150,8 +156,8 @@ function confirmDelete() {
             <h1 class="cr-title">{{ company.name }}</h1>
           </div>
           <div class="cr-bar-right">
-            <MpButton variant="primary" is-rounded left-icon="add" @click="soon(t('New deal'))">{{ t('New deal') }}</MpButton>
-            <MpPopover id="cr-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpButton v-if="canCreateDeal" variant="primary" is-rounded left-icon="add" @click="soon(t('New deal'))">{{ t('New deal') }}</MpButton>
+            <MpPopover v-if="canEditCompany" id="cr-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
                 <MpButton class="cr-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
               </MpPopoverTrigger>
@@ -198,7 +204,7 @@ function confirmDelete() {
                     <input v-model="contactSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
                     <button v-if="contactSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="contactSearch = ''"><MpIcon name="close" size="sm" /></button>
                   </div>
-                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="newContact">{{ t('New contact') }}</MpButton>
+                  <MpButton v-if="canCreateContact" variant="tertiary" is-rounded left-icon="add" @click="newContact">{{ t('New contact') }}</MpButton>
                 </div>
 
                 <div class="cp-table">
@@ -222,8 +228,8 @@ function confirmDelete() {
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="goContact(c.id)">{{ t('View details') }}</MpPopoverListItem>
-                            <MpPopoverListItem @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
-                            <MpPopoverListItem @click="openDeleteContact(c.id)">{{ t('Delete') }}</MpPopoverListItem>
+                            <MpPopoverListItem v-if="canEditContact" @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
+                            <MpPopoverListItem v-if="canEditContact" @click="openDeleteContact(c.id)">{{ t('Delete') }}</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
@@ -254,7 +260,7 @@ function confirmDelete() {
               <!-- Note -->
               <section class="cr-section">
                 <h2 class="cr-section-title">{{ t('Note') }}</h2>
-                <CrmNotesPanel entity-type="company" :entity-id="company.id" />
+                <CrmNotesPanel entity-type="company" :entity-id="company.id" :read-only="!canEditCompany" />
                 <a class="cr-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
               </section>
             </div>

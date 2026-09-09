@@ -984,7 +984,8 @@ export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
 export const crmTeamMemberOptions = computed(() =>
   employees
     .filter((e) => e.status === 'active')
-    .map((e) => ({ id: e.id, name: e.fullName, subtitle: e.jobPosition || undefined })),
+    // No job position — Jurnal doesn't carry it (members modal + assign-members drawer).
+    .map((e) => ({ id: e.id, name: e.fullName, subtitle: undefined as string | undefined })),
 )
 export function teamMemberNames(ids: string[]): string[] {
   return ids.map((id) => employees.find((e) => e.id === id)?.fullName ?? id)
