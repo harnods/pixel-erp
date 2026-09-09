@@ -29,6 +29,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
@@ -144,9 +145,10 @@ const columns: TableColumn[] = [
   { key: 'joinDate', label: 'Join date', kind: 'date', sortType: 'date' },
 ]
 
-// Filters: ERP role + Status (left) + search (right). No CRM-access filter — the
-// list is CRM-access-enabled by definition.
+// Filters: ERP role + Status + Team (multi-select) (left) + search (right). No
+// CRM-access filter — the list is CRM-access-enabled by definition.
 const roleFilter = ref('')
+const teamFilter = ref<string[]>([])   // multi-select — match a user in ANY picked team
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
@@ -154,9 +156,13 @@ const {
   filterFn: (row, s, status) =>
     (!s || row.name.toLowerCase().includes(s) || row.email.toLowerCase().includes(s))
     && (!status || row.status === status)
-    && (!roleFilter.value || row.role === roleFilter.value),
+    && (!roleFilter.value || row.role === roleFilter.value)
+    && (teamFilter.value.length === 0 || row.teams.some((tm) => teamFilter.value.includes(tm))),
 })
 sortKey.value = 'name'
+
+// Team filter options — every CRM team name (matches the Team column + Teams index).
+const TEAM_OPTS = computed(() => crmTeams.map((tm) => tm.name).sort((a, b) => a.localeCompare(b)))
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -167,8 +173,8 @@ const STATUS_OPTS = [
 const ROLE_OPTS = computed(() =>
   [...new Set(crmUsers.value.map((u) => u.role))].map((r) => ({ value: r, label: r })),
 )
-const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.value || !!roleFilter.value)
-function clearUserFilters() { search.value = ''; statusFilter.value = ''; roleFilter.value = '' }
+const hasActiveUserFilter = computed(() => !!search.value || !!statusFilter.value || !!roleFilter.value || teamFilter.value.length > 0)
+function clearUserFilters() { search.value = ''; statusFilter.value = ''; roleFilter.value = ''; teamFilter.value = [] }
 const STATUS_LABEL: Record<string, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive' }
 
 // Column settings (Name is locked visible)
@@ -494,6 +500,15 @@ const integrations: Integration[] = [
                 placeholder="Status"
                 :options="STATUS_OPTS"
                 @update:model-value="(v: string) => (statusFilter = v)"
+              />
+              <MultiSelectDropdown
+                id="cru-team-filter"
+                :model-value="teamFilter"
+                :options="TEAM_OPTS"
+                :placeholder="t('Team')"
+                select-all-label="All teams"
+                all-selected-label="All teams"
+                @update:model-value="(v: string[]) => (teamFilter = v)"
               />
             </div>
 
