@@ -266,7 +266,7 @@ function reportBulk(res: { ok: boolean }[], what: string) {
 
 // ── Create (quick drawer) / Edit (full-detail page) ──
 const quickOpen = ref(false)
-function openCreate() { quickOpen.value = true }
+function openCreate() { router.push('/crm/deals/new') }
 function onQuickSaved(d: Deal) { quickOpen.value = false; successToast(t('Deal created')); goDetail(d.id) }
 function onQuickOpenFull(seed: DealDraftSeed) { dealDraftSeed.value = seed; quickOpen.value = false; router.push('/crm/deals/new') }
 // The detailed form is a PAGE (PRD) — Edit navigates there.
