@@ -18,7 +18,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmCompaniesFiltersDrawer, { emptyCompaniesFilters, type CompaniesFiltersValue } from '~/components/patterns/CrmCompaniesFiltersDrawer.vue'
-import { crmCompanies, contactsOfCompany, dealsForCompany, deleteCrmCompany, CUSTOMER_SEGMENTS, CRM_OWNERS, type CrmCompany } from '~/data/crm'
+import { crmCompanies, contactsOfCompany, dealsForCompany, deleteCrmCompany, CRM_OWNERS, type CrmCompany } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -64,7 +64,6 @@ function colText(r: CompanyRow, key: string): string {
 const companyFilters = ref<CompaniesFiltersValue>(emptyCompaniesFilters())
 const filtersOpen = ref(false)
 const ownerOptions = [...CRM_OWNERS]
-const industryOptions = [...CUSTOMER_SEGMENTS]
 function openFilters() { filtersOpen.value = true }
 function onApplyFilters(f: CompaniesFiltersValue) { companyFilters.value = f; filtersOpen.value = false }
 
@@ -74,11 +73,6 @@ const toolbarFiltered = computed<CompanyRow[]>(() => rows.value.filter((r) => {
     const has = cf.owners.includes(r.owner)
     if (cf.ownerComparator === 'isAnyOf' && !has) return false
     if (cf.ownerComparator === 'isNoneOf' && has) return false
-  }
-  if (cf.industries.length) {
-    const has = cf.industries.includes(r.industry)
-    if (cf.industryComparator === 'isAnyOf' && !has) return false
-    if (cf.industryComparator === 'isNoneOf' && has) return false
   }
   if (cf.keyword.trim()) {
     const kw = cf.keyword.trim().toLowerCase()
@@ -104,7 +98,7 @@ const {
 
 const activeFilterCount = computed(() => {
   const f = companyFilters.value
-  return f.owners.length + f.industries.length + (f.keyword.trim() ? 1 : 0)
+  return f.owners.length + (f.keyword.trim() ? 1 : 0)
 })
 const hasActiveFilter = computed(() => !!search.value || activeFilterCount.value > 0)
 function clearFilters() { search.value = ''; companyFilters.value = emptyCompaniesFilters() }
@@ -206,10 +200,7 @@ const deleteDescription = computed(() =>
 
         <!-- Company name + industry caption -->
         <template #cell-name="{ row }">
-          <div class="cru-name">
-            <span class="cell-link cell-text" @click.stop="open(row as unknown as CompanyRow)">{{ (row as unknown as CompanyRow).name }}</span>
-            <span class="cru-email">{{ (row as unknown as CompanyRow).industry }}</span>
-          </div>
+          <span class="cell-link cell-text" @click.stop="open(row as unknown as CompanyRow)">{{ (row as unknown as CompanyRow).name }}</span>
         </template>
         <template #cell-openDeals="{ row }">
           {{ (row as unknown as CompanyRow).openDeals }} {{ (row as unknown as CompanyRow).openDeals !== 1 ? t('deals') : t('deal') }}
@@ -242,7 +233,6 @@ const deleteDescription = computed(() =>
       :is-open="filtersOpen"
       :model-value="companyFilters"
       :owner-options="ownerOptions"
-      :industry-options="industryOptions"
       :columns="drawerColumns"
       @update:is-open="filtersOpen = $event"
       @apply="onApplyFilters"

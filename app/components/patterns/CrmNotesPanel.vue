@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
  * CrmNotesPanel — notes for a CRM contact or company. Reads + writes the unified
- * `crmNotes` store via the data helpers. Compose a note with a textarea +
- * "Add note"; existing notes list newest-first with a lg avatar, author name and
- * timestamp. You can edit / delete your OWN notes (author === current user);
- * other people's notes are read-only. Reused on the Contact + Company records.
+ * `crmNotes` store. Compose a note with a textarea + a secondary "Add note".
+ * Notes list newest-first with a lg avatar (stable per-user colour), author name
+ * and timestamp. You can edit / delete your OWN notes via a [⋯] menu on the right
+ * of the note; other people's notes are read-only. Reused on the Contact +
+ * Company records.
  */
 import { computed, ref } from 'vue'
-import { MpTextarea, MpButton, MpAvatar } from '@mekari/pixel3'
+import {
+  MpTextarea, MpButton, MpAvatar, MpIcon,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import { notesFor, addCrmNote, updateCrmNote, deleteCrmNote, type CrmNoteEntity } from '~/data/crm'
 import { formatDateTime } from '~/utils/date'
 
@@ -20,6 +24,14 @@ const draft = ref('')
 
 const editingId = ref('')
 const editDraft = ref('')
+
+// Stable avatar colour per author (same user → same colour, deterministic).
+const AVATAR_COLORS = ['sky', 'teal', 'violet', 'amber', 'rose', 'stone', 'lime', 'pink'] as const
+function avatarColor(name: string): string {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]!
+}
 
 function nowStamp(): string { return new Date().toISOString().slice(0, 19) }
 function submit() {
@@ -43,14 +55,14 @@ function isOwn(author: string): boolean { return author === currentUser.value }
     <div class="notes-compose">
       <MpTextarea id="crm-note-input" v-model="draft" :placeholder="t('Add a note…')" :rows="3" is-full-width />
       <div class="notes-compose-actions">
-        <MpButton variant="primary" is-rounded @click="submit">{{ t('Add note') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="submit">{{ t('Add note') }}</MpButton>
       </div>
     </div>
 
     <!-- List -->
     <ul v-if="notes.length" class="notes-list">
       <li v-for="n in notes" :key="n.id" class="note">
-        <MpAvatar :id="`na-${n.id}`" :name="n.author" size="lg" variant-color="green" />
+        <MpAvatar :id="`na-${n.id}`" :name="n.author" size="lg" :variant-color="avatarColor(n.author)" />
         <div class="note-body">
           <div class="note-head">
             <span class="note-author">{{ n.author }}</span>
@@ -65,15 +77,24 @@ function isOwn(author: string): boolean { return author === currentUser.value }
               <MpButton variant="primary" is-rounded @click="saveEdit(n.id)">{{ t('Save') }}</MpButton>
             </div>
           </template>
-
-          <template v-else>
-            <p class="note-text">{{ n.text }}</p>
-            <div v-if="isOwn(n.author)" class="note-actions">
-              <a class="note-action" role="button" tabindex="0" @click="startEdit(n.id, n.text)" @keydown.enter="startEdit(n.id, n.text)">{{ t('Edit') }}</a>
-              <a class="note-action note-action--danger" role="button" tabindex="0" @click="deleteCrmNote(n.id)" @keydown.enter="deleteCrmNote(n.id)">{{ t('Delete') }}</a>
-            </div>
-          </template>
+          <p v-else class="note-text">{{ n.text }}</p>
         </div>
+
+        <!-- Own note → [⋯] menu (Edit · Delete) on the right -->
+        <MpPopover
+          v-if="isOwn(n.author) && editingId !== n.id"
+          :id="`note-menu-${n.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+        >
+          <MpPopoverTrigger>
+            <MpButton class="note-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="startEdit(n.id, n.text)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteCrmNote(n.id)">{{ t('Delete') }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </li>
     </ul>
     <p v-else class="notes-empty">{{ t('No notes yet.') }}</p>
@@ -92,13 +113,16 @@ function isOwn(author: string): boolean { return author === currentUser.value }
 .note-author { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .note-time { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-wrap; overflow-wrap: anywhere; }
-
-.note-actions { display: flex; align-items: center; gap: var(--mp-spacing-4); margin-top: var(--mp-spacing-1); }
-.note-action { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
-.note-action:hover { text-decoration: underline; text-underline-offset: 2px; }
-.note-action--danger { color: var(--mp-text-danger); }
-
 .note-edit-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+
+.note-kebab {
+  flex-shrink: 0;
+  display: flex !important; align-items: center; justify-content: center;
+  padding: var(--mp-spacing-1) !important; min-width: 0 !important;
+  border: none !important; background: transparent !important; cursor: pointer;
+  border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
+}
+.note-kebab:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
 
 .notes-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

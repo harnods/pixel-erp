@@ -1305,9 +1305,19 @@ export function deleteCrmCompany(id: string): void {
 export type CrmNoteEntity = 'contact' | 'company'
 export interface CrmNote { id: string; entityType: CrmNoteEntity; entityId: string; author: string; text: string; at: string }
 const NOTES_SEED: CrmNote[] = [
-  { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation.', at: '2026-02-20T10:15:00' },
-  { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Rizal Candra',  text: 'Credit terms approved: NET 30.', at: '2026-02-22T14:00:00' },
-  { id: 'NT-003', entityType: 'contact', entityId: 'CT-001', author: 'Dewi Lestari',  text: 'Prefers WhatsApp over email for quotes.', at: '2026-02-21T09:30:00' },
+  // Company CO-001 — mix of authors so avatar colours differ; Rizal's are editable by "me".
+  { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation before sending the quote.', at: '2026-02-20T10:15:00' },
+  { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Fajar Nugroho', text: 'Procurement lead prefers a fixed price for the whole quarter. Flagging for margin review.', at: '2026-02-21T16:40:00' },
+  { id: 'NT-003', entityType: 'company', entityId: 'CO-001', author: 'Rizal Candra',  text: 'Credit terms approved: NET 30. Cleared with finance.', at: '2026-02-22T14:00:00' },
+  // Company CO-002
+  { id: 'NT-004', entityType: 'company', entityId: 'CO-002', author: 'Dewi Lestari',  text: 'Renewal due next month — schedule a business review.', at: '2026-02-19T11:05:00' },
+  { id: 'NT-005', entityType: 'company', entityId: 'CO-002', author: 'Rizal Candra',  text: 'Offered a 3% volume discount for a 12-month commitment.', at: '2026-02-23T09:20:00' },
+  // Contact CT-001
+  { id: 'NT-006', entityType: 'contact', entityId: 'CT-001', author: 'Dewi Lestari',  text: 'Prefers WhatsApp over email for quotes.', at: '2026-02-21T09:30:00' },
+  { id: 'NT-007', entityType: 'contact', entityId: 'CT-001', author: 'Rizal Candra',  text: 'Met at the coffee expo — very responsive, decision maker for purchasing.', at: '2026-02-24T13:15:00' },
+  { id: 'NT-008', entityType: 'contact', entityId: 'CT-001', author: 'Fajar Nugroho', text: 'Asked for samples of the espresso blend before committing.', at: '2026-02-25T15:45:00' },
+  // Contact CT-002
+  { id: 'NT-009', entityType: 'contact', entityId: 'CT-002', author: 'Rizal Candra',  text: 'Best reached in the morning; usually on-site after 2pm.', at: '2026-02-18T08:50:00' },
 ]
 export const crmNotes = reactive<CrmNote[]>(load('crm-notes-v1', NOTES_SEED))
 export function notesFor(entityType: CrmNoteEntity, entityId: string): CrmNote[] {

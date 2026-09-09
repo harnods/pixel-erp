@@ -2,13 +2,12 @@
 /**
  * CRM — Company record (/crm/customers/companies/:id).
  *
- * ERP detail format: detail-bar (breadcrumb above title) + tabs. Two tabs —
- * "Company details" (Company info · Contact person · Bank info · Note) and
- * "Deals". Title bar carries a primary "New deal" + a kebab Actions menu
- * (Edit · Delete). Key/value via ContentList (rule/detail-contentlist); the audit
- * trail is the shared ActivityLogModal opened from the Note "Last updated by…"
- * link (rule/activity-log-modal / rule/activity-log-trigger). Delete confirms
- * (rule/btn-danger-confirm).
+ * ERP detail format with the tab strip in the header band (MpTabs wraps the
+ * header + the stage, like ContactDetailsPage). Two tabs — "Company details"
+ * (Company info · Contact person · Bank info · Note) and "Deals" (stats +
+ * ErpTablePage). Title bar: primary "New deal" + kebab Actions (Edit · Delete).
+ * Notes via CrmNotesPanel; audit trail via the shared ActivityLogModal opened
+ * from the "Last updated by…" link. Delete confirms (rule/btn-danger-confirm).
  */
 import { ref, computed } from 'vue'
 import {
@@ -16,15 +15,19 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
+import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
-  getCompany, contactsOfCompany, isPrimaryContact, dealsForCompany,
-  deleteCrmCompany, deleteCrmContactPerson,
+  getCompany, contactsOfCompany, dealsForCompany, isDealOpen,
+  deleteCrmCompany, deleteCrmContactPerson, crmCustomers, DEAL_STAGES, type Deal,
 } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
@@ -40,6 +43,13 @@ const contacts = computed(() => { void refreshTick.value; return company.value ?
 const companyDeals = computed(() => (company.value ? dealsForCompany(company.value.id) : []))
 const banks = computed(() => company.value?.banks ?? [])
 
+// ── Deals-tab stats (from the matching ERP account) ──
+const account = computed(() => crmCustomers.find((c) => c.company === company.value?.name))
+const billed = computed(() => account.value?.lifetimeValue ?? 0)
+const outstanding = computed(() => account.value?.outstanding ?? 0)
+const openDeals = computed(() => companyDeals.value.filter(isDealOpen))
+const pipelineValue = computed(() => openDeals.value.reduce((n, d) => n + d.value, 0))
+
 // ── Contact person table (search) ──
 const contactSearch = ref('')
 const filteredContacts = computed(() => {
@@ -50,6 +60,30 @@ const filteredContacts = computed(() => {
 })
 function goContact(id: string) { router.push(`/crm/customers/contacts/${id}`) }
 function newContact() { router.push('/crm/customers/contacts/new') }
+
+// ── Deals table (ErpTablePage) ──
+const dealColumns: TableColumn[] = [
+  { key: 'number', label: 'Number', kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'name',   label: 'Deal name', kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'stage',  label: 'Stage', kind: 'status', sortable: true, sortType: 'text' },
+  { key: 'owner',  label: 'Deal owner', kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'value',  label: 'Value', kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'updated', label: 'Last updated', kind: 'date' },
+]
+const dealStageOptions = [...DEAL_STAGES]
+function dealNumber(d: Deal): string { return d.referenceNumber || d.id }
+const {
+  search: dealSearch, statusFilter: dealStage, currentPage: dealPage, paginated: dealPaginated,
+  total: dealTotal, perPage: dealPerPage, setPage: dealSetPage, setPerPage: dealSetPerPage,
+  sortKey: dealSortKey, sortDir: dealSortDir, toggleSort: dealToggleSort, setSort: dealSetSort,
+} = useTableState<Deal>(companyDeals, {
+  filterFn: (row, s, stage) =>
+    (!stage || row.stage === stage)
+    && (!s || row.name.toLowerCase().includes(s) || dealNumber(row).toLowerCase().includes(s) || row.owner.toLowerCase().includes(s)),
+  defaultSort: { key: 'value', dir: 'desc' },
+})
+const dealsHasFilter = computed(() => !!dealSearch.value || !!dealStage.value)
+function clearDealFilters() { dealSearch.value = ''; dealStage.value = '' }
 
 // ── Activity log ──
 const activityOpen = ref(false)
@@ -103,39 +137,41 @@ function confirmDelete() {
 </script>
 
 <template>
-  <div class="detail-page" v-if="company">
-    <header class="detail-bar">
-      <div class="detail-bar-left">
-        <NuxtLink class="detail-breadcrumb" to="/crm/customers/companies">{{ t('Customers') }}</NuxtLink>
-        <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ company.name }}</h1>
+  <div class="cr-page" v-if="company">
+    <MpTabs id="cr-detail-tabs" v-model="activeTab" is-manual variant-color="green" class="cr-tabs">
+      <!-- ── Title bar band: breadcrumb + title + actions, then the tab strip ── -->
+      <header class="cr-header">
+        <div class="cr-bar">
+          <div class="cr-bar-left">
+            <NuxtLink class="cr-breadcrumb" to="/crm/customers/companies">{{ t('Customers') }}</NuxtLink>
+            <h1 class="cr-title">{{ company.name }}</h1>
+          </div>
+          <div class="cr-bar-right">
+            <MpButton variant="primary" is-rounded left-icon="add" @click="soon(t('New deal'))">{{ t('New deal') }}</MpButton>
+            <MpPopover id="cr-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton class="cr-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="openDeleteCompany">{{ t('Delete') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
         </div>
-      </div>
-      <div class="cr-bar-actions">
-        <MpButton variant="primary" is-rounded left-icon="add" @click="soon(t('New deal'))">{{ t('New deal') }}</MpButton>
-        <MpPopover id="cr-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton class="cr-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="openDeleteCompany">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </div>
-    </header>
 
-    <div class="detail-stage">
-      <MpTabs id="cr-detail-tabs" v-model="activeTab" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab>{{ t('Company details') }}</MpTab>
           <MpTab>{{ t('Deals') }} ({{ companyDeals.length }})</MpTab>
         </MpTabList>
+      </header>
 
+      <!-- ── Stage ── -->
+      <div class="cr-stage">
         <MpTabPanels>
-          <!-- ── Company details ── -->
+          <!-- ─────────── Company details ─────────── -->
           <MpTabPanel>
             <div class="cr-sections">
               <!-- Company info -->
@@ -159,7 +195,7 @@ function confirmDelete() {
                     <input v-model="contactSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
                     <button v-if="contactSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="contactSearch = ''"><MpIcon name="close" size="sm" /></button>
                   </div>
-                  <MpButton variant="primary" is-rounded left-icon="add" @click="newContact">{{ t('New contact') }}</MpButton>
+                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="newContact">{{ t('New contact') }}</MpButton>
                 </div>
 
                 <div class="cp-table">
@@ -172,7 +208,6 @@ function confirmDelete() {
                   <div v-for="c in filteredContacts" :key="c.id" class="cp-row">
                     <div class="cp-name">
                       <span class="cell-link" role="button" tabindex="0" @click="goContact(c.id)" @keydown.enter="goContact(c.id)">{{ c.name }}</span>
-                      <span v-if="c.jobTitle" class="cp-caption">{{ c.jobTitle }}</span>
                     </div>
                     <span class="cp-cell">{{ c.email || '—' }}</span>
                     <span class="cp-cell">{{ c.phone || '—' }}</span>
@@ -216,38 +251,96 @@ function confirmDelete() {
               <!-- Note -->
               <section class="cr-section">
                 <h2 class="cr-section-title">{{ t('Note') }}</h2>
-                <p v-if="company.note" class="cr-note">{{ company.note }}</p>
+                <CrmNotesPanel entity-type="company" :entity-id="company.id" />
                 <a class="cr-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
               </section>
             </div>
           </MpTabPanel>
 
-          <!-- ── Deals ── -->
+          <!-- ─────────── Deals ─────────── -->
           <MpTabPanel>
-            <div class="cr-panel">
-              <div v-if="companyDeals.length" class="cr-deals">
-                <div class="cr-deals-head">
-                  <span>{{ t('Deal') }}</span>
-                  <span>{{ t('Stage') }}</span>
-                  <span class="cr-num">{{ t('Value') }}</span>
-                  <span>{{ t('Owner') }}</span>
+            <div class="cr-deals-tab">
+              <!-- Stats -->
+              <div class="cr-stats">
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Outstanding') }}</div>
+                  <div class="stat-amount" :class="{ 'stat-amount--danger': outstanding > 0 }">{{ formatIDR(outstanding) }}</div>
+                  <span class="stat-period">{{ t('Invoiced, not yet paid') }}</span>
                 </div>
-                <div v-for="d in companyDeals" :key="d.id" class="cr-deal-row">
-                  <div class="cr-deal-name">
-                    <a class="cell-link" @click="router.push(`/crm/deals/${d.id}`)">{{ d.name }}</a>
-                    <span class="cr-deal-id">{{ d.id }}</span>
-                  </div>
-                  <span><ErpStatusBadge :status="d.stage" /></span>
-                  <span class="cr-num">{{ formatIDR(d.value) }}</span>
-                  <span>{{ d.owner }}</span>
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Billed to date') }}</div>
+                  <div class="stat-amount">{{ formatIDR(billed) }}</div>
+                  <a class="stat-link" role="button" tabindex="0" @click="soon(t('Invoices'))">{{ t('View invoices') }}</a>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-title">{{ t('In flight') }}</div>
+                  <div class="stat-amount">{{ formatIDR(pipelineValue) }}</div>
+                  <span class="stat-period">{{ openDeals.length }} {{ openDeals.length !== 1 ? t('deals') : t('deal') }}</span>
                 </div>
               </div>
-              <p v-else class="cp-empty">{{ t('No deals for this company.') }}</p>
+
+              <ErpTablePage
+                :columns="dealColumns"
+                :rows="(dealPaginated as unknown as Record<string, unknown>[])"
+                :total="dealTotal"
+                :current-page="dealPage"
+                :per-page="dealPerPage"
+                :sort-key="dealSortKey"
+                :sort-dir="dealSortDir"
+                filter-empty-label="deal"
+                :search="dealSearch"
+                :has-active-filter="dealsHasFilter"
+                @page-change="dealSetPage"
+                @per-page-change="dealSetPerPage"
+                @sort="dealToggleSort"
+                @sort-change="dealSetSort"
+                @clear-filters="clearDealFilters"
+              >
+                <template #filters>
+                  <div class="filter-left">
+                    <ErpFilterSelect id="cr-deal-stage" :model-value="dealStage" :placeholder="t('Status')" :options="dealStageOptions" @update:model-value="(v: string) => (dealStage = v)" />
+                  </div>
+                  <div class="filter-right">
+                    <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="soon(t('Export'))"><MpIcon name="export" size="md" /></button>
+                    <div class="filter-search">
+                      <MpIcon name="search" size="sm" />
+                      <input v-model="dealSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+                      <button v-if="dealSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="dealSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    </div>
+                  </div>
+                </template>
+
+                <template #cell-number="{ row }">
+                  <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ dealNumber(row as unknown as Deal) }}</span>
+                </template>
+                <template #cell-name="{ row }">
+                  <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ (row as unknown as Deal).name }}</span>
+                </template>
+                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" /></template>
+                <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as Deal).owner }}</span></template>
+                <template #cell-value="{ row }"><span class="cell-text">{{ formatIDR((row as unknown as Deal).value) }}</span></template>
+                <template #cell-updated="{ row }">
+                  <LastUpdatedCell :at="lastUpdatedFor((row as unknown as Deal).id).at" :by="lastUpdatedFor((row as unknown as Deal).id).by" />
+                </template>
+
+                <template #actions="{ row }">
+                  <MpPopover :id="`cr-deal-actions-${(row as unknown as Deal).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton class="cr-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ t('View details') }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </template>
+              </ErpTablePage>
             </div>
           </MpTabPanel>
         </MpTabPanels>
-      </MpTabs>
-    </div>
+      </div>
+    </MpTabs>
 
     <!-- Activity log -->
     <ActivityLogModal :is-open="activityOpen" :subject="company.name" :entries="activityEntries" @close="activityOpen = false" />
@@ -264,21 +357,24 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-.detail-tabs { margin-top: 0; }
-.detail-tabs :deep(.mp-tab--isSelected_true), .detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
-.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
-.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-6) !important; }
+.cr-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.cr-tabs { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 
-.detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
-.detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); text-decoration: none; }
-.detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
-.detail-titlerow-left { display: flex; align-items: baseline; gap: var(--mp-spacing-3); }
-.detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.cr-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+/* ── Title bar band (bar + tab strip share the neutral-subtle background) ── */
+.cr-header { flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); }
+.cr-bar { height: var(--mp-sizes-18, 72px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.cr-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.cr-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.cr-breadcrumb { align-self: flex-start; cursor: pointer; font-size: 12px; line-height: var(--mp-line-heights-md); color: var(--mp-text-link); text-decoration: none; }
+.cr-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cr-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-8); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; }
+.cr-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; }
+.cr-tabs :deep(.mp-tab--isSelected_true), .cr-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.cr-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+
+/* ── Stage ── */
+.cr-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6) var(--mp-spacing-6) var(--mp-spacing-8); }
 
 /* ── Sections ── */
 .cr-sections { display: flex; flex-direction: column; }
@@ -297,6 +393,7 @@ function confirmDelete() {
 .cp-head, .cp-row { display: grid; grid-template-columns: 2.4fr 2fr 1.6fr 40px; align-items: center; gap: var(--mp-spacing-3); }
 .cp-head { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.02em; }
 .cp-row { padding: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.cp-row:last-child { border-bottom: none; }
 .cp-name { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
 .cp-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-cell { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -309,24 +406,32 @@ function confirmDelete() {
 .cr-bank-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
 .cr-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-.cr-note { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); white-space: pre-line; }
-.cr-updated { align-self: flex-start; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
+.cr-updated { display: inline-block; margin-top: var(--mp-spacing-6); align-self: flex-start; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
 .cr-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* Deals table (reused) */
-.cr-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 900px; }
-.cr-deals { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); overflow: hidden; }
-.cr-deals-head, .cr-deal-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
-.cr-deals-head { background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
-.cr-deal-row { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cr-deal-row:last-child { border-bottom: none; }
-.cr-deal-name { display: flex; flex-direction: column; min-width: 0; }
-.cr-deal-name .cell-link { font-weight: var(--mp-font-weights-medium, 500); }
-.cr-deal-id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cr-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* ── Deals tab ── */
+.cr-deals-tab { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.cr-stats { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--danger { color: var(--mp-text-danger); }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-link { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; cursor: pointer; }
+.stat-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+.cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cell-link { color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Filter bar (deals) */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #ffffff); border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.search-clear-btn { display: inline-flex !important; align-items: center; justify-content: center; flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important; border: none !important; background: none !important; cursor: pointer; color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important; }
+.search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 
 .cr-kebab {
   display: flex !important; align-items: center; justify-content: center;
@@ -335,14 +440,6 @@ function confirmDelete() {
   border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
 }
 .cr-kebab:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
-
-.search-clear-btn {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
-  border: none !important; background: none !important; cursor: pointer;
-  color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
-}
-.search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 
 .cr-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: 80px; color: var(--mp-text-secondary); }
 </style>

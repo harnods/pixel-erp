@@ -11,16 +11,12 @@ export interface CompaniesFiltersValue {
   /** Owner — comparator + selected names */
   ownerComparator: TagMatcher
   owners: string[]
-  /** Industry — comparator + selected industries */
-  industryComparator: TagMatcher
-  industries: string[]
 }
 
 export function emptyCompaniesFilters(): CompaniesFiltersValue {
   return {
     keyword: '', keywordColumn: 'all',
     ownerComparator: 'isAnyOf', owners: [],
-    industryComparator: 'isAnyOf', industries: [],
   }
 }
 </script>
@@ -46,7 +42,6 @@ const props = defineProps<{
   isOpen: boolean
   modelValue: CompaniesFiltersValue
   ownerOptions: string[]
-  industryOptions: string[]
   columns: { key: string; label: string }[]
 }>()
 const emit = defineEmits<{
@@ -58,7 +53,6 @@ function clone(v: CompaniesFiltersValue): CompaniesFiltersValue {
   return {
     keyword: v.keyword, keywordColumn: v.keywordColumn,
     ownerComparator: v.ownerComparator, owners: [...v.owners],
-    industryComparator: v.industryComparator, industries: [...v.industries],
   }
 }
 const draft = reactive<CompaniesFiltersValue>(clone(props.modelValue))
@@ -104,20 +98,6 @@ function apply() { emit('apply', clone(draft)); close() }
               :placeholder="t('Type a name…')"
               @update:comparator="draft.ownerComparator = $event"
               @update:values="draft.owners = $event"
-            />
-          </div>
-
-          <!-- Industry -->
-          <div class="ccfd-field">
-            <span class="ccfd-field-label">{{ t('Industry') }}</span>
-            <ErpTagComparatorField
-              :id="`${id}-industry`"
-              :comparator="draft.industryComparator"
-              :values="draft.industries"
-              :options="industryOptions"
-              :placeholder="t('Type an industry…')"
-              @update:comparator="draft.industryComparator = $event"
-              @update:values="draft.industries = $event"
             />
           </div>
         </div>

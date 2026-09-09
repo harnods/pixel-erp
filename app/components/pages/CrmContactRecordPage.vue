@@ -14,6 +14,7 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
@@ -120,7 +121,7 @@ function confirmDelete() {
         </section>
 
         <!-- ── Company info ── -->
-        <section class="cd-section cd-section--last">
+        <section class="cd-section">
           <h2 class="cd-section-title">{{ t('Company info') }}</h2>
           <div v-if="company" class="cd-grid">
             <ContentList :label="t('Company name')">
@@ -136,6 +137,12 @@ function confirmDelete() {
             <ContentList :label="t('Fax')" :value="company.fax || undefined" />
           </div>
           <p v-else class="cd-muted cd-empty">{{ t('Not associated with any company yet.') }}</p>
+        </section>
+
+        <!-- ── Note ── -->
+        <section class="cd-section cd-section--last">
+          <h2 class="cd-section-title">{{ t('Note') }}</h2>
+          <CrmNotesPanel entity-type="contact" :entity-id="contact.id" />
         </section>
       </div>
 
