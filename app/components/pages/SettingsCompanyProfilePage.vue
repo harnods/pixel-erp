@@ -889,7 +889,7 @@ const ADVANCED_TOGGLES = [
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   align-items: start;
-  margin-bottom: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-3);
 }
 .cp-section-meta { grid-column: 1 / 7; display: flex; flex-direction: column; }
 /* Edit button sits in the 7th grid column, left-aligned (like settings/warehouse) */
@@ -899,8 +899,8 @@ const ADVANCED_TOGGLES = [
 .cp-section > :not(.cp-section-header) { grid-column: 1 / 7; }
 
 .cp-section-title {
-  margin: 0 0 var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-lg);
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }

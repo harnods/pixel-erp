@@ -100,6 +100,8 @@ function submit(): CrmCompany | null {
   // Detail-page fields not in addCrmCompany's input — set + persist.
   created.country = country.value
   created.billingAddress = billing
+  created.banks = banks.value.filter((b) => b.bankName || b.accountNo || b.accountName)
+  created.note = note.value.trim()
   persistCrmCompanies()
   return created
 }

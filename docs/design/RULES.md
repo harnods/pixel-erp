@@ -393,6 +393,14 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/filter-bar-search-export`** — *Do:* the filter bar's right side always
   carries **Search** (rounded pill form) + **Export**. *Don't:* put Export in the
   page title bar. **Why:** fixed affordance location. **Lint:** review.
+- **`rule/filter-bar-action-tertiary`** — *Do:* an **action button placed beside the
+  search** in a filter bar / section toolbar (e.g. a "New contact" / create button that
+  sits next to the search pill, NOT in the page title bar) uses the **black tertiary**
+  button — `MpButton variant="tertiary" is-rounded` (dark fill, white text/icon). *Don't:*
+  use `primary` (green) or `secondary` there — the green primary create button belongs in
+  the page **title bar**; a create/action next to search is tertiary. **Why:** one fixed
+  look for search-adjacent actions, distinct from the title-bar primary. **Source:** Figma
+  CRM company detail (Contact person). **Lint:** review.
 
 ### Form fields — baku ERP overrides of Pixel 3 DT 2.4 Enterprise
 

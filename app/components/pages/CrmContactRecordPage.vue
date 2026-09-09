@@ -57,7 +57,6 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     details: [
       { label: t('Display name'), value: c.name },
       { label: t('Full name'), value: c.fullName || '—' },
-      { label: t('Job title'), value: c.jobTitle || '—' },
       { label: t('Email'), value: c.email || '—' },
       { label: t('Mobile'), value: c.phone || '—' },
       { label: t('Company'), value: company.value?.name || '—' },
@@ -112,7 +111,6 @@ function confirmDelete() {
           <div class="cd-grid">
             <ContentList :label="t('Display name')" :value="contact.name" />
             <ContentList :label="t('Full name')" :value="contact.fullName || undefined" />
-            <ContentList :label="t('Job title')" :value="contact.jobTitle || undefined" />
             <ContentList :label="t('Email')">
               <a v-if="contact.email" class="cell-link" :href="`mailto:${contact.email}`">{{ contact.email }}</a>
               <template v-else>—</template>

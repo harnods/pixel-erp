@@ -195,12 +195,9 @@ const deleteDescription = computed(() =>
           >{{ t('Delete') }}</MpButton>
         </template>
 
-        <!-- Name + job-title caption -->
+        <!-- Name -->
         <template #cell-name="{ row }">
-          <div class="cru-name">
-            <span class="cell-link cell-text" @click.stop="open(row as unknown as ContactRow)">{{ (row as unknown as ContactRow).name }}</span>
-            <span class="cru-email">{{ (row as unknown as ContactRow).jobTitle }}</span>
-          </div>
+          <span class="cell-link cell-text" @click.stop="open(row as unknown as ContactRow)">{{ (row as unknown as ContactRow).name }}</span>
         </template>
         <template #cell-company="{ row }">
           <span v-if="(row as unknown as ContactRow).companyId" class="cell-link cell-text" @click.stop="router.push(`/crm/customers/companies/${(row as unknown as ContactRow).companyId}`)">{{ (row as unknown as ContactRow).companyName }}</span>

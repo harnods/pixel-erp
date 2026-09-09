@@ -16,6 +16,7 @@
 import { reactive, computed, ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { employees } from './employees'
+import type { ContactBank } from './contacts'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -1143,6 +1144,8 @@ export interface CrmCompany {
   billingAddress?: string    // full billing address (composed); shown on detail
   shippingAddress?: string
   fax?: string
+  banks?: ContactBank[]      // bank accounts (shown on the company detail)
+  note?: string
   owner: string
   contactIds: string[]       // member contacts (M2M)
   primaryContactId?: string  // required when the company has >1 contact
@@ -1170,6 +1173,11 @@ const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
   province: provinceFor(c.city),
   postalCode: `${10000 + i * 110}`,
   billingAddress: `Jl. Jenderal Sudirman No. ${12 + i}, ${c.city}, ${provinceFor(c.city)} ${10000 + i * 110}`,
+  shippingAddress: `Jl. Jenderal Sudirman No. ${12 + i}, ${c.city}, ${provinceFor(c.city)} ${10000 + i * 110}`,
+  banks: [
+    { id: 'b1', bankName: 'Bank BCA', branch: 'KCU Sudirman', accountNo: `78866668${String(100 + i).padStart(3, '0')}`, accountName: c.company },
+    { id: 'b2', bankName: 'Bank Mandiri', branch: 'KCP Thamrin', accountNo: `12000998${String(100 + i).padStart(3, '0')}`, accountName: c.company },
+  ],
   owner: c.owner,
   contactIds: [`CT-${String(i + 1).padStart(3, '0')}`],
   primaryContactId: `CT-${String(i + 1).padStart(3, '0')}`,
@@ -1310,6 +1318,10 @@ export function addCrmNote(entityType: CrmNoteEntity, entityId: string, text: st
   crmNotes.push(note)
   saveSnapshot('crm-notes-v1', crmNotes)
   return note
+}
+export function updateCrmNote(id: string, text: string): void {
+  const n = crmNotes.find((x) => x.id === id)
+  if (n) { n.text = text.trim(); saveSnapshot('crm-notes-v1', crmNotes) }
 }
 export function deleteCrmNote(id: string): void {
   const i = crmNotes.findIndex((n) => n.id === id)
