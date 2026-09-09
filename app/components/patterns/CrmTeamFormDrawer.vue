@@ -51,8 +51,8 @@ const { t } = useLocale()
 
 // Character caps (rule/input-char-counter): show n/max + native maxlength.
 // Limits follow the Teams PRD (name 1–100, description ≤500).
-const NAME_MAX = 100
-const DESC_MAX = 500
+const NAME_MAX = 25
+const DESC_MAX = 250
 
 function hasModule(key: CrmTeamModule) { return props.draft.modules.includes(key) }
 function toggleModule(key: CrmTeamModule, on: boolean) {

@@ -72,7 +72,8 @@ function emailFor(name: string): string {
 // (ERP role is a separate, read-only column sourced from the ERP account.) ──
 type CrmUser = {
   id: string; name: string; email: string; empId: string
-  role: string; teams: string[]; modules: string[]; status: string; joinDate: string; lastUpdated: string
+  role: string; teams: string[]; modules: string[]; status: string; joinDate: string
+  lastUpdated: string; lastUpdatedBy: string
   perms: CrmPermSet; accessLabel: string
 }
 
@@ -126,7 +127,8 @@ const crmUsers = computed<CrmUser[]>(() =>
       status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
       // deterministic, coherent mock (no Date.now)
       joinDate: `202${4 + (i % 2)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 27)).padStart(2, '0')}`,
-      lastUpdated: `2026-0${1 + (i % 9)}-${String(1 + ((i * 7) % 27)).padStart(2, '0')}`,
+      lastUpdated: `2026-0${1 + (i % 9)}-${String(1 + ((i * 7) % 27)).padStart(2, '0')}T${String(8 + (i % 9)).padStart(2, '0')}:${String((i * 13) % 60).padStart(2, '0')}:00`,
+      lastUpdatedBy: CRM_OWNERS[(i + 1) % CRM_OWNERS.length]!,
       perms,
       accessLabel: permSummary(perms),
     }
@@ -552,7 +554,9 @@ const integrations: Integration[] = [
             <span v-else>—</span>
           </template>
           <template #cell-joinDate="{ value }">{{ formatDate(value as string) }}</template>
-          <template #cell-lastUpdated="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-lastUpdated="{ row }">
+            <LastUpdatedCell :at="(row as unknown as CrmUser).lastUpdated" :by="(row as unknown as CrmUser).lastUpdatedBy" />
+          </template>
 
           <!-- Row actions: Manage CRM access (the redundant enabled/disabled column
                was removed — everyone in this list already has CRM access). -->
