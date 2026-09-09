@@ -222,6 +222,20 @@ export function getPutAwayTask(taskId: string): PutAwayTask | undefined {
 
 function nowIso(): string { return new Date().toISOString(); }
 
+/** Hand this task to someone else — the escape hatch for a task still held by
+ *  someone who has lost access to the company. Only while the task is Open or
+ *  In Progress: past that the assignee is a record of who did the work, not who
+ *  owes it. Access is gated in the UI (useLineManagerAccess); this only refuses
+ *  states where a handover would be meaningless. */
+export function reassignPutAwayTask(taskId: string, assignee: string): boolean {
+  const t = getPutAwayTask(taskId);
+  if (!t || (t.status !== "open" && t.status !== "in progress")) return false;
+  if (!assignee.trim() || assignee === t.assignee) return false;
+  t.assignee = assignee;
+  persistPutAways();
+  return true;
+}
+
 export function startPutAway(taskId: string): void {
   const t = getPutAwayTask(taskId);
   if (!t || t.status !== 'open') return;

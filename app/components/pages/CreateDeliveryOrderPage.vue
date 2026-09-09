@@ -173,6 +173,12 @@ function onProductSearch(e: Event) {
   productFilter.value = (e.target as HTMLInputElement).value
 }
 
+// WMS doesn't author product copy — a line's description is the product's own, read
+// from product details and shown as text. Only the ERP package, where a document
+// line can carry its own wording for the customer/vendor, keeps it editable.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function onProductSelect(row: LineRow, id: string) {
   // The combobox is disabled for a locked row; belt-and-braces so a stray event
   // can't rewrite a line a picking task is already pointing at.
@@ -184,7 +190,9 @@ function onProductSelect(row: LineRow, id: string) {
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
-  if (!row.description) row.description = p.desc
+  // WMS mirrors the product, always. ERP only fills a blank, so a line the user
+  // has worded themselves survives a product change.
+  if (isWms.value || !row.description) row.description = p.desc
   if (!row.unit) row.unit = p.unit
   const last = rows.value[rows.value.length - 1]
   if (last && last.id === row.id) rows.value.push(makeRow())
@@ -738,8 +746,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
+                    <!-- Description: the product's own in WMS — disabled rather than
+                         removed, so the column keeps its width and the cell still
+                         reads as the field it is. Editable in ERP, where a document
+                         line legitimately carries its own wording. -->
                     <td class="cr-td cr-td--input">
-                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                      <MpInput
+                        :id="`cr-desc-${row.id}`"
+                        v-model="row.description"
+                        :is-disabled="isWms"
+                        is-full-width
+                      />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': qtyInvalid(row) }">
                       <MpTooltip
