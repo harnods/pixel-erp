@@ -657,7 +657,7 @@ export function dealActivityLog(d: Deal): DealActivityEntry[] {
       details: [
         { label: 'Deal', value: d.name },
         { label: 'Customer', value: d.company },
-        { label: d.convertedTarget ?? 'Sales Order', value: d.salesOrderId },
+        { label: d.convertedTarget ?? 'Sales Order', value: `#${getDealSalesOrder(d)?.number ?? d.salesOrderId}` },
       ],
     })
   }

@@ -17,7 +17,7 @@ import { dealToSalesPrefill } from '~/data/salesFormPrefill'
 import type { Deal } from '~/data/crm'
 
 const props = defineProps<{ open: boolean; kind: 'sales-order' | 'sales-quote'; deal: Deal | null }>()
-const emit = defineEmits<{ close: []; created: [] }>()
+const emit = defineEmits<{ close: []; created: [record?: { id: string }] }>()
 const { t } = useLocale()
 
 const prefill = computed(() => (props.deal ? dealToSalesPrefill(props.deal) : null))
@@ -44,14 +44,14 @@ const title = computed(() => (props.kind === 'sales-order' ? t('Create sales ord
               embedded
               :prefill="prefill"
               @cancel="emit('close')"
-              @created="emit('created')"
+              @created="(rec) => emit('created', rec)"
             />
             <NewSalesQuotePage
               v-else
               embedded
               :prefill="prefill"
               @cancel="emit('close')"
-              @created="emit('created')"
+              @created="(rec) => emit('created', rec)"
             />
           </div>
         </div>

@@ -266,6 +266,7 @@ function confirmDeleteFile() {
 function fmtUploaded(iso?: string) { return iso ? formatDateTime(iso) : '—' }
 
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
+function goSalesOrder(id: string) { router.push(`/sales-orders/${id}`) }
 function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 </script>
 
@@ -355,7 +356,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       </div>
       <div v-else-if="isConverted" class="detail-banner">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
-        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ convTarget }} {{ deal.salesOrderId }}. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
+        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ convTarget }} <template v-if="linkedOrder">#{{ linkedOrder.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
       </div>
       <div v-else-if="isLost" class="detail-banner detail-banner--warn">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
@@ -628,7 +629,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── Sales orders — same columns as the Sales orders index ── -->
+          <!-- ── Sales orders — the linked ERP sales order, same table as the ERP index ── -->
           <MpTabPanel value="orders">
             <h3 class="detail-tab-heading">{{ t('Sales orders') }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
@@ -636,30 +637,36 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--number" />
                 <col />
+                <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--status" />
                 <col class="detail-linked-col--amount" />
-                <col class="detail-linked-col--owner" />
+                <col class="detail-linked-col--amount" />
+                <col class="detail-linked-col--tags" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
                   <th class="detail-th">{{ t('Number') }}</th>
                   <th class="detail-th">{{ t('Customer') }}</th>
+                  <th class="detail-th">{{ t('Due date') }}</th>
                   <th class="detail-th">{{ t('Status') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Balance due') }}</th>
                   <th class="detail-th detail-th--num">{{ t('Total') }}</th>
-                  <th class="detail-th">{{ t('Owner') }}</th>
+                  <th class="detail-th">{{ t('Tags') }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr class="detail-item-row">
                   <td class="detail-td">{{ fmtDate(linkedOrder.date) }}</td>
-                  <td class="detail-td"><a class="cell-link cell-text" @click="goOrder(linkedOrder.id)">{{ linkedOrder.id }}</a></td>
-                  <td class="detail-td">{{ linkedOrder.customer }}</td>
+                  <td class="detail-td"><a class="cell-link cell-text" @click="goSalesOrder(linkedOrder.id)">{{ t('Sales Order') }} #{{ linkedOrder.number }}</a></td>
+                  <td class="detail-td">{{ linkedOrder.customer.name }}</td>
+                  <td class="detail-td">{{ fmtDate(linkedOrder.dueDate) }}</td>
                   <td class="detail-td">
                     <ErpStatusBadge :status="linkedOrder.status" :label="ORDER_STATUS[linkedOrder.status]?.label ?? linkedOrder.status" :type="ORDER_STATUS[linkedOrder.status]?.type ?? 'announcement'" />
                   </td>
-                  <td class="detail-td detail-td--num">{{ money(linkedOrder.amount) }}</td>
-                  <td class="detail-td">{{ linkedOrder.owner }}</td>
+                  <td class="detail-td detail-td--num">{{ money(linkedOrder.balanceDue) }}</td>
+                  <td class="detail-td detail-td--num">{{ money(linkedOrder.total) }}</td>
+                  <td class="detail-td"><ErpTagList v-if="linkedOrder.tags?.length" :tags="linkedOrder.tags" /><template v-else>—</template></td>
                 </tr>
               </tbody>
             </table>
@@ -930,6 +937,7 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--amount { width: 200px; }
 .detail-linked-col--owner { width: 160px; }
+.detail-linked-col--tags { width: 200px; }
 .detail-linked-col--actions { width: 56px; }
 
 /* ── Files tab ── */
