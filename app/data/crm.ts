@@ -984,8 +984,13 @@ export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
 export const crmTeamMemberOptions = computed(() =>
   employees
     .filter((e) => e.status === 'active')
-    // No job position — Jurnal doesn't carry it (members modal + assign-members drawer).
-    .map((e) => ({ id: e.id, name: e.fullName, subtitle: undefined as string | undefined })),
+    // Subtitle is the email (Jurnal doesn't carry job position) — shown in the
+    // members modal + assign-members drawer under the name.
+    .map((e) => ({
+      id: e.id,
+      name: e.fullName,
+      subtitle: e.email || `${e.fullName.trim().toLowerCase().replace(/\s+/g, '.')}@centralperk.co.id`,
+    })),
 )
 export function teamMemberNames(ids: string[]): string[] {
   return ids.map((id) => employees.find((e) => e.id === id)?.fullName ?? id)
