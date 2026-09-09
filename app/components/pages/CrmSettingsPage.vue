@@ -41,7 +41,7 @@ import {
   crmTeams, CRM_TEAM_MODULES, type CrmTeam,
   crmTeamMemberOptions, teamMemberNames, teamNamesForPerson,
   upsertCrmTeam, crmTeamNameExists, setCrmTeamStatus, persistCrmTeams,
-  type CrmPermSet, fullPermSet, defaultPermSet, permSummary,
+  type CrmPermSet, fullPermSet, defaultPermSet, permSummary, crmUserPermSet, setUserPermSet,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
 import { formatDate } from '~/utils/date'
@@ -79,12 +79,9 @@ type CrmUser = {
 
 // Per-user permission sets (persisted). The workspace owner (first user) gets full
 // access by default; everyone else the read-only baseline.
-const PERMS_KEY = 'crm-user-perm-set-v1'
-const userPermSet = reactive<Record<string, CrmPermSet>>(
-  import.meta.client ? (() => { try { return JSON.parse(localStorage.getItem(PERMS_KEY) || '{}') } catch { return {} } })() : {},
-)
+// Per-user perms live in the shared store (crm.ts) so the whole CRM enforces them.
 function permSetOf(id: string, i: number): CrmPermSet {
-  return userPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
+  return crmUserPermSet[id] ?? (i === 0 ? fullPermSet() : defaultPermSet())
 }
 
 // ERP role — sourced from the ERP account (read-only here). The workspace owner is
@@ -201,10 +198,7 @@ function openAccess(row: CrmUser) {
 function saveAccess() {
   const u = accessUser.value
   if (!u) return
-  userPermSet[u.id] = { ...accessDraft }
-  if (import.meta.client) {
-    try { localStorage.setItem(PERMS_KEY, JSON.stringify(userPermSet)) } catch { /* ignore */ }
-  }
+  setUserPermSet(u.id, accessDraft)
   accessDrawerOpen.value = false
   successToast(t('CRM access updated'))
 }
@@ -373,10 +367,12 @@ const membersModalOpen = ref(false)
 const membersModalTeam = ref<TeamRow | null>(null)
 function openMembers(row: TeamRow) { membersModalTeam.value = row; membersModalOpen.value = true }
 const membersModalList = computed(() => {
-  const ids = membersModalTeam.value?.memberIds ?? []
+  const team = membersModalTeam.value
+  const ids = team?.memberIds ?? []
+  const adminIds = team?.adminIds ?? []
   return ids.map((id) => {
     const m = crmTeamMemberOptions.value.find((o) => o.id === id)
-    return { id, name: m?.name ?? id, subtitle: m?.subtitle }
+    return { id, name: m?.name ?? id, subtitle: m?.subtitle, isAdmin: adminIds.includes(id) }
   })
 })
 
@@ -799,7 +795,10 @@ const integrations: Integration[] = [
         <MpModalBody>
           <ul class="cmt-member-list">
             <li v-for="m in membersModalList" :key="m.id" class="cmt-member-row">
-              <span class="cmt-member-name">{{ m.name }}</span>
+              <span class="cmt-member-nameline">
+                <span class="cmt-member-name">{{ m.name }}</span>
+                <span v-if="m.isAdmin" class="cmt-admin-badge">{{ t('Team Admin') }}</span>
+              </span>
               <span v-if="m.subtitle" class="cmt-member-sub">{{ m.subtitle }}</span>
             </li>
           </ul>
@@ -815,8 +814,15 @@ const integrations: Integration[] = [
 .cmt-member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .cmt-member-row { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cmt-member-row:last-child { border-bottom: none; }
+.cmt-member-nameline { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .cmt-member-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cmt-member-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cmt-admin-badge {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5, 6px);
+  height: var(--mp-sizes-5, 20px); border-radius: var(--mp-radii-sm, 4px);
+  background: var(--mp-background-information-subtle, #eaf1fb); color: var(--mp-text-link, #165082);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap;
+}
 
 /* ── Shell (mirrors CrmCustomerDetailPage) ── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

@@ -1362,6 +1362,37 @@ export function defaultPermSet(): CrmPermSet {
   for (const k of ['deals.readAll', 'contacts.readAll', 'companies.readAll']) s[k] = true
   return s
 }
+// ── Shared per-user permission store ────────────────────────────────────────
+// The Manage-access drawer edits this; the whole CRM reads it to gate actions.
+// Keyed by CU id (CU01, CU02, …) in CRM_OWNERS order — same ids CrmSettingsPage uses.
+const CRM_PERMS_KEY = 'crm-user-perm-set-v1'
+export const crmUserPermSet = reactive<Record<string, CrmPermSet>>(
+  import.meta.client
+    ? (() => { try { return JSON.parse(localStorage.getItem(CRM_PERMS_KEY) || '{}') } catch { return {} } })()
+    : {},
+)
+/** CU id for an owner name (CU01 = first owner = workspace owner, full access). */
+export function crmUserId(name: string): string {
+  const i = CRM_OWNERS.indexOf(name)
+  return `CU${String((i < 0 ? 0 : i) + 1).padStart(2, '0')}`
+}
+/** A user's effective permission set (their saved set, or the role default). */
+export function permSetForUser(name: string): CrmPermSet {
+  const i = CRM_OWNERS.indexOf(name)
+  return crmUserPermSet[crmUserId(name)] ?? (i === 0 ? fullPermSet() : defaultPermSet())
+}
+export function setUserPermSet(id: string, perms: CrmPermSet) {
+  crmUserPermSet[id] = { ...perms }
+  if (import.meta.client) { try { localStorage.setItem(CRM_PERMS_KEY, JSON.stringify(crmUserPermSet)) } catch { /* ignore */ } }
+}
+
+/** The signed-in CRM user (demo). Their permissions gate every CRM action. */
+export const CRM_CURRENT_USER = 'Rizal Candra'
+export function currentUserPerms(): CrmPermSet { return permSetForUser(CRM_CURRENT_USER) }
+/** Can the signed-in user do `key` (a permission flag)? Reactive — re-reads the
+ *  shared store, so gated buttons update the moment access is changed. */
+export function can(key: string): boolean { return !!currentUserPerms()[key] }
+
 /** One-line summary of a permission set for the User & roles index. */
 export function permSummary(s: CrmPermSet): string {
   const on = CRM_PERM_KEYS.filter((k) => s[k]).length

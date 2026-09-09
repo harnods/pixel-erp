@@ -182,7 +182,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // ── CRM Teams (PRD V1 audit) ──
   'A team with this name already exists.': 'Tim dengan nama ini sudah ada.',
-  'Assign at least one Team Admin.': 'Tetapkan minimal satu Team Admin.',
+  'Assign at least one Team Admin.': 'Tetapkan minimal satu Team admin.',
   'No other active team covers': 'Tidak ada tim aktif lain yang mencakup',
   'Assign another active team before deactivating.': 'Tetapkan tim aktif lain sebelum menonaktifkan.',
   'Cannot deactivate': 'Tidak bisa menonaktifkan',
@@ -195,8 +195,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Team reactivated': 'Tim diaktifkan',
   'Deactivate': 'Nonaktifkan',
   'Reactivate': 'Aktifkan',
-  'Team Admin': 'Team Admin',
-  'Mark at least one member as Team Admin.': 'Tandai minimal satu anggota sebagai Team Admin.',
+  'Team Admin': 'Team admin',
+  'Mark at least one member as Team Admin.': 'Tandai minimal satu anggota sebagai Team admin.',
   'Accessible modules': 'Modul yang dapat diakses',
   'Team updated': 'Tim diperbarui',
   'Team created': 'Tim dibuat',

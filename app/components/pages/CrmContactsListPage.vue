@@ -17,11 +17,16 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmContactsFiltersDrawer, { emptyContactsFilters, type ContactsFiltersValue } from '~/components/patterns/CrmContactsFiltersDrawer.vue'
-import { crmContactPeople, companiesOfContact, deleteCrmContactPerson, CRM_OWNERS, type CrmContactPerson } from '~/data/crm'
+import { crmContactPeople, companiesOfContact, deleteCrmContactPerson, can, CRM_CURRENT_USER, CRM_OWNERS, type CrmContactPerson } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
+
+// ── Permission gates (signed-in user) ──
+const canCreate = computed(() => can('contacts.create'))
+const canEdit = computed(() => can('contacts.edit'))
+const canViewAll = computed(() => can('contacts.readAll'))
 
 function open(row: ContactRow) { router.push(`/crm/customers/contacts/${row.id}`) }
 function soon(what: string) { infoToast(`${what} — coming soon`) }
@@ -67,6 +72,8 @@ function onApplyFilters(f: ContactsFiltersValue) { contactFilters.value = f; fil
 
 const toolbarFiltered = computed<ContactRow[]>(() => rows.value.filter((r) => {
   const cf = contactFilters.value
+  // "Only my contacts" access → hide records not owned by the signed-in user.
+  if (!canViewAll.value && r.owner !== CRM_CURRENT_USER) return false
   if (cf.owners.length) {
     const has = cf.owners.includes(r.owner)
     if (cf.ownerComparator === 'isAnyOf' && !has) return false
@@ -143,7 +150,7 @@ const deleteDescription = computed(() =>
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/contacts/new')">{{ t('New contact') }}</MpButton>
+        <MpButton v-if="canCreate" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/contacts/new')">{{ t('New contact') }}</MpButton>
       </div>
     </header>
 
@@ -156,7 +163,7 @@ const deleteDescription = computed(() =>
         :per-page="perPage"
         :sort-key="sortKey"
         :sort-dir="sortDir"
-        has-checkbox
+        :has-checkbox="canEdit"
         bulk-label="contact"
         filter-empty-label="contact"
         :search="search"
@@ -219,8 +226,8 @@ const deleteDescription = computed(() =>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="open(row as unknown as ContactRow)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="openDelete([(row as unknown as ContactRow).id])">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="openDelete([(row as unknown as ContactRow).id])">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
