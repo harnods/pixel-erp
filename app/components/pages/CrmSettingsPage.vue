@@ -252,8 +252,8 @@ const teamColumns: TableColumn[] = [
   { key: 'name',        label: 'Team name',          kind: 'name',   sortable: true, sortType: 'text'   },
   { key: 'memberCount', label: 'No. of members',     kind: 'number', sortable: true, sortType: 'number' },
   { key: 'modules',     label: 'Accessible modules', kind: 'tags'                                        },
-  { key: 'createdAt',   label: 'Created time',       kind: 'date',   sortable: true, sortType: 'date'   },
   { key: 'status',      label: 'Status',             kind: 'status', sortable: true, sortType: 'text'   },
+  { key: 'updatedAt',   label: 'Last updated',       kind: 'date',   sortable: true, sortType: 'date'   },
 ]
 
 // Filters: Status (left) + search (right).
@@ -266,7 +266,7 @@ const {
   filterFn: (row, s, status) =>
     (!s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s))
     && (!status || row.status === status),
-  defaultSort: { key: 'createdAt', dir: 'desc' },
+  defaultSort: { key: 'updatedAt', dir: 'desc' },
 })
 const TEAM_STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -275,8 +275,10 @@ const TEAM_STATUS_OPTS = [
 const hasActiveTeamFilter = computed(() => !!teamSearch.value || !!teamStatusFilter.value)
 function clearTeamFilters() { teamSearch.value = ''; teamStatusFilter.value = '' }
 
-// Column settings (Team name locked visible).
-const teamColumnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(teamColumns.map((c) => [c.key, true])))
+// Column settings (Team name locked visible; Last updated hidden by default).
+const teamColumnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(teamColumns.map((c) => [c.key, c.key !== 'updatedAt'])),
+)
 const teamColumnItems = teamColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const teamVisibleColumns = computed<TableColumn[]>(() => teamColumns.filter((c) => teamColumnVisibility[c.key]))
 function hideTeamColumn(key: string) { teamColumnVisibility[key] = false }
@@ -636,9 +638,9 @@ const integrations: Integration[] = [
             <span v-else class="cmt-muted">—</span>
           </template>
 
-          <!-- Created time — date + time, author below -->
-          <template #cell-createdAt="{ row }">
-            <LastUpdatedCell :at="(row as unknown as TeamRow).createdAt" :by="(row as unknown as TeamRow).createdBy" />
+          <!-- Last updated — date + time, author below -->
+          <template #cell-updatedAt="{ row }">
+            <LastUpdatedCell :at="(row as unknown as TeamRow).updatedAt" :by="(row as unknown as TeamRow).updatedBy" />
           </template>
 
           <!-- Status — Active / Inactive -->
