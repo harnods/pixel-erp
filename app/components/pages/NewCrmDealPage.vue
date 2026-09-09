@@ -349,13 +349,8 @@ function onSave() {
           <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
         </MpFormControl>
 
-        <MpFormControl id="f-email" class="si-field">
-          <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
-        </MpFormControl>
-
         <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Order total') }} {{ fmt(orderTotal) }}</h3>
+          <h3 class="si-header1-total-value">{{ t('Deal value') }} {{ fmt(orderTotal) }}</h3>
         </div>
       </section>
 
@@ -370,10 +365,10 @@ function onSave() {
 
           <div class="si-checkbox-stack">
             <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
+            <MpCheckbox v-if="requiresShipping" id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
           </div>
 
-          <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
+          <MpFormControl v-if="requiresShipping && shipToDifferent" id="f-ship-to" class="si-field">
             <MpFormLabel>{{ t('Ship to') }}</MpFormLabel>
             <MpTextarea id="f-ship-to-inp" v-model="shipTo" is-full-width />
           </MpFormControl>
@@ -437,14 +432,6 @@ function onSave() {
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
             <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
-          </MpFormControl>
-        </div>
-
-        <!-- Col 5: tags — last column, same 24px gap as every other pair -->
-        <div class="si-header2-col">
-          <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
-            <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
           </MpFormControl>
         </div>
       </section>
@@ -633,12 +620,6 @@ function onSave() {
       <section class="si-bottom-section">
         <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
         <div class="si-notes-col">
-          <MpFormControl id="f-message" class="si-note-field">
-            <div class="si-lbl-row"><MpFormLabel>{{ t('Message') }}</MpFormLabel><span class="si-counter">{{ message.length }}/250</span></div>
-            <MpTextarea id="f-message-inp" v-model="message" :maxlength="250" is-full-width />
-            <span class="si-field-caption">{{ t('Visible to customer') }}</span>
-          </MpFormControl>
-
           <MpFormControl id="f-memo" class="si-note-field">
             <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
             <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
