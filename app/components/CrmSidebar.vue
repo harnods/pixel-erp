@@ -41,8 +41,7 @@ const navGroups: Item[][] = [
       { name: 'Company profile',  to: '/crm/settings/company' },
       { name: 'Users',            to: '/crm/settings/users' },
       { name: 'Teams',            to: '/crm/settings/teams' },
-      { name: 'Deals',            to: '/crm/settings/deals' },
-      { name: 'Modules settings', to: '/crm/settings/modules' },
+      { name: 'Modules',          to: '/crm/settings/modules' },
     ] },
   ],
 ]
@@ -128,7 +127,7 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 
 .sidebar {
   width: 52px;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
   transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1); will-change: width;
   padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
@@ -154,7 +153,7 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 .nav-group {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
   padding-bottom: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-1);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .nav-group:last-child { border-bottom: none; }
 
@@ -170,7 +169,7 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 .nav-item:hover img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
 .nav-item:hover .nav-label { color: var(--mp-text-link, #165082); }
 
-.nav-item.active { background-color: var(--mp-background-neutral-pressed); }
+.nav-item.active { background-color: var(--mp-background-neutral-pressed, #ebf0f1); }
 .nav-item.active .nav-icon-line { display: none; }
 .nav-item .nav-icon-fill { display: none; }
 .nav-item.active .nav-icon-fill {
@@ -190,7 +189,7 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 
 /* ── Level-2 panel (mirrors ErpSidebar .sidebar-panel) ── */
 .sidebar-panel {
-  width: 188px; background: var(--mp-background-neutral-subtle); height: 100%;
+  width: 188px; background: var(--mp-background-neutral-subtle, #f8f9f9); height: 100%;
   display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
   padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
 }

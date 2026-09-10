@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput, MpRadio,
+  MpButton, MpIcon, MpToggle, MpInput,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -26,10 +26,12 @@ import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS,
   dealPipelines, persistDealPipelines,
+  deals, dealExpectedValue, dealDaysInStage,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
-  type DealPipeline, type DealPipelineStage,
+  type DealPipeline, type DealPipelineStage, type Deal, type DealStage,
 } from '~/data/crm'
+import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -87,22 +89,30 @@ const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(dealPipelines)))
 const selectedPipeId = ref<string>(pipeDraft.value[0]?.id ?? 'default')
 const currentPipe = computed<DealPipeline | undefined>(() => pipeDraft.value.find((p) => p.id === selectedPipeId.value) ?? pipeDraft.value[0])
 const pipeOptions = computed(() => pipeDraft.value.map((p) => ({ value: p.id, label: p.name })))
-const openStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages.filter((s) => s.kind === 'open') ?? [])
-const wonStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'won'))
-const lostStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'lost'))
+// Every stage renders as a Kanban swimlane (open flow + Won + Lost alike).
+const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages ?? [])
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
-// Keep the array ordered: open stages first (their own order), then won, then lost.
-function normalize(pipe: DealPipeline) {
-  const open = pipe.stages.filter((s) => s.kind === 'open')
-  const won = pipe.stages.filter((s) => s.kind === 'won')
-  const lost = pipe.stages.filter((s) => s.kind === 'lost')
-  if (!open.some((s) => s.isDefault) && open[0]) open[0].isDefault = true
-  pipe.stages = [...open, ...won, ...lost]
+// The real deals sitting in a stage — cards mirror the live pipeline (matched by
+// stage name, so the six seed stages fill and renamed/new stages show empty).
+function stageDeals(s: DealPipelineStage): Deal[] {
+  return deals.filter((d) => !d.archived && d.stage === (s.name as DealStage))
+}
+function stageTotal(s: DealPipelineStage): string {
+  return formatIDR(stageDeals(s).reduce((sum, d) => sum + dealExpectedValue(d), 0))
+}
+function agingLabel(d: Deal): string { return `${dealDaysInStage(d)}d` }
+
+// Inline rename — the pencil toggles a stage's name into an editable field.
+const editingStageId = ref<string | null>(null)
+function editStage(id: string) { editingStageId.value = id }
+function commitStageName(s: DealPipelineStage) {
+  if (!s.name.trim()) s.name = t('Untitled stage')
+  editingStageId.value = null
 }
 
-// Drag-reorder the OPEN stages (won/lost stay pinned in the swimlane).
+// Drag-reorder the swimlanes.
 const dragSrc = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
 function onStageDragStart(i: number, e: DragEvent) { dragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
@@ -110,47 +120,27 @@ function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTr
 function onStageDrop(i: number) {
   const pipe = currentPipe.value
   if (!pipe || dragSrc.value === null || dragSrc.value === i) { dragOver.value = null; return }
-  const open = [...openStages.value]
-  const [m] = open.splice(dragSrc.value, 1)
-  open.splice(i, 0, m!)
-  pipe.stages = [...open, ...pipe.stages.filter((s) => s.kind !== 'open')]
+  const arr = [...pipe.stages]
+  const [m] = arr.splice(dragSrc.value, 1)
+  arr.splice(i, 0, m!)
+  pipe.stages = arr
   dragSrc.value = null; dragOver.value = null
 }
 function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
 
-function setDefaultStage(id: string) { currentPipe.value?.stages.forEach((s) => { s.isDefault = s.kind === 'open' && s.id === id }) }
 function addStage() {
   const pipe = currentPipe.value; if (!pipe) return
-  pipe.stages.push({ id: newStageId(), name: 'New stage', kind: 'open' })
-  normalize(pipe)
+  const id = newStageId()
+  pipe.stages.push({ id, name: t('New stage'), kind: 'open' })
+  editingStageId.value = id
 }
+// Inline "can't delete the last stage" note keyed by pipeline id.
+const stageDeleteError = ref('')
 function removeStage(id: string) {
   const pipe = currentPipe.value; if (!pipe) return
+  if (pipe.stages.length <= 1) { stageDeleteError.value = t('A pipeline must keep at least one stage.'); return }
+  stageDeleteError.value = ''
   pipe.stages = pipe.stages.filter((s) => s.id !== id)
-  normalize(pipe)
-}
-// Mark a stage as the pipeline's Won / Lost ending (only one of each) — demotes the
-// previous holder back to an open flow stage.
-function markAs(id: string, kind: 'won' | 'lost') {
-  const pipe = currentPipe.value; if (!pipe) return
-  pipe.stages.forEach((s) => { if (s.kind === kind) s.kind = 'open' })
-  const target = pipe.stages.find((s) => s.id === id); if (!target) return
-  target.kind = kind; delete target.isDefault
-  normalize(pipe)
-}
-function createPipeline() {
-  const n = pipeDraft.value.length + 1
-  const id = `pipe-${n}-${stageSeq++}`
-  pipeDraft.value.push({
-    id, name: `Pipeline ${n}`,
-    stages: [
-      { id: newStageId(), name: 'New', kind: 'open', isDefault: true },
-      { id: newStageId(), name: 'Won', kind: 'won' },
-      { id: newStageId(), name: 'Lost', kind: 'lost' },
-    ],
-  })
-  selectedPipeId.value = id
-  activeTab.value = 'pipeline'
 }
 
 // ── Field type options + labels ──────────────────────────────────────────────
@@ -429,15 +419,15 @@ function saveChanges() {
   persistCrmModule(m, AUTHOR, nowStamp())
   successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
-// Deals is its own settings menu; custom modules live under Modules settings.
-function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/crm/settings/modules') }
+// Every module (Deals system module included) is edited from the Modules index.
+function cancel() { router.push('/crm/settings/modules') }
 </script>
 
 <template>
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <NuxtLink v-if="mod && !mod.system" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules settings') }}</NuxtLink>
+        <NuxtLink v-if="mod" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules') }}</NuxtLink>
         <div class="detail-titlerow-left">
           <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
@@ -458,63 +448,72 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpIcon name="folder-close" size="xl" />
         <p class="builder-empty-title">{{ t('Module not found') }}</p>
         <p class="builder-empty-caption">{{ t('This module doesn’t exist or was removed.') }}</p>
-        <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules settings') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules') }}</MpButton>
       </div>
 
       <template v-else>
-          <!-- ════════ PIPELINE (Deals) ════════ -->
+          <!-- ════════ PIPELINE (Deals) — swimlane stage editor (Figma 4238-10116) ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel">
             <template v-if="currentPipe">
-              <!-- Flow stages (draggable) -->
-              <section class="pipe-section">
-                <div class="pipe-section-head">
-                  <span class="pipe-section-title">{{ t('Stages') }}</span>
-                  <span class="pipe-section-caption">{{ t('Drag to reorder. A new deal enters the stage you set as default.') }}</span>
-                </div>
-                <ul class="pipe-stagelist">
-                  <li
-                    v-for="(s, i) in openStages" :key="s.id"
-                    class="pipe-stage" :class="{ 'pipe-stage--over': dragOver === i }"
-                    draggable="true"
-                    @dragstart="onStageDragStart(i, $event)" @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)" @dragend="onStageDragEnd"
-                  >
-                    <span class="pipe-drag" aria-hidden="true"><MpIcon name="drag" size="md" /></span>
-                    <MpInput :id="`stage-${s.id}`" v-model="s.name" class="pipe-stage-name" :aria-label="t('Stage name')" />
-                    <MpRadio :id="`default-${s.id}`" class="pipe-default" :is-checked="!!s.isDefault" @change="setDefaultStage(s.id)">{{ t('New deals enter here') }}</MpRadio>
-                    <MpPopover :id="`stage-menu-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                      <MpPopoverTrigger>
-                        <MpButton class="builder-kebab" :aria-label="t('Stage options')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-                      </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ minWidth: '176px', width: 'max-content' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem @click="markAs(s.id, 'won')">{{ t('Mark as Won stage') }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="markAs(s.id, 'lost')">{{ t('Mark as Lost stage') }}</MpPopoverListItem>
-                          <MpPopoverListItem v-if="openStages.length > 1" @click="removeStage(s.id)">{{ t('Remove stage') }}</MpPopoverListItem>
-                        </MpPopoverList>
-                      </MpPopoverContent>
-                    </MpPopover>
-                  </li>
-                </ul>
-                <MpButton variant="secondary" is-rounded left-icon="add" @click="addStage">{{ t('Add stage') }}</MpButton>
-              </section>
+              <!-- Module-name field + field-settings icon -->
+              <div class="pipe-toprow">
+                <MpInput id="pipe-module-name" v-model="draft.name" class="pipe-name-input" :aria-label="t('Module name')" />
+                <MpButton class="builder-kebab" is-rounded :aria-label="t('Field settings')"><MpIcon name="settings" size="md" /></MpButton>
+              </div>
 
-              <!-- Won / Lost swimlane — the two endings (no aging) -->
-              <section class="pipe-swimlane">
-                <div class="pipe-section-head">
-                  <span class="pipe-section-title">{{ t('Endings') }}</span>
-                  <span class="pipe-section-caption">{{ t('How a deal closes. One Won and one Lost per pipeline — endings carry no aging.') }}</span>
-                </div>
-                <div class="pipe-endings">
-                  <div class="pipe-ending pipe-ending--won">
-                    <span class="pipe-ending-tag">{{ t('Won') }}</span>
-                    <MpInput v-if="wonStage" :id="`won-${wonStage.id}`" v-model="wonStage.name" class="pipe-stage-name" :aria-label="t('Won stage name')" />
+              <p v-if="stageDeleteError" class="builder-inline-error">{{ stageDeleteError }}</p>
+
+              <!-- Swimlanes: one Kanban lane per stage, cards = live deals in it -->
+              <div class="pipe-board">
+                <div
+                  v-for="(s, i) in pipeStages" :key="s.id"
+                  class="pipe-lane" :class="{ 'pipe-lane--over': dragOver === i }"
+                  @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
+                >
+                  <div class="pipe-lane-head">
+                    <span
+                      class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                      @dragstart="onStageDragStart(i, $event)" @dragend="onStageDragEnd"
+                    ><MpIcon name="drag" size="md" /></span>
+                    <div class="pipe-lane-label">
+                      <MpInput
+                        v-if="editingStageId === s.id" :id="`lane-${s.id}`" v-model="s.name" class="pipe-lane-input"
+                        :aria-label="t('Stage name')" @blur="commitStageName(s)" @keydown.enter.prevent="commitStageName(s)"
+                      />
+                      <template v-else>
+                        <span class="pipe-lane-name">{{ s.name }}</span>
+                        <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
+                      </template>
+                    </div>
                   </div>
-                  <div class="pipe-ending pipe-ending--lost">
-                    <span class="pipe-ending-tag">{{ t('Lost') }}</span>
-                    <MpInput v-if="lostStage" :id="`lost-${lostStage.id}`" v-model="lostStage.name" class="pipe-stage-name" :aria-label="t('Lost stage name')" />
+
+                  <div class="pipe-lane-cards">
+                    <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
+                      <div class="pipe-card-head">
+                        <span class="pipe-card-company">{{ d.company }}</span>
+                        <span class="pipe-card-deal">{{ d.name }}</span>
+                      </div>
+                      <span class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
+                      <div class="pipe-card-foot">
+                        <span class="pipe-card-owner">{{ d.owner }}</span>
+                        <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                      </div>
+                    </div>
                   </div>
+
+                  <div class="pipe-lane-total">
+                    <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
+                    <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
+                  </div>
+
+                  <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
+                    <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
+                  </button>
                 </div>
-              </section>
+
+                <!-- + New stage -->
+                <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
+              </div>
             </template>
           </div>
 
@@ -849,38 +848,65 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 /* Each tab panel stacks its rows with the standard 20px gap. */
 .builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
-/* ── Pipeline tab ── */
-.pipe-toolbar { display: flex; align-items: flex-end; gap: var(--mp-spacing-4); }
-.pipe-select-field { flex: 0 0 auto; }
-.pipe-new-btn { flex-shrink: 0; }
-.pipe-section, .pipe-swimlane { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.pipe-section-head { display: flex; flex-direction: column; gap: 2px; }
-.pipe-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.pipe-section-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+/* ── Pipeline tab — swimlane stage editor (Figma 4238-10116) ── */
+/* Top row: the module-name field (296px) + a field-settings icon button. */
+.pipe-toprow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.pipe-name-input { width: 296px; max-width: 100%; }
 
-.pipe-stagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.pipe-stage {
-  display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px);
-  background: var(--mp-colors-background-neutral, #fff);
+/* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
+.pipe-board { display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
+.pipe-lane {
+  flex: 0 0 250px; width: 250px; min-height: 520px;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-2\.5, 6px);
+  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
 }
-.pipe-stage--over { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
-.pipe-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; }
-.pipe-stage-name { flex: 1; min-width: 0; }
-.pipe-default { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); cursor: pointer; white-space: nowrap; }
+.pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
 
-/* Won / Lost swimlane — a distinct band with the two endings side by side. */
-.pipe-endings { display: flex; gap: var(--mp-spacing-4); }
-.pipe-ending {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 10px); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+.pipe-lane-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
+.pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
+.pipe-lane-label { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; flex: 1; }
+.pipe-lane-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-lane-input { flex: 1; min-width: 0; }
+.pipe-lane-edit {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-icon-subtle, #97a0af);
 }
-.pipe-ending--won { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
-.pipe-ending--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
-.pipe-ending-tag { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.pipe-ending--won .pipe-ending-tag { color: var(--mp-colors-text-success, #186f4a); }
-.pipe-ending--lost .pipe-ending-tag { color: var(--mp-colors-text-danger, #a8352d); }
+.pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
+
+/* Card list grows to fill the lane so the total + delete pin to the bottom. */
+.pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.pipe-card {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-stage, #fff);
+}
+.pipe-card-head { display: flex; flex-direction: column; min-width: 0; }
+.pipe-card-company { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-deal { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.pipe-card-owner { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-aging {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-placeholder, #8690a2);
+  font-size: var(--mp-font-sizes-xs, 10px); line-height: 1;
+}
+
+.pipe-lane-total { display: flex; flex-direction: column; gap: 2px; }
+.pipe-lane-total-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary, #3a4749); }
+.pipe-lane-total-value { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-default, #080d0e); }
+
+.pipe-lane-delete {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start;
+  padding: 0 var(--mp-spacing-0\.5, 2px); border: none; background: none; cursor: pointer;
+  color: var(--mp-colors-text-secondary, #3a4749); font-size: var(--mp-font-sizes-md);
+}
+.pipe-lane-delete:hover { color: var(--mp-colors-text-danger, #a8352d); }
+
+.pipe-newstage { flex-shrink: 0; align-self: flex-start; }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
