@@ -1223,6 +1223,38 @@ const DEAL_PIPELINES_SEED: DealPipeline[] = [
 export const dealPipelines = reactive<DealPipeline[]>(load('crm-deal-pipelines-v1', DEAL_PIPELINES_SEED))
 export function persistDealPipelines() { saveSnapshot('crm-deal-pipelines-v1', dealPipelines) }
 
+/** Pipeline board DISPLAY settings — edited from the right-hand panel of the
+ *  Deals module builder (Figma 4240-18081). Drives which fields render on a deal
+ *  card (+ their order), whether the per-stage total shows, and whether the
+ *  swimlanes are colour-coded by outcome. Persisted separately from the stages. */
+export type DealCardFieldKey = 'company' | 'dealName' | 'contactPerson' | 'dealValue' | 'owner' | 'date' | 'note'
+export interface DealCardField { key: DealCardFieldKey; label: string; on: boolean }
+export interface DealPipelineDisplay {
+  stageTotal: boolean       // "Total deal value" per stage
+  colorColumns: boolean     // "Color stage columns"
+  showAging: boolean        // "Rotting in (days)" — the card aging badge
+  cardFields: DealCardField[]
+}
+const DEAL_PIPELINE_DISPLAY_SEED: DealPipelineDisplay = {
+  stageTotal: true,
+  colorColumns: false,
+  showAging: true,
+  cardFields: [
+    { key: 'company',       label: 'Company name',   on: true },
+    { key: 'dealName',      label: 'Deal name',      on: true },
+    { key: 'contactPerson', label: 'Contact person', on: false },
+    { key: 'dealValue',     label: 'Deal value',     on: true },
+    { key: 'owner',         label: 'Owner',          on: true },
+    { key: 'date',          label: 'Date',           on: false },
+    { key: 'note',          label: 'Note',           on: false },
+  ],
+}
+export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
+  loadSnapshot<DealPipelineDisplay>('crm-deal-pipeline-display-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+)
+export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
+
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,

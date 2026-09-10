@@ -26,10 +26,12 @@ import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS,
   dealPipelines, persistDealPipelines,
+  dealPipelineDisplay, persistDealPipelineDisplay,
   deals, dealExpectedValue, dealDaysInStage,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage, type Deal, type DealStage,
+  type DealPipelineDisplay,
 } from '~/data/crm'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
@@ -142,6 +144,32 @@ function removeStage(id: string) {
   stageDeleteError.value = ''
   pipe.stages = pipe.stages.filter((s) => s.id !== id)
 }
+
+// ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
+//    changes applies it. Drives which fields show on cards + stage/column props. ──
+const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(dealPipelineDisplay)))
+const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
+const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
+
+// Per-field value for a deal card.
+function cardContact(d: Deal): string { return d.picName || '—' }
+function cardDate(d: Deal): string { return d.expectedCloseDate || '—' }
+function cardNote(d: Deal): string { return d.description || '—' }
+
+// Drag-reorder the card-property rows (order = the order fields stack on a card).
+const fieldDragSrc = ref<number | null>(null)
+const fieldDragOver = ref<number | null>(null)
+function onFieldDragStart(i: number, e: DragEvent) { fieldDragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
+function onFieldDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; fieldDragOver.value = i }
+function onFieldDrop(i: number) {
+  if (fieldDragSrc.value === null || fieldDragSrc.value === i) { fieldDragOver.value = null; return }
+  const arr = [...disp.cardFields]
+  const [m] = arr.splice(fieldDragSrc.value, 1)
+  arr.splice(i, 0, m!)
+  disp.cardFields = arr
+  fieldDragSrc.value = null; fieldDragOver.value = null
+}
+function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
 
 // ── Field type options + labels ──────────────────────────────────────────────
 const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldType, string][])
@@ -408,6 +436,8 @@ function saveChanges() {
   if (m.system) {
     dealPipelines.splice(0, dealPipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
     persistDealPipelines()
+    Object.assign(dealPipelineDisplay, JSON.parse(JSON.stringify(disp)))
+    persistDealPipelineDisplay()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -452,67 +482,110 @@ function cancel() { router.push('/crm/settings/modules') }
       </div>
 
       <template v-else>
-          <!-- ════════ PIPELINE (Deals) — swimlane stage editor (Figma 4238-10116) ════════ -->
-          <div v-show="activeTab === 'pipeline'" class="builder-panel">
+          <!-- ════════ PIPELINE (Deals) — swimlane editor + settings panel (Figma 4240-18081) ════════ -->
+          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
-              <!-- Module-name field + field-settings icon -->
-              <div class="pipe-toprow">
-                <MpInput id="pipe-module-name" v-model="draft.name" class="pipe-name-input" :aria-label="t('Module name')" />
-                <MpButton class="builder-kebab" is-rounded :aria-label="t('Field settings')"><MpIcon name="settings" size="md" /></MpButton>
-              </div>
-
-              <p v-if="stageDeleteError" class="builder-inline-error">{{ stageDeleteError }}</p>
-
-              <!-- Swimlanes: one Kanban lane per stage, cards = live deals in it -->
-              <div class="pipe-board">
-                <div
-                  v-for="(s, i) in pipeStages" :key="s.id"
-                  class="pipe-lane" :class="{ 'pipe-lane--over': dragOver === i }"
-                  @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
-                >
-                  <div class="pipe-lane-head">
-                    <span
-                      class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                      @dragstart="onStageDragStart(i, $event)" @dragend="onStageDragEnd"
-                    ><MpIcon name="drag" size="md" /></span>
-                    <div class="pipe-lane-label">
-                      <MpInput
-                        v-if="editingStageId === s.id" :id="`lane-${s.id}`" v-model="s.name" class="pipe-lane-input"
-                        :aria-label="t('Stage name')" @blur="commitStageName(s)" @keydown.enter.prevent="commitStageName(s)"
-                      />
-                      <template v-else>
-                        <span class="pipe-lane-name">{{ s.name }}</span>
-                        <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
-                      </template>
-                    </div>
-                  </div>
-
-                  <div class="pipe-lane-cards">
-                    <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
-                      <div class="pipe-card-head">
-                        <span class="pipe-card-company">{{ d.company }}</span>
-                        <span class="pipe-card-deal">{{ d.name }}</span>
-                      </div>
-                      <span class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
-                      <div class="pipe-card-foot">
-                        <span class="pipe-card-owner">{{ d.owner }}</span>
-                        <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
+              <div class="pipe-layout">
+                <!-- Board: one Kanban lane per stage, cards = live deals in it -->
+                <div class="pipe-board">
+                  <p v-if="stageDeleteError" class="builder-inline-error pipe-board-error">{{ stageDeleteError }}</p>
+                  <div
+                    v-for="(s, i) in pipeStages" :key="s.id"
+                    class="pipe-lane"
+                    :class="{ 'pipe-lane--over': dragOver === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
+                  >
+                    <div class="pipe-lane-head">
+                      <span
+                        class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                        @dragstart="onStageDragStart(i, $event)" @dragend="onStageDragEnd"
+                      ><MpIcon name="drag" size="md" /></span>
+                      <div class="pipe-lane-label">
+                        <MpInput
+                          v-if="editingStageId === s.id" :id="`lane-${s.id}`" v-model="s.name" class="pipe-lane-input"
+                          :aria-label="t('Stage name')" @blur="commitStageName(s)" @keydown.enter.prevent="commitStageName(s)"
+                        />
+                        <template v-else>
+                          <span class="pipe-lane-name">{{ s.name }}</span>
+                          <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
+                        </template>
                       </div>
                     </div>
+
+                    <div class="pipe-lane-cards">
+                      <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
+                        <template v-for="f in enabledCardFields" :key="f.key">
+                          <span v-if="f.key === 'company'" class="pipe-card-company">{{ d.company }}</span>
+                          <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ d.name }}</span>
+                          <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ cardContact(d) }}</span>
+                          <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
+                          <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
+                            <span class="pipe-card-owner">{{ d.owner }}</span>
+                            <span v-if="disp.showAging" class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                          </div>
+                          <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ cardDate(d) }}</span>
+                          <span v-else-if="f.key === 'note'" class="pipe-card-sub pipe-card-note">{{ cardNote(d) }}</span>
+                        </template>
+                        <!-- Aging still shows even if Owner is hidden -->
+                        <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
+                          <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="disp.stageTotal" class="pipe-lane-total">
+                      <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
+                      <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
+                    </div>
+
+                    <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
+                      <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
+                    </button>
                   </div>
 
-                  <div class="pipe-lane-total">
-                    <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
-                    <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
-                  </div>
-
-                  <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
-                    <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
-                  </button>
+                  <!-- + New stage -->
+                  <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
 
-                <!-- + New stage -->
-                <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
+                <!-- Settings panel — sticky at the far right -->
+                <aside class="pipe-sidebar">
+                  <div class="pipe-side-field">
+                    <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
+                    <MpInput id="pipe-module-name" v-model="draft.name" is-full-width :aria-label="t('Module name')" />
+                  </div>
+
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
+                    <div class="pipe-side-row">
+                      <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
+                    </div>
+                    <div class="pipe-side-row">
+                      <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
+                    </div>
+                  </section>
+
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
+                    <div
+                      v-for="(f, i) in disp.cardFields" :key="f.key"
+                      class="pipe-side-row pipe-side-row--drag" :class="{ 'pipe-side-row--over': fieldDragOver === i }"
+                      @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop(i)"
+                    >
+                      <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                      <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                      <span
+                        class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                        @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                      ><MpIcon name="drag" size="md" /></span>
+                    </div>
+                    <div class="pipe-side-row pipe-side-row--sep">
+                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    </div>
+                  </section>
+                </aside>
               </div>
             </template>
           </div>
@@ -848,21 +921,26 @@ function cancel() { router.push('/crm/settings/modules') }
 /* Each tab panel stacks its rows with the standard 20px gap. */
 .builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
-/* ── Pipeline tab — swimlane stage editor (Figma 4238-10116) ── */
-/* Top row: the module-name field (296px) + a field-settings icon button. */
-.pipe-toprow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
-.pipe-name-input { width: 296px; max-width: 100%; }
+/* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
+/* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
+.builder-panel--pipeline { flex: 1; min-height: 0; }
+.pipe-layout { display: flex; align-items: stretch; gap: var(--mp-spacing-6); flex: 1; min-height: 0; }
 
 /* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
-.pipe-board { display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
+.pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
+.pipe-board-error { flex: 0 0 100%; }
 .pipe-lane {
-  flex: 0 0 250px; width: 250px; min-height: 520px;
+  flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-2\.5, 6px);
   border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
   background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
 }
 .pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
+/* Color stage columns (toggle): tint the lane by outcome. */
+.pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
+.pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
+.pipe-lane--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 
 .pipe-lane-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
 .pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
@@ -888,6 +966,9 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-card-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .pipe-card-owner { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-note { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pipe-card-foot--end { justify-content: flex-end; }
 .pipe-card-aging {
   flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px);
@@ -907,6 +988,25 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-lane-delete:hover { color: var(--mp-colors-text-danger, #a8352d); }
 
 .pipe-newstage { flex-shrink: 0; align-self: flex-start; }
+
+/* ── Settings panel — sticky at the far right ── */
+.pipe-sidebar {
+  flex: 0 0 304px; width: 304px; align-self: stretch;
+  position: sticky; top: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-5);
+  padding: 0 0 0 var(--mp-spacing-4);
+  border-left: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  overflow-y: auto;
+}
+.pipe-side-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pipe-side-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-section { display: flex; flex-direction: column; }
+.pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) 0; }
+.pipe-side-rowlabel { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
+.pipe-side-row--over { background: var(--mp-colors-background-neutral-hovered, #eef0f3); border-radius: var(--mp-radii-sm); }
+.pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
