@@ -449,6 +449,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Deal owner': 'Pemilik deal',
   'Note': 'Catatan',
   'Rotting in (days)': 'Mengendap (hari)',
+  'Change icon': 'Ganti ikon',
   'Ongoing, base currency': 'Berjalan, mata uang dasar',
   'Closing this month': 'Tutup bulan ini',
   'Past due date': 'Lewat tanggal jatuh tempo',

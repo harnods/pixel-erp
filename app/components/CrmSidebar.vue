@@ -71,9 +71,10 @@ function isChildActive(to: string): boolean {
 }
 function handleNavClick(item: Item) { router.push(item.children?.length ? item.children[0]!.to : item.to) }
 
-// The Deals nav item mirrors the Deals module's name (renamable in module settings).
+// The Deals nav item mirrors the Deals module's name + icon (both set in module settings).
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsModuleName.value : t(item.name) }
+function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrmModule('deals')?.icon || item.icon) : item.icon }
 </script>
 
 <template>
@@ -97,8 +98,8 @@ function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsM
           type="button"
           @click="handleNavClick(item)"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="">
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
           <span class="nav-label">{{ navLabel(item) }}</span>
         </button>
       </div>

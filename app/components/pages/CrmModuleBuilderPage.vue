@@ -26,7 +26,7 @@ import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS,
   dealPipelines, persistDealPipelines,
-  dealPipelineDisplay, persistDealPipelineDisplay,
+  dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
@@ -46,24 +46,30 @@ const mod = computed<CrmModule | undefined>(() => getCrmModule(props.orderId))
 
 // ── Local editable deep-clone ────────────────────────────────────────────────
 const UNUSED = '__unused__'
+const MODULE_NAME_MAX = 25
 interface Draft {
   name: string
+  icon: string
   sections: string[]
   fields: CrmModuleField[]
   views: CrmModuleView[]
   layoutDriver: string // '' = none
 }
-const draft = reactive<Draft>({ name: '', sections: [], fields: [], views: [], layoutDriver: '' })
+const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '' })
 
 function loadDraft() {
   const m = mod.value
   if (!m) return
   draft.name = m.name
+  draft.icon = m.icon ?? 'pipeline'
   draft.sections = clone(m.sections)
   draft.fields = clone(m.fields)
   draft.views = clone(m.views)
   draft.layoutDriver = m.layoutDriver ?? ''
 }
+// Icon picker (the Name-field prefix) — opens a small grid of module icons.
+const iconMenuOpen = ref(false)
+function pickIcon(icon: string) { draft.icon = icon; iconMenuOpen.value = false }
 onMounted(loadDraft)
 watch(() => props.orderId, loadDraft)
 
@@ -441,8 +447,10 @@ function saveChanges() {
     views: clone(draft.views),
     layoutDriver: draft.layoutDriver || undefined,
   })
-  // Renaming the module (incl. the Deals system module) also renames its nav item.
+  // Renaming/re-iconing the module (incl. the Deals system module) also updates
+  // its nav item.
   m.name = draft.name.trim() || m.name
+  m.icon = draft.icon
   persistCrmModule(m, AUTHOR, nowStamp())
   successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
@@ -550,8 +558,34 @@ function cancel() { router.push('/crm/settings/modules') }
                 <!-- Settings panel — sticky at the far right -->
                 <aside class="pipe-sidebar">
                   <div class="pipe-side-field">
-                    <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
-                    <MpInput id="pipe-module-name" v-model="draft.name" is-full-width :aria-label="t('Module name')" />
+                    <div class="pipe-side-labelrow">
+                      <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
+                      <span class="pipe-side-counter">{{ draft.name.length }} / {{ MODULE_NAME_MAX }}</span>
+                    </div>
+                    <!-- Icon prefix (click to change the module icon) + name input -->
+                    <div class="pipe-name-field">
+                      <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
+                        <MpPopoverTrigger>
+                          <button type="button" class="pipe-name-prefix" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
+                            <MpIcon :name="draft.icon" size="md" />
+                            <MpIcon name="chevron-down" size="sm" class="pipe-name-prefix-caret" />
+                          </button>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)' })">
+                          <div class="pipe-icon-grid">
+                            <button
+                              v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
+                              class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
+                              :aria-label="ic" @click="pickIcon(ic)"
+                            ><MpIcon :name="ic" size="md" /></button>
+                          </div>
+                        </MpPopoverContent>
+                      </MpPopover>
+                      <input
+                        id="pipe-module-name" v-model="draft.name" class="pipe-name-input-el" type="text"
+                        :maxlength="MODULE_NAME_MAX" :aria-label="t('Module name')"
+                      >
+                    </div>
                   </div>
 
                   <section class="pipe-side-section">
@@ -909,7 +943,9 @@ function cancel() { router.push('/crm/settings/modules') }
 }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* Top spacing is padding (not a border) so the sidebar's left divider can extend
+   into it and reach the very top of the stage without being clipped by overflow. */
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* Section tabs — neutral-subtle bar below the title, OUTSIDE the white stage
    (rule/erp-tabs-pattern; mirrors the .page-tab pattern in [...slug].vue). */
@@ -925,7 +961,7 @@ function cancel() { router.push('/crm/settings/modules') }
 /* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
 .builder-panel--pipeline { flex: 1; min-height: 0; }
-.pipe-layout { display: flex; align-items: stretch; gap: var(--mp-spacing-6); flex: 1; min-height: 0; }
+.pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 
 /* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
 .pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
@@ -1007,7 +1043,22 @@ function cancel() { router.push('/crm/settings/modules') }
   border-left: 1px solid var(--mp-colors-border-default, #e3e7e9);
 }
 .pipe-side-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pipe-side-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .pipe-side-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+
+/* Name field = clickable icon prefix + borderless text input, one bordered pill. */
+.pipe-name-field { display: flex; align-items: stretch; border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-neutral, #fff); overflow: hidden; }
+.pipe-name-field:focus-within { border-color: var(--mp-border-bold, #8c9596); }
+.pipe-name-prefix { display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); flex-shrink: 0; padding: 0 var(--mp-spacing-2); border: none; border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
+.pipe-name-prefix:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+.pipe-name-prefix-caret { color: var(--mp-colors-icon-subtle, #97a0af); }
+.pipe-name-input-el { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+
+.pipe-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-1); }
+.pipe-icon-choice { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--mp-radii-md, 6px); background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
+.pipe-icon-choice:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+.pipe-icon-choice--active { border-color: var(--mp-colors-border-selected, #029861); color: var(--mp-colors-text-selected, #0f6d4d); background: var(--mp-colors-background-brand-subtle, #eafaf1); }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-row { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-sm); transition: opacity 0.12s ease, background 0.12s ease; }

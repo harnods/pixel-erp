@@ -1158,14 +1158,19 @@ export interface CrmModule {
   views: CrmModuleView[]
   conversionTarget: CrmConversionTarget
   recordCount: number
+  /** Nav/menu icon slug (mekari.design icon name). */
+  icon?: string
   updatedAt: string
   updatedBy: string
 }
 
+/** Icon choices offered by the module builder's Name-field icon picker. */
+export const CRM_MODULE_ICONS = ['pipeline', 'reports', 'contact', 'briefcase', 'tag', 'cart', 'chart-line', 'grid'] as const
+
 const DEAL_STAGE_OPTIONS = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost']
 const MODULES_SEED: CrmModule[] = [
   {
-    id: 'deals', name: 'Deals', system: true, accessLevel: 'company', status: 'published',
+    id: 'deals', name: 'Deals', system: true, accessLevel: 'company', status: 'published', icon: 'pipeline',
     sections: ['Deal information', 'Products & value'],
     fields: [
       { id: 'name',     label: 'Deal name',          type: 'text',         required: true,  system: true, isPrimary: true, section: 'Deal information', column: 1 },
