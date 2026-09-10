@@ -26,6 +26,13 @@ import {
 import type { SalesQuote } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+
+// Embedded mode: rendered inside a full-screen drawer (e.g. from a CRM Deal). Hides
+// its own title bar and emits cancel/created instead of routing. `prefill` seeds the
+// fields (all editable).
+const props = withDefaults(defineProps<{ embedded?: boolean; prefill?: SalesFormPrefill | null }>(), { embedded: false, prefill: null })
+const emit = defineEmits<{ cancel: []; created: [quote: SalesQuote] }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -249,7 +256,45 @@ function nextQuoteId(): string {
   return `SQ${String(n).padStart(3, '0')}`
 }
 
-function onCancel() { router.push('/sales-quotes') }
+function onCancel() {
+  if (props.embedded) { emit('cancel'); return }
+  router.push('/sales-quotes')
+}
+
+// Seed fields from a prefill payload (embedded Deal → sales quote). Everything stays
+// editable afterwards.
+function applyPrefill(p: SalesFormPrefill) {
+  if (p.customerId && customers.some(c => c.id === p.customerId)) { customerId.value = p.customerId }
+  if (p.emails?.length) emailTags.value = toTagData(p.emails)
+  if (p.billingAddress) billingAddress.value = p.billingAddress
+  if (p.shipTo) { shipTo.value = p.shipTo; shipToDifferent.value = true }
+  if (p.txDate) txDate.value = isoToDMY(p.txDate)
+  if (p.dueDate) expirationDate.value = isoToDMY(p.dueDate)
+  if (p.shipDate) { shipDate.value = isoToDMY(p.shipDate); requiresShipping.value = true }
+  if (p.shipVia) shipVia.value = p.shipVia
+  if (p.paymentTerms) paymentTerms.value = p.paymentTerms
+  if (p.trackingNo) trackingNo.value = p.trackingNo
+  if (p.referenceNo) referenceNo.value = p.referenceNo
+  if (p.warehouse) warehouse.value = p.warehouse
+  if (p.tags?.length) tagsList.value = toTagData(p.tags)
+  if (typeof p.shippingFee === 'number') shippingFee.value = p.shippingFee
+  if (p.items?.length) {
+    items.value = p.items.map(it => ({
+      _key: ++_seq,
+      product: it.product,
+      sku: it.sku ?? '',
+      description: it.description ?? '',
+      qty: it.qty,
+      unit: it.unit,
+      unitPrice: it.unitPrice,
+      discountPct: it.discountPct ?? 0,
+      taxLabel: it.taxLabel ?? 'PPN 11%',
+      productError: false,
+      qtyError: false,
+    }))
+  }
+}
+onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
 
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
@@ -269,6 +314,7 @@ function onSave() {
   }
   salesQuotes.push(quote)
   toast.notify({ variant: 'success', title: t('Sales quote created'), rootProps: { class: 'toast-enterprise' } })
+  if (props.embedded) { emit('created', quote); return }
   router.push(`/sales-quotes/${quote.id}`)
 }
 </script>
@@ -276,8 +322,8 @@ function onSave() {
 <template>
   <div class="si-form-page">
 
-    <!-- ── Fixed header bar ── -->
-    <header class="si-form-bar">
+    <!-- ── Fixed header bar (hidden when embedded — the host drawer supplies it) ── -->
+    <header v-if="!embedded" class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales quotes') }}</MpTextlink>
         <h1 class="si-form-h1">{{ t('New sales quote') }}</h1>

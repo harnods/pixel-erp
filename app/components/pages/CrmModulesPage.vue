@@ -28,10 +28,10 @@ function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
-// Deals (the system module) has its own "Deals" settings menu — Modules settings
-// lists only the CUSTOM modules.
+// The Modules index lists EVERY module — the Deals system module (edited via its
+// Pipeline/Layout builder) plus any custom modules.
 const rows = computed<ModuleRow[]>(() =>
-  crmModules.filter((m) => !m.system).map((m) => ({
+  crmModules.map((m) => ({
     ...m,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
@@ -165,7 +165,7 @@ watch(statusFilter, () => setPage(1))
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="manage(row as unknown as ModuleRow)">{{ t('Manage') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="manage(row as unknown as ModuleRow)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="!(row as unknown as ModuleRow).system" @click="soon(t('Delete module'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
@@ -179,12 +179,12 @@ watch(statusFilter, () => setPage(1))
 <style scoped>
 /* Shell — mirrors CrmSettingsPage's Teams surface exactly. */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; }
 
 /* Name cell — link over a caption. */
 .cru-name { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }

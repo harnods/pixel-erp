@@ -101,7 +101,7 @@ async function save() {
               </button>
             </div>
             <div class="sad-col-head">
-              <h2 class="sad-col-title">{{ listTitle }}</h2>
+              <h3 class="sad-col-title">{{ listTitle }}</h3>
               <button class="sad-link" type="button" @click="addAll">Add all</button>
             </div>
             <div class="sad-list">
@@ -131,7 +131,7 @@ async function save() {
                 </button>
               </div>
               <div class="sad-col-head">
-                <h2 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h2>
+                <h3 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h3>
                 <button class="sad-link" type="button" @click="removeAll">Remove all</button>
               </div>
               <div class="sad-list">
@@ -212,7 +212,7 @@ async function save() {
 .sad-divider { background: var(--mp-border-default, #e3e7e9); }
 /* Matches the table filter-bar search: border-default pill + neutral focus ring. */
 .sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
-.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
@@ -226,7 +226,8 @@ async function save() {
 /* 20px between the search box and the list header (design-doc rule). */
 .sad-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-top: 20px; }
 /* H2 heading — Users / Roles / Selected … */
-.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
+/* H3 = 16px / semibold (the drawer title is the 20px h2 above). */
+.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .sad-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .sad-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 

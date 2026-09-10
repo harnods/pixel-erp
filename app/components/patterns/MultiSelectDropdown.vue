@@ -136,8 +136,11 @@ function clear(e: MouseEvent) {
    IconButton/.demo-fab precedent). */
 /* width is deliberately NOT !important (unlike its neighbours) — .msd-field--full
    below needs to be able to win over it for isFullWidth consumers. */
-.msd-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
-.msd-field:hover { background: var(--mp-background-neutral-hovered) !important; }
+/* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
+   38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
+   aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
+.msd-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #fff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-colors-text-default, #080d0e); cursor: pointer; }
+.msd-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .msd-field--full { width: 100%; }
 .msd-field--invalid { border-color: var(--mp-border-danger, #dc2626) !important; }
 
@@ -167,7 +170,7 @@ function clear(e: MouseEvent) {
   cursor: pointer;
   user-select: none;
 }
-.msd-item:hover { background: var(--mp-background-neutral-hovered); }
+.msd-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .msd-item-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.msd-divider { height: 1px; margin: var(--mp-spacing-1) var(--mp-spacing-1); background: var(--mp-border-default); list-style: none; }
+.msd-divider { height: 1px; margin: var(--mp-spacing-1) var(--mp-spacing-1); background: var(--mp-border-default, #e3e7e9); list-style: none; }
 </style>

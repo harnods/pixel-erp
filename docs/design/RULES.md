@@ -57,6 +57,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Secondary variant for a Cancel button | ghost | `rule/btn-cancel-ghost` |
 | `box-shadow` to lift a card | 1px border | `rule/surface-border-no-shadow` |
 | Italic for a note/caption/hint | smaller size + secondary color | `rule/type-no-italic` |
+| Regular-weight H1 / H2 / H3 heading | headings are always semibold | `rule/type-heading-semibold` |
 | Hardcoded `px` / hex color | `var(--mp-*)` tokens | `rule/token-no-hardcoded-*` |
 | Pixel `width` on a name/date/amount column | semantic `kind` | `rule/table-column-kind` |
 | `MpTextlink` for a clickable row name | `<span>` styled as link | `rule/table-name-link-span` |
@@ -203,6 +204,14 @@ is the point: they *feel* normal, which is exactly why they slip through.
   actions must be reversible-by-intent — one guaranteed confirm step, worded so the
   user knows exactly what happens. **Lint:** pixel-police (flags a danger button with
   `@click` in a file that has no `MpModal`) + review for the copy.
+- **`rule/remove-icon-tooltip`** — *Do:* a **remove control on a repeatable row**
+  (added email/phone, bank account, contact-person/member, product line, etc.) is the
+  **`minus-circular` (−) icon button** — never a text "Remove" link — and it MUST be
+  wrapped in an **`MpTooltip` `label="Remove"`** (`placement="top"` `use-portal`) plus an
+  `aria-label`. Every `(−)` remove icon in the app carries the same **Remove** tooltip.
+  *Don't:* a bare icon with no tooltip, or a text-link remove beside icon-remove rows
+  (inconsistent). **Why:** the (−) glyph alone is ambiguous; one consistent labelled
+  affordance across every repeatable list. **Lint:** review.
 - **`rule/btn-save-toast`** — *Do:* a button whose action is a **save / submit /
   approve / delete** shows a **success `MpToast`** (`successToast()`) when it
   succeeds. Copy follows the **UXW** library: a short past-participle phrase —
@@ -388,12 +397,34 @@ is the point: they *feel* normal, which is exactly why they slip through.
   this from `erp.css` automatically; a **hand-rolled** `<input>` must set it itself. *Don't:*
   use the brand-emerald focus border/ring Pixel ships (or any coloured focus). **Why:** one
   calm neutral focus across every form. **Source:** `erp.css` › Form-field focus. **Lint:** review.
+- **`rule/select-field-metrics`** — *Do:* every **hand-rolled select/dropdown trigger**
+  (`ErpFilterSelect` `.efs-trigger`, `PopoverSelect` `.ps-trigger`, `MultiSelectDropdown`
+  `.msd-field`, `AdvanceDateFilter` `.adf-trigger`, and any new one) matches **MpInput md**
+  at rest: **height `38px`** (`--mp-sizes-9.5`, 2.375rem) and **border
+  `1px solid var(--mp-colors-border-form, #1d1f2429)`** — the same translucent form-border
+  MpInput/MpAutocomplete draw. *Don't:* use `36px`/`--mp-sizes-9`, or the lighter table
+  border `--mp-colors-border-default` (#e3e7e9), on a field-style trigger — it renders a
+  visibly cooler/lighter, 2px-shorter box next to MpInput. Also **never the short `--mp-*`
+  aliases** (`--mp-border-form`, `--mp-border-default`, …) — they resolve **EMPTY** in this
+  Pixel build; always the fully-qualified `--mp-colors-*` token + hex fallback. The rounded
+  filter-bar **search pill** is exempt (it is deliberately a pill, `--mp-colors-border-default`).
+  Focus/active border is separate — `rule/select-active-neutral` / `rule/form-focus-border-bold`.
+  **Why:** a select must be indistinguishable from a text input beside it. **Source:** measured
+  MpInput md (38px, `--mp-colors-border-form`). **Lint:** review.
 - **`rule/select-multi-mpinputtag`** — *Do:* multi-select tag input uses
   **`MpInputTag`**. *Don't:* hand-roll toggle chips. **Why:** one tag-input
   behavior. **Lint:** review.
 - **`rule/filter-bar-search-export`** — *Do:* the filter bar's right side always
   carries **Search** (rounded pill form) + **Export**. *Don't:* put Export in the
   page title bar. **Why:** fixed affordance location. **Lint:** review.
+- **`rule/filter-bar-action-tertiary`** — *Do:* an **action button placed beside the
+  search** in a filter bar / section toolbar (e.g. a "New contact" / create button that
+  sits next to the search pill, NOT in the page title bar) uses the **black tertiary**
+  button — `MpButton variant="tertiary" is-rounded` (dark fill, white text/icon). *Don't:*
+  use `primary` (green) or `secondary` there — the green primary create button belongs in
+  the page **title bar**; a create/action next to search is tertiary. **Why:** one fixed
+  look for search-adjacent actions, distinct from the title-bar primary. **Source:** Figma
+  CRM company detail (Contact person). **Lint:** review.
 
 ### Form fields — baku ERP overrides of Pixel 3 DT 2.4 Enterprise
 
@@ -456,7 +487,7 @@ ERP override wins.
   date** = `MpDatePicker` (`format="DD/MM/YYYY"`, `value-type="format"`); **range /
   presets** = the ERP **`AdvancedDateRangePicker`** (preset list + 2-month calendar in
   Custom, portaled). *Don't:* hand-roll a second range picker. **Why:** two vetted
-  controls cover every date need. **Source:** `docs/patterns/date-range-picker.md`.
+  controls cover every date need. **Source:** `docs/patterns/AdvancedDateRangePicker.md`.
   **Lint:** review.
 - **`rule/date-picker-no-clip`** — *Do:* a date picker's calendar must **render fully,
   never clipped** — the ERP calendars portal / escape their container (as
@@ -565,7 +596,7 @@ ERP override wins.
   cell (description / avatar / ≥3 lines) aligns **that row's** cells **top**. The **`[…]`
   actions cell is the exception — it ALWAYS aligns top** (never middle), on every row.
   It's per-row, not whole-table — `ErpTablePage` toggles `.erp-tr--align-top` on each
-  measured tall row. **Why:** the golden padding/align rule (`docs/table-design.md`).
+  measured tall row. **Why:** the golden padding/align rule (`docs/patterns/ErpTablePage.md`).
   **Lint:** review.
 - **`rule/table-default-newest-first`** — *Do:* any table whose rows carry a
   **`date`** (every transactional index — invoices, orders, quotes, deliveries,
@@ -787,10 +818,21 @@ ERP override wins.
   omit it on a page that posts to the ledger. **Why:** the posting is always one click
   away. **Lint:** review.
 
-## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/empty-state.md`
+## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/design/reachable-states.md`
 
 - **`rule/empty-state-structure`** — *Do:* an empty state = illustration + title +
   caption + a **secondary-variant** button. **Lint:** review.
+- **`rule/table-empty-state`** — *Do:* **every** table renders an empty state — never
+  a blank table. `ErpTablePage` owns this: the **default** (no data ever) state is what
+  the page supplies via the **`#empty` slot** and it MUST follow
+  `rule/empty-state-structure` (illustration `empty-folder.png` + title + caption +
+  secondary CTA that creates the first record, gated to the create permission). The
+  **filtered/search-empty** state is rendered automatically by `ErpTablePage` — the
+  **same illustration** with "…not found / no … match your filters" + a *Clear all
+  filters* link — so both empty states read consistently. *Don't:* leave the built-in
+  bare "No data yet" fallback (it has no illustration/CTA); don't hand-roll a separate
+  empty state or a different illustration. **Source:** `docs/patterns/ErpTablePage.md`
+  › Empty state. **Lint:** review.
 - **`rule/skeleton-solid-static`** — *Do:* loading skeletons are **solid and static** —
   **no shimmer gradient, no animation**. Every `<MpSkeleton>` gets **`duration="0s"`**
   and the flattening class (`.erp-skeleton` in `ErpTablePage`, `.cw-skeleton` in Cowork):
@@ -832,8 +874,16 @@ ERP override wins.
   **captions only**. **Lint:** review.
 - **`rule/type-scale`** — *Do:* pick a **role**, not a raw px — **H1** `2xl`/24, **H2**
   `xl`/20, **H3** `lg`/16, **p** `md`/14 (body default), **small** `sm`/12 (caption).
+  All three heading roles are **semibold** (see `rule/type-heading-semibold`).
   *Don't:* use **xsm/10px** (`xs`) in ERP product UI — 10px is below our minimum — or set
   an off-scale size. **Why:** one type scale, mapped by role. **Lint:** review.
+- **`rule/type-heading-semibold`** — *Do:* headings **H1 / H2 / H3 are always
+  semibold** (`--mp-font-weights-semi-bold`) — pair the semibold weight with the role
+  size from `rule/type-scale` (24 / 20 / 16). Body (`p`/14) and captions (`sm`/12) stay
+  **regular**. *Don't:* render any heading at regular weight, or lean on size alone for
+  hierarchy. **Why:** headings carry the hierarchy through weight **and** size together;
+  a regular-weight heading reads as body text. **Source:**
+  `docs/patterns/pixel-enterprise-overrides.md`. **Lint:** review.
 - **`rule/type-no-italic`** — *Do:* de-emphasize with smaller size + secondary color;
   emphasize with weight. *Don't:* use **any** italic — no `font-style: italic`,
   `<i>`, or `<em>`, anywhere (notes, captions, hints, disclaimers). **Why:** italic

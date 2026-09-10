@@ -1309,7 +1309,7 @@ onMounted(() => {
 .scf-prod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-prod-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-swap-search { padding: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
-.scf-swap-search input { width: 100%; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); outline: none; }
+.scf-swap-search input { width: 100%; border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); outline: none; }
 .scf-swap-sku { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .scf-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .scf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }

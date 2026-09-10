@@ -39,15 +39,16 @@ Component path: `app/components/patterns/ErpTablePage.vue`
 >   single-line row renders at this 40px baseline; taller content can grow the row.
 > * Default body-cell vertical padding is **10px top/bottom**
 >   (`var(--mp-spacing-2\.5)`).
-> * Icon action cells are the exception: they use **2px top/bottom** so a 36px icon
->   button fits inside the 40px baseline row.
+> * Icon action cells are the exception: they use **reduced top/bottom padding** so a
+>   **38px** icon button (the ERP-standard icon-button size — see the Actions column
+>   below) fits inside the 40px baseline row.
 > * Vertical alignment: **single-line → middle, taller row → top** (see below).
 
 ## Cell content rules
 
 * **Default vertical padding is 10px** (`var(--mp-spacing-2.5)`) — both text-only
-    and multi-line rows. Action/icon cells may use 2px top/bottom to fit a 36px
-    icon button in the 40px baseline.
+    and multi-line rows. Action/icon cells may use reduced top/bottom padding to fit a
+    **38px** icon button (the ERP-standard icon-button size) in the 40px baseline.
 * **Vertical alignment is conditional.** Single-line rows: `vertical-align: middle`,
     40px baseline. When a row grows beyond 40px because it contains a **description**,
     **caption**, **tags**, an **avatar/photo**, or other taller content, the whole row
@@ -449,10 +450,13 @@ When a table row expands to reveal a detail sub-panel (e.g. Warehouse detail →
 
 Follows Mekari's [empty state inside an index view](https://docs.mekari.design/skills/mekari-taste/references/index-view.html#empty-state-inside-an-index-view).
 
+Every table renders one of these — **never a blank table** (`rule/table-empty-state`).
+Both variants use the **same illustration** so the two states read consistently.
+
 | Variant | When | What | How |
 | ------- | ---- | ---- | --- |
-| **Full** (illustrated) | List has **never** had data | Illustration + title + helper text + **CTA** (create first record) | Provide via the **`#empty`** slot (per module) |
-| **Inline** (minimal) | Search/filter eliminated all results | **No illustration** — "No results found" + "Try adjusting your filters." + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
+| **Full** (default) | List has **never** had data (no filter/search active) | Illustration + title + helper text + **secondary CTA** (create first record, gated to the create permission) | Provide via the **`#empty`** slot (per module) |
+| **Inline** (filtered) | Search/filter eliminated all results | **Same illustration** + "\"{search}\" not found" / "No {label} match your filters" + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
 
 **Full empty-state copy — fixed format (use everywhere):**
 
@@ -556,7 +560,7 @@ Mark as completed · Duplicate · *(divider)* · Share via WhatsApp · Share via
 >
   <template #filters>
     <MpInputGroup id="search">...</MpInputGroup>
-    <MpSelect id="filter">...</MpSelect>
+    <ErpFilterSelect id="filter" placeholder="Status" :model-value="statusFilter" :options="statusOptions" @update:model-value="v => (statusFilter = v)" /> <!-- never MpSelect (rule/select-erpfilterselect) -->
     <MpButton variant="primary" style="margin-left: auto">Create</MpButton>
   </template>
 

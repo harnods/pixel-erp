@@ -2060,7 +2060,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-background-surface);
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -2251,8 +2251,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 }
 /* neutral slate focus, consistent with all ERP form fields (border-bold = #8C9596) */
 .wh-search:focus-within {
-  border-color: var(--mp-border-bold);
-  box-shadow: 0 0 0 1px var(--mp-border-bold);
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596);
 }
 .wh-search-input {
   flex: 1;

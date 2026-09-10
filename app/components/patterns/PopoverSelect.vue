@@ -52,7 +52,7 @@ function clear() { emit('update:modelValue', null) }
             role="combobox" :aria-expanded="isOpen" :tabindex="0"
             class="ps-trigger"
             :class="css({
-              minW: '0', w: 'full', pl: '3', pr: '2.75rem', py: '2',
+              minW: '0', w: 'full', h: '2.375rem', pl: '3', pr: '2.75rem',
               display: 'flex', alignItems: 'center', outline: '0',
               borderWidth: '1px', borderStyle: 'solid', borderRadius: 'md', appearance: 'none',
               transition: 'border-color 200ms, box-shadow 200ms', cursor: 'pointer', userSelect: 'none', fontSize: 'md',
@@ -60,7 +60,7 @@ function clear() { emit('update:modelValue', null) }
             :style="{
               background: 'var(--mp-colors-background-neutral, #ffffff)',
               color: selected ? 'var(--mp-colors-text-default, #080d0e)' : 'var(--mp-colors-text-secondary, #5f6b6d)',
-              borderColor: isOpen ? 'var(--mp-colors-border-bold, #8c9596)' : 'var(--mp-colors-border-default, #e3e7e9)',
+              borderColor: isOpen ? 'var(--mp-colors-border-bold, #8c9596)' : 'var(--mp-colors-border-form, #1d1f2429)',
               boxShadow: isOpen ? '0 0 0 1px var(--mp-colors-border-bold, #8c9596)' : 'none',
             }"
             @click="isOpen = !isOpen"

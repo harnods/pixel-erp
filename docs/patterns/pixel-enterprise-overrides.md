@@ -22,14 +22,18 @@ secondary = neutral fill, **bold black border**, **black text**, **semibold**.
 
 | Property | Value |
 |---|---|
-| Fill | `var(--mp-background-neutral)` |
-| Border | `var(--mp-border-bold)` (bold, black) |
-| Text | `var(--mp-text-default)` (**black**, never `text.secondary`/gray) |
+| Fill | `var(--mp-colors-background-neutral, #fff)` |
+| Border | `var(--mp-colors-border-bold, #8c9596)` (bold, black) |
+| Text | `var(--mp-colors-text-default, #080d0e)` (**black**, never `text.secondary`/gray) |
 | Font weight | **semibold** |
-| Hover | `var(--mp-background-neutral-hovered)` |
+| Hover | `var(--mp-colors-background-neutral-hovered)` |
 
-Use `class="btn-enterprise btn-enterprise--secondary"` — NOT `MpButton
-variant="secondary"` (gray text). See `Button.md`. (`erp.css` › `.btn-enterprise--secondary`.)
+Use **`MpButton variant="secondary"`** — `erp.css` applies the black-text / bold-border
+override to Pixel's recipe class automatically (`rule/btn-secondary-black`), so you get the
+ERP look without any wrapper. `.btn-enterprise--secondary` is **legacy**
+(`rule/btn-mpbutton-standard`) — don't add new ones. See `Button.md`. Always the
+fully-qualified `--mp-colors-*` tokens + hex fallback (the short `--mp-*` aliases can
+resolve empty; `rule/style-with-css`).
 
 ## 2. Ghost button — regular weight
 
@@ -70,6 +74,17 @@ clipping), and it's **clearable** — an (×) on hover resets it.
 
 Options are `string[]` or `{ value, label }[]`. The pixel-police full-scan
 **fails on a native `<select>` OR an `MpSelect` in the CRM module.**
+
+**Field metrics — match MpInput exactly (`rule/select-field-metrics`).** Every
+hand-rolled select/dropdown trigger (`.efs-trigger`, `PopoverSelect` `.ps-trigger`,
+`MultiSelectDropdown` `.msd-field`, `AdvanceDateFilter` `.adf-trigger`) must sit at the
+**same height and resting border as an MpInput/MpAutocomplete beside it**: **height
+`var(--mp-sizes-9.5, 38px)`** and **border `1px solid var(--mp-colors-border-form,
+#1d1f2429)`** — the translucent form-border Pixel draws on MpInput. Do **not** use `36px`
+(`--mp-sizes-9`) or the lighter/cooler table border `--mp-colors-border-default` (#e3e7e9)
+on a field trigger, and never the short `--mp-*` aliases (they resolve **empty** in this
+build). Focus/active border stays the neutral bold `#8c9596` ring
+(`rule/select-active-neutral`). The rounded filter-bar **search pill** (§5) is exempt.
 
 ## 5. Search — always a form pill, shared focus ring
 

@@ -23,8 +23,8 @@
 - Open state controlled by `v-model` (boolean).
 - `MpModalHeader` holds the title + `MpModalCloseButton`.
 - `MpModalBody` holds the content.
-- `MpModalFooter` holds actions: **secondary Cancel + primary confirm**, in an
-  `MpButtonGroup`.
+- `MpModalFooter` holds actions: **ghost Cancel + primary confirm**
+  (`rule/btn-cancel-ghost`), in an `MpButtonGroup`.
 
 ---
 
@@ -52,7 +52,7 @@ const isOpen = ref(false)
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup>
-          <MpButton variant="secondary" @click="isOpen = false">Cancel</MpButton>
+          <MpButton variant="ghost" @click="isOpen = false">Cancel</MpButton>
           <MpButton variant="primary">Confirm</MpButton>
         </MpButtonGroup>
       </MpModalFooter>

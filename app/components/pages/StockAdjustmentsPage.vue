@@ -37,6 +37,8 @@ import {
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 import { useScenario } from '~/composables/useScenario'
 import { assigneeDisplayName } from '~/data/users'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { cycleCountDocumentFor } from '~/data/deliveryDocuments'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,6 +95,11 @@ const columns: TableColumn[] = [
   { key: 'startDate',     label: 'Start date',   kind: 'date', sortType: 'date' },
   { key: 'endDate',       label: 'End date',     kind: 'date', sortType: 'date' },
   { key: 'assignee',      label: 'Assignee',     kind: 'name', sortType: 'text' },
+  // Same "which document posted this?" column as the Shipping / receiving / put-away
+  // indexes. A cycle count's poster is the ERP Stock Count that approving it creates
+  // — a real link (linkedCycleCountId), not a binding, so an unapproved count shows
+  // nothing rather than a fabricated number.
+  { key: 'deliveryDoc',   label: 'Transaction document', kind: 'name', sortType: 'text' },
   { key: 'status',        label: 'Status',       kind: 'status', sortType: 'text' },
 ]
 
@@ -101,6 +108,13 @@ const columns: TableColumn[] = [
 // data. Hidden from the table AND from the column-settings menu, so it can't be
 // switched back on into an empty column.
 const hideAccount = computed(() => activeScenario.value.startsWith('WMS'))
+
+// The posted Stock Count, shown only on a COUNTED cycle count — a count that is
+// still Open or In progress has counted nothing to post.
+function countedDocFor(row: StockAdjustment) {
+  if (row.status !== 'counted') return undefined
+  return cycleCountDocumentFor(row.id)
+}
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on. "Last updated" is opt-in
@@ -121,6 +135,9 @@ const visibleColumns = computed(() =>
     && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
     && !(c.key === 'totalSku' && currentPageKey.value !== 'Cycle counts')
+    // Cycle counts only: on the ERP stock-adjustment list the row IS the document,
+    // so pointing it at itself would be circular.
+    && !(c.key === 'deliveryDoc' && currentPageKey.value !== 'Cycle counts')
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -612,6 +629,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- A task whose assignee has left the company reads as Unassigned, so it's
          visible as something a manager still has to hand over. -->
+    <!-- Transaction document — the ERP Stock Count that approving this count posted. -->
+    <template #cell-deliveryDoc="{ row }">
+      <a
+        v-if="countedDocFor(row as unknown as StockAdjustment)"
+        class="cell-link cell-text"
+        @click.stop="router.push(deliveryDocumentRoute(countedDocFor(row as unknown as StockAdjustment)!))"
+      >{{ countedDocFor(row as unknown as StockAdjustment)!.number }}</a>
+      <span v-else>—</span>
+    </template>
+
     <template #cell-assignee="{ value }">
       <span :class="{ 'sa-unassigned': !assigneeDisplayName(value as string) }">
         {{ assigneeDisplayName(value as string) || t('Unassigned') }}

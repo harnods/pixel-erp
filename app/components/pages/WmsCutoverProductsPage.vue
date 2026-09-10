@@ -893,7 +893,7 @@ onUnmounted(() => {
 .cut-titlebar {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -935,7 +935,7 @@ onUnmounted(() => {
 /* ── Stage — detail/form pages supply their own 24px ── */
 .cut-stage {
   flex: 1;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-y: auto;
   padding: var(--mp-spacing-6) var(--mp-spacing-6) 80px;
@@ -979,8 +979,8 @@ onUnmounted(() => {
   display: flex;
   align-items: stretch;
   gap: 0;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
 }
 
@@ -998,7 +998,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   padding: var(--mp-spacing-4) var(--mp-spacing-5);
-  border-left: 1px solid var(--mp-border-default);
+  border-left: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 .cut-progress-row {
@@ -1051,8 +1051,8 @@ onUnmounted(() => {
   gap: var(--mp-spacing-2);
   width: 248px;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   color: var(--mp-text-subtle);
 }
@@ -1082,7 +1082,7 @@ onUnmounted(() => {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.cut-search-clear:hover { background: var(--mp-background-neutral-hovered); }
+.cut-search-clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .cut-filter-trigger {
   /* Trigger widths sit between the size tokens (180/280px) — named here. */
@@ -1092,10 +1092,10 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: var(--mp-spacing-2);
   width: var(--cut-trigger-w);
-  height: var(--mp-sizes-10, 40px);
+  height: var(--mp-sizes-9\.5, 38px);
   padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-colors-background-neutral, #fff);
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md);
   font-family: inherit;
   font-size: var(--mp-font-sizes-md);
@@ -1116,7 +1116,7 @@ onUnmounted(() => {
 .cut-tr-bulk .cut-th--bulk {
   padding: 0 var(--mp-spacing-3);
   height: var(--mp-sizes-12, 48px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   text-transform: none;
   letter-spacing: normal;
   font-weight: var(--mp-font-weights-regular);
@@ -1147,8 +1147,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 0 var(--mp-spacing-1);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-sm, 4px);
   font-family: inherit;
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -1174,7 +1174,7 @@ onUnmounted(() => {
    (mekari-taste → index-view.md). border.bold reads as a heavy frame. */
 .cut-table-scroll {
   overflow-x: auto;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
 }
 
@@ -1230,9 +1230,9 @@ onUnmounted(() => {
   padding: var(--mp-spacing-2);
   text-align: left;
   vertical-align: middle;
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-sm);
@@ -1260,9 +1260,9 @@ onUnmounted(() => {
 .cut-req { color: var(--mp-text-danger); }
 
 .cut-td {
-  border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
-  background: var(--mp-background-neutral);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-neutral, #ffffff);
   vertical-align: top;
 }
 .cut-td:last-child { border-right: none; }
@@ -1293,8 +1293,8 @@ onUnmounted(() => {
   border-radius: var(--mp-radii-md);
   flex-shrink: 0;
   object-fit: cover;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default, #e3e7e9));
 }
 
 .cut-product {
@@ -1334,7 +1334,7 @@ onUnmounted(() => {
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   z-index: 2;
   pointer-events: none;
 }
@@ -1404,13 +1404,13 @@ onUnmounted(() => {
 .cut-cell-placeholder { color: var(--mp-text-placeholder, var(--mp-text-secondary)); }
 
 /* Not applicable — the group switch is off. Values are preserved, not wiped. */
-.cut-td--off { background: var(--mp-background-neutral-subtle); }
+.cut-td--off { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Read-only / derived cells read as calculated, per FormTable.md → Cell Types */
 .cut-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .cut-td--readonly {
   padding: var(--cut-cell-pad-y) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-text-secondary);
   vertical-align: middle;
 }
@@ -1462,8 +1462,8 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage);
-  border-top: 1px solid var(--mp-border-default);
+  background: var(--mp-background-stage, #ffffff);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .cut-footer-actions {
   display: flex;
@@ -1490,7 +1490,7 @@ onUnmounted(() => {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .imd-body {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -1511,7 +1511,7 @@ onUnmounted(() => {
   width: 24px; height: 24px;
   border-radius: var(--mp-radii-full, 999px);
   display: flex; align-items: center; justify-content: center;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums;
 }
@@ -1550,7 +1550,7 @@ onUnmounted(() => {
   flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-6);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 .imd-enter-active, .imd-leave-active { transition: background-color 250ms ease; }

@@ -297,7 +297,7 @@ function open(node: SitemapNode) {
   color: var(--mp-text-placeholder);
   min-width: var(--mp-sizes-64, 256px);
 }
-.dsn-search:focus-within { border-color: var(--mp-border-bold); }
+.dsn-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .dsn-search-input {
   border: none;
   outline: none;

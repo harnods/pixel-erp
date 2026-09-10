@@ -128,6 +128,10 @@ const pageRegistry: Record<string, Component> = {
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
+  // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
+  // The page itself is served by its tabs (User list / Custom role) — this entry
+  // keeps the key resolvable before a tab is picked.
+  'Users and roles':    defineAsyncComponent(() => import('~/components/pages/UsersListPage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
@@ -278,6 +282,12 @@ const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
+const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
+// The "New custom role" title-bar button lives here, but the drawer it opens is
+// rendered inside CustomRolesPage — the two talk through this shared intent.
+const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
+const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -436,10 +446,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/customers → L2 [Contacts, Companies] (first-class contacts/companies, M2M).
     if (sub === 'customers' && id === 'contacts') {
       if (segs[3] === 'new') return { component: NewCrmContactPage, id: 'new' }
+      // /crm/customers/contacts/:id/edit → the create form in edit mode.
+      if (segs[3] && segs[4] === 'edit') return { component: NewCrmContactPage, id: segs[3] }
       return segs[3] ? { component: CrmContactRecordPage, id: segs[3] } : { component: CrmContactsListPage, id: '' }
     }
     if (sub === 'customers' && id === 'companies') {
       if (segs[3] === 'new') return { component: NewCrmCompanyPage, id: 'new' }
+      // /crm/customers/companies/:id/edit → the create form in edit mode.
+      if (segs[3] && segs[4] === 'edit') return { component: NewCrmCompanyPage, id: segs[3] }
       return segs[3] ? { component: CrmCompanyRecordPage, id: segs[3] } : { component: CrmCompaniesListPage, id: '' }
     }
     if (sub === 'customers') return { component: CrmContactsListPage, id: '' } // bare → Contacts
@@ -630,6 +644,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'approval-workflows') {
     if (segs[1] === 'new') return { component: CreateApprovalWorkflowPage, id: 'new' }
     if (segs.length >= 3 && segs[2] === 'edit') return { component: CreateApprovalWorkflowPage, id: segs[1]! }
+  }
+  // /users-and-roles/invite → invite form; /:id/edit → edit access (same page).
+  // The bare index falls through to the tabbed User list / Custom role pages.
+  if (segs.length >= 2 && segs[0] === 'users-and-roles') {
+    if (segs[1] === 'invite') return { component: InviteUserPage, id: 'invite' }
+    if (segs.length >= 3 && segs[2] === 'edit') return { component: InviteUserPage, id: segs[1]! }
   }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
@@ -940,6 +960,8 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
+  'Users and roles':   ['User list', 'Custom role'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1240,6 +1262,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  'Users and roles': {
+    'User list': UsersListPage,
+    'Custom role': CustomRolesPage,
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
@@ -1820,6 +1846,19 @@ function startResize(e: MouseEvent) {
             </svg>
             {{ t('New dimension') }}
           </button>
+        </div>
+        <!-- Settings → Users & roles: the create action follows the active tab. -->
+        <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
+          <MpButton
+            v-if="activeTab === 'Custom role'"
+            variant="primary" is-rounded left-icon="add"
+            @click="openCustomRoleCreate()"
+          >{{ t('New custom role') }}</MpButton>
+          <MpButton
+            v-else
+            variant="primary" is-rounded left-icon="add"
+            @click="router.push('/users-and-roles/invite')"
+          >{{ t('Invite user') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
@@ -2571,7 +2610,7 @@ function startResize(e: MouseEvent) {
 
 .page-title-bar {
   height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2598,7 +2637,7 @@ function startResize(e: MouseEvent) {
     display: none;
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
     min-width: 220px; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2);
-    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default);
+    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9);
     border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-2);
     box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0,0,0,0.12));
   }
@@ -2673,7 +2712,7 @@ function startResize(e: MouseEvent) {
 }
 
 .btn-enterprise--active {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
 }
 
 .import-dropdown {
@@ -2681,8 +2720,8 @@ function startResize(e: MouseEvent) {
   top: calc(100% + var(--mp-spacing-1));
   right: 0;
   width: 220px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
@@ -2696,7 +2735,7 @@ function startResize(e: MouseEvent) {
 }
 
 .import-group--bordered {
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-2);
   margin-bottom: 0;
 }
@@ -2718,7 +2757,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle) !important;
+  background: var(--mp-background-neutral-subtle, #f8f9f9) !important;
 }
 
 .import-item--ai {
@@ -2800,7 +2839,7 @@ function startResize(e: MouseEvent) {
 
 .stage {
   flex: 1;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -2837,7 +2876,7 @@ function startResize(e: MouseEvent) {
   display: flex;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   flex-shrink: 0;
 }
 
@@ -2846,7 +2885,7 @@ function startResize(e: MouseEvent) {
   align-items: flex-end;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   flex-shrink: 0;
 }
 
@@ -2916,7 +2955,7 @@ function startResize(e: MouseEvent) {
 .airene-slot {
   /* width is set dynamically via :style */
   flex-shrink: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: var(--mp-spacing-3);
   display: flex;
   gap: var(--mp-spacing-2);
@@ -2944,18 +2983,18 @@ function startResize(e: MouseEvent) {
   display: block;
   width: 2px;
   height: var(--mp-spacing-10, 40px);
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   transition: background 0.15s;
 }
 .airene-divider:hover::after {
-  background: var(--mp-border-bold);
+  background: var(--mp-border-bold, #8c9596);
 }
 
 /* White inner card */
 .airene-card {
   flex: 1;
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
   display: flex;
@@ -2997,7 +3036,7 @@ function startResize(e: MouseEvent) {
   min-width: 0;
   max-width: 100%;
 }
-.airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
+.airene-new-chat:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .airene-chat-title {
   min-width: 0;
@@ -3022,8 +3061,8 @@ function startResize(e: MouseEvent) {
   top: calc(100% + var(--mp-spacing-1));
   left: 0;
   width: 256px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 10px);
   box-shadow: var(--mp-shadows-md);
   z-index: 200;
@@ -3047,11 +3086,11 @@ function startResize(e: MouseEvent) {
   text-align: left;
   border-radius: var(--mp-radii-md);
 }
-.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle); }
+.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-history-sep {
   height: 1px;
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   margin: var(--mp-spacing-1) 0;
 }
 
@@ -3082,7 +3121,7 @@ function startResize(e: MouseEvent) {
   text-overflow: ellipsis;
   border-radius: var(--mp-radii-sm);
 }
-.airene-history-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-history-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-header-icons {
   display: flex;
@@ -3103,7 +3142,7 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-secondary);
   padding: var(--mp-spacing-2);
 }
-.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Kebab (…) menu — clear / delete chat */
 .airene-kebab-wrapper { position: relative; display: inline-flex; }
@@ -3132,7 +3171,7 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md, 8px);
 }
-.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .airene-kebab-item--danger { color: var(--mp-text-critical, #d3382e); }
 
 /* ── Chat body ───────────────────────────────────────────────────────────── */
@@ -3319,7 +3358,7 @@ function startResize(e: MouseEvent) {
   width: var(--mp-sizes-1\.5, 6px);
   height: var(--mp-sizes-1\.5, 6px);
   border-radius: var(--mp-radii-full, 50%);
-  background: var(--mp-text-secondary);
+  background: var(--mp-text-secondary, #3a4749);
   flex-shrink: 0;
   animation: typingBounce 1.2s infinite ease-in-out;
 }
@@ -3367,7 +3406,7 @@ function startResize(e: MouseEvent) {
   width: 9px;              /* mascot eye — fixed pixel positions */
   height: 9px;
   border-radius: var(--mp-radii-full, 50%);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   overflow: hidden;          /* clips pupil inside the white disc */
   display: flex;
   align-items: center;
@@ -3467,8 +3506,8 @@ function startResize(e: MouseEvent) {
 
 /* Input box: white rounded rectangle */
 .airene-input-box {
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 12px);
   padding: var(--mp-spacing-2);
   display: flex;
@@ -3489,8 +3528,8 @@ function startResize(e: MouseEvent) {
   align-items: center;
   gap: var(--mp-spacing-1);
   padding: 3px var(--mp-spacing-1\.5) 3px var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-regular);
@@ -3522,7 +3561,7 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-full, 50%);
 }
 .airene-context-remove:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
   color: var(--mp-text-default);
 }
 
@@ -3569,7 +3608,7 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-sm);
   color: var(--mp-text-secondary);
 }
-.airene-add-btn:hover { background: var(--mp-background-neutral-subtle); }
+.airene-add-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-input-right {
   display: flex;
@@ -3596,12 +3635,12 @@ function startResize(e: MouseEvent) {
   width: var(--mp-sizes-8, 32px);
   height: var(--mp-sizes-8, 32px);
   border: none;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-full, 999px);
   cursor: pointer;
   flex-shrink: 0;
 }
-.airene-send-btn:hover { background: var(--mp-background-neutral-hovered); }
+.airene-send-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Disclaimer */
 .airene-disclaimer {

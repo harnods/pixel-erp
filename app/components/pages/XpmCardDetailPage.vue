@@ -331,7 +331,7 @@ function proceedTopUp() {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; font-family: inherit;
 }
-.xpm-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.xpm-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .xpm-activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .xpm-activity-row {
   display: flex; align-items: center; gap: var(--mp-spacing-3);

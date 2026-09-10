@@ -32,12 +32,45 @@ everywhere, it lives as its own component:
 
 ---
 
+## Two layouts — vertical (default) & horizontal (`rule/content-list-horizontal`)
+
+`ContentList` has **two** layouts; both keep the **8px top/bottom** field padding.
+
+**Vertical (default)** — label stacked directly over the value (the anatomy above):
+label 12px/`--mp-colors-text-secondary`, value 14px/`--mp-colors-text-default`, **0 gap**.
+
+**Horizontal (`horizontal` prop)** — label **left**, value **right**:
+
+```
+┌───────────────────────────────────────────────┐
+│ Label (min 184px)   ⟵24px⟶   Value (fills rest) │
+└───────────────────────────────────────────────┘
+   ▲ padding 8px top & bottom
+```
+
+| Part | Value |
+|---|---|
+| Label | **left**, **min-width 184px**, **14px/regular** (`--mp-font-sizes-md`, NOT the 12px caption), `--mp-colors-text-secondary` |
+| Gap label → value | **24px** (`var(--mp-spacing-6)`) |
+| Value | fills the remaining width, 14px, `--mp-colors-text-default` |
+| Field padding | **8px** top & bottom (same as vertical) |
+
+Do **not** hand-roll a horizontal key/value row with different metrics — use the
+`horizontal` prop so detail-page key/value stays aligned everywhere.
+
+```vue
+<ContentList horizontal label="Payment terms" value="Net 30" />
+```
+
+---
+
 ## Props
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | — | Caption above the value. Omit for value-only. |
 | `value` | `string \| number` | — | Plain-text value. For rich values use the **default slot** instead. |
+| `horizontal` | `boolean` | `false` | Switch to the **horizontal** layout (label left, value right). See below. |
 
 The **default slot** overrides `value` for rich content (tags, links, multi-line).
 

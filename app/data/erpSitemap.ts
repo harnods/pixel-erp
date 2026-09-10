@@ -82,6 +82,7 @@ export const BUILT_KEYS = new Set<string>([
   'Bill of materials',
   'Company profile',
   'Warehouse settings',
+  'Users and roles', // tabComponents (User list / Custom role) + /users-and-roles/invite
   'Mekari pay',
   'Wms report',
   'Inventory report',
@@ -253,6 +254,13 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Stock inout': [a('Index', 'built'), a('Create', 'built')],
   // ── Reports ──
   'WMS': [a('Index', 'built'), a('Details', 'built'), a('Export', 'built')],
+  // ── Settings ──
+  'Users & roles': [
+    a('Invite user', 'built'), a('Edit access', 'built'), a('Deactivate / Activate', 'built'),
+    a('Delete user', 'built'), a('Resend invitation', 'partial', 'toast only, no mail'),
+    a('New custom role', 'built'), a('Edit custom role', 'built'), a('Duplicate custom role', 'built'),
+    a('Delete custom role', 'built'), a('Export', 'missing'),
+  ],
 }
 
 /** Build a leaf node, resolving its route, key, and built-status in one place. */

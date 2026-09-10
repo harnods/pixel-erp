@@ -1,6 +1,6 @@
 # Form
 
-**Pixel components**: `MpFormControl`, `MpFormLabel`, `MpInput`, `MpTextarea`, `MpSelect`, `MpDatePicker`, `MpCheckbox`, `MpRadio`, `MpToggle`, `MpFormErrorMessage`
+**Pixel components**: `MpFormControl`, `MpFormLabel`, `MpInput`, `MpTextarea`, `MpAutocomplete` (via `ErpFilterSelect`), `MpDatePicker`, `MpCheckbox`, `MpRadio`, `MpToggle`, `MpFormErrorMessage`
 **Purpose**: Standard layout and field anatomy for create/edit forms in the ERP.
 
 > ⚠️ There is no custom `ErpForm` component. Forms are **composed** from Pixel
@@ -122,7 +122,7 @@ Use the right surface:
 |---|---|---|
 | Text input | `MpInput` in `MpFormControl` | Add label, help text, error state explicitly |
 | Multi-line text | `MpTextarea` in `MpFormControl` | Keep validation close to the field |
-| Select / dropdown | `MpSelect` | Active/focus state MUST show the **bold neutral border** — see ⚠️ below |
+| Select / dropdown | `ErpFilterSelect` (wraps `MpAutocomplete`) | **Never `MpSelect`/native `<select>`** (`rule/select-erpfilterselect`). Resting height + border match `MpInput` (`rule/select-field-metrics`); focus = **bold neutral border** — see ⚠️ below |
 | Select with tags | `MpInputTag` | Verify props/slots |
 | Date | `MpDatePicker` in `MpFormControl` | Verify formatting and value contract |
 | Checkbox / radio / toggle | `MpCheckbox`, `MpRadio`, `MpToggle` | Preserve accessible labels and state |
@@ -131,7 +131,7 @@ Use the right surface:
 
 ## Every input has a focus/active state — NO EXCEPTIONS ⚠️
 
-**Any** typeable/selectable control — `MpInput`, `MpTextarea`, `MpSelect`, and
+**Any** typeable/selectable control — `MpInput`, `MpTextarea`, `ErpFilterSelect`/`MpAutocomplete`, and
 every **custom-styled field** (search boxes, filter-bar search, the two-pane
 drawer search, combobox triggers) — MUST show a visible focus/active state. The
 canonical treatment across the ERP is the **bold neutral border**: `#8c9596`
@@ -146,24 +146,19 @@ on focus) is a bug — match the surrounding module.
   1px #8c9596 }`. When you add a new custom search/input wrapper, **add its class
   to that list** rather than re-styling focus per component.
 - Pixel inputs (`MpInput`/`MpTextarea`) already ship this; don't override.
-- `MpSelect` needs the extra `!important` fix below (Pixel's default is too faint).
+- `ErpFilterSelect` / `MpAutocomplete` already carry the neutral focus **and** the
+  MpInput-matching resting border/height (`rule/select-active-neutral`,
+  `rule/select-field-metrics`); don't re-style focus per component.
 
-## MpSelect active/focus border ⚠️ (recurring mistake)
+## Select active/focus border ⚠️ (recurring mistake)
 
-Every `MpSelect`'s **active/open (focus) state must show a clearly bold neutral
-border** (`#8c9596` = Gray/Slate400, plus a 1px ring of the same colour) — the
-same treatment as `MpInput`/`MpTextarea` focus. The Pixel `@latest` default
-renders only a faint ~16%-alpha hairline that stays thin even when open.
-
-- The global fix lives in `app/assets/css/erp.css` and targets
-  `.mp-select__root:focus-within .mp-select__control`, plus the open-popover
-  states `[aria-expanded="true"]` / `[data-state="open"]`, with `!important`
-  (Pixel ships a layered `!important` that otherwise wins). **Do not** re-solve
-  this per component.
-- Prefer a **plain `MpSelect`** with real `<option>`s (native focus keeps the
-  bold border). If you wrap `MpSelect` inside an `MpPopover` trigger, the popover
-  steals focus and the border reverts to the thin default — avoid that for form
-  selects.
+Every select's **active/open (focus) state shows a clearly bold neutral border**
+(`#8c9596` = Gray/Slate400 + a 1px ring of the same colour) — the same treatment
+as `MpInput`/`MpTextarea` focus (`rule/select-active-neutral`,
+`rule/form-focus-border-bold`). Its **resting** height (38px) + border
+(`--mp-colors-border-form`) also match `MpInput` (`rule/select-field-metrics`).
+`ErpFilterSelect` / `MpAutocomplete` ship all of this — do **not** re-solve it per
+component, and never fall back to a native `MpSelect` to "get native focus".
 
 ## Checkbox / radio label gap & alignment ⚠️ (recurring mistake)
 
@@ -193,7 +188,8 @@ each row = name (with a secondary subtitle line beneath it, e.g. the user's role
 
 - Both panes carry a search box; **20px gap** from the search box to the list
   header below it.
-- List headers are **`<h2>`** (20px semibold): left = the noun (`Users` / `Roles`)
+- List headers are **`<h3>`** (20px semibold) — the drawer title is the `<h2>`, so
+  the two column headers sit one level below it: left = the noun (`Users` / `Roles`)
   with an `Add all` link; right = `Selected users (n)` / `Selected roles (n)` with
   a `Remove all` link. Right pane shows the illustration empty state until
   something is selected.
@@ -204,9 +200,14 @@ each row = name (with a secondary subtitle line beneath it, e.g. the user's role
 
 ## Select
 
-The control is an **`MpSelect`**; its dropdown is an **`MpPopover`** (options via
-`MpPopoverList` / `MpPopoverListItem`) — not the browser-native option list. Used
-for all selects, including the index-page filter bar's **quick filters**.
+The control is **`ErpFilterSelect`** (the ERP wrapper around `MpAutocomplete`): a
+form-pill trigger + a Pixel `MpPopover` option list (`use-portal`, so the menu
+never clips) — never the browser-native option list. **Never `MpSelect` or a
+native `<select>`** (`rule/select-erpfilterselect` — pixel-police fails the build
+on either). Its resting height + border match `MpInput` (`rule/select-field-metrics`).
+Used for all selects, including the index-page filter bar's **quick filters**.
+Full detail: [pixel-enterprise-overrides.md › Dropdowns](pixel-enterprise-overrides.md)
+and [ErpFilterBar.md](ErpFilterBar.md).
 
 ### Active / selected option = BG FILL (not green text)
 
@@ -227,118 +228,53 @@ A quick filter defaults to **show-all**, but show-all is **not** an option:
    "All category". Shown while nothing is selected (which means: show all).
 2. **Dropdown options are the real values only** (`Open`, `Closed`, …). There is
    **no "All status" / "All category" entry** in the list.
-3. Selecting a value filters the table. The `MpSelect` then shows that value with a
-   **clear `(x)`** (`is-clearable`) → clicking it resets the filter to show-all.
+3. Selecting a value filters the table. `ErpFilterSelect` then shows that value with a
+   **clear `(×)`** on hover → clicking it resets the filter to show-all.
 4. Default `model-value` is `''` (empty = show all); the `filterFn` treats empty as
    "no filter".
 
 > **Max 2 quick filters per page.** When generating a filter bar, **always ask the
 > user: which quick filters (max 2), and what options does each have?**
 
-### Dropdown width rule
+### Dropdown width & truncation
 
-Goal: the dropdown is **as wide as the `MpSelect`**, and **hugs its content**
-(grows) only when an option is longer than the select.
-
-Pin it on `MpPopoverContent` via Pixel `css()`:
-
-```ts
-css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })
-//        ▲ = select width        ▲ hug/grow        ▲ cap very long options
-```
-
-- `minWidth` = the select's width → dropdown never narrower than the trigger.
-- `width: 'max-content'` → hugs the longest option (grows past the select when needed).
-- `maxWidth` → optional cap.
-
-**Trigger width:** the `MpSelect` itself is **fixed width** (e.g. `160px`). When the
-selected label is longer than that, **truncate it with `…`** —
-`css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })`.
-The dropdown still shows the full option text (it's `max-content`). Don't let the
-trigger grow for one long option.
-
-> Note: these `css()` classes land on the **inner `<select>`** (which has no scoped
-> `data-v` attribute), so style the select via `css()` — scoped CSS / a plain
-> `class=""` won't reliably reach it.
-
-> Pixel's `MpPopover` has an `is-adaptive-width` prop ("min-width same as the
-> trigger"). In practice it applies `min-width: 100%`, which equals the trigger
-> **only** when the content is positioned directly inside it. When the popover is
-> portaled / anchored against a wider container, `100%` resolves to that container
-> (the dropdown goes full-width). So **pin `minWidth` to the select width
-> explicitly** as above rather than relying on `is-adaptive-width`.
-
-### Gotchas
-
-- **Native dropdown**: `MpSelect` renders a real `<select>`. Add `@mousedown.prevent`
-  on it so the browser-native list never opens — the click still bubbles to
-  `MpPopoverTrigger` and opens the popover.
-- **Label display**: give the `MpSelect` a single `<option v-if="value">` for the
-  current value so it shows the label; when empty it falls back to the placeholder.
-- **`MpPopoverTrigger` accepts exactly ONE child node** — do **not** put a comment or
-  any sibling inside `<MpPopoverTrigger>`, or the trigger **silently fails to render**
-  (only the popover content appears, the select disappears). Keep comments *outside* it.
-- Using `MpSelect` as the trigger logs a harmless `[MpPopoverTrigger] Only 1 node
-  allowed` warning (MpSelect renders a multi-node root). The trigger still works and
-  the width/position are correct — it's safe to ignore. (To silence it entirely you'd
-  swap `MpSelect` for a single-element select-styled button.)
+`ErpFilterSelect` handles this: pass `width` for the trigger (e.g. `176px`); the
+menu uses `use-portal` + `is-adaptive-width` so it never clips and stays at least
+as wide as the trigger. A long selected label truncates with `…` in the trigger
+while the menu shows full option text. You do **not** hand-roll `MpPopover` +
+`css({ minWidth… })` per select — that machinery lived here for the old, banned
+`MpSelect` pattern.
 
 ### Example
 
-Live reference: [SalesOrdersPage.vue](../../app/components/pages/SalesOrdersPage.vue) (filter bar).
+Live reference: any index filter bar (e.g. [SalesOrdersPage.vue](../../app/components/pages/SalesOrdersPage.vue)).
 
 ```vue
 <script setup lang="ts">
-import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, css,
-} from '@mekari/pixel3'
+import { ref } from 'vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 const value = ref('')   // '' = show all
 const options = [        // real values only — NO "All status" entry
-  { label: 'Open',                value: 'open'                },
-  { label: 'Partially processed', value: 'partially processed' },
-  { label: 'Closed',              value: 'closed'              },
-  { label: 'Voided',              value: 'voided'              },
+  { label: 'Open',   value: 'open'   },
+  { label: 'Closed', value: 'closed' },
 ]
-const selectedLabel = computed(() => options.find(o => o.value === value.value)?.label ?? '')
 </script>
 
 <template>
-  <!-- any comment goes OUTSIDE MpPopoverTrigger -->
-  <MpPopover id="status-filter" is-close-on-select>
-    <MpPopoverTrigger>
-      <MpSelect
-        id="status-select"
-        placeholder="Status"
-        :model-value="value"
-        is-clearable
-        :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
-        @mousedown.prevent
-        @clear="value = ''"
-      >
-        <option v-if="value" :value="value">{{ selectedLabel }}</option>
-      </MpSelect>
-    </MpPopoverTrigger>
-
-    <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-      <MpPopoverList>
-        <MpPopoverListItem
-          v-for="opt in options"
-          :key="opt.value"
-          :is-active="opt.value === value"
-          @click="value = opt.value"
-        >
-          {{ opt.label }}
-        </MpPopoverListItem>
-      </MpPopoverList>
-    </MpPopoverContent>
-  </MpPopover>
+  <ErpFilterSelect
+    id="status-filter"
+    placeholder="Status"
+    :model-value="value"
+    :options="options"
+    @update:model-value="v => (value = v)"
+  />
 </template>
 ```
 
-> Verify the live `MpSelect` / `MpPopover` props with
-> `get-component("MpSelect")` / `get-component("MpPopover")` before finalizing.
+> `ErpFilterSelect` is the sanctioned wrapper; for a type-to-filter (searchable)
+> variant use `MpAutocomplete` with `is-searchable`. Verify props via
+> `get-component("MpAutocomplete")` / `get-component("MpPopover")` before finalizing.
 
 ---
 
@@ -408,7 +344,7 @@ onMounted(() => navigate('Entity', 'Create entity'))
     <!-- Action group — always last -->
     <MpFlex gap="3">
       <MpButton variant="primary">Save</MpButton>
-      <MpButton variant="tertiary">Cancel</MpButton>
+      <MpButton variant="ghost">Cancel</MpButton>
     </MpFlex>
   </MpFlex>
 </template>

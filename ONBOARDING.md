@@ -32,9 +32,14 @@ wrong.
 
 Everything below is committed, so a fresh clone gets it automatically:
 
-- **Skill `pixel-erp-design`** (`.claude/skills/`) — the routing entry point. Invoke
+- **Skill `pixel-erp-design`** — the routing entry point. Invoke
   `/pixel-erp-design`, or just start UI work and Claude routes to the right rules.
-  (`erp-table-page` is the table-specific skill.)
+  (`erp-table-page` is the table-specific skill.) The skills live in
+  `.agents/skills/` and are surfaced to Claude Code via committed symlinks under
+  `.claude/skills/` (`pixel-erp-design`, `erp-table-page`) — Claude Code only
+  discovers project skills from `.claude/skills/`, so a skill dropped only in
+  `.agents/skills/` will not register. **Restart your Claude Code session** after a
+  fresh clone so the skills are picked up.
 - **`pixel-police` hook** (`.claude/settings.json` + `.claude/scripts/pixel-police.sh`)
   — runs on every Edit/Write of a `.vue` file and flags rule violations, each citing
   its `rule/*` ID. On first run Claude Code asks you to **approve the project hooks** —

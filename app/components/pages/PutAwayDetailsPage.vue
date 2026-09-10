@@ -8,6 +8,8 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
@@ -15,6 +17,7 @@ import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import {
   putAwayTasks, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway,
   acknowledgeCanceledPutAway,
+  reassignPutAwayTask,
 } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat, type PutAwayLineItem } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
@@ -30,6 +33,15 @@ const router = useRouter()
 const { t } = useLocale()
 
 const task = computed(() => putAwayTasks.find(pt => pt.id === props.orderId))
+
+// Change assignee — manager-only escape hatch, Open / In Progress only.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(task.value?.status))
+function applyReassign(assignee: string) {
+  if (!reassignPutAwayTask(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `${t('Assignee changed to')} ${assignee}`, maxWidth: 'max-content' })
+}
 const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
 
 // ── Progress stats ─────────────────────────────────────────────────────────
@@ -527,6 +539,10 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Footer action bar ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), and only while the
+           task is still Open / In Progress. -->
+      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
       <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">{{ t('Print put-away slip') }}</button>
 
       <!-- Completed / canceled: stock already committed to its final location
@@ -643,6 +659,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
   />
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="task?.taskNo ?? ''"
+      :current-assignee="task?.assignee ?? ''"
+      :warehouse-id="task?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>
@@ -681,7 +705,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: none; outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

@@ -1121,10 +1121,12 @@ const bulkCountLabel = computed(() => {
   background: var(--mp-background-neutral-hovered, #eef0f3);
 }
 /* Read-only tables with no row actions opt out of the hover highlight
-   (rule/table-no-hover-no-actions). */
+   (rule/table-no-hover-no-actions). !important so it always beats the base
+   .erp-tr:hover .erp-td rule regardless of scoped-selector specificity/order. */
 .erp-table-page--no-row-hover .erp-tr:hover .erp-td {
-  background: transparent;
+  background: var(--mp-background-neutral) !important;
 }
+.erp-table-page--no-row-hover .erp-tr { cursor: default; }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 

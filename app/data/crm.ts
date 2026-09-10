@@ -16,6 +16,11 @@
 import { reactive, computed, ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { employees } from './employees'
+import type { ContactBank } from './contacts'
+import { formatMoney } from '~/utils/currency'
+import { CATALOG } from './catalog'
+import { salesOrders } from './salesOrders'
+import type { SalesOrder } from './types'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -202,6 +207,24 @@ export const DEAL_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation
 export type DealStage = typeof DEAL_STAGES[number]
 /** Ongoing (non-closed) stages — used by metrics + the reopen picker. */
 export const ONGOING_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation'] as const
+
+/** Canonical deal-stage → `ErpStatusBadge` colour `type`. **Single source of
+ *  truth** so every surface (deals pipeline/list, deal preview, company detail
+ *  Deals tab) colours a stage identically — pass the result as `:type` on
+ *  `ErpStatusBadge` (label stays the stage name, via `t()` at the call site). */
+export function dealStageBadgeType(
+  stage: DealStage,
+): 'completed' | 'announcement' | 'information' | 'warning' | 'critical' {
+  switch (stage) {
+    case 'Won':         return 'completed'
+    case 'Lost':        return 'announcement'
+    case 'Negotiation':
+    case 'Proposal':    return 'warning'
+    case '1st Meeting': return 'information'
+    default:            return 'information' // Open Lead
+  }
+}
+
 export type DealPriority = 'low' | 'medium' | 'high' | 'critical'
 /** ERP Conversion Status (PRD). `none` = Not converted, `processing` = queued,
  *  `converted` = an ERP transaction exists (salesOrderId), `failed` = the attempt
@@ -232,6 +255,9 @@ export type LineDiscountType = 'none' | 'percentage' | 'fixed'
 export interface DealLineItem {
   productId: string
   productName: string         // display snapshot
+  sku?: string                // SCM item code snapshot (shown under the product name)
+  description?: string        // free-text line description (SO-style)
+  image?: string              // product photo (from the SCM catalog)
   unit: string
   quantity: number
   originalPrice: number       // Deal-only snapshot (seeded from SCM, editable)
@@ -247,6 +273,14 @@ export function lineDiscountedPrice(li: DealLineItem): number {
 export function lineSubtotal(li: DealLineItem): number { return Math.round(li.quantity * lineDiscountedPrice(li)) }
 
 export type AdjustmentType = 'percentage' | 'fixed'
+
+/** A contact person on the Deal (SO-style multi-contact block). Prefilled from the
+ *  Company PIC; never writes back to the Company record. */
+export interface DealContact { name: string; email?: string; phone?: string }
+/** A file attached to the Deal (shown under the Files tab). `src` is set for files
+ *  uploaded in-session (object URL) so they can be previewed/downloaded; seeded
+ *  files have none (preview falls back to a placeholder). */
+export interface DealAttachment { name: string; sizeKB: number; uploadedBy?: string; uploadedAt?: string; src?: string }
 
 export interface Deal {
   id: string                  // 'DL-260901'
@@ -265,6 +299,19 @@ export interface Deal {
   picName?: string
   phones?: string[]
   email?: string
+  contacts?: DealContact[]    // multi-contact block (derived from PIC + company)
+  // Logistics / references (SO-style detail fields; mock, non-PRD — populated on load)
+  billingAddress?: string
+  shipTo?: string
+  transactionDate?: string    // ISO; falls back to createdAt
+  shipDate?: string           // ISO
+  shipVia?: string
+  trackingNo?: string
+  warehouse?: string
+  paymentTerms?: string
+  tags?: string[]
+  attachments?: DealAttachment[]
+  stageHistory?: { stage: DealStage; at: string }[]   // real per-stage entry log (drives accurate aging)
   // Products & commercial adjustments
   products?: DealLineItem[]
   taxType?: AdjustmentType
@@ -305,18 +352,20 @@ const B = { currency: 'IDR' as DealCurrency, exchangeRate: 1 }
 // Product-line snapshot builders (SCM catalog) — Subtotal = qty × price, so each
 // deal's seeded `value` equals the calculated value (no discount unless noted).
 const P = {
-  gayo:     (q: number): DealLineItem => ({ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', unit: 'Sack', quantity: q, originalPrice: 3_200_000, discountType: 'none', discount: 0 }),
-  toraja:   (q: number): DealLineItem => ({ productId: 'p03', productName: 'Green Beans Arabica Toraja Sapan', unit: 'Sack', quantity: q, originalPrice: 3_600_000, discountType: 'none', discount: 0 }),
-  robusta:  (q: number): DealLineItem => ({ productId: 'p02', productName: 'Green Beans Robusta Lampung', unit: 'Sack', quantity: q, originalPrice: 2_400_000, discountType: 'none', discount: 0 }),
-  house:    (q: number): DealLineItem => ({ productId: 'p09', productName: 'Roasted Beans House Blend Medium', unit: 'Bag', quantity: q, originalPrice: 280_000, discountType: 'none', discount: 0 }),
-  espresso: (q: number): DealLineItem => ({ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', unit: 'Bag', quantity: q, originalPrice: 320_000, discountType: 'none', discount: 0 }),
-  single:   (q: number): DealLineItem => ({ productId: 'p11', productName: 'Roasted Beans Single Origin Gayo', unit: 'Bag', quantity: q, originalPrice: 450_000, discountType: 'none', discount: 0 }),
+  gayo:     (q: number): DealLineItem => ({ productId: 'p01', productName: 'Green Beans Arabica Gayo Grade 1', sku: 'GB-ARB-GAYO', description: 'Grade 1 washed Arabica, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 3_200_000, discountType: 'none', discount: 0 }),
+  toraja:   (q: number): DealLineItem => ({ productId: 'p03', productName: 'Green Beans Arabica Toraja Sapan', sku: 'GB-ARB-TRJ', description: 'Sapan highland washed Arabica, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 3_600_000, discountType: 'none', discount: 0 }),
+  robusta:  (q: number): DealLineItem => ({ productId: 'p02', productName: 'Green Beans Robusta Lampung', sku: 'GB-ROB-LMP', description: 'Lampung natural Robusta, 60 kg sack', unit: 'Sack', quantity: q, originalPrice: 2_400_000, discountType: 'none', discount: 0 }),
+  house:    (q: number): DealLineItem => ({ productId: 'p09', productName: 'Roasted Beans House Blend Medium', sku: 'RB-HOUSE-MED', description: 'Medium roast house blend, whole bean', unit: 'Bag', quantity: q, originalPrice: 280_000, discountType: 'none', discount: 0 }),
+  espresso: (q: number): DealLineItem => ({ productId: 'p10', productName: 'Roasted Beans Espresso Blend Dark', sku: 'RB-ESP-DARK', description: 'Dark roast espresso blend, whole bean', unit: 'Bag', quantity: q, originalPrice: 320_000, discountType: 'none', discount: 0 }),
+  single:   (q: number): DealLineItem => ({ productId: 'p11', productName: 'Roasted Beans Single Origin Gayo', sku: 'RB-SO-GAYO', description: 'Single origin Gayo, light-medium roast', unit: 'Bag', quantity: q, originalPrice: 450_000, discountType: 'none', discount: 0 }),
 }
 // A real pipeline is a funnel — most deals sit in the early stages and thin out
 // toward the close. Distribution: Open Lead 7 · 1st Meeting 5 · Proposal 4 ·
 // Negotiation 3 · Won 3 · Lost 2. Values, customers, owners and dates are coherent
 // with the coffee catalog + account master. createdAt is spread so aging varies.
 const DEALS_SEED: Deal[] = [
+  // ── New lead with NO products yet (just created, product not added) ──
+  { id: 'DL-260898', name: 'Cold brew kiosk pilot', customerId: 'C001', company: 'Anomali Coffee', stage: 'Open Lead', owner: 'Dewi Lestari', value: 6_000_000, valueOverridden: true, priority: 'low', ...B, referenceNumber: 'RFQ-9001', expectedCloseDate: '2026-10-10', createdAt: '2026-09-07', createdBy: 'Dewi Lestari', lastActivity: '2026-09-07', conversion: 'none' },
   // ── Open Lead (7) ──
   { id: 'DL-260901', name: 'Cold brew concentrate trial',  customerId: 'C001', company: 'Anomali Coffee',           stage: 'Open Lead', owner: 'Dewi Lestari',  value: 9_000_000,  priority: 'medium', ...B, products: [P.single(20)], expectedCloseDate: '2026-09-30', createdAt: '2026-09-05', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-06', conversion: 'none' },
   { id: 'DL-260902', name: 'Office pantry monthly supply', customerId: 'C014', company: 'GoWork Office Tower',       stage: 'Open Lead', owner: 'Dewi Lestari',  value: 8_400_000,  priority: 'low',    ...B, products: [P.house(30)],  expectedCloseDate: '2026-10-06', createdAt: '2026-09-03', createdBy: 'Dewi Lestari',  lastActivity: '2026-09-04', conversion: 'none' },
@@ -353,12 +402,317 @@ export const deals = reactive<Deal[]>(load('crm-deals-v3', DEALS_SEED))
 // Migrate snapshots that predate the model expansion: old stage casing, the
 // renamed 'validation-failed' status, and the currency/rate defaults.
 const STAGE_MIGRATE: Record<string, DealStage> = { 'Open lead': 'Open Lead', '1st meeting': '1st Meeting' }
+// Product-line meta (sku + description) keyed by productId — backfills line items
+// that predate the DealLineItem model expansion (persisted snapshots).
+const LINE_META: Record<string, { sku: string; description: string }> = {
+  p01: { sku: 'GB-ARB-GAYO', description: 'Grade 1 washed Arabica, 60 kg sack' },
+  p03: { sku: 'GB-ARB-TRJ', description: 'Sapan highland washed Arabica, 60 kg sack' },
+  p02: { sku: 'GB-ROB-LMP', description: 'Lampung natural Robusta, 60 kg sack' },
+  p09: { sku: 'RB-HOUSE-MED', description: 'Medium roast house blend, whole bean' },
+  p10: { sku: 'RB-ESP-DARK', description: 'Dark roast espresso blend, whole bean' },
+  p11: { sku: 'RB-SO-GAYO', description: 'Single origin Gayo, light-medium roast' },
+}
+// Build a plausible street address for a customer city (mock; keeps every Deal
+// detail page complete without per-record seeding).
+const CITY_ADDRESS: Record<string, string> = {
+  Jakarta: 'Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta',
+  Bekasi: 'Jl. Ahmad Yani No. 1, Bekasi Selatan, 17141, Jawa Barat',
+  Bandung: 'Jl. Asia Afrika No. 8, Sumur Bandung, 40111, Jawa Barat',
+  Surabaya: 'Jl. Basuki Rahmat No. 2, Genteng, 60271, Jawa Timur',
+  Bali: 'Jl. Sunset Road No. 88, Kuta, 80361, Bali',
+  Denpasar: 'Jl. Teuku Umar No. 120, Denpasar, 80114, Bali',
+}
+// A handful of deals get a second contact person so the multi-contact block has a
+// live example (Contact person supports N contacts side by side).
+const EXTRA_CONTACTS: Record<string, DealContact[]> = {
+  'DL-260907': [{ name: 'Linayanti', email: 'lina@kopikenangan.com', phone: '+62 811 8044 222' }],
+  'DL-260906': [{ name: 'Sri Wahyuni', email: 'finance@tanameracoffee.com', phone: '+62 812 5550 010' }],
+  'DL-260913': [{ name: 'Bagus Prakoso', email: 'ap@kopikenangan.com', phone: '+62 811 8044 190' }],
+  'DL-260917': [{ name: 'Yulia Kartika', email: 'finance@sentraboga.co.id', phone: '+62 813 5550 020' }],
+}
+
+// Example files so the Files tab has a populated table (name · size · uploader · when).
+const SEED_ATTACHMENTS: Record<string, DealAttachment[]> = {
+  'DL-260920': [
+    { name: 'Proposal - Green beans Q3.pdf', sizeKB: 248.4, uploadedBy: 'Fajar Nugroho', uploadedAt: '2026-08-06T10:12:00' },
+    { name: 'Price agreement.xlsx', sizeKB: 52.1, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-08-10T14:03:00' },
+    { name: 'Company profile.png', sizeKB: 890.7, uploadedBy: 'Rizal Candra', uploadedAt: '2026-08-12T09:20:00' },
+  ],
+  'DL-260907': [
+    { name: 'Espresso roast notes.pdf', sizeKB: 120.6, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-09-06T11:00:00' },
+  ],
+}
+
+/** Seed a plausible stage-entry history for a deal that predates the stageHistory
+ *  field: a normal progression Open Lead → current stage, dates spread from
+ *  createdAt to lastActivity. Interactive moves append real entries on top. */
+function synthStageHistory(d: Deal): { stage: DealStage; at: string }[] {
+  const forward: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
+  const path: DealStage[] =
+    d.stage === 'Lost' ? ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Lost']
+    : forward.slice(0, forward.indexOf(d.stage) + 1)
+  const start = Date.parse(d.createdAt)
+  const end = Math.max(Date.parse(d.lastActivity || d.createdAt), start)
+  const n = path.length
+  return path.map((stage, i) => ({
+    stage,
+    at: n <= 1 ? d.createdAt : new Date(start + ((end - start) * i) / (n - 1)).toISOString().slice(0, 10),
+  }))
+}
 for (const d of deals) {
   const migrated = STAGE_MIGRATE[d.stage as string]
   if (migrated) d.stage = migrated
   if ((d.conversion as string) === 'validation-failed') d.conversion = 'failed'
   if (!d.currency) d.currency = 'IDR'
   if (typeof d.exchangeRate !== 'number') d.exchangeRate = 1
+  // Line-item meta backfill (persisted snapshots)
+  for (const li of d.products ?? []) {
+    const m = LINE_META[li.productId]
+    if (m && !li.description) li.description = m.description
+    // Align to the SCM catalog (sku + photo) so the table and the Select product
+    // drawer share one identity (drawer keys on sku).
+    const cat = CATALOG.find((c) => c.id === li.productId)
+    if (cat) { li.sku = cat.sku; if (!li.image) li.image = cat.img }
+  }
+  // SO-style logistics / commercial mock fields — populate any that are missing so
+  // every Deal detail page renders the full transaction layout.
+  const c = crmCustomers.find((x) => x.id === d.customerId)
+  const addr = (c && CITY_ADDRESS[c.city]) || (c ? `${c.city}, Indonesia` : '—')
+  if (!d.billingAddress) d.billingAddress = addr
+  if (!d.shipTo) d.shipTo = addr
+  if (!d.transactionDate) d.transactionDate = d.createdAt
+  if (!d.shipDate) d.shipDate = d.expectedCloseDate
+  if (!d.shipVia) d.shipVia = 'Sentral Cargo'
+  if (!d.warehouse) d.warehouse = 'Default location'
+  if (!d.paymentTerms) d.paymentTerms = 'Net 30'
+  if (!d.tags && c?.segments?.length) d.tags = [...c.segments]
+  // Commercial adjustments only make sense once the deal has products.
+  if (d.products?.length) {
+    if (d.taxType == null && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
+    if (d.shippingFee == null) d.shippingFee = 100_000
+  }
+  if (!d.stageHistory) d.stageHistory = synthStageHistory(d)
+  if (!d.attachments) d.attachments = (SEED_ATTACHMENTS[d.id] ?? []).map((a) => ({ ...a }))
+  if (!d.contacts) {
+    const name = d.picName || c?.contact
+    d.contacts = name ? [{ name, email: d.email || c?.email, phone: d.phones?.[0] || c?.phone }] : []
+    // Some deals carry a second narahubung (multi-contact example).
+    const extra = EXTRA_CONTACTS[d.id]
+    if (extra) d.contacts.push(...extra)
+  }
+}
+
+// ── Link converted deals to a real ERP sales order ──────────────────────────────
+// A converted deal's Sales orders tab shows the actual ERP sales order (same table
+// as the ERP Sales Orders index). Seeds that point at a stale id (or none) get a
+// freshly built ERP order appended to `salesOrders` and linked back.
+let _dealOrderSeq = salesOrders.reduce((m, o) => Math.max(m, o.number), 10089)
+function buildOrderFromDeal(d: Deal): SalesOrder {
+  _dealOrderSeq += 1
+  const number = _dealOrderSeq
+  const t = dealTotals(d)
+  return {
+    id: `SO${String(number - 9999).padStart(3, '0')}`,   // beyond the seeded SO001–SO100
+    number,
+    customer: { id: d.customerId, name: d.company },
+    date: d.lastActivity || d.createdAt,
+    dueDate: d.expectedCloseDate,
+    status: 'open',
+    balanceDue: t.total,
+    total: t.total,
+    tags: d.tags ? [...d.tags] : [],
+    items: (d.products ?? []).map((li) => ({
+      product: li.productName, sku: li.sku ?? '', description: li.description ?? '',
+      qty: li.quantity, unit: li.unit, unitPrice: li.originalPrice,
+      discountPct: li.discountType === 'percentage' ? li.discount : 0,
+      amount: lineSubtotal(li),
+    })),
+    globalDiscount: t.globalDiscount,
+    shippingFee: t.shippingFee,
+  }
+}
+for (const d of deals) {
+  if (d.conversion !== 'converted') continue
+  if (d.salesOrderId && salesOrders.some((o) => o.id === d.salesOrderId)) continue
+  const so = buildOrderFromDeal(d)
+  salesOrders.unshift(so)
+  d.salesOrderId = so.id
+  d.convertedTarget = d.convertedTarget ?? 'Sales Order'
+}
+
+/** The ERP sales order a converted deal is linked to (from `salesOrders`). */
+export function getDealSalesOrder(d: Deal): SalesOrder | undefined {
+  return d.salesOrderId ? salesOrders.find((o) => o.id === d.salesOrderId) : undefined
+}
+/** Link a deal to a just-created ERP sales order (drawer conversion flow). */
+export function linkDealSalesOrder(id: string, order: { id: string }): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  d.conversion = 'converted'
+  d.convertedTarget = 'Sales Order'
+  d.salesOrderId = order.id
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
+}
+
+/** Days a Deal has spent in its current stage (mock: since its last activity;
+ *  used for the "5d" duration under the active stepper segment). */
+export function dealDaysInStage(d: Deal): number {
+  const from = new Date(d.lastActivity || d.createdAt).getTime()
+  const now = new Date(DEAL_TODAY).getTime()
+  return Math.max(0, Math.round((now - from) / 86_400_000))
+}
+
+/** Compact aging label — 45 → "1m", 10 → "1w", 3 → "3d". */
+export function formatAging(days: number): string {
+  if (days >= 30) return `${Math.round(days / 30)}m`
+  if (days >= 7) return `${Math.round(days / 7)}w`
+  return `${Math.max(0, days)}d`
+}
+
+/** Per-stage aging (days) for the pipeline stepper, computed from the REAL stage
+ *  history: each stage's aging = time until the next transition (or today for the
+ *  current stage). Only stages actually entered get an entry — a deal that jumped
+ *  Open Lead → Won shows aging for those two, NOT the skipped stages in between. */
+export function dealStageAgingDays(d: Deal): Record<string, number> {
+  const forwardSet = new Set<DealStage>(['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won'])
+  const hist = d.stageHistory?.length ? d.stageHistory : synthStageHistory(d)
+  const today = Date.parse(DEAL_TODAY)
+  const out: Record<string, number> = {}
+  for (let i = 0; i < hist.length; i++) {
+    const cur = hist[i]!
+    if (!forwardSet.has(cur.stage)) continue   // Lost node carries no aging label
+    const startMs = Date.parse(cur.at)
+    const endMs = hist[i + 1] ? Date.parse(hist[i + 1]!.at) : today
+    out[cur.stage] = Math.max(0, Math.round((endMs - startMs) / 86_400_000))
+  }
+  return out
+}
+
+// ── Activity log ───────────────────────────────────────────────────────────────
+export interface DealActivityDetail { label: string; value: string }
+export interface DealActivityEntry { date: string; user: string; activity: string; details: DealActivityDetail[] }
+
+/** ISO datetime `n` days (+ `hour`) after an ISO date — deterministic (no Date.now). */
+function isoAt(iso: string, days: number, hour = 9): string {
+  const [y, m, dd] = iso.split('-').map(Number)
+  const t = Date.UTC(y!, m! - 1, dd!, hour) + days * 86_400_000
+  return new Date(t).toISOString()
+}
+
+/**
+ * Full activity log for a Deal (newest first). No real audit trail in the demo, so
+ * a realistic, deterministic timeline is synthesised from the record's own data:
+ * created → stage moves → a field edit (old → new) → conversion/lost/archive. Each
+ * event carries a DETAILS list; edits render "old → new". Consumed by
+ * ActivityLogTable (Deal "Activity" tab), which shows the first 3 details + more/less.
+ */
+export function dealActivityLog(d: Deal): DealActivityEntry[] {
+  const forward: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
+  const money = (n: number) => formatMoney(n, d.currency)
+  const otherOwner = CRM_OWNERS.find((o) => o !== d.owner) ?? 'Dewi Lestari'
+  const closeIndex = d.stage === 'Lost' ? 3 : forward.indexOf(d.stage === 'Won' ? 'Negotiation' : d.stage)
+  const total = dealTotals(d).total
+  const created = d.createdBy || 'System'
+  const editor = d.lastModifiedBy || d.owner
+
+  const events: DealActivityEntry[] = []
+
+  // 1. Created — many fields (triggers Show more).
+  events.push({
+    date: isoAt(d.createdAt, 0, 9), user: created, activity: 'Created deal',
+    details: [
+      { label: 'Deal name', value: d.name },
+      { label: 'Deal number', value: dealNo(d.id) },
+      { label: 'Customer', value: d.company },
+      { label: 'Deal owner', value: d.owner },
+      { label: 'Stage', value: 'Open Lead' },
+      { label: 'Deal value', value: money(total) },
+      { label: 'Currency', value: d.currency },
+      { label: 'Due date', value: d.expectedCloseDate },
+      { label: 'Reference no.', value: d.referenceNumber || '—' },
+    ],
+  })
+
+  // 2. Stage moves — one event per forward transition up to the close index.
+  for (let i = 1; i <= closeIndex && i < forward.length; i++) {
+    events.push({
+      date: isoAt(d.createdAt, i, 11), user: d.owner, activity: 'Stage updated',
+      details: [{ label: 'Stage', value: `${forward[i - 1]} → ${forward[i]}` }],
+    })
+  }
+
+  // 3. A field edit (old → new) — demonstrates change tracking + Show more.
+  events.push({
+    date: isoAt(d.createdAt, closeIndex + 1, 14), user: editor, activity: 'Updated deal',
+    details: [
+      { label: 'Deal value', value: `${money(Math.round(total * 0.9))} → ${money(total)}` },
+      { label: 'Deal owner', value: `${otherOwner} → ${d.owner}` },
+      { label: 'Payment terms', value: `Net 14 → ${d.paymentTerms || 'Net 30'}` },
+      { label: 'Due date', value: `${isoAt(d.expectedCloseDate, -14, 0).slice(0, 10)} → ${d.expectedCloseDate}` },
+    ],
+  })
+
+  // 4. Terminal / conversion events.
+  if (d.stage === 'Won') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 15), user: editor, activity: 'Marked as Won',
+      details: [{ label: 'Stage', value: 'Negotiation → Won' }],
+    })
+  }
+  if (d.stage === 'Lost') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 15), user: editor, activity: 'Marked as Lost',
+      details: [
+        { label: 'Stage', value: 'Negotiation → Lost' },
+        { label: 'Lost reason', value: d.lostReason || '—' },
+      ],
+    })
+  }
+  if (d.conversion === 'converted' && d.salesOrderId) {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 16), user: editor,
+      activity: `Converted to ${d.convertedTarget ?? 'Sales Order'}`,
+      details: [
+        { label: 'Deal', value: d.name },
+        { label: 'Customer', value: d.company },
+        { label: d.convertedTarget ?? 'Sales Order', value: `#${getDealSalesOrder(d)?.number ?? d.salesOrderId}` },
+      ],
+    })
+  }
+  if (d.conversion === 'failed') {
+    events.push({
+      date: isoAt(d.lastActivity, 0, 16), user: editor, activity: 'Conversion failed',
+      details: [{ label: 'Reason', value: d.conversionError || '—' }],
+    })
+  }
+  if (d.archived) {
+    events.push({
+      date: isoAt(d.lastActivity, 1, 10), user: editor, activity: 'Archived deal',
+      details: [{ label: 'Deal', value: d.name }],
+    })
+  }
+
+  // Newest first.
+  return events.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+/** Full totals breakdown for the detail page (Subtotal → Total), matching the
+ *  Deals detail mockup: subtotal = gross (before line discounts). */
+export function dealTotals(d: Deal) {
+  const lines = d.products ?? []
+  const subtotal = lines.reduce((n, li) => n + li.quantity * li.originalPrice, 0)     // gross, before line discounts
+  const afterLine = lines.reduce((n, li) => n + lineSubtotal(li), 0)
+  const discountPerLine = subtotal - afterLine
+  const globalDiscount = d.orderDiscount
+    ? (d.orderDiscountType === 'percentage' ? Math.round(afterLine * (d.orderDiscount / 100)) : d.orderDiscount)
+    : 0
+  const taxBase = Math.max(0, afterLine - globalDiscount)
+  const taxAmount = d.tax ? (d.taxType === 'percentage' ? Math.round(taxBase * (d.tax / 100)) : d.tax) : 0
+  const taxLabel = d.tax ? (d.taxType === 'percentage' ? `PPN ${d.tax}%` : 'Tax') : ''
+  const shippingFee = d.shippingFee ?? 0
+  const otherExpense = d.otherExpense ?? 0
+  const total = Math.max(0, taxBase + taxAmount + shippingFee + otherExpense)
+  return { subtotal, discountPerLine, globalDiscount, taxAmount, taxLabel, shippingFee, otherExpense, total }
 }
 export function persistCrmDeals() { saveSnapshot('crm-deals-v3', deals) }
 
@@ -372,6 +726,12 @@ export const crmRelatedPeopleOptions = computed(() =>
 export function isDealOpen(d: Deal): boolean { return d.stage !== 'Won' && d.stage !== 'Lost' }
 export function isDealArchived(d: Deal): boolean { return d.archived === true }
 export function getDeal(id: string): Deal | undefined { return deals.find((d) => d.id === id) }
+/** Canonical deal display number — fixed format `Deal #1{NNNN}` (e.g. DL-260907 → Deal #10007).
+ *  Use EVERYWHERE a deal number is shown (list, detail, company deals, activity log). */
+export function dealNo(id: string): string {
+  const n = parseInt(String(id).replace(/\D/g, ''), 10)
+  return Number.isNaN(n) ? String(id) : `Deal #${10000 + (n % 100)}`
+}
 export function dealsInStage(stage: DealStage): Deal[] { return deals.filter((d) => d.stage === stage && !d.archived) }
 
 // ── Commercial calculation (PRD provisional formula, TBC w/ ERP txn team) ──
@@ -442,9 +802,9 @@ export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?:
   if (!d) return { ok: false, error: 'Deal not found.' }
   if (d.archived) return { ok: false, error: 'Restore this deal before changing its stage.' }
   if (d.stage === stage) return { ok: true }
-  if (d.stage === 'Won') return { ok: false, error: 'Won is terminal — this deal cannot move to another stage.' }
-  if (d.stage === 'Lost' && !(ONGOING_STAGES as readonly string[]).includes(stage)) {
-    return { ok: false, error: 'A Lost deal can only be reopened to an ongoing stage.' }
+  // A closed deal (Won/Lost) can be moved back to an ongoing stage, or Won → Lost.
+  if ((d.stage === 'Won' || d.stage === 'Lost') && !(ONGOING_STAGES as readonly string[]).includes(stage) && stage !== 'Lost') {
+    return { ok: false, error: 'A closed deal can only be moved back to an ongoing stage.' }
   }
   if (stage === 'Lost' && !opts.lostReason?.trim()) return { ok: false, error: 'A Lost reason is required.' }
   const from = d.stage
@@ -452,6 +812,9 @@ export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?:
   d.lastActivity = DEAL_TODAY
   if (stage === 'Lost') d.lostReason = opts.lostReason!.trim()
   if (from === 'Lost' && stage !== 'Lost') d.lostReason = undefined
+  // Record the real transition so aging reflects only stages actually entered.
+  if (!d.stageHistory) d.stageHistory = synthStageHistory({ ...d, stage: from })
+  d.stageHistory.push({ stage, at: DEAL_TODAY })
   persistCrmDeals()
   return { ok: true }
 }
@@ -470,6 +833,58 @@ export function restoreDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
   d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
 }
+/** Payload from the Deal "Add product" full-screen editor (the embedded sales-order
+ *  line-items + totals form). */
+export interface DealProductsPayload {
+  items: { product: string; sku: string; description: string; qty: number; unit: string; unitPrice: number; discountPct: number }[]
+  globalDiscountType: '%' | 'Rp'
+  globalDiscountValue: number
+  shippingFee: number
+  priceIncludesTax: boolean
+}
+
+/** Write the edited products + commercial totals back onto a deal. Line items map by
+ *  catalog sku (for productId + photo); PPN stays 11% (the form's fixed tax). */
+export function setDealProductsFull(id: string, p: DealProductsPayload): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  d.products = p.items.map((it) => {
+    const cat = CATALOG.find((c) => c.sku === it.sku)
+    return {
+      productId: cat?.id ?? it.sku,
+      productName: it.product,
+      sku: it.sku || undefined,
+      description: it.description || undefined,
+      image: cat?.img,
+      unit: it.unit,
+      quantity: it.qty,
+      originalPrice: it.unitPrice,
+      discountType: it.discountPct ? 'percentage' : 'none',
+      discount: it.discountPct,
+    }
+  })
+  d.orderDiscountType = p.globalDiscountType === 'Rp' ? 'fixed' : 'percentage'
+  d.orderDiscount = p.globalDiscountValue
+  d.shippingFee = p.shippingFee
+  if (d.products.length && d.tax == null) { d.taxType = 'percentage'; d.tax = 11 }
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
+}
+
+/** Attach a file to a deal (Files tab upload / drag-drop). */
+export function addDealAttachment(id: string, file: DealAttachment): DealOpResult {
+  const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
+  if (!d.attachments) d.attachments = []
+  d.attachments.unshift(file)
+  d.lastActivity = DEAL_TODAY
+  persistCrmDeals(); return { ok: true }
+}
+/** Remove a file from a deal by index. */
+export function removeDealAttachment(id: string, index: number): DealOpResult {
+  const d = getDeal(id); if (!d?.attachments) return { ok: false, error: 'Deal not found.' }
+  d.attachments.splice(index, 1)
+  persistCrmDeals(); return { ok: true }
+}
+
 /** Permanently remove a deal from the store. (PRD V1 keeps only Archive/Restore;
  *  Delete is a prototype affordance kept per product request.) */
 export function deleteDeal(id: string): DealOpResult {
@@ -514,6 +929,7 @@ export function createDeal(input: DealInput, author = 'You'): Deal {
     id: nextDealId(), ...input,
     createdAt: DEAL_TODAY, createdBy: author, lastActivity: DEAL_TODAY, lastModifiedBy: author,
     conversion: 'none', priority: input.priority ?? 'medium',
+    stageHistory: [{ stage: input.stage, at: DEAL_TODAY }],
   }
   deals.unshift(d); persistCrmDeals(); return d
 }
@@ -563,44 +979,80 @@ export const CRM_TEAM_MODULES = [
 ] as const
 export type CrmTeamModule = typeof CRM_TEAM_MODULES[number]['key']
 
+export type CrmTeamStatus = 'active' | 'inactive'
+
 export interface CrmTeam {
   id: string
   name: string
   description: string
   memberIds: string[]          // employees.id (EMP-000x)
+  adminIds: string[]           // Team Admins — always a subset of memberIds
   modules: CrmTeamModule[]
+  status: CrmTeamStatus        // Active / Inactive (no hard delete in V1)
+  createdAt: string            // ISO datetime — drives the Created time cell
+  createdBy: string            // author who created the team
   updatedAt: string            // ISO datetime — drives the Last updated cell
   updatedBy: string            // author name
 }
 
 const TEAMS_SEED: CrmTeam[] = [
-  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], modules: ['deals'], updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
-  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        modules: [],        updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], adminIds: ['EMP-0001'], modules: ['deals'], status: 'active', createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        adminIds: ['EMP-0005'], modules: [],        status: 'active', createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
 ]
 
-export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v1', TEAMS_SEED))
-export function persistCrmTeams() { saveSnapshot('crm-teams-v1', crmTeams) }
+// Storage key bumped to v2 — the Team shape gained status/adminIds/createdAt.
+export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v2', TEAMS_SEED))
+export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
 
 /** Member picker options — active employees as { id, name, subtitle=jobPosition }. */
 export const crmTeamMemberOptions = computed(() =>
   employees
     .filter((e) => e.status === 'active')
-    .map((e) => ({ id: e.id, name: e.fullName, subtitle: e.jobPosition || undefined })),
+    // Subtitle is the email (Jurnal doesn't carry job position) — shown in the
+    // members modal + assign-members drawer under the name.
+    .map((e) => ({
+      id: e.id,
+      name: e.fullName,
+      subtitle: e.email || `${e.fullName.trim().toLowerCase().replace(/\s+/g, '.')}@centralperk.co.id`,
+    })),
 )
 export function teamMemberNames(ids: string[]): string[] {
   return ids.map((id) => employees.find((e) => e.id === id)?.fullName ?? id)
 }
+/** Team names a given person belongs to — resolved from real crmTeams membership
+ *  (matches the employee master by name), so the Users list stays in sync with the
+ *  Teams index. Returns [] when the person is on no team. */
+export function teamNamesForPerson(name: string): string[] {
+  const emp = employees.find((e) => e.fullName === name)
+  if (!emp) return []
+  return crmTeams.filter((t) => t.memberIds.includes(emp.id)).map((t) => t.name)
+}
 
-/** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy. */
+/** Case-insensitive team-name uniqueness within the company (PRD §5.6/§5.8). */
+export function crmTeamNameExists(name: string, excludeId?: string): boolean {
+  const n = name.trim().toLowerCase()
+  return crmTeams.some((t) => t.id !== excludeId && t.name.trim().toLowerCase() === n)
+}
+
+/** Create or update a team (snapshot-persisted). Stamps updatedAt/updatedBy; sets
+ *  createdAt/createdBy on create. adminIds are always coerced to a subset of
+ *  memberIds (a Team Admin must be a member — PRD §5.8). */
 export function upsertCrmTeam(
-  input: { id?: string; name: string; description: string; memberIds: string[]; modules: CrmTeamModule[] },
+  input: { id?: string; name: string; description: string; memberIds: string[]; adminIds: string[]; modules: CrmTeamModule[]; status?: CrmTeamStatus },
   author: string,
   now: string,
 ): CrmTeam {
+  const memberIds = [...input.memberIds]
+  const adminIds = input.adminIds.filter((id) => memberIds.includes(id))
   if (input.id) {
     const t = crmTeams.find((x) => x.id === input.id)
     if (t) {
-      Object.assign(t, { name: input.name, description: input.description, memberIds: [...input.memberIds], modules: [...input.modules], updatedAt: now, updatedBy: author })
+      Object.assign(t, {
+        name: input.name, description: input.description,
+        memberIds, adminIds, modules: [...input.modules],
+        status: input.status ?? t.status,
+        updatedAt: now, updatedBy: author,
+      })
       persistCrmTeams()
       return t
     }
@@ -609,16 +1061,20 @@ export function upsertCrmTeam(
   const created: CrmTeam = {
     id: `TEAM-${String(nextNum).padStart(2, '0')}`,
     name: input.name, description: input.description,
-    memberIds: [...input.memberIds], modules: [...input.modules],
+    memberIds, adminIds, modules: [...input.modules],
+    status: input.status ?? 'active',
+    createdAt: now, createdBy: author,
     updatedAt: now, updatedBy: author,
   }
   crmTeams.push(created)
   persistCrmTeams()
   return created
 }
-export function deleteCrmTeam(id: string): void {
-  const i = crmTeams.findIndex((t) => t.id === id)
-  if (i !== -1) { crmTeams.splice(i, 1); persistCrmTeams() }
+
+/** Activate / deactivate a team (reversible lifecycle — no hard delete in V1). */
+export function setCrmTeamStatus(id: string, status: CrmTeamStatus, author: string, now: string): void {
+  const t = crmTeams.find((x) => x.id === id)
+  if (t) { t.status = status; t.updatedAt = now; t.updatedBy = author; persistCrmTeams() }
 }
 
 // ── Modules (Settings → Modules settings) ─────────────────────────────────────
@@ -767,6 +1223,38 @@ const DEAL_PIPELINES_SEED: DealPipeline[] = [
 export const dealPipelines = reactive<DealPipeline[]>(load('crm-deal-pipelines-v1', DEAL_PIPELINES_SEED))
 export function persistDealPipelines() { saveSnapshot('crm-deal-pipelines-v1', dealPipelines) }
 
+/** Pipeline board DISPLAY settings — edited from the right-hand panel of the
+ *  Deals module builder (Figma 4240-18081). Drives which fields render on a deal
+ *  card (+ their order), whether the per-stage total shows, and whether the
+ *  swimlanes are colour-coded by outcome. Persisted separately from the stages. */
+export type DealCardFieldKey = 'company' | 'dealName' | 'contactPerson' | 'dealValue' | 'owner' | 'date' | 'note'
+export interface DealCardField { key: DealCardFieldKey; label: string; on: boolean }
+export interface DealPipelineDisplay {
+  stageTotal: boolean       // "Total deal value" per stage
+  colorColumns: boolean     // "Color stage columns"
+  showAging: boolean        // "Rotting in (days)" — the card aging badge
+  cardFields: DealCardField[]
+}
+const DEAL_PIPELINE_DISPLAY_SEED: DealPipelineDisplay = {
+  stageTotal: true,
+  colorColumns: false,
+  showAging: true,
+  cardFields: [
+    { key: 'company',       label: 'Company name',   on: true },
+    { key: 'dealName',      label: 'Deal name',      on: true },
+    { key: 'contactPerson', label: 'Contact person', on: false },
+    { key: 'dealValue',     label: 'Deal value',     on: true },
+    { key: 'owner',         label: 'Owner',          on: true },
+    { key: 'date',          label: 'Date',           on: false },
+    { key: 'note',          label: 'Note',           on: false },
+  ],
+}
+export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
+  loadSnapshot<DealPipelineDisplay>('crm-deal-pipeline-display-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+)
+export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
+
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,
@@ -874,54 +1362,53 @@ export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1
 // The value is a flat map of permission-key → boolean; set at invite time and
 // editable per user.
 export interface CrmPermItem { key: string; label: string }
-export interface CrmPermGroup { group: string; items: CrmPermItem[] }
+/** A permission group is a collapsible section (title + optional subtitle) made of
+ *  one or more CONTROLS, per Figma "Manage permissions":
+ *   • access     — a "Record access" radio (All vs Only mine), backed by two keys.
+ *   • permission — a "Permission" radio (View only vs a capability), backed by the
+ *                  capability keys (view = all off).
+ *   • checkbox   — a single checkbox (optionally under its own sub-label, e.g. Export). */
+export type CrmPermControl =
+  | { type: 'access'; label: string; allLabel: string; mineLabel: string; allKey: string; mineKey: string }
+  | { type: 'permission'; label: string; capabilityLabel: string; capabilityKeys: string[] }
+  | { type: 'checkbox'; label: string; key: string; sublabel?: string }
+export interface CrmPermGroup { group: string; subtitle?: string; controls: CrmPermControl[] }
+
 export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
-  { group: 'Deals', items: [
-    { key: 'deals.readAll',   label: 'Read only all deals' },
-    { key: 'deals.readMine',  label: 'Read only deals assigned to you' },
-    { key: 'deals.create',    label: 'Can create deal' },
-    { key: 'deals.edit',      label: 'Can edit deal' },
-    { key: 'deals.comment',   label: 'Can comment' },
-    { key: 'deals.archive',   label: 'Can archive/delete' },
-    { key: 'deals.export',    label: 'Can export' },
+  { group: 'Records', subtitle: 'Deals and custom module records', controls: [
+    { type: 'access',     label: 'Record access', allLabel: 'All records', mineLabel: 'Only my records', allKey: 'deals.readAll', mineKey: 'deals.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['deals.create', 'deals.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export records', key: 'deals.export' },
   ] },
-  { group: 'Customers', items: [
-    { key: 'customers.readAll',  label: 'Read only all customers' },
-    { key: 'customers.readMine', label: 'Read only my customer' },
-    { key: 'customers.create',   label: 'Can create' },
-    { key: 'customers.edit',     label: 'Can edit' },
-    { key: 'customers.comment',  label: 'Can comment' },
-    { key: 'customers.archive',  label: 'Can archive/delete' },
-    { key: 'customers.export',   label: 'Can export' },
+  { group: 'Contacts', controls: [
+    { type: 'access',     label: 'Contact access', allLabel: 'All contacts', mineLabel: 'Only my contacts', allKey: 'contacts.readAll', mineKey: 'contacts.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['contacts.create', 'contacts.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export contacts data', key: 'contacts.export' },
   ] },
-  { group: 'Reports', items: [
-    { key: 'reports.view', label: 'Can view report' },
+  { group: 'Companies', controls: [
+    { type: 'access',     label: 'Company access', allLabel: 'All companies', mineLabel: 'Only my companies', allKey: 'companies.readAll', mineKey: 'companies.readMine' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['companies.create', 'companies.edit'] },
+    { type: 'checkbox',   sublabel: 'Export', label: 'Can export companies data', key: 'companies.export' },
   ] },
-  { group: 'Activity log', items: [
-    { key: 'activity.view', label: 'Can view activity log' },
+  { group: 'Reports', controls: [
+    { type: 'checkbox', label: 'Can view report', key: 'reports.view' },
   ] },
-  { group: 'Settings / User & Roles', items: [
-    { key: 'settingsUsers.view',   label: 'Can view users' },
-    { key: 'settingsUsers.invite', label: 'Can invite user' },
-    { key: 'settingsUsers.revoke', label: 'Can revoke user' },
+  { group: 'Settings / Company profile', controls: [
+    { type: 'checkbox', label: 'Can view company profile', key: 'settingsCompany.view' },
   ] },
-  { group: 'Settings / Teams', items: [
-    { key: 'settingsTeams.view',   label: 'Can view team' },
-    { key: 'settingsTeams.create', label: 'Can create' },
-    { key: 'settingsTeams.edit',   label: 'Can edit' },
-    { key: 'settingsTeams.delete', label: 'Can delete' },
-    { key: 'settingsTeams.assign', label: 'Can assign team member' },
+  { group: 'Settings / Teams', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit', 'settingsTeams.delete', 'settingsTeams.assign'] },
   ] },
-  { group: 'Settings / Deal', items: [
-    { key: 'settingsDeal.edit', label: 'Can edit' },
+  { group: 'Settings / Deals', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit', capabilityKeys: ['settingsDeal.edit'] },
   ] },
-  { group: 'Settings / Custom modules', items: [
-    { key: 'settingsModules.create',  label: 'Can create' },
-    { key: 'settingsModules.edit',    label: 'Can edit' },
-    { key: 'settingsModules.archive', label: 'Can archive/delete' },
+  { group: 'Settings / Custom module', controls: [
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsCustom.create', 'settingsCustom.edit'] },
   ] },
 ]
-export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))
+export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.controls.flatMap((c) =>
+  c.type === 'access' ? [c.allKey, c.mineKey] : c.type === 'permission' ? c.capabilityKeys : [c.key],
+))
 export type CrmPermSet = Record<string, boolean>
 
 export function emptyPermSet(): CrmPermSet {
@@ -933,9 +1420,40 @@ export function fullPermSet(): CrmPermSet {
 /** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
 export function defaultPermSet(): CrmPermSet {
   const s = emptyPermSet()
-  for (const k of ['deals.readAll', 'customers.readAll', 'reports.view', 'activity.view', 'settingsUsers.view', 'settingsTeams.view']) s[k] = true
+  // Read-only baseline: sees all records + contacts + companies, no create/edit/export.
+  for (const k of ['deals.readAll', 'contacts.readAll', 'companies.readAll']) s[k] = true
   return s
 }
+// ── Shared per-user permission store ────────────────────────────────────────
+// The Manage-access drawer edits this; the whole CRM reads it to gate actions.
+// Keyed by CU id (CU01, CU02, …) in CRM_OWNERS order — same ids CrmSettingsPage uses.
+const CRM_PERMS_KEY = 'crm-user-perm-set-v1'
+export const crmUserPermSet = reactive<Record<string, CrmPermSet>>(
+  import.meta.client
+    ? (() => { try { return JSON.parse(localStorage.getItem(CRM_PERMS_KEY) || '{}') } catch { return {} } })()
+    : {},
+)
+/** CU id for an owner name (CU01 = first owner = workspace owner, full access). */
+export function crmUserId(name: string): string {
+  const i = CRM_OWNERS.indexOf(name)
+  return `CU${String((i < 0 ? 0 : i) + 1).padStart(2, '0')}`
+}
+/** A user's effective permission set (their saved set, or the role default). */
+export function permSetForUser(name: string): CrmPermSet {
+  const i = CRM_OWNERS.indexOf(name)
+  return crmUserPermSet[crmUserId(name)] ?? (i === 0 ? fullPermSet() : defaultPermSet())
+}
+export function setUserPermSet(id: string, perms: CrmPermSet) {
+  crmUserPermSet[id] = { ...perms }
+  if (import.meta.client) { try { localStorage.setItem(CRM_PERMS_KEY, JSON.stringify(crmUserPermSet)) } catch { /* ignore */ } }
+}
+
+/** currentUserPerms uses CRM_CURRENT_USER (declared once above). */
+export function currentUserPerms(): CrmPermSet { return permSetForUser(CRM_CURRENT_USER) }
+/** Can the signed-in user do `key` (a permission flag)? Reactive — re-reads the
+ *  shared store, so gated buttons update the moment access is changed. */
+export function can(key: string): boolean { return !!currentUserPerms()[key] }
+
 /** One-line summary of a permission set for the User & roles index. */
 export function permSummary(s: CrmPermSet): string {
   const on = CRM_PERM_KEYS.filter((k) => s[k]).length
@@ -1085,14 +1603,29 @@ export function addDealComment(dealId: string, text: string, author = 'You'): Cr
 export interface CrmContactPerson {
   id: string                 // 'CT-001'
   name: string
+  fullName: string           // legal / full name (Display name is the short label)
   jobTitle: string
-  email: string
-  phone: string
+  email: string              // primary email (mirrors emails[0]) — kept for list/search/detail
+  phone: string              // primary phone (mirrors phones[0])
+  emails?: string[]          // all emails (≤5, first = primary) — PRD §194
+  phones?: string[]          // all phones (≤5, first = primary) — PRD §194
+  source?: string            // Source pick list value — PRD §199 (one of CRM_SOURCE_OPTIONS)
+  sourceOther?: string       // free text, required only when source === 'Other' — PRD §200
+  country?: string           // Primary Location — PRD §195-198
+  province?: string
+  city?: string
+  address?: string           // detailed address
+  postalCode?: string        // postal / ZIP code
+  description?: string       // multi-line description (CRM-only) — PRD §192
   companyIds: string[]       // associated companies (M2M)
-  owner: string
+  owner: string              // Customer Owner (required) — PRD §201
+  archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
   createdAt: string
   lastActivity: string
 }
+
+/** Source — protected pick list, fixed in V1 (PRD §199). Not user-extensible. */
+export const CRM_SOURCE_OPTIONS = ['Referral', 'Website', 'Event', 'Social Media', 'Partner', 'Outbound', 'Imported', 'Other'] as const
 export interface CrmCompany {
   id: string                 // 'CO-001'
   name: string
@@ -1104,9 +1637,22 @@ export interface CrmCompany {
   city: string
   province: string
   postalCode: string
-  owner: string
-  contactIds: string[]       // member contacts (M2M)
-  primaryContactId?: string  // required when the company has >1 contact
+  country?: string
+  billingAddress?: string    // full billing address (composed); shown on detail
+  shippingAddress?: string   // full shipping address (composed); shown on detail
+  // Shipping location components (raw; billing uses address/city/province/country/postalCode)
+  shipAddress?: string
+  shipCity?: string
+  shipProvince?: string
+  shipCountry?: string
+  shipPostalCode?: string
+  fax?: string
+  banks?: ContactBank[]      // bank accounts (shown on the company detail)
+  note?: string
+  owner?: string             // DEPRECATED — Companies have no Owner in V1 (PRD §237); kept optional for legacy snapshots only, never surfaced
+  archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
+  contactIds: string[]       // member contacts (M2M) — ≥1 active required (PRD §230)
+  primaryContactId?: string  // Primary PIC — required, one active member (PRD §231)
   createdAt: string
   lastActivity: string
 }
@@ -1130,6 +1676,12 @@ const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
   city: c.city,
   province: provinceFor(c.city),
   postalCode: `${10000 + i * 110}`,
+  billingAddress: `Jl. Jenderal Sudirman No. ${12 + i}, ${c.city}, ${provinceFor(c.city)} ${10000 + i * 110}`,
+  shippingAddress: `Jl. Jenderal Sudirman No. ${12 + i}, ${c.city}, ${provinceFor(c.city)} ${10000 + i * 110}`,
+  banks: [
+    { id: 'b1', bankName: 'Bank BCA', branch: 'KCU Sudirman', accountNo: `78866668${String(100 + i).padStart(3, '0')}`, accountName: c.company },
+    { id: 'b2', bankName: 'Bank Mandiri', branch: 'KCP Thamrin', accountNo: `12000998${String(100 + i).padStart(3, '0')}`, accountName: c.company },
+  ],
   owner: c.owner,
   contactIds: [`CT-${String(i + 1).padStart(3, '0')}`],
   primaryContactId: `CT-${String(i + 1).padStart(3, '0')}`,
@@ -1138,6 +1690,7 @@ const _companySeed: CrmCompany[] = crmCustomers.map((c, i) => ({
 const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
   id: `CT-${String(i + 1).padStart(3, '0')}`,
   name: c.contact,
+  fullName: c.contact,
   jobTitle: jobTitleFor(c.contact),
   email: c.email,
   phone: c.phone,
@@ -1149,7 +1702,7 @@ const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
 //  • CT-100 is a group buyer associated with TWO companies (M2M).
 //  • CO-001 gains a second contact (CT-100) — CT-001 stays primary (multi-contact company).
 _contactSeed.push({
-  id: 'CT-100', name: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
+  id: 'CT-100', name: 'Bagus Prasetyo', fullName: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
   email: 'bagus.prasetyo@centralperk.co.id', phone: '021-5550100',
   companyIds: ['CO-001', 'CO-002'], owner: 'Fajar Nugroho', createdAt: '2026-02-01', lastActivity: '2026-02-27',
 })
@@ -1167,13 +1720,13 @@ export function companyName(id: string): string { return getCompany(id)?.name ??
 export function contactName(id: string): string { return getContactPerson(id)?.name ?? id }
 /** Companies a contact belongs to. */
 export function companiesOfContact(id: string): CrmCompany[] {
-  return crmCompanies.filter((co) => co.contactIds.includes(id))
+  return crmCompanies.filter((co) => !co.archived && co.contactIds.includes(id))
 }
-/** Contacts of a company (primary first). */
+/** Active contacts of a company (primary first; archived excluded). */
 export function contactsOfCompany(id: string): CrmContactPerson[] {
   const co = getCompany(id)
   if (!co) return []
-  const list = co.contactIds.map(getContactPerson).filter(Boolean) as CrmContactPerson[]
+  const list = co.contactIds.map(getContactPerson).filter((c) => c && !c.archived) as CrmContactPerson[]
   return list.sort((a, b) => (a.id === co.primaryContactId ? -1 : b.id === co.primaryContactId ? 1 : 0))
 }
 export function isPrimaryContact(companyId: string, contactId: string): boolean {
@@ -1189,7 +1742,8 @@ function nextId(prefix: string, list: { id: string }[]): string {
   const n = list.reduce((m, x) => Math.max(m, Number(x.id.replace(`${prefix}-`, '')) || 0), 0) + 1
   return `${prefix}-${String(n).padStart(3, '0')}`
 }
-export function addCrmContactPerson(input: { name: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string }, now: string): CrmContactPerson {
+type ContactWritable = Partial<Pick<CrmContactPerson, 'emails' | 'phones' | 'source' | 'sourceOther' | 'country' | 'province' | 'city' | 'address' | 'postalCode' | 'description'>>
+export function addCrmContactPerson(input: { name: string; fullName: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string } & ContactWritable, now: string): CrmContactPerson {
   const person: CrmContactPerson = { id: nextId('CT', crmContactPeople), ...input, companyIds: [...input.companyIds], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10) }
   crmContactPeople.push(person)
   // keep the reverse link + primary rule coherent
@@ -1203,10 +1757,10 @@ export function addCrmContactPerson(input: { name: string; jobTitle: string; ema
   persistCrmContactPeople(); persistCrmCompanies()
   return person
 }
-export function addCrmCompany(input: { name: string; industry: string; email: string; phone: string; website: string; address: string; city: string; province: string; postalCode: string; owner: string; contactIds: string[] }, now: string): CrmCompany {
+export function addCrmCompany(input: { name: string; industry: string; email: string; phone: string; website: string; address: string; city: string; province: string; postalCode: string; contactIds: string[]; primaryContactId?: string }, now: string): CrmCompany {
   const co: CrmCompany = {
     id: nextId('CO', crmCompanies), ...input, contactIds: [...input.contactIds],
-    primaryContactId: input.contactIds[0], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10),
+    primaryContactId: input.primaryContactId ?? input.contactIds[0], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10),
   }
   crmCompanies.push(co)
   for (const cid of co.contactIds) {
@@ -1221,13 +1775,155 @@ export function setPrimaryContact(companyId: string, contactId: string): void {
   if (co && co.contactIds.includes(contactId)) { co.primaryContactId = contactId; persistCrmCompanies() }
 }
 
+/**
+ * Delete a contact person and strip it out of every company's reverse link.
+ * When the deleted contact was a company's primary, promote the next remaining
+ * contact (or clear it if none left).
+ */
+export function deleteCrmContactPerson(id: string): void {
+  const i = crmContactPeople.findIndex((c) => c.id === id)
+  if (i === -1) return
+  crmContactPeople.splice(i, 1)
+  for (const co of crmCompanies) {
+    const j = co.contactIds.indexOf(id)
+    if (j !== -1) co.contactIds.splice(j, 1)
+    if (co.primaryContactId === id) co.primaryContactId = co.contactIds[0]
+  }
+  persistCrmContactPeople(); persistCrmCompanies()
+}
+
+/**
+ * Delete a company and strip it out of every contact's reverse link.
+ */
+export function deleteCrmCompany(id: string): void {
+  const i = crmCompanies.findIndex((c) => c.id === id)
+  if (i === -1) return
+  crmCompanies.splice(i, 1)
+  for (const p of crmContactPeople) {
+    const j = p.companyIds.indexOf(id)
+    if (j !== -1) p.companyIds.splice(j, 1)
+  }
+  persistCrmCompanies(); persistCrmContactPeople()
+}
+
+// ── Archive / restore (PRD §345-368: soft, no permanent delete in V1) ──
+// Soft-archive keeps relationships intact; archived records drop out of active
+// lists + selectors and can be restored.
+export function archiveCrmContactPerson(id: string): void {
+  const c = getContactPerson(id); if (!c) return
+  c.archived = true; c.lastActivity = nowDate(); persistCrmContactPeople()
+}
+export function restoreCrmContactPerson(id: string): void {
+  const c = getContactPerson(id); if (!c) return
+  c.archived = false; c.lastActivity = nowDate(); persistCrmContactPeople()
+}
+export function archiveCrmCompany(id: string): void {
+  const co = getCompany(id); if (!co) return
+  co.archived = true; co.lastActivity = nowDate(); persistCrmCompanies()
+}
+export function restoreCrmCompany(id: string): void {
+  const co = getCompany(id); if (!co) return
+  co.archived = false; co.lastActivity = nowDate(); persistCrmCompanies()
+}
+
+function nowDate(): string { return new Date().toISOString().slice(0, 10) }
+
+// ── Edit (patch) — update a record + keep reverse links coherent ──
+export function updateCrmContactPerson(id: string, patch: Partial<Pick<CrmContactPerson, 'name' | 'fullName' | 'jobTitle' | 'email' | 'phone' | 'emails' | 'phones' | 'source' | 'sourceOther' | 'country' | 'province' | 'city' | 'address' | 'postalCode' | 'description' | 'owner' | 'companyIds'>>): void {
+  const c = getContactPerson(id); if (!c) return
+  if (patch.companyIds) {
+    const next = patch.companyIds
+    for (const co of crmCompanies) {
+      const inNext = next.includes(co.id)
+      const j = co.contactIds.indexOf(id)
+      if (!inNext && j !== -1) { co.contactIds.splice(j, 1); if (co.primaryContactId === id) co.primaryContactId = co.contactIds[0] }
+      if (inNext && j === -1) { co.contactIds.push(id); if (!co.primaryContactId) co.primaryContactId = id }
+    }
+    c.companyIds = [...next]
+  }
+  const { companyIds: _c, ...rest } = patch
+  Object.assign(c, rest)
+  c.lastActivity = nowDate()
+  persistCrmContactPeople(); persistCrmCompanies()
+}
+export function updateCrmCompany(id: string, patch: Partial<CrmCompany>): void {
+  const co = getCompany(id); if (!co) return
+  if (patch.contactIds) {
+    const next = patch.contactIds
+    for (const p of crmContactPeople) {
+      const inNext = next.includes(p.id)
+      const j = p.companyIds.indexOf(id)
+      if (!inNext && j !== -1) p.companyIds.splice(j, 1)
+      if (inNext && j === -1) p.companyIds.push(id)
+    }
+    if (co.primaryContactId && !next.includes(co.primaryContactId)) co.primaryContactId = next[0]
+  }
+  const { id: _i, ...rest } = patch
+  Object.assign(co, rest)
+  co.lastActivity = nowDate()
+  persistCrmCompanies(); persistCrmContactPeople()
+}
+
+/** The active company for which this contact is the Primary PIC or the sole active
+ *  member. Archiving such a contact is blocked until a replacement PIC/member is
+ *  committed or the company is archived (PRD §351). Returns undefined if none. */
+export function contactBlockingCompany(contactId: string): CrmCompany | undefined {
+  return crmCompanies.find((co) => {
+    if (co.archived || !co.contactIds.includes(contactId)) return false
+    const activeMembers = contactsOfCompany(co.id)
+    const isPic = co.primaryContactId === contactId
+    const isSole = activeMembers.length === 1 && activeMembers[0]?.id === contactId
+    return isPic || isSole
+  })
+}
+
+/** Active member count of a company — shown in the archive confirmation (PRD §361). */
+export function activeMemberCount(companyId: string): number { return contactsOfCompany(companyId).length }
+
+/** Same-name CRM contacts (active + archived) excluding one id — duplicate warning (PRD §263). */
+export function contactsSameName(name: string, excludeId?: string): CrmContactPerson[] {
+  const n = name.trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!n) return []
+  return crmContactPeople.filter((c) => c.id !== excludeId && c.name.trim().replace(/\s+/g, ' ').toLowerCase() === n)
+}
+/** True if another company already uses this normalized name — Company name is blocked (PRD §310). */
+export function companyNameTaken(name: string, excludeId?: string): boolean {
+  const n = name.trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!n) return false
+  return crmCompanies.some((c) => c.id !== excludeId && c.name.trim().replace(/\s+/g, ' ').toLowerCase() === n)
+}
+/** Companies sharing a normalized domain/website host — duplicate-domain warning (PRD §311). */
+export function companiesSameDomain(website: string, excludeId?: string): CrmCompany[] {
+  const host = (website || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/\.$/, '')
+  if (!host) return []
+  const norm = (w?: string) => (w || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/\.$/, '')
+  return crmCompanies.filter((c) => c.id !== excludeId && norm(c.website) === host)
+}
+
 // ── Notes / comments — attach to a contact OR a company (unified store) ──
-export type CrmNoteEntity = 'contact' | 'company'
+export type CrmNoteEntity = 'contact' | 'company' | 'deal'
 export interface CrmNote { id: string; entityType: CrmNoteEntity; entityId: string; author: string; text: string; at: string }
 const NOTES_SEED: CrmNote[] = [
-  { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation.', at: '2026-02-20T10:15:00' },
-  { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Rizal Candra',  text: 'Credit terms approved: NET 30.', at: '2026-02-22T14:00:00' },
-  { id: 'NT-003', entityType: 'contact', entityId: 'CT-001', author: 'Dewi Lestari',  text: 'Prefers WhatsApp over email for quotes.', at: '2026-02-21T09:30:00' },
+  // Deal DL-260920 — a thread from several teammates (Rizal's are editable by "me").
+  { id: 'NT-101', entityType: 'deal', entityId: 'DL-260920', author: 'Fajar Nugroho', text: 'Client confirmed the Q3 volume at 20 sacks. Locking the price before month-end.', at: '2026-08-28T09:15:00' },
+  { id: 'NT-102', entityType: 'deal', entityId: 'DL-260920', author: 'Dewi Lestari',  text: 'Finance approved NET 30 terms. Good to move to the order.', at: '2026-08-30T13:40:00' },
+  { id: 'NT-103', entityType: 'deal', entityId: 'DL-260920', author: 'Rizal Candra',  text: 'Drafted the sales order — waiting on the signed PO to confirm.', at: '2026-09-01T16:05:00' },
+  // Deal DL-260907
+  { id: 'NT-104', entityType: 'deal', entityId: 'DL-260907', author: 'Dewi Lestari',  text: 'Sent the espresso blend samples. Follow up after their cupping session next week.', at: '2026-09-06T10:30:00' },
+  { id: 'NT-105', entityType: 'deal', entityId: 'DL-260907', author: 'Rizal Candra',  text: 'PIC (Ratna) prefers WhatsApp for quick updates.', at: '2026-09-06T15:10:00' },
+  // Company CO-001 — mix of authors so avatar colours differ; Rizal's are editable by "me".
+  { id: 'NT-001', entityType: 'company', entityId: 'CO-001', author: 'Dewi Lestari',  text: 'Called about the Q4 roastery supply — waiting on volume confirmation before sending the quote.', at: '2026-02-20T10:15:00' },
+  { id: 'NT-002', entityType: 'company', entityId: 'CO-001', author: 'Fajar Nugroho', text: 'Procurement lead prefers a fixed price for the whole quarter. Flagging for margin review.', at: '2026-02-21T16:40:00' },
+  { id: 'NT-003', entityType: 'company', entityId: 'CO-001', author: 'Rizal Candra',  text: 'Credit terms approved: NET 30. Cleared with finance.', at: '2026-02-22T14:00:00' },
+  // Company CO-002
+  { id: 'NT-004', entityType: 'company', entityId: 'CO-002', author: 'Dewi Lestari',  text: 'Renewal due next month — schedule a business review.', at: '2026-02-19T11:05:00' },
+  { id: 'NT-005', entityType: 'company', entityId: 'CO-002', author: 'Rizal Candra',  text: 'Offered a 3% volume discount for a 12-month commitment.', at: '2026-02-23T09:20:00' },
+  // Contact CT-001
+  { id: 'NT-006', entityType: 'contact', entityId: 'CT-001', author: 'Dewi Lestari',  text: 'Prefers WhatsApp over email for quotes.', at: '2026-02-21T09:30:00' },
+  { id: 'NT-007', entityType: 'contact', entityId: 'CT-001', author: 'Rizal Candra',  text: 'Met at the coffee expo — very responsive, decision maker for purchasing.', at: '2026-02-24T13:15:00' },
+  { id: 'NT-008', entityType: 'contact', entityId: 'CT-001', author: 'Fajar Nugroho', text: 'Asked for samples of the espresso blend before committing.', at: '2026-02-25T15:45:00' },
+  // Contact CT-002
+  { id: 'NT-009', entityType: 'contact', entityId: 'CT-002', author: 'Rizal Candra',  text: 'Best reached in the morning; usually on-site after 2pm.', at: '2026-02-18T08:50:00' },
 ]
 export const crmNotes = reactive<CrmNote[]>(load('crm-notes-v1', NOTES_SEED))
 export function notesFor(entityType: CrmNoteEntity, entityId: string): CrmNote[] {
@@ -1238,6 +1934,10 @@ export function addCrmNote(entityType: CrmNoteEntity, entityId: string, text: st
   crmNotes.push(note)
   saveSnapshot('crm-notes-v1', crmNotes)
   return note
+}
+export function updateCrmNote(id: string, text: string): void {
+  const n = crmNotes.find((x) => x.id === id)
+  if (n) { n.text = text.trim(); saveSnapshot('crm-notes-v1', crmNotes) }
 }
 export function deleteCrmNote(id: string): void {
   const i = crmNotes.findIndex((n) => n.id === id)

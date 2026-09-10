@@ -15,6 +15,8 @@ import {
   type PutAwayTask,
 } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { inboundPosterKindFor, bindSeededDocumentById } from '~/data/deliveryDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -53,6 +55,7 @@ const columns: TableColumn[] = [
   { key: 'warehouseName',     label: 'Warehouse',         kind: 'name', sortType: 'text' },
   { key: 'assignee',          label: 'Assignee',          kind: 'name', sortType: 'text' },
   { key: 'itemQty',           label: 'Items',             align: 'right', sortType: 'number' },
+  { key: 'deliveryDoc',       label: 'Delivery document', kind: 'name', sortType: 'text' },
   { key: 'status',            label: 'Status',            kind: 'status', sortType: 'text' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
@@ -78,6 +81,16 @@ onMounted(() => {
     statusFilter.value = [s]
   }
 })
+
+// ── Delivery document (design-consistent with the Shipping index) ──────────────
+// Which posting document this task's goods moved on. A purchase-order receipt
+// posts a Purchase Delivery in ERP-full; everything else — and the whole WMS
+// package, which has no costing or JE — posts a Stock In/Out. Only a task that has
+// actually moved stock has one; an open task legitimately has none.
+function docFor(taskId: string, hasPo: boolean, posted: boolean) {
+  if (!posted) return undefined
+  return bindSeededDocumentById(taskId, inboundPosterKindFor(hasPo))
+}
 
 const baseTasks = computed<PutAwayTask[]>(() =>
   demoState.value === 'data'
@@ -283,6 +296,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
+    <!-- Delivery document — the posting document behind this put-away. Completed
+         put-aways have moved stock; open ones have not, so they show an em dash. -->
+    <template #cell-deliveryDoc="{ row }">
+      <a
+        v-if="docFor((row as unknown as PutAwayTask).id, true, (row as unknown as PutAwayTask).status === 'completed')"
+        class="cell-link cell-text"
+        @click.stop="router.push(deliveryDocumentRoute(docFor((row as unknown as PutAwayTask).id, true, true)!))"
+      >{{ docFor((row as unknown as PutAwayTask).id, true, true)!.number }}</a>
+      <span v-else>—</span>
+    </template>
+
     <template #cell-receivingTaskNos="{ value, row }">
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">

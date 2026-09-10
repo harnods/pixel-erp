@@ -26,6 +26,23 @@ import {
 import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+
+// Embedded mode: the form is rendered inside a full-screen drawer (e.g. from a CRM
+// Deal). It hides its own title bar and, instead of routing on cancel/save, emits
+// so the host drawer can close and react. `prefill` seeds the fields (all editable).
+// `productsOnly` renders just the line-items + totals editor (no customer/header,
+// no notes) — used by the CRM Deal "Add product" full-screen drawer. Save then
+// emits the working products/totals instead of creating a sales order.
+const props = withDefaults(defineProps<{ embedded?: boolean; productsOnly?: boolean; prefill?: SalesFormPrefill | null }>(), { embedded: false, productsOnly: false, prefill: null })
+const emit = defineEmits<{
+  cancel: []
+  created: [order: SalesOrder]
+  'save-products': [payload: {
+    items: { product: string; sku: string; description: string; qty: number; unit: string; unitPrice: number; discountPct: number }[]
+    globalDiscountType: '%' | 'Rp'; globalDiscountValue: number; shippingFee: number; priceIncludesTax: boolean
+  }]
+}>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -249,9 +266,65 @@ function nextOrderId(): string {
   return `SO${String(n).padStart(3, '0')}`
 }
 
-function onCancel() { router.push('/sales-orders') }
+function onCancel() {
+  if (props.embedded) { emit('cancel'); return }
+  router.push('/sales-orders')
+}
+
+// Seed fields from a prefill payload (embedded Deal → sales order). Everything stays
+// editable afterwards.
+function applyPrefill(p: SalesFormPrefill) {
+  if (p.customerId && customers.some(c => c.id === p.customerId)) { customerId.value = p.customerId }
+  if (p.emails?.length) emailTags.value = toTagData(p.emails)
+  if (p.billingAddress) billingAddress.value = p.billingAddress
+  if (p.shipTo) { shipTo.value = p.shipTo; shipToDifferent.value = true }
+  if (p.txDate) txDate.value = isoToDMY(p.txDate)
+  if (p.dueDate) dueDate.value = isoToDMY(p.dueDate)
+  if (p.shipDate) { shipDate.value = isoToDMY(p.shipDate); requiresShipping.value = true }
+  if (p.shipVia) shipVia.value = p.shipVia
+  if (p.paymentTerms) paymentTerms.value = p.paymentTerms
+  if (p.trackingNo) trackingNo.value = p.trackingNo
+  if (p.referenceNo) referenceNo.value = p.referenceNo
+  if (p.warehouse) warehouse.value = p.warehouse
+  if (p.tags?.length) tagsList.value = toTagData(p.tags)
+  if (typeof p.shippingFee === 'number') shippingFee.value = p.shippingFee
+  if (p.globalDiscountType) globalDiscountType.value = p.globalDiscountType
+  if (typeof p.globalDiscountValue === 'number') globalDiscountValue.value = p.globalDiscountValue
+  if (typeof p.priceIncludesTax === 'boolean') priceIncludesTax.value = p.priceIncludesTax
+  if (p.items?.length) {
+    items.value = p.items.map(it => ({
+      _key: ++_seq,
+      product: it.product,
+      sku: it.sku ?? '',
+      description: it.description ?? '',
+      qty: it.qty,
+      unit: it.unit,
+      unitPrice: it.unitPrice,
+      discountPct: it.discountPct ?? 0,
+      taxLabel: it.taxLabel ?? 'PPN 11%',
+      productError: false,
+      qtyError: false,
+    }))
+  }
+}
+onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
 
 function onSave() {
+  // Products-only (Deal → Add product): validate line items only, then emit.
+  if (props.productsOnly) {
+    noItemsError.value = !items.value.length
+    let ok = items.value.length > 0
+    items.value.forEach(it => { if (!it.product) { it.productError = true; ok = false } if (!(it.qty > 0)) { it.qtyError = true; ok = false } })
+    if (!ok) return
+    emit('save-products', {
+      items: items.value.map(it => ({ product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct })),
+      globalDiscountType: globalDiscountType.value,
+      globalDiscountValue: globalDiscountValue.value,
+      shippingFee: shippingFee.value,
+      priceIncludesTax: priceIncludesTax.value,
+    })
+    return
+  }
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
   const customer = customers.find(c => c.id === customerId.value)!
@@ -276,6 +349,7 @@ function onSave() {
   }
   salesOrders.push(order)
   toast.notify({ variant: 'success', title: t('Sales order created'), rootProps: { class: 'toast-enterprise' } })
+  if (props.embedded) { emit('created', order); return }
   router.push(`/sales-orders/${order.id}`)
 }
 </script>
@@ -283,8 +357,8 @@ function onSave() {
 <template>
   <div class="si-form-page">
 
-    <!-- ── Fixed header bar ── -->
-    <header class="si-form-bar">
+    <!-- ── Fixed header bar (hidden when embedded — the host drawer supplies it) ── -->
+    <header v-if="!embedded" class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales orders') }}</MpTextlink>
         <h1 class="si-form-h1">{{ t('New sales order') }}</h1>
@@ -295,7 +369,7 @@ function onSave() {
     <div class="si-form-stage">
 
       <!-- ── Header section 1: Customer + Email + Balance due ── -->
-      <section class="si-header1 si-dashed-divider">
+      <section v-if="!productsOnly" class="si-header1 si-dashed-divider">
         <MpFormControl id="f-customer" class="si-field" is-required :is-invalid="customerError">
           <MpFormLabel>{{ t('Customer') }}</MpFormLabel>
           <MpAutocomplete
@@ -318,7 +392,7 @@ function onSave() {
       </section>
 
       <!-- ── Header section 2 — fixed-width fields that wrap, never stretch ── -->
-      <section class="si-header2">
+      <section v-if="!productsOnly" class="si-header2">
         <!-- Col 1 (318px): addresses + shipping toggles -->
         <div class="si-header2-col si-header2-col--wide">
           <MpFormControl id="f-billing" class="si-field">
@@ -592,7 +666,7 @@ function onSave() {
       <!-- ── Notes + Attachment + Totals ── -->
       <section class="si-bottom-section">
         <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
-        <div class="si-notes-col">
+        <div v-if="!productsOnly" class="si-notes-col">
           <MpFormControl id="f-message" class="si-note-field">
             <div class="si-lbl-row"><MpFormLabel>{{ t('Message') }}</MpFormLabel><span class="si-counter">{{ message.length }}/250</span></div>
             <MpTextarea id="f-message-inp" v-model="message" :maxlength="250" is-full-width />
@@ -689,7 +763,7 @@ function onSave() {
       </section>
 
       <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
-      <MpButtonGroup class="erp-action-footer si-form-footer">
+      <MpButtonGroup class="erp-action-footer si-form-footer" :class="{ 'si-form-footer--sticky': productsOnly }">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
 
         <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
@@ -1035,6 +1109,15 @@ function onSave() {
   display: flex; align-items: center; justify-content: flex-end;
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
+}
+/* Products-only (Deal → Add product): pin the actions to the bottom of the scroll
+   area so Save/Cancel stay reachable while the line items grow. */
+.si-form-footer--sticky {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: auto;
+  padding-top: var(--mp-spacing-4); padding-bottom: var(--mp-spacing-4);
+  background: var(--mp-background-stage, #fff);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 /* Chevron on a filled button follows the label colour, not the default icon grey */
 .si-form-footer .btn-enterprise--primary :deep(.mp-icon),

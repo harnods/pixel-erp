@@ -15,7 +15,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  MpIcon, MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
+  MpIcon, MpButton, MpInput, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -99,7 +99,7 @@ function openFull() { emit('open-full', seed()) }
           <div class="cqd-body">
             <MpFormControl id="cqd-name-fc" :is-invalid="!!errors.name">
               <MpFormLabel>Deal name</MpFormLabel>
-              <input v-model="name" class="cqd-input" :class="{ 'cqd-input--invalid': !!errors.name }" type="text" maxlength="120" @input="errors.name = ''">
+              <MpInput id="cqd-name" v-model="name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
               <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -172,10 +172,10 @@ function openFull() { emit('open-full', seed()) }
 
 .cqd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .cqd-panel { margin: var(--mp-spacing-3); width: min(460px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.cqd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.cqd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cqd-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cqd-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.cqd-close:hover { background: var(--mp-background-neutral-hovered); }
+.cqd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .cqd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5); padding: var(--mp-spacing-5); }
 .cqd-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
@@ -183,7 +183,7 @@ function openFull() { emit('open-full', seed()) }
 .cqd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cqd-label-row { display: flex; align-items: center; justify-content: space-between; }
 
-.cqd-input { width: 100%; box-sizing: border-box; height: var(--mp-sizes-10, 40px); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cqd-input { width: 100%; box-sizing: border-box; height: var(--mp-sizes-9\.5, 38px); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-colors-background-neutral, #fff); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
 .cqd-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
 .cqd-input--invalid { border-color: var(--mp-border-danger, #e2483d); }
 
@@ -196,11 +196,11 @@ function openFull() { emit('open-full', seed()) }
 .cqd-quickcreate .cqd-input { flex: 1; min-width: 0; }
 
 .cqd-more { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); align-self: flex-start; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px dashed var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px); background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.cqd-more:hover { background: var(--mp-background-neutral-subtle); }
+.cqd-more:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .cqd-form-error { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger, #c9372c); }
 
-.cqd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
+.cqd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Split button: Save + attached caret, joined into one pill. */
 .cqd-split { display: inline-flex; align-items: stretch; }

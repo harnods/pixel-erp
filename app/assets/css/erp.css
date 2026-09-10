@@ -275,14 +275,19 @@
 
 /* Custom search pills (index filter bars + detail/form search boxes) — one shared
    neutral slate focus ring so focus looks identical everywhere. Each component's
-   scoped border wins over border-color here, so only the subtle ring is added. */
+   scoped border wins over border-color here, so only the subtle ring is added.
+   The ring is INSET (drawn inside the box), never an outward box-shadow: filter
+   bars often sit flush against the top of a scroll/clip container (e.g. a stage
+   whose scroll area starts at the filter bar), and an OUTWARD 1px ring gets
+   clipped there — the search's top border reads as cut off. An inset ring can
+   never be clipped by an ancestor, so focus looks identical on every page. */
 .filter-search:focus-within,
 .pr-filter-search:focus-within,
 .rcvgd-search-wrap:focus-within,
 .cw-search:focus-within,
 .sad-search:focus-within {
   border-color: #8c9596;
-  box-shadow: 0 0 0 1px #8c9596;
+  box-shadow: inset 0 0 0 1px #8c9596;
 }
 
 /* Base filter-bar search PILL box — global so a hand-rolled `#filters` bar can

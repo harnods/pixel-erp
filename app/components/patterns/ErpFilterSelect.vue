@@ -92,9 +92,14 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 <style scoped>
 .efs { position: relative; display: inline-flex; }
 .efs-trigger {
+  /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
+     38px tall (--mp-sizes-9.5), border = --mp-colors-border-form (#1d1f2429).
+     The short --mp-* aliases resolve EMPTY in this Pixel build, so always use the
+     fully-qualified --mp-colors-* token with a hex fallback. */
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  width: var(--efs-w, 176px); height: 36px; padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
+  width: var(--efs-w, 176px); height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3);
+  background: var(--mp-colors-background-neutral, #fff);
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md); cursor: text;
 }
 .efs-trigger:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }

@@ -1069,7 +1069,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 260px;
 }
-.pi-search-wrap:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.pi-search-wrap:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .pi-search {
   flex: 1; border: none; background: transparent; outline: none;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);

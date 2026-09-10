@@ -8,6 +8,8 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
@@ -21,6 +23,7 @@ import {
 import {
   getPackingTask, startPacking, packingTaskAgingDays, canCancelPackingTask, cancelPackingTask,
   type PackingTask,
+  reassignPackingTask,
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
@@ -42,6 +45,15 @@ const task = computed(() => getPackingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : [])
 
 const localStatus = ref<TaskStatus>('open')
+
+// Change assignee — manager-only escape hatch, Open / In Progress only.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(localStatus.value))
+function applyReassign(assignee: string) {
+  if (!reassignPackingTask(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `${t('Assignee changed to')} ${assignee}`, maxWidth: 'max-content' })
+}
 const localEndDate = ref<string | null>(null)
 const localPacked = ref<Record<string, number>>({})
 
@@ -610,6 +622,10 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), and only while the
+           task is still Open / In Progress. -->
+      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
       <MpPopover id="pck-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
@@ -743,6 +759,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     @close="cancelShippingDetails"
     @submit="saveShippingDetailsAndPrint"
   />
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="task?.taskNo ?? ''"
+      :current-assignee="task?.assignee ?? ''"
+      :warehouse-id="task?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>
@@ -767,7 +791,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; padding-right: 34px; }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;

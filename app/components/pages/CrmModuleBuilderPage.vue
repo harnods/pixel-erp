@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput, MpRadio,
+  MpButton, MpIcon, MpToggle, MpInput,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -26,10 +26,14 @@ import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS,
   dealPipelines, persistDealPipelines,
+  dealPipelineDisplay, persistDealPipelineDisplay,
+  deals, dealExpectedValue, dealDaysInStage,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
-  type DealPipeline, type DealPipelineStage,
+  type DealPipeline, type DealPipelineStage, type Deal, type DealStage,
+  type DealPipelineDisplay,
 } from '~/data/crm'
+import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -87,22 +91,30 @@ const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(dealPipelines)))
 const selectedPipeId = ref<string>(pipeDraft.value[0]?.id ?? 'default')
 const currentPipe = computed<DealPipeline | undefined>(() => pipeDraft.value.find((p) => p.id === selectedPipeId.value) ?? pipeDraft.value[0])
 const pipeOptions = computed(() => pipeDraft.value.map((p) => ({ value: p.id, label: p.name })))
-const openStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages.filter((s) => s.kind === 'open') ?? [])
-const wonStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'won'))
-const lostStage = computed<DealPipelineStage | undefined>(() => currentPipe.value?.stages.find((s) => s.kind === 'lost'))
+// Every stage renders as a Kanban swimlane (open flow + Won + Lost alike).
+const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages ?? [])
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
-// Keep the array ordered: open stages first (their own order), then won, then lost.
-function normalize(pipe: DealPipeline) {
-  const open = pipe.stages.filter((s) => s.kind === 'open')
-  const won = pipe.stages.filter((s) => s.kind === 'won')
-  const lost = pipe.stages.filter((s) => s.kind === 'lost')
-  if (!open.some((s) => s.isDefault) && open[0]) open[0].isDefault = true
-  pipe.stages = [...open, ...won, ...lost]
+// The real deals sitting in a stage — cards mirror the live pipeline (matched by
+// stage name, so the six seed stages fill and renamed/new stages show empty).
+function stageDeals(s: DealPipelineStage): Deal[] {
+  return deals.filter((d) => !d.archived && d.stage === (s.name as DealStage))
+}
+function stageTotal(s: DealPipelineStage): string {
+  return formatIDR(stageDeals(s).reduce((sum, d) => sum + dealExpectedValue(d), 0))
+}
+function agingLabel(d: Deal): string { return `${dealDaysInStage(d)}d` }
+
+// Inline rename — the pencil toggles a stage's name into an editable field.
+const editingStageId = ref<string | null>(null)
+function editStage(id: string) { editingStageId.value = id }
+function commitStageName(s: DealPipelineStage) {
+  if (!s.name.trim()) s.name = t('Untitled stage')
+  editingStageId.value = null
 }
 
-// Drag-reorder the OPEN stages (won/lost stay pinned in the swimlane).
+// Drag-reorder the swimlanes.
 const dragSrc = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
 function onStageDragStart(i: number, e: DragEvent) { dragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
@@ -110,48 +122,54 @@ function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTr
 function onStageDrop(i: number) {
   const pipe = currentPipe.value
   if (!pipe || dragSrc.value === null || dragSrc.value === i) { dragOver.value = null; return }
-  const open = [...openStages.value]
-  const [m] = open.splice(dragSrc.value, 1)
-  open.splice(i, 0, m!)
-  pipe.stages = [...open, ...pipe.stages.filter((s) => s.kind !== 'open')]
+  const arr = [...pipe.stages]
+  const [m] = arr.splice(dragSrc.value, 1)
+  arr.splice(i, 0, m!)
+  pipe.stages = arr
   dragSrc.value = null; dragOver.value = null
 }
 function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
 
-function setDefaultStage(id: string) { currentPipe.value?.stages.forEach((s) => { s.isDefault = s.kind === 'open' && s.id === id }) }
 function addStage() {
   const pipe = currentPipe.value; if (!pipe) return
-  pipe.stages.push({ id: newStageId(), name: 'New stage', kind: 'open' })
-  normalize(pipe)
+  const id = newStageId()
+  pipe.stages.push({ id, name: t('New stage'), kind: 'open' })
+  editingStageId.value = id
 }
+// Inline "can't delete the last stage" note keyed by pipeline id.
+const stageDeleteError = ref('')
 function removeStage(id: string) {
   const pipe = currentPipe.value; if (!pipe) return
+  if (pipe.stages.length <= 1) { stageDeleteError.value = t('A pipeline must keep at least one stage.'); return }
+  stageDeleteError.value = ''
   pipe.stages = pipe.stages.filter((s) => s.id !== id)
-  normalize(pipe)
 }
-// Mark a stage as the pipeline's Won / Lost ending (only one of each) — demotes the
-// previous holder back to an open flow stage.
-function markAs(id: string, kind: 'won' | 'lost') {
-  const pipe = currentPipe.value; if (!pipe) return
-  pipe.stages.forEach((s) => { if (s.kind === kind) s.kind = 'open' })
-  const target = pipe.stages.find((s) => s.id === id); if (!target) return
-  target.kind = kind; delete target.isDefault
-  normalize(pipe)
+
+// ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
+//    changes applies it. Drives which fields show on cards + stage/column props. ──
+const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(dealPipelineDisplay)))
+const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
+const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
+
+// Per-field value for a deal card.
+function cardContact(d: Deal): string { return d.picName || '—' }
+function cardDate(d: Deal): string { return d.expectedCloseDate || '—' }
+function cardNote(d: Deal): string { return d.description || '—' }
+
+// Drag-reorder the card-property rows (order = the order fields stack on a card).
+const fieldDragSrc = ref<number | null>(null)
+const fieldDragOver = ref<number | null>(null)
+function onFieldDragStart(i: number, e: DragEvent) { fieldDragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
+function onFieldDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; fieldDragOver.value = i }
+function onFieldDrop(i: number) {
+  if (fieldDragSrc.value === null || fieldDragSrc.value === i) { fieldDragOver.value = null; return }
+  const arr = [...disp.cardFields]
+  const [m] = arr.splice(fieldDragSrc.value, 1)
+  arr.splice(i, 0, m!)
+  disp.cardFields = arr
+  fieldDragSrc.value = null; fieldDragOver.value = null
 }
-function createPipeline() {
-  const n = pipeDraft.value.length + 1
-  const id = `pipe-${n}-${stageSeq++}`
-  pipeDraft.value.push({
-    id, name: `Pipeline ${n}`,
-    stages: [
-      { id: newStageId(), name: 'New', kind: 'open', isDefault: true },
-      { id: newStageId(), name: 'Won', kind: 'won' },
-      { id: newStageId(), name: 'Lost', kind: 'lost' },
-    ],
-  })
-  selectedPipeId.value = id
-  activeTab.value = 'pipeline'
-}
+function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
 
 // ── Field type options + labels ──────────────────────────────────────────────
 const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldType, string][])
@@ -418,6 +436,8 @@ function saveChanges() {
   if (m.system) {
     dealPipelines.splice(0, dealPipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
     persistDealPipelines()
+    Object.assign(dealPipelineDisplay, JSON.parse(JSON.stringify(disp)))
+    persistDealPipelineDisplay()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -429,19 +449,19 @@ function saveChanges() {
   persistCrmModule(m, AUTHOR, nowStamp())
   successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
-// Deals is its own settings menu; custom modules live under Modules settings.
-function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/crm/settings/modules') }
+// Every module (Deals system module included) is edited from the Modules index.
+function cancel() { router.push('/crm/settings/modules') }
 </script>
 
 <template>
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <NuxtLink v-if="mod && !mod.system" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules settings') }}</NuxtLink>
+        <NuxtLink v-if="mod" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules') }}</NuxtLink>
         <div class="detail-titlerow-left">
           <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
         </div>
       </div>
     </header>
@@ -458,66 +478,115 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpIcon name="folder-close" size="xl" />
         <p class="builder-empty-title">{{ t('Module not found') }}</p>
         <p class="builder-empty-caption">{{ t('This module doesn’t exist or was removed.') }}</p>
-        <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules settings') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules') }}</MpButton>
       </div>
 
       <template v-else>
-          <!-- ════════ PIPELINE (Deals) ════════ -->
-          <div v-show="activeTab === 'pipeline'" class="builder-panel">
+          <!-- ════════ PIPELINE (Deals) — swimlane editor + settings panel (Figma 4240-18081) ════════ -->
+          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
-              <!-- Flow stages (draggable) -->
-              <section class="pipe-section">
-                <div class="pipe-section-head">
-                  <span class="pipe-section-title">{{ t('Stages') }}</span>
-                  <span class="pipe-section-caption">{{ t('Drag to reorder. A new deal enters the stage you set as default.') }}</span>
-                </div>
-                <ul class="pipe-stagelist">
-                  <li
-                    v-for="(s, i) in openStages" :key="s.id"
-                    class="pipe-stage" :class="{ 'pipe-stage--over': dragOver === i }"
-                    draggable="true"
-                    @dragstart="onStageDragStart(i, $event)" @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)" @dragend="onStageDragEnd"
+              <div class="pipe-layout">
+                <!-- Board: one Kanban lane per stage, cards = live deals in it -->
+                <div class="pipe-board">
+                  <p v-if="stageDeleteError" class="builder-inline-error pipe-board-error">{{ stageDeleteError }}</p>
+                  <div
+                    v-for="(s, i) in pipeStages" :key="s.id"
+                    class="pipe-lane"
+                    :class="{ 'pipe-lane--over': dragOver === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
                   >
-                    <span class="pipe-drag" aria-hidden="true"><MpIcon name="drag" size="md" /></span>
-                    <MpInput :id="`stage-${s.id}`" v-model="s.name" class="pipe-stage-name" :aria-label="t('Stage name')" />
-                    <label class="pipe-default">
-                      <MpRadio :id="`default-${s.id}`" :is-checked="!!s.isDefault" @change="setDefaultStage(s.id)" />
-                      <span>{{ t('New deals enter here') }}</span>
-                    </label>
-                    <MpPopover :id="`stage-menu-${s.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                      <MpPopoverTrigger>
-                        <MpButton class="builder-kebab" :aria-label="t('Stage options')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-                      </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ minWidth: '176px', width: 'max-content' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem @click="markAs(s.id, 'won')">{{ t('Mark as Won stage') }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="markAs(s.id, 'lost')">{{ t('Mark as Lost stage') }}</MpPopoverListItem>
-                          <MpPopoverListItem v-if="openStages.length > 1" @click="removeStage(s.id)">{{ t('Remove stage') }}</MpPopoverListItem>
-                        </MpPopoverList>
-                      </MpPopoverContent>
-                    </MpPopover>
-                  </li>
-                </ul>
-                <MpButton variant="secondary" is-rounded left-icon="add" @click="addStage">{{ t('Add stage') }}</MpButton>
-              </section>
+                    <div class="pipe-lane-head">
+                      <span
+                        class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                        @dragstart="onStageDragStart(i, $event)" @dragend="onStageDragEnd"
+                      ><MpIcon name="drag" size="md" /></span>
+                      <div class="pipe-lane-label">
+                        <MpInput
+                          v-if="editingStageId === s.id" :id="`lane-${s.id}`" v-model="s.name" class="pipe-lane-input"
+                          :aria-label="t('Stage name')" @blur="commitStageName(s)" @keydown.enter.prevent="commitStageName(s)"
+                        />
+                        <template v-else>
+                          <span class="pipe-lane-name">{{ s.name }}</span>
+                          <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
+                        </template>
+                      </div>
+                    </div>
 
-              <!-- Won / Lost swimlane — the two endings (no aging) -->
-              <section class="pipe-swimlane">
-                <div class="pipe-section-head">
-                  <span class="pipe-section-title">{{ t('Endings') }}</span>
-                  <span class="pipe-section-caption">{{ t('How a deal closes. One Won and one Lost per pipeline — endings carry no aging.') }}</span>
-                </div>
-                <div class="pipe-endings">
-                  <div class="pipe-ending pipe-ending--won">
-                    <span class="pipe-ending-tag">{{ t('Won') }}</span>
-                    <MpInput v-if="wonStage" :id="`won-${wonStage.id}`" v-model="wonStage.name" class="pipe-stage-name" :aria-label="t('Won stage name')" />
+                    <div class="pipe-lane-cards">
+                      <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
+                        <template v-for="f in enabledCardFields" :key="f.key">
+                          <span v-if="f.key === 'company'" class="pipe-card-company">{{ d.company }}</span>
+                          <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ d.name }}</span>
+                          <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ cardContact(d) }}</span>
+                          <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
+                          <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
+                            <span class="pipe-card-owner">{{ d.owner }}</span>
+                            <span v-if="disp.showAging" class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                          </div>
+                          <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ cardDate(d) }}</span>
+                          <span v-else-if="f.key === 'note'" class="pipe-card-sub pipe-card-note">{{ cardNote(d) }}</span>
+                        </template>
+                        <!-- Aging still shows even if Owner is hidden -->
+                        <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
+                          <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="disp.stageTotal" class="pipe-lane-total">
+                      <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
+                      <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
+                    </div>
+
+                    <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
+                      <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
+                    </button>
                   </div>
-                  <div class="pipe-ending pipe-ending--lost">
-                    <span class="pipe-ending-tag">{{ t('Lost') }}</span>
-                    <MpInput v-if="lostStage" :id="`lost-${lostStage.id}`" v-model="lostStage.name" class="pipe-stage-name" :aria-label="t('Lost stage name')" />
-                  </div>
+
+                  <!-- + New stage -->
+                  <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
-              </section>
+
+                <!-- Settings panel — sticky at the far right -->
+                <aside class="pipe-sidebar">
+                  <div class="pipe-side-field">
+                    <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
+                    <MpInput id="pipe-module-name" v-model="draft.name" is-full-width :aria-label="t('Module name')" />
+                  </div>
+
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
+                    <div class="pipe-side-row">
+                      <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
+                    </div>
+                    <div class="pipe-side-row">
+                      <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
+                    </div>
+                  </section>
+
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
+                    <div
+                      v-for="(f, i) in disp.cardFields" :key="f.key"
+                      class="pipe-side-row pipe-side-row--drag" :class="{ 'pipe-side-row--over': fieldDragOver === i }"
+                      @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop(i)"
+                    >
+                      <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                      <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                      <span
+                        class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                        @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                      ><MpIcon name="drag" size="md" /></span>
+                    </div>
+                    <div class="pipe-side-row pipe-side-row--sep">
+                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    </div>
+                  </section>
+                </aside>
+              </div>
             </template>
           </div>
 
@@ -577,8 +646,8 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                       <p v-if="removeErrors[f.id]" class="builder-inline-error">{{ removeErrors[f.id] }}</p>
                     </div>
                     <div class="builder-field-actions">
-                      <MpButton variant="ghost" is-rounded size="sm" @click="openEditField(f)">{{ t('Edit') }}</MpButton>
-                      <MpButton variant="ghost" is-rounded size="sm" @click="removeFieldFromLayout(f)">{{ t('Remove') }}</MpButton>
+                      <MpButton variant="ghost" is-rounded @click="openEditField(f)">{{ t('Edit') }}</MpButton>
+                      <MpButton variant="ghost" is-rounded @click="removeFieldFromLayout(f)">{{ t('Remove') }}</MpButton>
                     </div>
                   </div>
                 </div>
@@ -605,7 +674,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                   </div>
                   <span class="builder-chip">{{ t(typeLabel(f.type)) }}</span>
                   <div class="builder-unused-action">
-                    <MpButton variant="secondary" is-rounded size="sm" @click="openEditField(f)">{{ t('Add to layout') }}</MpButton>
+                    <MpButton variant="secondary" is-rounded @click="openEditField(f)">{{ t('Add to layout') }}</MpButton>
                   </div>
                 </li>
               </ul>
@@ -625,8 +694,8 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
                   <span v-if="v.type === 'kanban'" class="builder-view-caption">{{ t('Categorized by') }} {{ fieldLabelOf(v.categorizeBy) }}</span>
                 </div>
                 <div class="builder-field-actions">
-                  <MpButton variant="ghost" is-rounded size="sm" @click="openEditView(v)">{{ t('Edit') }}</MpButton>
-                  <MpButton variant="ghost" is-rounded size="sm" @click="removeView(v)">{{ t('Remove') }}</MpButton>
+                  <MpButton variant="ghost" is-rounded @click="openEditView(v)">{{ t('Edit') }}</MpButton>
+                  <MpButton variant="ghost" is-rounded @click="removeView(v)">{{ t('Remove') }}</MpButton>
                 </div>
               </li>
             </ul>
@@ -727,7 +796,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="fieldModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveField">{{ fieldModalMode === 'edit' ? t('Save changes') : t('Add field') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveField">{{ fieldModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -750,7 +819,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="sectionModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveSection">{{ sectionModalMode === 'rename' ? t('Save changes') : t('Add section') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveSection">{{ sectionModalMode === 'rename' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -813,7 +882,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
         <MpModalFooter>
           <MpButtonGroup>
             <MpButton variant="ghost" is-rounded @click="viewModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveView">{{ viewModalMode === 'edit' ? t('Save changes') : t('Add view') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveView">{{ viewModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>
@@ -825,7 +894,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 <style scoped>
 /* ── Shell (mirrors CrmSettingsPage / CrmCustomerDetailPage) ── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -839,11 +908,11 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* Section tabs — neutral-subtle bar below the title, OUTSIDE the white stage
    (rule/erp-tabs-pattern; mirrors the .page-tab pattern in [...slug].vue). */
-.page-tabs-bar { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); flex-shrink: 0; }
+.page-tabs-bar { display: flex; align-items: flex-end; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle, #f8f9f9); flex-shrink: 0; }
 .page-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-2); background: none; border: none; cursor: pointer; padding: var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); white-space: nowrap; }
 .page-tab:not(.page-tab--active):hover { color: var(--mp-text-default); }
 .page-tab--active { color: var(--mp-text-selected, #0f6d4d); font-weight: var(--mp-font-weights-semi-bold); }
@@ -852,38 +921,92 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 /* Each tab panel stacks its rows with the standard 20px gap. */
 .builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
-/* ── Pipeline tab ── */
-.pipe-toolbar { display: flex; align-items: flex-end; gap: var(--mp-spacing-4); }
-.pipe-select-field { flex: 0 0 auto; }
-.pipe-new-btn { flex-shrink: 0; }
-.pipe-section, .pipe-swimlane { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.pipe-section-head { display: flex; flex-direction: column; gap: 2px; }
-.pipe-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.pipe-section-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+/* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
+/* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
+.builder-panel--pipeline { flex: 1; min-height: 0; }
+.pipe-layout { display: flex; align-items: stretch; gap: var(--mp-spacing-6); flex: 1; min-height: 0; }
 
-.pipe-stagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.pipe-stage {
-  display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px);
-  background: var(--mp-colors-background-neutral, #fff);
+/* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
+.pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
+.pipe-board-error { flex: 0 0 100%; }
+.pipe-lane {
+  flex: 0 0 250px; width: 250px;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-2\.5, 6px);
+  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
 }
-.pipe-stage--over { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
-.pipe-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; }
-.pipe-stage-name { flex: 1; min-width: 0; }
-.pipe-default { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); cursor: pointer; white-space: nowrap; }
+.pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
+/* Color stage columns (toggle): tint the lane by outcome. */
+.pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
+.pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
+.pipe-lane--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 
-/* Won / Lost swimlane — a distinct band with the two endings side by side. */
-.pipe-endings { display: flex; gap: var(--mp-spacing-4); }
-.pipe-ending {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 10px); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+.pipe-lane-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
+.pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
+.pipe-lane-label { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; flex: 1; }
+.pipe-lane-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-lane-input { flex: 1; min-width: 0; }
+.pipe-lane-edit {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-icon-subtle, #97a0af);
 }
-.pipe-ending--won { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
-.pipe-ending--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
-.pipe-ending-tag { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.pipe-ending--won .pipe-ending-tag { color: var(--mp-colors-text-success, #186f4a); }
-.pipe-ending--lost .pipe-ending-tag { color: var(--mp-colors-text-danger, #a8352d); }
+.pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
+
+/* Card list grows to fill the lane so the total + delete pin to the bottom. */
+.pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.pipe-card {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-stage, #fff);
+}
+.pipe-card-head { display: flex; flex-direction: column; min-width: 0; }
+.pipe-card-company { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-deal { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.pipe-card-owner { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe-card-note { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pipe-card-foot--end { justify-content: flex-end; }
+.pipe-card-aging {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-placeholder, #8690a2);
+  font-size: var(--mp-font-sizes-xs, 10px); line-height: 1;
+}
+
+.pipe-lane-total { display: flex; flex-direction: column; gap: 2px; }
+.pipe-lane-total-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary, #3a4749); }
+.pipe-lane-total-value { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-default, #080d0e); }
+
+.pipe-lane-delete {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start;
+  padding: 0 var(--mp-spacing-0\.5, 2px); border: none; background: none; cursor: pointer;
+  color: var(--mp-colors-text-secondary, #3a4749); font-size: var(--mp-font-sizes-md);
+}
+.pipe-lane-delete:hover { color: var(--mp-colors-text-danger, #a8352d); }
+
+.pipe-newstage { flex-shrink: 0; align-self: flex-start; }
+
+/* ── Settings panel — sticky at the far right ── */
+.pipe-sidebar {
+  flex: 0 0 304px; width: 304px; align-self: stretch;
+  position: sticky; top: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-5);
+  padding: 0 0 0 var(--mp-spacing-4);
+  border-left: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  overflow-y: auto;
+}
+.pipe-side-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pipe-side-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-section { display: flex; flex-direction: column; }
+.pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) 0; }
+.pipe-side-rowlabel { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
+.pipe-side-row--over { background: var(--mp-colors-background-neutral-hovered, #eef0f3); border-radius: var(--mp-radii-sm); }
+.pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
@@ -894,18 +1017,18 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Layout driver ── */
-.builder-driver { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-driver { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-driver-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .builder-driver-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-driver-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Section card ── */
-.builder-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .builder-section-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-4); }
 .builder-column { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.builder-field { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle); }
+.builder-field { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-field-main { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .builder-field-labelrow { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .builder-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -915,22 +1038,22 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-field-actions { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
 .builder-section-foot { display: flex; }
 
-.builder-chip { display: inline-flex; align-items: center; background: var(--mp-background-neutral); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-sm); white-space: nowrap; }
-.builder-chip--soft { background: var(--mp-background-neutral-subtle); border: none; }
+.builder-chip { display: inline-flex; align-items: center; background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-sm); white-space: nowrap; }
+.builder-chip--soft { background: var(--mp-background-neutral-subtle, #f8f9f9); border: none; }
 
 .builder-add-section { display: flex; }
 
 /* ── Unused fields ── */
-.builder-unused { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral); }
+.builder-unused { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); background: var(--mp-background-neutral, #ffffff); }
 .builder-unused-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-unused-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .builder-unused-list { list-style: none; margin: var(--mp-spacing-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.builder-unused-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle); }
+.builder-unused-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 10px); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-unused-action { margin-left: auto; }
 
 /* ── Views ── */
-.builder-viewlist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
-.builder-viewrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.builder-viewlist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
+.builder-viewrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .builder-viewrow:last-child { border-bottom: none; }
 .builder-view-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .builder-view-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -956,7 +1079,7 @@ function cancel() { router.push(mod.value?.system ? '/crm/settings/deals' : '/cr
 .builder-form-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-form-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .builder-option-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle); }
+.builder-option-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .builder-option-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .builder-option-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .builder-option-add :deep([data-pixel-component="MpInput"]) { flex: 1; }
