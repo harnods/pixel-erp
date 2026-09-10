@@ -449,12 +449,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
                   <ContentList :label="t('Warehouse')" :value="deal.warehouse || '—'" />
                 </div>
-                <div class="content-list-col">
-                  <ContentList :label="t('Tags')">
-                    <ErpTagList v-if="deal.tags?.length" :tags="deal.tags" />
-                    <template v-else>—</template>
-                  </ContentList>
-                </div>
               </div>
             </section>
 
