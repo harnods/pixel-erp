@@ -135,6 +135,22 @@ function onCustomerChange(id: unknown) {
   seedPrimaryContact()
 }
 
+// Auto-fill addresses from the selected company: billing always; shipping (Ship to)
+// only when shipping is required AND the company's shipping differs from billing.
+const suppressAddressFill = ref(false)
+function fillAddressesFromCompany() {
+  if (suppressAddressFill.value) return
+  const co = selectedCompany.value
+  if (!co) return
+  if (co.billingAddress) billingAddress.value = co.billingAddress
+  const ship = co.shippingAddress || ''
+  if (requiresShipping.value && ship && ship !== co.billingAddress) {
+    shipToDifferent.value = true
+    shipTo.value = ship
+  }
+}
+watch([customerId, requiresShipping], () => fillAddressesFromCompany())
+
 // ── Line items ────────────────────────────────────────────────────────────────
 interface LineItem {
   _key: number
@@ -308,6 +324,8 @@ onMounted(() => {
   if (!isEdit.value) return
   const d = getDeal(props.orderId)
   if (!d) return
+  suppressAddressFill.value = true
+  nextTick(() => { suppressAddressFill.value = false })
   customerId.value = d.customerId
   // Restore the primary contact from the deal's picName (match within the company).
   const co0 = crmCompanies.find(co => co.name === d.company)
@@ -731,6 +749,12 @@ function onSave() {
             <span>{{ fmt(subtotal) }}</span>
           </div>
 
+          <!-- Discount applied AFTER tax → PPN sits ABOVE the discount block. -->
+          <div v-if="!discountBeforeTax" class="si-totals-row">
+            <span>PPN 11%{{ priceIncludesTax ? ` (${t('included')})` : '' }}</span>
+            <span>{{ fmt(taxAmount) }}</span>
+          </div>
+
           <!-- Discount block — the swap affordance sits in the gutter, as designed -->
           <div class="si-discount-block">
             <MpTooltip
@@ -777,17 +801,17 @@ function onSave() {
                 </span>
                 <span class="si-deduction">({{ fmt(globalDiscountAmount) }})</span>
               </div>
-              <p class="si-discount-mode-caption">
-                {{ discountBeforeTax ? t('Discount applied before tax') : t('Discount applied after tax') }}
-              </p>
             </div>
           </div>
 
-          <div class="si-totals-row">
+          <!-- Discount applied BEFORE tax → PPN sits BELOW the discount block. -->
+          <div v-if="discountBeforeTax" class="si-totals-row">
             <span>PPN 11%{{ priceIncludesTax ? ` (${t('included')})` : '' }}</span>
             <span>{{ fmt(taxAmount) }}</span>
           </div>
-          <div class="si-totals-row">
+
+          <!-- Shipping fee — only when the deal requires shipping. -->
+          <div v-if="requiresShipping" class="si-totals-row">
             <span>{{ t('Shipping fee') }}</span>
             <MpInputGroup id="f-shipping-fee-group" class="si-unit-field">
               <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
