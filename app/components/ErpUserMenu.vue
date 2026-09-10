@@ -66,10 +66,6 @@
             <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row" @click="toggleProductMenu(); onClosePopover()">
-            <span class="user-menu__label">{{ t('Show ERP Menu') }}</span>
-            <span v-if="showProductMenu" class="user-menu__value">{{ t('On') }}</span>
-          </button>
           <button type="button" class="user-menu__row" @click="view = 'scenario'">
             <span class="user-menu__label">{{ t('Scenario') }}</span>
             <span class="user-menu__value">{{ t(migrationScenario) }}</span>
@@ -291,8 +287,6 @@ const { activeScenario, setScenario } = useScenario();
 // they get manager-only actions such as changing a task's assignee.
 const { hasLmAccess, setLmAccess, isWarehouseOperator } = useLineManagerAccess();
 const { navigate } = useNavigation();
-// Product-switcher rail visibility (top-right "Show ERP Menu" toggle).
-const { showProductMenu, toggleProductMenu } = useProductMenu();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned
 // warehouse's PIC) — Budi Santoso for Ops 1, Agus Firmansyah for Ops 2. ERP and
