@@ -120,16 +120,19 @@ function onStageDragStart(i: number, e: DragEvent) {
   const lane = (e.target as HTMLElement).closest('.pipe-lane') as HTMLElement | null
   if (lane) e.dataTransfer!.setDragImage(lane, 24, 24)
 }
-function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; dragOver.value = i }
-function onStageDrop(i: number) {
+// Live sortable: as the dragged lane hovers over another, swap them in place so the
+// board physically opens a slot where it'll drop (animated via <TransitionGroup>).
+function onStageDragOver(i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
   const pipe = currentPipe.value
-  if (!pipe || dragSrc.value === null || dragSrc.value === i) { dragOver.value = null; return }
+  if (!pipe || dragSrc.value === null || dragSrc.value === i) return
   const arr = [...pipe.stages]
   const [m] = arr.splice(dragSrc.value, 1)
   arr.splice(i, 0, m!)
   pipe.stages = arr
-  dragSrc.value = null; dragOver.value = null
+  dragSrc.value = i // the dragged lane now lives at index i
 }
+function onStageDrop() { dragSrc.value = null; dragOver.value = null }
 function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
 
 function addStage() {
@@ -162,15 +165,17 @@ function onFieldDragStart(i: number, e: DragEvent) {
   const row = (e.target as HTMLElement).closest('.pipe-side-row') as HTMLElement | null
   if (row) e.dataTransfer!.setDragImage(row, 12, 12)
 }
-function onFieldDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; fieldDragOver.value = i }
-function onFieldDrop(i: number) {
-  if (fieldDragSrc.value === null || fieldDragSrc.value === i) { fieldDragOver.value = null; return }
+// Live sortable (same feel as the swimlanes): swap rows in place on hover.
+function onFieldDragOver(i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
+  if (fieldDragSrc.value === null || fieldDragSrc.value === i) return
   const arr = [...disp.cardFields]
   const [m] = arr.splice(fieldDragSrc.value, 1)
   arr.splice(i, 0, m!)
   disp.cardFields = arr
-  fieldDragSrc.value = null; fieldDragOver.value = null
+  fieldDragSrc.value = i
 }
+function onFieldDrop() { fieldDragSrc.value = null; fieldDragOver.value = null }
 function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
 
 // ── Field type options + labels ──────────────────────────────────────────────
@@ -494,11 +499,12 @@ function cancel() { router.push('/crm/settings/modules') }
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
                   <p v-if="stageDeleteError" class="builder-inline-error pipe-board-error">{{ stageDeleteError }}</p>
+                  <TransitionGroup name="lane" tag="div" class="pipe-lanes">
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'pipe-lane--over': dragOver === i && dragSrc !== i, 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
-                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
+                    :class="{ 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop()"
                   >
                     <div class="pipe-lane-head">
                       <span
@@ -550,6 +556,7 @@ function cancel() { router.push('/crm/settings/modules') }
                       <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
                     </button>
                   </div>
+                  </TransitionGroup>
 
                   <!-- + New stage -->
                   <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
@@ -602,19 +609,21 @@ function cancel() { router.push('/crm/settings/modules') }
 
                   <section class="pipe-side-section">
                     <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
-                    <div
-                      v-for="(f, i) in disp.cardFields" :key="f.key"
-                      class="pipe-side-row pipe-side-row--drag"
-                      :class="{ 'pipe-side-row--over': fieldDragOver === i && fieldDragSrc !== i, 'is-dragging': fieldDragSrc === i }"
-                      @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop(i)"
-                    >
-                      <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
-                      <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
-                      <span
-                        class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                        @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
-                      ><MpIcon name="drag" size="md" /></span>
-                    </div>
+                    <TransitionGroup name="row" tag="div" class="pipe-side-rows">
+                      <div
+                        v-for="(f, i) in disp.cardFields" :key="f.key"
+                        class="pipe-side-row pipe-side-row--drag"
+                        :class="{ 'is-dragging': fieldDragSrc === i }"
+                        @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop()"
+                      >
+                        <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                        <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                        <span
+                          class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                          @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                        ><MpIcon name="drag" size="md" /></span>
+                      </div>
+                    </TransitionGroup>
                     <div class="pipe-side-row pipe-side-row--sep">
                       <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
                       <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
@@ -966,6 +975,10 @@ function cancel() { router.push('/crm/settings/modules') }
 /* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
 .pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
 .pipe-board-error { flex: 0 0 100%; }
+/* The TransitionGroup wrapper lays out transparently so lanes stay direct flex
+   items of the board; .lane-move FLIP-animates them sliding aside on reorder. */
+.pipe-lanes { display: contents; }
+.lane-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
 .pipe-lane {
   flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
@@ -1070,6 +1083,9 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-side-row--over::before { content: ''; position: absolute; left: 0; right: 0; top: -1px; height: 2px; border-radius: 2px; background: var(--mp-colors-border-selected, #029861); }
 .pipe-side-row.is-dragging { opacity: 0.4; }
 .pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
+/* Live reorder — rows slide to make room (FLIP), same feel as the swimlanes. */
+.pipe-side-rows { display: contents; }
+.row-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
