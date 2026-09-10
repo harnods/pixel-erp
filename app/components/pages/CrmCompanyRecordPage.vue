@@ -208,20 +208,43 @@ function confirmArchive() {
                 <h2 class="cr-section-title">{{ t('Company info') }}</h2>
                 <div class="cr-grid">
                   <ContentList :label="t('Company name')" :value="company.name" />
-                  <ContentList :label="t('Primary PIC')">
-                    <span v-if="picContact" class="cell-link" role="button" tabindex="0" @click="goContact(picContact.id)" @keydown.enter="goContact(picContact.id)">{{ picContact.name }}</span>
+                  <ContentList :label="t('Primary contact')">
+                    <div v-if="picContact" class="cru-name">
+                      <span class="cell-link" role="button" tabindex="0" @click="goContact(picContact.id)" @keydown.enter="goContact(picContact.id)">{{ picContact.name }}</span>
+                      <span v-if="picContact.email" class="cru-email">{{ picContact.email }}</span>
+                    </div>
                     <template v-else>—</template>
                   </ContentList>
-                  <ContentList :label="t('Domain')">
+                  <ContentList :label="t('Website')">
                     <a v-if="companyDomain" class="cell-link" :href="`https://${companyDomain}`" target="_blank" rel="noopener">{{ companyDomain }}</a>
                     <template v-else>—</template>
                   </ContentList>
                   <ContentList :label="t('Country')" :value="company.country || undefined" />
                   <ContentList :label="t('Billing address')" :value="company.billingAddress || undefined" />
                   <ContentList :label="t('Shipping address')" :value="company.shippingAddress || undefined" />
+                  <ContentList :label="t('Email')">
+                    <a v-if="company.email" class="cell-link" :href="`mailto:${company.email}`">{{ company.email }}</a>
+                    <template v-else>—</template>
+                  </ContentList>
                   <ContentList :label="t('Phone')" :value="company.phone || undefined" />
-                  <ContentList :label="t('Fax')" :value="company.fax || undefined" />
                 </div>
+              </section>
+
+              <!-- Bank info -->
+              <section class="cr-section">
+                <h2 class="cr-section-title">{{ t('Bank info') }}</h2>
+                <div v-if="banks.length" class="cr-banks">
+                  <div v-for="(b, i) in banks" :key="b.id" class="cr-bank-col">
+                    <div class="cr-bank-head">
+                      <span class="cr-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
+                    </div>
+                    <ContentList :label="t('Bank name')" :value="b.bankName || undefined" />
+                    <ContentList :label="t('Bank branch')" :value="b.branch || undefined" />
+                    <ContentList :label="t('Account no.')" :value="b.accountNo || undefined" />
+                    <ContentList :label="t('Account name')" :value="b.accountName || undefined" />
+                  </div>
+                </div>
+                <p v-else class="cp-empty">{{ t('No bank account yet.') }}</p>
               </section>
 
               <!-- Contact person -->
@@ -238,7 +261,7 @@ function confirmArchive() {
 
                 <div class="cp-table">
                   <div class="cp-head">
-                    <span>{{ t('Display name') }}</span>
+                    <span>{{ t('Name') }}</span>
                     <span>{{ t('Email') }}</span>
                     <span>{{ t('Mobile') }}</span>
                     <span class="cp-actions-col" />
@@ -269,30 +292,7 @@ function confirmArchive() {
                 </div>
               </section>
 
-              <!-- Bank info -->
-              <section class="cr-section">
-                <h2 class="cr-section-title">{{ t('Bank info') }}</h2>
-                <div v-if="banks.length" class="cr-banks">
-                  <div v-for="(b, i) in banks" :key="b.id" class="cr-bank-col">
-                    <div class="cr-bank-head">
-                      <span class="cr-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
-                      <ErpStatusBadge v-if="i === 0" status="active" :label="t('Connected')" />
-                    </div>
-                    <ContentList :label="t('Bank name')" :value="b.bankName || undefined" />
-                    <ContentList :label="t('Bank branch')" :value="b.branch || undefined" />
-                    <ContentList :label="t('Account no.')" :value="b.accountNo || undefined" />
-                    <ContentList :label="t('Account name')" :value="b.accountName || undefined" />
-                  </div>
-                </div>
-                <p v-else class="cp-empty">{{ t('No bank account yet.') }}</p>
-              </section>
-
-              <!-- Note -->
-              <section class="cr-section">
-                <h2 class="cr-section-title">{{ t('Note') }}</h2>
-                <CrmNotesPanel entity-type="company" :entity-id="company.id" :read-only="!canEditCompany" />
-                <a class="cr-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
-              </section>
+              <a class="cr-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
             </div>
           </MpTabPanel>
 
@@ -426,6 +426,8 @@ function confirmArchive() {
 /* Company info key/value — 3-col grid */
 .cr-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-3); }
 .cr-grid > * { min-width: 0; }
+.cru-name { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
+.cru-email { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Contact person table */
 .cp-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
@@ -441,9 +443,9 @@ function confirmArchive() {
 .cp-actions-col { display: flex; align-items: center; justify-content: flex-end; }
 .cp-empty { margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* Bank info — 6-col grid; each bank account spans 3 columns (half). */
-.cr-banks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-6); }
-.cr-bank-col { grid-column: span 3; display: flex; flex-direction: column; }
+/* Bank info — 12-col grid; each bank account spans 4 columns → 3 per row. */
+.cr-banks { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-6); }
+.cr-bank-col { grid-column: span 4; display: flex; flex-direction: column; }
 .cr-bank-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
 .cr-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
