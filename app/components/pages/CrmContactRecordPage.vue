@@ -63,6 +63,19 @@ const sourceText = computed(() => {
   if (!c?.source) return undefined
   return c.source === 'Other' && c.sourceOther ? c.sourceOther : t(c.source)
 })
+// Billing address — one composed line (address, city, province+postal, country),
+// same format as the company detail. e.g. "Jl. … No. 18, Jakarta, DKI Jakarta 10660, Indonesia".
+const billingAddressText = computed(() => {
+  const c = contact.value
+  if (!c) return undefined
+  const line = [
+    (c.address ?? '').trim(),
+    (c.city ?? '').trim(),
+    [(c.province ?? '').trim(), (c.postalCode ?? '').trim()].filter(Boolean).join(' '),
+    (c.country ?? '').trim(),
+  ].filter(Boolean).join(', ')
+  return line || undefined
+})
 
 // ── Deals — only deals whose PRIMARY CONTACT is this contact ──────────────────
 // A deal's primary contact = its own picName snapshot, else the company's PIC.
@@ -268,11 +281,7 @@ function confirmArchive() {
               <section class="cr-section">
                 <h2 class="cr-section-title">{{ t('Address') }}</h2>
                 <div class="cr-grid">
-                  <ContentList :label="t('Billing address')" :value="contact.address || undefined" />
-                  <ContentList :label="t('City')" :value="contact.city || undefined" />
-                  <ContentList :label="t('Province')" :value="contact.province || undefined" />
-                  <ContentList :label="t('Country')" :value="contact.country || undefined" />
-                  <ContentList :label="t('Postal code')" :value="contact.postalCode || undefined" />
+                  <ContentList :label="t('Billing address')" :value="billingAddressText" />
                 </div>
               </section>
 
