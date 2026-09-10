@@ -217,7 +217,7 @@ export const DEAL_STAGE_ID: Record<DealStage, string> = {
 }
 const DEAL_STAGE_SEED_NAME: Record<DealStage, string> = {
   'Open Lead': 'Open lead', '1st Meeting': '1st meeting', 'Proposal': 'Proposal',
-  'Negotiation': 'Negotiation', 'Won': 'Won', 'Lost': 'Lost',
+  'Negotiation': 'Negotiation', 'Won': 'Closed won', 'Lost': 'Closed lost',
 }
 /** Display label for a stage. Returns the CANONICAL key while the stage keeps its
  *  seed name (so the call site's `t()` localizes it); returns the custom name once
@@ -1239,8 +1239,8 @@ const DEAL_PIPELINES_SEED: DealPipeline[] = [
       { id: 's-1st-meeting', name: '1st meeting', kind: 'open' },
       { id: 's-proposal',    name: 'Proposal',    kind: 'open' },
       { id: 's-negotiation', name: 'Negotiation', kind: 'open' },
-      { id: 's-won',  name: 'Won',  kind: 'won' },
-      { id: 's-lost', name: 'Lost', kind: 'lost' },
+      { id: 's-won',  name: 'Closed won',  kind: 'won' },
+      { id: 's-lost', name: 'Closed lost', kind: 'lost' },
     ],
   },
 ]

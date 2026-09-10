@@ -463,7 +463,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             id="deal-stage-filter"
             :model-value="statusFilter"
             :placeholder="t('Stage')"
-            :options="[...DEAL_STAGES]"
+            :options="DEAL_STAGES.map((s) => ({ value: s, label: t(dealStageLabel(s)) }))"
             @update:model-value="(v: string) => (statusFilter = v)"
           />
           <MpButton

@@ -36,7 +36,7 @@ import {
   dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder, linkDealSalesOrder,
-  lineSubtotal, crmCustomers, dealNo,
+  lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
 
@@ -76,7 +76,10 @@ const dealNumber = computed(() => (deal.value ? dealNo(deal.value.id) : ''))
 // ── Pipeline stepper (segmented bar) ──
 const FORWARD_STAGES: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
 const currentStageIndex = computed(() => (deal.value ? FORWARD_STAGES.indexOf(deal.value.stage) : -1))
-const stepLabels = computed(() => ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', isLost.value ? 'Lost' : 'Won'])
+const stepLabels = computed(() =>
+  (['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', isLost.value ? 'Lost' : 'Won'] as DealStage[])
+    .map((s) => t(dealStageLabel(s))),
+)
 const agingMap = computed(() => (deal.value ? dealStageAgingDays(deal.value) : {} as Record<string, number>))
 function isFilled(i: number) { return isLost.value ? i <= 3 : i <= currentStageIndex.value }
 function isLostNode(i: number) { return isLost.value && i === 4 }

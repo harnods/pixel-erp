@@ -206,7 +206,7 @@ function stampTime(id: string): string {
                 </MpPopoverList>
                 <MpPopoverList v-else>
                   <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
-                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ s }}</MpPopoverListItem>
+                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
