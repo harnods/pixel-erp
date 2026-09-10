@@ -207,6 +207,24 @@ export const DEAL_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation
 export type DealStage = typeof DEAL_STAGES[number]
 /** Ongoing (non-closed) stages — used by metrics + the reopen picker. */
 export const ONGOING_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation'] as const
+
+/** Canonical deal-stage → `ErpStatusBadge` colour `type`. **Single source of
+ *  truth** so every surface (deals pipeline/list, deal preview, company detail
+ *  Deals tab) colours a stage identically — pass the result as `:type` on
+ *  `ErpStatusBadge` (label stays the stage name, via `t()` at the call site). */
+export function dealStageBadgeType(
+  stage: DealStage,
+): 'completed' | 'announcement' | 'information' | 'warning' | 'critical' {
+  switch (stage) {
+    case 'Won':         return 'completed'
+    case 'Lost':        return 'announcement'
+    case 'Negotiation':
+    case 'Proposal':    return 'warning'
+    case '1st Meeting': return 'information'
+    default:            return 'information' // Open Lead
+  }
+}
+
 export type DealPriority = 'low' | 'medium' | 'high' | 'critical'
 /** ERP Conversion Status (PRD). `none` = Not converted, `processing` = queued,
  *  `converted` = an ERP transaction exists (salesOrderId), `failed` = the attempt

@@ -40,7 +40,7 @@ import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
-  CRM_OWNERS, crmCustomers,
+  CRM_OWNERS, crmCustomers, dealStageBadgeType,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
@@ -359,15 +359,10 @@ const exportColumns = [
 function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
 
 // ── Badges ──
+// Colour comes from the shared `dealStageBadgeType` (single source of truth, so the
+// pipeline, deal preview, and company Deals tab never drift). Label = the stage name.
 function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'; label: string } {
-  switch (stage) {
-    case 'Won':         return { type: 'completed',   label: t('Won') }
-    case 'Lost':        return { type: 'announcement', label: t('Lost') }
-    case 'Negotiation': return { type: 'warning',     label: t('Negotiation') }
-    case 'Proposal':    return { type: 'warning',     label: t('Proposal') }
-    case '1st Meeting': return { type: 'information',  label: t('1st Meeting') }
-    default:            return { type: 'information',  label: t('Open Lead') }
-  }
+  return { type: dealStageBadgeType(stage), label: t(stage) }
 }
 // ── Columns — the 6 defaults, plus optional PRD columns hidden by default and
 // toggleable from Column settings. ──

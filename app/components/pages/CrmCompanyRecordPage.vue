@@ -29,7 +29,7 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
   getCompany, getContactPerson, contactsOfCompany, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
-  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, CRM_OWNERS, DEAL_STAGES, type Deal,
+  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, type Deal,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -222,7 +222,7 @@ function confirmArchive() {
       <header class="cr-header">
         <div class="cr-bar">
           <div class="cr-bar-left">
-            <NuxtLink class="cr-breadcrumb" to="/crm/customers/companies">{{ t('Customers') }}</NuxtLink>
+            <NuxtLink class="cr-breadcrumb" to="/crm/customers/companies">{{ t('Companies') }}</NuxtLink>
             <h1 class="cr-title">{{ company.name }}</h1>
           </div>
           <div class="cr-bar-right">
@@ -425,7 +425,7 @@ function confirmArchive() {
                     <span v-if="dealContactEmail(row as unknown as Deal)" class="cru-email">{{ dealContactEmail(row as unknown as Deal) }}</span>
                   </div>
                 </template>
-                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" /></template>
+                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" :type="dealStageBadgeType((row as unknown as Deal).stage)" :label="t((row as unknown as Deal).stage)" /></template>
                 <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as Deal).owner }}</span></template>
                 <template #cell-value="{ row }"><span class="cell-text">{{ formatIDR((row as unknown as Deal).value) }}</span></template>
                 <template #cell-updated="{ row }">
