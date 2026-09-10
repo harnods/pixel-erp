@@ -1221,31 +1221,24 @@ onMounted(() => {
 
 .scf-table-section { margin-top: var(--mp-spacing-5); }
 .scf-table-scroll { overflow-x: auto; }
-/* table-layout:fixed with a MIX of % and px columns let the browser recompute
-   every %-column's rendered pixel width whenever the table's own width
-   changed (exactly what happened when Dimensions was added) — the opposite
-   of what a fixed line-items table should do. Every column below is now a
-   flat px value (the exact pixel size each %-column already rendered at,
-   at the table's un-stretched 900px) so NONE of them ever move again,
-   regardless of whether Dimensions is present or the container is wider. */
-.scf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: 954px; }
-/* Dimensions is the only column that varies (added on top of the fixed sum
-   above) — bump min-width so .scf-table-scroll's overflow-x:auto scrolls a
-   narrow container instead of squeezing the existing columns. */
-.scf-table--with-dimensions { min-width: 1174px; }
-.scf-col-prod    { width: 234px; }
-.scf-col-sku     { width: 108px; }
-/* 72px was sized for the data cell's short numeric value, not the "ON HAND
-   QTY"/"DIFFERENCE" header labels — table-layout:fixed's overflow:visible let
-   the overflowing header text visually run into the next column's header
-   (looked like merged/overlapping words). Widened to fit the label with a
-   few px of breathing room, matching the proven sio-col-onhand value used by
-   the sibling Stock in/out table. */
-.scf-col-onhand  { width: 108px; }
-.scf-col-counted { width: 135px; }
-.scf-col-diff    { width: 100px; }
-.scf-col-unit    { width: 72px; }
-.scf-col-avg     { width: 153px; }
+/* Flat px columns, not the original % ones: table-layout:fixed recomputed every
+   %-column's rendered width whenever the table's own width changed (which is what
+   adding Dimensions did), so the line items shifted around. Each value below is
+   the pixel width its % resolved to on the pre-Dimensions table at the app's
+   1320px content width (26/12/8/15/9/8/17% of 1320) — the widths this table has
+   always shown on a 1440px screen — so nothing narrows and nothing moves.
+   Dimensions is added ON TOP of that sum rather than taken out of it, which is
+   why the total can exceed the container; .scf-table-scroll's overflow-x:auto
+   scrolls it instead of squeezing the other columns. */
+.scf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: 1298px; }
+.scf-table--with-dimensions { min-width: 1518px; }
+.scf-col-prod    { width: 343px; }
+.scf-col-sku     { width: 158px; }
+.scf-col-onhand  { width: 106px; }
+.scf-col-counted { width: 198px; }
+.scf-col-diff    { width: 119px; }
+.scf-col-unit    { width: 106px; }
+.scf-col-avg     { width: 224px; }
 .scf-col-dimensions { width: 220px; }
 .scf-col-del     { width: 44px; max-width: 44px; }
 .scf-table--loc .scf-th { background: var(--mp-background-neutral, #fff); }

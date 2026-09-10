@@ -795,20 +795,22 @@ onUnmounted(() => { stageObserver?.disconnect() })
    overlapped/cropped). table-layout:fixed + flat px widths below make every
    column's size a flat constant, independent of content or of whether
    Dimensions is present. */
-.sio-loc-table { width: 100%; table-layout: fixed; border-collapse: collapse; min-width: 949px; }
-/* Dimensions is the only column that varies (added on top of the fixed sum
-   above) — bump min-width so .sio-loc-table-wrap's overflow-x:auto scrolls a
-   narrow container instead of squeezing the existing columns. */
-.sio-loc-table--with-dimensions { min-width: 1169px; }
-.sio-col-loc       { width: 294px; }
-/* Each header's own text-measured width (its scrollWidth with no width
-   constraint) — a shared width for all three froze "Stock in/out qty" /
-   "New on hand qty" mid-word into their neighbours. */
-.sio-col-onhand    { width: 108px; }
-.sio-col-inout     { width: 140px; }
-.sio-col-newonhand { width: 140px; }
+.sio-loc-table { width: 100%; table-layout: fixed; border-collapse: collapse; min-width: 1395px; }
+/* Widths are the pixel sizes the original %-columns resolved to at the app's
+   1320px content width (46% location, 12% each qty, 7% unit) — the widths this
+   table has always shown on a 1440px screen — so the location name keeps its
+   full column and nothing else narrows either. Only ACTION departs from its %
+   (it was `auto`, and the remainder left it ~95px, which cropped the control):
+   it keeps its content-measured 170px. Dimensions is added ON TOP of the sum
+   rather than taken out of it, so the total can exceed the container and
+   .sio-loc-table-wrap's overflow-x:auto scrolls instead of squeezing. */
+.sio-loc-table--with-dimensions { min-width: 1615px; }
+.sio-col-loc       { width: 607px; }
+.sio-col-onhand    { width: 158px; }
+.sio-col-inout     { width: 158px; }
+.sio-col-newonhand { width: 158px; }
 .sio-col-action    { width: 170px; }
-.sio-col-unit      { width: 45px; }
+.sio-col-unit      { width: 92px; }
 .sio-col-dimensions { width: 220px; }
 .sio-col-del       { width: 52px; }
 .sio-th { height: 28px; text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap; letter-spacing: 0.04em; }
