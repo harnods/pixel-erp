@@ -15,22 +15,24 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput,
+  MpButton, MpIcon, MpToggle, MpInput, MpCheckbox, MpRadio,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   getCrmModule, persistCrmModule,
-  CRM_FIELD_TYPE_LABELS,
+  CRM_FIELD_TYPE_LABELS, CRM_OWNERS,
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
+  dealModuleSetup, persistDealModuleSetup,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
-  type DealPipelineDisplay,
+  type DealPipelineDisplay, type DealModuleSetup,
 } from '~/data/crm'
 import { successToast } from '~/utils/toasts'
 
@@ -70,8 +72,28 @@ function loadDraft() {
 // Icon picker (the Name-field prefix) — opens a small grid of module icons.
 const iconMenuOpen = ref(false)
 function pickIcon(icon: string) { draft.icon = icon; iconMenuOpen.value = false }
-onMounted(loadDraft)
-watch(() => props.orderId, loadDraft)
+
+// ── Setup tab (Deals) — a local editable clone; Save changes applies it. ──
+const setup = reactive<DealModuleSetup>(JSON.parse(JSON.stringify(dealModuleSetup)))
+function loadSetup() { Object.assign(setup, JSON.parse(JSON.stringify(dealModuleSetup))) }
+const CURRENCY_OPTIONS = [{ value: 'IDR', label: 'Indonesian Rupiah (Rp)' }]
+const CLOSE_PERIOD_OPTIONS = [
+  { value: 'this-month', label: t('This month') },
+  { value: 'next-month', label: t('Next month') },
+]
+const CLOSE_UNIT_OPTIONS = [
+  { value: 'days', label: t('Days') },
+  { value: 'weeks', label: t('Weeks') },
+  { value: 'months', label: t('Months') },
+]
+// Access picker (drawer) — options are the CRM staff.
+const accessDrawerOpen = ref(false)
+const accessOptions = CRM_OWNERS.map((n) => ({ id: n, name: n }))
+const accessNames = computed(() => setup.access.join(', '))
+function onAccessSaved(ids: string[]) { setup.access = ids; accessDrawerOpen.value = false }
+
+onMounted(() => { loadDraft(); loadSetup() })
+watch(() => props.orderId, () => { loadDraft(); loadSetup() })
 
 // ── Header status badge ──────────────────────────────────────────────────────
 const STATUS_BADGE: Record<string, { status: string; label: string }> = {
@@ -85,9 +107,9 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
 const isDeals = computed(() => !!mod.value?.system)
 const tabs = computed(() => isDeals.value
-  ? [{ key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
+  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
-const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'pipeline' : 'fields')
+const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
 
 // ── Pipeline config (deals only) — a local editable clone; Save changes applies it. ──
@@ -445,6 +467,8 @@ function saveChanges() {
     persistDealPipelines()
     Object.assign(dealPipelineDisplay, JSON.parse(JSON.stringify(disp)))
     persistDealPipelineDisplay()
+    Object.assign(dealModuleSetup, JSON.parse(JSON.stringify(setup)))
+    persistDealModuleSetup()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -492,10 +516,144 @@ function cancel() { router.push('/crm/settings/modules') }
       </div>
 
       <template v-else>
-          <!-- ════════ PIPELINE (Deals) — swimlane editor + settings panel (Figma 4240-18081) ════════ -->
+          <!-- ════════ SETUP (Deals) ════════ -->
+          <div v-show="activeTab === 'setup'" class="builder-panel">
+            <div class="setup-form">
+              <!-- Module name + icon prefix + counter -->
+              <div class="setup-field">
+                <div class="setup-labelrow">
+                  <label class="setup-label" for="setup-module-name">{{ t('Module name') }}</label>
+                  <span class="setup-counter">{{ draft.name.length }} / {{ MODULE_NAME_MAX }}</span>
+                </div>
+                <div class="pipe-name-field setup-control">
+                  <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
+                    <MpPopoverTrigger>
+                      <button type="button" class="pipe-name-prefix" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
+                        <MpIcon :name="draft.icon" size="md" />
+                        <MpIcon name="chevrons-down" size="sm" class="pipe-name-prefix-caret" />
+                      </button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)' })">
+                      <div class="pipe-icon-grid">
+                        <button
+                          v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
+                          class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
+                          :aria-label="ic" @click="pickIcon(ic)"
+                        ><MpIcon :name="ic" size="md" /></button>
+                      </div>
+                    </MpPopoverContent>
+                  </MpPopover>
+                  <input
+                    id="setup-module-name" v-model="draft.name" class="pipe-name-input-el" type="text"
+                    :maxlength="MODULE_NAME_MAX" :aria-label="t('Module name')"
+                  >
+                </div>
+              </div>
+
+              <!-- Base currency -->
+              <div class="setup-field">
+                <label class="setup-label">{{ t('Base currency') }}</label>
+                <ErpFilterSelect
+                  id="setup-currency" :model-value="setup.baseCurrency" :options="CURRENCY_OPTIONS"
+                  :is-clearable="false" width="280px" class="setup-control"
+                  @update:model-value="(v: string) => (setup.baseCurrency = v || 'IDR')"
+                />
+              </div>
+
+              <!-- Default close date -->
+              <div class="setup-field">
+                <label class="setup-check">
+                  <MpCheckbox id="setup-closedate" :is-checked="setup.applyCloseDate" @change="setup.applyCloseDate = !setup.applyCloseDate" />
+                  <span class="setup-check-text">
+                    <span class="setup-check-label">{{ t('Apply default close date to new records') }}</span>
+                    <span class="setup-check-caption">{{ t('Select the default close date when creating a Deal.') }}</span>
+                  </span>
+                </label>
+
+                <div v-if="setup.applyCloseDate" class="setup-indent">
+                  <label class="setup-radio">
+                    <MpRadio id="close-period" name="close-mode" value="period" :is-checked="setup.closeMode === 'period'" @change="setup.closeMode = 'period'" />
+                    <span>{{ t('End of a certain period') }}</span>
+                  </label>
+                  <div v-if="setup.closeMode === 'period'" class="setup-radio-detail">
+                    <ErpFilterSelect
+                      id="close-period-opt" :model-value="setup.closePeriod" :options="CLOSE_PERIOD_OPTIONS"
+                      :is-clearable="false" width="240px"
+                      @update:model-value="(v: string) => (setup.closePeriod = (v || 'this-month') as DealModuleSetup['closePeriod'])"
+                    />
+                  </div>
+
+                  <label class="setup-radio">
+                    <MpRadio id="close-fromcreation" name="close-mode" value="fromCreation" :is-checked="setup.closeMode === 'fromCreation'" @change="setup.closeMode = 'fromCreation'" />
+                    <span>{{ t('Time from record creation') }}</span>
+                  </label>
+                  <div v-if="setup.closeMode === 'fromCreation'" class="setup-radio-detail setup-amount">
+                    <MpInput id="close-amount" v-model.number="setup.closeAmount" type="number" class="setup-amount-input" :aria-label="t('Amount')" />
+                    <ErpFilterSelect
+                      id="close-unit" :model-value="setup.closeUnit" :options="CLOSE_UNIT_OPTIONS"
+                      :is-clearable="false" width="140px"
+                      @update:model-value="(v: string) => (setup.closeUnit = (v || 'days') as DealModuleSetup['closeUnit'])"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Access -->
+              <div class="setup-field">
+                <label class="setup-label">{{ t('Access') }}</label>
+                <span class="setup-caption">{{ t('Choose who can access this module.') }}</span>
+                <div class="setup-access setup-control">
+                  <span v-if="setup.access.length" class="setup-access-names">{{ accessNames }}</span>
+                  <span v-else class="setup-access-empty">{{ t('No users selected') }}</span>
+                  <MpButton variant="secondary" is-rounded left-icon="add" @click="accessDrawerOpen = true">{{ t('Select users') }}</MpButton>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ════════ PROPERTIES (Deals) — stage + card display ════════ -->
+          <div v-show="activeTab === 'properties'" class="builder-panel">
+            <div class="props-panel">
+              <section class="pipe-side-section">
+                <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
+                <div class="pipe-side-row">
+                  <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
+                </div>
+                <div class="pipe-side-row">
+                  <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
+                </div>
+              </section>
+
+              <section class="pipe-side-section">
+                <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
+                <TransitionGroup name="row" tag="div" class="pipe-side-rows">
+                  <div
+                    v-for="(f, i) in disp.cardFields" :key="f.key"
+                    class="pipe-side-row pipe-side-row--drag"
+                    :class="{ 'is-dragging': fieldDragSrc === i }"
+                    @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop()"
+                  >
+                    <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                    <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                    <span
+                      class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                      @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                    ><MpIcon name="drag" size="md" /></span>
+                  </div>
+                </TransitionGroup>
+                <div class="pipe-side-row pipe-side-row--sep">
+                  <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- ════════ PIPELINE (Deals) — swimlane editor ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
-              <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
                   <p v-if="stageDeleteError" class="builder-inline-error pipe-board-error">{{ stageDeleteError }}</p>
@@ -561,76 +719,6 @@ function cancel() { router.push('/crm/settings/modules') }
                   <!-- + New stage -->
                   <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
-
-                <!-- Settings panel — sticky at the far right -->
-                <aside class="pipe-sidebar">
-                  <div class="pipe-side-field">
-                    <div class="pipe-side-labelrow">
-                      <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
-                      <span class="pipe-side-counter">{{ draft.name.length }} / {{ MODULE_NAME_MAX }}</span>
-                    </div>
-                    <!-- Icon prefix (click to change the module icon) + name input -->
-                    <div class="pipe-name-field">
-                      <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
-                        <MpPopoverTrigger>
-                          <button type="button" class="pipe-name-prefix" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
-                            <MpIcon :name="draft.icon" size="md" />
-                            <MpIcon name="chevron-down" size="sm" class="pipe-name-prefix-caret" />
-                          </button>
-                        </MpPopoverTrigger>
-                        <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)' })">
-                          <div class="pipe-icon-grid">
-                            <button
-                              v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
-                              class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
-                              :aria-label="ic" @click="pickIcon(ic)"
-                            ><MpIcon :name="ic" size="md" /></button>
-                          </div>
-                        </MpPopoverContent>
-                      </MpPopover>
-                      <input
-                        id="pipe-module-name" v-model="draft.name" class="pipe-name-input-el" type="text"
-                        :maxlength="MODULE_NAME_MAX" :aria-label="t('Module name')"
-                      >
-                    </div>
-                  </div>
-
-                  <section class="pipe-side-section">
-                    <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
-                    <div class="pipe-side-row">
-                      <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
-                    </div>
-                    <div class="pipe-side-row">
-                      <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
-                    </div>
-                  </section>
-
-                  <section class="pipe-side-section">
-                    <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
-                    <TransitionGroup name="row" tag="div" class="pipe-side-rows">
-                      <div
-                        v-for="(f, i) in disp.cardFields" :key="f.key"
-                        class="pipe-side-row pipe-side-row--drag"
-                        :class="{ 'is-dragging': fieldDragSrc === i }"
-                        @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop()"
-                      >
-                        <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
-                        <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
-                        <span
-                          class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                          @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
-                        ><MpIcon name="drag" size="md" /></span>
-                      </div>
-                    </TransitionGroup>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
-                    </div>
-                  </section>
-                </aside>
-              </div>
             </template>
           </div>
 
@@ -758,6 +846,19 @@ function cancel() { router.push('/crm/settings/modules') }
         <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
       </MpButtonGroup>
     </footer>
+
+    <!-- ════════ Access drawer (Setup ▸ Access) ════════ -->
+    <SelectAccessDrawer
+      :open="accessDrawerOpen"
+      :title="t('Select users')"
+      :list-title="t('Users')"
+      :options="accessOptions"
+      :model-value="setup.access"
+      :empty-title="t('No users selected')"
+      :empty-caption="t('Pick who can access this module.')"
+      @update:open="accessDrawerOpen = $event"
+      @save="onAccessSaved($event)"
+    />
 
     <!-- ════════ Field modal ════════ -->
     <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">
@@ -971,6 +1072,7 @@ function cancel() { router.push('/crm/settings/modules') }
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
 .builder-panel--pipeline { flex: 1; min-height: 0; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
+.builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
 /* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
 .pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
@@ -1072,6 +1174,31 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-icon-choice { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--mp-radii-md, 6px); background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
 .pipe-icon-choice:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .pipe-icon-choice--active { border-color: var(--mp-colors-border-selected, #029861); color: var(--mp-colors-text-selected, #0f6d4d); background: var(--mp-colors-background-brand-subtle, #eafaf1); }
+
+/* ── Setup tab form ── */
+.setup-form { display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 520px; }
+.setup-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.setup-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.setup-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.setup-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+.setup-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-control { max-width: 320px; width: 100%; }
+/* Default close-date checkbox + indented radios */
+.setup-check { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); cursor: pointer; }
+.setup-check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.setup-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.setup-check-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-indent { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); margin-left: var(--mp-spacing-8, 32px); }
+.setup-radio { display: flex; align-items: center; gap: var(--mp-spacing-3); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.setup-radio-detail { margin-left: var(--mp-spacing-8, 32px); }
+.setup-amount { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.setup-amount-input { width: 100px; }
+.setup-access.setup-control { max-width: 480px; display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.setup-access-names { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
+
+/* ── Properties tab ── */
+.props-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 480px; }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-row { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-sm); transition: opacity 0.12s ease, background 0.12s ease; }

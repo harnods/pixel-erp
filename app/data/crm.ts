@@ -1279,6 +1279,26 @@ export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
 
+/** Deals module Setup-tab settings (base currency, default close date, access). */
+export interface DealModuleSetup {
+  baseCurrency: string
+  applyCloseDate: boolean
+  closeMode: 'period' | 'fromCreation'
+  closePeriod: 'this-month' | 'next-month'
+  closeAmount: number
+  closeUnit: 'days' | 'weeks' | 'months'
+  access: string[]                 // user names who can access the module
+}
+const DEAL_MODULE_SETUP_SEED: DealModuleSetup = {
+  baseCurrency: 'IDR', applyCloseDate: false, closeMode: 'period',
+  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
+}
+export const dealModuleSetup = reactive<DealModuleSetup>(
+  loadSnapshot<DealModuleSetup>('crm-deal-module-setup-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_MODULE_SETUP_SEED)),
+)
+export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v1', [dealModuleSetup]) }
+
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,
