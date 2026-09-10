@@ -450,6 +450,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Note': 'Catatan',
   'Rotting in (days)': 'Mengendap (hari)',
   'Change icon': 'Ganti ikon',
+  'Add stage before': 'Tambah stage sebelum',
+  'Add stage after': 'Tambah stage sesudah',
   'Ongoing, base currency': 'Berjalan, mata uang dasar',
   'Closing this month': 'Tutup bulan ini',
   'Past due date': 'Lewat tanggal jatuh tempo',
