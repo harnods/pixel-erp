@@ -30,7 +30,7 @@ import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import {
   getContactPerson, getCompany, companiesOfContact, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
-  archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, type Deal,
+  archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, type Deal,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -104,7 +104,6 @@ const outstanding = computed(() => wonDeals.value.filter((d) => d.conversion !==
 const dealColumns: TableColumn[] = [
   { key: 'number',  label: 'Number',          kind: 'number', sortable: true, sortType: 'text' },
   { key: 'name',    label: 'Deal name',       kind: 'name',   sortable: true, sortType: 'text' },
-  { key: 'contact', label: 'Primary contact', kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'stage',   label: 'Stage',           kind: 'status', sortable: true, sortType: 'text' },
   { key: 'owner',   label: 'Deal owner',      kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'value',   label: 'Value',           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
@@ -371,13 +370,7 @@ function confirmArchive() {
                 <template #cell-name="{ row }">
                   <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ (row as unknown as Deal).name }}</span>
                 </template>
-                <template #cell-contact="{ row }">
-                  <div class="cru-name">
-                    <span class="cell-text">{{ dealContactName(row as unknown as Deal) }}</span>
-                    <span v-if="dealContactEmail(row as unknown as Deal)" class="cru-email">{{ dealContactEmail(row as unknown as Deal) }}</span>
-                  </div>
-                </template>
-                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" /></template>
+                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" :type="dealStageBadgeType((row as unknown as Deal).stage)" :label="t((row as unknown as Deal).stage)" /></template>
                 <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as Deal).owner }}</span></template>
                 <template #cell-value="{ row }"><span class="cell-text">{{ formatIDR((row as unknown as Deal).value) }}</span></template>
                 <template #cell-updated="{ row }">
