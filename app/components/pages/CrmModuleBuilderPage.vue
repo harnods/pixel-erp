@@ -27,13 +27,11 @@ import {
   CRM_FIELD_TYPE_LABELS,
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay,
-  deals, dealExpectedValue, dealDaysInStage,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
-  type DealPipeline, type DealPipelineStage, type Deal, type DealStage,
+  type DealPipeline, type DealPipelineStage,
   type DealPipelineDisplay,
 } from '~/data/crm'
-import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -96,15 +94,6 @@ const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
-// The real deals sitting in a stage — cards mirror the live pipeline (matched by
-// stage name, so the six seed stages fill and renamed/new stages show empty).
-function stageDeals(s: DealPipelineStage): Deal[] {
-  return deals.filter((d) => !d.archived && d.stage === (s.name as DealStage))
-}
-function stageTotal(s: DealPipelineStage): string {
-  return formatIDR(stageDeals(s).reduce((sum, d) => sum + dealExpectedValue(d), 0))
-}
-function agingLabel(d: Deal): string { return `${dealDaysInStage(d)}d` }
 
 // Inline rename — the pencil toggles a stage's name into an editable field.
 const editingStageId = ref<string | null>(null)
@@ -117,7 +106,14 @@ function commitStageName(s: DealPipelineStage) {
 // Drag-reorder the swimlanes.
 const dragSrc = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
-function onStageDragStart(i: number, e: DragEvent) { dragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
+function onStageDragStart(i: number, e: DragEvent) {
+  dragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+  // Drag the whole lane as the ghost (not just the handle) — this is what makes
+  // the reorder feel like the Deals board's card drag.
+  const lane = (e.target as HTMLElement).closest('.pipe-lane') as HTMLElement | null
+  if (lane) e.dataTransfer!.setDragImage(lane, 24, 24)
+}
 function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; dragOver.value = i }
 function onStageDrop(i: number) {
   const pipe = currentPipe.value
@@ -151,15 +147,15 @@ const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(dealPipelin
 const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
 
-// Per-field value for a deal card.
-function cardContact(d: Deal): string { return d.picName || '—' }
-function cardDate(d: Deal): string { return d.expectedCloseDate || '—' }
-function cardNote(d: Deal): string { return d.description || '—' }
-
 // Drag-reorder the card-property rows (order = the order fields stack on a card).
 const fieldDragSrc = ref<number | null>(null)
 const fieldDragOver = ref<number | null>(null)
-function onFieldDragStart(i: number, e: DragEvent) { fieldDragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
+function onFieldDragStart(i: number, e: DragEvent) {
+  fieldDragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+  const row = (e.target as HTMLElement).closest('.pipe-side-row') as HTMLElement | null
+  if (row) e.dataTransfer!.setDragImage(row, 12, 12)
+}
 function onFieldDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; fieldDragOver.value = i }
 function onFieldDrop(i: number) {
   if (fieldDragSrc.value === null || fieldDragSrc.value === i) { fieldDragOver.value = null; return }
@@ -445,7 +441,8 @@ function saveChanges() {
     views: clone(draft.views),
     layoutDriver: draft.layoutDriver || undefined,
   })
-  if (!m.system) m.name = draft.name.trim() || m.name
+  // Renaming the module (incl. the Deals system module) also renames its nav item.
+  m.name = draft.name.trim() || m.name
   persistCrmModule(m, AUTHOR, nowStamp())
   successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
@@ -492,7 +489,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'pipe-lane--over': dragOver === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    :class="{ 'pipe-lane--over': dragOver === i && dragSrc !== i, 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
                     @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
                   >
                     <div class="pipe-lane-head">
@@ -512,30 +509,33 @@ function cancel() { router.push('/crm/settings/modules') }
                       </div>
                     </div>
 
+                    <!-- Preview cards — placeholder field labels (a layout preview,
+                         not live data); populated on the first lane only, per Figma. -->
                     <div class="pipe-lane-cards">
-                      <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
-                        <template v-for="f in enabledCardFields" :key="f.key">
-                          <span v-if="f.key === 'company'" class="pipe-card-company">{{ d.company }}</span>
-                          <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ d.name }}</span>
-                          <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ cardContact(d) }}</span>
-                          <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
-                          <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
-                            <span class="pipe-card-owner">{{ d.owner }}</span>
-                            <span v-if="disp.showAging" class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                      <template v-if="i === 0">
+                        <div v-for="n in 2" :key="n" class="pipe-card">
+                          <template v-for="f in enabledCardFields" :key="f.key">
+                            <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company name') }}</span>
+                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
+                            <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
+                            <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Deal value') }}</span>
+                            <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
+                              <span class="pipe-card-owner">{{ t('Deal owner') }}</span>
+                              <span v-if="disp.showAging" class="pipe-card-aging">2d</span>
+                            </div>
+                            <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ t('Date') }}</span>
+                            <span v-else-if="f.key === 'note'" class="pipe-card-sub">{{ t('Note') }}</span>
+                          </template>
+                          <!-- Aging still shows even if Owner is hidden -->
+                          <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
+                            <span class="pipe-card-aging">2d</span>
                           </div>
-                          <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ cardDate(d) }}</span>
-                          <span v-else-if="f.key === 'note'" class="pipe-card-sub pipe-card-note">{{ cardNote(d) }}</span>
-                        </template>
-                        <!-- Aging still shows even if Owner is hidden -->
-                        <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
-                          <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
                         </div>
-                      </div>
+                      </template>
                     </div>
 
                     <div v-if="disp.stageTotal" class="pipe-lane-total">
                       <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
-                      <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
                     </div>
 
                     <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
@@ -570,7 +570,8 @@ function cancel() { router.push('/crm/settings/modules') }
                     <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
                     <div
                       v-for="(f, i) in disp.cardFields" :key="f.key"
-                      class="pipe-side-row pipe-side-row--drag" :class="{ 'pipe-side-row--over': fieldDragOver === i }"
+                      class="pipe-side-row pipe-side-row--drag"
+                      :class="{ 'pipe-side-row--over': fieldDragOver === i && fieldDragSrc !== i, 'is-dragging': fieldDragSrc === i }"
                       @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop(i)"
                     >
                       <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
@@ -932,17 +933,19 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-lane {
   flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-2\.5, 6px);
-  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
+  padding: var(--mp-spacing-3);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 12px);
   background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
+  transition: opacity 0.12s ease, border-color 0.12s ease;
 }
 .pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
+.pipe-lane.is-dragging { opacity: 0.4; }
 /* Color stage columns (toggle): tint the lane by outcome. */
 .pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
 .pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
 .pipe-lane--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 
-.pipe-lane-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
+.pipe-lane-head { display: flex; align-items: center; gap: var(--mp-spacing-3); min-height: 36px; }
 .pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
 .pipe-lane-label { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; flex: 1; }
 .pipe-lane-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -950,15 +953,18 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-lane-edit {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-icon-subtle, #97a0af);
+  opacity: 0; transition: opacity 0.12s ease;
 }
+/* The rename pencil only reveals on swimlane hover (or keyboard focus). */
+.pipe-lane:hover .pipe-lane-edit, .pipe-lane-edit:focus-visible { opacity: 1; }
 .pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
 
 /* Card list grows to fill the lane so the total + delete pin to the bottom. */
 .pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .pipe-card {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
-  border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-stage, #fff);
+  padding: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-md, 8px); background: var(--mp-colors-background-stage, #fff);
 }
 .pipe-card-head { display: flex; flex-direction: column; min-width: 0; }
 .pipe-card-company { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -992,20 +998,26 @@ function cancel() { router.push('/crm/settings/modules') }
 /* ── Settings panel — sticky at the far right ── */
 .pipe-sidebar {
   flex: 0 0 304px; width: 304px; align-self: stretch;
-  position: sticky; top: 0; box-sizing: border-box;
+  box-sizing: border-box;
   display: flex; flex-direction: column; gap: var(--mp-spacing-5);
-  padding: 0 0 0 var(--mp-spacing-4);
+  /* Pull the divider into the stage's top/bottom padding so the line runs the
+     full height (top → bottom); padding keeps the content itself aligned. */
+  margin: calc(-1 * var(--mp-spacing-6)) 0;
+  padding: var(--mp-spacing-6) 0 var(--mp-spacing-6) var(--mp-spacing-4);
   border-left: 1px solid var(--mp-colors-border-default, #e3e7e9);
-  overflow-y: auto;
 }
 .pipe-side-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pipe-side-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.pipe-side-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) 0; }
+.pipe-side-row { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-sm); transition: opacity 0.12s ease, background 0.12s ease; }
+.pipe-side-row--drag:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .pipe-side-rowlabel { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
-.pipe-side-row--over { background: var(--mp-colors-background-neutral-hovered, #eef0f3); border-radius: var(--mp-radii-sm); }
+.pipe-side-drag:active { cursor: grabbing; }
+/* Drop-target insertion line (top edge) + faded source, like the Deals board drag. */
+.pipe-side-row--over::before { content: ''; position: absolute; left: 0; right: 0; top: -1px; height: 2px; border-radius: 2px; background: var(--mp-colors-border-selected, #029861); }
+.pipe-side-row.is-dragging { opacity: 0.4; }
 .pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
