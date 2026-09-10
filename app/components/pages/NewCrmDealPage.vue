@@ -482,7 +482,7 @@ function onSave() {
           </MpFormControl>
 
           <MpFormControl id="f-due-date" class="si-field">
-            <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Close date') }}</MpFormLabel>
             <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 

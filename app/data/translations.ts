@@ -649,6 +649,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Date': 'Tanggal',
   'Created date': 'Tanggal dibuat',
   'Due date': 'Tanggal jatuh tempo',
+  'Close date': 'Tanggal closing',
   'Expiry date': 'Tanggal kedaluwarsa',
   'On hand': 'Stok fisik',
   'On hand qty': 'Jumlah stok fisik',
