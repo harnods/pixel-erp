@@ -21,8 +21,17 @@
 | A1 | Grade "Code" vs "Name" | **Name only.** There is no separate Code. | Grade = Name · Rank · Description · Status. Import and API resolve grades **by Name**, case-insensitive. The PRD's "Code first, then Name" and "ambiguous Code/Name match" rules no longer apply. Because Name is renameable, batches still store the **grade ID**, never the text. |
 | A2 | Expiry date: date or month precision | **Per value.** Each batch picks its own precision. | The Expiry field in the batch form has a **Date / Month** switch. The stored value is `YYYY-MM-DD` or `YYYY-MM`, so precision comes from the value itself. |
 | A3 | Grade menu placement | **Inventory submenu** | Inventory panel › **Grades** (Phase 1), confirmed. |
-| A4 | Can a batch number be edited? | **Yes, but it can't duplicate.** | Batch number is editable in the edit form and stays unique within the product. The batch store needs a stable internal ID so a rename doesn't orphan barcode or attribute data. |
+| A4 | Can a batch number be edited? | **Yes, but it can't duplicate.** *Narrowed by A9: only while the batch is unused.* | Batch number is editable in the edit form and stays unique within the product. The batch store needs a stable internal ID so a rename doesn't orphan barcode or attribute data. |
 | A5 | Unassigned batch | **Still available to choose, but no attributes are ever assigned to it.** | Every batch-tracked product gets a system **Unassigned** batch. It shows "—" for every attribute, never renders attribute fields, and required-attribute rules skip it. |
+
+### PM answers, round 2 (10 Sep 2026)
+
+| # | Question | Answer | Effect on the plan |
+|---|----------|--------|--------------------|
+| A6 | Rename "Supplier" → "Vendor" in the PRD | **PM will update the PRD later.** | No change: the UI already says Vendor (D2). |
+| A7 | Error copy for an import row that targets the Unassigned batch | **To be confirmed later.** | Keep the rejection and the proposed copy (Phase 4), marked *pending PM*. |
+| A8 | Does a renamed grade show its new name on older batches? | **Yes, show the new name.** | Already the behaviour: batches store the grade ID and display its current name. No snapshot of the old name. |
+| A9 | Can a batch be renamed once it's used on transactions? | **Lock it for now; the PM will decide later.** | The batch number is editable **only while the batch has no stock movements**. Once used, it's read-only in the edit form, with a caption explaining why. This narrows A4. |
 
 ---
 
@@ -102,6 +111,8 @@
 - `createBatch(sku, { batchNo, description, attributes })`: batch number is unique **per product**, case-insensitive. "Unassigned" is reserved.
 - `updateBatch(sku, id, patch)`:
   - The batch number may change but must stay unique within the product, excluding the batch itself (A4).
+  - It may change **only when `batchHasMovements(sku, id)` is false** (A9). A number change on a used batch is refused.
+  - `batchHasMovements` is true when the batch has any ledger entry (`getBatchTransactions`) or non-zero on-hand/reserved. In practice, every seeded batch with stock is locked, and a freshly created qty-0 batch is renameable until its first stock adjustment.
   - On save, attributes that are no longer in the product's config are **purged** (story 7).
 
 **Fix Track stock by persistence**
@@ -114,6 +125,7 @@
 - grade rank auto-increment, the min-1-active and max-10-active limits, and delete-blocked-when-used
 - batch number unique per product, not globally
 - rename keeps uniqueness and moves the barcode
+- rename is refused once the batch has movements (A9)
 - "Unassigned" is reserved and rejects attribute writes
 - attributes purged on update after a config change
 - expiry month value counts as end of month for the near-expiry warning
@@ -162,7 +174,9 @@
 - Empty state: when the product has no batches, show a "No batches" empty state with the New batch action (`rule/table-empty-state`, `rule/empty-state-structure`). Today this tab only renders when on-hand > 0.
 
 **New `BatchFormModal.vue`** (create + edit; `MpModal` md)
-- Batch number: required, unique within the product (case-insensitive), and "Unassigned" is reserved. **Editable in edit mode too** (A4), with the same uniqueness check excluding the batch itself.
+- Batch number: required, unique within the product (case-insensitive), and "Unassigned" is reserved.
+  - **In edit mode it's editable only while the batch is unused** (A4 + A9), with the same uniqueness check excluding the batch itself.
+  - Once the batch has stock movements, the field is read-only with a secondary caption: "Batch number can't be changed after the batch is used in a transaction." / "Nomor batch tidak dapat diubah setelah batch digunakan dalam transaksi." Run the copy through uxw-mekari.
 - Description: optional.
 - One field per product attribute, in config order. Required ones get `is-required`; optional ones may be empty.
   - `expiry_date` (A2): a pill segmented control **Date | Month** (`rule/segmented-control-pill`) above one `MpDatePicker`.
@@ -176,7 +190,7 @@
 - **Edit mode (story 7):**
   - Only attributes in the *current* config are shown. Values for removed attributes are hidden and purged on save.
   - Newly required attributes are required; required→optional ones can be cleared.
-  - Renaming the batch number keeps its barcode, attributes and history (stable ID).
+  - Renaming an unused batch keeps its barcode and attributes (stable ID). Used batches can't be renamed (A9).
 - Success toast on save only (`rule/toast-success-only`, `rule/btn-save-toast`).
 
 **`BatchDetailsPage.vue`**
@@ -207,7 +221,7 @@
   - Semantics to spell out in the template help panel: `null` clears a value, and a blank cell leaves it unchanged.
   - **Grade matching (A1):** by **Name** only, case-insensitive. Unknown → "Grade name not found". Inactive → "Grade is not active". Import never creates a grade.
   - **Expiry (A2):** each row may be `DD/MM/YYYY` *or* `MM/YYYY`, and that row's value keeps that precision.
-  - **Unassigned batch (A5):** a row naming it with any attribute filled is rejected. Proposed copy: "Unassigned batch can't have attributes" / "Batch Unassigned tidak dapat memiliki atribut". The copy is an assumption; confirm wording with the PM. Description-only rows are also rejected, since it's a system batch.
+  - **Unassigned batch (A5):** a row naming it with any attribute filled is rejected. Proposed copy: "Unassigned batch can't have attributes" / "Batch Unassigned tidak dapat memiliki atribut". The copy is **pending PM confirmation (A7)**. Description-only rows are also rejected, since it's a system batch.
   - The template matches batches **by batch number**, so it can't rename them. Renames are web-only.
 - Runs as a background process: after submit, push an entry into the header activity popover (`uploadCenter.ts`) and return to the product. Success → toast.
 - **Not built:** the "Product Batch" filter on Other lists › Export & import, because that page doesn't exist in the prototype. Track as a follow-up.
@@ -266,19 +280,20 @@ All new strings go through `t()`. Indonesian follows uxw-mekari (run the `uxw-me
 | Grades page | populated · only-seed (A/B/C) · at 10 active (New grade → limit notice) · last active grade (deactivate blocked) · delete-used (offer deactivate) · first-load skeleton (`rule/index-first-load-skeleton`) |
 | Product form | not batch-tracked (block hidden) · 1 row default · 3 rows (add hidden) · duplicate prevented · edit with changes → confirm modal · edit without changes → no modal |
 | Stock by batches tab | only the Unassigned batch · created batch at qty 0 · Unassigned row ("—" attributes, no Edit) · attribute columns for 1 vs 3 attributes · day- vs month-precision expiry side by side · month expiry near end of month (warning) · search no-match |
-| Batch form | create · expiry Date ↔ Month switch · edit after an attribute was added-as-required (must fill) · after an attribute was removed (hidden, purged) · rename to a new number · rename to a duplicate (inline error) · "Unassigned" typed as a number (inline error) · no active grades *(unreachable: min 1 active is enforced)* |
+| Batch form | create · expiry Date ↔ Month switch · edit after an attribute was added-as-required (must fill) · after an attribute was removed (hidden, purged) · rename an unused batch · rename to a duplicate (inline error) · edit a used batch (number read-only + caption) · "Unassigned" typed as a number (inline error) · no active grades *(unreachable: min 1 active is enforced)* |
 | Update import | success · partial (error table + download, incl. an Unassigned row and a mixed DD/MM/YYYY + MM/YYYY file) · all failed · wrong file type / too large |
 
 ---
 
 ## 8. Open questions for PM / design
 
-The first round (Code vs Name, expiry precision, Grades placement, batch-number edits, Unassigned batch) is answered; see §1 A1–A5. Still open:
+Both rounds are answered (§1, A1–A9). Nothing blocks the build. These items are **pending a later PM decision**, and the plan runs on the interim behaviour until then:
 
-1. The PRD copy uses **"Supplier"**; the repo standard is **"Vendor"** (D2). Please rename in the PRD.
-2. **Unassigned batch in Update Batch import:** the plan rejects any row that targets it. Confirm, and confirm the error copy in Phase 4.
-3. **Grade rename vs. existing batches:** batches store the grade ID, so a rename shows the new name on every past batch. Confirm that's intended, rather than keeping the old name as a historical snapshot.
-4. **Renaming a batch that is already on transactions:** the plan lets it go through, and the transactions show the new number because the ID is stable. Confirm there's no lock once a batch has movements.
+| Item | Interim behaviour in the prototype | Waiting on |
+|------|------------------------------------|------------|
+| PRD still says "Supplier" (A6) | UI says **Vendor** | PM updating the PRD |
+| Import error copy for Unassigned batch rows (A7) | Row rejected, with the proposed EN/ID copy in Phase 4 | PM confirming the wording |
+| Renaming a batch that's already used (A9) | **Locked:** the number is read-only once the batch has movements | PM's final call. Unlocking it later is a one-line change to the `batchHasMovements` guard, because the stable batch ID already supports renames. |
 
 ---
 
