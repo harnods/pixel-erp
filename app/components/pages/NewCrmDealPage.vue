@@ -1155,9 +1155,12 @@ function onSave() {
 
 /* ── Footer ── */
 .si-form-footer {
+  /* Pushed to the very bottom of the scroll stage — sits at the page bottom when the
+     form is short, flows after the content when it's long. */
+  margin-top: auto;
   display: flex; align-items: center; justify-content: flex-end;
   gap: var(--mp-spacing-3);
-  padding-top: var(--mp-spacing-4);
+  padding-top: var(--mp-spacing-6);
 }
 /* Chevron on a filled button follows the label colour, not the default icon grey */
 .si-form-footer .btn-enterprise--primary :deep(.mp-icon),
