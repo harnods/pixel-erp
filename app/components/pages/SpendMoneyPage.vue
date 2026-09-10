@@ -4,6 +4,7 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpInputTag, MpTextarea, MpUpload, MpUploadList,
   MpIcon, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextlink, toast,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   type DataInterface,
 } from '@mekari/pixel3'
 import { bills } from '~/data/bills'
@@ -11,6 +12,8 @@ import type { Bill } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
 import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
 // orderId = the unpaid bill the "Add payment" action was launched from — this
@@ -85,10 +88,12 @@ interface PaymentRow {
   removable: boolean
   /** dimension id → chosen value, for the line-level Dimensions column. */
   dimensions: Record<string, string>
+  /** dimensionId -> whether that mandatory dimension is missing (set by validateLineItems). */
+  dimensionErrors: Record<string, boolean>
 }
 let rowSeq = 0
 function makeRow(b: Bill, amount: string, removable: boolean): PaymentRow {
-  return { id: rowSeq++, billId: b.id, billLabel: billLabel(b), description: '', balanceDue: b.balanceDue, total: b.total, amount, removable, dimensions: {} }
+  return { id: rowSeq++, billId: b.id, billLabel: billLabel(b), description: '', balanceDue: b.balanceDue, total: b.total, amount, removable, dimensions: {}, dimensionErrors: {} }
 }
 function buildInitialRows(): PaymentRow[] {
   const b = sourceBill.value
@@ -97,6 +102,36 @@ function buildInitialRows(): PaymentRow[] {
   return [makeRow(b, String(b.balanceDue), false), ...siblings.map((s) => makeRow(s, '', true))]
 }
 const rows = ref<PaymentRow[]>(buildInitialRows())
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every line's dimensions (a dimension left blank in the
+// popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  rows.value.forEach((row) => {
+    row.dimensions = { ...row.dimensions, ...patch }
+    for (const dimId of Object.keys(patch)) { if (patch[dimId]) row.dimensionErrors[dimId] = false }
+  })
+}
+function onRowDimensionsUpdate(row: PaymentRow, v: Record<string, string>) {
+  row.dimensions = v
+  for (const dimId of Object.keys(v)) { if (v[dimId]) row.dimensionErrors[dimId] = false }
+}
+
+// Every row with a mandatory dimension configured for "Expenses" must have it
+// filled before saving — same convention as NewExpensePage/NewSalesInvoicePage's
+// validateLineItems (feedback_erp_transaction_line_item_error_pattern).
+function validateLineItems(): boolean {
+  let valid = true
+  if (showDimensionsColumn.value) {
+    rows.value.forEach((row) => {
+      applicableDimensions('expenses').forEach((dim) => {
+        if (dim.mandatory && !row.dimensions[dim.id]) { row.dimensionErrors[dim.id] = true; valid = false }
+      })
+    })
+  }
+  return valid
+}
+const lineItemsHaveError = computed(() => rows.value.some((r) => Object.values(r.dimensionErrors).some(Boolean)))
 
 // "Select expense" trailing row — lets the user add another of this payee's
 // unpaid bills that isn't already in the table.
@@ -153,6 +188,7 @@ function fileIconName(name: string) {
 // balanceDue: 0), so a nonzero amount here means that bill is now paid in full. ──
 function handleSave() {
   if (!payFromId.value) { payFromError.value = true; return }
+  if (!validateLineItems()) return
   const accountName = BANK_ACCOUNT_OPTIONS.find((a) => a.id === payFromId.value)?.name ?? payFromId.value
   const paymentDateISO = toISODate(transactionDate.value)
 
@@ -248,6 +284,11 @@ function handleSave() {
         </div>
 
         <!-- Line items -->
+        <MpBanner v-if="lineItemsHaveError" id="sm-lineitems-error-banner" variant="danger" align-items="center" class="ex-lineitems-error-banner">
+          <MpBannerIcon id="sm-lineitems-error-banner-icon" />
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+        </MpBanner>
         <div class="ex-table-section">
           <div class="ex-table-scroll">
             <table class="ex-table ex-lineitems-table sm-table">
@@ -264,7 +305,13 @@ function handleSave() {
                 <tr>
                   <th class="ex-th">{{ t('Expense') }}</th>
                   <th class="ex-th">{{ t('Description') }}</th>
-                  <th v-if="showDimensionsColumn" class="ex-th">{{ t('Dimensions') }}</th>
+                  <th v-if="showDimensionsColumn" class="ex-th ex-th--dimensions">
+                    <span class="ex-th-dim-label">
+                      {{ t('Dimensions') }}
+                      <ErpDimensionsInfoPopover id="sm-dim-info" />
+                    </span>
+                    <ErpBulkDimensionsPopover id="sm-dim-bulk" transaction-type="expenses" @apply="onBulkDimensions" />
+                  </th>
                   <th class="ex-th ex-th--num">{{ t('Balance due') }}</th>
                   <th class="ex-th ex-th--num">{{ t('Total') }}</th>
                   <th class="ex-th ex-th--num">{{ t('Amount') }}</th>
@@ -283,8 +330,10 @@ function handleSave() {
                   <td v-if="showDimensionsColumn" class="ex-td ex-td--border sm-td--dimensions">
                     <ErpLineDimensionsCell
                       :id="`sm-dim-${row.id}`"
-                      v-model="row.dimensions"
+                      :model-value="row.dimensions"
                       transaction-type="expenses"
+                      :errors="row.dimensionErrors"
+                      @update:model-value="(v) => onRowDimensionsUpdate(row, v)"
                     />
                   </td>
                   <td class="ex-td ex-td--border ex-td--readonly">{{ formatIDR(row.balanceDue) }}</td>
@@ -469,11 +518,16 @@ function handleSave() {
   color: var(--mp-text-secondary-pressed, #243032);
 }
 
+.ex-lineitems-error-banner { margin-bottom: var(--mp-spacing-5, 20px); }
+
 /* ── Line items table ─────────────────────────────────────────────────────── */
 .ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
-.ex-col-desc { width: auto; }
+/* table-layout:fixed gives an unspecified column 0px once every other column
+   already carries an explicit width (unlike flex "auto") — pin a real width,
+   same convention as NewExpensePage's own .ex-col-desc. */
+.ex-col-desc { width: 200px; }
 .sm-col-expense { width: 320px; }
 .sm-col-num { width: 180px; }
 .sm-col-del { width: 52px; }
@@ -482,6 +536,8 @@ function handleSave() {
 .sm-col-dimensions { width: 240px; }
 .sm-td--dimensions { padding: var(--mp-spacing-2) var(--mp-spacing-2); }
 .ex-lineitems-table .sm-td--dimensions { height: auto; }
+.ex-th--dimensions { display: table-cell; }
+.ex-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;

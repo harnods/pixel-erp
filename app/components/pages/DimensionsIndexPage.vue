@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
-  MpIcon, MpSelect, MpProgress,
+  MpIcon, MpProgress, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast, css,
@@ -25,6 +25,8 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import DimensionFormDrawer from '~/components/patterns/DimensionFormDrawer.vue'
 import DimensionDetailDrawer from '~/components/patterns/DimensionDetailDrawer.vue'
 import { infoToast } from '~/utils/toasts'
@@ -32,6 +34,7 @@ import {
   dimensions, DIMENSIONS_QUOTA, setDimensionStatus, deleteDimension, addDimension, updateDimension,
   transactionTypeLabel, DIMENSION_TRANSACTION_TYPE_OPTIONS, type Dimension, type DimensionInput,
 } from '~/data/dimensions'
+import type { DimensionsQuotaScenario } from '~/composables/useDimensionsQuotaScenario'
 
 // A dimension edited/created via DimensionFormDrawer never stores the legacy
 // 'all' sentinel — it always saves an explicit array (see Dimension['transactionTypes']
@@ -254,45 +257,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
          empty state), stays otherwise. ── -->
     <template v-if="showFilters" #filters>
       <div class="filter-left">
-        <MpPopover id="dim-status-filter" is-close-on-select>
-          <MpPopoverTrigger>
-            <MpSelect
-              id="dim-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="dim-status-select" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
       </div>
       <div class="filter-right">
-        <div class="filter-btn-group">
+        <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
+        <MpButtonGroup class="filter-btn-group">
           <ColumnSettingsMenu id="dim-columns" :items="columnItems" :visibility="columnVisibility" />
-          <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="soon(t('Export'))">
-            <MpIcon name="download" size="md" />
-          </button>
-        </div>
+          <MpTooltip :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="soon(t('Export'))" />
+          </MpTooltip>
+        </MpButtonGroup>
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search dimension name')" />
         </div>
       </div>
@@ -340,13 +316,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`dim-actions-${(row as unknown as Dimension).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab btn-enterprise" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
+          <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -372,12 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No dimensions') }}</p>
         <p class="empty-full-desc">{{ t('Dimensions will appear here.') }}</p>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before empty-full-cta" type="button" @click="openCreateForm">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          {{ t('New dimension') }}
-        </button>
+        <MpButton variant="secondary" is-rounded left-icon="add" class="empty-full-cta" @click="openCreateForm">{{ t('New dimension') }}</MpButton>
       </div>
     </template>
 
@@ -406,22 +371,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB — preview the quota bar's Empty / Skeleton / under-quota
        ("Half") / at-quota ("Upgraded") states without touching real data, matching
        ApprovalWorkflowsPage.vue's demo-fab convention exactly. ── -->
-  <MpPopover id="dim-demo-fab" is-close-on-select use-portal placement="top-end">
-    <MpPopoverTrigger>
-      <button class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
-    </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
-      <p class="demo-fab-heading">{{ t('Dimensions quota state') }}</p>
-      <MpPopoverList>
-        <MpPopoverListItem :is-active="quotaScenario === 'live'" @click="setQuotaScenario('live')">{{ t('Live data') }}</MpPopoverListItem>
-        <MpPopoverListItem :is-active="quotaScenario === 'empty'" @click="setQuotaScenario('empty')">{{ t('Empty') }}</MpPopoverListItem>
-        <MpPopoverListItem :is-active="quotaScenario === 'under-quota'" @click="setQuotaScenario('under-quota')">{{ t('Under quota') }}</MpPopoverListItem>
-        <MpPopoverListItem :is-active="quotaScenario === 'skeleton'" @click="setQuotaScenario('skeleton')">{{ t('Skeleton') }}</MpPopoverListItem>
-      </MpPopoverList>
-    </MpPopoverContent>
-  </MpPopover>
+  <ScenarioFab
+    :model-value="quotaScenario"
+    :aria-label="t('Change scenario state')"
+    :scenarios="[
+      { label: t('Live data'), value: 'live' },
+      { label: t('Empty'), value: 'empty' },
+      { label: t('Under quota'), value: 'under-quota' },
+      { label: t('Skeleton'), value: 'skeleton' },
+    ]"
+    @update:model-value="(v: string) => setQuotaScenario(v as DimensionsQuotaScenario)"
+  />
 
   <!-- ── Archive confirmation modal — reversible (can be re-activated), so the
        primary button is the standard (non-danger) state. ── -->
@@ -443,10 +403,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('This dimension will no longer be available to tag on new transaction lines. You can activate it again anytime.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeArchiveModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">{{ t('Archive') }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="closeArchiveModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmArchive">{{ t('Archive') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -468,13 +428,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        {{ t('Deleted dimension cannot be restored, and any transaction lines tagged with it will lose that tag.') }}
+        {{ t('Deleted dimension cannot be restored.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="closeDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmDelete">{{ t('Delete dimension') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -500,10 +460,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('Contact your account manager or email support-mekarierp@mekari.com to increase your quota.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeAddQuotaModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeAddQuotaModal">{{ t('Contact account manager') }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="closeAddQuotaModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="closeAddQuotaModal">{{ t('Contact account manager') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -534,14 +494,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* ── Filter bar ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
-.filter-btn-group { display: flex; align-items: center; }
-.filter-icon-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  padding: var(--mp-spacing-2); border: none; background: transparent;
-  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
-}
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -569,12 +523,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-last-updated__by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
 .row-kebab {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  padding: 0; border: none; background: none;
-  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
+  display: flex !important; align-items: center; justify-content: center;
+  padding: var(--mp-spacing-1) !important; min-width: 0 !important;
+  border: none !important; background: transparent !important; cursor: pointer;
+  border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-secondary);
 }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
@@ -583,19 +537,4 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .empty-full-cta { margin-top: var(--mp-spacing-5); }
 
-.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-
-/* Demo scenario FAB — matches ApprovalWorkflowsPage.vue's convention exactly. */
-.demo-fab {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse);
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB, not a surface/card */
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

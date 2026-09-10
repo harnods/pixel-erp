@@ -16,11 +16,9 @@
     - none; copy is taken verbatim from the Figma source.
 
   CONVENTION OVERRIDES applied (Figma path only):
-    - Buttons: rebuilt as .btn-enterprise (primary/secondary/ghost) instead of
-      Figma's generic "Button (E)" component, matching this codebase's button
-      convention.
-    - "Learn more" text link and the like/dislike feedback controls use plain
-      buttons instead of a Pixel MpButton, for the same reason.
+    - Buttons are Pixel <MpButton is-rounded> (rule/btn-mpbutton-standard) rather
+      than Figma's generic "Button (E)" component; the ERP secondary look comes
+      from erp.css's global variant override, not .btn-enterprise.
     - Hero illustration and the 3 step thumbnails are flattened Figma exports
       (single PNGs) rather than hand-rebuilt nested layers — matches how the
       sibling TaxPaywallPage/MekariPayPaywallPage illustrations work.
@@ -35,7 +33,8 @@
       currently shows a "coming soon" toast.
 -->
 <script setup lang="ts">
-import { MpText, MpIcon, css } from '@mekari/pixel3'
+import { MpText, MpIcon, MpButton, MpTooltip, toast, css } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 
 const emit = defineEmits<{ activate: [] }>()
 
@@ -68,7 +67,7 @@ const COPY = {
   howItWorksTitle: t('How does this feature work?'),
   steps: [
     {
-      label: t('STEP 1'),
+      label: t('Step 1'),
       thumb: '/illustrations/dimensions-step-1.png',
       title: t('Activate and configure Dimensions'),
       items: [
@@ -77,7 +76,7 @@ const COPY = {
       ],
     },
     {
-      label: t('STEP 2'),
+      label: t('Step 2'),
       thumb: '/illustrations/dimensions-step-2.png',
       title: t('Use Dimensions in your transactions'),
       items: [
@@ -94,7 +93,7 @@ const COPY = {
       ],
     },
     {
-      label: t('STEP 3'),
+      label: t('Step 3'),
       thumb: '/illustrations/dimensions-step-3.png',
       title: t('Analyze your Multidimensional report'),
       items: [
@@ -112,6 +111,16 @@ const COPY = {
   ctaQuestion: t('Ready to track business performance with Dimensions?'),
   ctaButton: t('Activate Dimensions'),
   helpfulLabel: t('Was this helpful?'),
+}
+
+// "Learn more" has no destination yet, and the feedback pair records nothing —
+// both say so rather than looking clickable and doing nothing.
+function learnMore() { infoToast(t('Dimensions guide — coming soon')) }
+
+const feedback = ref<'up' | 'down' | ''>('')
+function sendFeedback(v: 'up' | 'down') {
+  feedback.value = v
+  toast.notify({ variant: 'success', title: t('Thanks for your feedback'), rootProps: { class: 'toast-enterprise' } })
 }
 
 // Sits inside the stage's own 24px padding (left/right/top/bottom) — no
@@ -134,18 +143,31 @@ const heroCol = css({
   position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '6',
   maxWidth: '480px', paddingLeft: '10', paddingBlock: '8',
 })
-// Native asset resolution (685×378) so it fills the card's full 378px height
-// without upscaling blur — a small crop top/bottom from overflow:hidden is
-// intentional, matching the reference's larger, edge-bleeding illustration.
+// The illustration is sized off the card's HEIGHT, not a fixed width: pinned to
+// the right edge and scaled to fill all 378px, so the card never shows bands of
+// bare background above and below it. Its width follows the asset's own ratio
+// and is cropped by the card's overflow:hidden; the text column sits above it
+// (heroCol z-1) over the illustration's empty left side.
 const heroImg = css({
-  position: 'absolute', top: '50%', right: '0', transform: 'translateY(-50%)',
-  width: '685px', height: 'auto', zIndex: 0, pointerEvents: 'none',
-  '@media (max-width: 1024px)': { display: 'none' },
+  position: 'absolute', top: '0', right: '0',
+  height: '100%', width: '58%',
+  // never wider than the space left of the text column (heroCol: 480px + its
+  // 40px inset), so it can't run under the CTA row
+  maxWidth: 'calc(100% - 520px)',
+  // cover, not contain: the illustration is scaled off the card's height and
+  // cropped horizontally, rather than shrunk until it no longer fills the card
+  objectFit: 'cover', objectPosition: 'right center',
+  zIndex: 0, pointerEvents: 'none',
+  // below this the leftover strip is too narrow to crop into anything
+  // recognisable, so the hero drops to text only
+  '@media (max-width: 1280px)': { display: 'none' },
 })
 
-// Headings share the same style Tag as the app's page-title H1 (24/600/32),
-// since MpText has no heading sizes in our Pixel build.
-const headingLg = css({ margin: 0, fontSize: '24px', fontWeight: '600', lineHeight: '32px', color: 'text.default', letterSpacing: '-0.2px' })
+// MpText has no heading sizes in our Pixel build, so the three heading roles are
+// spelled out here at their rule/type-scale sizes — H1 24, H2 20, H3 16, all
+// semibold (rule/type-heading-semibold).
+const headingH1 = css({ margin: 0, fontSize: '24px', fontWeight: '600', lineHeight: '32px', color: 'text.default', letterSpacing: '-0.2px' })
+const headingH2 = css({ margin: 0, fontSize: '20px', fontWeight: '600', lineHeight: '28px', color: 'text.default' })
 
 const content = css({ display: 'flex', flexDirection: 'column', gap: '10', width: '100%', maxWidth: '760px', marginInline: 'auto', paddingBlock: '5' })
 
@@ -163,7 +185,7 @@ const thumbImg = css({
   background: 'background.surface',
 })
 const stepText = css({ display: 'flex', flexDirection: 'column', gap: '1', minWidth: '260px', flex: 1 })
-const stepTitle = css({ margin: 0, fontSize: '20px', fontWeight: '600', lineHeight: '32px', color: 'text.default' })
+const stepTitle = css({ margin: 0, fontSize: '16px', fontWeight: '600', lineHeight: '24px', color: 'text.default' })
 const orderedList = css({ paddingLeft: '5', listStyleType: 'decimal', color: 'text.secondary' })
 const bulletList = css({ paddingLeft: '5', listStyleType: 'disc', color: 'text.secondary' })
 
@@ -183,12 +205,12 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
     <div :class="hero">
       <div :class="heroCol">
         <div :class="css({ display: 'flex', flexDirection: 'column', gap: '2' })">
-          <h1 :class="headingLg">{{ COPY.heroTitle }}</h1>
+          <h1 :class="headingH1">{{ COPY.heroTitle }}</h1>
           <MpText size="body" color="text.secondary">{{ COPY.heroBody }}</MpText>
         </div>
         <div :class="css({ display: 'flex', alignItems: 'center', gap: '4' })">
-          <button class="btn-enterprise btn-enterprise--primary" @click="emit('activate')">{{ COPY.primaryCta }}</button>
-          <button class="btn-enterprise btn-enterprise--ghost">{{ COPY.learnMore }}</button>
+          <MpButton variant="primary" is-rounded @click="emit('activate')">{{ COPY.primaryCta }}</MpButton>
+          <MpButton variant="ghost" is-rounded @click="learnMore">{{ COPY.learnMore }}</MpButton>
         </div>
       </div>
 
@@ -209,7 +231,7 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
 
       <!-- ── How does this feature work? ───────────────────────────────── -->
       <div :class="stepsSection">
-        <h2 :class="headingLg">{{ COPY.howItWorksTitle }}</h2>
+        <h2 :class="headingH2">{{ COPY.howItWorksTitle }}</h2>
 
         <div :class="stepsList">
           <div v-for="step in COPY.steps" :key="step.title" :class="css({ display: 'flex', flexDirection: 'column', gap: '3' })">
@@ -242,7 +264,7 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
       <div :class="ctaSection">
         <p :class="ctaQuestion">{{ COPY.ctaQuestion }}</p>
         <div>
-          <button class="btn-enterprise btn-enterprise--secondary" @click="emit('activate')">{{ COPY.ctaButton }}</button>
+          <MpButton variant="secondary" is-rounded @click="emit('activate')">{{ COPY.ctaButton }}</MpButton>
         </div>
       </div>
 
@@ -250,12 +272,22 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
       <div :class="feedbackRow">
         <MpText size="body" color="text.secondary">{{ COPY.helpfulLabel }}</MpText>
         <div :class="css({ display: 'flex', alignItems: 'center' })">
-          <button class="feedback-icon-btn" :aria-label="t('Yes, this was helpful')">
-            <MpIcon name="like" size="sm" color="icon.secondary" />
-          </button>
-          <button class="feedback-icon-btn" :aria-label="t('No, this was not helpful')">
-            <MpIcon name="dislike" size="sm" color="icon.secondary" />
-          </button>
+          <MpTooltip :label="t('Yes, this was helpful')" placement="top">
+            <MpButton
+              variant="ghost" left-icon="like" is-rounded
+              :class="feedback === 'up' ? 'feedback-btn feedback-btn--on' : 'feedback-btn'"
+              :aria-label="t('Yes, this was helpful')" :aria-pressed="feedback === 'up'"
+              @click="sendFeedback('up')"
+            />
+          </MpTooltip>
+          <MpTooltip :label="t('No, this was not helpful')" placement="top">
+            <MpButton
+              variant="ghost" left-icon="dislike" is-rounded
+              :class="feedback === 'down' ? 'feedback-btn feedback-btn--on' : 'feedback-btn'"
+              :aria-label="t('No, this was not helpful')" :aria-pressed="feedback === 'down'"
+              @click="sendFeedback('down')"
+            />
+          </MpTooltip>
         </div>
       </div>
     </div>
@@ -263,21 +295,6 @@ const feedbackRow = css({ display: 'flex', alignItems: 'center', gap: '2' })
 </template>
 
 <style scoped>
-.feedback-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-9, 36px);
-  height: var(--mp-sizes-9, 36px);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: var(--mp-radii-md);
-  padding: 0;
-  transition: background 0.1s ease;
-}
-
-.feedback-icon-btn:hover {
-  background: var(--mp-background-neutral-hovered);
-}
+/* The chosen thumb stays filled in, so the answer is visibly recorded. */
+.feedback-btn--on :deep(svg) { color: var(--mp-colors-icon-default, #1d1f24); }
 </style>

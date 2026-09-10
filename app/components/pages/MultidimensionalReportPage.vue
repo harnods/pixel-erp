@@ -28,16 +28,18 @@ import {
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import MultidimensionalFiltersDrawer from '~/components/patterns/MultidimensionalFiltersDrawer.vue'
+import MultidimensionalFiltersDrawer, { type MdFiltersApply } from '~/components/patterns/MultidimensionalFiltersDrawer.vue'
 import MultidimensionalCompareDrawer from '~/components/patterns/MultidimensionalCompareDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import {
   MD_SECTIONS, reportDimensions, getReportDimension, usingDemoDimensions, mdAmount, mdSectionTotal, mdProfitLines,
-  emptyMdFilters, emptyCompareSettings, comparePeriodLabel, comparePeriodCount,
+  emptyMdFilters, normalizeMdFilters, mdTagShare,
+  emptyCompareSettings, comparePeriodLabel, comparePeriodCount,
   multidimensionalViews, addMdView, updateMdView, deleteMdView,
   type MdAccount, type MdFilters, type MdSavedView, type MdCompareSettings,
 } from '~/data/multidimensionalReport'
+import { bills } from '~/data/bills'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -46,8 +48,9 @@ const router = useRouter()
 function d(y: number, m: number, day: number) { return new Date(y, m, day) }
 const pendingRange = ref<Date[]>([d(2026, 11, 1), d(2026, 11, 31)])
 const appliedRange = ref<Date[]>([d(2026, 11, 1), d(2026, 11, 31)])
-const formError = ref('')
-function onPendingChange(v: Date[]) { pendingRange.value = v; formError.value = '' }
+const dateError = ref('')
+const dimensionError = ref('')
+function onPendingChange(v: Date[]) { pendingRange.value = v; dateError.value = '' }
 
 // ── Dimension ────────────────────────────────────────────────────────────────
 const dimensionOptions = computed(() => reportDimensions())
@@ -59,7 +62,7 @@ const pendingDimensionId = ref('')
 const appliedDimensionId = ref('')
 const pendingDimensionName = computed(() => getReportDimension(pendingDimensionId.value)?.name ?? '')
 const appliedDimension = computed(() => getReportDimension(appliedDimensionId.value))
-function pickDimension(id: string) { pendingDimensionId.value = id; formError.value = '' }
+function pickDimension(id: string) { pendingDimensionId.value = id; dimensionError.value = '' }
 
 // ── Report generation — idle (prompt) → loading (skeleton) → ready ───────────
 const reportState = ref<'idle' | 'loading' | 'ready'>('idle')
@@ -73,10 +76,11 @@ onBeforeUnmount(() => { if (genTimer) clearTimeout(genTimer) })
 
 function applyReport() {
   const [s, e] = pendingRange.value
-  if (!s || !e) { formError.value = t('You must fill in date range'); return }
-  if (s > e) { formError.value = t('Start date cannot be after end date.'); return }
-  if (!pendingDimensionId.value) { formError.value = t('You must fill in dimension'); return }
-  formError.value = ''
+  dateError.value = ''
+  dimensionError.value = ''
+  if (!s || !e) { dateError.value = t('You must fill in date range'); return }
+  if (s > e) { dateError.value = t('Start date cannot be after end date.'); return }
+  if (!pendingDimensionId.value) { dimensionError.value = t('You must select dimension'); return }
   appliedRange.value = [...pendingRange.value]
   appliedDimensionId.value = pendingDimensionId.value
   syncColumnVisibility()
@@ -151,26 +155,56 @@ const periods = computed<MdPeriod[]>(() => {
 })
 const primaryKey = computed(() => periods.value[0]?.key ?? '')
 
-// ── Filters ──────────────────────────────────────────────────────────────────
+// ── Filters (All filters drawer, Figma 4926-67880) ───────────────────────────
+// The drawer owns the period and the dimension too, so its Apply is the report's
+// Apply: it commits the staged period/dimension AND the value filters, then
+// regenerates in one step.
 const filters = reactive<MdFilters>(emptyMdFilters())
 const drawerOpen = ref(false)
-function onApplyFilters(v: MdFilters) {
+/** Tags recorded on transactions — the Tags filter's option list. */
+const tagOptions = computed(() => [...new Set(bills.flatMap((b) => b.tags ?? []))].sort())
+function applyFilters(v: MdFilters) {
+  filters.valuesComparator = v.valuesComparator
   filters.values = [...v.values]
+  filters.tagsComparator = v.tagsComparator
+  filters.tags = [...v.tags]
   filters.accountKeyword = v.accountKeyword
   filters.showZero = v.showZero
+}
+function onApplyFilters(v: MdFiltersApply) {
+  if (v.range) { pendingRange.value = [...v.range]; appliedRange.value = [...v.range] }
+  pendingDimensionId.value = v.dimensionId
+  appliedDimensionId.value = v.dimensionId
+  dateError.value = ''
+  dimensionError.value = ''
+  applyFilters(v.filters)
   syncColumnVisibility()
-  if (reportState.value !== 'idle') generate()
+  generate()
 }
 const activeFilterCount = computed(() =>
-  filters.values.length + (filters.accountKeyword ? 1 : 0) + (filters.showZero ? 0 : 1))
-function resetFilters() { filters.values = []; filters.accountKeyword = ''; filters.showZero = true; syncColumnVisibility() }
-function removeValue(v: string) { filters.values = filters.values.filter((x) => x !== v) }
+  filters.values.length + filters.tags.length + (filters.accountKeyword ? 1 : 0) + (filters.showZero ? 0 : 1))
+function resetFilters() { applyFilters(emptyMdFilters()); syncColumnVisibility() }
+
+/**
+ * Share of every posted amount the Tags filter keeps. The report's numbers are
+ * generated rather than posted, so a tag scope can't be summed for real — it
+ * scales each amount deterministically instead (see `mdTagShare`), and because
+ * every subtotal re-sums the scaled amounts the arithmetic stays consistent.
+ */
+const tagShare = computed(() => mdTagShare(filters.tagsComparator, filters.tags))
 
 // ── Columns (dimension values + TOTAL) ───────────────────────────────────────
-/** Values kept by the filter drawer — empty selection means "all of them". */
+/**
+ * Values kept by the filter drawer — empty selection means "all of them".
+ * "Is all of" / "Is any of" scope the report DOWN to the picked values; "Is none
+ * of" drops them and keeps the rest.
+ */
 const filteredValues = computed(() => {
   const all = appliedDimension.value?.values ?? []
-  return filters.values.length ? all.filter((v) => filters.values.includes(v)) : all
+  if (!filters.values.length) return all
+  return filters.valuesComparator === 'isNoneOf'
+    ? all.filter((v) => !filters.values.includes(v))
+    : all.filter((v) => filters.values.includes(v))
 })
 const colVis = reactive<Record<string, boolean>>({ total: true })
 /** Re-seed visibility whenever the column set changes (new dimension / filter). */
@@ -195,7 +229,7 @@ function matchesKeyword(a: MdAccount) {
 /** An account row is dropped when the "no activity" toggle is off and every
  *  visible column is zero. */
 function hasActivity(a: MdAccount) {
-  return valueColumns.value.some((v) => mdAmount(a.code, v, primaryKey.value) !== 0)
+  return valueColumns.value.some((v) => mdAmount(a.code, v, primaryKey.value, tagShare.value) !== 0)
 }
 function accountFilter(a: MdAccount) { return matchesKeyword(a) && (filters.showZero || hasActivity(a)) }
 
@@ -207,20 +241,20 @@ const sections = computed(() =>
 const hasRows = computed(() => sections.value.length > 0 && valueColumns.value.length > 0)
 
 // ── Amounts ──────────────────────────────────────────────────────────────────
-function amount(code: string, value: string, key: string) { return mdAmount(code, value, key) }
+function amount(code: string, value: string, key: string) { return mdAmount(code, value, key, tagShare.value) }
 function rowTotal(code: string, key: string) {
-  return valueColumns.value.reduce((sum, v) => sum + mdAmount(code, v, key), 0)
+  return valueColumns.value.reduce((sum, v) => sum + mdAmount(code, v, key, tagShare.value), 0)
 }
 function sectionAmount(sectionKey: string, value: string, key: string) {
   const s = MD_SECTIONS.find((x) => x.key === sectionKey)!
-  return mdSectionTotal(s, value, key, accountFilter)
+  return mdSectionTotal(s, value, key, accountFilter, tagShare.value)
 }
 function sectionTotal(sectionKey: string, key: string) {
   return valueColumns.value.reduce((sum, v) => sum + sectionAmount(sectionKey, v, key), 0)
 }
 type ProfitKey = 'grossProfit' | 'operatingProfit' | 'netProfit'
 function profit(which: ProfitKey, value: string, key: string) {
-  return mdProfitLines(value, key, accountFilter)[which]
+  return mdProfitLines(value, key, accountFilter, tagShare.value)[which]
 }
 function profitTotal(which: ProfitKey, key: string) {
   return valueColumns.value.reduce((sum, v) => sum + profit(which, v, key), 0)
@@ -284,7 +318,7 @@ const columnGroups = computed<MdGroup[]>(() => {
     return periods.value.map((p, i) => ({
       id: `p-${i}`,
       label: p.label,
-      cols: valuesWithTotal.value.flatMap((v) => (i === 0 ? [amountCol(v, valueLabel(v), i)] : [amountCol(v, valueLabel(v), i), deltaCol(v, i)])),
+      cols: valuesWithTotal.value.map((v) => amountCol(v, valueLabel(v), i)),
     }))
   }
   return valuesWithTotal.value.map((v) => ({
@@ -296,6 +330,73 @@ const columnGroups = computed<MdGroup[]>(() => {
 /** Flattened columns, in render order — the body iterates this. */
 const flatColumns = computed(() => columnGroups.value.flatMap((g) => g.cols))
 const grouped = computed(() => compareOn.value && periods.value.length > 1)
+
+/**
+ * Column ids that start a divider — ungrouped, that's every value column
+ * (the plain "divider between dimension values" case); grouped, it's only
+ * each band's first column, so the divider marks period/dimension GROUP
+ * boundaries, not every column inside one. A delta (variance) column never
+ * starts a divider — it stays visually attached to the amount it explains.
+ */
+const dividerStarts = computed<Set<string>>(() => {
+  const set = new Set<string>()
+  if (!grouped.value) {
+    for (const c of flatColumns.value) if (c.kind === 'amount') set.add(c.id)
+  } else {
+    for (const g of columnGroups.value) if (g.cols[0]) set.add(g.cols[0].id)
+  }
+  return set
+})
+function hasDivider(c: MdCol): boolean { return dividerStarts.value.has(c.id) }
+
+/**
+ * The band row's real rendered height, measured — not guessed — so the leaf
+ * header row underneath can stick flush below it. A hardcoded offset drifts
+ * out of sync with padding/font changes and opens a gap the tbody's own rows
+ * (e.g. the section header) show through during scroll, in front of where
+ * the sticky header should be. `undefined` while ungrouped, since then
+ * there's no band row for the leaf row to sit under.
+ */
+const bandRowEl = ref<HTMLTableRowElement | null>(null)
+const bandRowHeight = ref(0)
+let bandRowObserver: ResizeObserver | null = null
+watch(bandRowEl, (el) => {
+  bandRowObserver?.disconnect()
+  bandRowObserver = null
+  if (!el) { bandRowHeight.value = 0; return }
+  bandRowObserver = new ResizeObserver(() => { bandRowHeight.value = el.offsetHeight })
+  bandRowObserver.observe(el)
+  bandRowHeight.value = el.offsetHeight
+}, { flush: 'post' })
+onBeforeUnmount(() => bandRowObserver?.disconnect())
+const leafRowTop = computed(() => (grouped.value ? `${bandRowHeight.value}px` : undefined))
+
+// ── Column widths — the divider between value columns doubles as a drag
+// handle, so each column can be minimised/maximised independently. ─────────
+const DEFAULT_COL_WIDTH: Record<MdCol['kind'], number> = { amount: 180, delta: 84 }
+const MIN_COL_WIDTH: Record<MdCol['kind'], number> = { amount: 80, delta: 56 }
+const MAX_COL_WIDTH = 480
+const colWidths = reactive<Record<string, number>>({})
+function colWidth(c: MdCol): number { return colWidths[c.id] ?? DEFAULT_COL_WIDTH[c.kind] }
+
+const resizingId = ref('')
+function startResize(c: MdCol, e: MouseEvent) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startWidth = colWidth(c)
+  resizingId.value = c.id
+  function onMove(ev: MouseEvent) {
+    const next = startWidth + (ev.clientX - startX)
+    colWidths[c.id] = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH[c.kind], next))
+  }
+  function onUp() {
+    resizingId.value = ''
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 /** Resolves one row's amount for any (value, period) pair. */
 type RowAmount = (value: string, key: string) => number
@@ -345,9 +446,7 @@ function selectView(id: string) {
   activeViewId.value = id
   const v = multidimensionalViews.find((x) => x.id === id)
   if (v) {
-    filters.values = [...v.filters.values]
-    filters.accountKeyword = v.filters.accountKeyword
-    filters.showZero = v.filters.showZero
+    applyFilters(normalizeMdFilters(v.filters))
     if (getReportDimension(v.dimensionId)) {
       pendingDimensionId.value = v.dimensionId
       appliedDimensionId.value = v.dimensionId
@@ -422,7 +521,7 @@ function buildReportGround(): string {
     return 'Multidimensional report (Reports › Financials › Multidimensional), IDR. No report generated yet — the user has not applied a period and dimension.'
   }
   const lines = valueColumns.value.map((v) => {
-    const p = mdProfitLines(v, primaryKey.value, accountFilter)
+    const p = mdProfitLines(v, primaryKey.value, accountFilter, tagShare.value)
     return `- ${v}: revenue ${formatIDR(sectionAmount('revenue', v, primaryKey.value))}, `
       + `cost of sales ${formatIDR(sectionAmount('cost-of-sales', v, primaryKey.value))}, `
       + `operating expenses ${formatIDR(sectionAmount('operating-expenses', v, primaryKey.value))}, `
@@ -499,6 +598,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
               :placeholder="t('Select date')"
               @update:model-value="onPendingChange"
             />
+            <p v-if="dateError" class="mdr-field-error">{{ dateError }}</p>
           </div>
 
           <div class="mdr-dimfield">
@@ -511,6 +611,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                   id="mdr-dimension-select"
                   :placeholder="t('Select dimension')"
                   :model-value="pendingDimensionId"
+                  :is-invalid="!!dimensionError"
                   :class="css({ width: '180px' })"
                   @mousedown.prevent
                 >
@@ -530,13 +631,20 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
+            <p v-if="dimensionError" class="mdr-field-error">{{ dimensionError }}</p>
           </div>
 
-          <button class="mdr-apply" type="button" @click="applyReport">{{ t('Apply') }}</button>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before mdr-allfilters" type="button" @click="drawerOpen = true">
-            <MpIcon name="filter" size="sm" /> {{ t('All filters') }}
-            <span v-if="activeFilterCount" class="mdr-allfilters-count">{{ activeFilterCount }}</span>
-          </button>
+          <div class="mdr-btnfield">
+            <span class="mdr-field-label mdr-field-label--ghost" aria-hidden="true">&nbsp;</span>
+            <button class="mdr-apply" type="button" @click="applyReport">{{ t('Apply') }}</button>
+          </div>
+          <div class="mdr-btnfield">
+            <span class="mdr-field-label mdr-field-label--ghost" aria-hidden="true">&nbsp;</span>
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before mdr-allfilters" type="button" @click="drawerOpen = true">
+              <MpIcon name="filter" size="sm" /> {{ t('All filters') }}
+              <span v-if="activeFilterCount" class="mdr-allfilters-count">{{ activeFilterCount }}</span>
+            </button>
+          </div>
         </div>
 
         <div class="mdr-controls-right">
@@ -578,19 +686,10 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
           <MpIcon name="caret-down" size="sm" />
         </button>
       </div>
-      <p v-if="!fullscreen && formError" class="mdr-form-error">{{ formError }}</p>
       <p v-if="!fullscreen && isDemoDimensions" class="mdr-demo-note">
         {{ t('Showing sample dimensions.') }}
         <a class="mdr-demo-link" @click="router.push('/dimensions')">{{ t('Set up your dimensions') }}</a>
       </p>
-
-      <!-- Active-filter badges -->
-      <div v-if="!fullscreen && activeFilterCount" class="mdr-badges">
-        <span v-if="filters.accountKeyword" class="mdr-fbadge">“{{ filters.accountKeyword }}”<button type="button" :aria-label="t('Remove')" @click="filters.accountKeyword = ''"><MpIcon name="close" size="sm" /></button></span>
-        <span v-for="v in filters.values" :key="`v-${v}`" class="mdr-fbadge">{{ v }}<button type="button" :aria-label="t('Remove')" @click="removeValue(v)"><MpIcon name="close" size="sm" /></button></span>
-        <span v-if="!filters.showZero" class="mdr-fbadge">{{ t('Hiding accounts with no activity') }}<button type="button" :aria-label="t('Remove')" @click="filters.showZero = true"><MpIcon name="close" size="sm" /></button></span>
-        <button class="mdr-reset" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
-      </div>
 
       <!-- ── View tabs ── -->
       <div v-if="!fullscreen" class="mdr-viewbar">
@@ -677,16 +776,42 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 
           <!-- Ready + data (Figma frames 2 & 4; grouped header per 4836-67530) -->
           <div v-else-if="hasRows" class="mdr-table-wrap">
-            <table class="mdr-table">
+            <table class="mdr-table mdr-table--resizable">
+              <colgroup>
+                <col style="width: 280px" />
+                <col v-for="c in flatColumns" :key="c.id" :style="{ width: colWidth(c) + 'px' }" />
+              </colgroup>
               <thead>
                 <!-- Band row — only when comparing: dimension value, or period. -->
-                <tr v-if="grouped">
+                <tr v-if="grouped" ref="bandRowEl">
                   <th class="mdr-th mdr-th--account mdr-th--band" />
-                  <th v-for="g in columnGroups" :key="g.id" class="mdr-th mdr-th--band" :colspan="g.cols.length">{{ g.label }}</th>
+                  <th
+                    v-for="g in columnGroups"
+                    :key="g.id"
+                    class="mdr-th mdr-th--band"
+                    :class="{ 'mdr-th--divider': g.cols[0] && hasDivider(g.cols[0]) }"
+                    :colspan="g.cols.length"
+                  >{{ g.label }}</th>
                 </tr>
                 <tr>
-                  <th class="mdr-th mdr-th--account" />
-                  <th v-for="c in flatColumns" :key="c.id" class="mdr-th mdr-th--num" :class="{ 'mdr-th--delta': c.kind === 'delta' }">{{ c.label }}</th>
+                  <th class="mdr-th mdr-th--account" :style="{ top: leafRowTop }" />
+                  <th
+                    v-for="c in flatColumns"
+                    :key="c.id"
+                    class="mdr-th mdr-th--num"
+                    :class="{ 'mdr-th--delta': c.kind === 'delta', 'mdr-th--divider': hasDivider(c) }"
+                    :style="{ top: leafRowTop }"
+                  >
+                    <span class="mdr-th-cell">
+                      <span class="mdr-th-label">{{ c.label }}</span>
+                      <span
+                        class="mdr-col-resizer"
+                        :class="{ 'is-active': resizingId === c.id }"
+                        @mousedown="startResize(c, $event)"
+                        @click.stop
+                      />
+                    </span>
+                  </th>
                 </tr>
               </thead>
 
@@ -695,7 +820,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                   <!-- Section header -->
                   <tr class="mdr-row mdr-row--section">
                     <td class="mdr-td mdr-td--account mdr-td--section">{{ t(s.label).toUpperCase() }}</td>
-                    <td v-for="c in flatColumns" :key="c.id" class="mdr-td mdr-td--section" />
+                    <td v-for="c in flatColumns" :key="c.id" class="mdr-td mdr-td--section" :class="{ 'mdr-td--divider': hasDivider(c) }" />
                   </tr>
 
                   <!-- Accounts -->
@@ -707,7 +832,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                       v-for="c in flatColumns"
                       :key="c.id"
                       class="mdr-td mdr-td--num"
-                      :class="{ 'mdr-td--delta': c.kind === 'delta' }"
+                      :class="{ 'mdr-td--delta': c.kind === 'delta', 'mdr-td--divider': hasDivider(c) }"
                     >
                       <span v-if="c.kind === 'delta'" class="mdr-delta" :class="`mdr-delta--${cellTrend(accountRow(a.code), c)}`">
                         <MpIcon v-if="cellTrend(accountRow(a.code), c)" :name="cellTrend(accountRow(a.code), c) > 0 ? 'caret-up' : 'caret-down'" size="sm" />
@@ -724,7 +849,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                       v-for="c in flatColumns"
                       :key="c.id"
                       class="mdr-td mdr-td--num mdr-strong"
-                      :class="{ 'mdr-td--delta': c.kind === 'delta' }"
+                      :class="{ 'mdr-td--delta': c.kind === 'delta', 'mdr-td--divider': hasDivider(c) }"
                     >
                       <span v-if="c.kind === 'delta'" class="mdr-delta" :class="`mdr-delta--${cellTrend(subtotalRow(s.key), c)}`">
                         <MpIcon v-if="cellTrend(subtotalRow(s.key), c)" :name="cellTrend(subtotalRow(s.key), c) > 0 ? 'caret-up' : 'caret-down'" size="sm" />
@@ -741,7 +866,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
                       v-for="c in flatColumns"
                       :key="c.id"
                       class="mdr-td mdr-td--num mdr-strong"
-                      :class="{ 'mdr-td--delta': c.kind === 'delta' }"
+                      :class="{ 'mdr-td--delta': c.kind === 'delta', 'mdr-td--divider': hasDivider(c) }"
                     >
                       <span v-if="c.kind === 'delta'" class="mdr-delta" :class="`mdr-delta--${cellTrend(profitRow(profitAfter(s.key)!.key), c)}`">
                         <MpIcon v-if="cellTrend(profitRow(profitAfter(s.key)!.key), c)" :name="cellTrend(profitRow(profitAfter(s.key)!.key), c) > 0 ? 'caret-up' : 'caret-down'" size="sm" />
@@ -769,8 +894,10 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
     <MultidimensionalFiltersDrawer
       v-model:is-open="drawerOpen"
       :model-value="filters"
-      :dimension-name="appliedDimension?.name ?? pendingDimensionName"
-      :value-options="(appliedDimension ?? getReportDimension(pendingDimensionId))?.values ?? []"
+      :range="pendingRange"
+      :dimension-id="pendingDimensionId"
+      :dimension-options="dimensionOptions"
+      :tag-options="tagOptions"
       @apply="onApplyFilters"
     />
 
@@ -817,7 +944,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 <style scoped>
 .mdr { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-.mdr-titlebar { flex-shrink: 0; min-height: 72px; background: var(--mp-background-neutral-subtle); display: flex; align-items: center; padding: 0 var(--mp-spacing-6); }
+.mdr-titlebar { flex-shrink: 0; min-height: 72px; background: var(--mp-background-neutral-subtle, #f8f9f9); display: flex; align-items: center; padding: 0 var(--mp-spacing-6); }
 .mdr-titlebar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; }
 .mdr-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-link); font-family: inherit; }
 .mdr-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -828,38 +955,40 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 
 /* Controls */
 .mdr-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.mdr-controls-left { display: flex; align-items: flex-end; gap: var(--mp-spacing-3); flex-wrap: wrap; }
+/* flex-start (not flex-end) — a field's error caption grows it downward, and
+   top-aligning keeps every field's control lined up regardless, instead of the
+   whole row jumping to a new shared baseline when one field grows. */
+.mdr-controls-left { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .mdr-controls-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .mdr-datefield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 220px; }
 .mdr-dimfield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+/* Apply / All filters have no label of their own — a hidden ghost label of the
+   same height keeps their button lined up with the fields' controls. */
+.mdr-btnfield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .mdr-field-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); line-height: var(--mp-line-heights-sm, 16px); }
+.mdr-field-label--ghost { visibility: hidden; }
+.mdr-field-error { margin: var(--mp-spacing-1, 4px) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 .mdr-apply { height: 36px; padding: 0 var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: pointer; font-family: inherit; }
 .mdr-apply:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 .mdr-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 999px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
 .mdr-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
-.mdr-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.mdr-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .mdr-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
 .mdr-export { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 
 /* Compare */
-.mdr-comparebar { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.mdr-comparebar { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); }
 .mdr-compare-trigger { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); border: none; background: none; padding: 0; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .mdr-compare-label { font-weight: var(--mp-font-weights-semi-bold, 600); }
 .mdr-compare-basis { color: var(--mp-text-secondary); }
-.mdr-form-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 .mdr-demo-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mdr-demo-link { color: var(--mp-text-link); cursor: pointer; }
 .mdr-demo-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Filter badges */
-.mdr-badges { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.mdr-fbadge { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #eceef0); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
-.mdr-fbadge button { display: inline-flex; align-items: center; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); padding: 0; }
-.mdr-fbadge button:hover { color: var(--mp-text-default); }
-.mdr-reset { border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); text-decoration: underline; text-underline-offset: 2px; font-family: inherit; }
 
 /* View tabs */
-.mdr-viewbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--mp-border-default); }
+.mdr-viewbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .mdr-views { display: flex; align-items: center; gap: var(--mp-spacing-5); }
 .mdr-viewtab { position: relative; border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-3) 0; }
 .mdr-viewtab:not(.is-active):hover { color: var(--mp-text-default); }
@@ -873,12 +1002,12 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 .mdr-view-kebab { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-sm, 4px); visibility: hidden; }
 .mdr-viewtab-wrap:hover .mdr-view-kebab,
 .mdr-viewtab-wrap:focus-within .mdr-view-kebab { visibility: visible; }
-.mdr-view-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+.mdr-view-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 .mdr-viewtab--editing { display: inline-flex; align-items: center; padding: var(--mp-spacing-2) 0; }
 .mdr-viewtab-input { width: 140px; height: 28px; padding: 0 8px; border: 1px solid var(--mp-border-brand, #0a6e4e); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; font-family: inherit; }
 .mdr-viewbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .mdr-fs-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, #536062); }
-.mdr-fs-btn:hover { background: var(--mp-background-neutral-subtle); }
+.mdr-fs-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Report */
 .mdr-report { display: flex; flex-direction: column; min-width: 0; }
@@ -892,37 +1021,57 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 .mdr-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 
 .mdr-th {
-  position: sticky; top: 0; z-index: 2;
+  position: sticky; top: 0; z-index: 2; box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral, #fff);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f4f5f7);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: 0.3px; color: var(--mp-text-secondary);
   text-align: right; white-space: nowrap;
 }
 .mdr-th--num { min-width: 160px; }
-.mdr-th--account { left: 0; z-index: 3; width: 280px; min-width: 280px; text-align: left; border-right: 1px solid var(--mp-border-default); }
+/* `.mdr-th-cell` is a positioning box ONLY (no overflow:hidden) — it must not
+   be `.mdr-th--num` itself: that cell inherits `position: sticky` from
+   `.mdr-th`, and overriding it with `relative` for a containing block (same
+   specificity, declared later) previously broke stickiness outright — the
+   row's sticky `top` offset silently became a normal-flow nudge instead of a
+   scroll pin. `.mdr-col-resizer` needs to hang half outside its box (see
+   `right: -4px` below); giving *this* wrapper `overflow: hidden` for ellipsis
+   would clip the handle again, so truncation lives on the inner
+   `.mdr-th-label` instead, leaving this box free to let the handle overflow. */
+.mdr-th-cell { position: relative; display: block; height: 100%; }
+.mdr-th-label { display: block; overflow: hidden; text-overflow: ellipsis; }
+.mdr-th--account { left: 0; z-index: 3; width: 280px; min-width: 280px; text-align: left; border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Comparison band row — the dimension value (or period) each column set belongs
-   to, centred over its columns and separated from the next band. */
-.mdr-th--band { top: 0; text-align: center; border-bottom: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); }
-.mdr-th--band.mdr-th--account { border-left: none; }
-/* The sub-header row sits below the band row, so it can't also stick at top: 0. */
-.mdr-table thead tr:nth-child(2) .mdr-th { top: 33px; }
+   to, left-aligned over its columns. Its own left border is dropped in favour
+   of `.mdr-th--divider`, which only lands on an actual group boundary. */
+.mdr-th--band { top: 0; text-align: left; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+/* Divider — a dimension-value column when ungrouped, a whole band's worth of
+   columns when grouped (never around a delta/variance column either way); see
+   `dividerStarts`/`hasDivider`. One rule, reused on every row type below so the
+   line runs unbroken from the header straight through to the last body row. */
+.mdr-th--divider, .mdr-td--divider { border-left: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Change columns are narrow — they hold "▲ 12%", not money. */
-.mdr-th--delta { min-width: 84px; }
+.mdr-th--delta { min-width: 84px; text-align: left; }
+/* Fixed layout so a column's <col> width (drag-resized or not) actually holds —
+   auto layout would keep growing a column to fit its widest cell. */
+.mdr-table--resizable { table-layout: fixed; }
+.mdr-col-resizer { position: absolute; top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; z-index: 4; }
+.mdr-col-resizer:hover, .mdr-col-resizer.is-active { background: var(--mp-border-brand, #0a6e4e); opacity: 0.4; }
 
 .mdr-td {
   height: 40px; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default);
   vertical-align: middle; white-space: nowrap; background: var(--mp-background-neutral, #fff);
+  box-sizing: border-box;
 }
-.mdr-td--num { text-align: right; font-variant-numeric: tabular-nums; }
-.mdr-td--account { position: sticky; left: 0; z-index: 1; width: 280px; min-width: 280px; border-right: 1px solid var(--mp-border-default); overflow: hidden; text-overflow: ellipsis; }
+.mdr-td--num { text-align: right; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.mdr-td--account { position: sticky; left: 0; z-index: 1; width: 280px; min-width: 280px; border-right: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; text-overflow: ellipsis; }
 .mdr-strong { font-weight: var(--mp-font-weights-semi-bold, 600); }
 /* Change cell — the caret carries the direction, so the figure stays unsigned. */
-.mdr-td--delta { padding-left: var(--mp-spacing-1); }
-.mdr-delta { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+.mdr-td--delta { padding-left: var(--mp-spacing-1); text-align: left; }
+.mdr-delta { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); font-variant-numeric: tabular-nums; }
 .mdr-delta--1 { color: var(--mp-text-success, #12805c); }
 .mdr-delta--0 { color: var(--mp-text-secondary); }
 .mdr-delta---1 { color: var(--mp-text-danger, #c62828); }
@@ -934,7 +1083,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 .mdr-row--section .mdr-td { background: var(--mp-background-neutral-subtle, #f4f5f7); }
 .mdr-td--section { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); text-transform: uppercase; letter-spacing: 0.3px; color: var(--mp-text-secondary); height: 32px; }
 .mdr-row:hover .mdr-td:not(.mdr-td--section) { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.mdr-row--profit .mdr-td { border-top: 1px solid var(--mp-border-default); }
+.mdr-row--profit .mdr-td { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 
 /* Empty + skeleton */
 .mdr-empty { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
@@ -942,8 +1091,8 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 .mdr-empty-img { width: 240px; height: 200px; object-fit: contain; }
 .mdr-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .mdr-empty-desc { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.mdr-empty-cta { margin-top: var(--mp-spacing-3); height: 36px; padding: 0 var(--mp-spacing-4); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); font-family: inherit; }
-.mdr-skel { display: inline-block; background-color: var(--mp-border-default) !important; background-image: none !important; animation: none !important; }
+.mdr-empty-cta { margin-top: var(--mp-spacing-3); height: 36px; padding: 0 var(--mp-spacing-4); border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #ffffff); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); font-family: inherit; }
+.mdr-skel { display: inline-block; background-color: var(--mp-border-default, #e3e7e9) !important; background-image: none !important; animation: none !important; }
 
 /* All-views drawer */
 .mdr-vd-enter-active, .mdr-vd-leave-active { transition: background-color 200ms ease; }
@@ -952,14 +1101,14 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 .mdr-vd-enter-from .mdr-vd-panel, .mdr-vd-leave-to .mdr-vd-panel { transform: translateX(calc(100% + 12px)); }
 .mdr-vd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .mdr-vd-panel { margin: var(--mp-spacing-3); width: min(400px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden; }
-.mdr-vd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.mdr-vd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .mdr-vd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .mdr-vd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.mdr-vd-close:hover { background: var(--mp-background-neutral-hovered); }
+.mdr-vd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .mdr-vd-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .mdr-vd-hint { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mdr-view-item { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); flex: 1; font-family: inherit; }
-.mdr-view-item:hover { background: var(--mp-background-neutral-subtle); }
+.mdr-view-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .mdr-view-item.is-active { background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); font-weight: var(--mp-font-weights-medium, 500); }
 .mdr-view-item-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .mdr-view-del { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-subtle, #97a0af); }

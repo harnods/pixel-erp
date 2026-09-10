@@ -35,13 +35,17 @@ import {
   type Dimension, type DimensionInput, type DimensionTransactionType, type DimensionValue,
 } from '~/data/dimensions'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   id: string
   isOpen: boolean
   mode: 'create' | 'edit'
   /** The dimension being edited — null/undefined in create mode. */
   modelValue?: Dimension | null
-}>()
+  /** 'transaction' when opened inline from a transaction form (e.g. ErpDimensionTagUpsell)
+   *  instead of from Settings > Dimensions itself — swaps the header close control for a
+   *  "view in Settings" shortcut, since closing here would just re-open the same upsell. */
+  context?: 'settings' | 'transaction'
+}>(), { context: 'settings' })
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'save', v: DimensionInput): void
@@ -185,10 +189,11 @@ function onUserAccessSaved(ids: string[]) {
 //    transactions used a given value, so there's nothing further to migrate. ──
 const transferOpen = ref(false)
 const transferTarget = ref('')
+const transferError = ref(false)
 const transferOptions = computed(() => draft.values.filter((v) => !selectedValueNames.value.has(v.name)))
-function openTransfer() { transferTarget.value = ''; transferOpen.value = true }
+function openTransfer() { transferTarget.value = ''; transferError.value = false; transferOpen.value = true }
 function confirmTransfer() {
-  if (!transferTarget.value) return
+  if (!transferTarget.value) { transferError.value = true; return }
   const movedCount = selectedValueNames.value.size
   const target = transferTarget.value
   draft.values = draft.values.filter((v) => !selectedValueNames.value.has(v.name))
@@ -203,6 +208,7 @@ function confirmTransfer() {
 }
 
 function close() { emit('update:isOpen', false) }
+function viewInSettings() { window.open('/dimensions', '_blank', 'noopener') }
 function save() {
   nameError.value = !draft.name.trim()
   typesError.value = selectedTypeLabels.value.length === 0
@@ -219,7 +225,11 @@ function save() {
       <div class="dfd-panel" role="dialog" :aria-label="mode === 'create' ? t('New dimension') : t('Edit dimension')">
         <header class="dfd-header">
           <span class="dfd-title">{{ mode === 'create' ? t('New dimension') : t('Edit dimension') }}</span>
-          <button class="dfd-close" type="button" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></button>
+          <button
+            v-if="context === 'transaction'"
+            class="dfd-close" type="button" :aria-label="t('View in Settings')" @click="viewInSettings"
+          ><MpIcon name="newtab" size="md" /></button>
+          <button v-else class="dfd-close" type="button" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></button>
         </header>
 
         <div class="dfd-body">
@@ -267,9 +277,10 @@ function save() {
             <span class="dfd-label">{{ t('Values') }}</span>
             <input
               :id="`${id}-value-input`" v-model="newValueDraft" class="dfd-input"
-              type="text" :placeholder="t('Type value and press Enter to add')"
+              type="text"
               @keydown.enter.prevent="addValue"
             >
+            <span class="dfd-hint">{{ t('Press Enter to add a value') }}</span>
           </div>
 
           <div v-if="showValueSearch" class="dfd-search">
@@ -418,17 +429,18 @@ function save() {
             v-for="opt in transferOptions"
             :key="opt.name"
             :is-active="opt.name === transferTarget"
-            @click="transferTarget = opt.name"
+            @click="transferTarget = opt.name; transferError = false"
           >
             {{ opt.name }}
           </MpPopoverListItem>
           <li v-if="!transferOptions.length" class="dfd-transfer-empty">{{ t('No other values to transfer to.') }}</li>
         </MpPopoverList>
+        <span v-if="transferError" class="dfd-error">{{ t('You must select a target value') }}</span>
       </MpModalBody>
       <MpModalFooter>
         <div class="dfd-transfer-footer-btns">
           <button class="dfd-btn dfd-btn--ghost" type="button" @click="transferOpen = false">{{ t('Cancel') }}</button>
-          <button class="dfd-btn dfd-btn--primary" type="button" :disabled="!transferTarget" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <button class="dfd-btn dfd-btn--primary" type="button" @click="confirmTransfer">{{ t('Transfer') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -471,9 +483,10 @@ function save() {
 .dfd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .dfd-required { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
 .dfd-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); flex-shrink: 0; }
+.dfd-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .dfd-input { width: 100%; height: 36px; padding: 0 var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
-.dfd-input:focus { border-color: var(--mp-border-brand, #0a6e4e); }
+.dfd-input:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
 .dfd-input::placeholder { color: var(--mp-text-placeholder); }
 .dfd-input.is-invalid { border-color: var(--mp-border-danger, #dc2626); }
 .dfd-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
@@ -486,6 +499,7 @@ function save() {
 .dfd-type-item:last-child { border-bottom: none; }
 
 .dfd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); color: var(--mp-icon-default); }
+.dfd-search:focus-within { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
 .dfd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .dfd-search-input::placeholder { color: var(--mp-text-placeholder); }
 
@@ -539,7 +553,6 @@ function save() {
 .dfd-transfer-hint { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .dfd-transfer-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); list-style: none; }
 .dfd-transfer-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-.dfd-transfer-footer-btns .dfd-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .dfd-values-empty { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-6) 0; }
 .dfd-values-empty-img { width: 96px; height: 80px; object-fit: contain; }

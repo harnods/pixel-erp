@@ -2560,6 +2560,38 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Transfer to another dimension": "Transfer ke dimensi lain",
   "Cannot delete. Transaction has been recorded with this dimension.": "Tidak dapat dihapus. Transaksi telah tercatat dengan dimensi ini.",
 
+  // ── Settings › Dimensions — first-run / paywall (DimensionsPaywallPage) ─────
+  "Elevate your business performance tracking with Dimensions": "Tingkatkan pelacakan performa bisnis Anda dengan Dimensi",
+  "Classify transaction lines by SBU, branch, or any category for your business without adding new accounts. Data is automatically reflected in profit and loss reports, budgets, and the Multidimensional report.": "Klasifikasikan baris transaksi berdasarkan SBU, cabang, atau kategori apa pun untuk bisnis Anda tanpa menambah akun baru. Data otomatis tercermin di laporan laba rugi, anggaran, dan laporan Multidimensi.",
+  "Start using Dimensions": "Mulai gunakan Dimensi",
+  "One transaction line with multiple dimensions": "Satu baris transaksi dengan banyak dimensi",
+  "A single transaction line can be tagged with multiple dimensions, enabling cross-dimensional analysis.": "Satu baris transaksi dapat ditandai dengan beberapa dimensi sekaligus sehingga analisis lintas dimensi bisa dilakukan.",
+  "Accurate cost and profit analysis with Multidimensional": "Analisis biaya dan laba yang akurat dengan Multidimensi",
+  "Get an accurate picture of cost and profit with dimensions tagged at the transaction line level.": "Dapatkan gambaran biaya dan laba yang akurat dengan dimensi yang ditandai di tingkat baris transaksi.",
+  "Track performance without hundreds of accounts": "Pantau performa tanpa ratusan akun",
+  "Monitor your dimensions in real time without expanding your chart of accounts.": "Pantau dimensi Anda secara real-time tanpa memperbanyak bagan akun.",
+  "How does this feature work?": "Bagaimana fitur ini bekerja?",
+  "Step 3": "Langkah 3",
+  "Activate and configure Dimensions": "Aktifkan dan atur Dimensi",
+  "On the Dimensions page, add the types of dimensions you want to use, such as Branch, SBU, Project, or Channel.": "Di halaman Dimensi, tambahkan tipe dimensi yang ingin Anda gunakan, seperti Cabang, SBU, Proyek, atau Kanal.",
+  "Add the values you need for each dimension and set whether filling it in is mandatory for transactions.": "Tambahkan nilai yang Anda perlukan untuk tiap dimensi dan tentukan apakah pengisiannya wajib untuk transaksi.",
+  "Use Dimensions in your transactions": "Gunakan Dimensi di transaksi Anda",
+  "On each line of your transaction, click the Dimensions column.": "Di tiap baris transaksi, klik kolom Dimensi.",
+  "Select the dimension that applies to the line item, for example, Branch: Jakarta.": "Pilih dimensi yang sesuai untuk baris tersebut, misalnya Cabang: Jakarta.",
+  "The system automatically tags the dimension at the transaction line level and reflects it in reports, including:": "Sistem otomatis menandai dimensi di tingkat baris transaksi dan menampilkannya di laporan, termasuk:",
+  "Multidimensional report (shows profit and loss by dimension)": "Laporan Multidimensi (menampilkan laba rugi per dimensi)",
+  "Budget variance report": "Laporan selisih anggaran",
+  "General ledger report, grouped by dimension.": "Laporan buku besar, dikelompokkan per dimensi.",
+  "Analyze your Multidimensional report": "Analisis laporan Multidimensi Anda",
+  "Analyze the dimensions you tagged across transactions in the Multidimensional report, General Ledger, and P&L Budgeting report.": "Analisis dimensi yang Anda tandai di seluruh transaksi lewat laporan Multidimensi, Buku Besar, dan Anggaran Laba Rugi.",
+  "In these reports, you can:": "Di laporan ini, Anda dapat:",
+  "Ready to track business performance with Dimensions?": "Siap melacak performa bisnis dengan Dimensi?",
+  "Was this helpful?": "Apakah ini membantu?",
+  "Yes, this was helpful": "Ya, ini membantu",
+  "No, this was not helpful": "Tidak, ini tidak membantu",
+  "Dimensions guide — coming soon": "Panduan Dimensi — segera hadir",
+  "Thanks for your feedback": "Terima kasih atas masukan Anda",
+
   // ── Dimensions cross-sell caption (under the header "Tag" field on transaction
   //    create pages, while Dimensions isn't activated yet) ──────────────────────
   "Get more precise business tracking with line-level dimension tagging.": "Dapatkan pelacakan bisnis yang lebih presisi dengan penandaan dimensi di setiap baris.",
@@ -2613,6 +2645,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Apply": "Terapkan",
   "Compare": "Bandingkan",
   "Change": "Perubahan",
+
+  // ── All filters drawer (MultidimensionalFiltersDrawer, Figma 4926-67880) ────
+  "Filters the values of each dimension.": "Menyaring nilai dari setiap dimensi.",
+  "Is all of": "Semuanya",
+  "Is any of": "Salah satunya",
+  "Is none of": "Bukan salah satunya",
+  "Type a dimension value…": "Cari nilai dimensi…",
+  "Select a dimension first": "Pilih dimensi terlebih dahulu",
+  "Type a tag…": "Cari tag…",
+  "Accounts": "Akun",
 
   // ── Comparison drawer (MultidimensionalCompareDrawer) ───────────────────────
   "Comparison": "Perbandingan",
@@ -2696,6 +2738,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Select date range and dimension, then click Apply button.": "Pilih rentang tanggal dan dimensi, lalu klik tombol Terapkan.",
   "You must fill in date range": "Anda harus mengisi rentang tanggal",
   "You must fill in dimension": "Anda harus mengisi dimensi",
+  "You must select dimension": "Anda harus memilih dimensi",
   "Start date cannot be after end date.": "Tanggal mulai tidak boleh melewati tanggal akhir.",
   "Total revenue": "Total pendapatan",
   "Cost of sales": "Beban pokok penjualan",

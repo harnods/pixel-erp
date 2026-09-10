@@ -41,7 +41,7 @@ function handleSave(input: DimensionInput) {
     <a class="dtu-link" @click="open">{{ t('Activate Dimensions') }}</a>
   </p>
 
-  <DimensionFormDrawer :id="drawerId" v-model:is-open="drawerOpen" mode="create" @save="handleSave" />
+  <DimensionFormDrawer :id="drawerId" v-model:is-open="drawerOpen" mode="create" context="transaction" @save="handleSave" />
 </template>
 
 <style scoped>

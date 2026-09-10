@@ -1,73 +1,197 @@
 <script setup lang="ts">
 /**
- * Multidimensional report — "All filters" drawer (Figma 4836-56598).
- * Custom Teleport-style overlay, same shell as WmsReportFiltersDrawer (MpDrawer
- * has no structural CSS in this Pixel3 build). Scopes the report to a subset of
- * the chosen dimension's values, narrows the account rows by keyword, and toggles
- * zero-balance accounts. Edits a local draft; commits only on Apply, so Cancel /
- * click-outside discards.
+ * Multidimensional report — "All filters" drawer (Figma 4926-67880).
+ *
+ * The drawer is the report's whole filter surface: the period and the sliced
+ * dimension live here beside the value filters, so one Apply both re-scopes and
+ * regenerates the report. Fields, top to bottom, per the Figma:
+ *
+ *   Date range   AdvancedDateRangePicker (period presets)
+ *   Dimension    ErpFilterSelect — which dimension the columns slice by
+ *   Values ▸ Dimensions   comparator prefix + chips — which dimension values
+ *   Values ▸ Tags         comparator prefix + chips — which transaction tags
+ *
+ * The Account keyword + "no activity" toggle keep the drawer a superset of what
+ * the report can filter (they predate this flow and nothing else exposes them).
+ *
+ * Custom Teleport-style overlay, same shell as BillsFiltersDrawer (MpDrawer has
+ * no structural CSS in this Pixel3 build) — `rule/drawer-custom-shell`. Edits a
+ * local draft and commits only on Apply; being a form it ignores overlay clicks
+ * (`rule/filter-drawer-shell`), and Apply is never disabled — unmet
+ * preconditions surface as inline errors (`rule/form-errors-inline`).
  */
-import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
-import type { MdFilters } from '~/data/multidimensionalReport'
+import { computed, reactive, ref, watch } from 'vue'
+import { MpButton, MpIcon, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpTagComparatorField from '~/components/patterns/ErpTagComparatorField.vue'
+import { MD_COMPARATORS, emptyMdFilters, type MdComparator, type MdFilters } from '~/data/multidimensionalReport'
+
+/** What Apply hands back — the staged period and dimension travel with the
+ *  filters, since the drawer now owns all three. */
+export interface MdFiltersApply {
+  range: Date[] | null
+  dimensionId: string
+  filters: MdFilters
+}
 
 const props = defineProps<{
   isOpen: boolean
   modelValue: MdFilters
-  /** Name of the dimension being sliced by — labels the value checkbox group. */
-  dimensionName: string
-  /** Every value of that dimension; empty selection = all of them. */
-  valueOptions: string[]
+  /** Staged period — null while nothing has been picked yet. */
+  range: Date[] | null
+  /** Staged dimension id. */
+  dimensionId: string
+  /** Every reportable dimension (with its values), for the Dimension picker —
+   *  the Dimensions filter offers the values of whichever one is staged HERE,
+   *  not the one the report currently shows. */
+  dimensionOptions: { id: string; name: string; values: string[] }[]
+  /** Every tag recorded on a transaction. */
+  tagOptions: string[]
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
-  (e: 'apply', v: MdFilters): void
+  (e: 'apply', v: MdFiltersApply): void
 }>()
 
 const { t } = useLocale()
 
-const values = ref<string[]>([...props.modelValue.values])
-const accountKeyword = ref(props.modelValue.accountKeyword)
-const showZero = ref(props.modelValue.showZero)
+const draft = reactive<MdFilters>({ ...props.modelValue, values: [...props.modelValue.values], tags: [...props.modelValue.tags] })
+const draftRange = ref<Date[] | null>(props.range ? [...props.range] : null)
+const draftDimensionId = ref(props.dimensionId)
+const dateError = ref('')
+const dimensionError = ref('')
 
 watch(() => props.isOpen, (open) => {
-  if (open) {
-    values.value = [...props.modelValue.values]
-    accountKeyword.value = props.modelValue.accountKeyword
-    showZero.value = props.modelValue.showZero
-  }
+  if (!open) return
+  Object.assign(draft, props.modelValue, { values: [...props.modelValue.values], tags: [...props.modelValue.tags] })
+  draftRange.value = props.range ? [...props.range] : null
+  draftDimensionId.value = props.dimensionId
+  dateError.value = ''
+  dimensionError.value = ''
 })
 
-function toggleValue(v: string) {
-  values.value = values.value.includes(v) ? values.value.filter((x) => x !== v) : [...values.value, v]
+const dimensionSelectOptions = computed(() => props.dimensionOptions.map((d) => ({ value: d.id, label: d.name })))
+const valueOptions = computed(() => props.dimensionOptions.find((d) => d.id === draftDimensionId.value)?.values ?? [])
+
+/** Switching dimension invalidates the picked values — they belong to the old one. */
+function onDimensionChange(id: string) {
+  if (id !== draftDimensionId.value) draft.values = []
+  draftDimensionId.value = id
+  dimensionError.value = ''
 }
+function onRangeChange(v: Date[]) { draftRange.value = v; dateError.value = '' }
+
+const valuePlaceholder = computed(() =>
+  draftDimensionId.value ? t('Type a dimension value…') : t('Select a dimension first'))
+
 function close() { emit('update:isOpen', false) }
+
 function apply() {
+  const [s, e] = draftRange.value ?? []
+  dateError.value = ''
+  dimensionError.value = ''
+  if (!s || !e) dateError.value = t('You must fill in date range')
+  else if (s > e) dateError.value = t('Start date cannot be after end date.')
+  if (!draftDimensionId.value) dimensionError.value = t('You must select dimension')
+  if (dateError.value || dimensionError.value) return
+
   emit('apply', {
-    values: [...values.value],
-    accountKeyword: accountKeyword.value.trim(),
-    showZero: showZero.value,
+    range: draftRange.value ? [...draftRange.value] : null,
+    dimensionId: draftDimensionId.value,
+    filters: { ...draft, values: [...draft.values], tags: [...draft.tags], accountKeyword: draft.accountKeyword.trim() },
   })
   close()
 }
-function clearAll() { values.value = []; accountKeyword.value = ''; showZero.value = true }
+
+/** Reset clears the value filters only — the period and dimension are what the
+ *  report is OF, not a filter on it, so wiping them would leave nothing to show. */
+function clearAll() {
+  Object.assign(draft, emptyMdFilters())
+  dateError.value = ''
+  dimensionError.value = ''
+}
 </script>
 
 <template>
   <Transition name="mdf-filters">
-    <div v-if="isOpen" class="mdf-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="mdf-filters-overlay">
       <div class="mdf-filters-panel" role="dialog" :aria-label="t('All filters')">
         <header class="mdf-filters-header">
           <span class="mdf-filters-title">{{ t('All filters') }}</span>
-          <button class="mdf-filters-close" type="button" :aria-label="t('Close')" @click="close">
+          <MpButton class="mdf-filters-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="mdf-filters-body">
+          <!-- Date range — the report's period; presets + custom range. -->
+          <div class="mdf-field">
+            <span class="mdf-field-label">{{ t('Date range') }}</span>
+            <AdvancedDateRangePicker
+              id="mdf-filters-range"
+              :model-value="draftRange"
+              is-full-width
+              hide-label
+              period-mode
+              :placeholder="t('Select date range')"
+              @update:model-value="onRangeChange"
+            />
+            <p v-if="dateError" class="mdf-field-error">{{ dateError }}</p>
+          </div>
+
+          <!-- Dimension — which dimension the report's columns slice by. -->
+          <div class="mdf-field">
+            <span class="mdf-field-label">{{ t('Dimension') }}</span>
+            <ErpFilterSelect
+              id="mdf-filters-dimension"
+              :model-value="draftDimensionId"
+              :placeholder="t('Select dimension')"
+              :options="dimensionSelectOptions"
+              width="100%"
+              @update:model-value="onDimensionChange"
+            />
+            <p v-if="dimensionError" class="mdf-field-error">{{ dimensionError }}</p>
+          </div>
+
+          <!-- Values — the comparator filters, scoping what the report counts. -->
+          <div class="mdf-group">
+            <h3 class="mdf-group-title">{{ t('Values') }}</h3>
+            <p class="mdf-group-desc">{{ t('Filters the values of each dimension.') }}</p>
+          </div>
+
+          <div class="mdf-field">
+            <span class="mdf-field-label">{{ t('Dimensions') }}</span>
+            <ErpTagComparatorField
+              id="mdf-filters-values"
+              :comparator="draft.valuesComparator"
+              :values="draft.values"
+              :options="valueOptions"
+              :comparators="MD_COMPARATORS"
+              :placeholder="valuePlaceholder"
+              @update:comparator="draft.valuesComparator = $event as MdComparator"
+              @update:values="draft.values = $event"
+            />
+          </div>
+
+          <div class="mdf-field">
+            <span class="mdf-field-label">{{ t('Tags') }}</span>
+            <ErpTagComparatorField
+              id="mdf-filters-tags"
+              :comparator="draft.tagsComparator"
+              :values="draft.tags"
+              :options="tagOptions"
+              :comparators="MD_COMPARATORS"
+              :placeholder="t('Type a tag…')"
+              @update:comparator="draft.tagsComparator = $event as MdComparator"
+              @update:values="draft.tags = $event"
+            />
+          </div>
+
           <MpFormControl id="mdf-filters-account-fc">
             <MpFormLabel>{{ t('Account') }}</MpFormLabel>
             <input
-              v-model="accountKeyword"
+              v-model="draft.accountKeyword"
               class="mdf-keyword-input"
               type="text"
               :placeholder="t('Search account code or name...')"
@@ -75,27 +199,11 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
             />
           </MpFormControl>
 
-          <MpFormControl id="mdf-filters-values-fc">
-            <MpFormLabel>{{ dimensionName || t('Dimension value') }}</MpFormLabel>
-            <p class="mdf-filters-hint">{{ t('Leave all unchecked to show every value.') }}</p>
-            <div class="mdf-filters-checkbox-list">
-              <label v-for="opt in valueOptions" :key="opt" class="mdf-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`mdf-filters-value-${opt.replace(/\s+/g, '-')}`"
-                  :is-checked="values.includes(opt)"
-                  @change="toggleValue(opt)"
-                >
-                  {{ opt }}
-                </MpCheckbox>
-              </label>
-            </div>
-          </MpFormControl>
-
           <MpFormControl id="mdf-filters-zero-fc">
             <MpFormLabel>{{ t('Accounts') }}</MpFormLabel>
             <div class="mdf-filters-checkbox-list">
               <label class="mdf-filters-checkbox-item">
-                <MpCheckbox id="mdf-filters-zero" :is-checked="showZero" @change="showZero = !showZero">
+                <MpCheckbox id="mdf-filters-zero" :is-checked="draft.showZero" @change="draft.showZero = !draft.showZero">
                   {{ t('Show accounts with no activity') }}
                 </MpCheckbox>
               </label>
@@ -104,7 +212,7 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
         </div>
 
         <footer class="mdf-filters-footer">
-          <button class="mdf-filters-reset" type="button" @click="clearAll">{{ t('Reset') }}</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ t('Reset filter') }}</button>
           <div class="mdf-filters-footer-actions">
             <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
             <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
@@ -126,7 +234,7 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
 
 .mdf-filters-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .mdf-filters-panel {
@@ -141,8 +249,8 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
 .mdf-filters-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
 }
 .mdf-filters-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
@@ -154,24 +262,43 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.mdf-filters-close:hover { background: var(--mp-background-neutral-hovered); }
+.mdf-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .mdf-filters-body {
   flex: 1; overflow-y: auto;
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
 }
+
+/* Field = bold label above a reused control (rule/filter-drawer-fields). */
+.mdf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); }
+.mdf-field-label {
+  font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600);
+  color: var(--mp-text-default);
+}
+.mdf-field-error {
+  margin: 0; font-size: var(--mp-font-sizes-sm, 12px);
+  color: var(--mp-colors-text-danger, #d3222a);
+}
+
+/* "Values" — a section heading inside the body, not a field label. */
+.mdf-group { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); }
+.mdf-group-title {
+  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); line-height: 24px;
+  font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default);
+}
+.mdf-group-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
+
 .mdf-keyword-input {
-  width: 100%; height: 36px; padding: 0 var(--mp-spacing-3);
+  width: 100%; height: 38px; padding: 0 var(--mp-spacing-3);
   background: var(--mp-background-neutral, #fff);
-  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
+  border: 1px solid var(--mp-colors-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-md, 6px);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
 }
-.mdf-keyword-input:focus { border-color: var(--mp-border-brand, #4b61dc); box-shadow: 0 0 0 1px var(--mp-border-brand, #4b61dc); }
+.mdf-keyword-input:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
 .mdf-keyword-input::placeholder { color: var(--mp-text-placeholder); }
 
-.mdf-filters-hint { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .mdf-filters-checkbox-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .mdf-filters-checkbox-item { display: flex; align-items: flex-start; }
 
@@ -181,10 +308,4 @@ function clearAll() { values.value = []; accountKeyword.value = ''; showZero.val
   padding: var(--mp-spacing-4);
 }
 .mdf-filters-footer-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.mdf-filters-reset {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-secondary);
-}
-.mdf-filters-reset:hover { text-decoration: underline; }
 </style>

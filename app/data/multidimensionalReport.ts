@@ -130,25 +130,25 @@ function roundish(n: number): number {
  * `periodKey` separates the primary period from the compare period (and one
  * month/quarter from the next) — same account + value + period → same number.
  */
-export function mdAmount(code: string, value: string, periodKey = ''): number {
+export function mdAmount(code: string, value: string, periodKey = '', share = 1): number {
   const base = ACCOUNT_BY_CODE.get(code)?.base ?? 0
   if (!base) return 0
   const variance = 0.86 + (hash(`${code}|${value}|${periodKey}`) % 29) / 100 // 0.86 – 1.14
-  return roundish(base * variance)
+  return roundish(base * variance * share)
 }
 
 /** Sum of a section's accounts for one dimension value. */
-export function mdSectionTotal(section: MdSection, value: string, periodKey = '', accountFilter?: (a: MdAccount) => boolean): number {
+export function mdSectionTotal(section: MdSection, value: string, periodKey = '', accountFilter?: (a: MdAccount) => boolean, share = 1): number {
   return section.accounts
     .filter((a) => !accountFilter || accountFilter(a))
-    .reduce((sum, a) => sum + mdAmount(a.code, value, periodKey), 0)
+    .reduce((sum, a) => sum + mdAmount(a.code, value, periodKey, share), 0)
 }
 
 /** The three derived profit lines for one dimension value. */
-export function mdProfitLines(value: string, periodKey = '', accountFilter?: (a: MdAccount) => boolean) {
+export function mdProfitLines(value: string, periodKey = '', accountFilter?: (a: MdAccount) => boolean, share = 1) {
   const total = (key: string) => {
     const s = MD_SECTIONS.find((x) => x.key === key)!
-    return mdSectionTotal(s, value, periodKey, accountFilter)
+    return mdSectionTotal(s, value, periodKey, accountFilter, share)
   }
   const grossProfit = total('revenue') - total('cost-of-sales')
   const operatingProfit = grossProfit - total('operating-expenses')
@@ -186,9 +186,25 @@ export function comparePeriodCount(v: MdComparePeriod | ''): number {
 export function emptyCompareSettings(): MdCompareSettings { return { period: '', groupBy: '' } }
 
 // ── Filters ──────────────────────────────────────────────────────────────────
+/** The comparator every value filter carries (Figma 4926-67880 ▸ Values). */
+export type MdComparator = 'isAllOf' | 'isAnyOf' | 'isNoneOf'
+
+export const MD_COMPARATORS: MdComparator[] = ['isAllOf', 'isAnyOf', 'isNoneOf']
+export const MD_COMPARATOR_LABELS: Record<MdComparator, string> = {
+  isAllOf: 'Is all of',
+  isAnyOf: 'Is any of',
+  isNoneOf: 'Is none of',
+}
+
 export interface MdFilters {
-  /** Dimension values kept in the report; empty = all of them. */
+  /** How `values` reads: keep only them (is all of / is any of) or drop them. */
+  valuesComparator: MdComparator
+  /** Dimension values scoped in (or out) of the report; empty = all of them. */
   values: string[]
+  /** How `tags` reads — same three comparators as `valuesComparator`. */
+  tagsComparator: MdComparator
+  /** Transaction tags the postings must carry; empty = every tag. */
+  tags: string[]
   /** Free-text match against an account's code or name; empty = no filter. */
   accountKeyword: string
   /** Show accounts whose amounts are all zero across the visible columns. */
@@ -196,7 +212,27 @@ export interface MdFilters {
 }
 
 export function emptyMdFilters(): MdFilters {
-  return { values: [], accountKeyword: '', showZero: true }
+  return { valuesComparator: 'isAnyOf', values: [], tagsComparator: 'isAnyOf', tags: [], accountKeyword: '', showZero: true }
+}
+
+/** Fill in what an older persisted view (saved before the comparator/tag filters
+ *  existed) is missing, so a stored view never applies `undefined`. */
+export function normalizeMdFilters(v: Partial<MdFilters> | undefined): MdFilters {
+  return { ...emptyMdFilters(), ...(v ?? {}), values: [...(v?.values ?? [])], tags: [...(v?.tags ?? [])] }
+}
+
+/**
+ * The share of a posted amount that survives the Tags filter — the report's
+ * numbers are generated, not posted, so a tag scope can't be summed for real;
+ * it deterministically keeps a believable slice of each amount instead (and the
+ * complement for "is none of", so the two are consistent with each other).
+ * Every derived line re-sums the scaled amounts, so subtotals stay honest.
+ */
+export function mdTagShare(comparator: MdComparator, tags: string[]): number {
+  if (!tags.length) return 1
+  const key = `${comparator === 'isNoneOf' ? 'in' : comparator}|${[...tags].sort().join(',')}`
+  const share = 0.3 + (hash(key) % 35) / 100 // 0.30 – 0.64
+  return comparator === 'isNoneOf' ? 1 - share : share
 }
 
 // ── Saved views ──────────────────────────────────────────────────────────────
