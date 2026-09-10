@@ -170,17 +170,17 @@ async function save() {
 .sad-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .sad-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.sad-close:hover { background: var(--mp-background-neutral-hovered); }
+.sad-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .sad-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .sad-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); }
-.sad-divider { background: var(--mp-border-default); }
+.sad-divider { background: var(--mp-border-default, #e3e7e9); }
 /* Matches the table filter-bar search: border-default pill + neutral focus ring. */
-.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
+.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
 .sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -191,7 +191,7 @@ async function save() {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* 20px between the search box and the list header (design-doc rule). */
 .sad-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-top: 20px; }
 /* H2 heading — Users / Roles / Selected … */
@@ -205,16 +205,17 @@ async function save() {
    (roles) land at 36px, two-line rows (user + role subtitle) at ~52px like Figma.
    min-height keeps single-line rows steady when the add/remove control appears. */
 .sad-item {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 36px; text-align: left;
+  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 52px; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-1); background: none; border: none; cursor: pointer;
-  border-bottom: 1px solid var(--mp-border-default); position: relative;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
-.sad-item:hover { background: var(--mp-background-neutral-subtle); }
+.sad-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sad-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sad-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.sad-act { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; }
-.sad-item:hover .sad-act { display: inline-flex; }
+.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Always in layout (opacity, not display) so revealing it never reflows row height. */
+.sad-act { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; opacity: 0; transition: opacity 0.1s ease; }
+.sad-item:hover .sad-act, .sad-item:focus-visible .sad-act { opacity: 1; }
 .sad-act--add { color: var(--mp-text-link); }
 .sad-act--remove { color: var(--mp-text-secondary); }
 .sad-remove-tip { display: inline-flex; }
@@ -226,5 +227,5 @@ async function save() {
 .sad-empty-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-empty-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 </style>

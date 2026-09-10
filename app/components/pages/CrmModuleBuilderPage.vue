@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput, MpInputGroup, MpInputLeftAddon, MpCheckbox, MpRadio,
+  MpButton, MpIcon, MpToggle, MpInput, MpInputGroup, MpInputLeftAddon, MpCheckbox, MpRadio, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -86,11 +86,19 @@ const CLOSE_UNIT_OPTIONS = [
   { value: 'weeks', label: t('Weeks') },
   { value: 'months', label: t('Months') },
 ]
-// Access picker (drawer) — options are the CRM staff.
+// Access picker (drawer) — options are the CRM staff (name + email caption).
+const OWNER_EMAIL: Record<string, string> = {
+  'Dewi Lestari': 'dewi.lestari@centralperk.co.id',
+  'Fajar Nugroho': 'fajar.nugroho@centralperk.co.id',
+  'Rizal Candra': 'rizal.candra@centralperk.co.id',
+}
+function ownerEmail(name: string): string {
+  return OWNER_EMAIL[name] || `${name.toLowerCase().replace(/\s+/g, '.')}@centralperk.co.id`
+}
 const accessDrawerOpen = ref(false)
-const accessOptions = CRM_OWNERS.map((n) => ({ id: n, name: n }))
-const accessNames = computed(() => setup.access.join(', '))
+const accessOptions = CRM_OWNERS.map((n) => ({ id: n, name: n, subtitle: ownerEmail(n) }))
 function onAccessSaved(ids: string[]) { setup.access = ids; accessDrawerOpen.value = false }
+function removeAccess(id: string) { setup.access = setup.access.filter((x) => x !== id) }
 
 onMounted(() => { loadDraft(); loadSetup() })
 watch(() => props.orderId, () => { loadDraft(); loadSetup() })
@@ -519,13 +527,13 @@ function cancel() { router.push('/crm/settings/modules') }
           <!-- ════════ SETUP (Deals) ════════ -->
           <div v-show="activeTab === 'setup'" class="builder-panel">
             <div class="setup-form">
-              <!-- Module name — icon-prefix picker (MpInputGroup addon) + 25-char counter -->
-              <MpFormControl id="setup-name-fc" class="setup-field">
+              <!-- Module name — full-width (6-col) MpFormControl; icon-prefix picker + counter -->
+              <MpFormControl id="setup-name-fc">
                 <div class="setup-labelrow">
                   <MpFormLabel>{{ t('Module name') }}</MpFormLabel>
                   <span class="setup-counter">{{ draft.name.length }} / {{ MODULE_NAME_MAX }}</span>
                 </div>
-                <MpInputGroup id="setup-name-group" size="md" class="setup-control">
+                <MpInputGroup id="setup-name-group" size="md">
                   <MpInputLeftAddon id="setup-name-addon" has-background>
                     <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
                       <MpPopoverTrigger>
@@ -550,22 +558,20 @@ function cancel() { router.push('/crm/settings/modules') }
               </MpFormControl>
 
               <!-- Base currency -->
-              <MpFormControl id="setup-currency-fc" class="setup-field">
+              <MpFormControl id="setup-currency-fc">
                 <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
                 <ErpFilterSelect
                   id="setup-currency" :model-value="setup.baseCurrency" :options="CURRENCY_OPTIONS"
-                  :is-clearable="false" width="280px" class="setup-control"
+                  :is-clearable="false" width="280px"
                   @update:model-value="(v: string) => (setup.baseCurrency = v || 'IDR')"
                 />
               </MpFormControl>
 
-              <!-- Default close date — checkbox + indented radios (label lives inside the control) -->
+              <!-- Default close date — checkbox (title + #description caption, box top-aligned) -->
               <div class="setup-field">
-                <MpCheckbox id="setup-closedate" class="setup-check" :is-checked="setup.applyCloseDate" @change="setup.applyCloseDate = !setup.applyCloseDate">
-                  <span class="setup-check-text">
-                    <span class="setup-check-title">{{ t('Apply default close date to new records') }}</span>
-                    <span class="setup-check-caption">{{ t('Select the default close date when creating a Deal.') }}</span>
-                  </span>
+                <MpCheckbox id="setup-closedate" :is-checked="setup.applyCloseDate" @change="setup.applyCloseDate = !setup.applyCloseDate">
+                  {{ t('Apply default close date to new records') }}
+                  <template #description>{{ t('Select the default close date when creating a Deal.') }}</template>
                 </MpCheckbox>
 
                 <div v-if="setup.applyCloseDate" class="setup-indent">
@@ -583,22 +589,32 @@ function cancel() { router.push('/crm/settings/modules') }
                     <MpInput id="close-amount" v-model.number="setup.closeAmount" type="number" class="setup-amount-input" :aria-label="t('Amount')" />
                     <ErpFilterSelect
                       id="close-unit" :model-value="setup.closeUnit" :options="CLOSE_UNIT_OPTIONS"
-                      :is-clearable="false" width="140px"
+                      :is-clearable="false" width="120px"
                       @update:model-value="(v: string) => (setup.closeUnit = (v || 'days') as DealModuleSetup['closeUnit'])"
                     />
                   </div>
                 </div>
               </div>
 
-              <!-- Access -->
+              <!-- Access — selected users listed with an email caption + (−) remove -->
               <div class="setup-field">
                 <span class="setup-fieldlabel">{{ t('Access') }}</span>
                 <span class="setup-caption">{{ t('Choose who can access this module.') }}</span>
-                <div class="setup-access">
-                  <span v-if="setup.access.length" class="setup-access-names">{{ accessNames }}</span>
-                  <span v-else class="setup-access-empty">{{ t('No users selected') }}</span>
-                  <MpButton variant="secondary" is-rounded @click="accessDrawerOpen = true">{{ t('Select users') }}</MpButton>
-                </div>
+                <ul v-if="setup.access.length" class="setup-user-list">
+                  <li v-for="id in setup.access" :key="id" class="setup-user-row">
+                    <span class="setup-user-info">
+                      <span class="setup-user-name">{{ id }}</span>
+                      <span class="setup-user-email">{{ ownerEmail(id) }}</span>
+                    </span>
+                    <MpTooltip :id="`acc-rm-${id}`" :label="t('Remove')" placement="top" use-portal>
+                      <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${id}`" @click="removeAccess(id)">
+                        <MpIcon name="minus-circular" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </li>
+                </ul>
+                <p v-else class="setup-access-empty">{{ t('No users selected') }}</p>
+                <MpButton class="setup-access-btn" variant="secondary" is-rounded @click="accessDrawerOpen = true">{{ setup.access.length ? t('Edit users') : t('Select users') }}</MpButton>
               </div>
             </div>
           </div>
@@ -1174,22 +1190,25 @@ function cancel() { router.push('/crm/settings/modules') }
 .setup-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
 .setup-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-fieldlabel { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.setup-control { max-width: 320px; width: 100%; }
 /* Module-name icon prefix (inside MpInputLeftAddon) */
 .setup-icon-trigger { display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
-.setup-icon-caret { color: var(--mp-colors-icon-subtle, #97a0af); }
-/* Default close-date checkbox — box tracks the first line (rule/checkbox-multiline-top) */
-.setup-check :deep(.mp-checkbox__root) { align-items: flex-start; }
-.setup-check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.setup-check-title { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
-.setup-check-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
-.setup-indent { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); margin-left: var(--mp-spacing-8, 32px); }
+.setup-icon-caret { color: var(--mp-colors-icon-default, #536062); }
+/* Default close-date — indented radios; the box top-aligns natively via #description slot */
+.setup-indent { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); margin-left: var(--mp-spacing-7, 28px); }
 .setup-radio-detail { margin-left: var(--mp-spacing-7, 28px); }
-.setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); }
-.setup-amount-input { width: 100px; }
-.setup-access { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.setup-access-names { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Time from record creation" input + unit = 3 grid cols (~279px) */
+.setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); max-width: 279px; }
+.setup-amount-input { flex: 1; min-width: 0; }
+/* Access — selected users list (mirrors the Team members list: name + email + (−)) */
+.setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }
+.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-user-email { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-user-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-access-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-row { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-sm); transition: opacity 0.12s ease, background 0.12s ease; }

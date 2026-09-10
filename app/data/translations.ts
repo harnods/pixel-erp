@@ -467,6 +467,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Choose who can access this module.': 'Pilih siapa yang bisa mengakses modul ini.',
   'No users selected': 'Belum ada user dipilih',
   'Select users': 'Pilih user',
+  'Edit users': 'Ubah user',
   'Users': 'User',
   'Pick who can access this module.': 'Pilih siapa yang bisa mengakses modul ini.',
   'Amount': 'Jumlah',
