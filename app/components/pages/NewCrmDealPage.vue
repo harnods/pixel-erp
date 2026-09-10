@@ -23,7 +23,7 @@ import {
 } from '~/data'
 import {
   crmCustomers, crmProducts, createDeal, updateDeal, getDeal,
-  addDealAttachment, addCrmCustomer,
+  addDealAttachment, addCrmCustomer, crmCompanies, contactsOfCompany,
   defaultDealStage, CRM_OWNERS,
   type CrmProduct, type DealInput, type DealLineItem, type CrmCompany,
 } from '~/data/crm'
@@ -110,11 +110,29 @@ const priceIncludesTax = ref(false)
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
 function onTagsChange(data: DataInterface[])  { tagsList.value = data }
 
-// Picking a customer seeds the email chip list.
+// ── Primary contact — chosen from the selected company's contacts (appears once a
+// customer/company is picked, to the right of the Customer field). ──
+const primaryContactId = ref('')
+const selectedCompany = computed(() => {
+  const cu = crmCustomers.find(x => x.id === customerId.value)
+  return cu ? crmCompanies.find(co => co.name === cu.company) : undefined
+})
+const primaryContactOptions = computed(() =>
+  selectedCompany.value ? contactsOfCompany(selectedCompany.value.id).map(c => ({ id: c.id, name: c.name })) : [],
+)
+function seedPrimaryContact() {
+  const co = selectedCompany.value
+  const members = co ? contactsOfCompany(co.id) : []
+  const pic = co?.primaryContactId && members.some(m => m.id === co.primaryContactId) ? co.primaryContactId : (members[0]?.id ?? '')
+  primaryContactId.value = pic
+}
+
+// Picking a customer seeds the email chip list + the company's primary contact.
 function onCustomerChange(id: unknown) {
   customerError.value = false
   const c = crmCustomers.find(x => x.id === id)
   if (c?.email && !emailTags.value.length) emailTags.value = toTagData([c.email])
+  seedPrimaryContact()
 }
 
 // ── Line items ────────────────────────────────────────────────────────────────
@@ -291,6 +309,9 @@ onMounted(() => {
   const d = getDeal(props.orderId)
   if (!d) return
   customerId.value = d.customerId
+  // Restore the primary contact from the deal's picName (match within the company).
+  const co0 = crmCompanies.find(co => co.name === d.company)
+  primaryContactId.value = co0 ? (contactsOfCompany(co0.id).find(m => m.name === d.picName)?.id ?? '') : ''
   const c = crmCustomers.find(x => x.id === d.customerId)
   if (c?.email) emailTags.value = toTagData([c.email])
   dueDate.value = isoToDMY(d.expectedCloseDate)
@@ -345,6 +366,9 @@ function onSave() {
     notes: memo.value || undefined,
     referenceNumber: referenceNo.value || undefined,
   }
+  // Attach the selected primary contact's snapshot to the deal.
+  const picC = selectedCompany.value ? contactsOfCompany(selectedCompany.value.id).find(c => c.id === primaryContactId.value) : undefined
+  if (picC) { input.picName = picC.name; input.email = picC.email || undefined; if (picC.phone) input.phones = [picC.phone] }
   const nowISO = new Date().toISOString()
   if (isEdit.value) {
     updateDeal(props.orderId, input)
@@ -395,6 +419,16 @@ function onSave() {
             </template>
           </MpAutocomplete>
           <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
+        </MpFormControl>
+
+        <!-- Primary contact — appears once a company is chosen; options = that company's contacts. -->
+        <MpFormControl v-if="customerId" id="f-primary-contact" class="si-field">
+          <MpFormLabel>{{ t('Primary contact') }}</MpFormLabel>
+          <MpAutocomplete
+            id="f-primary-contact-inp" v-model="primaryContactId" :data="primaryContactOptions"
+            label-prop="name" value-prop="id" is-searchable is-clearable use-portal is-full-width
+            :placeholder="t('Select primary contact')"
+          />
         </MpFormControl>
 
         <div class="si-header1-total">
