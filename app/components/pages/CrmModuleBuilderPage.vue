@@ -135,14 +135,10 @@ function onStageDragOver(i: number, e: DragEvent) {
 function onStageDrop() { dragSrc.value = null; dragOver.value = null }
 function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
 
-function addStage() { addStageAt(currentPipe.value?.stages.length ?? 0) }
-// Insert a new stage at a position (Pipedrive-style + between swimlanes).
-function addStageAt(index: number) {
+function addStage() {
   const pipe = currentPipe.value; if (!pipe) return
   const id = newStageId()
-  const arr = [...pipe.stages]
-  arr.splice(index, 0, { id, name: t('New stage'), kind: 'open' })
-  pipe.stages = arr
+  pipe.stages.push({ id, name: t('New stage'), kind: 'open' })
   editingStageId.value = id
 }
 // Inline "can't delete the last stage" note keyed by pipeline id.
@@ -510,9 +506,6 @@ function cancel() { router.push('/crm/settings/modules') }
                     :class="{ 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
                     @dragover="onStageDragOver(i, $event)" @drop="onStageDrop()"
                   >
-                    <!-- Insert-a-stage affordances (Pipedrive-style): reveal on hover -->
-                    <button class="pipe-lane-insert pipe-lane-insert--left" type="button" :aria-label="t('Add stage before')" @click="addStageAt(i)"><MpIcon name="add" size="sm" /></button>
-                    <button class="pipe-lane-insert pipe-lane-insert--right" type="button" :aria-label="t('Add stage after')" @click="addStageAt(i + 1)"><MpIcon name="add" size="sm" /></button>
                     <div class="pipe-lane-head">
                       <span
                         class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
@@ -987,7 +980,6 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-lanes { display: contents; }
 .lane-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
 .pipe-lane {
-  position: relative;
   flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3);
@@ -997,21 +989,6 @@ function cancel() { router.push('/crm/settings/modules') }
 }
 .pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
 .pipe-lane.is-dragging { opacity: 0.4; }
-
-/* Insert-a-stage (+) buttons — straddle the lane's left/right edge at header level,
-   revealed on lane hover (Pipedrive-style insert between stages). */
-.pipe-lane-insert {
-  position: absolute; top: var(--mp-spacing-3); z-index: 3;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; padding: 0; border-radius: var(--mp-radii-full, 999px);
-  border: 1px solid var(--mp-colors-border-default, #e3e7e9); background: var(--mp-colors-background-stage, #fff);
-  color: var(--mp-colors-text-secondary, #3a4749); cursor: pointer;
-  opacity: 0; transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-.pipe-lane-insert--left { left: -11px; }
-.pipe-lane-insert--right { right: -11px; }
-.pipe-lane:hover .pipe-lane-insert, .pipe-lane-insert:focus-visible { opacity: 1; }
-.pipe-lane-insert:hover { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); color: var(--mp-colors-text-selected, #0f6d4d); }
 /* Color stage columns (toggle): tint the lane by outcome. */
 .pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
 .pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
