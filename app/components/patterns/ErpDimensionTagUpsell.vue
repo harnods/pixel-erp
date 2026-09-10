@@ -10,6 +10,7 @@
   create their first dimension inline, without leaving the transaction form.
 -->
 <script setup lang="ts">
+import { ref } from 'vue'
 import { toast } from '@mekari/pixel3'
 import DimensionFormDrawer from '~/components/patterns/DimensionFormDrawer.vue'
 import { addDimension, type DimensionInput } from '~/data/dimensions'
