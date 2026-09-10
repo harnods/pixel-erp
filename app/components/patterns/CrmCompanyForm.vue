@@ -18,7 +18,7 @@
  */
 import { ref, computed } from 'vue'
 import {
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput, MpButton, MpIcon, MpCheckbox, MpToggle,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput, MpButton, MpIcon, MpCheckbox, MpToggle, MpTooltip,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
@@ -292,7 +292,9 @@ defineExpose({ submit, isEdit })
         <div v-for="(bank, i) in banks" :key="bank.id" class="cf-bank">
           <div v-if="banks.length > 1" class="cf-bank-head">
             <span class="cf-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
-            <a class="cf-bank-remove" role="button" tabindex="0" @click="removeBank(i)" @keydown.enter="removeBank(i)">{{ t('Remove') }}</a>
+            <MpTooltip :id="`cf-bank-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
+              <button type="button" class="cf-selected-remove" :aria-label="t('Remove')" @click="removeBank(i)"><MpIcon name="minus-circular" size="md" /></button>
+            </MpTooltip>
           </div>
           <div class="cf-grid">
             <MpFormControl :id="`cf-bank-name-${i}`" class="span-3">
@@ -336,7 +338,9 @@ defineExpose({ submit, isEdit })
               <span class="cf-pic-toggle-label">{{ t('Primary contact') }}</span>
               <MpToggle :is-checked="primaryContactId === c.id" :aria-label="`${t('Primary contact')} — ${c.name}`" @change="setPrimary(c.id)" />
             </label>
-            <button type="button" class="cf-selected-remove" :aria-label="`${t('Remove')} ${c.name}`" @click="removeContact(c.id)"><MpIcon name="minus-circular" size="md" /></button>
+            <MpTooltip :id="`cf-ct-rm-${c.id}`" :label="t('Remove')" placement="top" use-portal>
+              <button type="button" class="cf-selected-remove" :aria-label="`${t('Remove')} ${c.name}`" @click="removeContact(c.id)"><MpIcon name="minus-circular" size="md" /></button>
+            </MpTooltip>
           </li>
         </ul>
         <p v-if="memberError" class="cf-inline-error">{{ memberError }}</p>
@@ -394,8 +398,6 @@ defineExpose({ submit, isEdit })
 .cf-bank { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cf-bank-head { display: flex; align-items: center; justify-content: space-between; }
 .cf-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cf-bank-remove { cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.cf-bank-remove:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Selected contact list */
 .cf-contact { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }

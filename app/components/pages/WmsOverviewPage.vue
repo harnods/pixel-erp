@@ -414,8 +414,8 @@ function stageAccent(s: StageCard): string {
 /* Custom bordered dropdown trigger (fixed width → chevron never bleeds) */
 .filter-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
-  height: 40px; padding: 0 12px;
-  border: 1px solid var(--mp-border-form, var(--mp-border-default)); border-radius: 8px;
+  height: var(--mp-sizes-9\.5, 38px); padding: 0 12px;
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: 8px;
   background: var(--mp-background-default, #fff);
   font-size: 14px; color: var(--mp-text-default); cursor: pointer; text-align: left;
 }
@@ -424,7 +424,7 @@ function stageAccent(s: StageCard): string {
 /* borderless variant — the Live operations date picker sits inline next to the title */
 /* Overview date/period pickers: no box, just a bottom border (underline style). */
 .filter-trigger--ghost { border-color: transparent; border-radius: 0; border-bottom-color: var(--mp-border-form, var(--mp-border-default)); background: transparent; padding-left: 4px; padding-right: 4px; }
-.filter-trigger--ghost:hover { border-color: transparent; border-bottom-color: var(--mp-border-bold); background: var(--mp-background-neutral-subtle); }
+.filter-trigger--ghost:hover { border-color: transparent; border-bottom-color: var(--mp-border-bold); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .filter-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-trigger .chev { color: var(--mp-icon-default); flex: none; }
 
@@ -462,7 +462,7 @@ function stageAccent(s: StageCard): string {
 .funnel { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
 .stat-card {
   flex: 1 1 0; min-width: 176px;
-  border: 1px solid var(--mp-border-default); border-radius: 10px;
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 10px;
   padding: 16px; display: flex; flex-direction: column; gap: 8px;
 }
 .stat-card--clickable { cursor: pointer; transition: border-color 0.12s ease; }
@@ -510,7 +510,7 @@ function stageAccent(s: StageCard): string {
 .sub-panel--box {
   padding: 20px;
   background: var(--mp-background-default, #fff);
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: 10px;
 }
 .ov-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
@@ -545,7 +545,7 @@ function stageAccent(s: StageCard): string {
 .stage-fill--cycle { background: var(--mp-colors-emerald-700, #029861); }
 .stage-val { text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); white-space: nowrap; }
 .stage-val--strong { color: var(--mp-text-default); font-weight: 500; }
-.stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default); }
+.stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default, #e3e7e9); }
 
 /* Timeliness / Volume / Activity ratios — each stat is a white bordered card:
    title + shortcut, divider, then body. Cards in a grid stretch to equal height. */
@@ -555,7 +555,7 @@ function stageAccent(s: StageCard): string {
 .metric-grid--pair { grid-template-columns: repeat(2, minmax(0, 340px)); justify-content: start; }
 /* --vol / --single / --wide inherit the base grid so every card is one column wide */
 .metric-card {
-  background: var(--mp-background-default, #fff); border: 1px solid var(--mp-border-default); border-radius: 12px; padding: 20px;
+  background: var(--mp-background-default, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 12px; padding: 20px;
   display: flex; flex-direction: column; transition: border-color 0.12s ease;
 }
 .metric-card:hover { border-color: var(--mp-border-bold, #758195); }

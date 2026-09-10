@@ -542,6 +542,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // New-contact form — section headings + field copy
   'Contact details': 'Detail kontak',
   'Additional details': 'Detail lainnya',
+  'Account details': 'Detail akun',
   'Account owner': 'Pemilik akun',
   "a business or person's name": 'nama bisnis atau perorangan',
   'Add another email': 'Tambah email lain',

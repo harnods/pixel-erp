@@ -378,16 +378,16 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #fff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-colors-text-default, #080d0e); cursor: pointer; }
 .adr-field--full { width: 100%; }
-.adr-field:hover { background: var(--mp-background-neutral-hovered); }
+.adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 /* ── Popover: sidebar + calendar ── */
 .adr-popover { display: flex; }
 
-.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
+.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default, #e3e7e9); display: flex; flex-direction: column; }
 .adr-sidebar-title {
   padding: var(--mp-spacing-1) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -405,7 +405,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
+.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
   display: flex;
@@ -421,7 +421,7 @@ function onYearClick(y: number) {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-text-default);
 }
-.adr-sidebar-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-2) 0; }
+.adr-sidebar-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) 0; }
 
 .adr-calendar { width: 280px; padding: var(--mp-spacing-3); }
 
@@ -440,7 +440,7 @@ function onYearClick(y: number) {
   border: none !important; background: transparent !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered) !important; }
+.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 .adr-cal-weekdays {
   display: grid;
@@ -461,7 +461,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-cal-day:hover { background: var(--mp-background-neutral-hovered); }
+.adr-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-cal-day--outside { color: var(--mp-text-placeholder); }
 .adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
 .adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
@@ -480,12 +480,12 @@ function onYearClick(y: number) {
 .adr-grid-cell {
   padding: var(--mp-spacing-2);
   border: none;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered); }
+.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-grid-cell--current { background: var(--mp-background-warning, #fcefc2); font-weight: var(--mp-font-weights-semi-bold); }
 </style>

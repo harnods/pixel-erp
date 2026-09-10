@@ -202,6 +202,14 @@ is the point: they *feel* normal, which is exactly why they slip through.
   actions must be reversible-by-intent — one guaranteed confirm step, worded so the
   user knows exactly what happens. **Lint:** pixel-police (flags a danger button with
   `@click` in a file that has no `MpModal`) + review for the copy.
+- **`rule/remove-icon-tooltip`** — *Do:* a **remove control on a repeatable row**
+  (added email/phone, bank account, contact-person/member, product line, etc.) is the
+  **`minus-circular` (−) icon button** — never a text "Remove" link — and it MUST be
+  wrapped in an **`MpTooltip` `label="Remove"`** (`placement="top"` `use-portal`) plus an
+  `aria-label`. Every `(−)` remove icon in the app carries the same **Remove** tooltip.
+  *Don't:* a bare icon with no tooltip, or a text-link remove beside icon-remove rows
+  (inconsistent). **Why:** the (−) glyph alone is ambiguous; one consistent labelled
+  affordance across every repeatable list. **Lint:** review.
 - **`rule/btn-save-toast`** — *Do:* a button whose action is a **save / submit /
   approve / delete** shows a **success `MpToast`** (`successToast()`) when it
   succeeds. Copy follows the **UXW** library: a short past-participle phrase —

@@ -16,16 +16,16 @@
  * selects are ErpFilterSelect (rule/select-erpfilterselect); no example placeholders
  * (rule/input-no-placeholder).
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
-  MpButton, MpButtonGroup, MpInput, MpTextarea, MpAutocomplete, MpIcon, toast,
+  MpButton, MpButtonGroup, MpInput, MpTextarea, MpAutocomplete, MpIcon, MpTooltip, toast,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { TITLE_OPTIONS } from '~/data/contacts'
 import {
-  addCrmContactPerson, updateCrmContactPerson, getContactPerson, contactsSameName, companiesOfContact,
+  addCrmContactPerson, updateCrmContactPerson, getContactPerson, getCompany, contactsSameName, companiesOfContact,
   addCrmNote, crmCompanies, CRM_OWNERS, CRM_SOURCE_OPTIONS,
 } from '~/data/crm'
 
@@ -82,6 +82,19 @@ function addEmail() { if (emails.value.length < MAX_CONTACT_METHODS) emails.valu
 function removeEmail(i: number) { emails.value.splice(i, 1); if (!emails.value.length) emails.value = [''] }
 function addPhone() { if (phones.value.length < MAX_CONTACT_METHODS) phones.value.push('') }
 function removePhone(i: number) { phones.value.splice(i, 1); if (!phones.value.length) phones.value = [''] }
+
+// Picking a company auto-fills the contact's address from that company's billing
+// address (still editable here; editing does NOT write back to the company).
+// Only fires on user selection — the initial edit-mode value doesn't trigger it.
+watch(companyId, (id) => {
+  const co = id ? getCompany(id) : undefined
+  if (!co || !(co.billingAddress || co.address)) return
+  address.value = co.address ?? ''
+  city.value = co.city ?? ''
+  province.value = co.province ?? ''
+  country.value = co.country ?? country.value
+  postalCode.value = co.postalCode ?? ''
+})
 
 // ── Duplicate warning (non-blocking; requires explicit Save anyway — PRD §264) ──
 const duplicateNames = computed(() => {
@@ -217,7 +230,9 @@ async function save() {
                 </div>
                 <div class="nc-multi-row">
                   <MpInput :id="`nc-email-input-${i}`" v-model="emails[i]" type="email" is-full-width />
-                  <button v-if="emails.length > 1" type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removeEmail(i)"><MpIcon name="minus-circular" size="md" /></button>
+                  <MpTooltip v-if="emails.length > 1" :id="`nc-email-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
+                    <button type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removeEmail(i)"><MpIcon name="minus-circular" size="md" /></button>
+                  </MpTooltip>
                 </div>
               </MpFormControl>
               <div v-if="emails.length < MAX_CONTACT_METHODS">
@@ -234,7 +249,9 @@ async function save() {
                 </div>
                 <div class="nc-multi-row">
                   <MpInput :id="`nc-phone-input-${i}`" v-model="phones[i]" is-full-width @update:model-value="phoneError = ''" />
-                  <button v-if="phones.length > 1" type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removePhone(i)"><MpIcon name="minus-circular" size="md" /></button>
+                  <MpTooltip v-if="phones.length > 1" :id="`nc-phone-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
+                    <button type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removePhone(i)"><MpIcon name="minus-circular" size="md" /></button>
+                  </MpTooltip>
                 </div>
                 <MpFormErrorMessage v-if="i === phones.length - 1">{{ phoneError }}</MpFormErrorMessage>
               </MpFormControl>
@@ -310,7 +327,7 @@ async function save() {
 
         <!-- ── Additional details (owner · source · note) ── -->
         <section class="nc-section">
-          <h3 class="nc-section-title">{{ t('Additional details') }}</h3>
+          <h3 class="nc-section-title">{{ t('Account details') }}</h3>
           <div class="nc-fields">
             <MpFormControl id="nc-owner" class="nc-col">
               <MpFormLabel>{{ t('Account owner') }}</MpFormLabel>
