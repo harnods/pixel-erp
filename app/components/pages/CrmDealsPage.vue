@@ -39,7 +39,7 @@ import { infoToast, successToast } from '~/utils/toasts'
 import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
-  dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed,
+  dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
   CRM_OWNERS, crmCustomers,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
@@ -52,11 +52,6 @@ function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
 function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 
 const TODAY = '2026-09-07'
-/** Display number — "Deal #{5-digit}" (mirrors Purchase Invoice #{n}). */
-function dealNo(id: string): string {
-  const n = parseInt(id.replace(/\D/g, ''), 10)
-  return `Deal #${Number.isNaN(n) ? id : String(n).padStart(5, '0')}`
-}
 /** Deterministic HH:MM for the "Last updated" timestamp (mock — the store keeps
  *  dates only, so derive a stable time from the id). */
 function updatedTime(id: string): string {

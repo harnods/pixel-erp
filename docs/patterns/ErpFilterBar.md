@@ -64,15 +64,11 @@ index pages (e.g. Sales Orders):
 <template #filters>
   <!-- Left: status select + "All filters" pill -->
   <div class="filter-left">
-    <div class="filter-select-wrap">
-      <select class="filter-select" v-model="statusFilter">
-        <option value="">Status</option>
-        <option v-for="opt in statusOptions.slice(1)" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-      <!-- chevron svg -->
-    </div>
+    <ErpFilterSelect
+      id="status-filter" placeholder="Status"
+      :model-value="statusFilter" :options="statusOptions"
+      @update:model-value="v => (statusFilter = v)"
+    />
     <button class="filter-all-btn"><!-- icon -->All filters</button>
   </div>
 
@@ -224,11 +220,12 @@ page uses the current hand-rolled pill search, add the explicit trailing
       style="min-width: 240px; max-width: 320px" />
   </MpInputGroup>
 
-  <MpSelect id="status-filter" v-model="statusFilter" size="md">
-    <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-      {{ opt.label }}
-    </option>
-  </MpSelect>
+  <!-- Quick filter — ErpFilterSelect, NEVER MpSelect/native <select> (rule/select-erpfilterselect) -->
+  <ErpFilterSelect
+    id="status-filter" placeholder="Status"
+    :model-value="statusFilter" :options="statusOptions"
+    @update:model-value="v => (statusFilter = v)"
+  />
 
   <MpButton variant="primary" left-icon="add-circular" style="margin-left: auto">
     Create item

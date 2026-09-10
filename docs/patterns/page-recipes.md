@@ -73,7 +73,7 @@ Stage       (white content area, flex column)
 
 **Rules**:
 - Form fields must not exceed `max-width: 558px` (6-column Pixel grid)
-- Always end with an Action Group (`MpButton variant="primary"` + `MpButton variant="tertiary"`)
+- Always end with an Action Group (`MpButton variant="primary"` + ghost `MpButton variant="ghost"` Cancel — `rule/btn-cancel-ghost`)
 - Use `MpFormControl` to wrap each field
 
 **Minimal scaffold**:
@@ -95,7 +95,7 @@ onMounted(() => navigate('Entity', 'Create entity'))
     <!-- Action group — always last -->
     <MpFlex gap="3">
       <MpButton variant="primary">Save</MpButton>
-      <MpButton variant="tertiary">Cancel</MpButton>
+      <MpButton variant="ghost">Cancel</MpButton>
     </MpFlex>
   </MpFlex>
 </template>

@@ -39,15 +39,16 @@ Component path: `app/components/patterns/ErpTablePage.vue`
 >   single-line row renders at this 40px baseline; taller content can grow the row.
 > * Default body-cell vertical padding is **10px top/bottom**
 >   (`var(--mp-spacing-2\.5)`).
-> * Icon action cells are the exception: they use **2px top/bottom** so a 36px icon
->   button fits inside the 40px baseline row.
+> * Icon action cells are the exception: they use **reduced top/bottom padding** so a
+>   **38px** icon button (the ERP-standard icon-button size — see the Actions column
+>   below) fits inside the 40px baseline row.
 > * Vertical alignment: **single-line → middle, taller row → top** (see below).
 
 ## Cell content rules
 
 * **Default vertical padding is 10px** (`var(--mp-spacing-2.5)`) — both text-only
-    and multi-line rows. Action/icon cells may use 2px top/bottom to fit a 36px
-    icon button in the 40px baseline.
+    and multi-line rows. Action/icon cells may use reduced top/bottom padding to fit a
+    **38px** icon button (the ERP-standard icon-button size) in the 40px baseline.
 * **Vertical alignment is conditional.** Single-line rows: `vertical-align: middle`,
     40px baseline. When a row grows beyond 40px because it contains a **description**,
     **caption**, **tags**, an **avatar/photo**, or other taller content, the whole row
@@ -492,7 +493,7 @@ Mark as completed · Duplicate · *(divider)* · Share via WhatsApp · Share via
 >
   <template #filters>
     <MpInputGroup id="search">...</MpInputGroup>
-    <MpSelect id="filter">...</MpSelect>
+    <ErpFilterSelect id="filter" placeholder="Status" :model-value="statusFilter" :options="statusOptions" @update:model-value="v => (statusFilter = v)" /> <!-- never MpSelect (rule/select-erpfilterselect) -->
     <MpButton variant="primary" style="margin-left: auto">Create</MpButton>
   </template>
 

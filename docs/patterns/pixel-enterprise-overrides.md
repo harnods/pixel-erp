@@ -22,14 +22,18 @@ secondary = neutral fill, **bold black border**, **black text**, **semibold**.
 
 | Property | Value |
 |---|---|
-| Fill | `var(--mp-background-neutral)` |
-| Border | `var(--mp-border-bold)` (bold, black) |
-| Text | `var(--mp-text-default)` (**black**, never `text.secondary`/gray) |
+| Fill | `var(--mp-colors-background-neutral, #fff)` |
+| Border | `var(--mp-colors-border-bold, #8c9596)` (bold, black) |
+| Text | `var(--mp-colors-text-default, #080d0e)` (**black**, never `text.secondary`/gray) |
 | Font weight | **semibold** |
-| Hover | `var(--mp-background-neutral-hovered)` |
+| Hover | `var(--mp-colors-background-neutral-hovered)` |
 
-Use `class="btn-enterprise btn-enterprise--secondary"` — NOT `MpButton
-variant="secondary"` (gray text). See `Button.md`. (`erp.css` › `.btn-enterprise--secondary`.)
+Use **`MpButton variant="secondary"`** — `erp.css` applies the black-text / bold-border
+override to Pixel's recipe class automatically (`rule/btn-secondary-black`), so you get the
+ERP look without any wrapper. `.btn-enterprise--secondary` is **legacy**
+(`rule/btn-mpbutton-standard`) — don't add new ones. See `Button.md`. Always the
+fully-qualified `--mp-colors-*` tokens + hex fallback (the short `--mp-*` aliases can
+resolve empty; `rule/style-with-css`).
 
 ## 2. Ghost button — regular weight
 

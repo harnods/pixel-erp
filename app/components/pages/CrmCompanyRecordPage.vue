@@ -9,26 +9,30 @@
  * Notes via CrmNotesPanel; audit trail via the shared ActivityLogModal opened
  * from the "Last updated by…" link. Delete confirms (rule/btn-danger-confirm).
  */
-import { ref, computed } from 'vue'
+import { ref, reactive, computed, watch, inject } from 'vue'
 import {
-  MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpButton, MpButtonGroup, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
+import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
-  getCompany, getContactPerson, contactsOfCompany, dealsForCompany, isDealOpen,
-  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, DEAL_STAGES, type Deal,
+  getCompany, getContactPerson, contactsOfCompany, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
+  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, CRM_OWNERS, DEAL_STAGES, type Deal,
 } from '~/data/crm'
+
+const toggleAirene = inject<() => void>('toggleAirene')
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -81,28 +85,73 @@ function goContact(id: string) { router.push(`/crm/customers/contacts/${id}`) }
 function newContact() { router.push('/crm/customers/contacts/new') }
 
 // ── Deals table (ErpTablePage) ──
+// A deal's Primary contact — its own PIC snapshot, falling back to the company PIC.
+function dealContactName(d: Deal): string { return d.picName || picContact.value?.name || '—' }
+function dealContactEmail(d: Deal): string { return d.email || picContact.value?.email || '' }
+
 const dealColumns: TableColumn[] = [
-  { key: 'number', label: 'Number', kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'name',   label: 'Deal name', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'stage',  label: 'Stage', kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'owner',  label: 'Deal owner', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'value',  label: 'Value', kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'updated', label: 'Last updated', kind: 'date' },
+  { key: 'number',  label: 'Number',          kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'name',    label: 'Deal name',       kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'contact', label: 'Primary contact', kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'stage',   label: 'Stage',           kind: 'status', sortable: true, sortType: 'text' },
+  { key: 'owner',   label: 'Deal owner',      kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'value',   label: 'Value',           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'updated', label: 'Last updated',    kind: 'date' },
 ]
 const dealStageOptions = [...DEAL_STAGES]
-function dealNumber(d: Deal): string { return d.referenceNumber || d.id }
+
+// Column settings (show/hide) — Deal name stays locked.
+const dealColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(dealColumns.map((c) => [c.key, true])))
+const dealColItems = dealColumns.map((c) => ({ key: c.key, label: c.label, disabled: c.key === 'name' }))
+const visibleDealColumns = computed<TableColumn[]>(() => dealColumns.filter((c) => dealColVisibility[c.key]))
+function hideDealColumn(key: string) { dealColVisibility[key] = false }
+
+// All-filters drawer (keyword · value · owner · customer).
+const dealFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
+const dealFiltersOpen = ref(false)
+const dealOwnerOptions = [...CRM_OWNERS]
+const dealCustomerOptions = computed(() => (company.value ? [company.value.name] : []))
+const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Deal owner' }]
+function applyDealFilters(v: CrmDealsFiltersValue) { Object.assign(dealFilters, v); dealFiltersOpen.value = false }
+const dealFilterCount = computed(() => {
+  const f = dealFilters
+  return (f.keyword.trim() ? 1 : 0) + ((f.value !== '' || f.valueMin !== '' || f.valueMax !== '') ? 1 : 0) + (f.owners.length ? 1 : 0) + (f.customers.length ? 1 : 0)
+})
+function matchAmount(amount: number, comparator: string, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  return amount >= (min === '' ? -Infinity : Number(min)) && amount <= (max === '' ? Infinity : Number(max))
+}
+function matchTags(rowValue: string, comparator: string, picked: string[]): boolean {
+  if (!picked.length) return true
+  return comparator === 'isNoneOf' ? !picked.includes(rowValue) : picked.includes(rowValue)
+}
+
 const {
   search: dealSearch, statusFilter: dealStage, currentPage: dealPage, paginated: dealPaginated,
   total: dealTotal, perPage: dealPerPage, setPage: dealSetPage, setPerPage: dealSetPerPage,
   sortKey: dealSortKey, sortDir: dealSortDir, toggleSort: dealToggleSort, setSort: dealSetSort,
 } = useTableState<Deal>(companyDeals, {
-  filterFn: (row, s, stage) =>
-    (!stage || row.stage === stage)
-    && (!s || row.name.toLowerCase().includes(s) || dealNumber(row).toLowerCase().includes(s) || row.owner.toLowerCase().includes(s)),
+  filterFn: (row, s, stage) => {
+    if (stage && row.stage !== stage) return false
+    if (s && !(row.name.toLowerCase().includes(s) || dealNo(row.id).toLowerCase().includes(s) || row.owner.toLowerCase().includes(s) || dealContactName(row).toLowerCase().includes(s))) return false
+    const f = dealFilters
+    const kw = f.keyword.trim().toLowerCase()
+    if (kw) {
+      const colText: Record<string, string> = { name: row.name, id: dealNo(row.id), owner: row.owner }
+      const hay = f.keywordColumn === 'all' ? Object.values(colText).join(' ') : (colText[f.keywordColumn] ?? '')
+      if (!hay.toLowerCase().includes(kw)) return false
+    }
+    if (!matchAmount(dealExpectedValue(row), f.valueComparator, f.value, f.valueMin, f.valueMax)) return false
+    if (!matchTags(row.owner, f.ownerComparator, f.owners)) return false
+    if (!matchTags(row.company, f.customerComparator, f.customers)) return false
+    return true
+  },
   defaultSort: { key: 'value', dir: 'desc' },
 })
-const dealsHasFilter = computed(() => !!dealSearch.value || !!dealStage.value)
-function clearDealFilters() { dealSearch.value = ''; dealStage.value = '' }
+watch(dealFilters, () => dealSetPage(1))
+const dealsHasFilter = computed(() => !!dealSearch.value || !!dealStage.value || dealFilterCount.value > 0)
+function clearDealFilters() { dealSearch.value = ''; dealStage.value = ''; Object.assign(dealFilters, emptyCrmDealsFilters()) }
 
 // ── Activity log ──
 const activityOpen = ref(false)
@@ -319,7 +368,7 @@ function confirmArchive() {
               </div>
 
               <ErpTablePage
-                :columns="dealColumns"
+                :columns="visibleDealColumns"
                 :rows="(dealPaginated as unknown as Record<string, unknown>[])"
                 :total="dealTotal"
                 :current-page="dealPage"
@@ -333,14 +382,28 @@ function confirmArchive() {
                 @per-page-change="dealSetPerPage"
                 @sort="dealToggleSort"
                 @sort-change="dealSetSort"
+                @hide-column="hideDealColumn"
                 @clear-filters="clearDealFilters"
               >
                 <template #filters>
                   <div class="filter-left">
-                    <ErpFilterSelect id="cr-deal-stage" :model-value="dealStage" :placeholder="t('Status')" :options="dealStageOptions" @update:model-value="(v: string) => (dealStage = v)" />
+                    <ErpFilterSelect id="cr-deal-stage" :model-value="dealStage" :placeholder="t('Stage')" :options="dealStageOptions" @update:model-value="(v: string) => (dealStage = v)" />
+                    <MpButton
+                      variant="secondary" left-icon="filter" is-rounded
+                      class="filter-all-btn" :class="{ 'filter-all-btn--active': dealFilterCount > 0 }"
+                      @click="dealFiltersOpen = true"
+                    >{{ t('All filters') }}{{ dealFilterCount > 0 ? ` (${dealFilterCount})` : '' }}</MpButton>
                   </div>
                   <div class="filter-right">
-                    <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="soon(t('Export'))"><MpIcon name="download" size="md" /></button>
+                    <MpButtonGroup class="filter-btn-group">
+                      <MpTooltip :label="t('Ask Airene')" placement="bottom">
+                        <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
+                      </MpTooltip>
+                      <ColumnSettingsMenu id="cr-deal-columns" :items="dealColItems" :visibility="dealColVisibility" />
+                      <MpTooltip :label="t('Export')" placement="bottom">
+                        <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="soon(t('Export'))" />
+                      </MpTooltip>
+                    </MpButtonGroup>
                     <div class="filter-search">
                       <MpIcon name="search" size="sm" />
                       <input v-model="dealSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
@@ -350,10 +413,16 @@ function confirmArchive() {
                 </template>
 
                 <template #cell-number="{ row }">
-                  <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ dealNumber(row as unknown as Deal) }}</span>
+                  <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ dealNo((row as unknown as Deal).id) }}</span>
                 </template>
                 <template #cell-name="{ row }">
                   <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ (row as unknown as Deal).name }}</span>
+                </template>
+                <template #cell-contact="{ row }">
+                  <div class="cru-name">
+                    <span class="cell-text">{{ dealContactName(row as unknown as Deal) }}</span>
+                    <span v-if="dealContactEmail(row as unknown as Deal)" class="cru-email">{{ dealContactEmail(row as unknown as Deal) }}</span>
+                  </div>
                 </template>
                 <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" /></template>
                 <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as Deal).owner }}</span></template>
@@ -386,6 +455,17 @@ function confirmArchive() {
 
     <!-- Archive confirmation (company or contact) — soft, non-destructive -->
     <ConfirmModal v-model:is-open="archiveOpen" :title="archiveTitle" :description="archiveDescription" :confirm-label="t('Archive')" :is-danger="false" @confirm="confirmArchive" />
+
+    <!-- Deals "All filters" drawer -->
+    <CrmDealsFiltersDrawer
+      id="cr-deal-filters"
+      v-model:is-open="dealFiltersOpen"
+      :model-value="dealFilters"
+      :columns="dealDrawerColumns"
+      :owner-options="dealOwnerOptions"
+      :customer-options="dealCustomerOptions"
+      @apply="applyDealFilters"
+    />
   </div>
 
   <div v-else class="cr-missing">
@@ -473,6 +553,11 @@ function confirmArchive() {
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #ffffff); border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* "All filters" button + right-side icon group (mirrors the Deals list). */
+.filter-all-btn { font-weight: var(--mp-font-weights-semi-bold); }
+.filter-all-btn--active { border-color: var(--mp-border-brand, #1877f2); color: var(--mp-text-link, #165082); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 .search-clear-btn { display: inline-flex !important; align-items: center; justify-content: center; flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important; border: none !important; background: none !important; cursor: pointer; color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important; }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 

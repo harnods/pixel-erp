@@ -36,7 +36,7 @@ import {
   dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder, linkDealSalesOrder,
-  lineSubtotal, crmCustomers,
+  lineSubtotal, crmCustomers, dealNo,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
 
@@ -71,7 +71,7 @@ const isWon = computed(() => deal.value?.stage === 'Won')
 const isLost = computed(() => deal.value?.stage === 'Lost')
 const isOngoing = computed(() => !isWon.value && !isLost.value)
 const convTarget = computed(() => deal.value?.convertedTarget ?? dealConversionTarget.value)
-const dealNumber = computed(() => deal.value?.id.replace(/^DL-/, '') ?? '')
+const dealNumber = computed(() => (deal.value ? dealNo(deal.value.id) : ''))
 
 // ── Pipeline stepper (segmented bar) ──
 const FORWARD_STAGES: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
@@ -445,7 +445,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <ContentList :label="t('Tracking no.')" :value="deal.trackingNo || '—'" />
                 </div>
                 <div class="content-list-col">
-                  <ContentList :label="t('Transaction no.')" :value="`${t('Deal')} #${dealNumber}`" />
+                  <ContentList :label="t('Transaction no.')" :value="dealNumber" />
                   <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
                   <ContentList :label="t('Warehouse')" :value="deal.warehouse || '—'" />
                 </div>

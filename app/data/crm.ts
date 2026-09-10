@@ -604,7 +604,7 @@ export function dealActivityLog(d: Deal): DealActivityEntry[] {
     date: isoAt(d.createdAt, 0, 9), user: created, activity: 'Created deal',
     details: [
       { label: 'Deal name', value: d.name },
-      { label: 'Deal number', value: `Deal #${d.id.replace(/^DL-/, '')}` },
+      { label: 'Deal number', value: dealNo(d.id) },
       { label: 'Customer', value: d.company },
       { label: 'Deal owner', value: d.owner },
       { label: 'Stage', value: 'Open Lead' },
@@ -708,6 +708,12 @@ export const crmRelatedPeopleOptions = computed(() =>
 export function isDealOpen(d: Deal): boolean { return d.stage !== 'Won' && d.stage !== 'Lost' }
 export function isDealArchived(d: Deal): boolean { return d.archived === true }
 export function getDeal(id: string): Deal | undefined { return deals.find((d) => d.id === id) }
+/** Canonical deal display number — fixed format `Deal #1{NNNN}` (e.g. DL-260907 → Deal #10007).
+ *  Use EVERYWHERE a deal number is shown (list, detail, company deals, activity log). */
+export function dealNo(id: string): string {
+  const n = parseInt(String(id).replace(/\D/g, ''), 10)
+  return Number.isNaN(n) ? String(id) : `Deal #${10000 + (n % 100)}`
+}
 export function dealsInStage(stage: DealStage): Deal[] { return deals.filter((d) => d.stage === stage && !d.archived) }
 
 // ── Commercial calculation (PRD provisional formula, TBC w/ ERP txn team) ──

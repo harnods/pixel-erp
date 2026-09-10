@@ -1,20 +1,14 @@
 # Drawer
 
-**Pixel components**: `MpDrawer` (+ header / body / footer subcomponents — verify with `get-component`)
+**Implementation**: a hand-rolled **`Teleport` overlay panel** — **not** Pixel `MpDrawer`.
 **Purpose**: Side panel that slides in from the edge for contextual detail or editing without leaving the current page.
 
-> ⚠️ **`MpDrawerHeader` / `MpDrawerFooter` are broken in this Pixel3 build** — they
-> render *outside* the floating card, detached at the viewport top/bottom edges (only
-> `MpDrawerBody` is styled as the card). **Do not use them.** Two working options:
->
-> 1. **Preferred — custom Teleport overlay** (what ~30 of 38 `*Drawer.vue` use, incl.
->    every filters drawer). Copy the shell from **`BillsFiltersDrawer.vue`**. No
->    `MpDrawer` at all: a `Teleport`+`Transition` `.xxx-overlay` (fixed inset 0) around
->    a `.xxx-panel` (12px margin, `calc(100%-24px)` height, 12px radius, flex column)
->    with plain `<header>` / `.body` / `<footer>` inside. This is the ERP default.
-> 2. **MpDrawer, header+footer inside the body.** If you use `MpDrawer`, put the header
->    row, content, AND footer row all inside a single `MpDrawerBody` (styled as the
->    card) — never `MpDrawerHeader`/`MpDrawerFooter`. See `NewLocationDrawer.vue`.
+> ⚠️ **Never use `MpDrawer` (or `MpDrawerHeader` / `MpDrawerFooter`)** — it has **no
+> structural CSS** in this Pixel3 build: the header/footer detach to the viewport
+> edges and the body renders as a bare floating card (`rule/drawer-custom-shell`).
+> Every ERP/Cowork drawer uses the same **custom Teleport shell** instead — copy it
+> from **`BillsFiltersDrawer.vue`** ("All filters"). This is the canonical, only
+> supported drawer. (~30 of 38 `*Drawer.vue` already use it.)
 
 ---
 
@@ -27,66 +21,47 @@
 
 ---
 
-## ERP default — floating
+## The custom Teleport shell (ERP default)
 
-ERP drawers use the **`floating`** variant: the panel is **not flush** to the screen —
-it sits with a **12px margin** from the edges and has **12px rounded corners** (card-like).
-Always pass `variant="floating"` (plus `placement="right"` + a `size`). Header title +
-`MpDrawerCloseButton`; scrollable body form; footer `MpButtonGroup` with **ghost Cancel +
-primary Save** (both `is-rounded`). Example: `NewLocationDrawer.vue`.
+A `Teleport`+`Transition` `.xxx-overlay` (fixed inset 0; flex justify-end; overlay
+bg) wraps a `.xxx-panel` (12px margin; `calc(100% - 24px)` height; 12px radius; flex
+column; `overflow: hidden`) with plain `<header>` / `.body` / `<footer>` inside.
+Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
+`transform: translateX(calc(100% + 12px))` on enter/leave. Footer uses the
+`btn-enterprise--{ghost,primary}` classes: **ghost Cancel + primary Save**
+(`rule/btn-cancel-ghost`). A drawer that is a **form** ignores overlay clicks
+(close only via ×/Cancel/Esc) so in-progress input is never lost.
 
 ```vue
-<MpDrawer id="…" :is-open="open" placement="right" size="sm" variant="floating" @close="open = false">
-  <MpDrawerContent>
-    <MpDrawerHeader>Title <MpDrawerCloseButton /></MpDrawerHeader>
-    <MpDrawerBody>…form…</MpDrawerBody>
-    <MpDrawerFooter>
-      <MpButtonGroup>
-        <MpButton variant="ghost" is-rounded @click="open = false">Cancel</MpButton>
-        <MpButton variant="primary" is-rounded>Save</MpButton>
-      </MpButtonGroup>
-    </MpDrawerFooter>
-  </MpDrawerContent>
-  <MpDrawerOverlay />
-</MpDrawer>
+<template>
+  <Teleport to="body">
+    <Transition name="xxx">
+      <div v-if="open" class="xxx-overlay">           <!-- fixed inset 0; flex justify-end; overlay bg -->
+        <div class="xxx-panel" role="dialog">         <!-- margin 12px; height calc(100%-24px); radius 12px; flex column; overflow hidden -->
+          <header class="xxx-header">
+            Title
+            <MpButton class="xxx-close" aria-label="Close" @click="open = false"><MpIcon name="close" /></MpButton>
+          </header>
+          <div class="xxx-body">…scrollable content (reuse Form.md field anatomy)…</div>
+          <footer class="xxx-footer">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="open = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="save">Save</button>
+          </footer>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+</template>
 ```
+
+See `BillsFiltersDrawer.vue` for the full, copy-paste-ready shell (overlay/panel/
+header/body/footer CSS + the slide transition), and CLAUDE.md › "Drawers".
 
 ---
 
 ## Anatomy
 
-- Open state controlled by `v-model` (boolean).
-- Header: title + close button.
+- Open state controlled by a boolean (`v-if` on the overlay).
+- Header: title + close button (`MpIcon name="close"`).
 - Body: scrollable content (detail fields or a form — reuse [Form.md](Form.md) field anatomy).
-- Footer: actions — **secondary Cancel + primary confirm**, in an `MpButtonGroup`.
-
----
-
-## Example
-
-```vue
-<script setup lang="ts">
-import { MpDrawer, MpButton, MpButtonGroup, MpText } from '@mekari/pixel3'
-
-const isOpen = ref(false)
-</script>
-
-<template>
-  <MpDrawer v-model="isOpen" placement="right">
-    <!-- Header -->
-    <MpText size="h3">Entity detail</MpText>
-
-    <!-- Body: detail or form fields -->
-    <MpText>Content goes here.</MpText>
-
-    <!-- Footer -->
-    <MpButtonGroup>
-      <MpButton variant="secondary" @click="isOpen = false">Cancel</MpButton>
-      <MpButton variant="primary">Save</MpButton>
-    </MpButtonGroup>
-  </MpDrawer>
-</template>
-```
-
-> ⚠️ `placement` and the exact slot/subcomponent structure are assumed — run
-> `get-component("MpDrawer")` and adjust this example to the real API.
+- Footer: actions — **ghost Cancel + primary confirm** (`rule/btn-cancel-ghost`).
