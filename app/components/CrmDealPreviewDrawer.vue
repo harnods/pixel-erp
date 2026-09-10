@@ -19,10 +19,11 @@ import { formatDate, formatDateTime } from '~/utils/date'
 import { CATALOG } from '~/data/catalog'
 import {
   crmCustomers, dealExpectedValue, lineSubtotal, skuFor, DEAL_STAGES,
-  dealComments, addDealComment, dealNo,
+  dealComments, addDealComment, dealNo, dealStageBadgeType, dealStageLabel,
   type Deal, type DealStage,
 } from '~/data/crm'
 
+const { t } = useLocale()
 const props = defineProps<{ open: boolean; deal: Deal | null }>()
 const emit = defineEmits<{
   close: []; 'view-details': [id: string]; edit: [deal: Deal]
@@ -61,11 +62,10 @@ const productCount = computed(() => d.value?.products?.length ?? 0)
 const contactEmail = computed(() => d.value?.email || customer.value?.email || '')
 const contactPhone = computed(() => (d.value?.phones?.length ? d.value.phones.join(', ') : (customer.value?.phone || '')))
 
+// Colour + label from the shared source so a renamed stage updates here too.
 function stageBadge(stage: DealStage) {
-  if (stage === 'Won') return { status: 'active', type: 'completed' as const, label: 'Won' }
-  if (stage === 'Lost') return { status: 'churned', type: 'announcement' as const, label: 'Lost' }
-  if (stage === 'Negotiation' || stage === 'Proposal') return { status: 'prospect', type: 'warning' as const, label: stage }
-  return { status: 'prospect', type: 'information' as const, label: stage }
+  const status = stage === 'Won' ? 'active' : stage === 'Lost' ? 'churned' : 'prospect'
+  return { status, type: dealStageBadgeType(stage), label: t(dealStageLabel(stage)) }
 }
 function ownerInitials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
@@ -206,7 +206,7 @@ function stampTime(id: string): string {
                 </MpPopoverList>
                 <MpPopoverList v-else>
                   <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
-                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ s }}</MpPopoverListItem>
+                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>

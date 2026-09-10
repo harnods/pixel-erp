@@ -29,7 +29,7 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
   getCompany, getContactPerson, contactsOfCompany, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
-  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, type Deal,
+  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, dealStageLabel, type Deal,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')

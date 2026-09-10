@@ -40,12 +40,24 @@ import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
-  CRM_OWNERS, crmCustomers, dealStageBadgeType,
+  CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
+  dealPipelineDisplay,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
 const { t } = useLocale()
 const router = useRouter()
+// The page title mirrors the Deals module name (renamable in module settings).
+const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
+
+// ── Deals-module settings applied to the board (module builder ▸ Pipeline) ──
+// Stage labels come from the shared dealStageLabel (renamable in settings, matched
+// by stable id) so the board, table + every badge stay one source.
+function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
+  return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
+}
+// Card field / display toggles from the module builder's right-hand panel.
+const cardFieldOn = (key: string) => dealPipelineDisplay.cardFields.some((f) => f.key === key && f.on)
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
@@ -362,7 +374,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
 // Colour comes from the shared `dealStageBadgeType` (single source of truth, so the
 // pipeline, deal preview, and company Deals tab never drift). Label = the stage name.
 function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'; label: string } {
-  return { type: dealStageBadgeType(stage), label: t(stage) }
+  return { type: dealStageBadgeType(stage), label: t(dealStageLabel(stage)) }
 }
 // ── Columns — the 6 defaults, plus optional PRD columns hidden by default and
 // toggleable from Column settings. ──
@@ -394,7 +406,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
     <!-- ── Title bar ── -->
     <header class="crm-titlebar">
       <div class="crm-titlebar__left">
-        <h1 class="crm-title">{{ t('Deals') }}</h1>
+        <h1 class="crm-title">{{ dealsModuleName }}</h1>
       </div>
       <div class="crm-titlebar__right">
         <MpButtonGroup>
@@ -451,7 +463,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             id="deal-stage-filter"
             :model-value="statusFilter"
             :placeholder="t('Stage')"
-            :options="[...DEAL_STAGES]"
+            :options="DEAL_STAGES.map((s) => ({ value: s, label: t(dealStageLabel(s)) }))"
             @update:model-value="(v: string) => (statusFilter = v)"
           />
           <MpButton
@@ -487,13 +499,13 @@ const toggleAirene = inject<() => void>('toggleAirene')
             v-for="col in boardColumns"
             :key="col.stage"
             class="kcol"
-            :class="{ 'kcol--over': dragOverStage === col.stage }"
+            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: dealPipelineDisplay.colorColumns }"
             @dragover.prevent="dragOverStage = col.stage"
             @dragleave="dragOverStage === col.stage && (dragOverStage = null)"
             @drop="onDrop(col.stage)"
           >
             <header class="kcol__head">
-              <span class="kcol__name">{{ col.stage }}</span>
+              <span class="kcol__name">{{ t(dealStageLabel(col.stage)) }}</span>
               <span class="kcol__count">{{ col.cards.length }}</span>
             </header>
             <div class="kcol__cards">
@@ -510,21 +522,24 @@ const toggleAirene = inject<() => void>('toggleAirene')
                 @keydown="onCardKey($event, d)"
               >
                 <div class="deal__head">
-                  <p class="deal__company">{{ d.company }}</p>
-                  <p class="deal__name">{{ d.name }}</p>
+                  <p v-if="cardFieldOn('company')" class="deal__company">{{ d.company }}</p>
+                  <p v-if="cardFieldOn('dealName')" class="deal__name">{{ d.name }}</p>
+                  <p v-if="cardFieldOn('contactPerson') && d.picName" class="deal__sub">{{ d.picName }}</p>
                 </div>
-                <div class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
-                <div class="deal__foot">
-                  <span class="deal__owner">
+                <div v-if="cardFieldOn('dealValue')" class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
+                <p v-if="cardFieldOn('date') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
+                <p v-if="cardFieldOn('note') && d.description" class="deal__sub deal__note">{{ d.description }}</p>
+                <div v-if="cardFieldOn('owner') || (dealPipelineDisplay.showAging && isDealOpen(d))" class="deal__foot">
+                  <span v-if="cardFieldOn('owner')" class="deal__owner">
                     <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
                   </span>
-                  <span v-if="isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                  <span v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
-            <footer class="kcol__foot">
+            <footer v-if="dealPipelineDisplay.stageTotal" class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>
@@ -814,6 +829,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .deal__head { display: flex; flex-direction: column; gap: 2px; }
 .deal__company { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__name { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deal__sub { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deal__note { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Color stage columns (module setting) — tint by outcome. */
+.kcol--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
+.kcol--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
+.kcol--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 .deal__value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

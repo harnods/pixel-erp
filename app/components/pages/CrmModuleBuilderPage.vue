@@ -15,25 +15,25 @@
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import {
-  MpButton, MpIcon, MpToggle, MpInput,
+  MpButton, MpIcon, MpToggle, MpInput, MpCheckbox, MpRadio,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   getCrmModule, persistCrmModule,
-  CRM_FIELD_TYPE_LABELS,
+  CRM_FIELD_TYPE_LABELS, CRM_OWNERS,
   dealPipelines, persistDealPipelines,
-  dealPipelineDisplay, persistDealPipelineDisplay,
-  deals, dealExpectedValue, dealDaysInStage,
+  dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
+  dealModuleSetup, persistDealModuleSetup,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
-  type DealPipeline, type DealPipelineStage, type Deal, type DealStage,
-  type DealPipelineDisplay,
+  type DealPipeline, type DealPipelineStage,
+  type DealPipelineDisplay, type DealModuleSetup,
 } from '~/data/crm'
-import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -48,26 +48,52 @@ const mod = computed<CrmModule | undefined>(() => getCrmModule(props.orderId))
 
 // ── Local editable deep-clone ────────────────────────────────────────────────
 const UNUSED = '__unused__'
+const MODULE_NAME_MAX = 25
 interface Draft {
   name: string
+  icon: string
   sections: string[]
   fields: CrmModuleField[]
   views: CrmModuleView[]
   layoutDriver: string // '' = none
 }
-const draft = reactive<Draft>({ name: '', sections: [], fields: [], views: [], layoutDriver: '' })
+const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '' })
 
 function loadDraft() {
   const m = mod.value
   if (!m) return
   draft.name = m.name
+  draft.icon = m.icon ?? 'pipeline'
   draft.sections = clone(m.sections)
   draft.fields = clone(m.fields)
   draft.views = clone(m.views)
   draft.layoutDriver = m.layoutDriver ?? ''
 }
-onMounted(loadDraft)
-watch(() => props.orderId, loadDraft)
+// Icon picker (the Name-field prefix) — opens a small grid of module icons.
+const iconMenuOpen = ref(false)
+function pickIcon(icon: string) { draft.icon = icon; iconMenuOpen.value = false }
+
+// ── Setup tab (Deals) — a local editable clone; Save changes applies it. ──
+const setup = reactive<DealModuleSetup>(JSON.parse(JSON.stringify(dealModuleSetup)))
+function loadSetup() { Object.assign(setup, JSON.parse(JSON.stringify(dealModuleSetup))) }
+const CURRENCY_OPTIONS = [{ value: 'IDR', label: 'Indonesian Rupiah (Rp)' }]
+const CLOSE_PERIOD_OPTIONS = [
+  { value: 'this-month', label: t('This month') },
+  { value: 'next-month', label: t('Next month') },
+]
+const CLOSE_UNIT_OPTIONS = [
+  { value: 'days', label: t('Days') },
+  { value: 'weeks', label: t('Weeks') },
+  { value: 'months', label: t('Months') },
+]
+// Access picker (drawer) — options are the CRM staff.
+const accessDrawerOpen = ref(false)
+const accessOptions = CRM_OWNERS.map((n) => ({ id: n, name: n }))
+const accessNames = computed(() => setup.access.join(', '))
+function onAccessSaved(ids: string[]) { setup.access = ids; accessDrawerOpen.value = false }
+
+onMounted(() => { loadDraft(); loadSetup() })
+watch(() => props.orderId, () => { loadDraft(); loadSetup() })
 
 // ── Header status badge ──────────────────────────────────────────────────────
 const STATUS_BADGE: Record<string, { status: string; label: string }> = {
@@ -81,9 +107,9 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
 const isDeals = computed(() => !!mod.value?.system)
 const tabs = computed(() => isDeals.value
-  ? [{ key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
+  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
-const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'pipeline' : 'fields')
+const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
 
 // ── Pipeline config (deals only) — a local editable clone; Save changes applies it. ──
@@ -96,15 +122,6 @@ const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
-// The real deals sitting in a stage — cards mirror the live pipeline (matched by
-// stage name, so the six seed stages fill and renamed/new stages show empty).
-function stageDeals(s: DealPipelineStage): Deal[] {
-  return deals.filter((d) => !d.archived && d.stage === (s.name as DealStage))
-}
-function stageTotal(s: DealPipelineStage): string {
-  return formatIDR(stageDeals(s).reduce((sum, d) => sum + dealExpectedValue(d), 0))
-}
-function agingLabel(d: Deal): string { return `${dealDaysInStage(d)}d` }
 
 // Inline rename — the pencil toggles a stage's name into an editable field.
 const editingStageId = ref<string | null>(null)
@@ -117,17 +134,27 @@ function commitStageName(s: DealPipelineStage) {
 // Drag-reorder the swimlanes.
 const dragSrc = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
-function onStageDragStart(i: number, e: DragEvent) { dragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
-function onStageDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; dragOver.value = i }
-function onStageDrop(i: number) {
+function onStageDragStart(i: number, e: DragEvent) {
+  dragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+  // Drag the whole lane as the ghost (not just the handle) — this is what makes
+  // the reorder feel like the Deals board's card drag.
+  const lane = (e.target as HTMLElement).closest('.pipe-lane') as HTMLElement | null
+  if (lane) e.dataTransfer!.setDragImage(lane, 24, 24)
+}
+// Live sortable: as the dragged lane hovers over another, swap them in place so the
+// board physically opens a slot where it'll drop (animated via <TransitionGroup>).
+function onStageDragOver(i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
   const pipe = currentPipe.value
-  if (!pipe || dragSrc.value === null || dragSrc.value === i) { dragOver.value = null; return }
+  if (!pipe || dragSrc.value === null || dragSrc.value === i) return
   const arr = [...pipe.stages]
   const [m] = arr.splice(dragSrc.value, 1)
   arr.splice(i, 0, m!)
   pipe.stages = arr
-  dragSrc.value = null; dragOver.value = null
+  dragSrc.value = i // the dragged lane now lives at index i
 }
+function onStageDrop() { dragSrc.value = null; dragOver.value = null }
 function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
 
 function addStage() {
@@ -151,24 +178,26 @@ const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(dealPipelin
 const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
 
-// Per-field value for a deal card.
-function cardContact(d: Deal): string { return d.picName || '—' }
-function cardDate(d: Deal): string { return d.expectedCloseDate || '—' }
-function cardNote(d: Deal): string { return d.description || '—' }
-
 // Drag-reorder the card-property rows (order = the order fields stack on a card).
 const fieldDragSrc = ref<number | null>(null)
 const fieldDragOver = ref<number | null>(null)
-function onFieldDragStart(i: number, e: DragEvent) { fieldDragSrc.value = i; e.dataTransfer!.effectAllowed = 'move' }
-function onFieldDragOver(i: number, e: DragEvent) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; fieldDragOver.value = i }
-function onFieldDrop(i: number) {
-  if (fieldDragSrc.value === null || fieldDragSrc.value === i) { fieldDragOver.value = null; return }
+function onFieldDragStart(i: number, e: DragEvent) {
+  fieldDragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+  const row = (e.target as HTMLElement).closest('.pipe-side-row') as HTMLElement | null
+  if (row) e.dataTransfer!.setDragImage(row, 12, 12)
+}
+// Live sortable (same feel as the swimlanes): swap rows in place on hover.
+function onFieldDragOver(i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
+  if (fieldDragSrc.value === null || fieldDragSrc.value === i) return
   const arr = [...disp.cardFields]
   const [m] = arr.splice(fieldDragSrc.value, 1)
   arr.splice(i, 0, m!)
   disp.cardFields = arr
-  fieldDragSrc.value = null; fieldDragOver.value = null
+  fieldDragSrc.value = i
 }
+function onFieldDrop() { fieldDragSrc.value = null; fieldDragOver.value = null }
 function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
 
 // ── Field type options + labels ──────────────────────────────────────────────
@@ -438,6 +467,8 @@ function saveChanges() {
     persistDealPipelines()
     Object.assign(dealPipelineDisplay, JSON.parse(JSON.stringify(disp)))
     persistDealPipelineDisplay()
+    Object.assign(dealModuleSetup, JSON.parse(JSON.stringify(setup)))
+    persistDealModuleSetup()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -445,7 +476,10 @@ function saveChanges() {
     views: clone(draft.views),
     layoutDriver: draft.layoutDriver || undefined,
   })
-  if (!m.system) m.name = draft.name.trim() || m.name
+  // Renaming/re-iconing the module (incl. the Deals system module) also updates
+  // its nav item.
+  m.name = draft.name.trim() || m.name
+  m.icon = draft.icon
   persistCrmModule(m, AUTHOR, nowStamp())
   successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
 }
@@ -482,18 +516,153 @@ function cancel() { router.push('/crm/settings/modules') }
       </div>
 
       <template v-else>
-          <!-- ════════ PIPELINE (Deals) — swimlane editor + settings panel (Figma 4240-18081) ════════ -->
+          <!-- ════════ SETUP (Deals) ════════ -->
+          <div v-show="activeTab === 'setup'" class="builder-panel">
+            <div class="setup-form">
+              <!-- Module name + icon prefix + counter -->
+              <div class="setup-field">
+                <div class="setup-labelrow">
+                  <label class="setup-label" for="setup-module-name">{{ t('Module name') }}</label>
+                  <span class="setup-counter">{{ draft.name.length }} / {{ MODULE_NAME_MAX }}</span>
+                </div>
+                <div class="pipe-name-field setup-control">
+                  <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
+                    <MpPopoverTrigger>
+                      <button type="button" class="pipe-name-prefix" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
+                        <MpIcon :name="draft.icon" size="md" />
+                        <MpIcon name="chevrons-down" size="sm" class="pipe-name-prefix-caret" />
+                      </button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)' })">
+                      <div class="pipe-icon-grid">
+                        <button
+                          v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
+                          class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
+                          :aria-label="ic" @click="pickIcon(ic)"
+                        ><MpIcon :name="ic" size="md" /></button>
+                      </div>
+                    </MpPopoverContent>
+                  </MpPopover>
+                  <input
+                    id="setup-module-name" v-model="draft.name" class="pipe-name-input-el" type="text"
+                    :maxlength="MODULE_NAME_MAX" :aria-label="t('Module name')"
+                  >
+                </div>
+              </div>
+
+              <!-- Base currency -->
+              <div class="setup-field">
+                <label class="setup-label">{{ t('Base currency') }}</label>
+                <ErpFilterSelect
+                  id="setup-currency" :model-value="setup.baseCurrency" :options="CURRENCY_OPTIONS"
+                  :is-clearable="false" width="280px" class="setup-control"
+                  @update:model-value="(v: string) => (setup.baseCurrency = v || 'IDR')"
+                />
+              </div>
+
+              <!-- Default close date -->
+              <div class="setup-field">
+                <label class="setup-check">
+                  <MpCheckbox id="setup-closedate" :is-checked="setup.applyCloseDate" @change="setup.applyCloseDate = !setup.applyCloseDate" />
+                  <span class="setup-check-text">
+                    <span class="setup-check-label">{{ t('Apply default close date to new records') }}</span>
+                    <span class="setup-check-caption">{{ t('Select the default close date when creating a Deal.') }}</span>
+                  </span>
+                </label>
+
+                <div v-if="setup.applyCloseDate" class="setup-indent">
+                  <label class="setup-radio">
+                    <MpRadio id="close-period" name="close-mode" value="period" :is-checked="setup.closeMode === 'period'" @change="setup.closeMode = 'period'" />
+                    <span>{{ t('End of a certain period') }}</span>
+                  </label>
+                  <div v-if="setup.closeMode === 'period'" class="setup-radio-detail">
+                    <ErpFilterSelect
+                      id="close-period-opt" :model-value="setup.closePeriod" :options="CLOSE_PERIOD_OPTIONS"
+                      :is-clearable="false" width="240px"
+                      @update:model-value="(v: string) => (setup.closePeriod = (v || 'this-month') as DealModuleSetup['closePeriod'])"
+                    />
+                  </div>
+
+                  <label class="setup-radio">
+                    <MpRadio id="close-fromcreation" name="close-mode" value="fromCreation" :is-checked="setup.closeMode === 'fromCreation'" @change="setup.closeMode = 'fromCreation'" />
+                    <span>{{ t('Time from record creation') }}</span>
+                  </label>
+                  <div v-if="setup.closeMode === 'fromCreation'" class="setup-radio-detail setup-amount">
+                    <MpInput id="close-amount" v-model.number="setup.closeAmount" type="number" class="setup-amount-input" :aria-label="t('Amount')" />
+                    <ErpFilterSelect
+                      id="close-unit" :model-value="setup.closeUnit" :options="CLOSE_UNIT_OPTIONS"
+                      :is-clearable="false" width="140px"
+                      @update:model-value="(v: string) => (setup.closeUnit = (v || 'days') as DealModuleSetup['closeUnit'])"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Access -->
+              <div class="setup-field">
+                <label class="setup-label">{{ t('Access') }}</label>
+                <span class="setup-caption">{{ t('Choose who can access this module.') }}</span>
+                <div class="setup-access setup-control">
+                  <span v-if="setup.access.length" class="setup-access-names">{{ accessNames }}</span>
+                  <span v-else class="setup-access-empty">{{ t('No users selected') }}</span>
+                  <MpButton variant="secondary" is-rounded left-icon="add" @click="accessDrawerOpen = true">{{ t('Select users') }}</MpButton>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ════════ PROPERTIES (Deals) — stage + card display ════════ -->
+          <div v-show="activeTab === 'properties'" class="builder-panel">
+            <div class="props-panel">
+              <section class="pipe-side-section">
+                <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
+                <div class="pipe-side-row">
+                  <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
+                </div>
+                <div class="pipe-side-row">
+                  <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
+                </div>
+              </section>
+
+              <section class="pipe-side-section">
+                <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
+                <TransitionGroup name="row" tag="div" class="pipe-side-rows">
+                  <div
+                    v-for="(f, i) in disp.cardFields" :key="f.key"
+                    class="pipe-side-row pipe-side-row--drag"
+                    :class="{ 'is-dragging': fieldDragSrc === i }"
+                    @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop()"
+                  >
+                    <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                    <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                    <span
+                      class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
+                      @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                    ><MpIcon name="drag" size="md" /></span>
+                  </div>
+                </TransitionGroup>
+                <div class="pipe-side-row pipe-side-row--sep">
+                  <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                  <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- ════════ PIPELINE (Deals) — swimlane editor ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
-              <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
                   <p v-if="stageDeleteError" class="builder-inline-error pipe-board-error">{{ stageDeleteError }}</p>
+                  <TransitionGroup name="lane" tag="div" class="pipe-lanes">
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'pipe-lane--over': dragOver === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
-                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop(i)"
+                    :class="{ 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop()"
                   >
                     <div class="pipe-lane-head">
                       <span
@@ -512,81 +681,44 @@ function cancel() { router.push('/crm/settings/modules') }
                       </div>
                     </div>
 
+                    <!-- Preview cards — placeholder field labels (a layout preview,
+                         not live data); populated on the first lane only, per Figma. -->
                     <div class="pipe-lane-cards">
-                      <div v-for="d in stageDeals(s)" :key="d.id" class="pipe-card">
-                        <template v-for="f in enabledCardFields" :key="f.key">
-                          <span v-if="f.key === 'company'" class="pipe-card-company">{{ d.company }}</span>
-                          <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ d.name }}</span>
-                          <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ cardContact(d) }}</span>
-                          <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ formatIDR(dealExpectedValue(d)) }}</span>
-                          <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
-                            <span class="pipe-card-owner">{{ d.owner }}</span>
-                            <span v-if="disp.showAging" class="pipe-card-aging">{{ agingLabel(d) }}</span>
+                      <template v-if="i === 0">
+                        <div v-for="n in 2" :key="n" class="pipe-card">
+                          <template v-for="f in enabledCardFields" :key="f.key">
+                            <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company name') }}</span>
+                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
+                            <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
+                            <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Deal value') }}</span>
+                            <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
+                              <span class="pipe-card-owner">{{ t('Deal owner') }}</span>
+                              <span v-if="disp.showAging" class="pipe-card-aging">2d</span>
+                            </div>
+                            <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ t('Date') }}</span>
+                            <span v-else-if="f.key === 'note'" class="pipe-card-sub">{{ t('Note') }}</span>
+                          </template>
+                          <!-- Aging still shows even if Owner is hidden -->
+                          <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
+                            <span class="pipe-card-aging">2d</span>
                           </div>
-                          <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ cardDate(d) }}</span>
-                          <span v-else-if="f.key === 'note'" class="pipe-card-sub pipe-card-note">{{ cardNote(d) }}</span>
-                        </template>
-                        <!-- Aging still shows even if Owner is hidden -->
-                        <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
-                          <span class="pipe-card-aging">{{ agingLabel(d) }}</span>
                         </div>
-                      </div>
+                      </template>
                     </div>
 
                     <div v-if="disp.stageTotal" class="pipe-lane-total">
                       <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
-                      <span class="pipe-lane-total-value">{{ stageTotal(s) }}</span>
                     </div>
 
                     <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
-                      <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
+                      <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
                     </button>
                   </div>
+                  </TransitionGroup>
 
                   <!-- + New stage -->
                   <MpButton class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
-
-                <!-- Settings panel — sticky at the far right -->
-                <aside class="pipe-sidebar">
-                  <div class="pipe-side-field">
-                    <label class="pipe-side-label" for="pipe-module-name">{{ t('Name') }}</label>
-                    <MpInput id="pipe-module-name" v-model="draft.name" is-full-width :aria-label="t('Module name')" />
-                  </div>
-
-                  <section class="pipe-side-section">
-                    <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
-                    <div class="pipe-side-row">
-                      <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
-                    </div>
-                    <div class="pipe-side-row">
-                      <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
-                    </div>
-                  </section>
-
-                  <section class="pipe-side-section">
-                    <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
-                    <div
-                      v-for="(f, i) in disp.cardFields" :key="f.key"
-                      class="pipe-side-row pipe-side-row--drag" :class="{ 'pipe-side-row--over': fieldDragOver === i }"
-                      @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop(i)"
-                    >
-                      <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
-                      <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
-                      <span
-                        class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                        @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
-                      ><MpIcon name="drag" size="md" /></span>
-                    </div>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
-                    </div>
-                  </section>
-                </aside>
-              </div>
             </template>
           </div>
 
@@ -714,6 +846,19 @@ function cancel() { router.push('/crm/settings/modules') }
         <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
       </MpButtonGroup>
     </footer>
+
+    <!-- ════════ Access drawer (Setup ▸ Access) ════════ -->
+    <SelectAccessDrawer
+      :open="accessDrawerOpen"
+      :title="t('Select users')"
+      :list-title="t('Users')"
+      :options="accessOptions"
+      :model-value="setup.access"
+      :empty-title="t('No users selected')"
+      :empty-caption="t('Pick who can access this module.')"
+      @update:open="accessDrawerOpen = $event"
+      @save="onAccessSaved($event)"
+    />
 
     <!-- ════════ Field modal ════════ -->
     <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">
@@ -908,7 +1053,9 @@ function cancel() { router.push('/crm/settings/modules') }
 }
 .cd-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* Top spacing is padding (not a border) so the sidebar's left divider can extend
+   into it and reach the very top of the stage without being clipped by overflow. */
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 
 /* Section tabs — neutral-subtle bar below the title, OUTSIDE the white stage
    (rule/erp-tabs-pattern; mirrors the .page-tab pattern in [...slug].vue). */
@@ -924,25 +1071,32 @@ function cancel() { router.push('/crm/settings/modules') }
 /* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
 .builder-panel--pipeline { flex: 1; min-height: 0; }
-.pipe-layout { display: flex; align-items: stretch; gap: var(--mp-spacing-6); flex: 1; min-height: 0; }
+.pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
+.builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
 /* The board: horizontal Kanban lanes; scrolls sideways if they overflow. */
 .pipe-board { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--mp-spacing-2); overflow-x: auto; padding-bottom: var(--mp-spacing-2); }
 .pipe-board-error { flex: 0 0 100%; }
+/* The TransitionGroup wrapper lays out transparently so lanes stay direct flex
+   items of the board; .lane-move FLIP-animates them sliding aside on reorder. */
+.pipe-lanes { display: contents; }
+.lane-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
 .pipe-lane {
   flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-2\.5, 6px);
-  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 6px);
+  padding: var(--mp-spacing-3);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 12px);
   background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
+  transition: opacity 0.12s ease, border-color 0.12s ease;
 }
 .pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
+.pipe-lane.is-dragging { opacity: 0.4; }
 /* Color stage columns (toggle): tint the lane by outcome. */
 .pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
 .pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
 .pipe-lane--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 
-.pipe-lane-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
+.pipe-lane-head { display: flex; align-items: center; gap: var(--mp-spacing-3); min-height: 36px; }
 .pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
 .pipe-lane-label { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; flex: 1; }
 .pipe-lane-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -950,15 +1104,18 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-lane-edit {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-icon-subtle, #97a0af);
+  opacity: 0; transition: opacity 0.12s ease;
 }
+/* The rename pencil only reveals on swimlane hover (or keyboard focus). */
+.pipe-lane:hover .pipe-lane-edit, .pipe-lane-edit:focus-visible { opacity: 1; }
 .pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
 
 /* Card list grows to fill the lane so the total + delete pin to the bottom. */
 .pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .pipe-card {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
-  border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-stage, #fff);
+  padding: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-md, 8px); background: var(--mp-colors-background-stage, #fff);
 }
 .pipe-card-head { display: flex; flex-direction: column; min-width: 0; }
 .pipe-card-company { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -992,21 +1149,70 @@ function cancel() { router.push('/crm/settings/modules') }
 /* ── Settings panel — sticky at the far right ── */
 .pipe-sidebar {
   flex: 0 0 304px; width: 304px; align-self: stretch;
-  position: sticky; top: 0; box-sizing: border-box;
+  box-sizing: border-box;
   display: flex; flex-direction: column; gap: var(--mp-spacing-5);
-  padding: 0 0 0 var(--mp-spacing-4);
+  /* Pull the divider into the stage's top/bottom padding so the line runs the
+     full height (top → bottom); padding keeps the content itself aligned. */
+  margin: calc(-1 * var(--mp-spacing-6)) 0;
+  padding: var(--mp-spacing-6) 0 var(--mp-spacing-6) var(--mp-spacing-4);
   border-left: 1px solid var(--mp-colors-border-default, #e3e7e9);
-  overflow-y: auto;
 }
 .pipe-side-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pipe-side-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .pipe-side-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.pipe-side-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+
+/* Name field = clickable icon prefix + borderless text input, one bordered pill. */
+.pipe-name-field { display: flex; align-items: stretch; border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-neutral, #fff); overflow: hidden; }
+.pipe-name-field:focus-within { border-color: var(--mp-border-bold, #8c9596); }
+.pipe-name-prefix { display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); flex-shrink: 0; padding: 0 var(--mp-spacing-2); border: none; border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
+.pipe-name-prefix:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+.pipe-name-prefix-caret { color: var(--mp-colors-icon-subtle, #97a0af); }
+.pipe-name-input-el { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+
+.pipe-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-1); }
+.pipe-icon-choice { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--mp-radii-md, 6px); background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
+.pipe-icon-choice:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+.pipe-icon-choice--active { border-color: var(--mp-colors-border-selected, #029861); color: var(--mp-colors-text-selected, #0f6d4d); background: var(--mp-colors-background-brand-subtle, #eafaf1); }
+
+/* ── Setup tab form ── */
+.setup-form { display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 520px; }
+.setup-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.setup-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.setup-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.setup-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+.setup-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-control { max-width: 320px; width: 100%; }
+/* Default close-date checkbox + indented radios */
+.setup-check { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); cursor: pointer; }
+.setup-check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.setup-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.setup-check-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-indent { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); margin-left: var(--mp-spacing-8, 32px); }
+.setup-radio { display: flex; align-items: center; gap: var(--mp-spacing-3); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.setup-radio-detail { margin-left: var(--mp-spacing-8, 32px); }
+.setup-amount { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.setup-amount-input { width: 100px; }
+.setup-access.setup-control { max-width: 480px; display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.setup-access-names { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
+
+/* ── Properties tab ── */
+.props-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 480px; }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.pipe-side-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) 0; }
+.pipe-side-row { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); border-radius: var(--mp-radii-sm); transition: opacity 0.12s ease, background 0.12s ease; }
+.pipe-side-row--drag:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .pipe-side-rowlabel { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
-.pipe-side-row--over { background: var(--mp-colors-background-neutral-hovered, #eef0f3); border-radius: var(--mp-radii-sm); }
+.pipe-side-drag:active { cursor: grabbing; }
+/* Drop-target insertion line (top edge) + faded source, like the Deals board drag. */
+.pipe-side-row--over::before { content: ''; position: absolute; left: 0; right: 0; top: -1px; height: 2px; border-radius: 2px; background: var(--mp-colors-border-selected, #029861); }
+.pipe-side-row.is-dragging { opacity: 0.4; }
 .pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
+/* Live reorder — rows slide to make room (FLIP), same feel as the swimlanes. */
+.pipe-side-rows { display: contents; }
+.row-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }

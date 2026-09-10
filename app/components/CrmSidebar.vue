@@ -8,6 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { getCrmModule } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 
 const router = useRouter()
@@ -69,6 +70,11 @@ function isChildActive(to: string): boolean {
   return route.path === to || route.path.startsWith(to + '/')
 }
 function handleNavClick(item: Item) { router.push(item.children?.length ? item.children[0]!.to : item.to) }
+
+// The Deals nav item mirrors the Deals module's name + icon (both set in module settings).
+const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
+function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsModuleName.value : t(item.name) }
+function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrmModule('deals')?.icon || item.icon) : item.icon }
 </script>
 
 <template>
@@ -88,13 +94,13 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name }"
-          :title="t(item.name)"
+          :title="navLabel(item)"
           type="button"
           @click="handleNavClick(item)"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="">
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="">
-          <span class="nav-label">{{ t(item.name) }}</span>
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
+          <span class="nav-label">{{ navLabel(item) }}</span>
         </button>
       </div>
     </nav>

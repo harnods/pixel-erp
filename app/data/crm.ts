@@ -208,6 +208,25 @@ export type DealStage = typeof DEAL_STAGES[number]
 /** Ongoing (non-closed) stages — used by metrics + the reopen picker. */
 export const ONGOING_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation'] as const
 
+/** Canonical stage → its stable pipeline-stage id + seed name. A deal always keeps
+ *  its canonical stage; renaming a stage in module settings only changes the
+ *  pipeline stage's `name`, matched back here by id so every badge updates. */
+export const DEAL_STAGE_ID: Record<DealStage, string> = {
+  'Open Lead': 's-open-lead', '1st Meeting': 's-1st-meeting', 'Proposal': 's-proposal',
+  'Negotiation': 's-negotiation', 'Won': 's-won', 'Lost': 's-lost',
+}
+const DEAL_STAGE_SEED_NAME: Record<DealStage, string> = {
+  'Open Lead': 'Open lead', '1st Meeting': '1st meeting', 'Proposal': 'Proposal',
+  'Negotiation': 'Negotiation', 'Won': 'Closed won', 'Lost': 'Closed lost',
+}
+/** Display label for a stage. Returns the CANONICAL key while the stage keeps its
+ *  seed name (so the call site's `t()` localizes it); returns the custom name once
+ *  it's been renamed in module settings. Single source for every stage badge. */
+export function dealStageLabel(stage: DealStage): string {
+  const st = dealPipelines[0]?.stages.find((s) => s.id === DEAL_STAGE_ID[stage])
+  return !st || st.name === DEAL_STAGE_SEED_NAME[stage] ? stage : st.name
+}
+
 /** Canonical deal-stage → `ErpStatusBadge` colour `type`. **Single source of
  *  truth** so every surface (deals pipeline/list, deal preview, company detail
  *  Deals tab) colours a stage identically — pass the result as `:type` on
@@ -1139,14 +1158,19 @@ export interface CrmModule {
   views: CrmModuleView[]
   conversionTarget: CrmConversionTarget
   recordCount: number
+  /** Nav/menu icon slug (mekari.design icon name). */
+  icon?: string
   updatedAt: string
   updatedBy: string
 }
 
+/** Icon choices offered by the module builder's Name-field icon picker. */
+export const CRM_MODULE_ICONS = ['pipeline', 'reports', 'contact', 'briefcase', 'tag', 'cart', 'chart-line', 'grid'] as const
+
 const DEAL_STAGE_OPTIONS = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost']
 const MODULES_SEED: CrmModule[] = [
   {
-    id: 'deals', name: 'Deals', system: true, accessLevel: 'company', status: 'published',
+    id: 'deals', name: 'Deals', system: true, accessLevel: 'company', status: 'published', icon: 'pipeline',
     sections: ['Deal information', 'Products & value'],
     fields: [
       { id: 'name',     label: 'Deal name',          type: 'text',         required: true,  system: true, isPrimary: true, section: 'Deal information', column: 1 },
@@ -1215,8 +1239,8 @@ const DEAL_PIPELINES_SEED: DealPipeline[] = [
       { id: 's-1st-meeting', name: '1st meeting', kind: 'open' },
       { id: 's-proposal',    name: 'Proposal',    kind: 'open' },
       { id: 's-negotiation', name: 'Negotiation', kind: 'open' },
-      { id: 's-won',  name: 'Won',  kind: 'won' },
-      { id: 's-lost', name: 'Lost', kind: 'lost' },
+      { id: 's-won',  name: 'Closed won',  kind: 'won' },
+      { id: 's-lost', name: 'Closed lost', kind: 'lost' },
     ],
   },
 ]
@@ -1254,6 +1278,26 @@ export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
     ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
 )
 export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
+
+/** Deals module Setup-tab settings (base currency, default close date, access). */
+export interface DealModuleSetup {
+  baseCurrency: string
+  applyCloseDate: boolean
+  closeMode: 'period' | 'fromCreation'
+  closePeriod: 'this-month' | 'next-month'
+  closeAmount: number
+  closeUnit: 'days' | 'weeks' | 'months'
+  access: string[]                 // user names who can access the module
+}
+const DEAL_MODULE_SETUP_SEED: DealModuleSetup = {
+  baseCurrency: 'IDR', applyCloseDate: false, closeMode: 'period',
+  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
+}
+export const dealModuleSetup = reactive<DealModuleSetup>(
+  loadSnapshot<DealModuleSetup>('crm-deal-module-setup-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_MODULE_SETUP_SEED)),
+)
+export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v1', [dealModuleSetup]) }
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
