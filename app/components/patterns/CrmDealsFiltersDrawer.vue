@@ -47,6 +47,9 @@ const props = defineProps<{
   columns: { key: string; label: string }[]
   ownerOptions: string[]
   customerOptions: string[]
+  /** Relabel the customer filter (e.g. "Contact person" on a company's Deals tab). */
+  customerLabel?: string
+  customerPlaceholder?: string
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -136,15 +139,15 @@ const keywordColumnLabel = computed(() =>
             />
           </div>
 
-          <!-- Customer — comparator prefix + typeable tag input (Is any of / none of). -->
+          <!-- Customer / Contact person — comparator prefix + typeable tag input. -->
           <div class="cdf-field">
-            <span class="cdf-field-label">Customer</span>
+            <span class="cdf-field-label">{{ customerLabel || 'Customer' }}</span>
             <ErpTagComparatorField
               :id="`${id}-customer`"
               :comparator="draft.customerComparator"
               :values="draft.customers"
               :options="customerOptions"
-              placeholder="Type a customer…"
+              :placeholder="customerPlaceholder || 'Type a customer…'"
               @update:comparator="draft.customerComparator = $event"
               @update:values="draft.customers = $event"
             />

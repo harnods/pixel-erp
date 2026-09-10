@@ -508,6 +508,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Shipping address': 'Alamat pengiriman',
   'Same as billing address': 'Sama dengan alamat penagihan',
   'Add contact person': 'Tambah kontak',
+  'Type a contact…': 'Ketik nama kontak…',
   'No. of contact': 'Jumlah kontak',
 
   // CRM list columns + filter placeholders

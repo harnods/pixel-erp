@@ -110,7 +110,8 @@ function hideDealColumn(key: string) { dealColVisibility[key] = false }
 const dealFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const dealFiltersOpen = ref(false)
 const dealOwnerOptions = [...CRM_OWNERS]
-const dealCustomerOptions = computed(() => (company.value ? [company.value.name] : []))
+// On a company's Deals tab, the "customer" facet is filtered by Contact person.
+const dealContactOptions = computed(() => [...new Set(contacts.value.map((c) => c.name))])
 const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Deal owner' }]
 function applyDealFilters(v: CrmDealsFiltersValue) { Object.assign(dealFilters, v); dealFiltersOpen.value = false }
 const dealFilterCount = computed(() => {
@@ -144,7 +145,7 @@ const {
     }
     if (!matchAmount(dealExpectedValue(row), f.valueComparator, f.value, f.valueMin, f.valueMax)) return false
     if (!matchTags(row.owner, f.ownerComparator, f.owners)) return false
-    if (!matchTags(row.company, f.customerComparator, f.customers)) return false
+    if (!matchTags(dealContactName(row), f.customerComparator, f.customers)) return false
     return true
   },
   defaultSort: { key: 'value', dir: 'desc' },
@@ -268,9 +269,9 @@ function confirmArchive() {
                     <a v-if="companyDomain" class="cell-link" :href="`https://${companyDomain}`" target="_blank" rel="noopener">{{ companyDomain }}</a>
                     <template v-else>—</template>
                   </ContentList>
-                  <ContentList :label="t('Country')" :value="company.country || undefined" />
                   <ContentList :label="t('Billing address')" :value="company.billingAddress || undefined" />
                   <ContentList :label="t('Shipping address')" :value="company.shippingAddress || undefined" />
+                  <ContentList :label="t('Country')" :value="company.country || undefined" />
                   <ContentList :label="t('Email')">
                     <a v-if="company.email" class="cell-link" :href="`mailto:${company.email}`">{{ company.email }}</a>
                     <template v-else>—</template>
@@ -463,7 +464,9 @@ function confirmArchive() {
       :model-value="dealFilters"
       :columns="dealDrawerColumns"
       :owner-options="dealOwnerOptions"
-      :customer-options="dealCustomerOptions"
+      :customer-options="dealContactOptions"
+      :customer-label="t('Contact person')"
+      :customer-placeholder="t('Type a contact…')"
       @apply="applyDealFilters"
     />
   </div>
@@ -500,7 +503,9 @@ function confirmArchive() {
 .cr-sections { display: flex; flex-direction: column; }
 .cr-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cr-section:first-child { padding-top: 0; }
-.cr-section:last-child { border-bottom: none; padding-bottom: 0; }
+/* Last real section (Contact person; the "Last updated" link is an <a>, not a section)
+   has no divider below it. */
+.cr-section:last-of-type { border-bottom: none; }
 .cr-section-title { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
 
 /* Company info key/value — 3-col grid */
@@ -514,8 +519,8 @@ function confirmArchive() {
 .cp-table { display: flex; flex-direction: column; }
 .cp-head, .cp-row { display: grid; grid-template-columns: 2.4fr 2fr 1.6fr 40px; align-items: center; gap: var(--mp-spacing-3); }
 .cp-head { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.02em; }
+/* Every row keeps a bottom border — this table has no pagination footer to close it off. */
 .cp-row { min-height: 40px; padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
-.cp-row:last-child { border-bottom: none; }
 .cp-name { display: flex; flex-direction: row; align-items: center; min-width: 0; gap: var(--mp-spacing-2); }
 .cp-pic-tag { padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-sm, 4px); background: var(--mp-background-info-subtle, #e8f1fb); color: var(--mp-text-link, #165082); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; }
 .cp-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
