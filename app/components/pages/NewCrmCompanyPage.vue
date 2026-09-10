@@ -8,18 +8,23 @@
  * submit(); on success it navigates to the created company's record.
  * Footer ghost Cancel + primary Save always present (rule/form-actions-always-present).
  */
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { MpButton, MpButtonGroup } from '@mekari/pixel3'
 import CrmCompanyForm from '~/components/patterns/CrmCompanyForm.vue'
 
+const props = defineProps<{ orderId?: string }>()
 const { t } = useLocale()
 const router = useRouter()
 const COMPANIES_PATH = '/crm/customers/companies'
 
+// Edit mode — the route passes the record id as `orderId` (create passes 'new').
+const editId = computed(() => (props.orderId && props.orderId !== 'new' ? props.orderId : ''))
+const isEdit = computed(() => !!editId.value)
+
 const formRef = ref<InstanceType<typeof CrmCompanyForm> | null>(null)
 function save() {
-  const created = formRef.value?.submit()
-  if (created) router.push(`${COMPANIES_PATH}/${created.id}`)
+  const saved = formRef.value?.submit()
+  if (saved) router.push(`${COMPANIES_PATH}/${saved.id}`)
 }
 function cancel() { router.push(COMPANIES_PATH) }
 </script>
@@ -32,14 +37,14 @@ function cancel() { router.push(COMPANIES_PATH) }
           <NuxtLink :to="COMPANIES_PATH" class="detail-breadcrumb">{{ t('Companies') }}</NuxtLink>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ t('New company') }}</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit company') : t('New company') }}</h1>
         </div>
       </div>
     </header>
 
     <div class="detail-stage">
       <div class="ncp-body">
-        <CrmCompanyForm ref="formRef" />
+        <CrmCompanyForm ref="formRef" :edit-id="editId" />
 
         <!-- Actions flow below the form (not sticky) — same as New contact. -->
         <MpButtonGroup class="erp-action-footer">

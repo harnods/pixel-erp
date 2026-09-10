@@ -17,16 +17,16 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { infoToast } from '~/utils/toasts'
-import { getContactPerson, companiesOfContact, deleteCrmContactPerson, can } from '~/data/crm'
+import { getContactPerson, companiesOfContact, dealsForCompany, archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can } from '~/data/crm'
+import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
-function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 const canEdit = computed(() => can('contacts.edit'))
 const contact = computed(() => getContactPerson(props.orderId))
+const isArchived = computed(() => !!contact.value?.archived)
 const companies = computed(() => (contact.value ? companiesOfContact(contact.value.id) : []))
 // A CRM contact belongs to one company; prefer the one it's primary of, else the first.
 const company = computed(() => {
@@ -36,6 +36,14 @@ const company = computed(() => {
 })
 
 function goCompany(id: string) { router.push(`/crm/customers/companies/${id}`) }
+
+// All emails / phones (fall back to the primary single field for legacy records).
+const emailList = computed(() => (contact.value?.emails?.length ? contact.value.emails : [contact.value?.email].filter(Boolean)) as string[])
+const phoneList = computed(() => (contact.value?.phones?.length ? contact.value.phones : [contact.value?.phone].filter(Boolean)) as string[])
+
+// Related records — deals of the contact's company (permission-aware read).
+const relatedDeals = computed(() => (company.value ? dealsForCompany(company.value.id) : []))
+function goDeal(id: string) { router.push(`/crm/deals/${id}`) }
 
 /** `Last updated by X on 25 Jan 2026, 11:00 (GMT+7)` */
 const lastUpdatedDisplay = computed(() => {
@@ -71,13 +79,25 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   return [updated, created]
 })
 
-// ── Delete (always confirmed) ──
-const deleteOpen = ref(false)
-function confirmDelete() {
+// ── Archive / Restore (always confirmed; soft — no permanent delete) ──
+const archiveOpen = ref(false)
+function confirmArchive() {
   if (!contact.value) return
-  deleteCrmContactPerson(contact.value.id)
-  toast.notify({ variant: 'success', title: t('Contact deleted'), maxWidth: 'max-content' })
-  router.push('/crm/customers/contacts')
+  const restoring = isArchived.value
+  if (!restoring) {
+    // Block archiving a contact that is a company's PIC or sole active member (PRD §351).
+    const blocker = contactBlockingCompany(contact.value.id)
+    if (blocker) {
+      toast.notify({ variant: 'warning', title: `${t('Set another PIC on')} ${blocker.name} ${t('before archiving.')}`, maxWidth: 'max-content' })
+      return
+    }
+    archiveCrmContactPerson(contact.value.id)
+    toast.notify({ variant: 'success', title: t('Contact archived'), maxWidth: 'max-content' })
+    router.push('/crm/customers/contacts')
+    return
+  }
+  restoreCrmContactPerson(contact.value.id)
+  toast.notify({ variant: 'success', title: t('Contact restored'), maxWidth: 'max-content' })
 }
 </script>
 
@@ -97,8 +117,8 @@ function confirmDelete() {
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isArchived" @click="router.push(`/crm/customers/contacts/${contact.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="archiveOpen = true">{{ isArchived ? t('Restore') : t('Archive') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -107,37 +127,71 @@ function confirmDelete() {
 
     <div class="detail-stage">
       <div class="cd-sections">
-        <!-- ── Contact info ── -->
+        <!-- ── Contact info (mirrors the create form) ── -->
         <section class="cd-section">
           <h2 class="cd-section-title">{{ t('Contact info') }}</h2>
           <div class="cd-grid">
             <ContentList :label="t('Display name')" :value="contact.name" />
             <ContentList :label="t('Full name')" :value="contact.fullName || undefined" />
-            <ContentList :label="t('Email')">
-              <a v-if="contact.email" class="cell-link" :href="`mailto:${contact.email}`">{{ contact.email }}</a>
+            <ContentList :label="t('Company')">
+              <span v-if="company" class="cell-link" role="button" tabindex="0" @click="goCompany(company.id)" @keydown.enter="goCompany(company.id)">{{ company.name }}</span>
               <template v-else>—</template>
             </ContentList>
-            <ContentList :label="t('Mobile')" :value="contact.phone || undefined" />
           </div>
         </section>
 
-        <!-- ── Company info ── -->
+        <!-- ── Contact information (emails + phones + address) ── -->
         <section class="cd-section">
-          <h2 class="cd-section-title">{{ t('Company info') }}</h2>
-          <div v-if="company" class="cd-grid">
-            <ContentList :label="t('Company name')">
-              <span class="cell-link" role="button" tabindex="0" @click="goCompany(company.id)" @keydown.enter="goCompany(company.id)">{{ company.name }}</span>
-            </ContentList>
-            <ContentList :label="t('Billing address')" :value="company.billingAddress || undefined" />
-            <ContentList :label="t('Shipping address')" :value="company.shippingAddress || undefined" />
-            <ContentList :label="t('Email')">
-              <a v-if="company.email" class="cell-link" :href="`mailto:${company.email}`">{{ company.email }}</a>
+          <h2 class="cd-section-title">{{ t('Contact information') }}</h2>
+          <div class="cd-grid">
+            <ContentList :label="emailList.length > 1 ? t('Emails') : t('Email')">
+              <div v-if="emailList.length" class="cd-stack">
+                <a v-for="(e, i) in emailList" :key="`e-${i}`" class="cell-link" :href="`mailto:${e}`">{{ e }}<span v-if="i === 0 && emailList.length > 1" class="cd-primary-tag">{{ t('Primary') }}</span></a>
+              </div>
               <template v-else>—</template>
             </ContentList>
-            <ContentList :label="t('Phone')" :value="company.phone || undefined" />
-            <ContentList :label="t('Fax')" :value="company.fax || undefined" />
+            <ContentList :label="phoneList.length > 1 ? t('Mobiles') : t('Mobile')">
+              <div v-if="phoneList.length" class="cd-stack">
+                <span v-for="(p, i) in phoneList" :key="`p-${i}`">{{ p }}<span v-if="i === 0 && phoneList.length > 1" class="cd-primary-tag">{{ t('Primary') }}</span></span>
+              </div>
+              <template v-else>—</template>
+            </ContentList>
+            <ContentList :label="t('Address')" :value="contact.address || undefined" />
+            <ContentList :label="t('City')" :value="contact.city || undefined" />
+            <ContentList :label="t('Province')" :value="contact.province || undefined" />
+            <ContentList :label="t('Country')" :value="contact.country || undefined" />
+            <ContentList :label="t('Postal code')" :value="contact.postalCode || undefined" />
           </div>
-          <p v-else class="cd-muted cd-empty">{{ t('Not associated with any company yet.') }}</p>
+        </section>
+
+        <!-- ── Ownership & Source ── -->
+        <section class="cd-section">
+          <h2 class="cd-section-title">{{ t('Ownership & source') }}</h2>
+          <div class="cd-grid">
+            <ContentList :label="t('Owner')" :value="contact.owner || undefined" />
+            <ContentList :label="t('Source')" :value="contact.source ? (contact.source === 'Other' && contact.sourceOther ? contact.sourceOther : t(contact.source)) : undefined" />
+          </div>
+        </section>
+
+        <!-- ── Description ── -->
+        <section v-if="contact.description" class="cd-section">
+          <h2 class="cd-section-title">{{ t('Description') }}</h2>
+          <p class="cd-description">{{ contact.description }}</p>
+        </section>
+
+        <!-- ── Related records (deals through the contact's company) — PRD §280 ── -->
+        <section class="cd-section">
+          <h2 class="cd-section-title">{{ t('Related records') }}</h2>
+          <ul v-if="relatedDeals.length" class="cd-related-list">
+            <li v-for="d in relatedDeals" :key="d.id" class="cd-related-row">
+              <div class="cd-related-main">
+                <span class="cell-link" role="button" tabindex="0" @click="goDeal(d.id)" @keydown.enter="goDeal(d.id)">{{ d.name }}</span>
+                <span class="cd-related-sub">{{ d.id }} · {{ t(d.stage) }}</span>
+              </div>
+              <span class="cd-related-amount">{{ formatIDR(d.value) }}</span>
+            </li>
+          </ul>
+          <p v-else class="cd-muted cd-empty">{{ t('No related records yet.') }}</p>
         </section>
 
         <!-- ── Note ── -->
@@ -158,13 +212,14 @@ function confirmDelete() {
       @close="activityOpen = false"
     />
 
-    <!-- Delete confirmation -->
+    <!-- Archive / Restore confirmation (soft, non-destructive) -->
     <ConfirmModal
-      v-model:is-open="deleteOpen"
-      :title="t('Delete contact')"
-      :description="t('This contact will be permanently deleted.')"
-      :confirm-label="t('Delete')"
-      @confirm="confirmDelete"
+      v-model:is-open="archiveOpen"
+      :title="isArchived ? t('Restore contact') : t('Archive contact')"
+      :description="isArchived ? t('This contact will be restored to the active list.') : t('This contact will be archived. You can restore it later.')"
+      :confirm-label="isArchived ? t('Restore') : t('Archive')"
+      :is-danger="false"
+      @confirm="confirmArchive"
     />
   </div>
 
@@ -199,6 +254,18 @@ function confirmDelete() {
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
+.cd-stack { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); }
+.cd-primary-tag { margin-left: var(--mp-spacing-2); padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-sm, 4px); background: var(--mp-background-info-subtle, #e8f1fb); color: var(--mp-text-link, #165082); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
+
+/* Related records list */
+.cd-related-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cd-related-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.cd-related-row:last-child { border-bottom: none; }
+.cd-related-main { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
+.cd-related-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cd-related-amount { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+
+.cd-description { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); white-space: pre-wrap; }
 .cd-muted { color: var(--mp-text-subtle); }
 .cd-empty { margin: 0; font-size: var(--mp-font-sizes-md); }
 .cd-updated { margin: var(--mp-spacing-8) 0 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }

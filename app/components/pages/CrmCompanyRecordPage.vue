@@ -26,8 +26,8 @@ import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { infoToast } from '~/utils/toasts'
 import {
-  getCompany, contactsOfCompany, dealsForCompany, isDealOpen,
-  deleteCrmCompany, deleteCrmContactPerson, can, DEAL_STAGES, type Deal,
+  getCompany, getContactPerson, contactsOfCompany, dealsForCompany, isDealOpen,
+  archiveCrmCompany, archiveCrmContactPerson, contactBlockingCompany, activeMemberCount, can, DEAL_STAGES, type Deal,
 } from '~/data/crm'
 
 const props = defineProps<{ orderId: string }>()
@@ -42,6 +42,16 @@ const canEditContact = computed(() => can('contacts.edit'))
 const canCreateDeal = computed(() => can('deals.create'))
 
 const company = computed(() => getCompany(props.orderId))
+// Primary PIC (active) + normalized Company Domain (PRD §229/§231).
+const picContact = computed(() => {
+  const co = company.value
+  if (!co?.primaryContactId) return undefined
+  const c = getContactPerson(co.primaryContactId)
+  return c && !c.archived ? c : undefined
+})
+const companyDomain = computed(() =>
+  (company.value?.website || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '').replace(/\.$/, ''),
+)
 const activeTab = ref(0)
 
 const refreshTick = ref(0)
@@ -121,26 +131,36 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   ]
 })
 
-// ── Delete (company or a contact row) — always confirmed ──
-const deleteOpen = ref(false)
-const deleteKind = ref<'company' | 'contact'>('company')
-const deleteContactId = ref('')
-function openDeleteCompany() { deleteKind.value = 'company'; deleteOpen.value = true }
-function openDeleteContact(id: string) { deleteKind.value = 'contact'; deleteContactId.value = id; deleteOpen.value = true }
-const deleteTitle = computed(() => deleteKind.value === 'company' ? t('Delete company') : t('Delete contact'))
-const deleteDescription = computed(() => deleteKind.value === 'company'
-  ? t('This company will be permanently deleted.')
-  : t('This contact will be permanently deleted.'))
-function confirmDelete() {
-  if (deleteKind.value === 'company') {
+// ── Archive (company or a contact row) — always confirmed; soft, no permanent delete ──
+const archiveOpen = ref(false)
+const archiveKind = ref<'company' | 'contact'>('company')
+const archiveContactId = ref('')
+function openArchiveCompany() { archiveKind.value = 'company'; archiveOpen.value = true }
+function openArchiveContact(id: string) { archiveKind.value = 'contact'; archiveContactId.value = id; archiveOpen.value = true }
+const archiveTitle = computed(() => archiveKind.value === 'company' ? t('Archive company') : t('Archive contact'))
+const archiveDescription = computed(() => {
+  if (archiveKind.value !== 'company') return t('This contact will be archived. You can restore it later.')
+  // Company archive confirmation states the number of affected members (PRD §361).
+  const n = company.value ? activeMemberCount(company.value.id) : 0
+  const base = t('This company will be archived. You can restore it later.')
+  return n > 0 ? `${base} ${n} ${n === 1 ? t('contact will be released.') : t('contacts will be released.')}` : base
+})
+function confirmArchive() {
+  if (archiveKind.value === 'company') {
     if (!company.value) return
-    deleteCrmCompany(company.value.id)
-    toast.notify({ variant: 'success', title: t('Company deleted'), maxWidth: 'max-content' })
+    archiveCrmCompany(company.value.id)
+    toast.notify({ variant: 'success', title: t('Company archived'), maxWidth: 'max-content' })
     router.push('/crm/customers/companies')
   } else {
-    deleteCrmContactPerson(deleteContactId.value)
+    // Block archiving a contact that is this company's PIC or sole active member (PRD §351).
+    const blocker = contactBlockingCompany(archiveContactId.value)
+    if (blocker) {
+      toast.notify({ variant: 'warning', title: t('Set another PIC before archiving this contact.'), maxWidth: 'max-content' })
+      return
+    }
+    archiveCrmContactPerson(archiveContactId.value)
     refreshTick.value++
-    toast.notify({ variant: 'success', title: t('Contact deleted'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Contact archived'), maxWidth: 'max-content' })
   }
 }
 </script>
@@ -163,8 +183,8 @@ function confirmDelete() {
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
-                  <MpPopoverListItem @click="soon(t('Edit company'))">{{ t('Edit') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="openDeleteCompany">{{ t('Delete') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="router.push(`/crm/customers/companies/${company.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="openArchiveCompany">{{ t('Archive') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
@@ -188,6 +208,15 @@ function confirmDelete() {
                 <h2 class="cr-section-title">{{ t('Company info') }}</h2>
                 <div class="cr-grid">
                   <ContentList :label="t('Company name')" :value="company.name" />
+                  <ContentList :label="t('Primary PIC')">
+                    <span v-if="picContact" class="cell-link" role="button" tabindex="0" @click="goContact(picContact.id)" @keydown.enter="goContact(picContact.id)">{{ picContact.name }}</span>
+                    <template v-else>—</template>
+                  </ContentList>
+                  <ContentList :label="t('Domain')">
+                    <a v-if="companyDomain" class="cell-link" :href="`https://${companyDomain}`" target="_blank" rel="noopener">{{ companyDomain }}</a>
+                    <template v-else>—</template>
+                  </ContentList>
+                  <ContentList :label="t('Country')" :value="company.country || undefined" />
                   <ContentList :label="t('Billing address')" :value="company.billingAddress || undefined" />
                   <ContentList :label="t('Shipping address')" :value="company.shippingAddress || undefined" />
                   <ContentList :label="t('Phone')" :value="company.phone || undefined" />
@@ -217,6 +246,7 @@ function confirmDelete() {
                   <div v-for="c in filteredContacts" :key="c.id" class="cp-row">
                     <div class="cp-name">
                       <span class="cell-link" role="button" tabindex="0" @click="goContact(c.id)" @keydown.enter="goContact(c.id)">{{ c.name }}</span>
+                      <span v-if="company.primaryContactId === c.id" class="cp-pic-tag">{{ t('Primary') }}</span>
                     </div>
                     <span class="cp-cell">{{ c.email || '—' }}</span>
                     <span class="cp-cell">{{ c.phone || '—' }}</span>
@@ -228,8 +258,8 @@ function confirmDelete() {
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="goContact(c.id)">{{ t('View details') }}</MpPopoverListItem>
-                            <MpPopoverListItem v-if="canEditContact" @click="soon(t('Edit contact'))">{{ t('Edit') }}</MpPopoverListItem>
-                            <MpPopoverListItem v-if="canEditContact" @click="openDeleteContact(c.id)">{{ t('Delete') }}</MpPopoverListItem>
+                            <MpPopoverListItem v-if="canEditContact" @click="router.push(`/crm/customers/contacts/${c.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                            <MpPopoverListItem v-if="canEditContact" @click="openArchiveContact(c.id)">{{ t('Archive') }}</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
@@ -354,8 +384,8 @@ function confirmDelete() {
     <!-- Activity log -->
     <ActivityLogModal :is-open="activityOpen" :subject="company.name" :entries="activityEntries" @close="activityOpen = false" />
 
-    <!-- Delete confirmation (company or contact) -->
-    <ConfirmModal v-model:is-open="deleteOpen" :title="deleteTitle" :description="deleteDescription" :confirm-label="t('Delete')" @confirm="confirmDelete" />
+    <!-- Archive confirmation (company or contact) — soft, non-destructive -->
+    <ConfirmModal v-model:is-open="archiveOpen" :title="archiveTitle" :description="archiveDescription" :confirm-label="t('Archive')" :is-danger="false" @confirm="confirmArchive" />
   </div>
 
   <div v-else class="cr-missing">
@@ -404,7 +434,8 @@ function confirmDelete() {
 .cp-head { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-sm, 4px); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.02em; }
 .cp-row { padding: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cp-row:last-child { border-bottom: none; }
-.cp-name { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.cp-name { display: flex; flex-direction: row; align-items: center; min-width: 0; gap: var(--mp-spacing-2); }
+.cp-pic-tag { padding: 0 var(--mp-spacing-1); border-radius: var(--mp-radii-sm, 4px); background: var(--mp-background-info-subtle, #e8f1fb); color: var(--mp-text-link, #165082); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; }
 .cp-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-cell { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cp-actions-col { display: flex; align-items: center; justify-content: flex-end; }

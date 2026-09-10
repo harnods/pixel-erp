@@ -387,6 +387,20 @@ is the point: they *feel* normal, which is exactly why they slip through.
   this from `erp.css` automatically; a **hand-rolled** `<input>` must set it itself. *Don't:*
   use the brand-emerald focus border/ring Pixel ships (or any coloured focus). **Why:** one
   calm neutral focus across every form. **Source:** `erp.css` › Form-field focus. **Lint:** review.
+- **`rule/select-field-metrics`** — *Do:* every **hand-rolled select/dropdown trigger**
+  (`ErpFilterSelect` `.efs-trigger`, `PopoverSelect` `.ps-trigger`, `MultiSelectDropdown`
+  `.msd-field`, `AdvanceDateFilter` `.adf-trigger`, and any new one) matches **MpInput md**
+  at rest: **height `38px`** (`--mp-sizes-9.5`, 2.375rem) and **border
+  `1px solid var(--mp-colors-border-form, #1d1f2429)`** — the same translucent form-border
+  MpInput/MpAutocomplete draw. *Don't:* use `36px`/`--mp-sizes-9`, or the lighter table
+  border `--mp-colors-border-default` (#e3e7e9), on a field-style trigger — it renders a
+  visibly cooler/lighter, 2px-shorter box next to MpInput. Also **never the short `--mp-*`
+  aliases** (`--mp-border-form`, `--mp-border-default`, …) — they resolve **EMPTY** in this
+  Pixel build; always the fully-qualified `--mp-colors-*` token + hex fallback. The rounded
+  filter-bar **search pill** is exempt (it is deliberately a pill, `--mp-colors-border-default`).
+  Focus/active border is separate — `rule/select-active-neutral` / `rule/form-focus-border-bold`.
+  **Why:** a select must be indistinguishable from a text input beside it. **Source:** measured
+  MpInput md (38px, `--mp-colors-border-form`). **Lint:** review.
 - **`rule/select-multi-mpinputtag`** — *Do:* multi-select tag input uses
   **`MpInputTag`**. *Don't:* hand-roll toggle chips. **Why:** one tag-input
   behavior. **Lint:** review.
@@ -798,6 +812,17 @@ ERP override wins.
 
 - **`rule/empty-state-structure`** — *Do:* an empty state = illustration + title +
   caption + a **secondary-variant** button. **Lint:** review.
+- **`rule/table-empty-state`** — *Do:* **every** table renders an empty state — never
+  a blank table. `ErpTablePage` owns this: the **default** (no data ever) state is what
+  the page supplies via the **`#empty` slot** and it MUST follow
+  `rule/empty-state-structure` (illustration `empty-folder.png` + title + caption +
+  secondary CTA that creates the first record, gated to the create permission). The
+  **filtered/search-empty** state is rendered automatically by `ErpTablePage` — the
+  **same illustration** with "…not found / no … match your filters" + a *Clear all
+  filters* link — so both empty states read consistently. *Don't:* leave the built-in
+  bare "No data yet" fallback (it has no illustration/CTA); don't hand-roll a separate
+  empty state or a different illustration. **Source:** `docs/patterns/ErpTablePage.md`
+  › Empty state. **Lint:** review.
 - **`rule/skeleton-solid-static`** — *Do:* loading skeletons are **solid and static** —
   **no shimmer gradient, no animation**. Every `<MpSkeleton>` gets **`duration="0s"`**
   and the flattening class (`.erp-skeleton` in `ErpTablePage`, `.cw-skeleton` in Cowork):

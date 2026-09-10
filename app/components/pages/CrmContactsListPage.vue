@@ -13,11 +13,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmContactsFiltersDrawer, { emptyContactsFilters, type ContactsFiltersValue } from '~/components/patterns/CrmContactsFiltersDrawer.vue'
-import { crmContactPeople, companiesOfContact, archiveCrmContactPerson, restoreCrmContactPerson, can, CRM_CURRENT_USER, CRM_OWNERS, type CrmContactPerson } from '~/data/crm'
+import { crmContactPeople, crmCompanies, companiesOfContact, archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_CURRENT_USER, CRM_OWNERS, CRM_SOURCE_OPTIONS, type CrmContactPerson } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -28,8 +29,12 @@ const canCreate = computed(() => can('contacts.create'))
 const canEdit = computed(() => can('contacts.edit'))
 const canViewAll = computed(() => can('contacts.readAll'))
 
-// Active vs Archived view (PRD §241/§633 — no permanent delete, soft archive).
-const showArchived = ref(false)
+// Status filter (Active / Archived) — a left-column ErpFilterSelect, not a
+// segmented control (rule/select-erpfilterselect). PRD §241/§633: soft archive,
+// no permanent delete. The two views are mutually exclusive → non-clearable.
+const statusFilter = ref('active')
+const statusOptions = [{ value: 'active', label: t('Active') }, { value: 'archived', label: t('Archived') }]
+const showArchived = computed(() => statusFilter.value === 'archived')
 watch(showArchived, () => setPage(1))
 
 function open(row: ContactRow) { router.push(`/crm/customers/contacts/${row.id}`) }
@@ -51,6 +56,7 @@ const columns: TableColumn[] = [
   { key: 'company',      label: 'Company',      kind: 'name', sortable: true, sortType: 'text' },
   { key: 'email',        label: 'Email',        sortable: true, sortType: 'text' },
   { key: 'phone',        label: 'Mobile' },
+  { key: 'source',       label: 'Source',       kind: 'status', sortable: true, sortType: 'text' },
   { key: 'owner',        label: 'Owner',        sortable: true, sortType: 'text' },
   { key: 'lastActivity', label: 'Last updated', kind: 'date', sortable: true, sortType: 'date' },
 ]
@@ -60,8 +66,9 @@ function colText(r: ContactRow, key: string): string {
   switch (key) {
     case 'name': return r.name
     case 'company': return r.companyName
-    case 'email': return r.email
-    case 'phone': return r.phone
+    case 'email': return (r.emails?.length ? r.emails : [r.email]).join(' ')
+    case 'phone': return (r.phones?.length ? r.phones : [r.phone]).join(' ')
+    case 'source': return r.source ?? ''
     case 'owner': return r.owner
     default: return ''
   }
@@ -71,8 +78,17 @@ function colText(r: ContactRow, key: string): string {
 const contactFilters = ref<ContactsFiltersValue>(emptyContactsFilters())
 const filtersOpen = ref(false)
 const ownerOptions = [...CRM_OWNERS]
+const companyOptions = computed(() => [...new Set(crmCompanies.filter((c) => !c.archived).map((c) => c.name))].sort())
+const sourceOptions = [...CRM_SOURCE_OPTIONS]
 function openFilters() { filtersOpen.value = true }
 function onApplyFilters(f: ContactsFiltersValue) { contactFilters.value = f; filtersOpen.value = false }
+
+// Apply an "Is any of / Is none of" tag comparator against a row value.
+function matchTag(comparator: 'isAnyOf' | 'isNoneOf', values: string[], value: string): boolean {
+  if (!values.length) return true
+  const has = values.includes(value)
+  return comparator === 'isAnyOf' ? has : !has
+}
 
 const toolbarFiltered = computed<ContactRow[]>(() => rows.value.filter((r) => {
   const cf = contactFilters.value
@@ -80,15 +96,13 @@ const toolbarFiltered = computed<ContactRow[]>(() => rows.value.filter((r) => {
   if (!!r.archived !== showArchived.value) return false
   // "Only my contacts" access → hide records not owned by the signed-in user.
   if (!canViewAll.value && r.owner !== CRM_CURRENT_USER) return false
-  if (cf.owners.length) {
-    const has = cf.owners.includes(r.owner)
-    if (cf.ownerComparator === 'isAnyOf' && !has) return false
-    if (cf.ownerComparator === 'isNoneOf' && has) return false
-  }
+  if (!matchTag(cf.ownerComparator, cf.owners, r.owner)) return false
+  if (!matchTag(cf.companyComparator, cf.companies, r.companyName)) return false
+  if (!matchTag(cf.sourceComparator, cf.sources, r.source ?? '')) return false
   if (cf.keyword.trim()) {
     const kw = cf.keyword.trim().toLowerCase()
     const hay = cf.keywordColumn === 'all'
-      ? [r.name, r.companyName, r.email, r.phone, r.owner].join(' ')
+      ? [r.name, r.companyName, colText(r, 'email'), colText(r, 'phone'), r.source ?? '', r.owner, r.city ?? '', r.province ?? '', r.country ?? ''].join(' ')
       : colText(r, cf.keywordColumn)
     if (!hay.toLowerCase().includes(kw)) return false
   }
@@ -109,7 +123,7 @@ const {
 
 const activeFilterCount = computed(() => {
   const f = contactFilters.value
-  return f.owners.length + (f.keyword.trim() ? 1 : 0)
+  return f.owners.length + f.companies.length + f.sources.length + (f.keyword.trim() ? 1 : 0)
 })
 const hasActiveFilter = computed(() => !!search.value || activeFilterCount.value > 0)
 function clearFilters() { search.value = ''; contactFilters.value = emptyContactsFilters() }
@@ -134,14 +148,21 @@ function openArchive(ids: string[], deselect?: () => void) {
   archiveOpen.value = true
 }
 function confirmArchive() {
-  const n = archiveTargets.value.length
   const restoring = showArchived.value
-  archiveTargets.value.forEach((id) => (restoring ? restoreCrmContactPerson(id) : archiveCrmContactPerson(id)))
-  archiveDeselect?.()
-  archiveDeselect = null
-  toast.notify({ variant: 'success', title: restoring
-    ? (n === 1 ? t('Contact restored') : t('Contacts restored'))
-    : (n === 1 ? t('Contact archived') : t('Contacts archived')), maxWidth: 'max-content' })
+  if (restoring) {
+    const n = archiveTargets.value.length
+    archiveTargets.value.forEach((id) => restoreCrmContactPerson(id))
+    archiveDeselect?.(); archiveDeselect = null
+    toast.notify({ variant: 'success', title: n === 1 ? t('Contact restored') : t('Contacts restored'), maxWidth: 'max-content' })
+    return
+  }
+  // Block archiving a contact that is a company's PIC or sole active member (PRD §351).
+  const blocked = archiveTargets.value.filter((id) => contactBlockingCompany(id))
+  const allowed = archiveTargets.value.filter((id) => !contactBlockingCompany(id))
+  allowed.forEach((id) => archiveCrmContactPerson(id))
+  archiveDeselect?.(); archiveDeselect = null
+  if (allowed.length) toast.notify({ variant: 'success', title: allowed.length === 1 ? t('Contact archived') : t('Contacts archived'), maxWidth: 'max-content' })
+  if (blocked.length) toast.notify({ variant: 'warning', title: t('Some contacts are a company PIC and were kept.'), maxWidth: 'max-content' })
 }
 const archiveTitle = computed(() => showArchived.value ? t('Restore contact') : t('Archive contact'))
 const archiveConfirmLabel = computed(() => showArchived.value ? t('Restore') : t('Archive'))
@@ -190,10 +211,11 @@ const archiveDescription = computed(() => {
       >
         <template #filters>
           <div class="filter-left">
-            <div class="view-toggle" role="tablist" :aria-label="t('View')">
-              <button class="view-toggle-btn" type="button" role="tab" :aria-selected="!showArchived" :class="{ 'is-active': !showArchived }" @click="showArchived = false">{{ t('Active') }}</button>
-              <button class="view-toggle-btn" type="button" role="tab" :aria-selected="showArchived" :class="{ 'is-active': showArchived }" @click="showArchived = true">{{ t('Archived') }}</button>
-            </div>
+            <ErpFilterSelect
+              id="cc-status" :model-value="statusFilter" :placeholder="t('Status')"
+              :options="statusOptions" :is-clearable="false" width="160px"
+              @update:model-value="(v: string) => (statusFilter = v)"
+            />
             <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="openFilters">
               <MpIcon name="filter" size="sm" />
               {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
@@ -229,6 +251,10 @@ const archiveDescription = computed(() => {
         </template>
         <template #cell-email="{ row }"><span class="cell-text">{{ (row as unknown as ContactRow).email }}</span></template>
         <template #cell-phone="{ row }"><span class="cell-text">{{ (row as unknown as ContactRow).phone }}</span></template>
+        <template #cell-source="{ row }">
+          <span v-if="(row as unknown as ContactRow).source" class="cell-text">{{ t((row as unknown as ContactRow).source!) }}</span>
+          <span v-else class="cell-text cru-email">—</span>
+        </template>
         <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as ContactRow).owner }}</span></template>
         <template #cell-lastActivity="{ row }">
           <LastUpdatedCell :at="(row as unknown as ContactRow).lastActivity" :by="(row as unknown as ContactRow).owner" />
@@ -249,6 +275,24 @@ const archiveDescription = computed(() => {
             </MpPopoverContent>
           </MpPopover>
         </template>
+
+        <!-- Default empty state (no data ever) — illustration + title + caption +
+             secondary CTA (rule/empty-state-structure). Filtered/search-empty reuses
+             ErpTablePage's built-in illustrated inline state. -->
+        <template #empty>
+          <div class="cc-empty">
+            <img src="/illustrations/empty-folder.png" alt="" class="cc-empty-illustration" width="288" height="240" />
+            <template v-if="showArchived">
+              <p class="cc-empty-title">{{ t('No archived contacts') }}</p>
+              <p class="cc-empty-desc">{{ t('Contacts you archive will appear here.') }}</p>
+            </template>
+            <template v-else>
+              <p class="cc-empty-title">{{ t('No contacts') }}</p>
+              <p class="cc-empty-desc">{{ t('Contacts will appear here.') }}</p>
+              <MpButton v-if="canCreate" variant="secondary" is-rounded left-icon="add" @click="router.push('/crm/customers/contacts/new')">{{ t('New contact') }}</MpButton>
+            </template>
+          </div>
+        </template>
       </ErpTablePage>
     </div>
 
@@ -258,6 +302,8 @@ const archiveDescription = computed(() => {
       :is-open="filtersOpen"
       :model-value="contactFilters"
       :owner-options="ownerOptions"
+      :company-options="companyOptions"
+      :source-options="sourceOptions"
       :columns="drawerColumns"
       @update:is-open="filtersOpen = $event"
       @apply="onApplyFilters"
@@ -300,17 +346,17 @@ const archiveDescription = computed(() => {
 }
 .row-kebab:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
 
+/* Default (no-data) empty state — illustration + title + caption + secondary CTA. */
+.cc-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10) var(--mp-spacing-6); }
+.cc-empty-illustration { width: 288px; max-width: 100%; height: auto; margin-bottom: var(--mp-spacing-2); }
+.cc-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cc-empty-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-subtle, #536062); }
+
 /* Filter bar (the .filter-search pill box + input are global in erp.css). */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-btn-group { display: flex; align-items: center; }
 .filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); font-weight: var(--mp-font-weights-semi-bold); }
-
-/* Active / Archived segmented view toggle. */
-.view-toggle { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); }
-.view-toggle-btn { appearance: none; border: 1px solid transparent; background: none; cursor: pointer; padding: var(--mp-spacing-1) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); line-height: var(--mp-line-heights-md); color: var(--mp-text-subtle, #536062); }
-.view-toggle-btn:hover:not(.is-active) { color: var(--mp-colors-text-default, #080d0e); }
-.view-toggle-btn.is-active { background: var(--mp-background-stage, #ffffff); color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold); border-color: var(--mp-border-default, #e3e7e9); }
 .search-clear-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;

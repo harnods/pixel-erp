@@ -8,15 +8,21 @@ export interface CompaniesFiltersValue {
   keyword: string
   /** column key to scope the keyword to, or 'all' for every column */
   keywordColumn: string
-  /** Owner — comparator + selected names */
-  ownerComparator: TagMatcher
-  owners: string[]
+  /** Location filters — comparator + selected values (PRD §304; Companies have no Owner) */
+  countryComparator: TagMatcher
+  countries: string[]
+  provinceComparator: TagMatcher
+  provinces: string[]
+  cityComparator: TagMatcher
+  cities: string[]
 }
 
 export function emptyCompaniesFilters(): CompaniesFiltersValue {
   return {
     keyword: '', keywordColumn: 'all',
-    ownerComparator: 'isAnyOf', owners: [],
+    countryComparator: 'isAnyOf', countries: [],
+    provinceComparator: 'isAnyOf', provinces: [],
+    cityComparator: 'isAnyOf', cities: [],
   }
 }
 </script>
@@ -41,7 +47,9 @@ const props = defineProps<{
   id: string
   isOpen: boolean
   modelValue: CompaniesFiltersValue
-  ownerOptions: string[]
+  countryOptions: string[]
+  provinceOptions: string[]
+  cityOptions: string[]
   columns: { key: string; label: string }[]
 }>()
 const emit = defineEmits<{
@@ -52,7 +60,9 @@ const emit = defineEmits<{
 function clone(v: CompaniesFiltersValue): CompaniesFiltersValue {
   return {
     keyword: v.keyword, keywordColumn: v.keywordColumn,
-    ownerComparator: v.ownerComparator, owners: [...v.owners],
+    countryComparator: v.countryComparator, countries: [...v.countries],
+    provinceComparator: v.provinceComparator, provinces: [...v.provinces],
+    cityComparator: v.cityComparator, cities: [...v.cities],
   }
 }
 const draft = reactive<CompaniesFiltersValue>(clone(props.modelValue))
@@ -87,17 +97,45 @@ function apply() { emit('apply', clone(draft)); close() }
             />
           </div>
 
-          <!-- Owner -->
+          <!-- Country -->
           <div class="ccfd-field">
-            <span class="ccfd-field-label">{{ t('Owner') }}</span>
+            <span class="ccfd-field-label">{{ t('Country') }}</span>
             <ErpTagComparatorField
-              :id="`${id}-owner`"
-              :comparator="draft.ownerComparator"
-              :values="draft.owners"
-              :options="ownerOptions"
-              :placeholder="t('Type a name…')"
-              @update:comparator="draft.ownerComparator = $event"
-              @update:values="draft.owners = $event"
+              :id="`${id}-country`"
+              :comparator="draft.countryComparator"
+              :values="draft.countries"
+              :options="countryOptions"
+              :placeholder="t('Type a country…')"
+              @update:comparator="draft.countryComparator = $event"
+              @update:values="draft.countries = $event"
+            />
+          </div>
+
+          <!-- Province -->
+          <div class="ccfd-field">
+            <span class="ccfd-field-label">{{ t('Province') }}</span>
+            <ErpTagComparatorField
+              :id="`${id}-province`"
+              :comparator="draft.provinceComparator"
+              :values="draft.provinces"
+              :options="provinceOptions"
+              :placeholder="t('Type a province…')"
+              @update:comparator="draft.provinceComparator = $event"
+              @update:values="draft.provinces = $event"
+            />
+          </div>
+
+          <!-- City -->
+          <div class="ccfd-field">
+            <span class="ccfd-field-label">{{ t('City') }}</span>
+            <ErpTagComparatorField
+              :id="`${id}-city`"
+              :comparator="draft.cityComparator"
+              :values="draft.cities"
+              :options="cityOptions"
+              :placeholder="t('Type a city…')"
+              @update:comparator="draft.cityComparator = $event"
+              @update:values="draft.cities = $event"
             />
           </div>
         </div>

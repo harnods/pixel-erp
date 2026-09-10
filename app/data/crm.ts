@@ -1549,14 +1549,27 @@ export interface CrmContactPerson {
   name: string
   fullName: string           // legal / full name (Display name is the short label)
   jobTitle: string
-  email: string
-  phone: string
+  email: string              // primary email (mirrors emails[0]) — kept for list/search/detail
+  phone: string              // primary phone (mirrors phones[0])
+  emails?: string[]          // all emails (≤5, first = primary) — PRD §194
+  phones?: string[]          // all phones (≤5, first = primary) — PRD §194
+  source?: string            // Source pick list value — PRD §199 (one of CRM_SOURCE_OPTIONS)
+  sourceOther?: string       // free text, required only when source === 'Other' — PRD §200
+  country?: string           // Primary Location — PRD §195-198
+  province?: string
+  city?: string
+  address?: string           // detailed address
+  postalCode?: string        // postal / ZIP code
+  description?: string       // multi-line description (CRM-only) — PRD §192
   companyIds: string[]       // associated companies (M2M)
-  owner: string
+  owner: string              // Customer Owner (required) — PRD §201
   archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
   createdAt: string
   lastActivity: string
 }
+
+/** Source — protected pick list, fixed in V1 (PRD §199). Not user-extensible. */
+export const CRM_SOURCE_OPTIONS = ['Referral', 'Website', 'Event', 'Social Media', 'Partner', 'Outbound', 'Imported', 'Other'] as const
 export interface CrmCompany {
   id: string                 // 'CO-001'
   name: string
@@ -1570,14 +1583,20 @@ export interface CrmCompany {
   postalCode: string
   country?: string
   billingAddress?: string    // full billing address (composed); shown on detail
-  shippingAddress?: string
+  shippingAddress?: string   // full shipping address (composed); shown on detail
+  // Shipping location components (raw; billing uses address/city/province/country/postalCode)
+  shipAddress?: string
+  shipCity?: string
+  shipProvince?: string
+  shipCountry?: string
+  shipPostalCode?: string
   fax?: string
   banks?: ContactBank[]      // bank accounts (shown on the company detail)
   note?: string
-  owner: string
+  owner?: string             // DEPRECATED — Companies have no Owner in V1 (PRD §237); kept optional for legacy snapshots only, never surfaced
   archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
-  contactIds: string[]       // member contacts (M2M)
-  primaryContactId?: string  // required when the company has >1 contact
+  contactIds: string[]       // member contacts (M2M) — ≥1 active required (PRD §230)
+  primaryContactId?: string  // Primary PIC — required, one active member (PRD §231)
   createdAt: string
   lastActivity: string
 }
@@ -1667,7 +1686,8 @@ function nextId(prefix: string, list: { id: string }[]): string {
   const n = list.reduce((m, x) => Math.max(m, Number(x.id.replace(`${prefix}-`, '')) || 0), 0) + 1
   return `${prefix}-${String(n).padStart(3, '0')}`
 }
-export function addCrmContactPerson(input: { name: string; fullName: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string }, now: string): CrmContactPerson {
+type ContactWritable = Partial<Pick<CrmContactPerson, 'emails' | 'phones' | 'source' | 'sourceOther' | 'country' | 'province' | 'city' | 'address' | 'postalCode' | 'description'>>
+export function addCrmContactPerson(input: { name: string; fullName: string; jobTitle: string; email: string; phone: string; companyIds: string[]; owner: string } & ContactWritable, now: string): CrmContactPerson {
   const person: CrmContactPerson = { id: nextId('CT', crmContactPeople), ...input, companyIds: [...input.companyIds], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10) }
   crmContactPeople.push(person)
   // keep the reverse link + primary rule coherent
@@ -1681,10 +1701,10 @@ export function addCrmContactPerson(input: { name: string; fullName: string; job
   persistCrmContactPeople(); persistCrmCompanies()
   return person
 }
-export function addCrmCompany(input: { name: string; industry: string; email: string; phone: string; website: string; address: string; city: string; province: string; postalCode: string; owner: string; contactIds: string[] }, now: string): CrmCompany {
+export function addCrmCompany(input: { name: string; industry: string; email: string; phone: string; website: string; address: string; city: string; province: string; postalCode: string; contactIds: string[]; primaryContactId?: string }, now: string): CrmCompany {
   const co: CrmCompany = {
     id: nextId('CO', crmCompanies), ...input, contactIds: [...input.contactIds],
-    primaryContactId: input.contactIds[0], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10),
+    primaryContactId: input.primaryContactId ?? input.contactIds[0], createdAt: now.slice(0, 10), lastActivity: now.slice(0, 10),
   }
   crmCompanies.push(co)
   for (const cid of co.contactIds) {
@@ -1753,7 +1773,7 @@ export function restoreCrmCompany(id: string): void {
 function nowDate(): string { return new Date().toISOString().slice(0, 10) }
 
 // ── Edit (patch) — update a record + keep reverse links coherent ──
-export function updateCrmContactPerson(id: string, patch: Partial<Pick<CrmContactPerson, 'name' | 'fullName' | 'jobTitle' | 'email' | 'phone' | 'owner' | 'companyIds'>>): void {
+export function updateCrmContactPerson(id: string, patch: Partial<Pick<CrmContactPerson, 'name' | 'fullName' | 'jobTitle' | 'email' | 'phone' | 'emails' | 'phones' | 'source' | 'sourceOther' | 'country' | 'province' | 'city' | 'address' | 'postalCode' | 'description' | 'owner' | 'companyIds'>>): void {
   const c = getContactPerson(id); if (!c) return
   if (patch.companyIds) {
     const next = patch.companyIds
@@ -1787,6 +1807,22 @@ export function updateCrmCompany(id: string, patch: Partial<CrmCompany>): void {
   co.lastActivity = nowDate()
   persistCrmCompanies(); persistCrmContactPeople()
 }
+
+/** The active company for which this contact is the Primary PIC or the sole active
+ *  member. Archiving such a contact is blocked until a replacement PIC/member is
+ *  committed or the company is archived (PRD §351). Returns undefined if none. */
+export function contactBlockingCompany(contactId: string): CrmCompany | undefined {
+  return crmCompanies.find((co) => {
+    if (co.archived || !co.contactIds.includes(contactId)) return false
+    const activeMembers = contactsOfCompany(co.id)
+    const isPic = co.primaryContactId === contactId
+    const isSole = activeMembers.length === 1 && activeMembers[0]?.id === contactId
+    return isPic || isSole
+  })
+}
+
+/** Active member count of a company — shown in the archive confirmation (PRD §361). */
+export function activeMemberCount(companyId: string): number { return contactsOfCompany(companyId).length }
 
 /** Same-name CRM contacts (active + archived) excluding one id — duplicate warning (PRD §263). */
 export function contactsSameName(name: string, excludeId?: string): CrmContactPerson[] {

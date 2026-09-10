@@ -382,10 +382,13 @@ When a table row expands to reveal a detail sub-panel (e.g. Warehouse detail →
 
 Follows Mekari's [empty state inside an index view](https://docs.mekari.design/skills/mekari-taste/references/index-view.html#empty-state-inside-an-index-view).
 
+Every table renders one of these — **never a blank table** (`rule/table-empty-state`).
+Both variants use the **same illustration** so the two states read consistently.
+
 | Variant | When | What | How |
 | ------- | ---- | ---- | --- |
-| **Full** (illustrated) | List has **never** had data | Illustration + title + helper text + **CTA** (create first record) | Provide via the **`#empty`** slot (per module) |
-| **Inline** (minimal) | Search/filter eliminated all results | **No illustration** — "No results found" + "Try adjusting your filters." + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
+| **Full** (default) | List has **never** had data (no filter/search active) | Illustration + title + helper text + **secondary CTA** (create first record, gated to the create permission) | Provide via the **`#empty`** slot (per module) |
+| **Inline** (filtered) | Search/filter eliminated all results | **Same illustration** + "\"{search}\" not found" / "No {label} match your filters" + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
 
 **Full empty-state copy — fixed format (use everywhere):**
 

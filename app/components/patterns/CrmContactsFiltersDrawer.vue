@@ -11,12 +11,20 @@ export interface ContactsFiltersValue {
   /** Owner — comparator + selected names */
   ownerComparator: TagMatcher
   owners: string[]
+  /** Company — comparator + selected company names */
+  companyComparator: TagMatcher
+  companies: string[]
+  /** Source — comparator + selected source values */
+  sourceComparator: TagMatcher
+  sources: string[]
 }
 
 export function emptyContactsFilters(): ContactsFiltersValue {
   return {
     keyword: '', keywordColumn: 'all',
     ownerComparator: 'isAnyOf', owners: [],
+    companyComparator: 'isAnyOf', companies: [],
+    sourceComparator: 'isAnyOf', sources: [],
   }
 }
 </script>
@@ -42,6 +50,8 @@ const props = defineProps<{
   isOpen: boolean
   modelValue: ContactsFiltersValue
   ownerOptions: string[]
+  companyOptions: string[]
+  sourceOptions: string[]
   columns: { key: string; label: string }[]
 }>()
 const emit = defineEmits<{
@@ -53,6 +63,8 @@ function clone(v: ContactsFiltersValue): ContactsFiltersValue {
   return {
     keyword: v.keyword, keywordColumn: v.keywordColumn,
     ownerComparator: v.ownerComparator, owners: [...v.owners],
+    companyComparator: v.companyComparator, companies: [...v.companies],
+    sourceComparator: v.sourceComparator, sources: [...v.sources],
   }
 }
 const draft = reactive<ContactsFiltersValue>(clone(props.modelValue))
@@ -98,6 +110,34 @@ function apply() { emit('apply', clone(draft)); close() }
               :placeholder="t('Type a name…')"
               @update:comparator="draft.ownerComparator = $event"
               @update:values="draft.owners = $event"
+            />
+          </div>
+
+          <!-- Company -->
+          <div class="ccfd-field">
+            <span class="ccfd-field-label">{{ t('Company') }}</span>
+            <ErpTagComparatorField
+              :id="`${id}-company`"
+              :comparator="draft.companyComparator"
+              :values="draft.companies"
+              :options="companyOptions"
+              :placeholder="t('Type a company…')"
+              @update:comparator="draft.companyComparator = $event"
+              @update:values="draft.companies = $event"
+            />
+          </div>
+
+          <!-- Source -->
+          <div class="ccfd-field">
+            <span class="ccfd-field-label">{{ t('Source') }}</span>
+            <ErpTagComparatorField
+              :id="`${id}-source`"
+              :comparator="draft.sourceComparator"
+              :values="draft.sources"
+              :options="sourceOptions"
+              :placeholder="t('Type a source…')"
+              @update:comparator="draft.sourceComparator = $event"
+              @update:values="draft.sources = $event"
             />
           </div>
         </div>
