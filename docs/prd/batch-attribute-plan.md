@@ -14,6 +14,16 @@
 | D2 | **The UI label is "Vendor", not "Supplier"**; the stable key stays `supplier`. | `rule/copy-vendor-not-supplier` + CLAUDE.md terminology. The PRD's semantic point still holds: the value is the *origin* vendor, not necessarily the billed one. **Flag to PM:** the PRD copy ("Supplier Batch Attribute…") needs the same rename. |
 | D3 | **No API, billing or Jurnal-brand work in the prototype.** | The prototype has no API layer and runs as the ERP brand, where Batch Attribute is built in. API stories are listed in §3 for completeness only. |
 
+### PM answers (10 Sep 2026) — these override the PRD text where they differ
+
+| # | Question | Answer | Effect on the plan |
+|---|----------|--------|--------------------|
+| A1 | Grade "Code" vs "Name" | **Name only.** There is no separate Code. | Grade = Name · Rank · Description · Status. Import and API resolve grades **by Name**, case-insensitive. The PRD's "Code first, then Name" and "ambiguous Code/Name match" rules no longer apply. Because Name is renameable, batches still store the **grade ID**, never the text. |
+| A2 | Expiry date: date or month precision | **Per value.** Each batch picks its own precision. | The Expiry field in the batch form has a **Date / Month** switch. The stored value is `YYYY-MM-DD` or `YYYY-MM`, so precision comes from the value itself. |
+| A3 | Grade menu placement | **Inventory submenu** | Inventory panel › **Grades** (Phase 1), confirmed. |
+| A4 | Can a batch number be edited? | **Yes, but it can't duplicate.** | Batch number is editable in the edit form and stays unique within the product. The batch store needs a stable internal ID so a rename doesn't orphan barcode or attribute data. |
+| A5 | Unassigned batch | **Still available to choose, but no attributes are ever assigned to it.** | Every batch-tracked product gets a system **Unassigned** batch. It shows "—" for every attribute, never renders attribute fields, and required-attribute rules skip it. |
+
 ---
 
 ## 2. What exists today (findings)
@@ -53,7 +63,11 @@
 ### Phase 0 — data foundation (no UI)
 
 **New `app/data/batchAttributes.ts`**
-- `BATCH_ATTRIBUTE_CATALOG`: `{ key, label, valueType }` for `expiry_date` (date **or month**), `manufacturing_date` (date), `best_before_date` (date), `supplier` (vendor ID, label **Vendor**), `grade` (grade ID).
+- `BATCH_ATTRIBUTE_CATALOG`: `{ key, label, valueType }` for `expiry_date` (date **or month**, per value — A2), `manufacturing_date` (date), `best_before_date` (date), `supplier` (vendor ID, label **Vendor**), `grade` (grade ID).
+- Expiry helpers:
+  - `expiryPrecision(v)`: returns `'day' | 'month'`, based on `YYYY-MM-DD` vs `YYYY-MM`.
+  - `formatExpiry(v)`: "28 Feb 2027" or "Feb 2027" (`docs/patterns/date-format.md`).
+  - `expiryEffectiveDate(v)`: a month value counts as its **last day**. The existing near-expiry warning (`isExpiryWarning`) compares against that.
 - Product attribute config store: `sku → { key, required }[]`, persisted (`loadSnapshot`/`saveSnapshot`, key `batch-attr-config-v1`).
   - `getBatchAttributeConfig(sku)` falls back to `[{ key: 'expiry_date', required: false }]` when nothing is set (PRD fallback rules 5 and 6).
   - `setBatchAttributeConfig(sku, next)` enforces 1–3 items and no duplicates. An empty set falls back to Expiry.
@@ -61,7 +75,9 @@
 
 **New `app/data/grades.ts`**
 - `GradeList { id, name }` is a single seeded list. `Grade { id, listId, name, rank, description, status: 'active' | 'inactive', deleted }` is seeded with A/1, B/2, C/3.
-  - The list is a separate entity and batches store the **grade ID**, per the PRD's "next phase needs no migration" note.
+  - There is **no Code field** (A1).
+  - The list is a separate entity and batches store the **grade ID**, per the PRD's "next phase needs no migration" note. The ID matters even more now that Name is the only identifier and can be renamed.
+  - `gradeByName(name)`: case-insensitive, searches the whole list including inactive grades, so callers can tell "not found" apart from "inactive".
 - Helpers:
   - `activeGrades()`
   - `nextRank()`: max rank over all grades, including inactive, + 1
@@ -72,10 +88,21 @@
 
 **Batch store: extend `app/data/productDetails.ts`**
 - Add `attributes: Partial<Record<AttrKey, string>>` to `ProductBatchSummary` / `BatchDetail`. Seeded batches map their existing `expiryDate` → `attributes.expiry_date`.
-- New persisted overlay `batch-overlay-v1`, keyed `${sku}::${batchNo}`. It holds user-created batches (qty 0) and attribute/description edits. `getProductBatches` merges seed + overlay.
+- **Stable batch ID (A4).** Add `id` to `ProductBatchSummary` / `BatchDetail`.
+  - Seeded batches get a deterministic ID of `${sku}::seed-${i}`; created batches get a generated one.
+  - The new persisted overlay `batch-overlay-v1` is keyed by **ID**, not batch number. It holds user-created batches (qty 0), attribute/description edits, and batch-number renames. `getProductBatches` merges seed + overlay.
   - A created batch must show even when the product has 0 on-hand; today that early-returns `[]` at `productDetails.ts:261`.
-- `createBatch(sku, { batchNo, description, attributes })`: batch number is unique **per product**.
-- `updateBatch(sku, batchNo, patch)`: on save, attributes that are no longer in the product's config are **purged** (story 7).
+  - The existing `batch-barcode-overlay-v1` is keyed by `sku::batchNo`. Re-key it on rename, or migrate it to ID keys, so the barcode follows the batch.
+  - The URL route `/product-list/:sku/batches/:batchNo` stays batch-number based, which is readable and matches today. After a rename, the detail page `router.replace`s to the new number. Warehouse-lot batch numbers from `warehouseDetails.ts` are seed data and aren't renamed.
+- **Unassigned batch (A5).** Every batch-tracked product has one system batch, `isUnassigned: true`, batch number "Unassigned", with **no attributes, ever**.
+  - It's listed with the product's batches and stays selectable wherever a batch is chosen.
+  - `updateBatch` refuses attribute writes to it, and required-attribute validation skips it.
+  - It can't be renamed and has no Edit action.
+  - Seeded as qty 0 unless stock is already unassigned.
+- `createBatch(sku, { batchNo, description, attributes })`: batch number is unique **per product**, case-insensitive. "Unassigned" is reserved.
+- `updateBatch(sku, id, patch)`:
+  - The batch number may change but must stay unique within the product, excluding the batch itself (A4).
+  - On save, attributes that are no longer in the product's config are **purged** (story 7).
 
 **Fix Track stock by persistence**
 - Add an optional `trackStockBy` to the custom `Product`, and save it from `NewProductPage.buildPayload()`.
@@ -86,11 +113,14 @@
 - config 1–3 / duplicate / fallback rules
 - grade rank auto-increment, the min-1-active and max-10-active limits, and delete-blocked-when-used
 - batch number unique per product, not globally
+- rename keeps uniqueness and moves the barcode
+- "Unassigned" is reserved and rejects attribute writes
 - attributes purged on update after a config change
+- expiry month value counts as end of month for the near-expiry warning
 
 ### Phase 1 — Grade List (story 3, 3a)
 
-- **Nav:** add **Grades** to the Inventory panel after *Units* (`ErpSidebar.vue:489`), and add it to `erpSitemap.ts`. The PRD marks placement as *needs design crosscheck*, so confirm with design.
+- **Nav:** add **Grades** to the Inventory panel after *Units* (`ErpSidebar.vue:489`), and add it to `erpSitemap.ts`. Placement confirmed by the PM (A3).
 - **Page `GradesPage.vue`** (route `/grades`): `ErpTablePage` (`rule/table-use-erptablepage`; invoke skill `erp-table-page`).
   - Columns: Rank · Name (link-span) · Description · Status (`ErpStatusBadge` Active/Inactive) · actions kebab (Edit · Activate/Deactivate · Delete).
   - Default sort is rank ascending. This is a deliberate exception to `rule/table-default-newest-first`, because rank *is* the order. Record the exception in the file.
@@ -128,13 +158,17 @@
   - Vendor shows the vendor name. Grade shows "A (Rank 1)". Expiry keeps its near-expiry warning.
 - Add **`[add] New batch`** in the tab's filter-bar right side. It's the single primary on that surface (`rule/btn-one-primary`), and "Print all barcode" stays secondary.
 - A newly created batch appears with qty 0.
+- The **Unassigned** row (A5) is listed last, with "—" in every attribute column and a kebab without Edit.
 - Empty state: when the product has no batches, show a "No batches" empty state with the New batch action (`rule/table-empty-state`, `rule/empty-state-structure`). Today this tab only renders when on-hand > 0.
 
 **New `BatchFormModal.vue`** (create + edit; `MpModal` md)
-- Batch number: required, unique within the product.
+- Batch number: required, unique within the product (case-insensitive), and "Unassigned" is reserved. **Editable in edit mode too** (A4), with the same uniqueness check excluding the batch itself.
 - Description: optional.
 - One field per product attribute, in config order. Required ones get `is-required`; optional ones may be empty.
-  - `expiry_date`: `MpDatePicker` `DD/MM/YYYY`. The PRD also allows a **month** value (MM/YYYY); open question Q2.
+  - `expiry_date` (A2): a pill segmented control **Date | Month** (`rule/segmented-control-pill`) above one `MpDatePicker`.
+    - Date → `type="date"`, `format="DD/MM/YYYY"`. Month → `type="month"`, `format="MM/YYYY"`. `value-type="format"` in both, per `rule/date-picker-variants`.
+    - Switching precision clears the value rather than guessing a day.
+    - In edit, the segment starts from the stored value's precision.
   - `manufacturing_date` / `best_before_date`: `MpDatePicker` (`rule/date-picker-variants`).
   - `supplier` → label **Vendor**: vendor autocomplete showing vendor names (`rule/select-quick-add` is not needed; creating vendors is out of scope).
   - `grade`: autocomplete over **active** grades, shown as "A · Rank 1".
@@ -142,12 +176,12 @@
 - **Edit mode (story 7):**
   - Only attributes in the *current* config are shown. Values for removed attributes are hidden and purged on save.
   - Newly required attributes are required; required→optional ones can be cleared.
-  - Batch number is read-only in edit. This is an assumption to confirm with the PM (Q4).
+  - Renaming the batch number keeps its barcode, attributes and history (stable ID).
 - Success toast on save only (`rule/toast-success-only`, `rule/btn-save-toast`).
 
 **`BatchDetailsPage.vue`**
-- Wire the inert **Edit** menu item to `BatchFormModal` in edit mode.
-- **Batch info** shows each configured attribute as a content-list row; an empty optional attribute shows "—".
+- Wire the inert **Edit** menu item to `BatchFormModal` in edit mode. Hide Edit for the Unassigned batch.
+- **Batch info** shows each configured attribute as a content-list row; an empty optional attribute shows "—". Expiry shows at its own precision ("Feb 2027" vs "28 Feb 2027"). The Unassigned batch shows no attribute rows.
 - Append batch create/edit entries to its Activity log.
 
 ### Phase 4 — Update Batch import (story 4 import rules, 9)
@@ -171,7 +205,10 @@
     - Grade is not active
   - The error table has a download-error-file action.
   - Semantics to spell out in the template help panel: `null` clears a value, and a blank cell leaves it unchanged.
-  - **Grade matching:** match Code first, then Name, case-insensitive. Reject when ambiguous or inactive. Import never creates a grade.
+  - **Grade matching (A1):** by **Name** only, case-insensitive. Unknown → "Grade name not found". Inactive → "Grade is not active". Import never creates a grade.
+  - **Expiry (A2):** each row may be `DD/MM/YYYY` *or* `MM/YYYY`, and that row's value keeps that precision.
+  - **Unassigned batch (A5):** a row naming it with any attribute filled is rejected. Proposed copy: "Unassigned batch can't have attributes" / "Batch Unassigned tidak dapat memiliki atribut". The copy is an assumption; confirm wording with the PM. Description-only rows are also rejected, since it's a system batch.
+  - The template matches batches **by batch number**, so it can't rename them. Renames are web-only.
 - Runs as a background process: after submit, push an entry into the header activity popover (`uploadCenter.ts`) and return to the product. Success → toast.
 - **Not built:** the "Product Batch" filter on Other lists › Export & import, because that page doesn't exist in the prototype. Track as a follow-up.
 
@@ -214,8 +251,9 @@ All new strings go through `t()`. Indonesian follows uxw-mekari (run the `uxw-me
   - Product *update* import ignores attribute columns.
 - **API:**
   - `batch_attributes` on Create/Update Product. It **replaces** the set rather than merging. Omitting it leaves the set unchanged. `[]` falls back to Expiry. Invalid input → 422.
-  - Create Batch endpoint: `attributes` keyed by API key, grade sent as its **Code**. 422 on a missing required or unselected key; 409 on a duplicate batch number.
-  - GET Batch returns attributes (grade code/name/rank) + qty on hand.
+  - Create Batch endpoint: `attributes` keyed by API key, grade sent as its **Name** (A1; the PRD said Code). 422 on a missing required or unselected key; 409 on a duplicate batch number.
+  - GET Batch returns attributes (grade ID/name/rank) + qty on hand.
+  - **Flag for the API owner:** with Name as the only identifier, an integrator holding an old grade name breaks after a rename. Recommend they sync the grade ID from GET Grade List.
   - GET Grade List endpoint.
 - **Entitlement:** a Jurnal add-on requiring `advanced_inventory_tracking`, SCM = TRUE and AVG costing. FIFO is out of scope.
 
@@ -227,20 +265,20 @@ All new strings go through `t()`. Indonesian follows uxw-mekari (run the `uxw-me
 |---------|--------|
 | Grades page | populated · only-seed (A/B/C) · at 10 active (New grade → limit notice) · last active grade (deactivate blocked) · delete-used (offer deactivate) · first-load skeleton (`rule/index-first-load-skeleton`) |
 | Product form | not batch-tracked (block hidden) · 1 row default · 3 rows (add hidden) · duplicate prevented · edit with changes → confirm modal · edit without changes → no modal |
-| Stock by batches tab | no batches (empty + New batch) · created batch at qty 0 · attribute columns for 1 vs 3 attributes · search no-match |
-| Batch form | create · edit after an attribute was added-as-required (must fill) · after an attribute was removed (hidden, purged) · duplicate batch number error · no active grades *(unreachable: min 1 active is enforced)* |
-| Update import | success · partial (error table + download) · all failed · wrong file type / too large |
+| Stock by batches tab | only the Unassigned batch · created batch at qty 0 · Unassigned row ("—" attributes, no Edit) · attribute columns for 1 vs 3 attributes · day- vs month-precision expiry side by side · month expiry near end of month (warning) · search no-match |
+| Batch form | create · expiry Date ↔ Month switch · edit after an attribute was added-as-required (must fill) · after an attribute was removed (hidden, purged) · rename to a new number · rename to a duplicate (inline error) · "Unassigned" typed as a number (inline error) · no active grades *(unreachable: min 1 active is enforced)* |
+| Update import | success · partial (error table + download, incl. an Unassigned row and a mixed DD/MM/YYYY + MM/YYYY file) · all failed · wrong file type / too large |
 
 ---
 
 ## 8. Open questions for PM / design
 
-1. **Grade "Code" vs "Name".** Story 4 (import/API) matches on a *Grade Value Code* and says only the Code is stable. Story 3's create form defines only Name / Rank / Description, with no Code. Is Code a separate immutable field, or is Name the code? The plan assumes **a separate immutable Code** isn't needed for the web prototype and matches import on Name. Confirm.
-2. **Expiry date "date / month".** Is this a per-product setting (day vs month precision), or per value? The import accepts both `DD/MM/YYYY` and `MM/YYYY`. The plan uses a day picker in the form and accepts both in import.
-3. **Grade menu placement:** Inventory › Grades (ERP). The PRD marks it *needs design crosscheck*.
-4. **Can a batch number be edited after creation?** The PRD is silent; the plan assumes **no**.
-5. **"Unassigned Batch".** The PRD exempts it from required attributes, but the prototype has no unassigned-batch concept. OK to skip?
-6. The PRD copy uses **"Supplier"**; the repo standard is **"Vendor"** (D2). Please rename in the PRD.
+The first round (Code vs Name, expiry precision, Grades placement, batch-number edits, Unassigned batch) is answered; see §1 A1–A5. Still open:
+
+1. The PRD copy uses **"Supplier"**; the repo standard is **"Vendor"** (D2). Please rename in the PRD.
+2. **Unassigned batch in Update Batch import:** the plan rejects any row that targets it. Confirm, and confirm the error copy in Phase 4.
+3. **Grade rename vs. existing batches:** batches store the grade ID, so a rename shows the new name on every past batch. Confirm that's intended, rather than keeping the old name as a historical snapshot.
+4. **Renaming a batch that is already on transactions:** the plan lets it go through, and the transactions show the new number because the ID is stable. Confirm there's no lock once a batch has movements.
 
 ---
 
