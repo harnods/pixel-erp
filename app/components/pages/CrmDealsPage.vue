@@ -40,8 +40,8 @@ import {
   deals, dealMetrics, DEAL_STAGES, ONGOING_STAGES, moveDealStage,
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
-  CRM_OWNERS, crmCustomers, dealStageBadgeType, getCrmModule,
-  dealPipelines, dealPipelineDisplay,
+  CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
+  dealPipelineDisplay,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 
@@ -51,17 +51,8 @@ const router = useRouter()
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 
 // ── Deals-module settings applied to the board (module builder ▸ Pipeline) ──
-// Column labels follow the pipeline stage names (renamable in settings); matched
-// by the stage's stable id so a rename shows through while deals keep their
-// canonical stage identity.
-const STAGE_ID_BY_CANONICAL: Record<DealStage, string> = {
-  'Open Lead': 's-open-lead', '1st Meeting': 's-1st-meeting', 'Proposal': 's-proposal',
-  'Negotiation': 's-negotiation', 'Won': 's-won', 'Lost': 's-lost',
-}
-function stageLabel(c: DealStage): string {
-  const id = STAGE_ID_BY_CANONICAL[c]
-  return dealPipelines[0]?.stages.find((s) => s.id === id)?.name || t(c)
-}
+// Stage labels come from the shared dealStageLabel (renamable in settings, matched
+// by stable id) so the board, table + every badge stay one source.
 function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
   return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
 }
@@ -383,7 +374,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
 // Colour comes from the shared `dealStageBadgeType` (single source of truth, so the
 // pipeline, deal preview, and company Deals tab never drift). Label = the stage name.
 function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'; label: string } {
-  return { type: dealStageBadgeType(stage), label: t(stage) }
+  return { type: dealStageBadgeType(stage), label: t(dealStageLabel(stage)) }
 }
 // ── Columns — the 6 defaults, plus optional PRD columns hidden by default and
 // toggleable from Column settings. ──
@@ -514,7 +505,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             @drop="onDrop(col.stage)"
           >
             <header class="kcol__head">
-              <span class="kcol__name">{{ stageLabel(col.stage) }}</span>
+              <span class="kcol__name">{{ t(dealStageLabel(col.stage)) }}</span>
               <span class="kcol__count">{{ col.cards.length }}</span>
             </header>
             <div class="kcol__cards">

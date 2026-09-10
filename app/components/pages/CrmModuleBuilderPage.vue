@@ -539,7 +539,7 @@ function cancel() { router.push('/crm/settings/modules') }
                     </div>
 
                     <button class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
-                      <MpIcon name="trash" size="sm" /><span>{{ t('Delete stage') }}</span>
+                      <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
                     </button>
                   </div>
 

@@ -30,7 +30,7 @@ import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import {
   getContactPerson, getCompany, companiesOfContact, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
-  archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, type Deal,
+  archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, dealStageLabel, type Deal,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -370,7 +370,7 @@ function confirmArchive() {
                 <template #cell-name="{ row }">
                   <span class="cell-link cell-text" @click.stop="router.push(`/crm/deals/${(row as unknown as Deal).id}`)">{{ (row as unknown as Deal).name }}</span>
                 </template>
-                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" :type="dealStageBadgeType((row as unknown as Deal).stage)" :label="t((row as unknown as Deal).stage)" /></template>
+                <template #cell-stage="{ row }"><ErpStatusBadge :status="(row as unknown as Deal).stage" :type="dealStageBadgeType((row as unknown as Deal).stage)" :label="t(dealStageLabel((row as unknown as Deal).stage))" /></template>
                 <template #cell-owner="{ row }"><span class="cell-text">{{ (row as unknown as Deal).owner }}</span></template>
                 <template #cell-value="{ row }"><span class="cell-text">{{ formatIDR((row as unknown as Deal).value) }}</span></template>
                 <template #cell-updated="{ row }">

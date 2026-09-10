@@ -208,6 +208,25 @@ export type DealStage = typeof DEAL_STAGES[number]
 /** Ongoing (non-closed) stages — used by metrics + the reopen picker. */
 export const ONGOING_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation'] as const
 
+/** Canonical stage → its stable pipeline-stage id + seed name. A deal always keeps
+ *  its canonical stage; renaming a stage in module settings only changes the
+ *  pipeline stage's `name`, matched back here by id so every badge updates. */
+export const DEAL_STAGE_ID: Record<DealStage, string> = {
+  'Open Lead': 's-open-lead', '1st Meeting': 's-1st-meeting', 'Proposal': 's-proposal',
+  'Negotiation': 's-negotiation', 'Won': 's-won', 'Lost': 's-lost',
+}
+const DEAL_STAGE_SEED_NAME: Record<DealStage, string> = {
+  'Open Lead': 'Open lead', '1st Meeting': '1st meeting', 'Proposal': 'Proposal',
+  'Negotiation': 'Negotiation', 'Won': 'Won', 'Lost': 'Lost',
+}
+/** Display label for a stage. Returns the CANONICAL key while the stage keeps its
+ *  seed name (so the call site's `t()` localizes it); returns the custom name once
+ *  it's been renamed in module settings. Single source for every stage badge. */
+export function dealStageLabel(stage: DealStage): string {
+  const st = dealPipelines[0]?.stages.find((s) => s.id === DEAL_STAGE_ID[stage])
+  return !st || st.name === DEAL_STAGE_SEED_NAME[stage] ? stage : st.name
+}
+
 /** Canonical deal-stage → `ErpStatusBadge` colour `type`. **Single source of
  *  truth** so every surface (deals pipeline/list, deal preview, company detail
  *  Deals tab) colours a stage identically — pass the result as `:type` on
