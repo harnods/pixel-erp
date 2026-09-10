@@ -88,12 +88,14 @@ function removePhone(i: number) { phones.value.splice(i, 1); if (!phones.value.l
 // Only fires on user selection — the initial edit-mode value doesn't trigger it.
 watch(companyId, (id) => {
   const co = id ? getCompany(id) : undefined
-  if (!co || !(co.billingAddress || co.address)) return
-  address.value = co.address ?? ''
-  city.value = co.city ?? ''
-  province.value = co.province ?? ''
-  country.value = co.country ?? country.value
-  postalCode.value = co.postalCode ?? ''
+  if (!co) return
+  // Fill each field only when the company actually has it — never clobber to empty
+  // (an older company may only carry the composed billing address).
+  address.value = co.address || co.billingAddress || address.value
+  if (co.city) city.value = co.city
+  if (co.province) province.value = co.province
+  if (co.country) country.value = co.country
+  if (co.postalCode) postalCode.value = co.postalCode
 })
 
 // ── Duplicate warning (non-blocking; requires explicit Save anyway — PRD §264) ──
