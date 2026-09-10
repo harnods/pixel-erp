@@ -485,7 +485,7 @@ ERP override wins.
   date** = `MpDatePicker` (`format="DD/MM/YYYY"`, `value-type="format"`); **range /
   presets** = the ERP **`AdvancedDateRangePicker`** (preset list + 2-month calendar in
   Custom, portaled). *Don't:* hand-roll a second range picker. **Why:** two vetted
-  controls cover every date need. **Source:** `docs/patterns/date-range-picker.md`.
+  controls cover every date need. **Source:** `docs/patterns/AdvancedDateRangePicker.md`.
   **Lint:** review.
 - **`rule/date-picker-no-clip`** — *Do:* a date picker's calendar must **render fully,
   never clipped** — the ERP calendars portal / escape their container (as
@@ -594,7 +594,7 @@ ERP override wins.
   cell (description / avatar / ≥3 lines) aligns **that row's** cells **top**. The **`[…]`
   actions cell is the exception — it ALWAYS aligns top** (never middle), on every row.
   It's per-row, not whole-table — `ErpTablePage` toggles `.erp-tr--align-top` on each
-  measured tall row. **Why:** the golden padding/align rule (`docs/table-design.md`).
+  measured tall row. **Why:** the golden padding/align rule (`docs/patterns/ErpTablePage.md`).
   **Lint:** review.
 - **`rule/table-default-newest-first`** — *Do:* any table whose rows carry a
   **`date`** (every transactional index — invoices, orders, quotes, deliveries,
@@ -816,7 +816,7 @@ ERP override wins.
   omit it on a page that posts to the ledger. **Why:** the posting is always one click
   away. **Lint:** review.
 
-## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/empty-state.md`
+## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/design/reachable-states.md`
 
 - **`rule/empty-state-structure`** — *Do:* an empty state = illustration + title +
   caption + a **secondary-variant** button. **Lint:** review.

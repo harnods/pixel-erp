@@ -44,7 +44,7 @@ the rare non-table case.
 
 ```vue
 <ErpFilterBar>
-  <!-- put MpInputGroup, MpSelect, MpButton here -->
+  <!-- put the search pill, ErpFilterSelect, MpButton here -->
 </ErpFilterBar>
 ```
 
@@ -166,17 +166,16 @@ Recommended clear-button style:
 
 ## Verbal Shorthand
 
-> ⚠️ **Aspirational** — the Pixel `MpInputGroup`/`MpSelect`/`MpButton` mappings
-> below are the intended Pixel-native pattern, but current pages hand-roll the
-> controls shown in **Real index-page pattern** above. Prefer matching existing
-> pages for consistency until the Pixel controls are adopted project-wide.
+> ⚠️ Map the user's words to slot content using the **Real index-page pattern**
+> above (search pill + `ErpFilterSelect`). **Quick filters are always
+> `ErpFilterSelect`, never `MpSelect`/native `<select>`** (`rule/select-erpfilterselect`).
 
 When the user describes what should be in the filter bar, map their words to slot content. **Do not create a new component.**
 
 | User says | What to put in the slot |
 |---|---|
 | "search only" | `MpInputGroup` + `MpInputLeftAddon` (search icon) + `MpInput` |
-| "add status filter" | + `MpSelect` with status options after search |
+| "add status filter" | + `ErpFilterSelect` (placeholder = filter name, real values only) after search |
 | "add date filter" | + `MpDatePicker` after search |
 | "add create button" | + `MpButton variant="primary" left-icon="add-circular" style="margin-left:auto"` |
 | "hide the create button" | Remove the `MpButton` from slot |
