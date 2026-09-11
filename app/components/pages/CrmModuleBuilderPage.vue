@@ -22,6 +22,7 @@ import {
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   getCrmModule, persistCrmModule,
@@ -29,7 +30,8 @@ import {
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
-  type CrmModule, type CrmModuleField, type CrmFieldType,
+  deals,
+  type CrmModule, type CrmModuleField, type CrmFieldType, type Deal,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
   type DealPipelineDisplay, type DealModuleSetup,
@@ -115,7 +117,7 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
 const isDeals = computed(() => !!mod.value?.system)
 const tabs = computed(() => isDeals.value
-  ? [{ key: 'setup', label: 'Setup' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
+  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
 const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
@@ -213,6 +215,68 @@ const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldTy
   .map(([value, label]) => ({ value, label }))
 function typeLabel(type: CrmFieldType): string { return CRM_FIELD_TYPE_LABELS[type] }
 function hasOptions(type: CrmFieldType): boolean { return type === 'pick-list' || type === 'radio' }
+
+// ── Properties tab — the module's fields as a table (name · type · created by ·
+//    fill rate · edit/delete). Reads the editable draft so changes show live. ──
+// Fill rate = % of active deals where the field carries a value (real, computed).
+const FIELD_FILLED: Record<string, (d: Deal) => boolean> = {
+  name: (d) => !!d.name,
+  customer: (d) => !!d.customerId,
+  stage: () => true,
+  owner: (d) => !!d.owner,
+  priority: (d) => !!d.priority,
+  products: (d) => !!(d.products && d.products.length),
+  value: (d) => !!d.value,
+  closeDate: (d) => !!d.expectedCloseDate,
+  source: (d) => !!(d as unknown as { source?: string }).source,
+  contactPerson: (d) => !!d.picName,
+  referenceNumber: (d) => !!d.referenceNumber,
+  description: (d) => !!d.description,
+  notes: (d) => !!d.notes,
+}
+function fieldFillRate(fieldId: string): number {
+  const active = deals.filter((d) => !d.archived)
+  const acc = FIELD_FILLED[fieldId]
+  if (!acc || !active.length) return 0
+  return Math.round((active.filter(acc).length / active.length) * 100)
+}
+interface PropertyRow { id: string; label: string; type: CrmFieldType; typeLabel: string; createdBy: string; fillRate: number; system: boolean }
+const propertyRows = computed<PropertyRow[]>(() =>
+  draft.fields.map((f) => ({
+    id: f.id, label: f.label, type: f.type, typeLabel: CRM_FIELD_TYPE_LABELS[f.type],
+    createdBy: 'System', fillRate: fieldFillRate(f.id), system: f.system,
+  })),
+)
+// Field-type filter options — only the types actually present.
+const propTypeOptions = computed(() => {
+  const seen = new Set<string>()
+  return draft.fields
+    .filter((f) => (seen.has(f.type) ? false : (seen.add(f.type), true)))
+    .map((f) => ({ value: f.type, label: CRM_FIELD_TYPE_LABELS[f.type] }))
+})
+const {
+  search: propSearch, statusFilter: propTypeFilter, paginated: propPaginated, total: propTotal,
+  currentPage: propPage, perPage: propPerPage, sortKey: propSortKey, sortDir: propSortDir,
+  setPage: propSetPage, setPerPage: propSetPerPage, toggleSort: propToggleSort, setSort: propSetSort,
+} = useTableState<PropertyRow>(propertyRows, {
+  filterFn: (row, s, status) =>
+    (!s || row.label.toLowerCase().includes(s)) && (!status || row.type === status),
+  defaultSort: { key: 'label', dir: 'asc' },
+})
+const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value)
+function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = '' }
+const PROP_COLUMNS: TableColumn[] = [
+  { key: 'label',     label: 'Name',       kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'type',      label: 'Field type', kind: 'status', sortable: true, sortType: 'text' },
+  { key: 'createdBy', label: 'Created by', kind: 'name' },
+  { key: 'fillRate',  label: 'Fill rate',  kind: 'number', align: 'right', sortable: true, sortType: 'number' },
+]
+function editProperty(id: string) { const f = draft.fields.find((x) => x.id === id); if (f) openEditField(f) }
+function deleteProperty(id: string) {
+  const f = draft.fields.find((x) => x.id === id)
+  if (!f || f.system) return
+  draft.fields = draft.fields.filter((x) => x.id !== id)
+}
 
 // Single-choice fields feed the Layout driver + Kanban "Categorize by".
 const choiceFieldOptions = computed(() =>
@@ -619,6 +683,70 @@ function cancel() { router.push('/crm/settings/modules') }
                 <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="accessDrawerOpen = true">{{ t('Add users') }}</MpButton>
               </div>
             </div>
+          </div>
+
+          <!-- ════════ PROPERTIES (Deals) — the module's fields as a table ════════ -->
+          <div v-show="activeTab === 'properties'" class="builder-panel builder-panel--table">
+            <ErpTablePage
+              :columns="PROP_COLUMNS"
+              :rows="(propPaginated as unknown as Record<string, unknown>[])"
+              :total="propTotal"
+              :current-page="propPage"
+              :per-page="propPerPage"
+              :sort-key="propSortKey"
+              :sort-dir="propSortDir"
+              has-checkbox
+              bulk-label="property"
+              filter-empty-label="property"
+              :search="propSearch"
+              :has-active-filter="propHasFilter"
+              @page-change="propSetPage"
+              @per-page-change="propSetPerPage"
+              @sort="propToggleSort"
+              @sort-change="propSetSort"
+              @clear-filters="clearPropFilters"
+            >
+              <template #filters>
+                <div class="filter-left">
+                  <ErpFilterSelect
+                    id="prop-type-filter"
+                    :model-value="propTypeFilter"
+                    :placeholder="t('Field type')"
+                    :options="propTypeOptions"
+                    @update:model-value="(v: string) => (propTypeFilter = v)"
+                  />
+                </div>
+                <div class="filter-right">
+                  <div class="filter-search">
+                    <MpIcon name="search" size="sm" />
+                    <input v-model="propSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+                    <button v-if="propSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="propSearch = ''"><MpIcon name="close" size="sm" /></button>
+                  </div>
+                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddField()">{{ t('New property') }}</MpButton>
+                </div>
+              </template>
+
+              <template #cell-label="{ row }">
+                <span class="prop-name">{{ (row as unknown as PropertyRow).label }}</span>
+              </template>
+              <template #cell-type="{ row }">{{ t((row as unknown as PropertyRow).typeLabel) }}</template>
+              <template #cell-createdBy="{ row }">{{ t((row as unknown as PropertyRow).createdBy) }}</template>
+              <template #cell-fillRate="{ row }">{{ (row as unknown as PropertyRow).fillRate }}%</template>
+
+              <template #actions="{ row }">
+                <MpPopover :id="`prop-actions-${(row as unknown as PropertyRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                  <MpPopoverTrigger>
+                    <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem @click="editProperty((row as unknown as PropertyRow).id)">{{ t('Edit') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-if="!(row as unknown as PropertyRow).system" @click="deleteProperty((row as unknown as PropertyRow).id)">{{ t('Delete') }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+              </template>
+            </ErpTablePage>
           </div>
 
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
@@ -1081,6 +1209,9 @@ function cancel() { router.push('/crm/settings/modules') }
 /* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
 .builder-panel--pipeline { flex: 1; min-height: 0; }
+/* Properties tab — ErpTablePage manages its own scroll; fill the stage. */
+.builder-panel--table { flex: 1; min-height: 0; }
+.prop-name { color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
