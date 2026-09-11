@@ -542,7 +542,7 @@ function cancel() { router.push('/crm/settings/modules') }
                           <MpIcon name="chevrons-down" size="sm" class="setup-icon-caret" />
                         </button>
                       </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)' })">
+                      <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)', width: '240px' })">
                         <div class="pipe-icon-grid">
                           <button
                             v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
