@@ -1260,6 +1260,16 @@ function cancel() { router.push('/crm/settings/modules') }
 .prop-name { color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
+/* Properties filter bar (mirrors the standard ErpFilterBar layout). */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.search-clear-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
+  border: none !important; background: none !important; cursor: pointer;
+  color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
+}
+.search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
