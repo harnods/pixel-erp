@@ -3,8 +3,9 @@
  * CrmDetailLayoutBuilder — the Layout tab ▸ "Details page" canvas of the Deals
  * module builder (Figma CRM 4244-18718). Concept mirrors HubSpot's edit-layout,
  * built with ERP components + tokens (/pixel-erp-design):
- *   "Edit layout" title → text tab strip (green underline) + New tab → per-tab
- *   sections (plain titled groups) → property fields as bordered cards.
+ *   "Edit layout" title → text tab strip (green underline; a FIXED set of tabs —
+ *   no add/delete) → per-tab sections (plain titled groups) → property fields as
+ *   bordered cards. A tab can only be renamed (hover kebab), never added or removed.
  * Section actions (add property / edit / delete) and property remove live in a
  * kebab menu; edits use MpModal, destructive delete uses ConfirmModal. All edits
  * mutate the passed reactive `detail`; the parent's Save changes persists it.
@@ -49,24 +50,14 @@ type ColCount = 1 | 2 | 3 | 4
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 const activeTabId = ref<string>(props.detail.tabs.find((tp) => tp.editable)?.id ?? props.detail.tabs[0]?.id ?? '')
 const activeTab = computed(() => props.detail.tabs.find((tp) => tp.id === activeTabId.value))
-let tabSeq = 1
 function selectTab(id: string) { activeTabId.value = id }
-function addTab() {
-  const id = `tab-custom-${tabSeq++}`
-  props.detail.tabs.push({ id, key: id, label: t('New tab'), editable: true, visible: true, sections: [] })
-  activeTabId.value = id
-}
-// Tab rename (inline) + delete — from the hover kebab. Nothing is saved until
-// "Save changes", so deletes are immediate (no confirm).
+// Tabs are a FIXED set (seeded) — they can only be renamed, never added or
+// deleted. Rename is inline from the hover kebab; nothing persists until the
+// parent's "Save changes".
 const renamingTabId = ref('')
 const renameValue = ref('')
 function startRenameTab(tp: DetailLayoutTab) { renamingTabId.value = tp.id; renameValue.value = t(tp.label) }
 function commitRenameTab(tp: DetailLayoutTab) { if (renameValue.value.trim()) tp.label = renameValue.value.trim(); renamingTabId.value = '' }
-function deleteTab(tp: DetailLayoutTab) {
-  const i = props.detail.tabs.findIndex((x) => x.id === tp.id)
-  props.detail.tabs = props.detail.tabs.filter((x) => x.id !== tp.id)
-  if (activeTabId.value === tp.id) activeTabId.value = props.detail.tabs[Math.max(0, i - 1)]?.id ?? props.detail.tabs[0]?.id ?? ''
-}
 
 // ── Property lookup ─────────────────────────────────────────────────────────────
 function prop(id: string) { return props.properties.find((p) => p.id === id) }
@@ -239,9 +230,21 @@ function onPropDragStart(section: DetailLayoutSection, i: number, e: DragEvent) 
 }
 function onPropDragOver(section: DetailLayoutSection, i: number, e: DragEvent) {
   e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
-  if (propDrag.value.sec !== section.id || propDrag.value.src === null || propDrag.value.src === i) return
-  const arr = [...section.propertyIds]; const [m] = arr.splice(propDrag.value.src, 1); arr.splice(i, 0, m!)
-  section.propertyIds = arr; propDrag.value.src = i
+  const from = propDrag.value.src
+  if (propDrag.value.sec !== section.id || from === null) return
+  // Insert BEFORE or AFTER the hovered card based on the cursor's position within
+  // it (top half → before, bottom half → after), so you can drop a card *below*
+  // another instead of only ever landing on its slot (a reorder, never a swap).
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const insertAfter = e.clientY - rect.top > rect.height / 2
+  let to = insertAfter ? i + 1 : i
+  if (to > from) to -= 1                 // account for the dragged card's own removal
+  if (to === from) return                // already in place — no reflow
+  const arr = [...section.propertyIds]
+  const [m] = arr.splice(from, 1)
+  arr.splice(to, 0, m!)
+  section.propertyIds = arr
+  propDrag.value.src = to
 }
 function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 </script>
@@ -254,8 +257,8 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
       <p class="dlb-desc">{{ t('Applies to the deal details page and the creation form.') }}</p>
     </div>
 
-    <!-- Text tab strip (green underline) + New tab. Each tab reveals a kebab on
-         hover: Rename (inline) / Delete. -->
+    <!-- Text tab strip (green underline) — a FIXED set of tabs (no add / delete).
+         Each tab reveals a kebab on hover with a single action: Rename (inline). -->
     <div class="dlb-tabstrip">
       <div v-for="tp in detail.tabs" :key="tp.id" class="dlb-tab" :class="{ 'dlb-tab--active': tp.id === activeTabId }">
         <MpInput
@@ -272,14 +275,12 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
               <MpPopoverContent :class="css({ minWidth: '160px' })">
                 <MpPopoverList>
                   <MpPopoverListItem @click="startRenameTab(tp)">{{ t('Rename tab') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="deleteTab(tp)">{{ t('Delete tab') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
           </span>
         </template>
       </div>
-      <button type="button" class="dlb-newtab" @click="addTab"><MpIcon name="add" size="sm" />{{ t('New tab') }}</button>
     </div>
 
     <!-- Active tab body -->
@@ -461,8 +462,6 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-colors-background-success-bold, #16b364); }
 .dlb-tab-input { width: 132px; }
 .dlb-tab-kebab { margin: -8px -6px -8px 0; }
-.dlb-newtab { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
-.dlb-newtab:hover { color: var(--mp-colors-text-default, #080d0e); }
 
 /* Body */
 .dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }

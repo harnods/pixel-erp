@@ -285,7 +285,7 @@ const PROP_FILL: Record<string, (d: Deal) => boolean> = {
   // Related lists (whole collections) — always present on a deal record.
   'files': () => true,
   'notes': () => true,
-  'sales-orders': () => true,
+  'erp-transactions': () => true,
   'activity-log': () => true,
   // Catalogue properties
   'amount-in-company-currency': (d) => d.value > 0,

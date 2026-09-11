@@ -40,6 +40,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Sales section
   'Sales quotes': 'Penawaran penjualan',
   'Sales orders': 'Pesanan penjualan',
+  'ERP transactions': 'Transaksi ERP',
   'Sales invoices': 'Faktur penjualan',
   'Sales deliveries': 'Pengiriman penjualan',
   'Customers': 'Pelanggan',

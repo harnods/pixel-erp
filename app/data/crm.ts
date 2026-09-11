@@ -1366,16 +1366,16 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
       sections: [{ id: 'sec-files', name: 'Files', columns: 1, propertyIds: ['files'] }],
     },
     {
-      id: 'tab-orders', key: 'orders', label: 'Sales orders', editable: true, visible: true,
-      sections: [{ id: 'sec-orders', name: 'Sales orders', columns: 1, propertyIds: ['sales-orders'] }],
+      id: 'tab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true,
+      sections: [{ id: 'sec-orders', name: 'ERP transactions', columns: 1, propertyIds: ['erp-transactions'] }],
     },
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v4')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v5')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v4', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v5', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1453,7 +1453,7 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   // ── Related lists (whole embedded tables/collections) — system, non-editable ──
   ['Files', 'Related list', 100],
   ['Notes', 'Related list', 100],
-  ['Sales orders', 'Related list', 100],
+  ['ERP transactions', 'Related list', 100],
   ['Activity log', 'Related list', 100],
   ['Payment terms', 'Dropdown select', 0],
   ['Description', 'Multi-line text', 0],
@@ -1527,8 +1527,8 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
 const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
   id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
 }))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v6', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v6', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v7', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v7', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICES module — a second Deals-like module for service (non-shipping) deals:
@@ -1583,7 +1583,7 @@ const SERVICE_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Products', 'Product list', 0],
   ['Files', 'Related list', 100],
   ['Notes', 'Related list', 100],
-  ['Sales orders', 'Related list', 100],
+  ['ERP transactions', 'Related list', 100],
   ['Activity log', 'Related list', 100],
   ['Payment terms', 'Dropdown select', 0],
   ['Description', 'Multi-line text', 0],
@@ -1592,8 +1592,8 @@ const SERVICE_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
 const SERVICE_PROPERTIES_SEED: DealProperty[] = SERVICE_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
   id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
 }))
-export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v1', SERVICE_PROPERTIES_SEED))
-export function persistServiceProperties() { saveSnapshot('crm-service-properties-v1', serviceProperties) }
+export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v2', SERVICE_PROPERTIES_SEED))
+export function persistServiceProperties() { saveSnapshot('crm-service-properties-v2', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   tabs: [

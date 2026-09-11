@@ -396,7 +396,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="deal-tab-orders" value="orders">{{ t('Sales orders') }}</MpTab>
+          <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -626,9 +626,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── Sales orders — the linked ERP sales order, same table as the ERP index ── -->
+          <!-- ── ERP transactions — the linked ERP sales order, same table as the ERP index ── -->
           <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('Sales orders') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
