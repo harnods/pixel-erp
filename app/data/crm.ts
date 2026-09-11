@@ -1308,6 +1308,92 @@ export const dealModuleSetup = reactive<DealModuleSetup>(
 )
 export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v1', [dealModuleSetup]) }
 
+// ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
+// The module's field catalogue. Field types mirror the standard CRM property
+// types (single-/multi-line text, number, date pickers, selects, calculation,
+// rollup, …) — the picker offers this full set; seeded defaults are `system`
+// (not deletable), custom ones added via "New property" are deletable.
+export const DEAL_PROPERTY_TYPES = [
+  'Single-line text', 'Multi-line text', 'Rich text', 'Phone number', 'Number',
+  'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
+  'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup', 'Object coordinates',
+] as const
+export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
+/** Icon per property type (Pixel icon slugs) — shown in the type picker. */
+export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
+  'Single-line text': 'text', 'Multi-line text': 'text-align-left', 'Rich text': 'code',
+  'Phone number': 'call', 'Number': 'hashtag', 'Date picker': 'calendar',
+  'Date and time picker': 'calendar', 'Single checkbox': 'checkbox', 'Multiple checkboxes': 'checklist',
+  'Dropdown select': 'chevrons-down', 'Radio select': 'radio-button', 'Calculation': 'calculator',
+  'User': 'profile', 'Rollup': 'stats', 'Object coordinates': 'location',
+}
+export interface DealProperty { id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number }
+function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
+  ['Amount', 'Number', 95],
+  ['Amount in company currency', 'Calculation', 95],
+  ['Amount in dollar', 'Single-line text', 40],
+  ['Annual contract value', 'Number', 30],
+  ['Annual recurring revenue', 'Number', 25],
+  ['Campaign of last booking in meetings tool', 'Single-line text', 10],
+  ['Close date', 'Date and time picker', 90],
+  ['Closed lost reason', 'Multi-line text', 20],
+  ['Closed won count', 'Calculation', 100],
+  ['Closed won reason', 'Multi-line text', 22],
+  ['Create date', 'Date and time picker', 100],
+  ['Created by user ID', 'Number', 100],
+  ['Date of last meeting booked in meetings tool', 'Date and time picker', 15],
+  ['Days to close', 'Calculation', 88],
+  ['Deal collaborator', 'User', 35],
+  ['Deal description', 'Multi-line text', 60],
+  ['Deal name', 'Single-line text', 100],
+  ['Deal owner', 'User', 100],
+  ['Deal probability', 'Number', 80],
+  ['Deal stage', 'Radio select', 100],
+  ['Deal type', 'Radio select', 45],
+  ['Exchange rate', 'Number', 100],
+  ['Forecast amount', 'Number', 70],
+  ['Forecast category', 'Dropdown select', 65],
+  ['Forecast probability', 'Number', 68],
+  ['Team', 'Dropdown select', 55],
+  ['Is closed (numeric)', 'Calculation', 100],
+  ['Is deal closed?', 'Calculation', 100],
+  ['Is open (numeric)', 'Calculation', 100],
+  ['Last activity date', 'Date and time picker', 85],
+  ['Last contacted', 'Date and time picker', 78],
+  ['Medium of last booking in meetings tool', 'Single-line text', 8],
+  ['Merged deal IDs', 'Multiple checkboxes', 5],
+  ['Monthly recurring revenue', 'Number', 22],
+  ['Next activity', 'Object coordinates', 40],
+  ['Next activity date', 'Date and time picker', 42],
+  ['Next meeting', 'Number', 30],
+  ['Next meeting name', 'Single-line text', 28],
+  ['Next meeting start time', 'Date and time picker', 27],
+  ['Next step', 'Multi-line text', 33],
+  ['Number of associated contacts', 'Rollup', 90],
+  ['Number of associated line items', 'Number', 92],
+  ['Number of sales activities', 'Number', 84],
+  ['Number of times contacted', 'Number', 80],
+  ['Owner assigned date', 'Date and time picker', 100],
+  ['Pipeline', 'Dropdown select', 100],
+  ['Priority', 'Dropdown select', 62],
+  ['Record ID', 'Number', 100],
+  ['Record source', 'Dropdown select', 100],
+  ['Record source detail 1', 'Single-line text', 30],
+  ['Record source detail 2', 'Single-line text', 18],
+  ['Record source detail 3', 'Single-line text', 9],
+  ['Source of last booking in meetings tool', 'Single-line text', 7],
+  ['Total contract value', 'Number', 35],
+  ['Updated by user ID', 'Number', 100],
+  ['Weighted amount', 'Calculation', 80],
+  ['Weighted amount in company currency', 'Calculation', 80],
+]
+const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
+  id: propId(name), name, type, system: true, fillRate,
+}))
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v1', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v1', dealProperties) }
+
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,

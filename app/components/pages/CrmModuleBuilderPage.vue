@@ -30,8 +30,9 @@ import {
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
-  deals,
-  type CrmModule, type CrmModuleField, type CrmFieldType, type Deal,
+  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON,
+  type DealProperty, type DealPropertyType,
+  type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
   type DealPipelineDisplay, type DealModuleSetup,
@@ -102,8 +103,8 @@ const accessOptions = CRM_OWNERS.map((n) => ({ id: n, name: n, subtitle: ownerEm
 function onAccessSaved(ids: string[]) { setup.access = ids; accessDrawerOpen.value = false }
 function removeAccess(id: string) { setup.access = setup.access.filter((x) => x !== id) }
 
-onMounted(() => { loadDraft(); loadSetup() })
-watch(() => props.orderId, () => { loadDraft(); loadSetup() })
+onMounted(() => { loadDraft(); loadSetup(); loadProperties() })
+watch(() => props.orderId, () => { loadDraft(); loadSetup(); loadProperties() })
 
 // ── Header status badge ──────────────────────────────────────────────────────
 const STATUS_BADGE: Record<string, { status: string; label: string }> = {
@@ -216,66 +217,72 @@ const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldTy
 function typeLabel(type: CrmFieldType): string { return CRM_FIELD_TYPE_LABELS[type] }
 function hasOptions(type: CrmFieldType): boolean { return type === 'pick-list' || type === 'radio' }
 
-// ── Properties tab — the module's fields as a table (name · type · created by ·
-//    fill rate · edit/delete). Reads the editable draft so changes show live. ──
-// Fill rate = % of active deals where the field carries a value (real, computed).
-const FIELD_FILLED: Record<string, (d: Deal) => boolean> = {
-  name: (d) => !!d.name,
-  customer: (d) => !!d.customerId,
-  stage: () => true,
-  owner: (d) => !!d.owner,
-  priority: (d) => !!d.priority,
-  products: (d) => !!(d.products && d.products.length),
-  value: (d) => !!d.value,
-  closeDate: (d) => !!d.expectedCloseDate,
-  source: (d) => !!(d as unknown as { source?: string }).source,
-  contactPerson: (d) => !!d.picName,
-  referenceNumber: (d) => !!d.referenceNumber,
-  description: (d) => !!d.description,
-  notes: (d) => !!d.notes,
-}
-function fieldFillRate(fieldId: string): number {
-  const active = deals.filter((d) => !d.archived)
-  const acc = FIELD_FILLED[fieldId]
-  if (!acc || !active.length) return 0
-  return Math.round((active.filter(acc).length / active.length) * 100)
-}
-interface PropertyRow { id: string; label: string; type: CrmFieldType; typeLabel: string; createdBy: string; fillRate: number; system: boolean }
-const propertyRows = computed<PropertyRow[]>(() =>
-  draft.fields.map((f) => ({
-    id: f.id, label: f.label, type: f.type, typeLabel: CRM_FIELD_TYPE_LABELS[f.type],
-    createdBy: 'System', fillRate: fieldFillRate(f.id), system: f.system,
-  })),
-)
-// Field-type filter options — only the types actually present.
+// ── Properties tab — the module's property catalogue as a table (name · field
+//    type · created by · fill rate · edit/delete). Local editable clone;
+//    Save changes persists it. ──
+const propList = ref<DealProperty[]>(JSON.parse(JSON.stringify(dealProperties)))
+function loadProperties() { propList.value = JSON.parse(JSON.stringify(dealProperties)) }
 const propTypeOptions = computed(() => {
   const seen = new Set<string>()
-  return draft.fields
-    .filter((f) => (seen.has(f.type) ? false : (seen.add(f.type), true)))
-    .map((f) => ({ value: f.type, label: CRM_FIELD_TYPE_LABELS[f.type] }))
+  return propList.value
+    .filter((p) => (seen.has(p.type) ? false : (seen.add(p.type), true)))
+    .map((p) => ({ value: p.type, label: p.type }))
 })
 const {
   search: propSearch, statusFilter: propTypeFilter, paginated: propPaginated, total: propTotal,
   currentPage: propPage, perPage: propPerPage, sortKey: propSortKey, sortDir: propSortDir,
   setPage: propSetPage, setPerPage: propSetPerPage, toggleSort: propToggleSort, setSort: propSetSort,
-} = useTableState<PropertyRow>(propertyRows, {
+} = useTableState<DealProperty>(propList, {
   filterFn: (row, s, status) =>
-    (!s || row.label.toLowerCase().includes(s)) && (!status || row.type === status),
-  defaultSort: { key: 'label', dir: 'asc' },
+    (!s || row.name.toLowerCase().includes(s)) && (!status || row.type === status),
+  defaultSort: { key: 'name', dir: 'asc' },
 })
 const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value)
 function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = '' }
 const PROP_COLUMNS: TableColumn[] = [
-  { key: 'label',     label: 'Name',       kind: 'name',   sortable: true, sortType: 'text' },
-  { key: 'type',      label: 'Field type', kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'createdBy', label: 'Created by', kind: 'name' },
+  { key: 'name',      label: 'Name',       kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'type',      label: 'Field type', kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'createdBy', label: 'Created by', kind: 'status' },
   { key: 'fillRate',  label: 'Fill rate',  kind: 'number', align: 'right', sortable: true, sortType: 'number' },
 ]
-function editProperty(id: string) { const f = draft.fields.find((x) => x.id === id); if (f) openEditField(f) }
+
+// New / edit property modal
+const propModalOpen = ref(false)
+const propModalMode = ref<'add' | 'edit'>('add')
+const editingPropId = ref<string | null>(null)
+const propForm = reactive<{ name: string; type: DealPropertyType }>({ name: '', type: 'Single-line text' })
+const propNameError = ref('')
+const propTypePickerOptions = DEAL_PROPERTY_TYPES.map((tp) => ({ value: tp, label: tp }))
+const propModalTitle = computed(() => (propModalMode.value === 'edit' ? t('Edit property') : t('New property')))
+function openAddProperty() {
+  propModalMode.value = 'add'; editingPropId.value = null; propNameError.value = ''
+  Object.assign(propForm, { name: '', type: 'Single-line text' as DealPropertyType })
+  propModalOpen.value = true
+}
+function openEditProperty(id: string) {
+  const p = propList.value.find((x) => x.id === id); if (!p) return
+  propModalMode.value = 'edit'; editingPropId.value = id; propNameError.value = ''
+  Object.assign(propForm, { name: p.name, type: p.type })
+  propModalOpen.value = true
+}
+function saveProperty() {
+  const name = propForm.name.trim()
+  if (!name) { propNameError.value = t('Enter a property name.'); return }
+  if (propModalMode.value === 'edit' && editingPropId.value) {
+    const p = propList.value.find((x) => x.id === editingPropId.value)
+    if (p) { p.name = name; p.type = propForm.type }
+  } else {
+    propList.value = [...propList.value, {
+      id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+      name, type: propForm.type, system: false, fillRate: 0,
+    }]
+  }
+  propModalOpen.value = false
+}
 function deleteProperty(id: string) {
-  const f = draft.fields.find((x) => x.id === id)
-  if (!f || f.system) return
-  draft.fields = draft.fields.filter((x) => x.id !== id)
+  const p = propList.value.find((x) => x.id === id)
+  if (!p || p.system) return
+  propList.value = propList.value.filter((x) => x.id !== id)
 }
 
 // Single-choice fields feed the Layout driver + Kanban "Categorize by".
@@ -541,6 +548,8 @@ function saveChanges() {
     persistDealPipelineDisplay()
     Object.assign(dealModuleSetup, JSON.parse(JSON.stringify(setup)))
     persistDealModuleSetup()
+    dealProperties.splice(0, dealProperties.length, ...JSON.parse(JSON.stringify(propList.value)))
+    persistDealProperties()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -722,26 +731,28 @@ function cancel() { router.push('/crm/settings/modules') }
                     <input v-model="propSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
                     <button v-if="propSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="propSearch = ''"><MpIcon name="close" size="sm" /></button>
                   </div>
-                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddField()">{{ t('New property') }}</MpButton>
+                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
                 </div>
               </template>
 
-              <template #cell-label="{ row }">
-                <span class="prop-name">{{ (row as unknown as PropertyRow).label }}</span>
+              <template #cell-name="{ row }">
+                <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
               </template>
-              <template #cell-type="{ row }">{{ t((row as unknown as PropertyRow).typeLabel) }}</template>
-              <template #cell-createdBy="{ row }">{{ t((row as unknown as PropertyRow).createdBy) }}</template>
-              <template #cell-fillRate="{ row }">{{ (row as unknown as PropertyRow).fillRate }}%</template>
+              <template #cell-type="{ row }">
+                <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
+              </template>
+              <template #cell-createdBy="{ row }">{{ t((row as unknown as DealProperty).system ? 'System' : 'You') }}</template>
+              <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
               <template #actions="{ row }">
-                <MpPopover :id="`prop-actions-${(row as unknown as PropertyRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
                     <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
-                      <MpPopoverListItem @click="editProperty((row as unknown as PropertyRow).id)">{{ t('Edit') }}</MpPopoverListItem>
-                      <MpPopoverListItem v-if="!(row as unknown as PropertyRow).system" @click="deleteProperty((row as unknown as PropertyRow).id)">{{ t('Delete') }}</MpPopoverListItem>
+                      <MpPopoverListItem @click="openEditProperty((row as unknown as DealProperty).id)">{{ t('Edit') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-if="!(row as unknown as DealProperty).system" @click="deleteProperty((row as unknown as DealProperty).id)">{{ t('Delete') }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -998,6 +1009,41 @@ function cancel() { router.push('/crm/settings/modules') }
       @save="onAccessSaved($event)"
     />
 
+    <!-- ════════ Property modal (Properties ▸ New / Edit) ════════ -->
+    <MpModal id="cmb-prop-modal" :is-open="propModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="propModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ propModalTitle }}</MpModalHeader>
+        <MpModalBody>
+          <div class="builder-form">
+            <MpFormControl id="cmb-prop-name-fc" :is-invalid="!!propNameError">
+              <MpFormLabel>{{ t('Property name') }}</MpFormLabel>
+              <MpInput id="cmb-prop-name" v-model="propForm.name" is-full-width @update:model-value="propNameError = ''" />
+              <MpFormErrorMessage v-if="propNameError">{{ propNameError }}</MpFormErrorMessage>
+            </MpFormControl>
+            <div class="builder-form-field">
+              <span class="builder-form-label">{{ t('Field type') }}</span>
+              <ErpFilterSelect
+                id="cmb-prop-type"
+                :model-value="propForm.type"
+                :placeholder="t('Field type')"
+                :options="propTypePickerOptions"
+                :is-clearable="false"
+                width="280px"
+                @update:model-value="(v: string) => (propForm.type = (v || 'Single-line text') as DealPropertyType)"
+              />
+            </div>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton variant="ghost" is-rounded @click="propModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="saveProperty">{{ propModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
     <!-- ════════ Field modal ════════ -->
     <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">
       <MpModalContent>
@@ -1212,6 +1258,8 @@ function cancel() { router.push('/crm/settings/modules') }
 /* Properties tab — ErpTablePage manages its own scroll; fill the stage. */
 .builder-panel--table { flex: 1; min-height: 0; }
 .prop-name { color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
+.prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
