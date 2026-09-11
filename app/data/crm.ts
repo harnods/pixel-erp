@@ -1314,19 +1314,19 @@ export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v
 // rollup, …) — the picker offers this full set; seeded defaults are `system`
 // (not deletable), custom ones added via "New property" are deletable.
 export const DEAL_PROPERTY_TYPES = [
-  'Single-line text', 'Multi-line text', 'Rich text', 'Phone number', 'Number',
+  'Single-line text', 'Multi-line text', 'Phone number', 'Number',
   'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
-  'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup', 'Object coordinates',
+  'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup',
   'Product list', 'File', 'URL', 'Email',
 ] as const
 export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
 export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
-  'Single-line text': 'text-editor-text', 'Multi-line text': 'textarea', 'Rich text': 'text-editor-write',
+  'Single-line text': 'text-editor-text', 'Multi-line text': 'textarea',
   'Phone number': 'phone', 'Number': 'number', 'Date picker': 'calendar',
   'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
-  'User': 'profile', 'Rollup': 'chart-line', 'Object coordinates': 'location',
+  'User': 'profile', 'Rollup': 'chart-line',
   'Product list': 'products', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
 }
 /** Field types offered when CREATING a property (drawer). Subset of the catalogue —
@@ -1334,7 +1334,7 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
  *  user-authorable. */
 export const NEW_PROPERTY_TYPES: DealPropertyType[] = [
   'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Date picker',
-  'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
+  'Single checkbox', 'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
 ]
 /** One option for select/checkbox/radio field types. */
 export interface DealPropertyOption { label: string; value: string; inForms: boolean }
@@ -1414,9 +1414,9 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Last activity date', 'Date and time picker', 85],
   ['Last contacted', 'Date and time picker', 78],
   ['Medium of last booking in meetings tool', 'Single-line text', 8],
-  ['Merged deal IDs', 'Multiple checkboxes', 5],
+  ['Merged deal IDs', 'Single-line text', 5],
   ['Monthly recurring revenue', 'Number', 22],
-  ['Next activity', 'Object coordinates', 40],
+  ['Next activity', 'Single-line text', 40],
   ['Next activity date', 'Date and time picker', 42],
   ['Next meeting', 'Number', 30],
   ['Next meeting name', 'Single-line text', 28],
@@ -1443,8 +1443,8 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
 const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
   id: propId(name), name, type, system: true, fillRate,
 }))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v2', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v2', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v3', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v3', dealProperties) }
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'

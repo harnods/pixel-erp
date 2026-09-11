@@ -46,6 +46,7 @@ function freshOptions(): DealPropertyOption[] {
 function seedConfig(tp: DealPropertyType) {
   for (const k of Object.keys(config)) delete (config as Record<string, unknown>)[k]
   if (tp === 'Date picker') { config.dateDisplay = 'date-only'; config.datePickerStyle = 'simple'; config.defaultDateAdvance = null }
+  if (tp === 'Single checkbox') config.defaultBool = ''
   if (tp === 'File') config.fileAccess = 'private'
   if (tp === 'URL') { config.defaultLinkText = ''; config.allowModifyLinkText = false; config.defaultUrl = '' }
   if (OPTION_TYPES.includes(tp)) { config.options = freshOptions(); config.defaultOption = '' }
@@ -192,6 +193,17 @@ function save() {
                 </label>
               </div>
             </template>
+
+            <!-- Single checkbox -->
+            <div v-else-if="type === 'Single checkbox'" class="cpd-field">
+              <span class="cpd-label">{{ t('Default value') }}</span>
+              <span class="cpd-caption">{{ t('This value is filled in automatically when a new record is created.') }}</span>
+              <ErpFilterSelect
+                id="cpd-def-bool" class="cpd-half" :model-value="config.defaultBool || ''"
+                :options="[{ value: 'Yes', label: t('Yes') }, { value: 'No', label: t('No') }]"
+                is-full-width @update:model-value="(v: string) => (config.defaultBool = (v as '' | 'Yes' | 'No'))"
+              />
+            </div>
 
             <!-- File -->
             <template v-else-if="type === 'File'">
