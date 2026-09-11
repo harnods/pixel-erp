@@ -679,9 +679,9 @@ function cancel() { router.push('/crm/settings/modules') }
       <div class="detail-bar-left">
         <NuxtLink v-if="mod" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules') }}</NuxtLink>
         <div class="detail-titlerow-left">
-          <h1 v-if="!mod || mod.system" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
+          <h1 v-if="!mod || isDeals" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
+          <ErpStatusBadge v-if="mod && !isDeals" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
         </div>
       </div>
     </header>

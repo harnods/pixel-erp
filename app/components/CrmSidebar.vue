@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { useLocale } from '~/composables/useLocale'
-import { getCrmModule } from '~/data/crm'
+import { getCrmModule, crmModules } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 
 const router = useRouter()
@@ -27,10 +27,20 @@ if (import.meta.client) {
 
 interface Child { name: string; to: string }
 interface Item { icon: string; name: string; to: string; children?: Child[] }
-// Two groups → the border-bottom between them is the divider (Customers | Settings).
-const navGroups: Item[][] = [
+// Published custom (non-system) modules — e.g. "Service deals" — sit in the Deals
+// group, so a new divider separates them from Reports/Customers.
+const customModuleItems = computed<Item[]>(() =>
+  crmModules
+    .filter((m) => !m.system && m.status === 'published')
+    .map((m) => ({ icon: m.icon || 'pipeline', name: m.name, to: `/crm/settings/modules/${m.id}` })),
+)
+// Each array is a nav group; the border-bottom between them is a divider.
+const navGroups = computed<Item[][]>(() => [
   [
-    { icon: 'pipeline', name: 'Deals',    to: '/crm/deals' },
+    { icon: 'pipeline', name: 'Deals', to: '/crm/deals' },
+    ...customModuleItems.value,
+  ],
+  [
     { icon: 'reports',  name: 'Reports',  to: '/crm/reports' },
     { icon: 'contact',  name: 'Customers', to: '/crm/customers', children: [
       { name: 'Contacts',  to: '/crm/customers/contacts' },
@@ -45,20 +55,22 @@ const navGroups: Item[][] = [
       { name: 'Modules',          to: '/crm/settings/modules' },
     ] },
   ],
-]
+])
 
 const activeItem = computed<string>(() => {
   if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
+  // Custom-module routes (settings/modules/:id) highlight the module, not Settings.
+  for (const it of customModuleItems.value) if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   if (route.path === '/crm/customers' || route.path.startsWith('/crm/customers/')) return 'Customers'
   if (route.path === '/crm/settings' || route.path.startsWith('/crm/settings/')) return 'Settings'
-  for (const g of navGroups) for (const it of g)
+  for (const g of navGroups.value) for (const it of g)
     if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   return 'Deals'
 })
 
 // Level-2 panel: opens whenever the active section has children (e.g. Customers).
 const activePanel = computed<Item | null>(() => {
-  for (const g of navGroups) for (const it of g)
+  for (const g of navGroups.value) for (const it of g)
     if (it.name === activeItem.value && it.children?.length) return it
   return null
 })
