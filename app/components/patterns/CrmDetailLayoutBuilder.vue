@@ -221,41 +221,58 @@ function onSecDragOver(i: number, e: DragEvent) {
 }
 function onSecDragEnd() { secDragSrc.value = null }
 
-const propDrag = ref<{ sec: string; src: number | null }>({ sec: '', src: null })
-function onPropDragStart(section: DetailLayoutSection, i: number, e: DragEvent) {
-  propDrag.value = { sec: section.id, src: i }
-  e.dataTransfer!.effectAllowed = 'move'
-  const card = (e.target as HTMLElement).closest('.dlb-prop') as HTMLElement | null
-  if (card) e.dataTransfer!.setDragImage(card, 12, 12)
+// ── Property-card reorder — POINTER-based sortable (not native HTML5 DnD) ────────
+// Native `draggable`/`dragover` proved unreliable here (drags that never start /
+// never fire over the grid gaps). A pointer sortable is robust + testable: press
+// the handle → move → the list reorders live under the cursor → release commits.
+const propDrag = ref<{ sec: string; pid: string } | null>(null)
+
+/** The grid element for a section (cards live inside it). */
+function gridEl(secId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-dlb-sec="${secId}"] .dlb-grid`)
 }
-// Live sortable at the GRID level (not per-card) so a drop anywhere in the section
-// — including the empty space below the last card, i.e. "drop it below X" — lands
-// somewhere sensible. We scan every card and pick the insertion index by the
-// cursor's reading-order position (row-major: above a card's mid-row → before it;
-// same row but left of its centre → before it), defaulting to the END when the
-// pointer is past all cards. It's a reorder/insert, never a swap.
-function onGridDragOver(section: DetailLayoutSection, e: DragEvent) {
-  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
-  const from = propDrag.value.src
-  if (propDrag.value.sec !== section.id || from === null) return
-  const cards = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('.dlb-prop'))
-  let to = cards.length
+/** Insertion index for a pointer at (x,y): reading-order scan — above a card's
+ *  mid-row → before it; same row but left of its centre → before it; past all
+ *  cards → the END. So you can drop a card *below* another (never a swap). */
+function insertionIndex(grid: HTMLElement, x: number, y: number): number {
+  const cards = Array.from(grid.querySelectorAll<HTMLElement>('.dlb-prop'))
   for (let idx = 0; idx < cards.length; idx++) {
     const r = cards[idx]!.getBoundingClientRect()
-    const midY = r.top + r.height / 2
-    const midX = r.left + r.width / 2
-    if (e.clientY < midY) { to = idx; break }                        // above this row
-    if (e.clientY <= r.bottom && e.clientX < midX) { to = idx; break } // same row, left of card
+    if (y < r.top + r.height / 2) return idx
+    if (y <= r.bottom && x < r.left + r.width / 2) return idx
   }
-  if (to > from) to -= 1                 // account for the dragged card's own removal
-  if (to === from) return                // already in place — no reflow
-  const arr = [...section.propertyIds]
-  const [m] = arr.splice(from, 1)
-  arr.splice(to, 0, m!)
-  section.propertyIds = arr
-  propDrag.value.src = to
+  return cards.length
 }
-function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
+function onPropPointerDown(section: DetailLayoutSection, i: number, e: PointerEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  const pid = section.propertyIds[i]
+  if (!pid) return
+  propDrag.value = { sec: section.id, pid }
+
+  const onMove = (ev: PointerEvent) => {
+    const d = propDrag.value
+    if (!d) return
+    const grid = gridEl(d.sec)
+    if (!grid) return
+    const from = section.propertyIds.indexOf(d.pid)
+    if (from < 0) return
+    let to = insertionIndex(grid, ev.clientX, ev.clientY)
+    if (to > from) to -= 1
+    if (to === from) return
+    const arr = [...section.propertyIds]
+    const [m] = arr.splice(from, 1)
+    arr.splice(to, 0, m!)
+    section.propertyIds = arr
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    propDrag.value = null
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
 </script>
 
 <template>
@@ -298,6 +315,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
         <TransitionGroup name="dlb-sec" tag="div" class="dlb-sections">
           <section
             v-for="(section, si) in (activeTab.sections ?? [])" :key="section.id"
+            :data-dlb-sec="section.id"
             class="dlb-section" :class="{ 'is-dragging': secDragSrc === si }"
             @dragover="onSecDragOver(si, $event)" @drop.prevent="onSecDragEnd"
           >
@@ -324,13 +342,12 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
             <TransitionGroup
               name="dlb-prop" tag="div" class="dlb-grid"
               :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }"
-              @dragover="onGridDragOver(section, $event)" @drop.prevent="onPropDragEnd"
             >
               <div
                 v-for="(pid, pi) in section.propertyIds" :key="pid"
-                class="dlb-prop" :class="{ 'is-dragging': propDrag.sec === section.id && propDrag.src === pi }"
+                class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
               >
-                <span class="dlb-drag" draggable="true" :aria-label="t('Drag to reorder')" @dragstart="onPropDragStart(section, pi, $event)" @dragend="onPropDragEnd"><MpIcon name="drag" size="sm" /></span>
+                <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pi, $event)"><MpIcon name="drag" size="sm" /></span>
                 <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                 <div class="dlb-prop-text">
                   <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
@@ -482,7 +499,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-radius: 8px; transition: opacity 0.12s ease; }
 .dlb-sec-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 /* Drag handle — default icon colour at 75% opacity (rule/dnd-live-sortable). */
-.dlb-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-default, #536062); opacity: 0.75; cursor: grab; flex-shrink: 0; }
+.dlb-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-default, #536062); opacity: 0.75; cursor: grab; flex-shrink: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
 .dlb-drag:active { cursor: grabbing; }
 .dlb-sec-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); }
 .dlb-spacer { flex: 1; }

@@ -1636,23 +1636,129 @@ export function moduleStores(id: string) {
 }
 
 // ── Service deals — records for the custom "Service deals" module workspace ──────
-export interface ServiceDeal {
-  id: string; name: string; company: string; contact: string
-  stage: string                 // matches a servicePipelines stage name
-  owner: string; value: number; serviceType: string
-  transactionDate: string; dueDate: string; description: string
+// A Service deal mirrors a Deal MINUS the shipping/logistics fields (this custom
+// module is for services that don't ship goods). The field set matches the
+// module's configured properties (serviceProperties): value/currency, service
+// type, customer + primary contact, transaction/reference no., payment terms,
+// products (service line-items), description + memo, and the related lists
+// (Files, Notes, Activity, ERP transactions) surfaced on the record detail tabs.
+export type ServiceType = 'Consultation' | 'Training' | 'Machine service' | 'Installation'
+export const SERVICE_TYPES: ServiceType[] = ['Consultation', 'Training', 'Machine service', 'Installation']
+export const SERVICE_PAYMENT_TERMS = ['Due on receipt', 'Net 14', 'Net 30', 'Net 45'] as const
+/** A linked ERP transaction (sales invoice/order) shown on the "ERP transactions" tab. */
+export interface ServiceTransactionLink {
+  id: string; number: string; type: 'Sales Invoice' | 'Sales Order'
+  date: string; dueDate: string; status: OrderStatus; total: number; balanceDue: number
 }
+export interface ServiceDeal {
+  id: string; name: string
+  company: string               // Customer (account name)
+  contact: string               // Primary contact person
+  stage: string                 // matches a servicePipelines stage name
+  owner: string                 // CRM_OWNERS
+  value: number                 // in `currency`
+  currency: DealCurrency
+  serviceType: ServiceType
+  transactionNo: string         // e.g. 'SRV-260901'
+  referenceNo: string           // e.g. quote / PO reference (optional, searchable)
+  transactionDate: string       // ISO
+  dueDate: string               // ISO
+  paymentTerms: string
+  products?: DealLineItem[]      // service line-items (Subtotal = qty × price)
+  description?: string
+  memo?: string
+  files?: DealAttachment[]
+  linkedTransaction?: ServiceTransactionLink   // populated when invoiced/ordered
+  createdAt: string
+  createdBy?: string
+  lastActivity: string
+  archived?: boolean
+}
+// Service line-item builders (Subtotal = qty × price, no discount), so each
+// record's seeded `value` equals the sum of its products (accurate totals).
+const SVC = {
+  consult:   (q: number): DealLineItem => ({ productId: 'svc-consult',  productName: 'Consulting — senior specialist', description: 'On-site consulting, per day',        unit: 'Day',     quantity: q, originalPrice: 3_500_000,  discountType: 'none', discount: 0 }),
+  training:  (q: number): DealLineItem => ({ productId: 'svc-training',  productName: 'Barista training session',        description: 'Full-day hands-on training session', unit: 'Session', quantity: q, originalPrice: 5_000_000,  discountType: 'none', discount: 0 }),
+  machine:   (q: number): DealLineItem => ({ productId: 'svc-machine',   productName: 'Espresso machine service',         description: 'Preventive maintenance, per unit',   unit: 'Unit',    quantity: q, originalPrice: 3_000_000,  discountType: 'none', discount: 0 }),
+  install:   (q: number): DealLineItem => ({ productId: 'svc-install',   productName: 'Equipment installation',           description: 'Install + commissioning, per unit',  unit: 'Unit',    quantity: q, originalPrice: 2_500_000,  discountType: 'none', discount: 0 }),
+  calibrate: (q: number): DealLineItem => ({ productId: 'svc-calib',     productName: 'Grinder calibration',              description: 'Calibration + test run, per unit',   unit: 'Unit',    quantity: q, originalPrice: 2_000_000,  discountType: 'none', discount: 0 }),
+  workshop:  (q: number): DealLineItem => ({ productId: 'svc-workshop',  productName: 'Menu engineering workshop',        description: 'Signature drinks + costing package', unit: 'Package', quantity: q, originalPrice: 15_000_000, discountType: 'none', discount: 0 }),
+  annual:    (q: number): DealLineItem => ({ productId: 'svc-annual',    productName: 'Annual maintenance contract',      description: 'Per machine, per year',              unit: 'Machine', quantity: q, originalPrice: 4_500_000,  discountType: 'none', discount: 0 }),
+}
+const SC = { currency: 'IDR' as DealCurrency }
 const SERVICE_DEALS_SEED: ServiceDeal[] = [
-  { id: 'SV-1001', name: 'Cafe opening consultation — Kopi Kenangan', company: 'Kopi Kenangan Pusat', contact: 'Ratna Sari', stage: 'Proposal',    owner: 'Dewi Lestari',  value: 45000000, serviceType: 'Consultation',   transactionDate: '2026-09-01', dueDate: '2026-10-15', description: 'End-to-end consulting to open a new flagship cafe.' },
-  { id: 'SV-1002', name: 'Espresso machine service contract',        company: 'Anomali Coffee',      contact: 'Bagus P.',   stage: 'In progress', owner: 'Fajar Nugroho', value: 18000000, serviceType: 'Machine service', transactionDate: '2026-08-20', dueDate: '2026-09-30', description: 'Quarterly preventive maintenance for 6 machines.' },
-  { id: 'SV-1003', name: 'Barista training — new outlet team',       company: 'Maxx Coffee Lippo Mall', contact: 'Sinta W.',  stage: 'Scoping',     owner: 'Dewi Lestari',  value: 12500000, serviceType: 'Training',       transactionDate: '2026-09-03', dueDate: '2026-09-25', description: '2-week barista onboarding program for 8 staff.' },
-  { id: 'SV-1004', name: 'Grinder calibration + install',           company: 'Coffee Cult Bali',    contact: 'Made A.',    stage: 'Inquiry',     owner: 'Fajar Nugroho', value: 6500000,  serviceType: 'Installation',   transactionDate: '2026-09-05', dueDate: '2026-09-18', description: 'Install and calibrate 3 new grinders.' },
-  { id: 'SV-1005', name: 'Menu engineering workshop',               company: 'Excelso Grand Indonesia', contact: 'Rudi H.', stage: 'Completed',   owner: 'Rizal Candra',  value: 22000000, serviceType: 'Consultation',   transactionDate: '2026-07-10', dueDate: '2026-08-01', description: 'Signature drinks + costing workshop.' },
-  { id: 'SV-1006', name: 'Annual service — 12 machines',            company: 'Hotel Mulia Senayan', contact: 'Yani S.',    stage: 'Proposal',    owner: 'Fajar Nugroho', value: 54000000, serviceType: 'Machine service', transactionDate: '2026-09-06', dueDate: '2026-11-01', description: 'Full-year maintenance across banquet + lounge.' },
+  { id: 'SV-1001', name: 'Cafe opening consultation — Kopi Kenangan', company: 'Kopi Kenangan Pusat',     contact: 'Ratna Sari',      stage: 'Proposal',    owner: 'Dewi Lestari',  ...SC, value: 45_000_000, serviceType: 'Consultation',   transactionNo: 'SRV-260901', referenceNo: 'SQ-4471', transactionDate: '2026-09-01', dueDate: '2026-10-15', paymentTerms: 'Net 30', products: [SVC.consult(10), SVC.training(2)], description: 'End-to-end consulting to open a new flagship cafe.', memo: 'Client wants a soft-launch by mid-October.', files: [{ name: 'Cafe-opening-brief.pdf', sizeKB: 820, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-09-01T10:20:00' }], createdAt: '2026-08-28', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06' },
+  { id: 'SV-1002', name: 'Espresso machine service contract',         company: 'Anomali Coffee',          contact: 'Rudi Hartono',    stage: 'In progress', owner: 'Fajar Nugroho', ...SC, value: 18_000_000, serviceType: 'Machine service', transactionNo: 'SRV-260902', referenceNo: 'PO-8830',  transactionDate: '2026-08-20', dueDate: '2026-09-30', paymentTerms: 'Net 14', products: [SVC.machine(6)], description: 'Quarterly preventive maintenance for 6 machines.', memo: 'Second visit scheduled for late September.', createdAt: '2026-08-18', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05' },
+  { id: 'SV-1003', name: 'Barista training — new outlet team',        company: 'Maxx Coffee Lippo Mall',  contact: 'Yuliana Tan',     stage: 'Scoping',     owner: 'Dewi Lestari',  ...SC, value: 12_500_000, serviceType: 'Training',       transactionNo: 'SRV-260903', referenceNo: '',         transactionDate: '2026-09-03', dueDate: '2026-09-25', paymentTerms: 'Net 30', products: [SVC.training(2), SVC.install(1)], description: 'Two-week barista onboarding program for 8 staff.', createdAt: '2026-09-01', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04' },
+  { id: 'SV-1004', name: 'Grinder calibration + install',            company: 'Coffee Cult Bali',        contact: 'Made Sudarsana',  stage: 'Inquiry',     owner: 'Fajar Nugroho', ...SC, value: 6_500_000,  serviceType: 'Installation',   transactionNo: 'SRV-260904', referenceNo: '',         transactionDate: '2026-09-05', dueDate: '2026-09-18', paymentTerms: 'Due on receipt', products: [SVC.install(1), SVC.calibrate(2)], description: 'Install and calibrate 3 new grinders.', createdAt: '2026-09-04', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05' },
+  { id: 'SV-1005', name: 'Menu engineering workshop',                company: 'Excelso Grand Indonesia', contact: 'Bambang Sutrisno', stage: 'Completed',  owner: 'Rizal Candra',  ...SC, value: 22_000_000, serviceType: 'Consultation',   transactionNo: 'SRV-260905', referenceNo: 'SQ-4402', transactionDate: '2026-07-10', dueDate: '2026-08-01', paymentTerms: 'Net 30', products: [SVC.workshop(1), SVC.consult(2)], description: 'Signature drinks + costing workshop for the barista team.', memo: 'Delivered on schedule. Invoice settled.', files: [{ name: 'Workshop-deck.pdf', sizeKB: 1240, uploadedBy: 'Rizal Candra', uploadedAt: '2026-07-11T09:00:00' }, { name: 'Costing-sheet.xlsx', sizeKB: 96, uploadedBy: 'Rizal Candra', uploadedAt: '2026-07-30T14:30:00' }], linkedTransaction: { id: 'INV-2041', number: 'INV-2041', type: 'Sales Invoice', date: '2026-08-05', dueDate: '2026-09-04', status: 'paid', total: 22_000_000, balanceDue: 0 }, createdAt: '2026-07-05', createdBy: 'Rizal Candra', lastActivity: '2026-08-05' },
+  { id: 'SV-1006', name: 'Annual service — 12 machines',             company: 'Hotel Mulia Senayan',     contact: 'Sinta Dewanti',   stage: 'Proposal',    owner: 'Fajar Nugroho', ...SC, value: 54_000_000, serviceType: 'Machine service', transactionNo: 'SRV-260906', referenceNo: 'SQ-4480', transactionDate: '2026-09-06', dueDate: '2026-11-01', paymentTerms: 'Net 45', products: [SVC.annual(12)], description: 'Full-year maintenance across banquet + lounge machines.', memo: 'Awaiting F&B manager sign-off on the annual scope.', createdAt: '2026-09-02', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-06' },
+  { id: 'SV-1007', name: 'Mobile coffee cart setup',                 company: 'Kopi Kenangan Pusat',     contact: 'Ratna Sari',      stage: 'In progress', owner: 'Rizal Candra',  ...SC, value: 7_500_000,  serviceType: 'Installation',   transactionNo: 'SRV-260907', referenceNo: '',         transactionDate: '2026-08-29', dueDate: '2026-09-20', paymentTerms: 'Net 14', products: [SVC.install(3)], description: 'Set up and commission 3 mobile coffee carts for events.', createdAt: '2026-08-27', createdBy: 'Rizal Candra', lastActivity: '2026-09-03' },
+  { id: 'SV-1008', name: 'Staff refresher training',                 company: 'Tanamera Coffee Roastery', contact: 'Agus Priyanto',  stage: 'Completed',   owner: 'Dewi Lestari',  ...SC, value: 15_000_000, serviceType: 'Training',       transactionNo: 'SRV-260908', referenceNo: 'PO-8812',  transactionDate: '2026-08-15', dueDate: '2026-09-15', paymentTerms: 'Net 30', products: [SVC.training(3)], description: 'Quarterly barista refresher for the roastery cafe team.', linkedTransaction: { id: 'INV-2047', number: 'INV-2047', type: 'Sales Invoice', date: '2026-08-28', dueDate: '2026-09-27', status: 'awaiting-payment', total: 15_000_000, balanceDue: 15_000_000 }, createdAt: '2026-08-12', createdBy: 'Dewi Lestari', lastActivity: '2026-08-28' },
 ]
-export const serviceDeals = reactive<ServiceDeal[]>(load('crm-service-deals-v1', SERVICE_DEALS_SEED))
-export function persistServiceDeals() { saveSnapshot('crm-service-deals-v1', serviceDeals) }
+export const serviceDeals = reactive<ServiceDeal[]>(load('crm-service-deals-v2', SERVICE_DEALS_SEED))
+export function persistServiceDeals() { saveSnapshot('crm-service-deals-v2', serviceDeals) }
 export function getServiceDeal(id: string): ServiceDeal | undefined { return serviceDeals.find((d) => d.id === id) }
+/** Sum of a service deal's line-items (Subtotal). */
+export function serviceProductsTotal(d: ServiceDeal): number { return (d.products ?? []).reduce((n, li) => n + lineSubtotal(li), 0) }
+/** Next free record id, e.g. 'SV-1009'. */
+export function nextServiceId(): string {
+  const nums = serviceDeals.map((d) => parseInt(d.id.replace(/\D/g, ''), 10)).filter((n) => !isNaN(n))
+  return `SV-${(nums.length ? Math.max(...nums) : 1000) + 1}`
+}
+/** Next transaction number, e.g. 'SRV-260909'. */
+export function nextServiceTxNo(): string {
+  const nums = serviceDeals.map((d) => parseInt((d.transactionNo || '').replace(/\D/g, ''), 10)).filter((n) => !isNaN(n))
+  return `SRV-${(nums.length ? Math.max(...nums) : 260900) + 1}`
+}
+export type ServiceDealInput = Omit<ServiceDeal, 'id' | 'transactionNo' | 'createdAt' | 'lastActivity'>
+export function addServiceDeal(input: ServiceDealInput): ServiceDeal {
+  const now = TODAY_ISO_CRM
+  const rec: ServiceDeal = { ...input, id: nextServiceId(), transactionNo: nextServiceTxNo(), createdAt: now, createdBy: input.owner, lastActivity: now }
+  serviceDeals.unshift(rec)
+  persistServiceDeals()
+  return rec
+}
+export function updateServiceDeal(id: string, patch: Partial<ServiceDeal>): void {
+  const d = getServiceDeal(id)
+  if (d) { Object.assign(d, patch, { lastActivity: TODAY_ISO_CRM }); persistServiceDeals() }
+}
+export function archiveServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = true; persistServiceDeals() } }
+export function restoreServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = false; persistServiceDeals() } }
+export function deleteServiceDeal(id: string): void { const i = serviceDeals.findIndex((d) => d.id === id); if (i >= 0) { serviceDeals.splice(i, 1); persistServiceDeals() } }
+/** Activity-log entries for a service record (Created → stage moves → invoice),
+ *  shaped for `ActivityLogTable` (date · user · activity · details). */
+export function serviceActivityLog(d: ServiceDeal): { date: string; user: string; activity: string; details: { label: string; value: string }[] }[] {
+  const money = (n: number) => formatMoney(n, d.currency)
+  const stages = (servicePipelines[0]?.stages ?? []).map((s) => s.name)
+  const closeIndex = Math.max(0, stages.indexOf(d.stage))
+  const created = d.createdBy || d.owner
+  const events: { date: string; user: string; activity: string; details: { label: string; value: string }[] }[] = []
+  events.push({
+    date: isoAt(d.createdAt, 0, 9), user: created, activity: 'Created record',
+    details: [
+      { label: 'Service name', value: d.name },
+      { label: 'Record number', value: d.transactionNo },
+      { label: 'Customer', value: d.company },
+      { label: 'Primary contact', value: d.contact || '—' },
+      { label: 'Owner', value: d.owner },
+      { label: 'Service type', value: d.serviceType },
+      { label: 'Value', value: money(d.value) },
+      { label: 'Due date', value: d.dueDate || '—' },
+    ],
+  })
+  for (let i = 1; i <= closeIndex && i < stages.length; i++) {
+    events.push({ date: isoAt(d.createdAt, i, 11), user: d.owner, activity: 'Stage updated', details: [{ label: 'Stage', value: `${stages[i - 1]} → ${stages[i]}` }] })
+  }
+  if (d.linkedTransaction) {
+    events.push({ date: isoAt(d.linkedTransaction.date, 0, 15), user: d.owner, activity: 'ERP transaction linked', details: [
+      { label: 'Transaction', value: `${d.linkedTransaction.type} #${d.linkedTransaction.number}` },
+      { label: 'Total', value: money(d.linkedTransaction.total) },
+      { label: 'Status', value: d.linkedTransaction.status },
+    ] })
+  }
+  return events.sort((a, b) => b.date.localeCompare(a.date))
+}
 /** Stages of the Service-deals pipeline (from module config) as [{name, kind}]. */
 export function serviceStages(): { name: string; kind: DealStageKind }[] {
   return (servicePipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))

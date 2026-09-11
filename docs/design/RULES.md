@@ -1056,13 +1056,16 @@ component — reuse it, never rebuild.
      (`splice` the dragged item to index `i`, then set `src = i`). The list opens a
      slot as you hover — do **not** wait for `drop` to swap, and do not draw a
      `--over` border/insertion line as the sole feedback.
-     - **Multi-column grids (e.g. a section's property cards) must insert
-       BEFORE or AFTER the hovered card by the cursor's vertical midpoint** —
-       `insertAfter = e.clientY - rect.top > rect.height/2`, target `= insertAfter
-       ? i+1 : i`, then `if (target > src) target--`. Always inserting *at* `i`
-       makes a single-file list feel fine but a grid feel like a **swap** (you can
-       never drop a card *below* another, only onto its slot). Source:
-       `CrmDetailLayoutBuilder.vue › onPropDragOver`.
+     - **Multi-column grids (e.g. a section's property cards) insert BEFORE or
+       AFTER by the cursor's reading-order position** (above a card's mid-row →
+       before; same row, left of centre → before; past all cards → END). Inserting
+       *at* the hovered index makes a single-file list feel fine but a grid feel
+       like a **swap** (you can never drop a card *below* another, only onto its
+       slot). When native HTML5 DnD proves unreliable for a grid (drags that never
+       start / never fire over gaps), use a **pointer-based sortable** instead —
+       `pointerdown` on the handle → global `pointermove` reorders the array live →
+       `pointerup` commits; put `touch-action: none; user-select: none` on the
+       handle. Source: `CrmDetailLayoutBuilder.vue › onPropPointerDown`.
   4. **Faded source** — the item being dragged gets `opacity: 0.4` (`.is-dragging`).
   5. **FLIP animation** — wrap the list in `<TransitionGroup name="x" tag="div">`
      and add `.x-move { transition: transform ~0.18–0.2s cubic-bezier(0.2,0,0,1); }`
