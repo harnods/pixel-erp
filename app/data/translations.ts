@@ -491,6 +491,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Add property': 'Tambah property',
   'Property actions': 'Aksi property',
   'Remove property': 'Hapus property',
+  'No properties selected': 'Belum ada property dipilih',
+  'Add properties from the left to show them in this section.': 'Pilih property dari kiri untuk ditampilkan di bagian ini.',
   'No properties yet. Add one from the section menu.': 'Belum ada property. Tambahkan dari menu bagian.',
   'Customizing': 'Sedang mengatur',
   'Arrange the fields shown on the create/edit form.': 'Atur field yang tampil di form buat/ubah.',

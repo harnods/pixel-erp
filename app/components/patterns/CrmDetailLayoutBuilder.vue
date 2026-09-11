@@ -16,6 +16,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButtonGroup,
 } from '@mekari/pixel3'
+import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   dealProperties, DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
@@ -58,12 +59,6 @@ function deleteTab(tp: DetailLayoutTab) {
 
 // ── Property lookup ─────────────────────────────────────────────────────────────
 function prop(id: string) { return dealProperties.find((p) => p.id === id) }
-const placedIds = computed(() => {
-  const ids = new Set<string>()
-  for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) for (const id of s.propertyIds) ids.add(id)
-  return ids
-})
-const availableProps = computed(() => dealProperties.filter((p) => p.id !== 'products' && !placedIds.value.has(p.id)))
 
 // ── Sections ────────────────────────────────────────────────────────────────────
 function addSection() {
@@ -88,16 +83,23 @@ function saveEditSection() {
   editOpen.value = false
 }
 
-// Add-property modal
+// Add-property — a two-pane "pick many" drawer (SelectAccessDrawer, same as
+// Setup ▸ Access "Select users"). Options = properties not placed in ANOTHER
+// section (plus this section's own, so they show as the running selection).
 const addOpen = ref(false)
 const addTarget = ref<DetailLayoutSection | null>(null)
-const addSearch = ref('')
-function openAddProperty(s: DetailLayoutSection) { addTarget.value = s; addSearch.value = ''; addOpen.value = true }
-const addFiltered = computed(() => {
-  const q = addSearch.value.trim().toLowerCase()
-  return q ? availableProps.value.filter((p) => p.name.toLowerCase().includes(q) || p.variableName.includes(q)) : availableProps.value
+function openAddProperty(s: DetailLayoutSection) { addTarget.value = s; addOpen.value = true }
+const addPropOptions = computed(() => {
+  const section = addTarget.value
+  if (!section) return []
+  const elsewhere = new Set<string>()
+  for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) if (s.id !== section.id) for (const id of s.propertyIds) elsewhere.add(id)
+  const own = new Set(section.propertyIds)
+  return dealProperties
+    .filter((p) => own.has(p.id) || (p.id !== 'products' && !elsewhere.has(p.id)))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName }))
 })
-function addProperty(id: string) { if (addTarget.value && !addTarget.value.propertyIds.includes(id)) addTarget.value.propertyIds.push(id) }
+function onAddPropSave(ids: string[]) { if (addTarget.value) addTarget.value.propertyIds = ids; addOpen.value = false }
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
@@ -249,32 +251,18 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
       </div>
     </div>
 
-    <!-- Add-property modal -->
-    <MpModal id="dlb-addprop-modal" :is-open="addOpen" :is-keep-alive="false" size="sm" @close="addOpen = false">
-      <MpModalContent>
-        <MpModalHeader>{{ t('Add property') }}<MpModalCloseButton /></MpModalHeader>
-        <MpModalBody>
-          <MpInput id="dlb-addprop-search" v-model="addSearch" is-full-width left-icon="search" :placeholder="t('Search property')" />
-          <ul class="dlb-picker">
-            <li v-for="p in addFiltered" :key="p.id" class="dlb-picker-row" @click="addProperty(p.id)">
-              <MpIcon :name="DEAL_PROPERTY_TYPE_ICON[p.type]" size="sm" class="dlb-picker-icon" />
-              <div class="dlb-prop-text">
-                <span class="dlb-prop-label">{{ p.name }}</span>
-                <span class="dlb-prop-var">{{ p.variableName }}</span>
-              </div>
-              <MpIcon name="add" size="sm" class="dlb-picker-add" />
-            </li>
-            <li v-if="!addFiltered.length" class="dlb-empty">{{ availableProps.length ? t('No matching property.') : t('All properties are placed.') }}</li>
-          </ul>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButtonGroup class="erp-action-footer">
-            <MpButton variant="ghost" is-rounded @click="addOpen = false">{{ t('Done') }}</MpButton>
-          </MpButtonGroup>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
+    <!-- Add-property drawer (two-pane pick-many, same as Setup ▸ Access) -->
+    <SelectAccessDrawer
+      :open="addOpen"
+      :title="t('Add property')"
+      :list-title="t('Properties')"
+      :options="addPropOptions"
+      :model-value="addTarget?.propertyIds ?? []"
+      :empty-title="t('No properties selected')"
+      :empty-caption="t('Add properties from the left to show them in this section.')"
+      @update:open="addOpen = $event"
+      @save="onAddPropSave"
+    />
 
     <!-- Edit-section modal -->
     <MpModal id="dlb-editsec-modal" :is-open="editOpen" :is-keep-alive="false" size="sm" @close="editOpen = false">
@@ -360,11 +348,6 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-systemtab-caption { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); }
 
 /* Add-property picker (modal) */
-.dlb-picker { list-style: none; margin: var(--mp-spacing-3) 0 0; padding: 0; }
-.dlb-picker-row { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2); border-radius: 6px; cursor: pointer; }
-.dlb-picker-row:hover { background: var(--mp-colors-background-neutral-subtle, #f2f4f4); }
-.dlb-picker-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
-.dlb-picker-add { color: var(--mp-colors-icon-subtle, #97a0a1); flex-shrink: 0; }
 
 /* Edit-section modal fields */
 .dlb-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
