@@ -126,7 +126,10 @@ function onNewPropertyClose(open: boolean) { newPropOpen.value = open; if (!open
 const condOpen = ref(false)
 const condSection = ref<DetailLayoutSection | null>(null)
 const condPid = ref('')
-const cond = ref<PropertyCondition>({ field: '', operator: 'equals', value: '', then: 'show' })
+// Working copy — `then: ''` is the unset (first-run) state; committed on Apply.
+const cond = ref<{ field: string; operator: PropertyCondition['operator']; value: string; valueEnd?: string; then: 'show' | 'hide' | '' }>(
+  { field: '', operator: 'equals', value: '', then: '' },
+)
 
 type CondKind = 'boolean' | 'number' | 'date' | 'text'
 function kindOf(type?: DealPropertyType): CondKind {
@@ -173,12 +176,14 @@ function onCondFieldChange(v: string) {
 function openCondition(section: DetailLayoutSection, pid: string) {
   condSection.value = section; condPid.value = pid
   const existing = section.conditions?.[pid]
-  cond.value = existing ? { ...existing } : { field: '', operator: 'equals', value: '', then: 'show' }
+  cond.value = existing ? { ...existing } : { field: '', operator: 'equals', value: '', then: '' }
   condOpen.value = true
 }
 function applyCondition() {
   const s = condSection.value
-  if (s && cond.value.field) { s.conditions = { ...(s.conditions ?? {}), [condPid.value]: { ...cond.value } } }
+  if (s && cond.value.field && cond.value.then) {
+    s.conditions = { ...(s.conditions ?? {}), [condPid.value]: { ...cond.value, then: cond.value.then } as PropertyCondition }
+  }
   condOpen.value = false
 }
 function clearCondition() {
@@ -246,7 +251,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
     <!-- Title block -->
     <div class="dlb-titleblock">
       <h3 class="dlb-title">{{ t('Edit layout') }}</h3>
-      <p class="dlb-desc">{{ t('Arrange the tabs, sections and properties shown on a deal record.') }}</p>
+      <p class="dlb-desc">{{ t('Applies to the deal details page and the creation form.') }}</p>
     </div>
 
     <!-- Text tab strip (green underline) + New tab. Each tab reveals a kebab on
@@ -408,28 +413,32 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
           <div class="dlb-cond-if">
             <div class="dlb-cond-head">
               <span class="dlb-cond-title">{{ t('If') }}</span>
-              <MpButton variant="ghost" is-rounded left-icon="delete" :aria-label="t('Clear condition')" @click="clearCondition" />
+              <MpTooltip id="dlb-cond-clear-tip" :label="t('Clear condition')" placement="top" use-portal>
+                <MpButton variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Clear condition')" @click="clearCondition" />
+              </MpTooltip>
             </div>
-            <ErpFilterSelect id="dlb-cond-field" class="dlb-cond-select" :placeholder="t('Select field')" :model-value="cond.field" :options="condFieldOptions" :is-clearable="false" @update:model-value="onCondFieldChange" />
-            <ErpFilterSelect id="dlb-cond-op" class="dlb-cond-select" placeholder="" :model-value="cond.operator" :options="condOpOptions" :is-clearable="false" @update:model-value="(v: string) => (cond.operator = v as PropertyCondition['operator'])" />
-            <!-- Value control adapts to the field type -->
-            <MpSegmentedControl v-if="condKind === 'boolean'" id="dlb-cond-val" name="dlb-cond-val" :model-value="cond.value || 'true'" :data="BOOL_OPTIONS" @update:model-value="(v: string) => (cond.value = v)" />
-            <div v-else-if="cond.operator === 'between'" class="dlb-cond-range">
-              <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v1" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
-              <MpInput v-else id="dlb-cond-v1" v-model="cond.value" type="number" is-full-width />
-              <span class="dlb-cond-and">{{ t('and') }}</span>
-              <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v2" v-model="cond.valueEnd" format="DD/MM/YYYY" value-type="format" use-portal />
-              <MpInput v-else id="dlb-cond-v2" v-model="cond.valueEnd" type="number" is-full-width />
-            </div>
-            <MpDatePicker v-else-if="condKind === 'date'" id="dlb-cond-val-date" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
-            <MpInput v-else-if="condKind === 'number'" id="dlb-cond-val-num" v-model="cond.value" type="number" is-full-width />
-            <MpInput v-else id="dlb-cond-val-text" v-model="cond.value" is-full-width />
+            <ErpFilterSelect id="dlb-cond-field" class="dlb-cond-select" :placeholder="t('Select a property')" :model-value="cond.field" :options="condFieldOptions" :is-clearable="false" @update:model-value="onCondFieldChange" />
+            <!-- Operator + value only appear once a property is chosen (first-run state = just the selector). -->
+            <template v-if="cond.field">
+              <ErpFilterSelect id="dlb-cond-op" class="dlb-cond-select" placeholder="" :model-value="cond.operator" :options="condOpOptions" :is-clearable="false" @update:model-value="(v: string) => (cond.operator = v as PropertyCondition['operator'])" />
+              <MpSegmentedControl v-if="condKind === 'boolean'" id="dlb-cond-val" name="dlb-cond-val" :model-value="cond.value || 'true'" :data="BOOL_OPTIONS" @update:model-value="(v: string) => (cond.value = v)" />
+              <div v-else-if="cond.operator === 'between'" class="dlb-cond-range">
+                <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v1" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
+                <MpInput v-else id="dlb-cond-v1" v-model="cond.value" type="number" is-full-width />
+                <span class="dlb-cond-and">{{ t('and') }}</span>
+                <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v2" v-model="cond.valueEnd" format="DD/MM/YYYY" value-type="format" use-portal />
+                <MpInput v-else id="dlb-cond-v2" v-model="cond.valueEnd" type="number" is-full-width />
+              </div>
+              <MpDatePicker v-else-if="condKind === 'date'" id="dlb-cond-val-date" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
+              <MpInput v-else-if="condKind === 'number'" id="dlb-cond-val-num" v-model="cond.value" type="number" is-full-width />
+              <MpInput v-else id="dlb-cond-val-text" v-model="cond.value" is-full-width />
+            </template>
           </div>
-          <div class="dlb-cond-then">
+          <div class="dlb-cond-then" :class="{ 'dlb-cond-disabled': !cond.field }">
             <span class="dlb-cond-title">{{ t('Then') }}</span>
-            <ErpFilterSelect id="dlb-cond-then" class="dlb-cond-select" placeholder="" :model-value="cond.then" :options="THEN_OPTIONS" :is-clearable="false" @update:model-value="(v: string) => (cond.then = v as 'show' | 'hide')" />
+            <ErpFilterSelect id="dlb-cond-then" class="dlb-cond-select" :placeholder="t('Choose display option')" :model-value="cond.then" :options="THEN_OPTIONS" :is-clearable="false" @update:model-value="(v: string) => (cond.then = v as 'show' | 'hide')" />
           </div>
-          <p class="dlb-cond-sentence">
+          <p v-if="cond.field && cond.then" class="dlb-cond-sentence">
             <strong>{{ condSentence.prop }}</strong> {{ t('will be') }} <strong>{{ condSentence.action }}</strong> {{ t('when') }} <strong>{{ condSentence.field }}</strong> {{ condSentence.op }} <strong>{{ condSentence.val }}</strong>.
           </p>
         </MpModalBody>
@@ -455,12 +464,12 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 
 /* Text tab strip with a green active underline; each tab reveals a hover kebab */
 .dlb-tabstrip { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.dlb-tab { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+.dlb-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
 .dlb-tab-btn { padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
 .dlb-tab--active .dlb-tab-btn { color: var(--mp-colors-text-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-colors-background-success-bold, #16b364); }
 .dlb-tab-input { width: 132px; }
-.dlb-tab-kebab { margin: -8px -6px -8px -2px; }
+.dlb-tab-kebab { margin: -8px -6px -8px 0; }
 .dlb-newtab { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
 .dlb-newtab:hover { color: var(--mp-colors-text-default, #080d0e); }
 
@@ -518,6 +527,8 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-cond-head { display: flex; align-items: center; justify-content: space-between; }
 .dlb-cond-range { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .dlb-cond-and { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); flex-shrink: 0; }
+/* First-run: Then is greyed until a property is chosen. */
+.dlb-cond-disabled { opacity: 0.45; pointer-events: none; }
 .dlb-cond-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .dlb-cond-then { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 .dlb-cond-sentence { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); line-height: 1.5; }

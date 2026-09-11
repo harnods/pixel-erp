@@ -67,13 +67,6 @@ interface Draft {
 }
 const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] } })
 
-// Layout tab (Deals): which page is being customized.
-const layoutPage = ref<'details' | 'form'>('details')
-const LAYOUT_PAGE_OPTIONS = [
-  { value: 'details', label: t('Details page') },
-  { value: 'form', label: t('Form page') },
-]
-
 function loadDraft() {
   const m = mod.value
   if (!m) return
@@ -950,22 +943,14 @@ function cancel() { router.push('/crm/settings/modules') }
             </template>
           </div>
 
-          <!-- ════════ LAYOUT (Deals) — page switcher + Details canvas ════════ -->
+          <!-- ════════ LAYOUT (Deals) — one Edit-layout canvas; applies to the deal
+               details page AND the creation/edit form ════════ -->
           <div v-if="activeTab === 'layout'" class="builder-panel builder-panel--layout">
-            <div class="builder-layout-switch">
-              <span class="builder-layout-switch-label">{{ t('Customizing') }}</span>
-              <ErpFilterSelect
-                id="cmb-layout-page" :model-value="layoutPage" :options="LAYOUT_PAGE_OPTIONS"
-                :is-clearable="false" width="200px"
-                @update:model-value="(v: string) => (layoutPage = v as 'details' | 'form')"
-              />
-            </div>
-            <CrmDetailLayoutBuilder v-show="layoutPage === 'details'" :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" />
-            <p v-show="layoutPage === 'form'" class="builder-layout-formhint">{{ t('Arrange the fields shown on the create/edit form.') }}</p>
+            <CrmDetailLayoutBuilder :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" />
           </div>
 
-          <!-- ════════ LAYOUT / FIELDS (form layout: custom modules, or Deals ▸ Form page) ════════ -->
-          <div v-show="activeTab === 'fields' || (activeTab === 'layout' && layoutPage === 'form')" class="builder-panel">
+          <!-- ════════ FIELDS (form layout — custom modules only) ════════ -->
+          <div v-show="activeTab === 'fields'" class="builder-panel">
             <!-- Layout driver -->
             <div class="builder-driver">
               <div class="builder-driver-text">
@@ -1315,9 +1300,6 @@ function cancel() { router.push('/crm/settings/modules') }
 
 /* ── Layout tab (Deals) — Details/Form page switcher ── */
 .builder-panel--layout { gap: var(--mp-spacing-4); }
-.builder-layout-switch { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.builder-layout-switch-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #6b7678); }
-.builder-layout-formhint { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
 /* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */
