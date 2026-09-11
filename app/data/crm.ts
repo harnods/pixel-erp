@@ -1337,10 +1337,8 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
         { id: 'sec-overview', name: 'Overview', columns: 3, propertyIds: ['customer', 'primary-contact', 'deal-value'] },
-        { id: 'sec-shipping', name: 'Shipping & billing', columns: 3, propertyIds: ['billing-address', 'ship-to', 'ship-date', 'ship-via', 'tracking-no', 'warehouse'] },
-        { id: 'sec-transaction', name: 'Transaction', columns: 3, propertyIds: ['transaction-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'] },
-        { id: 'sec-products', name: 'Products', columns: 1, propertyIds: [], kind: 'products', system: true },
-        { id: 'sec-notes', name: 'Notes', columns: 2, propertyIds: ['description', 'memo'] },
+        { id: 'sec-transaction', name: 'Transaction data', columns: 3, propertyIds: ['billing-address', 'ship-to', 'transaction-date', 'ship-date', 'payment-terms', 'transaction-no', 'reference-no', 'warehouse'] },
+        { id: 'sec-products', name: 'Products', columns: 1, propertyIds: ['products'] },
       ],
     },
     { id: 'tab-activity', key: 'activity', label: 'Activity', editable: false, visible: true },
@@ -1350,10 +1348,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v1')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v2')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v1', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v2', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1680,10 +1678,15 @@ export function crmUserId(name: string): string {
   const i = CRM_OWNERS.indexOf(name)
   return `CU${String((i < 0 ? 0 : i) + 1).padStart(2, '0')}`
 }
-/** A user's effective permission set (their saved set, or the role default). */
+/** The workspace owner — the signed-in user (Rizal Candra, COO). Always has full
+ *  CRM access; can't be restricted via the Manage-access drawer. */
+export const CRM_WORKSPACE_OWNER = CRM_CURRENT_USER
+/** A user's effective permission set. The workspace owner is always full access
+ *  (regardless of any saved/empty set, so a clean or stale browser still grants
+ *  everything); everyone else uses their saved set, or the read-only role default. */
 export function permSetForUser(name: string): CrmPermSet {
-  const i = CRM_OWNERS.indexOf(name)
-  return crmUserPermSet[crmUserId(name)] ?? (i === 0 ? fullPermSet() : defaultPermSet())
+  if (name === CRM_WORKSPACE_OWNER) return fullPermSet()
+  return crmUserPermSet[crmUserId(name)] ?? defaultPermSet()
 }
 export function setUserPermSet(id: string, perms: CrmPermSet) {
   crmUserPermSet[id] = { ...perms }
