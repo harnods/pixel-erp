@@ -228,16 +228,25 @@ function onPropDragStart(section: DetailLayoutSection, i: number, e: DragEvent) 
   const card = (e.target as HTMLElement).closest('.dlb-prop') as HTMLElement | null
   if (card) e.dataTransfer!.setDragImage(card, 12, 12)
 }
-function onPropDragOver(section: DetailLayoutSection, i: number, e: DragEvent) {
+// Live sortable at the GRID level (not per-card) so a drop anywhere in the section
+// — including the empty space below the last card, i.e. "drop it below X" — lands
+// somewhere sensible. We scan every card and pick the insertion index by the
+// cursor's reading-order position (row-major: above a card's mid-row → before it;
+// same row but left of its centre → before it), defaulting to the END when the
+// pointer is past all cards. It's a reorder/insert, never a swap.
+function onGridDragOver(section: DetailLayoutSection, e: DragEvent) {
   e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
   const from = propDrag.value.src
   if (propDrag.value.sec !== section.id || from === null) return
-  // Insert BEFORE or AFTER the hovered card based on the cursor's position within
-  // it (top half → before, bottom half → after), so you can drop a card *below*
-  // another instead of only ever landing on its slot (a reorder, never a swap).
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const insertAfter = e.clientY - rect.top > rect.height / 2
-  let to = insertAfter ? i + 1 : i
+  const cards = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('.dlb-prop'))
+  let to = cards.length
+  for (let idx = 0; idx < cards.length; idx++) {
+    const r = cards[idx]!.getBoundingClientRect()
+    const midY = r.top + r.height / 2
+    const midX = r.left + r.width / 2
+    if (e.clientY < midY) { to = idx; break }                        // above this row
+    if (e.clientY <= r.bottom && e.clientX < midX) { to = idx; break } // same row, left of card
+  }
   if (to > from) to -= 1                 // account for the dragged card's own removal
   if (to === from) return                // already in place — no reflow
   const arr = [...section.propertyIds]
@@ -312,11 +321,14 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
               </span>
             </header>
 
-            <TransitionGroup name="dlb-prop" tag="div" class="dlb-grid" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
+            <TransitionGroup
+              name="dlb-prop" tag="div" class="dlb-grid"
+              :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }"
+              @dragover="onGridDragOver(section, $event)" @drop.prevent="onPropDragEnd"
+            >
               <div
                 v-for="(pid, pi) in section.propertyIds" :key="pid"
                 class="dlb-prop" :class="{ 'is-dragging': propDrag.sec === section.id && propDrag.src === pi }"
-                @dragover="onPropDragOver(section, pi, $event)" @drop.prevent="onPropDragEnd"
               >
                 <span class="dlb-drag" draggable="true" :aria-label="t('Drag to reorder')" @dragstart="onPropDragStart(section, pi, $event)" @dragend="onPropDragEnd"><MpIcon name="drag" size="sm" /></span>
                 <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
@@ -483,7 +495,9 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-prop-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Property grid + field cards */
-.dlb-grid { display: grid; gap: var(--mp-spacing-4); }
+/* padding-bottom keeps a droppable strip under the last row so a card dropped in
+   the whitespace "below" the grid still registers a dragover (→ appends to end). */
+.dlb-grid { display: grid; gap: var(--mp-spacing-4); padding-bottom: var(--mp-spacing-4); }
 .dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease, border-color 0.12s ease; }
 .dlb-prop:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
