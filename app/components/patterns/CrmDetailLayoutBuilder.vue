@@ -243,12 +243,17 @@ function onSecDragOver(i: number, e: DragEvent) {
 function onSecDragEnd() { secDragSrc.value = null }
 
 // ── Property-card reorder — POINTER-based, COLUMN-aware sortable ─────────────────
-// Each column is its own list, so a card can be dragged WITHIN a column or ACROSS
-// to another (and a column may hold more cards than its neighbour). Press the
-// handle → move → the card lifts out of its column and drops into the target
-// column at the row under the cursor → release commits. Not native HTML5 DnD
-// (which proved unreliable); a pointer sortable is robust + testable.
+// The card LIFTS out and follows the cursor (a floating ghost, Teleported to the
+// body). Its place in the list becomes a dashed drop-slot placeholder that live-
+// moves as you drag — so surrounding cards FLIP-slide to open the gap where it
+// will land. Works within a column or across to another (columns hold independent
+// counts). Release drops it. Not native HTML5 DnD (which proved unreliable).
 const propDrag = ref<{ sec: string; pid: string } | null>(null)
+// Floating ghost that tracks the pointer (rendered via Teleport). `dx/dy` is where
+// inside the card the user grabbed, so the ghost sits under the cursor naturally.
+const ghost = ref<{ x: number; y: number; w: number; icon: string; label: string; variable: string } | null>(null)
+let ghostDX = 0
+let ghostDY = 0
 
 function colsWrapEl(secId: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-dlb-sec="${secId}"] .dlb-cols`)
@@ -264,11 +269,24 @@ function locate(section: DetailLayoutSection, pid: string): { c: number; i: numb
 function onPropPointerDown(section: DetailLayoutSection, pid: string, e: PointerEvent) {
   if (e.button !== 0) return
   e.preventDefault()
+  const cardEl = (e.currentTarget as HTMLElement).closest('.dlb-prop') as HTMLElement | null
+  const rect = cardEl?.getBoundingClientRect()
+  const p = prop(pid)
+  if (rect) {
+    ghostDX = e.clientX - rect.left
+    ghostDY = e.clientY - rect.top
+    ghost.value = {
+      x: rect.left, y: rect.top, w: rect.width,
+      icon: p?.type ? DEAL_PROPERTY_TYPE_ICON[p.type] : 'text-editor-text',
+      label: p?.name ?? pid, variable: p?.variableName ?? pid,
+    }
+  }
   propDrag.value = { sec: section.id, pid }
 
   const onMove = (ev: PointerEvent) => {
     const d = propDrag.value
     if (!d) return
+    if (ghost.value) { ghost.value.x = ev.clientX - ghostDX; ghost.value.y = ev.clientY - ghostDY }
     const wrap = colsWrapEl(d.sec)
     if (!wrap) return
     const colEls = Array.from(wrap.querySelectorAll<HTMLElement>('.dlb-col'))
@@ -300,6 +318,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
     propDrag.value = null
+    ghost.value = null
   }
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
@@ -506,6 +525,19 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <!-- Floating drag ghost — a lifted clone that follows the cursor while a
+         property card is being dragged (the in-list card becomes a dashed slot). -->
+    <Teleport to="body">
+      <div v-if="ghost" class="dlb-ghost" :style="{ left: `${ghost.x}px`, top: `${ghost.y}px`, width: `${ghost.w}px` }">
+        <span class="dlb-drag"><MpIcon name="drag" size="sm" /></span>
+        <MpIcon :name="ghost.icon" size="sm" class="dlb-prop-type" />
+        <div class="dlb-prop-text">
+          <span class="dlb-prop-label">{{ ghost.label }}</span>
+          <span class="dlb-prop-var">{{ ghost.variable }}</span>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -542,26 +574,42 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-section:hover > .dlb-sec-head > .dlb-kebab, .dlb-prop:hover .dlb-kebab, .dlb-tab:hover .dlb-kebab, .dlb-kebab:focus-within { opacity: 1; }
 /* Section drag: faded source (same feel as edit-pipeline). */
 .dlb-section.is-dragging { opacity: 0.4; }
-/* Property card drag: the card looks PICKED UP — a drop shadow + slight lift while
-   held, like a pipeline card being moved to another stage. Deviates from
-   rule/surface-border-no-shadow ON PURPOSE: this is a transient drag affordance
-   (only while grabbed), not a resting surface elevation. */
+/* Property card drag: the source card becomes a DASHED DROP-SLOT placeholder (its
+   content hidden, size kept) so surrounding cards FLIP-slide to open the gap where
+   the card will land. The lifted card itself is the floating .dlb-ghost. */
 .dlb-prop.is-dragging {
-  border-color: var(--mp-colors-border-bold, #8c9596);
-  box-shadow: 0 10px 24px rgba(8, 13, 14, 0.16), 0 2px 6px rgba(8, 13, 14, 0.10);
-  transform: scale(1.02);
+  border-style: dashed;
+  border-color: var(--mp-colors-border-brand, #0a6e4e);
+  background: var(--mp-colors-background-brand-subtle, #f0f7f4);
+  box-shadow: none;
+}
+.dlb-prop.is-dragging > * { visibility: hidden; }
+/* The floating ghost that tracks the cursor — a lifted clone (drop shadow + slight
+   tilt). Deviates from rule/surface-border-no-shadow ON PURPOSE: transient drag
+   affordance, not a resting surface. */
+.dlb-ghost {
+  position: fixed; z-index: 1000; pointer-events: none;
+  display: flex; align-items: center; gap: var(--mp-spacing-3);
+  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: 8px;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-colors-background-neutral, #fff); min-height: 56px;
+  box-shadow: 0 12px 28px rgba(8, 13, 14, 0.18), 0 2px 6px rgba(8, 13, 14, 0.12);
+  transform: rotate(-1.5deg) scale(1.03); transform-origin: center;
   cursor: grabbing;
-  z-index: 2;
 }
 .dlb-sec-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
-.dlb-prop-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
+/* FLIP: siblings slide to open/close the gap; enter/leave fade the slot smoothly. */
+.dlb-prop-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
+.dlb-prop-enter-active, .dlb-prop-leave-active { transition: opacity 0.15s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
+.dlb-prop-leave-active { position: absolute; }
+.dlb-prop-enter-from, .dlb-prop-leave-to { opacity: 0; }
 
 /* Property grid + field cards */
 /* Columns are independent lists. Each .dlb-col is a vertical stack (also a drop
    target); min-height keeps an empty column droppable. padding-bottom leaves a
    strip under the last card so "drop below the last card" still lands in-column. */
 .dlb-cols { display: grid; gap: var(--mp-spacing-4); align-items: start; }
-.dlb-col { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 56px; padding-bottom: var(--mp-spacing-4); min-width: 0; }
+.dlb-col { position: relative; display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 56px; padding-bottom: var(--mp-spacing-4); min-width: 0; }
 .dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease, border-color 0.12s ease; }
 .dlb-prop:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }

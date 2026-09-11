@@ -1067,7 +1067,13 @@ component — reuse it, never rebuild.
        `touch-action: none; user-select: none` on the handle; give empty columns a
        `min-height` so they stay droppable. Native HTML5 DnD was unreliable here
        (drags that never start / never fire over gaps) — use the pointer sortable.
-       Source: `CrmDetailLayoutBuilder.vue › onPropPointerDown`, `crm.ts ›
+       For the polished feel, the dragged item LIFTS into a **floating ghost that
+       tracks the cursor** (Teleport to body, `position: fixed`, drop shadow +
+       slight tilt, `pointer-events: none`); its in-list slot becomes a **dashed
+       placeholder** (`content visibility:hidden`, size kept) that live-moves as you
+       drag, and siblings FLIP-slide (`<TransitionGroup>` `-move`/`-leave-active`
+       `position:absolute`) to open the gap where it will land. Source:
+       `CrmDetailLayoutBuilder.vue › onPropPointerDown` + `.dlb-ghost`, `crm.ts ›
        DetailLayoutSection.cols`.
   4. **Faded source** — the item being dragged gets `opacity: 0.4` (`.is-dragging`).
   5. **FLIP animation** — wrap the list in `<TransitionGroup name="x" tag="div">`
