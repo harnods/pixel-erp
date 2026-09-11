@@ -522,6 +522,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'hidden': 'disembunyikan',
   'This property': 'Property ini',
   'Add properties from the left to show them in this section.': 'Pilih property dari kiri untuk ditampilkan di bagian ini.',
+  'Add properties from the left to show them on the card.': 'Pilih property dari kiri untuk ditampilkan di kartu.',
   'No properties yet. Add one from the section menu.': 'Belum ada property. Tambahkan dari menu bagian.',
   'Customizing': 'Sedang mengatur',
   'Arrange the fields shown on the create/edit form.': 'Atur field yang tampil di form buat/ubah.',

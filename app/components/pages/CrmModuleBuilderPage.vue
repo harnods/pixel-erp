@@ -217,6 +217,28 @@ function onFieldDragOver(i: number, e: DragEvent) {
 function onFieldDrop() { fieldDragSrc.value = null; fieldDragOver.value = null }
 function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
 
+// ── "+ Add property" to the Kanban card (Pipeline ▸ Card properties) ──
+// A two-pane drawer (same as Access "Select users"); adds picked deal properties
+// as extra card fields. Built-in fields (company/dealName/…) are left untouched.
+const cardPropsDrawerOpen = ref(false)
+const cardPropOptions = computed(() =>
+  propList.value.map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })),
+)
+const cardPropPropIds = computed(() => new Set(propList.value.map((p) => p.id)))
+const cardPropSelected = computed(() => disp.cardFields.filter((f) => cardPropPropIds.value.has(f.key)).map((f) => f.key))
+function onCardPropsSaved(ids: string[]) {
+  const idSet = new Set(ids)
+  // Keep built-in fields + still-selected property fields (in current order); append new picks.
+  const kept = disp.cardFields.filter((f) => !cardPropPropIds.value.has(f.key) || idSet.has(f.key))
+  const keptKeys = new Set(kept.map((f) => f.key))
+  const added = ids.filter((id) => !keptKeys.has(id)).map((id) => {
+    const p = propList.value.find((x) => x.id === id)!
+    return { key: id, label: p.name, on: true }
+  })
+  disp.cardFields = [...kept, ...added]
+  cardPropsDrawerOpen.value = false
+}
+
 // ── Field type options + labels ──────────────────────────────────────────────
 const FIELD_TYPE_OPTIONS = (Object.entries(CRM_FIELD_TYPE_LABELS) as [CrmFieldType, string][])
   .map(([value, label]) => ({ value, label }))
@@ -884,6 +906,7 @@ function cancel() { router.push('/crm/settings/modules') }
                             </div>
                             <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ t('Date') }}</span>
                             <span v-else-if="f.key === 'note'" class="pipe-card-sub">{{ t('Note') }}</span>
+                            <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                           </template>
                           <!-- Aging still shows even if Owner is hidden -->
                           <div v-if="disp.showAging && !ownerFieldOn" class="pipe-card-foot pipe-card-foot--end">
@@ -941,6 +964,9 @@ function cancel() { router.push('/crm/settings/modules') }
                     <div class="pipe-side-row pipe-side-row--sep">
                       <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
                       <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    </div>
+                    <div class="pipe-side-addprop">
+                      <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
                     </div>
                   </section>
                 </aside>
@@ -1090,6 +1116,19 @@ function cancel() { router.push('/crm/settings/modules') }
       :empty-caption="t('Pick who can access this module.')"
       @update:open="accessDrawerOpen = $event"
       @save="onAccessSaved($event)"
+    />
+
+    <!-- ════════ Add-card-property drawer (Pipeline ▸ Card properties) ════════ -->
+    <SelectAccessDrawer
+      :open="cardPropsDrawerOpen"
+      :title="t('Add property')"
+      :list-title="t('Properties')"
+      :options="cardPropOptions"
+      :model-value="cardPropSelected"
+      :empty-title="t('No properties selected')"
+      :empty-caption="t('Add properties from the left to show them on the card.')"
+      @update:open="cardPropsDrawerOpen = $event"
+      @save="onCardPropsSaved"
     />
 
     <!-- ════════ Property drawer (Properties ▸ New / Edit) ════════ -->
@@ -1470,6 +1509,7 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 /* Live reorder — rows slide to make room (FLIP), same feel as the swimlanes. */
 .pipe-side-rows { display: contents; }
+.pipe-side-addprop { margin-top: var(--mp-spacing-2); }
 .row-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
