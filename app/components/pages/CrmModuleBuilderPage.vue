@@ -318,14 +318,14 @@ function openEditProperty(id: string) {
   const p = propList.value.find((x) => x.id === id); if (!p) return
   propMode.value = 'edit'; editingProp.value = p; propDrawerOpen.value = true
 }
-function onPropertySave(payload: { name: string; type: DealPropertyType; config: DealPropertyConfig }) {
+function onPropertySave(payload: { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }) {
   if (propMode.value === 'edit' && editingProp.value) {
     const p = propList.value.find((x) => x.id === editingProp.value!.id)
-    if (p) { p.name = payload.name; p.type = payload.type; p.config = payload.config }
+    if (p) { p.name = payload.name; p.variableName = payload.variableName; p.type = payload.type; p.config = payload.config }
   } else {
     propList.value = [...propList.value, {
       id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-      name: payload.name, type: payload.type, system: false, fillRate: 0, config: payload.config,
+      name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
     }]
   }
   propDrawerOpen.value = false
@@ -787,7 +787,10 @@ function cancel() { router.push('/crm/settings/modules') }
               </template>
 
               <template #cell-name="{ row }">
-                <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
+                <span class="prop-namecell">
+                  <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
+                  <span class="prop-varname">{{ (row as unknown as DealProperty).variableName }}</span>
+                </span>
               </template>
               <template #cell-type="{ row }">
                 <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
@@ -1276,7 +1279,9 @@ function cancel() { router.push('/crm/settings/modules') }
 .builder-panel--pipeline { flex: 1; min-height: 0; }
 /* Properties tab — ErpTablePage manages its own scroll; fill the stage. */
 .builder-panel--table { flex: 1; min-height: 0; }
+.prop-namecell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .prop-name { color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-varname { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 /* Properties filter bar (mirrors the standard ErpFilterBar layout). */

@@ -1357,10 +1357,14 @@ export interface DealPropertyConfig {
   defaultEmail?: string
 }
 export interface DealProperty {
-  id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number
+  id: string; name: string; variableName: string; type: DealPropertyType; system: boolean; fillRate: number
   config?: DealPropertyConfig
 }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+/** snake_case identifier used to reference a property in formulas/integrations. */
+export function toVariableName(name: string): string {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
 const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   // ── From the deal creation form (form naming wins on duplicates) ──
   ['Deal value', 'Number', 0],
@@ -1441,10 +1445,10 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Weighted amount in company currency', 'Calculation', 80],
 ]
 const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
-  id: propId(name), name, type, system: true, fillRate,
+  id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
 }))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v3', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v3', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v4', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v4', dealProperties) }
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'

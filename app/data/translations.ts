@@ -475,6 +475,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'New property': 'Property',
   'Edit property': 'Ubah property',
   'Property name': 'Nama property',
+  'Variable name': 'Nama variabel',
+  'Used to reference this property in formulas and integrations.': 'Dipakai untuk merujuk property ini di rumus dan integrasi.',
   'Enter a property name.': 'Masukkan nama property.',
   'System': 'System',
   'You': 'Anda',
