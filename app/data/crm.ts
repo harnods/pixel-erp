@@ -1317,6 +1317,7 @@ export const DEAL_PROPERTY_TYPES = [
   'Single-line text', 'Multi-line text', 'Rich text', 'Phone number', 'Number',
   'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
   'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup', 'Object coordinates',
+  'Product list', 'File',
 ] as const
 export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
@@ -1326,11 +1327,34 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
   'User': 'profile', 'Rollup': 'chart-line', 'Object coordinates': 'location',
+  'Product list': 'products', 'File': 'attachment',
 }
 export interface DealProperty { id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
-  ['Amount', 'Number', 95],
+  // ── From the deal creation form (form naming wins on duplicates) ──
+  ['Deal value', 'Number', 0],
+  ['Currency', 'Dropdown select', 0],
+  ['Transaction date', 'Date picker', 0],
+  ['Transaction no.', 'Single-line text', 0],
+  ['Reference no.', 'Single-line text', 0],
+  ['Customer', 'Dropdown select', 0],
+  ['Primary contact', 'Dropdown select', 0],
+  ['Products', 'Product list', 0],
+  ['Payment terms', 'Dropdown select', 0],
+  ['Description', 'Multi-line text', 0],
+  ['Memo', 'Multi-line text', 0],
+  ['Requires shipping', 'Single checkbox', 0],
+  ['Shipping fee', 'Number', 0],
+  ['Ship to', 'Multi-line text', 0],
+  ['Billing address', 'Multi-line text', 0],
+  ['Ship date', 'Date picker', 0],
+  ['Ship via', 'Dropdown select', 0],
+  ['Tracking no.', 'Single-line text', 0],
+  ['Warehouse', 'Dropdown select', 0],
+  ['Attachment', 'File', 0],
+  // ── Remaining catalogue properties (dedup'd: Amount→Deal value, Create date→
+  //    Transaction date, Deal description→Description removed) ──
   ['Amount in company currency', 'Calculation', 95],
   ['Amount in dollar', 'Single-line text', 40],
   ['Annual contract value', 'Number', 30],
@@ -1340,12 +1364,10 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Closed lost reason', 'Multi-line text', 20],
   ['Closed won count', 'Calculation', 100],
   ['Closed won reason', 'Multi-line text', 22],
-  ['Create date', 'Date and time picker', 100],
   ['Created by user ID', 'Number', 100],
   ['Date of last meeting booked in meetings tool', 'Date and time picker', 15],
   ['Days to close', 'Calculation', 88],
   ['Deal collaborator', 'User', 35],
-  ['Deal description', 'Multi-line text', 60],
   ['Deal name', 'Single-line text', 100],
   ['Deal owner', 'User', 100],
   ['Deal probability', 'Number', 80],
@@ -1391,8 +1413,8 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
 const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
   id: propId(name), name, type, system: true, fillRate,
 }))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v1', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v1', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v2', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v2', dealProperties) }
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
