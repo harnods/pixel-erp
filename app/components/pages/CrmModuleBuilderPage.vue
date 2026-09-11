@@ -32,7 +32,7 @@ import {
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
   dealDetailLayout, persistDealDetailLayout,
-  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPE_ICON,
+  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
   deals,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
@@ -252,6 +252,11 @@ const PROP_FILL: Record<string, (d: Deal) => boolean> = {
   'tracking-no': (d) => !!d.trackingNo,
   'warehouse': (d) => !!d.warehouse,
   'attachment': (d) => !!(d.attachments && d.attachments.length),
+  // Related lists (whole collections) — always present on a deal record.
+  'files': () => true,
+  'notes': () => true,
+  'sales-orders': () => true,
+  'activity-log': () => true,
   // Catalogue properties
   'amount-in-company-currency': (d) => d.value > 0,
   'amount-in-dollar': (d) => d.currency === 'USD',
@@ -817,7 +822,7 @@ function cancel() { router.push('/crm/settings/modules') }
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
               <template #actions="{ row }">
-                <MpPopover :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover v-if="!isRelatedListType((row as unknown as DealProperty).type)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
                     <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
                   </MpPopoverTrigger>

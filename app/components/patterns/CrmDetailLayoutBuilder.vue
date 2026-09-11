@@ -20,7 +20,7 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
+  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
 } from '~/data/crm'
@@ -107,7 +107,7 @@ const addPropOptions = computed(() => {
   for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) if (s.id !== section.id) for (const id of s.propertyIds) elsewhere.add(id)
   const own = new Set(section.propertyIds)
   return props.properties
-    .filter((p) => own.has(p.id) || (p.id !== 'products' && !elsewhere.has(p.id)))
+    .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
     .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
 })
 function onAddPropSave(ids: string[]) { if (addTarget.value) addTarget.value.propertyIds = ids; addOpen.value = false }
@@ -163,7 +163,7 @@ const BOOL_OPTIONS = [
 ]
 // Any property can drive the rule (except the card itself).
 const condFieldOptions = computed(() =>
-  props.properties.filter((p) => p.id !== condPid.value && p.id !== 'products').map((p) => ({ value: p.id, label: p.name })),
+  props.properties.filter((p) => p.id !== condPid.value && !isRelatedListType(p.type)).map((p) => ({ value: p.id, label: p.name })),
 )
 function onCondFieldChange(v: string) {
   cond.value.field = v
@@ -349,15 +349,6 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
           <MpButton variant="secondary" is-rounded left-icon="add" @click="addSection">{{ t('New section') }}</MpButton>
         </div>
       </template>
-
-      <!-- System tab: not editable -->
-      <div v-else-if="activeTab" class="dlb-systemtab">
-        <MpIcon name="security" size="md" class="dlb-systemtab-icon" />
-        <div class="dlb-systemtab-text">
-          <span class="dlb-systemtab-title">{{ t(activeTab.label) }}</span>
-          <span class="dlb-systemtab-caption">{{ t('This tab shows system content and can’t be edited.') }}</span>
-        </div>
-      </div>
     </div>
 
     <!-- Add-property drawer (two-pane pick-many, same as Setup ▸ Access) -->
@@ -506,11 +497,6 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-add-section { padding-top: var(--mp-spacing-2); }
 
 /* System tab */
-.dlb-systemtab { display: flex; align-items: center; gap: var(--mp-spacing-4); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 12px; background: var(--mp-colors-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-5); }
-.dlb-systemtab-icon { color: var(--mp-colors-icon-subtle, #97a0a1); }
-.dlb-systemtab-text { display: flex; flex-direction: column; gap: 2px; }
-.dlb-systemtab-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
-.dlb-systemtab-caption { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); }
 
 /* Add-property picker (modal) */
 

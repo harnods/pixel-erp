@@ -1355,17 +1355,29 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
         { id: 'sec-products', name: 'Products', columns: 1, propertyIds: ['products'] },
       ],
     },
-    { id: 'tab-activity', key: 'activity', label: 'Activity', editable: false, visible: true },
-    { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
-    { id: 'tab-files', key: 'files', label: 'Files', editable: false, visible: true },
-    { id: 'tab-orders', key: 'orders', label: 'Sales orders', editable: false, visible: true },
+    {
+      id: 'tab-activity', key: 'activity', label: 'Activity', editable: true, visible: true,
+      sections: [{ id: 'sec-activity', name: 'Activity', columns: 1, propertyIds: ['activity-log'] }],
+    },
+    {
+      id: 'tab-notes', key: 'notes', label: 'Notes', editable: true, visible: true,
+      sections: [{ id: 'sec-notes', name: 'Notes', columns: 1, propertyIds: ['notes'] }],
+    },
+    {
+      id: 'tab-files', key: 'files', label: 'Files', editable: true, visible: true,
+      sections: [{ id: 'sec-files', name: 'Files', columns: 1, propertyIds: ['files'] }],
+    },
+    {
+      id: 'tab-orders', key: 'orders', label: 'Sales orders', editable: true, visible: true,
+      sections: [{ id: 'sec-orders', name: 'Sales orders', columns: 1, propertyIds: ['sales-orders'] }],
+    },
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v3')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v4')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v3', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v4', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1376,8 +1388,13 @@ export const DEAL_PROPERTY_TYPES = [
   'Single-line text', 'Multi-line text', 'Phone number', 'Number',
   'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
   'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup',
-  'Product list', 'File', 'URL', 'Email',
+  'Product list', 'Related list', 'File', 'URL', 'Email',
 ] as const
+/** Types that embed a whole table/collection of related records (Products, Files,
+ *  Notes, Sales orders, Activity log). System-owned — not user-editable/creatable. */
+export function isRelatedListType(type: DealPropertyType): boolean {
+  return type === 'Related list' || type === 'Product list'
+}
 export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
 export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
@@ -1386,7 +1403,7 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
   'User': 'profile', 'Rollup': 'chart-line',
-  'Product list': 'products', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
+  'Product list': 'products', 'Related list': 'table-view-list', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
 }
 /** Field types offered when CREATING a property (drawer). Subset of the catalogue —
  *  excludes computed/relation types (Calculation, Rollup, User, …) that aren't
@@ -1435,6 +1452,11 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Customer', 'Dropdown select', 0],
   ['Primary contact', 'Dropdown select', 0],
   ['Products', 'Product list', 0],
+  // ── Related lists (whole embedded tables/collections) — system, non-editable ──
+  ['Files', 'Related list', 100],
+  ['Notes', 'Related list', 100],
+  ['Sales orders', 'Related list', 100],
+  ['Activity log', 'Related list', 100],
   ['Payment terms', 'Dropdown select', 0],
   ['Description', 'Multi-line text', 0],
   ['Memo', 'Multi-line text', 0],
@@ -1507,8 +1529,8 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
 const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
   id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
 }))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v5', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v5', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v6', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v6', dealProperties) }
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
