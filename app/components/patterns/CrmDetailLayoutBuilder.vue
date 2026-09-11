@@ -323,10 +323,9 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-newtab:hover { color: var(--mp-colors-text-default, #080d0e); }
 
 /* Body */
-.dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.dlb-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-/* Divider + 20px gap between sections (Overview / Transaction data / Products). */
-.dlb-section:not(:first-child) { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); padding-top: var(--mp-spacing-5); }
+.dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* 32px gap between sections (Overview / Transaction data / Products), no divider. */
+.dlb-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); }
 .dlb-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-radius: 8px; transition: opacity 0.12s ease; }
 .dlb-sec-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 /* Drag handle — default icon colour at 75% opacity (rule/dnd-live-sortable). */

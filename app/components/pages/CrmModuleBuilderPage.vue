@@ -241,6 +241,7 @@ const PROP_FILL: Record<string, (d: Deal) => boolean> = {
   'deal-value': (d) => d.value > 0,
   'currency': (d) => !!d.currency,
   'transaction-date': (d) => !!(d.transactionDate || d.createdAt),
+  'due-date': (d) => !!d.expectedCloseDate,
   'transaction-no': (d) => !!d.id,
   'reference-no': (d) => !!d.referenceNumber,
   'customer': (d) => !!d.customerId,
