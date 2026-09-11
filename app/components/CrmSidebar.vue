@@ -32,7 +32,7 @@ interface Item { icon: string; name: string; to: string; children?: Child[] }
 const customModuleItems = computed<Item[]>(() =>
   crmModules
     .filter((m) => !m.system && m.status === 'published')
-    .map((m) => ({ icon: m.icon || 'pipeline', name: m.name, to: `/crm/settings/modules/${m.id}` })),
+    .map((m) => ({ icon: m.icon || 'pipeline', name: m.name, to: `/crm/${m.id}` })),
 )
 // Each array is a nav group; the border-bottom between them is a divider.
 const navGroups = computed<Item[][]>(() => [

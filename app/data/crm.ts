@@ -1635,6 +1635,30 @@ export function moduleStores(id: string) {
   }
 }
 
+// ── Service deals — records for the custom "Service deals" module workspace ──────
+export interface ServiceDeal {
+  id: string; name: string; company: string; contact: string
+  stage: string                 // matches a servicePipelines stage name
+  owner: string; value: number; serviceType: string
+  transactionDate: string; dueDate: string; description: string
+}
+const SERVICE_DEALS_SEED: ServiceDeal[] = [
+  { id: 'SV-1001', name: 'Cafe opening consultation — Kopi Kenangan', company: 'Kopi Kenangan Pusat', contact: 'Ratna Sari', stage: 'Proposal',    owner: 'Dewi Lestari',  value: 45000000, serviceType: 'Consultation',   transactionDate: '2026-09-01', dueDate: '2026-10-15', description: 'End-to-end consulting to open a new flagship cafe.' },
+  { id: 'SV-1002', name: 'Espresso machine service contract',        company: 'Anomali Coffee',      contact: 'Bagus P.',   stage: 'In progress', owner: 'Fajar Nugroho', value: 18000000, serviceType: 'Machine service', transactionDate: '2026-08-20', dueDate: '2026-09-30', description: 'Quarterly preventive maintenance for 6 machines.' },
+  { id: 'SV-1003', name: 'Barista training — new outlet team',       company: 'Maxx Coffee Lippo Mall', contact: 'Sinta W.',  stage: 'Scoping',     owner: 'Dewi Lestari',  value: 12500000, serviceType: 'Training',       transactionDate: '2026-09-03', dueDate: '2026-09-25', description: '2-week barista onboarding program for 8 staff.' },
+  { id: 'SV-1004', name: 'Grinder calibration + install',           company: 'Coffee Cult Bali',    contact: 'Made A.',    stage: 'Inquiry',     owner: 'Fajar Nugroho', value: 6500000,  serviceType: 'Installation',   transactionDate: '2026-09-05', dueDate: '2026-09-18', description: 'Install and calibrate 3 new grinders.' },
+  { id: 'SV-1005', name: 'Menu engineering workshop',               company: 'Excelso Grand Indonesia', contact: 'Rudi H.', stage: 'Completed',   owner: 'Rizal Candra',  value: 22000000, serviceType: 'Consultation',   transactionDate: '2026-07-10', dueDate: '2026-08-01', description: 'Signature drinks + costing workshop.' },
+  { id: 'SV-1006', name: 'Annual service — 12 machines',            company: 'Hotel Mulia Senayan', contact: 'Yani S.',    stage: 'Proposal',    owner: 'Fajar Nugroho', value: 54000000, serviceType: 'Machine service', transactionDate: '2026-09-06', dueDate: '2026-11-01', description: 'Full-year maintenance across banquet + lounge.' },
+]
+export const serviceDeals = reactive<ServiceDeal[]>(load('crm-service-deals-v1', SERVICE_DEALS_SEED))
+export function persistServiceDeals() { saveSnapshot('crm-service-deals-v1', serviceDeals) }
+export function getServiceDeal(id: string): ServiceDeal | undefined { return serviceDeals.find((d) => d.id === id) }
+/** Stages of the Service-deals pipeline (from module config) as [{name, kind}]. */
+export function serviceStages(): { name: string; kind: DealStageKind }[] {
+  return (servicePipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
+}
+export function moveServiceDealStage(id: string, stage: string) { const d = getServiceDeal(id); if (d) { d.stage = stage; persistServiceDeals() } }
+
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,
