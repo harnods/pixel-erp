@@ -21,7 +21,7 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType,
+  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
 } from '~/data/crm'
@@ -67,7 +67,7 @@ function addSection() {
   const tab = activeTab.value
   if (!tab?.editable) return
   tab.sections = tab.sections ?? []
-  tab.sections.push({ id: newDetailSectionId(), name: t('New section'), columns: 3, propertyIds: [] })
+  tab.sections.push({ id: newDetailSectionId(), name: t('New section'), columns: 3, cols: [[], [], []] })
 }
 
 // Edit-section modal (rename + columns)
@@ -81,7 +81,12 @@ function openEditSection(s: DetailLayoutSection) {
 }
 function saveEditSection() {
   if (!editName.value.trim()) { editError.value = t('Enter a section name.'); return }
-  if (editTarget.value) { editTarget.value.name = editName.value.trim(); editTarget.value.columns = Number(editCols.value) as ColCount }
+  const s = editTarget.value
+  if (s) {
+    s.name = editName.value.trim()
+    const n = Number(editCols.value) as ColCount
+    if (n !== s.columns) { s.cols = distributeCols(sectionAllProps(s), n); s.columns = n }  // re-flow, keep reading order
+  }
   editOpen.value = false
 }
 
@@ -95,13 +100,29 @@ const addPropOptions = computed(() => {
   const section = addTarget.value
   if (!section) return []
   const elsewhere = new Set<string>()
-  for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) if (s.id !== section.id) for (const id of s.propertyIds) elsewhere.add(id)
-  const own = new Set(section.propertyIds)
+  for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) if (s.id !== section.id) for (const id of sectionAllProps(s)) elsewhere.add(id)
+  const own = new Set(sectionAllProps(section))
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
     .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
 })
-function onAddPropSave(ids: string[]) { if (addTarget.value) addTarget.value.propertyIds = ids; addOpen.value = false }
+// Reconcile the drawer's picked set into the section's columns: drop de-selected
+// ids from every column, append newly-picked ids to the shortest column (keeps
+// each column roughly balanced without disturbing existing arrangement).
+function onAddPropSave(ids: string[]) {
+  const s = addTarget.value
+  if (s) {
+    const keep = new Set(ids)
+    s.cols = s.cols.map((col) => col.filter((id) => keep.has(id)))
+    const present = new Set(sectionAllProps(s))
+    for (const id of ids) if (!present.has(id)) {
+      let shortest = 0
+      for (let c = 1; c < s.cols.length; c++) if (s.cols[c]!.length < s.cols[shortest]!.length) shortest = c
+      s.cols[shortest]!.push(id)
+    }
+  }
+  addOpen.value = false
+}
 
 // "+ New property" from the drawer footer: swap Add-property → New-property drawer,
 // then swap back after the property is created (it appears in the Add list).
@@ -194,7 +215,7 @@ const condSentence = computed(() => {
     val,
   }
 })
-function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
+function removeProperty(section: DetailLayoutSection, id: string) { section.cols = section.cols.map((c) => c.filter((x) => x !== id)) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
 function deleteSection(s: DetailLayoutSection) {
@@ -221,49 +242,59 @@ function onSecDragOver(i: number, e: DragEvent) {
 }
 function onSecDragEnd() { secDragSrc.value = null }
 
-// ── Property-card reorder — POINTER-based sortable (not native HTML5 DnD) ────────
-// Native `draggable`/`dragover` proved unreliable here (drags that never start /
-// never fire over the grid gaps). A pointer sortable is robust + testable: press
-// the handle → move → the list reorders live under the cursor → release commits.
+// ── Property-card reorder — POINTER-based, COLUMN-aware sortable ─────────────────
+// Each column is its own list, so a card can be dragged WITHIN a column or ACROSS
+// to another (and a column may hold more cards than its neighbour). Press the
+// handle → move → the card lifts out of its column and drops into the target
+// column at the row under the cursor → release commits. Not native HTML5 DnD
+// (which proved unreliable); a pointer sortable is robust + testable.
 const propDrag = ref<{ sec: string; pid: string } | null>(null)
 
-/** The grid element for a section (cards live inside it). */
-function gridEl(secId: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`[data-dlb-sec="${secId}"] .dlb-grid`)
+function colsWrapEl(secId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-dlb-sec="${secId}"] .dlb-cols`)
 }
-/** Insertion index for a pointer at (x,y): reading-order scan — above a card's
- *  mid-row → before it; same row but left of its centre → before it; past all
- *  cards → the END. So you can drop a card *below* another (never a swap). */
-function insertionIndex(grid: HTMLElement, x: number, y: number): number {
-  const cards = Array.from(grid.querySelectorAll<HTMLElement>('.dlb-prop'))
-  for (let idx = 0; idx < cards.length; idx++) {
-    const r = cards[idx]!.getBoundingClientRect()
-    if (y < r.top + r.height / 2) return idx
-    if (y <= r.bottom && x < r.left + r.width / 2) return idx
+/** Which column + row a property currently sits in. */
+function locate(section: DetailLayoutSection, pid: string): { c: number; i: number } | null {
+  for (let c = 0; c < section.cols.length; c++) {
+    const i = section.cols[c]!.indexOf(pid)
+    if (i >= 0) return { c, i }
   }
-  return cards.length
+  return null
 }
-function onPropPointerDown(section: DetailLayoutSection, i: number, e: PointerEvent) {
+function onPropPointerDown(section: DetailLayoutSection, pid: string, e: PointerEvent) {
   if (e.button !== 0) return
   e.preventDefault()
-  const pid = section.propertyIds[i]
-  if (!pid) return
   propDrag.value = { sec: section.id, pid }
 
   const onMove = (ev: PointerEvent) => {
     const d = propDrag.value
     if (!d) return
-    const grid = gridEl(d.sec)
-    if (!grid) return
-    const from = section.propertyIds.indexOf(d.pid)
-    if (from < 0) return
-    let to = insertionIndex(grid, ev.clientX, ev.clientY)
-    if (to > from) to -= 1
-    if (to === from) return
-    const arr = [...section.propertyIds]
-    const [m] = arr.splice(from, 1)
-    arr.splice(to, 0, m!)
-    section.propertyIds = arr
+    const wrap = colsWrapEl(d.sec)
+    if (!wrap) return
+    const colEls = Array.from(wrap.querySelectorAll<HTMLElement>('.dlb-col'))
+    if (!colEls.length) return
+    // Target column: first whose right edge is past the cursor X (else the last).
+    let tc = colEls.length - 1
+    for (let c = 0; c < colEls.length; c++) {
+      if (ev.clientX < colEls[c]!.getBoundingClientRect().right) { tc = c; break }
+    }
+    // Target row within that column: above a card's vertical midpoint → before it;
+    // past all cards → the end.
+    const cards = Array.from(colEls[tc]!.querySelectorAll<HTMLElement>('.dlb-prop'))
+    let ti = cards.length
+    for (let k = 0; k < cards.length; k++) {
+      const r = cards[k]!.getBoundingClientRect()
+      if (ev.clientY < r.top + r.height / 2) { ti = k; break }
+    }
+    const loc = locate(section, d.pid)
+    if (!loc) return
+    if (loc.c === tc && loc.i === ti) return
+    const cols = section.cols.map((a) => [...a])
+    cols[loc.c]!.splice(loc.i, 1)
+    let insert = ti
+    if (loc.c === tc && loc.i < ti) insert -= 1     // same column, removed an earlier row
+    cols[tc]!.splice(insert, 0, d.pid)
+    section.cols = cols
   }
   const onUp = () => {
     window.removeEventListener('pointermove', onMove)
@@ -339,39 +370,42 @@ function onPropPointerDown(section: DetailLayoutSection, i: number, e: PointerEv
               </span>
             </header>
 
-            <TransitionGroup
-              name="dlb-prop" tag="div" class="dlb-grid"
-              :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }"
-            >
-              <div
-                v-for="(pid, pi) in section.propertyIds" :key="pid"
-                class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
+            <!-- Each column is its own drop list (independent card counts). -->
+            <div class="dlb-cols" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
+              <TransitionGroup
+                v-for="(col, ci) in section.cols" :key="ci"
+                name="dlb-prop" tag="div" class="dlb-col"
               >
-                <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pi, $event)"><MpIcon name="drag" size="sm" /></span>
-                <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
-                <div class="dlb-prop-text">
-                  <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
-                  <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+                <div
+                  v-for="pid in col" :key="pid"
+                  class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
+                >
+                  <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pid, $event)"><MpIcon name="drag" size="sm" /></span>
+                  <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
+                  <div class="dlb-prop-text">
+                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
+                    <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+                  </div>
+                  <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
+                    <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
+                  </MpTooltip>
+                  <span class="dlb-kebab">
+                    <MpPopover :id="`dlb-prop-${section.id}-${pid}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Property actions')" @click.stop />
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '190px' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </span>
                 </div>
-                <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
-                  <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
-                </MpTooltip>
-                <span class="dlb-kebab">
-                  <MpPopover :id="`dlb-prop-${section.id}-${pid}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                    <MpPopoverTrigger>
-                      <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Property actions')" @click.stop />
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '190px' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
-                        <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
-                </span>
-              </div>
-            </TransitionGroup>
-            <p v-if="!section.propertyIds.length" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
+              </TransitionGroup>
+            </div>
+            <p v-if="!section.cols.some((c) => c.length)" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
           </section>
         </TransitionGroup>
 
@@ -387,7 +421,7 @@ function onPropPointerDown(section: DetailLayoutSection, i: number, e: PointerEv
       :title="t('Add property')"
       :list-title="t('Properties')"
       :options="addPropOptions"
-      :model-value="addTarget?.propertyIds ?? []"
+      :model-value="addTarget ? sectionAllProps(addTarget) : []"
       :empty-title="t('No properties selected')"
       :empty-caption="t('Add properties from the left to show them in this section.')"
       @update:open="addOpen = $event"
@@ -512,9 +546,11 @@ function onPropPointerDown(section: DetailLayoutSection, i: number, e: PointerEv
 .dlb-prop-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Property grid + field cards */
-/* padding-bottom keeps a droppable strip under the last row so a card dropped in
-   the whitespace "below" the grid still registers a dragover (→ appends to end). */
-.dlb-grid { display: grid; gap: var(--mp-spacing-4); padding-bottom: var(--mp-spacing-4); }
+/* Columns are independent lists. Each .dlb-col is a vertical stack (also a drop
+   target); min-height keeps an empty column droppable. padding-bottom leaves a
+   strip under the last card so "drop below the last card" still lands in-column. */
+.dlb-cols { display: grid; gap: var(--mp-spacing-4); align-items: start; }
+.dlb-col { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 56px; padding-bottom: var(--mp-spacing-4); min-width: 0; }
 .dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease, border-color 0.12s ease; }
 .dlb-prop:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }

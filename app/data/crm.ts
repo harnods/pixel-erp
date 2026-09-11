@@ -1320,15 +1320,31 @@ export interface PropertyCondition {
   valueEnd?: string              // range end (operator 'between')
   then: 'show' | 'hide'
 }
-/** One section (card) inside an editable detail tab — an ordered property grid. */
+/** One section (card) inside an editable detail tab. Columns are INDEPENDENT
+ *  ordered lists (`cols[i]` = property ids in column i), so one column can hold
+ *  more cards than another — like HubSpot's edit-layout. `cols.length === columns`. */
 export interface DetailLayoutSection {
   id: string
   name: string
-  columns: 1 | 2 | 3 | 4         // property-grid columns
-  propertyIds: string[]          // ordered refs into dealProperties (by DealProperty.id)
+  columns: 1 | 2 | 3 | 4         // number of columns (=== cols.length)
+  cols: string[][]               // per-column ordered refs into dealProperties (by id)
   conditions?: Record<string, PropertyCondition>  // per-property conditional-logic rules (keyed by property id)
   kind?: 'products'              // system block (products table + totals) — non-property, locked
   system?: boolean              // locked section (can't delete / add props)
+}
+/** All property ids in a section, in reading order (row-major across columns). */
+export function sectionAllProps(s: DetailLayoutSection): string[] {
+  const out: string[] = []
+  const max = Math.max(0, ...s.cols.map((c) => c.length))
+  for (let r = 0; r < max; r++) for (const col of s.cols) if (col[r] !== undefined) out.push(col[r]!)
+  return out
+}
+/** Distribute an ordered id list round-robin into `n` columns (balanced, keeps
+ *  row-major reading order). Used to seed and to re-flow on a column-count change. */
+export function distributeCols(ids: string[], n: number): string[][] {
+  const cols: string[][] = Array.from({ length: n }, () => [])
+  ids.forEach((id, i) => cols[i % n]!.push(id))
+  return cols
 }
 /** One tab on the record detail page. Only the editable tab holds sections. */
 export interface DetailLayoutTab {
@@ -1348,34 +1364,34 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
-        { id: 'sec-overview', name: 'Overview', columns: 3, propertyIds: ['customer', 'primary-contact', 'deal-value'] },
-        { id: 'sec-transaction', name: 'Transaction data', columns: 4, propertyIds: ['billing-address', 'transaction-date', 'ship-date', 'transaction-no', 'ship-to', 'due-date', 'ship-via', 'reference-no', 'payment-terms', 'tracking-no', 'warehouse'] },
-        { id: 'sec-products', name: 'Products', columns: 1, propertyIds: ['products'] },
+        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
+        { id: 'sec-transaction', name: 'Transaction data', columns: 4, cols: distributeCols(['billing-address', 'transaction-date', 'ship-date', 'transaction-no', 'ship-to', 'due-date', 'ship-via', 'reference-no', 'payment-terms', 'tracking-no', 'warehouse'], 4) },
+        { id: 'sec-products', name: 'Products', columns: 1, cols: [['products']] },
       ],
     },
     {
       id: 'tab-activity', key: 'activity', label: 'Activity', editable: true, visible: true,
-      sections: [{ id: 'sec-activity', name: 'Activity', columns: 1, propertyIds: ['activity-log'] }],
+      sections: [{ id: 'sec-activity', name: 'Activity', columns: 1, cols: [['activity-log']] }],
     },
     {
       id: 'tab-notes', key: 'notes', label: 'Notes', editable: true, visible: true,
-      sections: [{ id: 'sec-notes', name: 'Notes', columns: 1, propertyIds: ['notes'] }],
+      sections: [{ id: 'sec-notes', name: 'Notes', columns: 1, cols: [['notes']] }],
     },
     {
       id: 'tab-files', key: 'files', label: 'Files', editable: true, visible: true,
-      sections: [{ id: 'sec-files', name: 'Files', columns: 1, propertyIds: ['files'] }],
+      sections: [{ id: 'sec-files', name: 'Files', columns: 1, cols: [['files']] }],
     },
     {
       id: 'tab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true,
-      sections: [{ id: 'sec-orders', name: 'ERP transactions', columns: 1, propertyIds: ['erp-transactions'] }],
+      sections: [{ id: 'sec-orders', name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }],
     },
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v5')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v6')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v5', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v6', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1600,22 +1616,22 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     {
       id: 'stab-details', key: 'details', label: 'Service details', editable: true, visible: true,
       sections: [
-        { id: 'ssec-overview', name: 'Overview', columns: 3, propertyIds: ['customer', 'primary-contact', 'deal-value'] },
-        { id: 'ssec-service', name: 'Service info', columns: 3, propertyIds: ['service-type', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'] },
-        { id: 'ssec-products', name: 'Products', columns: 1, propertyIds: ['products'] },
+        { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
+        { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'], 3) },
+        { id: 'ssec-products', name: 'Products', columns: 1, cols: [['products']] },
       ],
     },
-    { id: 'stab-activity', key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: 'ssec-activity', name: 'Activity', columns: 1, propertyIds: ['activity-log'] }] },
-    { id: 'stab-notes', key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: 'ssec-notes', name: 'Notes', columns: 1, propertyIds: ['notes'] }] },
-    { id: 'stab-files', key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: 'ssec-files', name: 'Files', columns: 1, propertyIds: ['files'] }] },
-    { id: 'stab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: 'ssec-orders', name: 'ERP transactions', columns: 1, propertyIds: ['erp-transactions'] }] },
+    { id: 'stab-activity', key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: 'ssec-activity', name: 'Activity', columns: 1, cols: [['activity-log']] }] },
+    { id: 'stab-notes', key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: 'ssec-notes', name: 'Notes', columns: 1, cols: [['notes']] }] },
+    { id: 'stab-files', key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: 'ssec-files', name: 'Files', columns: 1, cols: [['files']] }] },
+    { id: 'stab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: 'ssec-orders', name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }] },
   ],
 }
 export const serviceDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v2')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v3')?.[0]
     ?? JSON.parse(JSON.stringify(SERVICE_DETAIL_LAYOUT_SEED)),
 )
-export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v2', [serviceDetailLayout]) }
+export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v3', [serviceDetailLayout]) }
 
 /** True for the Deals-style modules that use the Setup/Properties/Pipeline/Layout builder. */
 export function isDealLikeModule(id: string): boolean { return id === 'deals' || id === 'services' }
