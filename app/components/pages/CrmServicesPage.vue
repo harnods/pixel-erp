@@ -72,10 +72,13 @@ function matchesMetric(d: ServiceDeal): boolean {
 }
 
 // ── Saved views ──
-const SAVED_VIEWS = ['All records', 'My services', 'Completed', 'Cancelled'] as const
+const SAVED_VIEWS = ['All records', 'My services', 'Completed', 'Cancelled', 'Archived'] as const
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
 function matchesView(d: ServiceDeal): boolean {
+  // The Archived view shows only archived records; every other view hides them.
+  if (savedView.value === 'Archived') return !!d.archived
+  if (d.archived) return false
   switch (savedView.value) {
     case 'My services': return d.owner === CRM_CURRENT_USER
     case 'Completed':   return stageKind(d.stage) === 'won'
@@ -92,7 +95,7 @@ const viewOptions = [
 ]
 
 // ── List (search + Stage filter + saved view + metric + sort) ──
-const source = computed<ServiceDeal[]>(() => activeDeals.value.filter((d) => matchesView(d) && matchesMetric(d)))
+const source = computed<ServiceDeal[]>(() => serviceDeals.filter((d) => matchesView(d) && matchesMetric(d)))
 const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, paginated, setPage, setPerPage, toggleSort } =
   useTableState<ServiceDeal>(source, {
     perPage: 25,
@@ -286,8 +289,56 @@ function confirmDelete() { if (deleteTarget.value) { deleteServiceDeal(deleteTar
         </template>
         <template #cell-value="{ row }">{{ formatMoney((row as unknown as ServiceDeal).value, 'IDR') }}</template>
         <template #cell-dueDate="{ row }">{{ (row as unknown as ServiceDeal).dueDate || '—' }}</template>
+        <template #actions="{ row }">
+          <MpPopover :id="`svc-actions-${asService(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList>
+                <MpPopoverListItem @click="goDetail(asService(row).id)">{{ t('View details') }}</MpPopoverListItem>
+                <template v-if="!asService(row).archived">
+                  <MpPopoverListItem @click="openEdit(asService(row))">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="openStageModal(asService(row))">{{ t('Change stage') }}</MpPopoverListItem>
+                </template>
+              </MpPopoverList>
+              <MpPopoverList>
+                <MpPopoverListItem v-if="asService(row).archived" @click="onRestore(asService(row))">{{ t('Restore') }}</MpPopoverListItem>
+                <MpPopoverListItem v-else @click="onArchive(asService(row))">{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="askDelete(asService(row))">{{ t('Delete') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
       </ErpTablePage>
     </div>
+
+    <!-- Change-stage modal (single record) -->
+    <MpModal id="svc-stage-modal" :is-open="stageModalOpen" :is-keep-alive="false" size="sm" @close="stageModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Change stage') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <div class="svc-stage-field">
+            <span class="svc-stage-label">{{ t('Stage') }}</span>
+            <ErpFilterSelect id="svc-stage-pick" class="svc-stage-select" :model-value="stagePick" :options="stages.map((s) => ({ value: s.name, label: s.name }))" :is-clearable="false" @update:model-value="(v: string) => (stagePick = v)" />
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton variant="ghost" is-rounded @click="stageModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="applyStage">{{ t('Save') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- Delete confirm (single record) -->
+    <ConfirmModal
+      v-model:is-open="deleteOpen" :title="t('Delete this service deal?')"
+      :description="t('This permanently removes the record. This action cannot be undone.')"
+      :confirm-label="t('Delete')" is-danger @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -346,4 +397,10 @@ function confirmDelete() { if (deleteTarget.value) { deleteServiceDeal(deleteTar
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); line-height: 1; background: var(--mp-background-neutral-subtle, #eef1f1); color: var(--mp-text-secondary); }
+
+/* Change-stage modal field */
+.svc-stage-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.svc-stage-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); }
+.svc-stage-select { width: 100%; }
+.svc-stage-select :deep(.efs), .svc-stage-select :deep(.efs-trigger) { width: 100%; }
 </style>

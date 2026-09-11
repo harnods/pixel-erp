@@ -579,6 +579,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No ERP transaction linked to this service yet.': 'Belum ada transaksi ERP yang terhubung ke layanan ini.',
   'Service deal archived': 'Layanan diarsipkan',
   'Service deal restored': 'Layanan dipulihkan',
+  'Service deal deleted': 'Layanan dihapus',
   'Service deal updated': 'Layanan diperbarui',
   'Service deal created': 'Layanan dibuat',
   'File uploaded': 'File diunggah',
