@@ -31,7 +31,8 @@ import {
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
   dealProperties, persistDealProperties, DEAL_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON,
-  type DealProperty, type DealPropertyType,
+  deals,
+  type DealProperty, type DealPropertyType, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
@@ -220,8 +221,49 @@ function hasOptions(type: CrmFieldType): boolean { return type === 'pick-list' |
 // ── Properties tab — the module's property catalogue as a table (name · field
 //    type · created by · fill rate · edit/delete). Local editable clone;
 //    Save changes persists it. ──
-const propList = ref<DealProperty[]>(JSON.parse(JSON.stringify(dealProperties)))
-function loadProperties() { propList.value = JSON.parse(JSON.stringify(dealProperties)) }
+// Fill rate = % of active (non-archived) deals whose corresponding field carries a
+// value, computed from the real deals DB. Properties with no matching deal field
+// stay 0% — so it's clear which are actually used vs. not.
+const PROP_FILL: Record<string, (d: Deal) => boolean> = {
+  'amount': (d) => d.value > 0,
+  'amount-in-company-currency': (d) => d.value > 0,
+  'amount-in-dollar': (d) => d.currency === 'USD',
+  'close-date': (d) => !!d.expectedCloseDate,
+  'closed-lost-reason': (d) => !!d.lostReason,
+  'closed-won-reason': (d) => d.stage === 'Won' && !!d.notes,
+  'create-date': (d) => !!d.createdAt,
+  'created-by-user-id': (d) => !!d.createdBy,
+  'days-to-close': (d) => !!d.expectedCloseDate && !!d.createdAt,
+  'deal-collaborator': (d) => !!(d.relatedPeople && d.relatedPeople.length),
+  'deal-description': (d) => !!d.description,
+  'deal-name': (d) => !!d.name,
+  'deal-owner': (d) => !!d.owner,
+  'deal-stage': (d) => !!d.stage,
+  'exchange-rate': (d) => !!d.exchangeRate,
+  'is-closed-numeric': () => true,
+  'is-deal-closed': () => true,
+  'is-open-numeric': () => true,
+  'last-activity-date': (d) => !!d.lastActivity,
+  'next-step': (d) => !!d.notes,
+  'number-of-associated-line-items': (d) => !!(d.products && d.products.length),
+  'pipeline': () => true,
+  'priority': (d) => !!d.priority,
+  'record-id': (d) => !!d.id,
+  'record-source': (d) => !!d.conversion,
+  'updated-by-user-id': (d) => !!d.lastModifiedBy,
+}
+function computeFillRate(id: string): number {
+  const acc = PROP_FILL[id]
+  const active = deals.filter((d) => !d.archived)
+  if (!acc || !active.length) return 0
+  return Math.round((active.filter(acc).length / active.length) * 100)
+}
+const propList = ref<DealProperty[]>([])
+function loadProperties() {
+  propList.value = JSON.parse(JSON.stringify(dealProperties))
+  // Recompute fill rate from the live deals data (0% when the field isn't used).
+  for (const p of propList.value) if (p.system) p.fillRate = computeFillRate(p.id)
+}
 const propTypeOptions = computed(() => {
   const seen = new Set<string>()
   return propList.value
