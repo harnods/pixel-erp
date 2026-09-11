@@ -14,6 +14,9 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpTooltip,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import { TODAY } from '~/data/master'
+import type { DateFilterValue } from '~/utils/dateFilter'
 import {
   NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type DealPropertyOption,
@@ -42,11 +45,10 @@ function freshOptions(): DealPropertyOption[] {
 // Reset config to that type's defaults.
 function seedConfig(tp: DealPropertyType) {
   for (const k of Object.keys(config)) delete (config as Record<string, unknown>)[k]
-  if (tp === 'Date picker') config.dateDisplay = 'date-only'
-  if (tp === 'Single checkbox') config.defaultBool = ''
+  if (tp === 'Date picker') { config.dateDisplay = 'date-only'; config.datePickerStyle = 'simple'; config.defaultDateAdvance = null }
   if (tp === 'File') config.fileAccess = 'private'
   if (tp === 'URL') { config.defaultLinkText = ''; config.allowModifyLinkText = false; config.defaultUrl = '' }
-  if (OPTION_TYPES.includes(tp)) { config.options = freshOptions(); config.optionStyle = 'default'; config.defaultOption = '' }
+  if (OPTION_TYPES.includes(tp)) { config.options = freshOptions(); config.defaultOption = '' }
 }
 
 watch(() => props.open, (o) => {
@@ -107,7 +109,7 @@ function save() {
             <div class="cpd-field">
               <span class="cpd-label">{{ t('Field type') }}</span>
               <ErpFilterSelect
-                id="cpd-type" :model-value="type" :options="typeOptions" :is-clearable="false"
+                id="cpd-type" class="cpd-half" :model-value="type" :options="typeOptions" :is-clearable="false"
                 is-full-width @update:model-value="onTypeChange"
               />
             </div>
@@ -159,9 +161,24 @@ function save() {
             <!-- Date picker -->
             <template v-else-if="type === 'Date picker'">
               <div class="cpd-field">
+                <span class="cpd-label">{{ t('Date picker type') }}</span>
+                <ErpFilterSelect
+                  id="cpd-date-style" class="cpd-half" :model-value="config.datePickerStyle || 'simple'"
+                  :options="[{ value: 'simple', label: t('Simple date picker') }, { value: 'advance', label: t('Advance date picker') }]"
+                  :is-clearable="false" is-full-width
+                  @update:model-value="(v: string) => (config.datePickerStyle = (v || 'simple') as 'simple' | 'advance')"
+                />
+              </div>
+              <div class="cpd-field">
                 <span class="cpd-label">{{ t('Default value') }}</span>
                 <span class="cpd-caption">{{ t('This value is filled in automatically when a new record is created.') }}</span>
-                <MpDatePicker id="cpd-def-date" v-model="config.defaultDate" format="DD/MM/YYYY" value-type="format" use-portal />
+                <AdvanceDateFilter
+                  v-if="config.datePickerStyle === 'advance'"
+                  id="cpd-def-date-adv" :model-value="(config.defaultDateAdvance as DateFilterValue | null) ?? null"
+                  :today="TODAY" :placeholder="t('Select date')"
+                  @update:model-value="(v: DateFilterValue | null) => (config.defaultDateAdvance = v)"
+                />
+                <MpDatePicker v-else id="cpd-def-date" v-model="config.defaultDate" format="DD/MM/YYYY" value-type="format" use-portal />
               </div>
               <div class="cpd-field">
                 <span class="cpd-label">{{ t('How should this date appear on records?') }}</span>
@@ -175,17 +192,6 @@ function save() {
                 </label>
               </div>
             </template>
-
-            <!-- Single checkbox -->
-            <div v-else-if="type === 'Single checkbox'" class="cpd-field">
-              <span class="cpd-label">{{ t('Default value') }}</span>
-              <span class="cpd-caption">{{ t('This value is filled in automatically when a new record is created.') }}</span>
-              <ErpFilterSelect
-                id="cpd-def-bool" :model-value="config.defaultBool || ''"
-                :options="[{ value: 'Yes', label: t('Yes') }, { value: 'No', label: t('No') }]"
-                is-full-width @update:model-value="(v: string) => (config.defaultBool = (v as '' | 'Yes' | 'No'))"
-              />
-            </div>
 
             <!-- File -->
             <template v-else-if="type === 'File'">
@@ -214,16 +220,9 @@ function save() {
               <div class="cpd-field">
                 <span class="cpd-label">{{ t('Default value') }}</span>
                 <ErpFilterSelect
-                  id="cpd-def-option" :model-value="config.defaultOption || ''" :options="defaultOptionOptions"
+                  id="cpd-def-option" class="cpd-half" :model-value="config.defaultOption || ''" :options="defaultOptionOptions"
                   is-full-width @update:model-value="(v: string) => (config.defaultOption = v)"
                 />
-              </div>
-              <div v-if="type === 'Multiple checkboxes'" class="cpd-field">
-                <span class="cpd-label">{{ t('Option style') }}</span>
-                <div class="cpd-segment">
-                  <button type="button" class="cpd-seg-btn" :class="{ 'cpd-seg-btn--active': config.optionStyle !== 'badge' }" @click="config.optionStyle = 'default'">{{ t('Default') }}</button>
-                  <button type="button" class="cpd-seg-btn" :class="{ 'cpd-seg-btn--active': config.optionStyle === 'badge' }" @click="config.optionStyle = 'badge'">{{ t('Badge') }}</button>
-                </div>
               </div>
               <div class="cpd-field">
                 <div class="cpd-opt-head">
@@ -275,6 +274,8 @@ function save() {
 
 .cpd-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .cpd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/* Dropdowns in this drawer sit at 50% of the field width (~3 of 6 grid cols). */
+.cpd-half { width: 50%; }
 .cpd-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .cpd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .cpd-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
@@ -287,11 +288,6 @@ function save() {
 .cpd-note { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-warning, #e8b931); border-radius: var(--mp-radii-md, 6px); background: var(--mp-colors-background-warning-subtle, #fdf6e3); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-default, #080d0e); }
 .cpd-note-icon { color: var(--mp-colors-icon-warning, #b7791f); flex-shrink: 0; margin-top: 1px; }
 
-/* Option style segmented control */
-.cpd-segment { display: inline-flex; border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); overflow: hidden; align-self: flex-start; }
-.cpd-seg-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: none; background: var(--mp-colors-background-neutral, #fff); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
-.cpd-seg-btn + .cpd-seg-btn { border-left: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.cpd-seg-btn--active { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* Options editor */
 .cpd-opt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }

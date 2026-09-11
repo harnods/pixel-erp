@@ -1334,7 +1334,7 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
  *  user-authorable. */
 export const NEW_PROPERTY_TYPES: DealPropertyType[] = [
   'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Date picker',
-  'Single checkbox', 'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
+  'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
 ]
 /** One option for select/checkbox/radio field types. */
 export interface DealPropertyOption { label: string; value: string; inForms: boolean }
@@ -1344,6 +1344,8 @@ export interface DealPropertyConfig {
   defaultNumber?: number | null
   defaultDate?: string
   dateDisplay?: 'date-only' | 'relative'
+  datePickerStyle?: 'simple' | 'advance'
+  defaultDateAdvance?: unknown   // DateFilterValue | null (advance picker)
   defaultBool?: '' | 'Yes' | 'No'
   options?: DealPropertyOption[]
   optionStyle?: 'default' | 'badge'
