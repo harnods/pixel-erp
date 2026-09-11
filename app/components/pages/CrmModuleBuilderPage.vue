@@ -282,7 +282,8 @@ const {
 const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value)
 function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = '' }
 const PROP_COLUMNS: TableColumn[] = [
-  { key: 'name',      label: 'Name',       kind: 'name',   sortable: true, sortType: 'text' },
+  // Explicit 360px width for this table only (escape hatch) — property names run long.
+  { key: 'name',      label: 'Name',       width: '360px', sortable: true, sortType: 'text' },
   { key: 'type',      label: 'Field type', kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'createdBy', label: 'Created by', kind: 'status' },
   { key: 'fillRate',  label: 'Fill rate',  kind: 'number', align: 'right', sortable: true, sortType: 'number' },
