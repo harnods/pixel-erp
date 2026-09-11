@@ -11,17 +11,18 @@
  */
 import { ref, computed } from 'vue'
 import {
-  MpButton, MpIcon, MpInput, MpSegmentedControl, css,
+  MpButton, MpIcon, MpInput, MpSegmentedControl, MpTooltip, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButtonGroup,
 } from '@mekari/pixel3'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
-  type DealProperty, type DealPropertyType, type DealPropertyConfig,
+  type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
 } from '~/data/crm'
 
 type NewPropertyPayload = { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }
@@ -118,6 +119,54 @@ function openNewProperty() { addOpen.value = false; newPropOpen.value = true }
 function onNewPropertySaved(payload: NewPropertyPayload) { props.createProperty(payload) }
 // Closing the New-property drawer (save OR cancel) swaps back to Add-property.
 function onNewPropertyClose(open: boolean) { newPropOpen.value = open; if (!open) addOpen.value = true }
+
+// ── Conditional logic (per property card) ───────────────────────────────────────
+// Show/hide a property card when another property's value meets a condition.
+const condOpen = ref(false)
+const condSection = ref<DetailLayoutSection | null>(null)
+const condPid = ref('')
+const cond = ref<PropertyCondition>({ field: '', operator: 'equals', value: 'true', then: 'show' })
+const OP_OPTIONS = [
+  { value: 'equals', label: t('is equal to') },
+  { value: 'not-equals', label: t('is not equal to') },
+]
+const THEN_OPTIONS = [
+  { value: 'show', label: t('Show') },
+  { value: 'hide', label: t('Hide') },
+]
+const BOOL_OPTIONS = [
+  { id: 'cond-true', label: t('True'), value: 'true' },
+  { id: 'cond-false', label: t('False'), value: 'false' },
+]
+// Any property can drive the rule (except the card itself).
+const condFieldOptions = computed(() =>
+  props.properties.filter((p) => p.id !== condPid.value && p.id !== 'products').map((p) => ({ value: p.id, label: p.name })),
+)
+function openCondition(section: DetailLayoutSection, pid: string) {
+  condSection.value = section; condPid.value = pid
+  const existing = section.conditions?.[pid]
+  cond.value = existing
+    ? { ...existing }
+    : { field: condFieldOptions.value[0]?.value ?? '', operator: 'equals', value: 'true', then: 'show' }
+  condOpen.value = true
+}
+function applyCondition() {
+  const s = condSection.value
+  if (s && cond.value.field) { s.conditions = { ...(s.conditions ?? {}), [condPid.value]: { ...cond.value } } }
+  condOpen.value = false
+}
+function clearCondition() {
+  const s = condSection.value
+  if (s?.conditions) { const c = { ...s.conditions }; delete c[condPid.value]; s.conditions = c }
+  condOpen.value = false
+}
+const condSentence = computed(() => ({
+  prop: prop(condPid.value)?.name ?? t('This property'),
+  action: cond.value.then === 'show' ? t('shown') : t('hidden'),
+  field: prop(cond.value.field)?.name ?? '—',
+  op: cond.value.operator === 'equals' ? t('is equal to') : t('is not equal to'),
+  val: cond.value.value === 'true' ? t('True') : t('False'),
+}))
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
@@ -238,13 +287,19 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
                   <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
                   <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
                 </div>
+                <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
+                  <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
+                </MpTooltip>
                 <span class="dlb-kebab">
                   <MpPopover :id="`dlb-prop-${section.id}-${pid}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                     <MpPopoverTrigger>
                       <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Property actions')" @click.stop />
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '160px' })">
-                      <MpPopoverList><MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem></MpPopoverList>
+                    <MpPopoverContent :class="css({ minWidth: '190px' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
+                        <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
+                      </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
                 </span>
@@ -313,6 +368,38 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <!-- Conditional-logic modal (per property card) -->
+    <MpModal id="dlb-cond-modal" :is-open="condOpen" :is-keep-alive="false" size="sm" @close="condOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Conditional logic') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <div class="dlb-cond-if">
+            <div class="dlb-cond-head">
+              <span class="dlb-cond-title">{{ t('If') }}</span>
+              <MpButton variant="ghost" is-rounded left-icon="delete" :aria-label="t('Clear condition')" @click="clearCondition" />
+            </div>
+            <ErpFilterSelect id="dlb-cond-field" class="dlb-cond-select" :placeholder="t('Select field')" :model-value="cond.field" :options="condFieldOptions" :is-clearable="false" @update:model-value="(v: string) => (cond.field = v)" />
+            <ErpFilterSelect id="dlb-cond-op" class="dlb-cond-select" placeholder="" :model-value="cond.operator" :options="OP_OPTIONS" :is-clearable="false" @update:model-value="(v: string) => (cond.operator = v as 'equals' | 'not-equals')" />
+            <MpSegmentedControl id="dlb-cond-val" name="dlb-cond-val" :model-value="cond.value" :data="BOOL_OPTIONS" @update:model-value="(v: string) => (cond.value = v as 'true' | 'false')" />
+          </div>
+          <div class="dlb-cond-then">
+            <span class="dlb-cond-title">{{ t('Then') }}</span>
+            <ErpFilterSelect id="dlb-cond-then" class="dlb-cond-select" placeholder="" :model-value="cond.then" :options="THEN_OPTIONS" :is-clearable="false" @update:model-value="(v: string) => (cond.then = v as 'show' | 'hide')" />
+          </div>
+          <p class="dlb-cond-sentence">
+            <strong>{{ condSentence.prop }}</strong> {{ t('will be') }} <strong>{{ condSentence.action }}</strong> {{ t('when') }} <strong>{{ condSentence.field }}</strong> {{ condSentence.op }} <strong>{{ condSentence.val }}</strong>.
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton variant="ghost" is-rounded @click="condOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="applyCondition">{{ t('Apply') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
@@ -359,6 +446,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease, border-color 0.12s ease; }
 .dlb-prop:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
+.dlb-prop-cond { color: var(--mp-colors-icon-information, #2f6fd0); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -380,4 +468,14 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 .dlb-field + .dlb-field { margin-top: var(--mp-spacing-4); }
 .dlb-field-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #6b7678); }
 .dlb-inline-error { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-danger, #d92d20); margin: 0; }
+
+/* Conditional-logic modal */
+.dlb-cond-select { width: 100%; }
+.dlb-cond-select :deep(.efs), .dlb-cond-select :deep(.efs-trigger) { width: 100%; }
+.dlb-cond-if { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 10px; padding: var(--mp-spacing-4); }
+.dlb-cond-head { display: flex; align-items: center; justify-content: space-between; }
+.dlb-cond-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
+.dlb-cond-then { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
+.dlb-cond-sentence { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); line-height: 1.5; }
+.dlb-cond-sentence strong { color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); }
 </style>

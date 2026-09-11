@@ -1309,12 +1309,20 @@ export const dealModuleSetup = reactive<DealModuleSetup>(
 export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v2', [dealModuleSetup]) }
 
 // ── Deals module DETAIL-PAGE LAYOUT (the Layout tab ▸ Details page) ───────────
+/** Show/hide rule for a property card: THEN show/hide it IF <field> <op> <value>. */
+export interface PropertyCondition {
+  field: string                  // property id whose value is evaluated
+  operator: 'equals' | 'not-equals'
+  value: 'true' | 'false'
+  then: 'show' | 'hide'
+}
 /** One section (card) inside an editable detail tab — an ordered property grid. */
 export interface DetailLayoutSection {
   id: string
   name: string
   columns: 1 | 2 | 3 | 4         // property-grid columns
   propertyIds: string[]          // ordered refs into dealProperties (by DealProperty.id)
+  conditions?: Record<string, PropertyCondition>  // per-property conditional-logic rules (keyed by property id)
   kind?: 'products'              // system block (products table + totals) — non-property, locked
   system?: boolean              // locked section (can't delete / add props)
 }
