@@ -31,14 +31,16 @@ import {
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
+  dealDetailLayout, persistDealDetailLayout,
   dealProperties, persistDealProperties, DEAL_PROPERTY_TYPE_ICON,
   deals,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
-  type DealPipelineDisplay, type DealModuleSetup,
+  type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
+import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -61,8 +63,16 @@ interface Draft {
   fields: CrmModuleField[]
   views: CrmModuleView[]
   layoutDriver: string // '' = none
+  detailLayout: DealDetailLayout // record detail-page layout (Deals only)
 }
-const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '' })
+const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] } })
+
+// Layout tab (Deals): which page is being customized.
+const layoutPage = ref<'details' | 'form'>('details')
+const LAYOUT_PAGE_OPTIONS = [
+  { value: 'details', label: t('Details page') },
+  { value: 'form', label: t('Form page') },
+]
 
 function loadDraft() {
   const m = mod.value
@@ -73,6 +83,7 @@ function loadDraft() {
   draft.fields = clone(m.fields)
   draft.views = clone(m.views)
   draft.layoutDriver = m.layoutDriver ?? ''
+  draft.detailLayout = clone(dealDetailLayout)
 }
 // Icon picker (the Name-field prefix) — opens a small grid of module icons.
 const iconMenuOpen = ref(false)
@@ -601,6 +612,8 @@ function saveChanges() {
     persistDealModuleSetup()
     dealProperties.splice(0, dealProperties.length, ...JSON.parse(JSON.stringify(propList.value)))
     persistDealProperties()
+    Object.assign(dealDetailLayout, JSON.parse(JSON.stringify(draft.detailLayout)))
+    persistDealDetailLayout()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -925,8 +938,22 @@ function cancel() { router.push('/crm/settings/modules') }
             </template>
           </div>
 
-          <!-- ════════ LAYOUT / FIELDS ════════ -->
-          <div v-show="isLayoutTab" class="builder-panel">
+          <!-- ════════ LAYOUT (Deals) — page switcher + Details canvas ════════ -->
+          <div v-if="activeTab === 'layout'" class="builder-panel builder-panel--layout">
+            <div class="builder-layout-switch">
+              <span class="builder-layout-switch-label">{{ t('Customizing') }}</span>
+              <ErpFilterSelect
+                id="cmb-layout-page" :model-value="layoutPage" :options="LAYOUT_PAGE_OPTIONS"
+                :is-clearable="false" width="200px"
+                @update:model-value="(v: string) => (layoutPage = v as 'details' | 'form')"
+              />
+            </div>
+            <CrmDetailLayoutBuilder v-show="layoutPage === 'details'" :detail="draft.detailLayout" :module-icon="draft.icon" />
+            <p v-show="layoutPage === 'form'" class="builder-layout-formhint">{{ t('Arrange the fields shown on the create/edit form.') }}</p>
+          </div>
+
+          <!-- ════════ LAYOUT / FIELDS (form layout: custom modules, or Deals ▸ Form page) ════════ -->
+          <div v-show="activeTab === 'fields' || (activeTab === 'layout' && layoutPage === 'form')" class="builder-panel">
             <!-- Layout driver -->
             <div class="builder-driver">
               <div class="builder-driver-text">
@@ -1273,6 +1300,12 @@ function cancel() { router.push('/crm/settings/modules') }
 
 /* Each tab panel stacks its rows with the standard 20px gap. */
 .builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+
+/* ── Layout tab (Deals) — Details/Form page switcher ── */
+.builder-panel--layout { gap: var(--mp-spacing-4); }
+.builder-layout-switch { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.builder-layout-switch-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #6b7678); }
+.builder-layout-formhint { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
 /* ── Pipeline tab — swimlane editor + right settings panel (Figma 4240-18081) ── */
 /* The pipeline panel fills the stage so the sidebar can run full-height + sticky. */

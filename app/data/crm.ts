@@ -1308,6 +1308,53 @@ export const dealModuleSetup = reactive<DealModuleSetup>(
 )
 export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v1', [dealModuleSetup]) }
 
+// ── Deals module DETAIL-PAGE LAYOUT (the Layout tab ▸ Details page) ───────────
+/** One section (card) inside an editable detail tab — an ordered property grid. */
+export interface DetailLayoutSection {
+  id: string
+  name: string
+  columns: 1 | 2 | 3            // property-grid columns
+  propertyIds: string[]          // ordered refs into dealProperties (by DealProperty.id)
+  kind?: 'products'              // system block (products table + totals) — non-property, locked
+  system?: boolean              // locked section (can't delete / add props)
+}
+/** One tab on the record detail page. Only the editable tab holds sections. */
+export interface DetailLayoutTab {
+  id: string
+  key: string                    // 'details' | 'activity' | 'notes' | 'files' | 'orders'
+  label: string
+  editable: boolean              // true only for the property-grid tab ('details')
+  visible: boolean
+  sections?: DetailLayoutSection[]
+}
+export interface DealDetailLayout { tabs: DetailLayoutTab[] }
+let detailSectionSeq = 1
+export function newDetailSectionId(): string { return `sec-${detailSectionSeq++}` }
+/** Mirrors the current CrmDealDetailPage record layout. */
+const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
+  tabs: [
+    {
+      id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
+      sections: [
+        { id: 'sec-overview', name: 'Overview', columns: 3, propertyIds: ['customer', 'primary-contact', 'deal-value'] },
+        { id: 'sec-shipping', name: 'Shipping & billing', columns: 3, propertyIds: ['billing-address', 'ship-to', 'ship-date', 'ship-via', 'tracking-no', 'warehouse'] },
+        { id: 'sec-transaction', name: 'Transaction', columns: 3, propertyIds: ['transaction-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'] },
+        { id: 'sec-products', name: 'Products', columns: 1, propertyIds: [], kind: 'products', system: true },
+        { id: 'sec-notes', name: 'Notes', columns: 2, propertyIds: ['description', 'memo'] },
+      ],
+    },
+    { id: 'tab-activity', key: 'activity', label: 'Activity', editable: false, visible: true },
+    { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
+    { id: 'tab-files', key: 'files', label: 'Files', editable: false, visible: true },
+    { id: 'tab-orders', key: 'orders', label: 'Sales orders', editable: false, visible: true },
+  ],
+}
+export const dealDetailLayout = reactive<DealDetailLayout>(
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
+)
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v1', [dealDetailLayout]) }
+
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
 // types (single-/multi-line text, number, date pickers, selects, calculation,
