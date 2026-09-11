@@ -1299,14 +1299,14 @@ export interface DealModuleSetup {
   access: string[]                 // user names who can access the module
 }
 const DEAL_MODULE_SETUP_SEED: DealModuleSetup = {
-  baseCurrency: 'IDR', applyCloseDate: false, closeMode: 'period',
+  baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
   closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
 }
 export const dealModuleSetup = reactive<DealModuleSetup>(
-  loadSnapshot<DealModuleSetup>('crm-deal-module-setup-v1')?.[0]
+  loadSnapshot<DealModuleSetup>('crm-deal-module-setup-v2')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_MODULE_SETUP_SEED)),
 )
-export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v1', [dealModuleSetup]) }
+export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v2', [dealModuleSetup]) }
 
 // ── Deals module DETAIL-PAGE LAYOUT (the Layout tab ▸ Details page) ───────────
 /** One section (card) inside an editable detail tab — an ordered property grid. */

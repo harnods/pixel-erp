@@ -10,7 +10,7 @@
 import { ref, computed, watch } from 'vue'
 import { MpIcon, MpButton, MpTooltip } from '@mekari/pixel3'
 
-export interface AccessOption { id: string; name: string; subtitle?: string }
+export interface AccessOption { id: string; name: string; subtitle?: string; icon?: string }
 
 const props = defineProps<{
   open: boolean
@@ -92,6 +92,7 @@ async function save() {
             </div>
             <div class="sad-list">
               <button v-for="o in available" :key="o.id" class="sad-item" type="button" @click="add(o.id)">
+                <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                 <span class="sad-info">
                   <span class="sad-name">{{ o.name }}</span>
                   <span v-if="o.subtitle" class="sad-sub">{{ o.subtitle }}</span>
@@ -122,6 +123,7 @@ async function save() {
               </div>
               <div class="sad-list">
                 <button v-for="o in selected" :key="o.id" class="sad-item" type="button" @click="remove(o.id)">
+                  <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                   <span class="sad-info">
                     <span class="sad-name">{{ o.name }}</span>
                     <span v-if="o.subtitle" class="sad-sub">{{ o.subtitle }}</span>
@@ -141,10 +143,13 @@ async function save() {
           </section>
         </div>
 
-        <!-- Footer -->
+        <!-- Footer — optional left action (e.g. "+ New …") + Cancel/Save -->
         <footer class="sad-footer">
-          <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+          <div class="sad-footer-left"><slot name="footer-left" /></div>
+          <div class="sad-footer-right">
+            <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+          </div>
         </footer>
       </div>
     </div>
@@ -210,6 +215,7 @@ async function save() {
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
 .sad-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.sad-icon { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
 .sad-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sad-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -227,5 +233,7 @@ async function save() {
 .sad-empty-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-empty-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.sad-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.sad-footer-left { display: inline-flex; }
+.sad-footer-right { display: inline-flex; gap: var(--mp-spacing-2); }
 </style>

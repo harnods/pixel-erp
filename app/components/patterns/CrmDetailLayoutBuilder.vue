@@ -17,13 +17,23 @@ import {
   MpButtonGroup,
 } from '@mekari/pixel3'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
+import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import {
-  dealProperties, DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
+  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
+  type DealProperty, type DealPropertyType, type DealPropertyConfig,
 } from '~/data/crm'
 
-// moduleIcon kept for API compatibility (parent passes it); not shown in this canvas.
-const props = withDefaults(defineProps<{ detail: DealDetailLayout; moduleIcon?: string }>(), { moduleIcon: 'pipeline' })
+type NewPropertyPayload = { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }
+
+// `properties` = the parent's editable property list (draft clone), so newly
+// created properties appear here immediately. moduleIcon kept for API compat.
+const props = withDefaults(defineProps<{
+  detail: DealDetailLayout
+  properties: DealProperty[]
+  createProperty: (payload: NewPropertyPayload) => DealProperty
+  moduleIcon?: string
+}>(), { moduleIcon: 'pipeline' })
 const { t } = useLocale()
 
 const SECTION_NAME_MAX = 30
@@ -58,7 +68,7 @@ function deleteTab(tp: DetailLayoutTab) {
 }
 
 // ── Property lookup ─────────────────────────────────────────────────────────────
-function prop(id: string) { return dealProperties.find((p) => p.id === id) }
+function prop(id: string) { return props.properties.find((p) => p.id === id) }
 
 // ── Sections ────────────────────────────────────────────────────────────────────
 function addSection() {
@@ -95,11 +105,21 @@ const addPropOptions = computed(() => {
   const elsewhere = new Set<string>()
   for (const tp of props.detail.tabs) for (const s of tp.sections ?? []) if (s.id !== section.id) for (const id of s.propertyIds) elsewhere.add(id)
   const own = new Set(section.propertyIds)
-  return dealProperties
+  return props.properties
     .filter((p) => own.has(p.id) || (p.id !== 'products' && !elsewhere.has(p.id)))
-    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName }))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
 })
 function onAddPropSave(ids: string[]) { if (addTarget.value) addTarget.value.propertyIds = ids; addOpen.value = false }
+
+// "+ New property" from the drawer footer: swap Add-property → New-property drawer,
+// then swap back after the property is created (it appears in the Add list).
+const newPropOpen = ref(false)
+function openNewProperty() { addOpen.value = false; newPropOpen.value = true }
+function onNewPropertySaved(payload: NewPropertyPayload) {
+  props.createProperty(payload)
+  newPropOpen.value = false
+  addOpen.value = true
+}
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
@@ -262,7 +282,14 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
       :empty-caption="t('Add properties from the left to show them in this section.')"
       @update:open="addOpen = $event"
       @save="onAddPropSave"
-    />
+    >
+      <template #footer-left>
+        <MpButton variant="secondary" is-rounded left-icon="add" @click="openNewProperty">{{ t('New property') }}</MpButton>
+      </template>
+    </SelectAccessDrawer>
+
+    <!-- New-property drawer — swapped in from the Add-property footer, swaps back on save. -->
+    <CrmPropertyDrawer :open="newPropOpen" mode="add" :property="null" @update:open="newPropOpen = $event" @save="onNewPropertySaved" />
 
     <!-- Edit-section modal -->
     <MpModal id="dlb-editsec-modal" :is-open="editOpen" :is-keep-alive="false" size="sm" @close="editOpen = false">
@@ -331,7 +358,8 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 
 /* Property grid + field cards */
 .dlb-grid { display: grid; gap: var(--mp-spacing-4); }
-.dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease; }
+.dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease, border-color 0.12s ease; }
+.dlb-prop:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

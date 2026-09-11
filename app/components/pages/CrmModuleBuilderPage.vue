@@ -342,6 +342,17 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
   }
   propDrawerOpen.value = false
 }
+// Create a property from the Layout ▸ Add-property drawer's "+ New property".
+// Adds to the editable propList (persisted on Save changes); returns the new prop
+// so the layout drawer can show it in the Add-property list.
+function createDealProperty(payload: { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }): DealProperty {
+  const np: DealProperty = {
+    id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+    name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
+  }
+  propList.value = [...propList.value, np]
+  return np
+}
 function deleteProperty(id: string) {
   const p = propList.value.find((x) => x.id === id)
   if (!p || p.system) return
@@ -949,7 +960,7 @@ function cancel() { router.push('/crm/settings/modules') }
                 @update:model-value="(v: string) => (layoutPage = v as 'details' | 'form')"
               />
             </div>
-            <CrmDetailLayoutBuilder v-show="layoutPage === 'details'" :detail="draft.detailLayout" :module-icon="draft.icon" />
+            <CrmDetailLayoutBuilder v-show="layoutPage === 'details'" :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" />
             <p v-show="layoutPage === 'form'" class="builder-layout-formhint">{{ t('Arrange the fields shown on the create/edit form.') }}</p>
           </div>
 
