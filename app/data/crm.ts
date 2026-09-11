@@ -1716,6 +1716,12 @@ const SERVICE_DEALS_SEED: ServiceDeal[] = [
 export const serviceDeals = reactive<ServiceDeal[]>(load('crm-service-deals-v2', SERVICE_DEALS_SEED))
 export function persistServiceDeals() { saveSnapshot('crm-service-deals-v2', serviceDeals) }
 export function getServiceDeal(id: string): ServiceDeal | undefined { return serviceDeals.find((d) => d.id === id) }
+/** Display transaction number — always follows the module name, like Deals'
+ *  `dealNo` ("Deal #10090" → "Service Deal #10090"). */
+export function serviceNo(id: string): string {
+  const n = parseInt(String(id).replace(/\D/g, ''), 10)
+  return Number.isNaN(n) ? String(id) : `Service Deal #${10000 + (n % 100)}`
+}
 /** Sum of a service deal's line-items (Subtotal). */
 export function serviceProductsTotal(d: ServiceDeal): number { return (d.products ?? []).reduce((n, li) => n + lineSubtotal(li), 0) }
 /** Next free record id, e.g. 'SV-1009'. */
@@ -1755,7 +1761,7 @@ export function serviceActivityLog(d: ServiceDeal): { date: string; user: string
     date: isoAt(d.createdAt, 0, 9), user: created, activity: 'Created record',
     details: [
       { label: 'Service name', value: d.name },
-      { label: 'Record number', value: d.transactionNo },
+      { label: 'Record number', value: serviceNo(d.id) },
       { label: 'Customer', value: d.company },
       { label: 'Primary contact', value: d.contact || '—' },
       { label: 'Owner', value: d.owner },

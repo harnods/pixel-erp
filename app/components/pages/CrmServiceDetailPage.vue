@@ -26,7 +26,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getServiceDeal, serviceStages, serviceStageBadgeType, serviceActivityLog,
+  getServiceDeal, serviceNo, serviceStages, serviceStageBadgeType, serviceActivityLog,
   serviceProductsTotal, lineSubtotal, moveServiceDealStage,
   archiveServiceDeal, restoreServiceDeal, deleteServiceDeal, persistServiceDeals,
   type OrderStatus, type DealAttachment,
@@ -325,7 +325,7 @@ function goTransaction(id: string) { router.push(`/sales-orders/${id}`) }
                   <ContentList :label="t('Due date')" :value="fmtDate(deal.dueDate)" />
                 </div>
                 <div class="content-list-col">
-                  <ContentList :label="t('Transaction no.')" :value="deal.transactionNo" />
+                  <ContentList :label="t('Transaction no.')" :value="serviceNo(deal.id)" />
                   <ContentList :label="t('Reference no.')" :value="deal.referenceNo || '—'" />
                 </div>
                 <div class="content-list-col">

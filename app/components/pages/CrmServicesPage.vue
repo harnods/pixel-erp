@@ -29,7 +29,7 @@ import { formatMoney } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 import { infoToast, successToast } from '~/utils/toasts'
 import {
-  serviceDeals, serviceStages, serviceStageBadgeType, moveServiceDealStage,
+  serviceDeals, serviceNo, serviceStages, serviceStageBadgeType, moveServiceDealStage,
   getCrmModule, CRM_CURRENT_USER, persistServiceDeals,
   archiveServiceDeal, restoreServiceDeal, deleteServiceDeal,
   type ServiceDeal,
@@ -101,14 +101,14 @@ function matchesMetric(d: ServiceDeal): boolean {
 }
 
 // ── Saved views ──
-const SAVED_VIEWS = ['All records', 'My services', 'Completed', 'Cancelled', 'Archived'] as const
+const SAVED_VIEWS = ['All records', 'My service deals', 'Completed', 'Cancelled', 'Archived'] as const
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
 function matchesView(d: ServiceDeal): boolean {
   if (savedView.value === 'Archived') return !!d.archived
   if (d.archived) return false
   switch (savedView.value) {
-    case 'My services': return d.owner === ME
+    case 'My service deals': return d.owner === ME
     case 'Completed':   return stageKind(d.stage) === 'won'
     case 'Cancelled':   return stageKind(d.stage) === 'lost'
     default:            return true
@@ -248,7 +248,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <div class="crm-titlebar__right">
         <MpButtonGroup>
           <MpButton variant="secondary" is-rounded @click="importOpen = true">{{ t('Import') }}</MpButton>
-          <MpButton variant="primary" is-rounded left-icon="add" @click="openCreate">{{ t('New service') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="openCreate">{{ t('New service deal') }}</MpButton>
         </MpButtonGroup>
       </div>
     </header>
@@ -258,12 +258,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <div class="cc-stats">
         <div class="stats-section">
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
-            <div class="stat-title">{{ t('Total ongoing services') }}</div>
+            <div class="stat-title">{{ t('Total ongoing service deals') }}</div>
             <div class="stat-amount">{{ m.ongoingCount }}</div>
             <div class="stat-sub">{{ t('In the pipeline') }}</div>
           </button>
           <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
-            <div class="stat-title">{{ t('Total service value') }}</div>
+            <div class="stat-title">{{ t('Total service deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.ongoingValue, 'IDR') }}</div>
             <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
           </button>
@@ -318,7 +318,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           </MpButtonGroup>
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search services…')" />
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search service deals…')" />
             <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
           </div>
         </div>
@@ -365,7 +365,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   </span>
                 </div>
               </article>
-              <p v-if="!col.cards.length" class="kcol__empty">{{ t('No services') }}</p>
+              <p v-if="!col.cards.length" class="kcol__empty">{{ t('No service deals') }}</p>
             </div>
             <footer class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
@@ -388,9 +388,9 @@ const toggleAirene = inject<() => void>('toggleAirene')
         :loading="loading"
         :search="search"
         :has-active-filter="hasActiveFilter"
-        :filter-empty-label="t('service')"
+        :filter-empty-label="t('service deal')"
         has-checkbox
-        :bulk-label="t('service')"
+        :bulk-label="t('service deal')"
         @page-change="setPage"
         @per-page-change="setPerPage"
         @sort="toggleSort"
@@ -399,7 +399,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
         @hide-column="hideColumn"
       >
         <template #cell-id="{ row }">
-          <span class="cell-link cell-text cc-num" @click.stop="goDetail(asService(row).id)">{{ asService(row).id }}</span>
+          <span class="cell-link cell-text cc-num" @click.stop="goDetail(asService(row).id)">{{ serviceNo(asService(row).id) }}</span>
         </template>
 
         <template #cell-name="{ row }">
@@ -452,9 +452,9 @@ const toggleAirene = inject<() => void>('toggleAirene')
         <template #empty>
           <div class="cc-empty">
             <img :src="'/illustrations/empty-folder.png'" alt="" class="cc-empty-illustration" width="288" height="240" />
-            <p class="cc-empty-title">{{ t('No services') }}</p>
+            <p class="cc-empty-title">{{ t('No service deals') }}</p>
             <p class="cc-empty-desc">{{ t('Create a service deal to start tracking work.') }}</p>
-            <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">{{ t('New service') }}</MpButton>
+            <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">{{ t('New service deal') }}</MpButton>
           </div>
         </template>
       </ErpTablePage>
