@@ -8,17 +8,23 @@
  * and board always agree and reflect whatever was set up in the module builder.
  */
 import { ref, computed } from 'vue'
-import { MpButton, MpButtonGroup, MpIcon, MpTooltip } from '@mekari/pixel3'
+import {
+  MpButton, MpButtonGroup, MpIcon,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+} from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpIconSegmented from '~/components/patterns/ErpIconSegmented.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { useTableState } from '~/composables/useTableState'
 import { formatMoney } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import {
   serviceDeals, serviceStages, serviceStageBadgeType, moveServiceDealStage,
   getCrmModule, CRM_CURRENT_USER,
+  archiveServiceDeal, restoreServiceDeal, deleteServiceDeal,
   type ServiceDeal,
 } from '~/data/crm'
 // Demo "today" — same reference the Deals page uses, so metrics stay meaningful
@@ -130,6 +136,28 @@ function onDrop(stage: string) {
   onDragEnd()
 }
 function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase() }
+
+// ── Row actions (kebab): View details · Edit · Change stage · Archive/Restore · Delete ──
+const asService = (row: Record<string, unknown>) => row as unknown as ServiceDeal
+function openEdit(d: ServiceDeal) { router.push(`/crm/services/${d.id}/edit`) }
+function onArchive(d: ServiceDeal) { archiveServiceDeal(d.id); successToast(t('Service deal archived')) }
+function onRestore(d: ServiceDeal) { restoreServiceDeal(d.id); successToast(t('Service deal restored')) }
+
+// Change-stage modal (single record).
+const stageModalOpen = ref(false)
+const stageTarget = ref<ServiceDeal | null>(null)
+const stagePick = ref('')
+function openStageModal(d: ServiceDeal) { stageTarget.value = d; stagePick.value = d.stage; stageModalOpen.value = true }
+function applyStage() {
+  if (stageTarget.value && stagePick.value) { moveServiceDealStage(stageTarget.value.id, stagePick.value); successToast(t('Stage updated')) }
+  stageModalOpen.value = false
+}
+
+// Delete confirm (single record).
+const deleteOpen = ref(false)
+const deleteTarget = ref<ServiceDeal | null>(null)
+function askDelete(d: ServiceDeal) { deleteTarget.value = d; deleteOpen.value = true }
+function confirmDelete() { if (deleteTarget.value) { deleteServiceDeal(deleteTarget.value.id); successToast(t('Service deal deleted')) } deleteOpen.value = false }
 </script>
 
 <template>

@@ -540,8 +540,19 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 /* Kebab reveals on card/section hover (or keyboard focus) only. */
 .dlb-kebab { display: inline-flex; opacity: 0; transition: opacity 0.12s ease; }
 .dlb-section:hover > .dlb-sec-head > .dlb-kebab, .dlb-prop:hover .dlb-kebab, .dlb-tab:hover .dlb-kebab, .dlb-kebab:focus-within { opacity: 1; }
-/* Faded source while dragging + FLIP move animation (same feel as edit-pipeline). */
-.dlb-section.is-dragging, .dlb-prop.is-dragging { opacity: 0.4; }
+/* Section drag: faded source (same feel as edit-pipeline). */
+.dlb-section.is-dragging { opacity: 0.4; }
+/* Property card drag: the card looks PICKED UP — a drop shadow + slight lift while
+   held, like a pipeline card being moved to another stage. Deviates from
+   rule/surface-border-no-shadow ON PURPOSE: this is a transient drag affordance
+   (only while grabbed), not a resting surface elevation. */
+.dlb-prop.is-dragging {
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  box-shadow: 0 10px 24px rgba(8, 13, 14, 0.16), 0 2px 6px rgba(8, 13, 14, 0.10);
+  transform: scale(1.02);
+  cursor: grabbing;
+  z-index: 2;
+}
 .dlb-sec-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
 .dlb-prop-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
