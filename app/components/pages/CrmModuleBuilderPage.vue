@@ -27,12 +27,9 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import {
   getCrmModule, persistCrmModule,
-  CRM_FIELD_TYPE_LABELS, CRM_OWNERS,
-  dealPipelines, persistDealPipelines,
-  dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
-  dealModuleSetup, persistDealModuleSetup,
-  dealDetailLayout, persistDealDetailLayout,
-  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
+  CRM_FIELD_TYPE_LABELS, CRM_OWNERS, CRM_MODULE_ICONS,
+  moduleStores, isDealLikeModule,
+  DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
   deals,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
@@ -52,6 +49,8 @@ function nowStamp(): string { return new Date().toISOString().slice(0, 19) }
 function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T }
 
 const mod = computed<CrmModule | undefined>(() => getCrmModule(props.orderId))
+// Deals-style modules (Deals + Service deals) each read/write their OWN config stores.
+const stores = computed(() => moduleStores(props.orderId))
 
 // ── Local editable deep-clone ────────────────────────────────────────────────
 const UNUSED = '__unused__'
@@ -76,15 +75,15 @@ function loadDraft() {
   draft.fields = clone(m.fields)
   draft.views = clone(m.views)
   draft.layoutDriver = m.layoutDriver ?? ''
-  draft.detailLayout = clone(dealDetailLayout)
+  draft.detailLayout = clone(stores.value.detailLayout)
 }
 // Icon picker (the Name-field prefix) — opens a small grid of module icons.
 const iconMenuOpen = ref(false)
 function pickIcon(icon: string) { draft.icon = icon; iconMenuOpen.value = false }
 
 // ── Setup tab (Deals) — a local editable clone; Save changes applies it. ──
-const setup = reactive<DealModuleSetup>(JSON.parse(JSON.stringify(dealModuleSetup)))
-function loadSetup() { Object.assign(setup, JSON.parse(JSON.stringify(dealModuleSetup))) }
+const setup = reactive<DealModuleSetup>(JSON.parse(JSON.stringify(stores.value.setup)))
+function loadSetup() { Object.assign(setup, JSON.parse(JSON.stringify(stores.value.setup))) }
 const CURRENCY_OPTIONS = [{ value: 'IDR', label: 'Indonesian Rupiah (Rp)' }]
 const CLOSE_PERIOD_OPTIONS = [
   { value: 'this-month', label: t('This month') },
@@ -122,15 +121,15 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 
 // ── Tabs (v-model = index) ───────────────────────────────────────────────────
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
-const isDeals = computed(() => !!mod.value?.system)
+const isDeals = computed(() => isDealLikeModule(mod.value?.id ?? ''))
 const tabs = computed(() => isDeals.value
   ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
-const activeTab = ref<string>(getCrmModule(props.orderId)?.system ? 'setup' : 'fields')
+const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
 
 // ── Pipeline config (deals only) — a local editable clone; Save changes applies it. ──
-const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(dealPipelines)))
+const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(stores.value.pipelines)))
 const selectedPipeId = ref<string>(pipeDraft.value[0]?.id ?? 'default')
 const currentPipe = computed<DealPipeline | undefined>(() => pipeDraft.value.find((p) => p.id === selectedPipeId.value) ?? pipeDraft.value[0])
 const pipeOptions = computed(() => pipeDraft.value.map((p) => ({ value: p.id, label: p.name })))
@@ -191,7 +190,7 @@ function removeStage(id: string) {
 
 // ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
 //    changes applies it. Drives which fields show on cards + stage/column props. ──
-const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(dealPipelineDisplay)))
+const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(stores.value.display)))
 const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
 
@@ -321,7 +320,7 @@ function computeFillRate(id: string): number {
 }
 const propList = ref<DealProperty[]>([])
 function loadProperties() {
-  propList.value = JSON.parse(JSON.stringify(dealProperties))
+  propList.value = JSON.parse(JSON.stringify(stores.value.properties))
   // Recompute fill rate from the live deals data (0% when the field isn't used).
   for (const p of propList.value) if (p.system) p.fillRate = computeFillRate(p.id)
 }
@@ -644,17 +643,18 @@ function saveChanges() {
   const m = mod.value
   if (!m) return
   // Deals: persist the pipeline config too.
-  if (m.system) {
-    dealPipelines.splice(0, dealPipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
-    persistDealPipelines()
-    Object.assign(dealPipelineDisplay, JSON.parse(JSON.stringify(disp)))
-    persistDealPipelineDisplay()
-    Object.assign(dealModuleSetup, JSON.parse(JSON.stringify(setup)))
-    persistDealModuleSetup()
-    dealProperties.splice(0, dealProperties.length, ...JSON.parse(JSON.stringify(propList.value)))
-    persistDealProperties()
-    Object.assign(dealDetailLayout, JSON.parse(JSON.stringify(draft.detailLayout)))
-    persistDealDetailLayout()
+  if (isDealLikeModule(m.id)) {
+    const s = stores.value
+    s.pipelines.splice(0, s.pipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
+    s.persistPipelines()
+    Object.assign(s.display, JSON.parse(JSON.stringify(disp)))
+    s.persistDisplay()
+    Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
+    s.persistSetup()
+    s.properties.splice(0, s.properties.length, ...JSON.parse(JSON.stringify(propList.value)))
+    s.persistProperties()
+    Object.assign(s.detailLayout, JSON.parse(JSON.stringify(draft.detailLayout)))
+    s.persistDetailLayout()
   }
   Object.assign(m, {
     sections: [...draft.sections],
@@ -667,7 +667,7 @@ function saveChanges() {
   m.name = draft.name.trim() || m.name
   m.icon = draft.icon
   persistCrmModule(m, AUTHOR, nowStamp())
-  successToast(t(m.system ? 'Pipeline saved' : 'Module saved'))
+  successToast(t(isDealLikeModule(m.id) ? 'Pipeline saved' : 'Module saved'))
 }
 // Every module (Deals system module included) is edited from the Modules index.
 function cancel() { router.push('/crm/settings/modules') }

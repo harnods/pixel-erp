@@ -1202,34 +1202,32 @@ const MODULES_SEED: CrmModule[] = [
     updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra',
   },
   {
-    id: 'onboarding', name: 'Customer Onboarding', system: false, accessLevel: 'team', status: 'draft',
-    sections: ['Onboarding'],
+    // Deals-style module for service (non-shipping) deals — consulting, machine
+    // service, training. Uses the same builder as Deals via moduleStores('services').
+    id: 'services', name: 'Service deals', system: false, accessLevel: 'company', status: 'published', icon: 'briefcase',
+    sections: ['Service information', 'Scope & value'],
     fields: [
-      { id: 'name',   label: 'Account',   type: 'text',      required: true,  system: true, isPrimary: true, section: 'Onboarding', column: 1 },
-      { id: 'stage',  label: 'Step',      type: 'pick-list', required: true,  system: false, options: ['Kickoff', 'Setup', 'Training', 'Live'], section: 'Onboarding', column: 1 },
-      { id: 'owner',  label: 'CSM',       type: 'user',      required: true,  system: true, section: 'Onboarding', column: 2 },
+      { id: 'name',     label: 'Service name',       type: 'text',      required: true,  system: true, isPrimary: true, section: 'Service information', column: 1 },
+      { id: 'customer', label: 'Customer',           type: 'customer',  required: true,  system: true,  section: 'Service information', column: 1 },
+      { id: 'stage',    label: 'Stage',              type: 'pick-list', required: true,  system: true,  options: ['Inquiry', 'Scoping', 'Proposal', 'In progress', 'Completed', 'Cancelled'], section: 'Service information', column: 2 },
+      { id: 'owner',    label: 'Owner',              type: 'user',      required: true,  system: true,  section: 'Service information', column: 2 },
+      { id: 'type',     label: 'Service type',       type: 'pick-list', required: false, system: false, options: ['Consultation', 'Machine service', 'Training', 'Installation'], section: 'Service information', column: 2 },
+      { id: 'value',    label: 'Value',              type: 'currency',  required: false, system: false, section: 'Scope & value', column: 2 },
+      { id: 'closeDate',label: 'Expected close date',type: 'date',      required: false, system: false, section: 'Scope & value', column: 2 },
     ],
-    views: [{ id: 'all', name: 'All onboardings', type: 'list', visibility: 'everyone' }],
-    conversionTarget: null,
-    recordCount: 4,
-    updatedAt: '2026-08-30T11:05:00', updatedBy: 'Dewi Lestari',
-  },
-  {
-    id: 'service', name: 'Service Requests', system: false, accessLevel: 'company', status: 'incomplete',
-    sections: ['Request'],
-    fields: [
-      { id: 'name',  label: 'Subject',  type: 'text',      required: true, system: true, isPrimary: true, section: 'Request', column: 1 },
-      { id: 'type',  label: 'Type',     type: 'pick-list', required: true, system: false, options: ['Complaint', 'Question', 'Return'], section: 'Request', column: 1 },
+    layoutDriver: 'stage',
+    views: [
+      { id: 'all',  name: 'All services', type: 'list',   visibility: 'everyone' },
+      { id: 'mine', name: 'My pipeline',  type: 'kanban', categorizeBy: 'stage', visibility: 'private' },
     ],
-    views: [{ id: 'all', name: 'All requests', type: 'list', visibility: 'everyone' }],
-    conversionTarget: 'expense',
-    recordCount: 0,
-    updatedAt: '2026-08-25T09:40:00', updatedBy: 'Rizal Candra',
+    conversionTarget: 'sales-order',
+    recordCount: 5,
+    updatedAt: '2026-09-09T10:00:00', updatedBy: 'Rizal Candra',
   },
 ]
 
-export const crmModules = reactive<CrmModule[]>(load('crm-modules-v1', MODULES_SEED))
-export function persistCrmModules() { saveSnapshot('crm-modules-v1', crmModules) }
+export const crmModules = reactive<CrmModule[]>(load('crm-modules-v2', MODULES_SEED))
+export function persistCrmModules() { saveSnapshot('crm-modules-v2', crmModules) }
 
 // ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
 // A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
@@ -1531,6 +1529,111 @@ const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, typ
 }))
 export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v6', DEAL_PROPERTIES_SEED))
 export function persistDealProperties() { saveSnapshot('crm-deal-properties-v6', dealProperties) }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SERVICES module — a second Deals-like module for service (non-shipping) deals:
+// consulting to open a cafe, coffee-machine servicing, barista training, etc. Same
+// builder as Deals (Setup · Properties · Pipeline · Layout) but with its OWN config
+// stores so editing it never touches the Deals module. `moduleStores(id)` resolves
+// which set the builder reads/writes.
+// ═══════════════════════════════════════════════════════════════════════════════
+const SERVICE_PIPELINES_SEED: DealPipeline[] = [
+  {
+    id: 'service-default', name: 'Default service pipeline',
+    stages: [
+      { id: 'ss-inquiry',  name: 'Inquiry',     kind: 'open', isDefault: true },
+      { id: 'ss-scoping',  name: 'Scoping',     kind: 'open' },
+      { id: 'ss-proposal', name: 'Proposal',    kind: 'open' },
+      { id: 'ss-progress', name: 'In progress', kind: 'open' },
+      { id: 'ss-done',     name: 'Completed',   kind: 'won' },
+      { id: 'ss-lost',     name: 'Cancelled',   kind: 'lost' },
+    ],
+  },
+]
+export const servicePipelines = reactive<DealPipeline[]>(load('crm-service-pipelines-v1', SERVICE_PIPELINES_SEED))
+export function persistServicePipelines() { saveSnapshot('crm-service-pipelines-v1', servicePipelines) }
+
+export const servicePipelineDisplay = reactive<DealPipelineDisplay>(
+  loadSnapshot<DealPipelineDisplay>('crm-service-pipeline-display-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+)
+export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v1', [servicePipelineDisplay]) }
+
+const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
+  baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
+  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
+}
+export const serviceModuleSetup = reactive<DealModuleSetup>(
+  loadSnapshot<DealModuleSetup>('crm-service-module-setup-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(SERVICE_MODULE_SETUP_SEED)),
+)
+export function persistServiceModuleSetup() { saveSnapshot('crm-service-module-setup-v1', [serviceModuleSetup]) }
+
+// Service properties — like Deals minus the shipping/logistics fields.
+const SERVICE_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
+  ['Deal value', 'Number', 0],
+  ['Currency', 'Dropdown select', 0],
+  ['Service type', 'Dropdown select', 0],
+  ['Transaction date', 'Date picker', 0],
+  ['Due date', 'Date picker', 0],
+  ['Transaction no.', 'Single-line text', 0],
+  ['Reference no.', 'Single-line text', 0],
+  ['Customer', 'Dropdown select', 0],
+  ['Primary contact', 'Dropdown select', 0],
+  ['Products', 'Product list', 0],
+  ['Files', 'Related list', 100],
+  ['Notes', 'Related list', 100],
+  ['Sales orders', 'Related list', 100],
+  ['Activity log', 'Related list', 100],
+  ['Payment terms', 'Dropdown select', 0],
+  ['Description', 'Multi-line text', 0],
+  ['Memo', 'Multi-line text', 0],
+]
+const SERVICE_PROPERTIES_SEED: DealProperty[] = SERVICE_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
+  id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
+}))
+export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v1', SERVICE_PROPERTIES_SEED))
+export function persistServiceProperties() { saveSnapshot('crm-service-properties-v1', serviceProperties) }
+
+const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
+  tabs: [
+    {
+      id: 'stab-details', key: 'details', label: 'Service details', editable: true, visible: true,
+      sections: [
+        { id: 'ssec-overview', name: 'Overview', columns: 3, propertyIds: ['customer', 'primary-contact', 'deal-value'] },
+        { id: 'ssec-service', name: 'Service info', columns: 3, propertyIds: ['service-type', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'] },
+        { id: 'ssec-products', name: 'Products', columns: 1, propertyIds: ['products'] },
+      ],
+    },
+    { id: 'stab-activity', key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: 'ssec-activity', name: 'Activity', columns: 1, propertyIds: ['activity-log'] }] },
+    { id: 'stab-notes', key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: 'ssec-notes', name: 'Notes', columns: 1, propertyIds: ['notes'] }] },
+    { id: 'stab-files', key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: 'ssec-files', name: 'Files', columns: 1, propertyIds: ['files'] }] },
+  ],
+}
+export const serviceDetailLayout = reactive<DealDetailLayout>(
+  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(SERVICE_DETAIL_LAYOUT_SEED)),
+)
+export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v1', [serviceDetailLayout]) }
+
+/** True for the Deals-style modules that use the Setup/Properties/Pipeline/Layout builder. */
+export function isDealLikeModule(id: string): boolean { return id === 'deals' || id === 'services' }
+/** Resolve the builder's config stores for a Deals-like module. */
+export function moduleStores(id: string) {
+  const svc = id === 'services'
+  return {
+    pipelines: svc ? servicePipelines : dealPipelines,
+    persistPipelines: svc ? persistServicePipelines : persistDealPipelines,
+    display: svc ? servicePipelineDisplay : dealPipelineDisplay,
+    persistDisplay: svc ? persistServicePipelineDisplay : persistDealPipelineDisplay,
+    setup: svc ? serviceModuleSetup : dealModuleSetup,
+    persistSetup: svc ? persistServiceModuleSetup : persistDealModuleSetup,
+    properties: svc ? serviceProperties : dealProperties,
+    persistProperties: svc ? persistServiceProperties : persistDealProperties,
+    detailLayout: svc ? serviceDetailLayout : dealDetailLayout,
+    persistDetailLayout: svc ? persistServiceDetailLayout : persistDealDetailLayout,
+  }
+}
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
