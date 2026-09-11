@@ -24,15 +24,16 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
+import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import {
   getCrmModule, persistCrmModule,
   CRM_FIELD_TYPE_LABELS, CRM_OWNERS,
   dealPipelines, persistDealPipelines,
   dealPipelineDisplay, persistDealPipelineDisplay, CRM_MODULE_ICONS,
   dealModuleSetup, persistDealModuleSetup,
-  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON,
+  dealProperties, persistDealProperties, DEAL_PROPERTY_TYPE_ICON,
   deals,
-  type DealProperty, type DealPropertyType, type Deal,
+  type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
   type CrmModuleView, type CrmModuleViewType, type CrmModuleViewVisibility,
   type DealPipeline, type DealPipelineStage,
@@ -308,38 +309,26 @@ const PROP_COLUMNS: TableColumn[] = [
   { key: 'fillRate',  label: 'Fill rate',  kind: 'number', align: 'right', sortable: true, sortType: 'number' },
 ]
 
-// New / edit property modal
-const propModalOpen = ref(false)
-const propModalMode = ref<'add' | 'edit'>('add')
-const editingPropId = ref<string | null>(null)
-const propForm = reactive<{ name: string; type: DealPropertyType }>({ name: '', type: 'Single-line text' })
-const propNameError = ref('')
-const propTypePickerOptions = DEAL_PROPERTY_TYPES.map((tp) => ({ value: tp, label: tp }))
-const propModalTitle = computed(() => (propModalMode.value === 'edit' ? t('Edit property') : t('New property')))
-function openAddProperty() {
-  propModalMode.value = 'add'; editingPropId.value = null; propNameError.value = ''
-  Object.assign(propForm, { name: '', type: 'Single-line text' as DealPropertyType })
-  propModalOpen.value = true
-}
+// New / edit property drawer
+const propDrawerOpen = ref(false)
+const propMode = ref<'add' | 'edit'>('add')
+const editingProp = ref<DealProperty | null>(null)
+function openAddProperty() { propMode.value = 'add'; editingProp.value = null; propDrawerOpen.value = true }
 function openEditProperty(id: string) {
   const p = propList.value.find((x) => x.id === id); if (!p) return
-  propModalMode.value = 'edit'; editingPropId.value = id; propNameError.value = ''
-  Object.assign(propForm, { name: p.name, type: p.type })
-  propModalOpen.value = true
+  propMode.value = 'edit'; editingProp.value = p; propDrawerOpen.value = true
 }
-function saveProperty() {
-  const name = propForm.name.trim()
-  if (!name) { propNameError.value = t('Enter a property name.'); return }
-  if (propModalMode.value === 'edit' && editingPropId.value) {
-    const p = propList.value.find((x) => x.id === editingPropId.value)
-    if (p) { p.name = name; p.type = propForm.type }
+function onPropertySave(payload: { name: string; type: DealPropertyType; config: DealPropertyConfig }) {
+  if (propMode.value === 'edit' && editingProp.value) {
+    const p = propList.value.find((x) => x.id === editingProp.value!.id)
+    if (p) { p.name = payload.name; p.type = payload.type; p.config = payload.config }
   } else {
     propList.value = [...propList.value, {
       id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-      name, type: propForm.type, system: false, fillRate: 0,
+      name: payload.name, type: payload.type, system: false, fillRate: 0, config: payload.config,
     }]
   }
-  propModalOpen.value = false
+  propDrawerOpen.value = false
 }
 function deleteProperty(id: string) {
   const p = propList.value.find((x) => x.id === id)
@@ -1071,40 +1060,8 @@ function cancel() { router.push('/crm/settings/modules') }
       @save="onAccessSaved($event)"
     />
 
-    <!-- ════════ Property modal (Properties ▸ New / Edit) ════════ -->
-    <MpModal id="cmb-prop-modal" :is-open="propModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="propModalOpen = false">
-      <MpModalContent>
-        <MpModalHeader>{{ propModalTitle }}</MpModalHeader>
-        <MpModalBody>
-          <div class="builder-form">
-            <MpFormControl id="cmb-prop-name-fc" :is-invalid="!!propNameError">
-              <MpFormLabel>{{ t('Property name') }}</MpFormLabel>
-              <MpInput id="cmb-prop-name" v-model="propForm.name" is-full-width @update:model-value="propNameError = ''" />
-              <MpFormErrorMessage v-if="propNameError">{{ propNameError }}</MpFormErrorMessage>
-            </MpFormControl>
-            <div class="builder-form-field">
-              <span class="builder-form-label">{{ t('Field type') }}</span>
-              <ErpFilterSelect
-                id="cmb-prop-type"
-                :model-value="propForm.type"
-                :placeholder="t('Field type')"
-                :options="propTypePickerOptions"
-                :is-clearable="false"
-                width="280px"
-                @update:model-value="(v: string) => (propForm.type = (v || 'Single-line text') as DealPropertyType)"
-              />
-            </div>
-          </div>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButtonGroup>
-            <MpButton variant="ghost" is-rounded @click="propModalOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="saveProperty">{{ propModalMode === 'edit' ? t('Save changes') : t('Save') }}</MpButton>
-          </MpButtonGroup>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
+    <!-- ════════ Property drawer (Properties ▸ New / Edit) ════════ -->
+    <CrmPropertyDrawer :open="propDrawerOpen" :mode="propMode" :property="editingProp" @update:open="propDrawerOpen = $event" @save="onPropertySave" />
 
     <!-- ════════ Field modal ════════ -->
     <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">

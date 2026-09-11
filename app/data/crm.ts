@@ -1317,7 +1317,7 @@ export const DEAL_PROPERTY_TYPES = [
   'Single-line text', 'Multi-line text', 'Rich text', 'Phone number', 'Number',
   'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
   'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup', 'Object coordinates',
-  'Product list', 'File',
+  'Product list', 'File', 'URL', 'Email',
 ] as const
 export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
@@ -1327,9 +1327,37 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
   'User': 'profile', 'Rollup': 'chart-line', 'Object coordinates': 'location',
-  'Product list': 'products', 'File': 'attachment',
+  'Product list': 'products', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
 }
-export interface DealProperty { id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number }
+/** Field types offered when CREATING a property (drawer). Subset of the catalogue —
+ *  excludes computed/relation types (Calculation, Rollup, User, …) that aren't
+ *  user-authorable. */
+export const NEW_PROPERTY_TYPES: DealPropertyType[] = [
+  'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Date picker',
+  'Single checkbox', 'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
+]
+/** One option for select/checkbox/radio field types. */
+export interface DealPropertyOption { label: string; value: string; inForms: boolean }
+/** Per-field-type config captured in the New property drawer. */
+export interface DealPropertyConfig {
+  defaultText?: string
+  defaultNumber?: number | null
+  defaultDate?: string
+  dateDisplay?: 'date-only' | 'relative'
+  defaultBool?: '' | 'Yes' | 'No'
+  options?: DealPropertyOption[]
+  optionStyle?: 'default' | 'badge'
+  defaultOption?: string
+  fileAccess?: 'private' | 'public'
+  defaultLinkText?: string
+  allowModifyLinkText?: boolean
+  defaultUrl?: string
+  defaultEmail?: string
+}
+export interface DealProperty {
+  id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number
+  config?: DealPropertyConfig
+}
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   // ── From the deal creation form (form naming wins on duplicates) ──
