@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
  * CrmServicesPage — records workspace for the custom "Service deals" module
- * (/crm/services). Same shape as the Deals workspace (list + Kanban), but driven
- * by the module's OWN pipeline (servicePipelines) + records (serviceDeals). Stage
- * columns/badges come from the configured service pipeline, so the workspace
- * reflects whatever was set up in the module builder.
+ * (/crm/services). Mirrors the Deals index-page format exactly: own title bar →
+ * fixed metric cards → ERP filter bar (saved view · Stage filter · view switch ·
+ * search) → LIST (default) or Stage KANBAN. Everything reads the ONE serviceDeals
+ * dataset + the module's configured pipeline (servicePipelines), so metrics, list
+ * and board always agree and reflect whatever was set up in the module builder.
  */
-import { ref, reactive, computed } from 'vue'
-import { MpButton, MpButtonGroup, MpIcon } from '@mekari/pixel3'
+import { ref, computed } from 'vue'
+import { MpButton, MpButtonGroup, MpIcon, MpTooltip } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpIconSegmented from '~/components/patterns/ErpIconSegmented.vue'
@@ -15,56 +17,109 @@ import { useTableState } from '~/composables/useTableState'
 import { formatMoney } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import {
-  serviceDeals, serviceStages, moveServiceDealStage, getCrmModule, CRM_CURRENT_USER, persistServiceDeals,
+  serviceDeals, serviceStages, serviceStageBadgeType, moveServiceDealStage,
+  getCrmModule, CRM_CURRENT_USER, persistServiceDeals,
   type ServiceDeal,
 } from '~/data/crm'
-import { TODAY } from '~/data/master'
+// Demo "today" — same reference the Deals page uses, so metrics stay meaningful
+// against the Aug–Sep seed dates (the app-wide TODAY_ISO is an earlier month).
+const TODAY_ISO = '2026-09-07'
 
 const router = useRouter()
 const { t } = useLocale()
 
 const moduleName = computed(() => getCrmModule('services')?.name || t('Service deals'))
-const view = ref<'table' | 'board'>('table')
 function goDetail(id: string) { router.push(`/crm/services/${id}`) }
 function openCreate() {
   const id = `SV-${1000 + serviceDeals.length + 1}`
-  serviceDeals.unshift({ id, name: t('Untitled service'), company: '', contact: '', stage: serviceStages()[0]?.name ?? 'Inquiry', owner: CRM_CURRENT_USER, value: 0, serviceType: 'Consultation', transactionDate: TODAY, dueDate: '', description: '' })
+  serviceDeals.unshift({ id, name: t('Untitled service'), company: '', contact: '', stage: serviceStages()[0]?.name ?? 'Inquiry', owner: CRM_CURRENT_USER, value: 0, serviceType: 'Consultation', transactionDate: TODAY_ISO, dueDate: '', description: '' })
   persistServiceDeals()
   goDetail(id)
 }
 
-// Stage → badge tone (from the configured pipeline stage kind).
-function stageKind(stage: string) { return serviceStages().find((s) => s.name === stage)?.kind ?? 'open' }
-function stageBadge(stage: string): { type: 'completed' | 'announcement' | 'information'; label: string } {
-  const kind = stageKind(stage)
-  return { type: kind === 'won' ? 'completed' : kind === 'lost' ? 'announcement' : 'information', label: stage }
+// ── Stage helpers (from the configured pipeline) ──
+const stages = computed(() => serviceStages())
+function stageKind(stage: string) { return stages.value.find((s) => s.name === stage)?.kind ?? 'open' }
+const isOngoing = (d: ServiceDeal) => stageKind(d.stage) === 'open'
+const currentMonth = TODAY_ISO.slice(0, 7)
+
+// ── Fixed metrics (mirror the Deals cards, click-through) ──
+type MetricFilter = '' | 'ongoing' | 'closing' | 'overdue'
+const metricFilter = ref<MetricFilter>('')
+function applyMetric(f: MetricFilter) { metricFilter.value = metricFilter.value === f ? '' : f; view.value = 'table' }
+const m = computed(() => {
+  const ongoing = serviceDeals.filter(isOngoing)
+  const closing = ongoing.filter((d) => d.dueDate.startsWith(currentMonth))
+  const overdue = ongoing.filter((d) => d.dueDate && d.dueDate < TODAY_ISO)
+  return {
+    ongoingCount: ongoing.length,
+    ongoingValue: ongoing.reduce((s, d) => s + d.value, 0),
+    closingCount: closing.length,
+    closingValue: closing.reduce((s, d) => s + d.value, 0),
+    overdueCount: overdue.length,
+  }
+})
+function matchesMetric(d: ServiceDeal): boolean {
+  switch (metricFilter.value) {
+    case 'ongoing': return isOngoing(d)
+    case 'closing': return isOngoing(d) && d.dueDate.startsWith(currentMonth)
+    case 'overdue': return isOngoing(d) && !!d.dueDate && d.dueDate < TODAY_ISO
+    default: return true
+  }
 }
 
-// ── List ──
-const source = computed<ServiceDeal[]>(() => serviceDeals)
-const { search, currentPage, perPage, sortKey, sortDir, total, paginated, setPage, setPerPage, toggleSort } =
+// ── Saved views ──
+const SAVED_VIEWS = ['All records', 'My services', 'Completed', 'Cancelled'] as const
+type SavedView = typeof SAVED_VIEWS[number]
+const savedView = ref<SavedView>('All records')
+function matchesView(d: ServiceDeal): boolean {
+  switch (savedView.value) {
+    case 'My services': return d.owner === CRM_CURRENT_USER
+    case 'Completed':   return stageKind(d.stage) === 'won'
+    case 'Cancelled':   return stageKind(d.stage) === 'lost'
+    default:            return true
+  }
+}
+
+// ── View toggle (list default) ──
+const view = ref<'table' | 'board'>('table')
+const viewOptions = [
+  { value: 'table', icon: 'table-view-list', label: t('List view') },
+  { value: 'board', icon: 'table-view-column', label: t('Board view') },
+]
+
+// ── List (search + Stage filter + saved view + metric + sort) ──
+const source = computed<ServiceDeal[]>(() => serviceDeals.filter((d) => matchesView(d) && matchesMetric(d)))
+const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, paginated, setPage, setPerPage, toggleSort } =
   useTableState<ServiceDeal>(source, {
     perPage: 25,
     defaultSort: { key: 'transactionDate', dir: 'desc' },
-    filterFn: (row, s) => !s || [row.name, row.id, row.company, row.owner, row.serviceType].join(' ').toLowerCase().includes(s),
+    filterFn: (row, s, status) => {
+      const matchesStage = !status || row.stage === status
+      const matchesSearch = !s || [row.name, row.id, row.company, row.owner, row.serviceType].join(' ').toLowerCase().includes(s)
+      return matchesStage && matchesSearch
+    },
   })
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Service name', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'company', label: 'Customer', kind: 'name' },
-  { key: 'stage', label: 'Stage', kind: 'status' },
-  { key: 'serviceType', label: 'Service type', kind: 'tags' },
-  { key: 'owner', label: 'Owner', kind: 'status' },
-  { key: 'value', label: 'Value', kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'dueDate', label: 'Due date', kind: 'date' },
+  { key: 'name', label: t('Service name'), kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'company', label: t('Customer'), kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'stage', label: t('Stage'), kind: 'status', sortable: true, sortType: 'text' },
+  { key: 'serviceType', label: t('Service type'), kind: 'tags' },
+  { key: 'owner', label: t('Owner'), kind: 'name' },
+  { key: 'value', label: t('Value'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'dueDate', label: t('Due date'), kind: 'date', sortable: true, sortType: 'text' },
 ]
-const hasActiveFilter = computed(() => !!search.value)
+const hasActiveFilter = computed(() => !!statusFilter.value || !!metricFilter.value || savedView.value !== 'All records')
 
-// ── Kanban ──
+// ── Kanban (respects saved view + stage filter + search + metric) ──
 interface Col { stage: string; kind: string; cards: ServiceDeal[]; total: number }
 const boardColumns = computed<Col[]>(() => {
   const s = search.value.trim().toLowerCase()
-  return serviceStages().map((st) => {
-    const cards = serviceDeals.filter((d) => d.stage === st.name && (!s || [d.name, d.id, d.company, d.owner].join(' ').toLowerCase().includes(s)))
+  return stages.value.map((st) => {
+    const cards = serviceDeals.filter((d) =>
+      d.stage === st.name && matchesView(d) && matchesMetric(d) &&
+      (!statusFilter.value || d.stage === statusFilter.value) &&
+      (!s || [d.name, d.id, d.company, d.owner].join(' ').toLowerCase().includes(s)))
     return { stage: st.name, kind: st.kind, cards, total: cards.reduce((sum, d) => sum + d.value, 0) }
   })
 })
@@ -82,7 +137,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 
 <template>
   <div class="crm">
-    <!-- Title bar -->
+    <!-- ── Title bar ── -->
     <header class="crm-titlebar">
       <div class="crm-titlebar__left"><h1 class="crm-title">{{ moduleName }}</h1></div>
       <div class="crm-titlebar__right">
@@ -92,22 +147,64 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
       </div>
     </header>
 
-    <div class="crm-body">
-      <!-- Toolbar: view toggle + search -->
-      <div class="svc-toolbar">
-        <ErpIconSegmented
-          id="svc-view" :model-value="view"
-          :options="[{ value: 'table', icon: 'table-view-list', label: t('List view') }, { value: 'board', icon: 'table-view-column', label: t('Board view') }]"
-          @update:model-value="(v: string) => (view = v as 'table' | 'board')"
-        />
-        <div class="filter-search svc-search">
-          <MpIcon name="search" size="sm" class="filter-search-icon" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search services…')" />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+    <div class="cc-stage">
+      <!-- ── Fixed metrics ── -->
+      <div class="cc-stats">
+        <div class="stats-section">
+          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+            <div class="stat-title">{{ t('Total ongoing services') }}</div>
+            <div class="stat-amount">{{ m.ongoingCount }}</div>
+            <div class="stat-sub">{{ t('In the pipeline') }}</div>
+          </button>
+          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+            <div class="stat-title">{{ t('Total service value') }}</div>
+            <div class="stat-amount">{{ formatMoney(m.ongoingValue, 'IDR') }}</div>
+            <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
+          </button>
+          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
+            <div class="stat-title">{{ t('Closing this month') }}</div>
+            <div class="stat-amount">{{ m.closingCount }}</div>
+            <div class="stat-sub">{{ formatMoney(m.closingValue, 'IDR') }}</div>
+          </button>
+          <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
+            <div class="stat-title">{{ t('Overdue') }}</div>
+            <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
+            <div class="stat-sub">{{ t('Past due date') }}</div>
+          </button>
         </div>
       </div>
 
-      <!-- Board -->
+      <!-- ── Filter bar ── -->
+      <div class="cc-filterbar">
+        <div class="filter-left">
+          <ErpFilterSelect
+            id="svc-saved-view"
+            :model-value="savedView"
+            :placeholder="t('View')"
+            :options="[...SAVED_VIEWS].map((v) => ({ value: v, label: t(v) }))"
+            :is-clearable="false"
+            @update:model-value="(v: string) => (savedView = v as SavedView)"
+          />
+          <ErpFilterSelect
+            id="svc-stage-filter"
+            :model-value="statusFilter"
+            :placeholder="t('Stage')"
+            :options="stages.map((s) => ({ value: s.name, label: s.name }))"
+            @update:model-value="(v: string) => (statusFilter = v)"
+          />
+        </div>
+
+        <div class="filter-right">
+          <ErpIconSegmented id="svc-view" v-model="view" :options="viewOptions" />
+          <div class="filter-search">
+            <MpIcon name="search" size="sm" />
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search services…')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Board ── -->
       <div v-if="view === 'board'" class="kanban">
         <div class="kanban__board">
           <section
@@ -146,7 +243,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         </div>
       </div>
 
-      <!-- List -->
+      <!-- ── List ── -->
       <ErpTablePage
         v-else
         :columns="columns"
@@ -160,7 +257,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
           <a class="cell-link" @click="goDetail((row as unknown as ServiceDeal).id)">{{ (row as unknown as ServiceDeal).name }}</a>
         </template>
         <template #cell-stage="{ row }">
-          <ErpStatusBadge :status="stageBadge((row as unknown as ServiceDeal).stage).type" :label="stageBadge((row as unknown as ServiceDeal).stage).label" badge-for="additionalInformation" />
+          <ErpStatusBadge :status="(row as unknown as ServiceDeal).stage" :type="serviceStageBadgeType((row as unknown as ServiceDeal).stage)" :label="(row as unknown as ServiceDeal).stage" />
         </template>
         <template #cell-value="{ row }">{{ formatMoney((row as unknown as ServiceDeal).value, 'IDR') }}</template>
         <template #cell-dueDate="{ row }">{{ (row as unknown as ServiceDeal).dueDate || '—' }}</template>
@@ -170,13 +267,37 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 </template>
 
 <style scoped>
-.crm-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4); flex: 1; min-height: 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); }
-.svc-toolbar { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.svc-search { flex: 1; max-width: 320px; }
+/* ── Stage / stats / filter bar (mirror CrmDealsPage) ── */
+.cc-stage { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); padding: 0 var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
+.cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.stat-card:hover .stat-title { color: var(--mp-text-link); }
+.stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--danger { color: var(--mp-text-danger); }
+.stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+
+.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+@media (max-width: 640px) {
+  .cc-filterbar { flex-wrap: wrap; }
+  .cc-filterbar > :last-child { flex: 1 1 100%; }
+}
+
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
+.search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-full, 999px); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-icon-default, #536062); }
+
 .cell-link { color: var(--mp-colors-text-link, #165082); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; }
 
-/* Kanban (mirrors the Deals board) */
+/* ── Kanban (mirrors the Deals board) ── */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }
 .kanban__board { display: flex; gap: var(--mp-spacing-4); align-items: stretch; min-height: 100%; }
 .kcol { flex: 0 0 288px; width: 288px; display: flex; flex-direction: column; min-height: 0; background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 12px; transition: background 0.12s ease, border-color 0.12s ease; }

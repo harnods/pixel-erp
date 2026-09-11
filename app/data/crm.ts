@@ -1658,6 +1658,22 @@ export function serviceStages(): { name: string; kind: DealStageKind }[] {
   return (servicePipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
 }
 export function moveServiceDealStage(id: string, stage: string) { const d = getServiceDeal(id); if (d) { d.stage = stage; persistServiceDeals() } }
+/** Service-stage → `ErpStatusBadge` colour `type` (parallels `dealStageBadgeType`).
+ *  won → completed (green), lost → announcement (gray), open stages ramp from
+ *  information (blue, early) to warning (yellow, near close) by pipeline position,
+ *  so each stage reads a distinct tone in the table + board. */
+export function serviceStageBadgeType(
+  stage: string,
+): 'completed' | 'announcement' | 'information' | 'warning' {
+  const stages = servicePipelines[0]?.stages ?? []
+  const st = stages.find((s) => s.name === stage)
+  if (!st) return 'information'
+  if (st.kind === 'won') return 'completed'
+  if (st.kind === 'lost') return 'announcement'
+  const open = stages.filter((s) => s.kind === 'open')
+  const idx = open.findIndex((s) => s.name === stage)
+  return idx >= 0 && idx >= Math.ceil(open.length / 2) ? 'warning' : 'information'
+}
 
 /** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
