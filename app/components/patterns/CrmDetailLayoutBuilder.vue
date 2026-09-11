@@ -13,7 +13,7 @@
  */
 import { ref, computed, reactive } from 'vue'
 import {
-  MpButton, MpIcon, MpInput, css,
+  MpButton, MpIcon, MpInput, MpTooltip, MpSegmentedControl, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -28,7 +28,11 @@ const props = withDefaults(defineProps<{ detail: DealDetailLayout; moduleIcon?: 
 const { t } = useLocale()
 
 const SECTION_NAME_MAX = 30
-const COLS = [1, 2, 3] as const
+const COL_OPTIONS = [
+  { id: 'col-1', label: '1', value: '1' },
+  { id: 'col-2', label: '2', value: '2' },
+  { id: 'col-3', label: '3', value: '3' },
+]
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 const visibleTabs = computed(() => props.detail.tabs.filter((tp) => tp.visible))
@@ -153,30 +157,31 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
     <!-- Tab strip -->
     <div class="dlb-tabstrip">
       <div class="dlb-tabs">
-        <button
-          v-for="(tp, i) in visibleTabs" :key="tp.id" type="button" class="dlb-tab"
+        <div
+          v-for="(tp, i) in visibleTabs" :key="tp.id" class="dlb-tab" role="tab" tabindex="0"
+          :aria-selected="tp.id === activeTabId"
           :class="{ 'dlb-tab--active': tp.id === activeTabId, 'dlb-tab--over': tabDrag.over === i && tabDrag.src !== i }"
           draggable="true"
-          @click="selectTab(tp.id)"
+          @click="selectTab(tp.id)" @keydown.enter="selectTab(tp.id)" @keydown.space.prevent="selectTab(tp.id)"
           @dragstart="tabDrag.src = i" @dragover.prevent="tabDrag.over = i" @drop.prevent="onTabDrop(i)" @dragend="tabDrag.src = null; tabDrag.over = null"
         >
           <MpIcon name="drag" size="sm" class="dlb-tab-drag" />
           <span class="dlb-tab-label">{{ t(tp.label) }}</span>
           <MpPopover v-if="!tp.editable" :id="`dlb-tab-${tp.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <span class="dlb-tab-kebab" role="button" :aria-label="t('Tab actions')" @click.stop><MpIcon name="menu-kebab" size="sm" /></span>
+              <MpButton class="dlb-tab-kebab" variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Tab actions')" @click.stop />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px' })">
               <MpPopoverList><MpPopoverListItem @click="hideTab(tp)">{{ t('Hide tab') }}</MpPopoverListItem></MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-        </button>
+        </div>
       </div>
 
       <!-- + Add tab (re-add a hidden default tab) -->
       <MpPopover id="dlb-add-tab" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpButton class="dlb-addtab" :aria-label="t('Add tab')" is-rounded><MpIcon name="add" size="md" /></MpButton>
+          <MpButton variant="ghost" is-rounded left-icon="add" :aria-label="t('Add tab')" />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px' })">
           <MpPopoverList>
@@ -206,7 +211,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
             <!-- Edit (rename + columns) -->
             <MpPopover v-if="!section.system" :id="`dlb-edit-${section.id}`" use-portal :is-keep-alive="false" placement="bottom-end" @open="openEditSection(section)">
               <MpPopoverTrigger>
-                <MpButton class="dlb-icon-btn" is-rounded :aria-label="t('Edit section')"><MpIcon name="edit" size="sm" /></MpButton>
+                <MpButton variant="ghost" is-rounded left-icon="edit" :aria-label="t('Edit section')" />
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '260px', padding: '12px' })">
                 <div class="dlb-edit">
@@ -214,11 +219,13 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
                   <MpInput :id="`dlb-secname-${section.id}`" v-model="editing.name" is-full-width :maxlength="SECTION_NAME_MAX" @update:model-value="editing.error = ''" />
                   <p v-if="editing.error" class="dlb-inline-error">{{ editing.error }}</p>
                   <span class="dlb-edit-label">{{ t('Columns') }}</span>
-                  <div class="dlb-seg">
-                    <button v-for="c in COLS" :key="c" type="button" class="dlb-seg-btn" :class="{ 'dlb-seg-btn--active': editing.columns === c }" @click="editing.columns = c">{{ c }}</button>
-                  </div>
+                  <MpSegmentedControl
+                    :id="`dlb-cols-${section.id}`" :name="`dlb-cols-${section.id}`"
+                    :model-value="String(editing.columns)" :data="COL_OPTIONS"
+                    @update:model-value="(v: string) => (editing.columns = (Number(v) as 1 | 2 | 3))"
+                  />
                   <div class="dlb-edit-actions">
-                    <MpButton class="btn-enterprise btn-enterprise--secondary" is-rounded @click="applyEditSection(section)">{{ t('Apply') }}</MpButton>
+                    <MpButton variant="secondary" is-rounded @click="applyEditSection(section)">{{ t('Apply') }}</MpButton>
                   </div>
                 </div>
               </MpPopoverContent>
@@ -226,7 +233,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
             <!-- Kebab (delete) -->
             <MpPopover v-if="!section.system" :id="`dlb-sec-${section.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <MpButton class="dlb-icon-btn" is-rounded :aria-label="t('Section actions')"><MpIcon name="menu-kebab" size="sm" /></MpButton>
+                <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Section actions')" />
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '160px' })">
                 <MpPopoverList><MpPopoverListItem @click="requestDeleteSection(section)">{{ t('Delete section') }}</MpPopoverListItem></MpPopoverList>
@@ -255,7 +262,9 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
                   <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
                   <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
                 </div>
-                <button type="button" class="dlb-prop-remove" :aria-label="t('Remove')" @click.stop="removeProperty(section, pid)"><MpIcon name="close" size="sm" /></button>
+                <MpTooltip :id="`dlb-rm-${section.id}-${pid}`" :label="t('Remove')" placement="top" use-portal>
+                  <MpButton class="dlb-prop-remove" variant="ghost" is-rounded left-icon="close" :aria-label="t('Remove')" @click.stop="removeProperty(section, pid)" />
+                </MpTooltip>
               </div>
               <div v-if="!section.propertyIds.length" class="dlb-empty-cell">{{ t('No properties yet.') }}</div>
             </div>
@@ -263,7 +272,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
             <!-- + Add property -->
             <MpPopover :id="`dlb-addprop-${section.id}`" use-portal :is-keep-alive="false" placement="bottom-start" @open="propSearch = ''">
               <MpPopoverTrigger>
-                <MpButton class="btn-enterprise btn-enterprise--ghost dlb-addprop" is-rounded left-icon="add">{{ t('Property') }}</MpButton>
+                <MpButton class="dlb-addprop" variant="ghost" is-rounded left-icon="add">{{ t('Property') }}</MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '320px', maxHeight: '360px', overflowY: 'auto', padding: '8px' })">
                 <MpInput :id="`dlb-propsearch-${section.id}`" v-model="propSearch" is-full-width left-icon="search" :placeholder="t('Search property')" />
@@ -285,7 +294,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 
         <!-- + Add section -->
         <div class="dlb-add-section">
-          <MpButton class="btn-enterprise btn-enterprise--secondary" is-rounded left-icon="add" @click="addSection">{{ t('Section') }}</MpButton>
+          <MpButton variant="secondary" is-rounded left-icon="add" @click="addSection">{{ t('Section') }}</MpButton>
         </div>
       </template>
 
@@ -329,9 +338,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 .dlb-tab--active { border-color: var(--mp-colors-border-success, #16b364); box-shadow: inset 0 -2px 0 var(--mp-colors-border-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-tab--over { border-color: var(--mp-colors-border-success, #16b364); }
 .dlb-tab-drag, .dlb-card-drag, .dlb-prop-drag { color: var(--mp-colors-icon-subtle, #97a0a1); cursor: grab; flex-shrink: 0; }
-.dlb-tab-kebab { display: inline-flex; align-items: center; color: var(--mp-colors-icon-default, #536062); border-radius: 4px; padding: 2px; }
-.dlb-tab-kebab:hover { background: var(--mp-colors-background-neutral-subtle, #f2f4f4); }
-.dlb-addtab { background: transparent !important; border: 1px dashed var(--mp-colors-border-default, #d5dadb) !important; color: var(--mp-colors-icon-default, #536062) !important; min-width: 36px; }
+.dlb-tab-kebab { margin: -6px -6px -6px 0; }
 
 /* Body cards */
 .dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
@@ -343,7 +350,6 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 .dlb-card-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .dlb-card-cols { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); background: var(--mp-colors-background-neutral-subtle, #f2f4f4); border-radius: 4px; padding: 1px 6px; }
 .dlb-card-spacer { flex: 1; }
-.dlb-icon-btn { background: transparent !important; border: none !important; color: var(--mp-colors-icon-default, #536062) !important; padding: 4px !important; min-width: 28px; }
 
 /* Property grid */
 .dlb-grid { display: grid; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); }
@@ -353,8 +359,7 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlb-prop-remove { border: none; background: transparent; color: var(--mp-colors-icon-subtle, #97a0a1); cursor: pointer; padding: 2px; border-radius: 4px; flex-shrink: 0; }
-.dlb-prop-remove:hover { color: var(--mp-colors-icon-danger, #e5484d); background: var(--mp-colors-background-neutral-subtle, #f2f4f4); }
+.dlb-prop-remove { flex-shrink: 0; margin: -4px -6px -4px 0; }
 .dlb-empty-cell { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); padding: var(--mp-spacing-3) 0; }
 .dlb-addprop { margin-top: var(--mp-spacing-3); }
 
@@ -378,9 +383,5 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 .dlb-edit { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .dlb-edit-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #6b7678); }
 .dlb-edit-actions { display: flex; justify-content: flex-end; margin-top: var(--mp-spacing-2); }
-.dlb-seg { display: inline-flex; border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 6px; overflow: hidden; align-self: flex-start; }
-.dlb-seg-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: none; background: var(--mp-colors-background-neutral, #fff); cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #3a4749); }
-.dlb-seg-btn + .dlb-seg-btn { border-left: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.dlb-seg-btn--active { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-inline-error { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-danger, #d92d20); margin: 0; }
 </style>
