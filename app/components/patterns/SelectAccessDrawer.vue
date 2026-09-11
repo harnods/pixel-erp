@@ -236,16 +236,17 @@ async function save() {
    (roles) land at 36px, two-line rows (user + role subtitle) at ~52px like Figma.
    min-height keeps single-line rows steady when the add/remove control appears. */
 .sad-item {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 36px; flex-shrink: 0; text-align: left;
+  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 52px; flex-shrink: 0; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-1); background: none; border: none; cursor: pointer;
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
 .sad-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sad-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sad-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.sad-act { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; }
-.sad-item:hover .sad-act { display: inline-flex; }
+.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Always in layout (opacity, not display) so revealing it never reflows row height. */
+.sad-act { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; opacity: 0; transition: opacity 0.1s ease; }
+.sad-item:hover .sad-act, .sad-item:focus-visible .sad-act { opacity: 1; }
 .sad-act--add { color: var(--mp-text-link); }
 .sad-act--remove { color: var(--mp-text-secondary); }
 .sad-remove-tip { display: inline-flex; }
