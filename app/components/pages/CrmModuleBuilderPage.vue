@@ -579,7 +579,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   <div v-if="setup.closeMode === 'period'" class="setup-radio-detail">
                     <ErpFilterSelect
                       id="close-period-opt" :model-value="setup.closePeriod" :options="CLOSE_PERIOD_OPTIONS"
-                      :is-clearable="false" width="240px"
+                      :is-clearable="false" width="224px"
                       @update:model-value="(v: string) => (setup.closePeriod = (v || 'this-month') as DealModuleSetup['closePeriod'])"
                     />
                   </div>
@@ -589,7 +589,7 @@ function cancel() { router.push('/crm/settings/modules') }
                     <MpInput id="close-amount" v-model.number="setup.closeAmount" type="number" class="setup-amount-input" :aria-label="t('Amount')" />
                     <ErpFilterSelect
                       id="close-unit" :model-value="setup.closeUnit" :options="CLOSE_UNIT_OPTIONS"
-                      :is-clearable="false" width="120px"
+                      :is-clearable="false" width="104px"
                       @update:model-value="(v: string) => (setup.closeUnit = (v || 'days') as DealModuleSetup['closeUnit'])"
                     />
                   </div>
@@ -598,8 +598,10 @@ function cancel() { router.push('/crm/settings/modules') }
 
               <!-- Access — selected users listed with an email caption + (−) remove -->
               <div class="setup-field">
-                <span class="setup-fieldlabel">{{ t('Access') }}</span>
-                <span class="setup-caption">{{ t('Choose who can access this module.') }}</span>
+                <div class="setup-labelgroup">
+                  <span class="setup-fieldlabel">{{ t('Access') }}</span>
+                  <span class="setup-caption">{{ t('Choose who can access this module.') }}</span>
+                </div>
                 <ul v-if="setup.access.length" class="setup-user-list">
                   <li v-for="id in setup.access" :key="id" class="setup-user-row">
                     <span class="setup-user-info">
@@ -614,7 +616,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   </li>
                 </ul>
                 <p v-else class="setup-access-empty">{{ t('No users selected') }}</p>
-                <MpButton class="setup-access-btn" variant="secondary" is-rounded @click="accessDrawerOpen = true">{{ setup.access.length ? t('Edit users') : t('Select users') }}</MpButton>
+                <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="accessDrawerOpen = true">{{ t('Add users') }}</MpButton>
               </div>
             </div>
           </div>
@@ -1178,7 +1180,7 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-name-prefix-caret { color: var(--mp-colors-icon-subtle, #97a0af); }
 .pipe-name-input-el { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
 
-.pipe-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-1); }
+.pipe-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-1); max-height: 264px; overflow-y: auto; }
 .pipe-icon-choice { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--mp-radii-md, 6px); background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
 .pipe-icon-choice:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 .pipe-icon-choice--active { border-color: var(--mp-colors-border-selected, #029861); color: var(--mp-colors-text-selected, #0f6d4d); background: var(--mp-colors-background-brand-subtle, #eafaf1); }
@@ -1189,15 +1191,16 @@ function cancel() { router.push('/crm/settings/modules') }
 .setup-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .setup-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
 .setup-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-labelgroup { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); }
 .setup-fieldlabel { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 /* Module-name icon prefix (inside MpInputLeftAddon) */
-.setup-icon-trigger { display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
+.setup-icon-trigger { display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); padding: 0 var(--mp-spacing-1, 4px); border: none; background: none; cursor: pointer; color: var(--mp-colors-text-default, #080d0e); }
 .setup-icon-caret { color: var(--mp-colors-icon-default, #536062); }
 /* Default close-date — indented radios; the box top-aligns natively via #description slot */
 .setup-indent { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); margin-left: var(--mp-spacing-7, 28px); }
 .setup-radio-detail { margin-left: var(--mp-spacing-7, 28px); }
 /* "Time from record creation" input + unit = 3 grid cols (~279px) */
-.setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); max-width: 279px; }
+.setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); max-width: 224px; }
 .setup-amount-input { flex: 1; min-width: 0; }
 /* Access — selected users list (mirrors the Team members list: name + email + (−)) */
 .setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }

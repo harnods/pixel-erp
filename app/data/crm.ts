@@ -1164,8 +1164,17 @@ export interface CrmModule {
   updatedBy: string
 }
 
-/** Icon choices offered by the module builder's Name-field icon picker. */
-export const CRM_MODULE_ICONS = ['pipeline', 'reports', 'contact', 'briefcase', 'tag', 'cart', 'chart-line', 'grid'] as const
+/** Icon choices offered by the module builder's Name-field icon picker — menu-bar
+ *  appropriate glyphs from the Pixel library (all verified in the app nav). */
+export const CRM_MODULE_ICONS = [
+  'pipeline', 'reports', 'dashboard', 'stats', 'chart-bar',
+  'contact', 'company', 'team', 'employee', 'partner',
+  'briefcase', 'sales', 'cart', 'products', 'box',
+  'warehouse', 'fulfillment', 'billing', 'finance', 'wallet',
+  'bank', 'book', 'calculator', 'promo', 'voucher',
+  'broadcast', 'expenses', 'protection', 'location', 'time',
+  'productivity', 'application',
+] as const
 
 const DEAL_STAGE_OPTIONS = ['Open lead', '1st meeting', 'Proposal', 'Negotiation', 'Won', 'Lost']
 const MODULES_SEED: CrmModule[] = [
