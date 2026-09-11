@@ -160,14 +160,14 @@ const TASKS_SEED: CrmTask[] = [
 function load<T>(key: string, seed: T[]): T[] {
   return (loadSnapshot<T>(key) ?? seed.map((x) => ({ ...x })))
 }
-export const crmCustomers = reactive<CrmCustomer[]>(load('crm-customers-v1', CUSTOMERS_SEED))
+export const crmCustomers = reactive<CrmCustomer[]>(load('crm-customers-v2', CUSTOMERS_SEED))
 // Back-fill `segments` for snapshots that predate the field.
 for (const c of crmCustomers) { if (!Array.isArray(c.segments)) c.segments = c.segment ? [c.segment] : [] }
 export const crmProducts  = reactive<CrmProduct[]>(load('crm-products-v1', PRODUCTS_SEED))
 export const crmOrders    = reactive<CrmOrder[]>(load('crm-orders-v1', ORDERS_SEED))
 export const crmTasks     = reactive<CrmTask[]>(load('crm-tasks-v1', TASKS_SEED))
 
-export function persistCrmCustomers() { saveSnapshot('crm-customers-v1', crmCustomers) }
+export function persistCrmCustomers() { saveSnapshot('crm-customers-v2', crmCustomers) }
 export function persistCrmProducts()  { saveSnapshot('crm-products-v1', crmProducts) }
 export function persistCrmOrders()    { saveSnapshot('crm-orders-v1', crmOrders) }
 export function persistCrmTasks()     { saveSnapshot('crm-tasks-v1', crmTasks) }
@@ -1749,7 +1749,7 @@ export function addCrmCustomer(input: {
 // Customer row actions (client-side, snapshot-persisted).
 export function deleteCrmCustomer(id: string): void {
   const i = crmCustomers.findIndex((c) => c.id === id)
-  if (i !== -1) { crmCustomers.splice(i, 1); saveSnapshot('crm-customers-v1', crmCustomers) }
+  if (i !== -1) { crmCustomers.splice(i, 1); saveSnapshot('crm-customers-v2', crmCustomers) }
 }
 export function getCrmCustomer(id: string): CrmCustomer | undefined { return crmCustomers.find((c) => c.id === id) }
 
@@ -1787,7 +1787,7 @@ export function deleteCrmContact(companyId: string): void {
   const c = crmCustomers.find((x) => x.id === companyId)
   if (!c) return
   c.contact = ''; c.email = ''; c.phone = ''
-  saveSnapshot('crm-customers-v1', crmCustomers)
+  saveSnapshot('crm-customers-v2', crmCustomers)
 }
 export function getCrmContact(id: string): CrmContact | undefined {
   return crmContactsList().find((c) => c.id === id)
@@ -1951,10 +1951,10 @@ _contactSeed.push({
 if (_companySeed[0]) _companySeed[0].contactIds = ['CT-001', 'CT-100']
 if (_companySeed[1]) _companySeed[1].contactIds = ['CT-002', 'CT-100']
 
-export const crmContactPeople = reactive<CrmContactPerson[]>(load('crm-contact-people-v1', _contactSeed))
-export const crmCompanies = reactive<CrmCompany[]>(load('crm-companies-v1', _companySeed))
-export function persistCrmContactPeople() { saveSnapshot('crm-contact-people-v1', crmContactPeople) }
-export function persistCrmCompanies() { saveSnapshot('crm-companies-v1', crmCompanies) }
+export const crmContactPeople = reactive<CrmContactPerson[]>(load('crm-contact-people-v2', _contactSeed))
+export const crmCompanies = reactive<CrmCompany[]>(load('crm-companies-v2', _companySeed))
+export function persistCrmContactPeople() { saveSnapshot('crm-contact-people-v2', crmContactPeople) }
+export function persistCrmCompanies() { saveSnapshot('crm-companies-v2', crmCompanies) }
 
 export function getContactPerson(id: string): CrmContactPerson | undefined { return crmContactPeople.find((c) => c.id === id) }
 export function getCompany(id: string): CrmCompany | undefined { return crmCompanies.find((c) => c.id === id) }
@@ -2217,7 +2217,7 @@ export function setCustomerSegments(id: string, tags: string[]): void {
   const c = crmCustomers.find((x) => x.id === id)
   if (!c) return
   c.segments = [...tags]
-  saveSnapshot('crm-customers-v1', crmCustomers)
+  saveSnapshot('crm-customers-v2', crmCustomers)
 }
 
 // ── Board drag & drop moves — persist the change behind the derived lifecycle. ──
@@ -2233,14 +2233,14 @@ export function setCustomerLifecycle(id: string, stage: LifecycleStage): void {
     if (stage === 'Lead') { c.openDeals = 0; c.inFlight = 0 }
     else if (c.openDeals < 1) c.openDeals = 1   // Opportunity needs an open deal
   }
-  saveSnapshot('crm-customers-v1', crmCustomers)
+  saveSnapshot('crm-customers-v2', crmCustomers)
 }
 /** Drop onto a contact-owner column. */
 export function setCustomerOwner(id: string, owner: string): void {
   const c = crmCustomers.find((x) => x.id === id)
   if (!c) return
   c.owner = owner
-  saveSnapshot('crm-customers-v1', crmCustomers)
+  saveSnapshot('crm-customers-v2', crmCustomers)
 }
 /** Drop across segment columns: drop the source tag, add the target tag. */
 export function moveCustomerSegment(id: string, from: string, to: string): void {
@@ -2249,7 +2249,7 @@ export function moveCustomerSegment(id: string, from: string, to: string): void 
   const next = c.segments.filter((s) => s !== from && s !== to)
   if (to !== '—') next.push(to)
   c.segments = next
-  saveSnapshot('crm-customers-v1', crmCustomers)
+  saveSnapshot('crm-customers-v2', crmCustomers)
 }
 
 // ── Saved views (Customers list: table/board + saved filters) ───────────────────
