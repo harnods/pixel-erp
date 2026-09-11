@@ -11,7 +11,7 @@
  */
 import { ref, computed } from 'vue'
 import {
-  MpButton, MpIcon, MpInput, MpSegmentedControl, MpTooltip, css,
+  MpButton, MpIcon, MpInput, MpSegmentedControl, MpTooltip, MpDatePicker, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButtonGroup,
@@ -121,15 +121,35 @@ function onNewPropertySaved(payload: NewPropertyPayload) { props.createProperty(
 function onNewPropertyClose(open: boolean) { newPropOpen.value = open; if (!open) addOpen.value = true }
 
 // ── Conditional logic (per property card) ───────────────────────────────────────
-// Show/hide a property card when another property's value meets a condition.
+// Show/hide a property card when another property's value meets a condition. The
+// operator set + value control adapt to the chosen field's type.
 const condOpen = ref(false)
 const condSection = ref<DetailLayoutSection | null>(null)
 const condPid = ref('')
-const cond = ref<PropertyCondition>({ field: '', operator: 'equals', value: 'true', then: 'show' })
-const OP_OPTIONS = [
-  { value: 'equals', label: t('is equal to') },
-  { value: 'not-equals', label: t('is not equal to') },
+const cond = ref<PropertyCondition>({ field: '', operator: 'equals', value: '', then: 'show' })
+
+type CondKind = 'boolean' | 'number' | 'date' | 'text'
+function kindOf(type?: DealPropertyType): CondKind {
+  if (type === 'Single checkbox') return 'boolean'
+  if (type === 'Number') return 'number'
+  if (type === 'Date picker' || type === 'Date and time picker') return 'date'
+  return 'text'
+}
+const condKind = computed<CondKind>(() => (cond.value.field ? kindOf(prop(cond.value.field)?.type) : 'text'))
+const ALL_OPS: { value: PropertyCondition['operator']; label: string }[] = [
+  { value: 'equals', label: 'is equal to' },
+  { value: 'not-equals', label: 'is not equal to' },
+  { value: 'less-than', label: 'is less than' },
+  { value: 'less-equal', label: 'is less than or equal to' },
+  { value: 'greater-than', label: 'is greater than' },
+  { value: 'greater-equal', label: 'is greater than or equal to' },
+  { value: 'between', label: 'is between' },
 ]
+// Ordered/range operators only make sense for Number + Date fields.
+const condOpOptions = computed(() => {
+  const ops = condKind.value === 'number' || condKind.value === 'date' ? ALL_OPS : ALL_OPS.slice(0, 2)
+  return ops.map((o) => ({ value: o.value, label: t(o.label) }))
+})
 const THEN_OPTIONS = [
   { value: 'show', label: t('Show') },
   { value: 'hide', label: t('Hide') },
@@ -142,12 +162,18 @@ const BOOL_OPTIONS = [
 const condFieldOptions = computed(() =>
   props.properties.filter((p) => p.id !== condPid.value && p.id !== 'products').map((p) => ({ value: p.id, label: p.name })),
 )
+function onCondFieldChange(v: string) {
+  cond.value.field = v
+  // Reset operator/value to valid defaults for the new field type.
+  const valid = condOpOptions.value.map((o) => o.value)
+  if (!valid.includes(cond.value.operator)) cond.value.operator = 'equals'
+  cond.value.value = condKind.value === 'boolean' ? 'true' : ''
+  cond.value.valueEnd = ''
+}
 function openCondition(section: DetailLayoutSection, pid: string) {
   condSection.value = section; condPid.value = pid
   const existing = section.conditions?.[pid]
-  cond.value = existing
-    ? { ...existing }
-    : { field: condFieldOptions.value[0]?.value ?? '', operator: 'equals', value: 'true', then: 'show' }
+  cond.value = existing ? { ...existing } : { field: '', operator: 'equals', value: '', then: 'show' }
   condOpen.value = true
 }
 function applyCondition() {
@@ -160,13 +186,18 @@ function clearCondition() {
   if (s?.conditions) { const c = { ...s.conditions }; delete c[condPid.value]; s.conditions = c }
   condOpen.value = false
 }
-const condSentence = computed(() => ({
-  prop: prop(condPid.value)?.name ?? t('This property'),
-  action: cond.value.then === 'show' ? t('shown') : t('hidden'),
-  field: prop(cond.value.field)?.name ?? '—',
-  op: cond.value.operator === 'equals' ? t('is equal to') : t('is not equal to'),
-  val: cond.value.value === 'true' ? t('True') : t('False'),
-}))
+const condSentence = computed(() => {
+  let val = cond.value.value || '—'
+  if (condKind.value === 'boolean') val = cond.value.value === 'false' ? t('False') : t('True')
+  if (cond.value.operator === 'between') val = `${cond.value.value || '—'} ${t('and')} ${cond.value.valueEnd || '—'}`
+  return {
+    prop: prop(condPid.value)?.name ?? t('This property'),
+    action: cond.value.then === 'show' ? t('shown') : t('hidden'),
+    field: prop(cond.value.field)?.name ?? '—',
+    op: condOpOptions.value.find((o) => o.value === cond.value.operator)?.label ?? '',
+    val,
+  }
+})
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
@@ -370,7 +401,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
     </MpModal>
 
     <!-- Conditional-logic modal (per property card) -->
-    <MpModal id="dlb-cond-modal" :is-open="condOpen" :is-keep-alive="false" size="sm" @close="condOpen = false">
+    <MpModal id="dlb-cond-modal" :is-open="condOpen" :is-keep-alive="false" size="md" @close="condOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Conditional logic') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -379,9 +410,20 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
               <span class="dlb-cond-title">{{ t('If') }}</span>
               <MpButton variant="ghost" is-rounded left-icon="delete" :aria-label="t('Clear condition')" @click="clearCondition" />
             </div>
-            <ErpFilterSelect id="dlb-cond-field" class="dlb-cond-select" :placeholder="t('Select field')" :model-value="cond.field" :options="condFieldOptions" :is-clearable="false" @update:model-value="(v: string) => (cond.field = v)" />
-            <ErpFilterSelect id="dlb-cond-op" class="dlb-cond-select" placeholder="" :model-value="cond.operator" :options="OP_OPTIONS" :is-clearable="false" @update:model-value="(v: string) => (cond.operator = v as 'equals' | 'not-equals')" />
-            <MpSegmentedControl id="dlb-cond-val" name="dlb-cond-val" :model-value="cond.value" :data="BOOL_OPTIONS" @update:model-value="(v: string) => (cond.value = v as 'true' | 'false')" />
+            <ErpFilterSelect id="dlb-cond-field" class="dlb-cond-select" :placeholder="t('Select field')" :model-value="cond.field" :options="condFieldOptions" :is-clearable="false" @update:model-value="onCondFieldChange" />
+            <ErpFilterSelect id="dlb-cond-op" class="dlb-cond-select" placeholder="" :model-value="cond.operator" :options="condOpOptions" :is-clearable="false" @update:model-value="(v: string) => (cond.operator = v as PropertyCondition['operator'])" />
+            <!-- Value control adapts to the field type -->
+            <MpSegmentedControl v-if="condKind === 'boolean'" id="dlb-cond-val" name="dlb-cond-val" :model-value="cond.value || 'true'" :data="BOOL_OPTIONS" @update:model-value="(v: string) => (cond.value = v)" />
+            <div v-else-if="cond.operator === 'between'" class="dlb-cond-range">
+              <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v1" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
+              <MpInput v-else id="dlb-cond-v1" v-model="cond.value" type="number" is-full-width />
+              <span class="dlb-cond-and">{{ t('and') }}</span>
+              <MpDatePicker v-if="condKind === 'date'" id="dlb-cond-v2" v-model="cond.valueEnd" format="DD/MM/YYYY" value-type="format" use-portal />
+              <MpInput v-else id="dlb-cond-v2" v-model="cond.valueEnd" type="number" is-full-width />
+            </div>
+            <MpDatePicker v-else-if="condKind === 'date'" id="dlb-cond-val-date" v-model="cond.value" format="DD/MM/YYYY" value-type="format" use-portal />
+            <MpInput v-else-if="condKind === 'number'" id="dlb-cond-val-num" v-model="cond.value" type="number" is-full-width />
+            <MpInput v-else id="dlb-cond-val-text" v-model="cond.value" is-full-width />
           </div>
           <div class="dlb-cond-then">
             <span class="dlb-cond-title">{{ t('Then') }}</span>
@@ -472,8 +514,10 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 /* Conditional-logic modal */
 .dlb-cond-select { width: 100%; }
 .dlb-cond-select :deep(.efs), .dlb-cond-select :deep(.efs-trigger) { width: 100%; }
-.dlb-cond-if { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 10px; padding: var(--mp-spacing-4); }
+.dlb-cond-if { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .dlb-cond-head { display: flex; align-items: center; justify-content: space-between; }
+.dlb-cond-range { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.dlb-cond-and { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); flex-shrink: 0; }
 .dlb-cond-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .dlb-cond-then { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 .dlb-cond-sentence { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); line-height: 1.5; }

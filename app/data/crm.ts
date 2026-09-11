@@ -1309,11 +1309,17 @@ export const dealModuleSetup = reactive<DealModuleSetup>(
 export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v2', [dealModuleSetup]) }
 
 // ── Deals module DETAIL-PAGE LAYOUT (the Layout tab ▸ Details page) ───────────
+/** Comparison operators for a conditional-logic rule. equals/not-equals apply to
+ *  every field type; the ordered/range operators only to Number + Date fields. */
+export type ConditionOperator =
+  | 'equals' | 'not-equals'
+  | 'less-than' | 'less-equal' | 'greater-than' | 'greater-equal' | 'between'
 /** Show/hide rule for a property card: THEN show/hide it IF <field> <op> <value>. */
 export interface PropertyCondition {
   field: string                  // property id whose value is evaluated
-  operator: 'equals' | 'not-equals'
-  value: 'true' | 'false'
+  operator: ConditionOperator
+  value: string                  // primary value (or range start); 'true'/'false' for a checkbox
+  valueEnd?: string              // range end (operator 'between')
   then: 'show' | 'hide'
 }
 /** One section (card) inside an editable detail tab — an ordered property grid. */
