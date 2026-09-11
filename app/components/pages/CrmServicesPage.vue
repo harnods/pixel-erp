@@ -18,7 +18,7 @@ import { formatMoney } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import {
   serviceDeals, serviceStages, serviceStageBadgeType, moveServiceDealStage,
-  getCrmModule, CRM_CURRENT_USER, persistServiceDeals,
+  getCrmModule, CRM_CURRENT_USER,
   type ServiceDeal,
 } from '~/data/crm'
 // Demo "today" — same reference the Deals page uses, so metrics stay meaningful
@@ -30,12 +30,9 @@ const { t } = useLocale()
 
 const moduleName = computed(() => getCrmModule('services')?.name || t('Service deals'))
 function goDetail(id: string) { router.push(`/crm/services/${id}`) }
-function openCreate() {
-  const id = `SV-${1000 + serviceDeals.length + 1}`
-  serviceDeals.unshift({ id, name: t('Untitled service'), company: '', contact: '', stage: serviceStages()[0]?.name ?? 'Inquiry', owner: CRM_CURRENT_USER, value: 0, serviceType: 'Consultation', transactionDate: TODAY_ISO, dueDate: '', description: '' })
-  persistServiceDeals()
-  goDetail(id)
-}
+function openCreate() { router.push('/crm/services/new') }
+// Active records only — archived ones are hidden from the list, board, and metrics.
+const activeDeals = computed(() => serviceDeals.filter((d) => !d.archived))
 
 // ── Stage helpers (from the configured pipeline) ──
 const stages = computed(() => serviceStages())
@@ -48,7 +45,7 @@ type MetricFilter = '' | 'ongoing' | 'closing' | 'overdue'
 const metricFilter = ref<MetricFilter>('')
 function applyMetric(f: MetricFilter) { metricFilter.value = metricFilter.value === f ? '' : f; view.value = 'table' }
 const m = computed(() => {
-  const ongoing = serviceDeals.filter(isOngoing)
+  const ongoing = activeDeals.value.filter(isOngoing)
   const closing = ongoing.filter((d) => d.dueDate.startsWith(currentMonth))
   const overdue = ongoing.filter((d) => d.dueDate && d.dueDate < TODAY_ISO)
   return {
@@ -89,7 +86,7 @@ const viewOptions = [
 ]
 
 // ── List (search + Stage filter + saved view + metric + sort) ──
-const source = computed<ServiceDeal[]>(() => serviceDeals.filter((d) => matchesView(d) && matchesMetric(d)))
+const source = computed<ServiceDeal[]>(() => activeDeals.value.filter((d) => matchesView(d) && matchesMetric(d)))
 const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, paginated, setPage, setPerPage, toggleSort } =
   useTableState<ServiceDeal>(source, {
     perPage: 25,
@@ -116,7 +113,7 @@ interface Col { stage: string; kind: string; cards: ServiceDeal[]; total: number
 const boardColumns = computed<Col[]>(() => {
   const s = search.value.trim().toLowerCase()
   return stages.value.map((st) => {
-    const cards = serviceDeals.filter((d) =>
+    const cards = activeDeals.value.filter((d) =>
       d.stage === st.name && matchesView(d) && matchesMetric(d) &&
       (!statusFilter.value || d.stage === statusFilter.value) &&
       (!s || [d.name, d.id, d.company, d.owner].join(' ').toLowerCase().includes(s)))

@@ -357,6 +357,7 @@ const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
 const CrmServiceDetailPage = asyncPage(() => import('~/components/pages/CrmServiceDetailPage.vue'))
+const NewCrmServicePage = asyncPage(() => import('~/components/pages/NewCrmServicePage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
@@ -462,7 +463,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
-    // /crm/services → Service deals workspace (custom module); /crm/services/:id → detail.
+    // /crm/services → Service deals workspace (custom module); /crm/services/new →
+    // create form; /crm/services/:id/edit → edit form; /crm/services/:id → detail.
+    if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
+    if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
     if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
     // /crm/orders/:id, /crm/products/:id → CRM detail pages.
     if (id && sub === 'deals') return { component: CrmDealDetailPage, id }

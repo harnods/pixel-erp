@@ -1608,13 +1608,14 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     { id: 'stab-activity', key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: 'ssec-activity', name: 'Activity', columns: 1, propertyIds: ['activity-log'] }] },
     { id: 'stab-notes', key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: 'ssec-notes', name: 'Notes', columns: 1, propertyIds: ['notes'] }] },
     { id: 'stab-files', key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: 'ssec-files', name: 'Files', columns: 1, propertyIds: ['files'] }] },
+    { id: 'stab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: 'ssec-orders', name: 'ERP transactions', columns: 1, propertyIds: ['erp-transactions'] }] },
   ],
 }
 export const serviceDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v1')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v2')?.[0]
     ?? JSON.parse(JSON.stringify(SERVICE_DETAIL_LAYOUT_SEED)),
 )
-export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v1', [serviceDetailLayout]) }
+export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v2', [serviceDetailLayout]) }
 
 /** True for the Deals-style modules that use the Setup/Properties/Pipeline/Layout builder. */
 export function isDealLikeModule(id: string): boolean { return id === 'deals' || id === 'services' }
@@ -1713,7 +1714,7 @@ export function nextServiceTxNo(): string {
 }
 export type ServiceDealInput = Omit<ServiceDeal, 'id' | 'transactionNo' | 'createdAt' | 'lastActivity'>
 export function addServiceDeal(input: ServiceDealInput): ServiceDeal {
-  const now = TODAY_ISO_CRM
+  const now = DEAL_TODAY
   const rec: ServiceDeal = { ...input, id: nextServiceId(), transactionNo: nextServiceTxNo(), createdAt: now, createdBy: input.owner, lastActivity: now }
   serviceDeals.unshift(rec)
   persistServiceDeals()
@@ -1721,7 +1722,7 @@ export function addServiceDeal(input: ServiceDealInput): ServiceDeal {
 }
 export function updateServiceDeal(id: string, patch: Partial<ServiceDeal>): void {
   const d = getServiceDeal(id)
-  if (d) { Object.assign(d, patch, { lastActivity: TODAY_ISO_CRM }); persistServiceDeals() }
+  if (d) { Object.assign(d, patch, { lastActivity: DEAL_TODAY }); persistServiceDeals() }
 }
 export function archiveServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = true; persistServiceDeals() } }
 export function restoreServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = false; persistServiceDeals() } }
@@ -2432,7 +2433,7 @@ export function companiesSameDomain(website: string, excludeId?: string): CrmCom
 }
 
 // ── Notes / comments — attach to a contact OR a company (unified store) ──
-export type CrmNoteEntity = 'contact' | 'company' | 'deal'
+export type CrmNoteEntity = 'contact' | 'company' | 'deal' | 'service'
 export interface CrmNote { id: string; entityType: CrmNoteEntity; entityId: string; author: string; text: string; at: string }
 const NOTES_SEED: CrmNote[] = [
   // Deal DL-260920 — a thread from several teammates (Rizal's are editable by "me").
@@ -2455,6 +2456,11 @@ const NOTES_SEED: CrmNote[] = [
   { id: 'NT-008', entityType: 'contact', entityId: 'CT-001', author: 'Fajar Nugroho', text: 'Asked for samples of the espresso blend before committing.', at: '2026-02-25T15:45:00' },
   // Contact CT-002
   { id: 'NT-009', entityType: 'contact', entityId: 'CT-002', author: 'Rizal Candra',  text: 'Best reached in the morning; usually on-site after 2pm.', at: '2026-02-18T08:50:00' },
+  // Service deals
+  { id: 'NT-201', entityType: 'service', entityId: 'SV-1001', author: 'Dewi Lestari',  text: 'Walked the site with Ratna — layout for the bar is confirmed. Sending the fit-out plan next.', at: '2026-09-02T10:20:00' },
+  { id: 'NT-202', entityType: 'service', entityId: 'SV-1001', author: 'Rizal Candra',  text: 'Budget approved for the full consulting scope. Green light to start.', at: '2026-09-04T14:05:00' },
+  { id: 'NT-203', entityType: 'service', entityId: 'SV-1002', author: 'Fajar Nugroho', text: 'First maintenance visit done — 2 machines needed new gaskets, replaced on-site.', at: '2026-09-01T16:30:00' },
+  { id: 'NT-204', entityType: 'service', entityId: 'SV-1005', author: 'Rizal Candra',  text: 'Workshop wrapped up; team loved the new signature menu. Invoice sent and settled.', at: '2026-08-05T09:45:00' },
 ]
 export const crmNotes = reactive<CrmNote[]>(load('crm-notes-v1', NOTES_SEED))
 export function notesFor(entityType: CrmNoteEntity, entityId: string): CrmNote[] {
