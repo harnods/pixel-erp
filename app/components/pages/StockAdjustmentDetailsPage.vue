@@ -23,6 +23,8 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions, getDimensionById } from '~/data/dimensions'
 import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment, type MisplacedSerial } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
@@ -46,6 +48,12 @@ const { activeScenario } = useScenario()
 const hideCosting = computed(() => isWmsRecord.value || activeScenario.value.startsWith('WMS'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
+}
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 // Also true for 'closed' — closing discards a.lines, so there's no real
 // counted data left to show either, same as a task that never started.
@@ -966,6 +974,7 @@ onUnmounted(() => {
                 </template>
                 <th v-else class="detail-th detail-th--num">{{ t('Qty in/out') }}</th>
                 <th class="detail-th">{{ t('Unit') }}</th>
+                <th v-if="!isCount && showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
                 <th v-if="!hideCosting" class="detail-th detail-th--num">{{ t('Average cost') }}</th>
               </tr>
             </thead>
@@ -1009,6 +1018,9 @@ onUnmounted(() => {
                   <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 </template>
                 <td class="detail-td">{{ item.unit }}</td>
+                <td v-if="!isCount && showDimensionsColumn" class="detail-td">
+                  <ErpLineDimensionsView :values="dimensionValuesFor(item.dimensions)" />
+                </td>
                 <td v-if="!hideCosting" class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
             </tbody>

@@ -30,10 +30,13 @@ function toggle(item: ColumnSettingItem) {
 
 <template>
   <MpPopover :id="id" placement="bottom-end" use-portal :is-keep-alive="false">
+    <!-- Identical to the sibling filter-bar tools (Airene / Export): a rounded
+         ghost icon MpButton, so hover is the same oval pill (rule/filter-bar-icon-group).
+         v-tooltip (not <MpTooltip>) keeps the button MpPopoverTrigger's direct (and ONLY)
+         child — MpPopoverTrigger requires exactly one slot node, so this comment must not
+         sit inside the trigger's slot, or it counts as a second node and the trigger
+         silently renders nothing ("[MpPopoverTrigger] Only 1 node allowed"). -->
     <MpPopoverTrigger>
-      <!-- Identical to the sibling filter-bar tools (Airene / Export): a rounded
-           ghost icon MpButton, so hover is the same oval pill (rule/filter-bar-icon-group).
-           v-tooltip (not <MpTooltip>) keeps the button MpPopoverTrigger's direct child. -->
       <MpButton
         v-tooltip="{ label: tooltip, placement: 'bottom' }"
         variant="ghost"
@@ -78,7 +81,7 @@ function toggle(item: ColumnSettingItem) {
   cursor: pointer;
   user-select: none;
 }
-.cs-item:hover { background: var(--mp-background-neutral-hovered); }
+.cs-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .cs-item--disabled { cursor: default; opacity: 0.5; }
 .cs-item--disabled:hover { background: none; }
 .cs-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }

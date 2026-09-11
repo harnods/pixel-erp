@@ -277,7 +277,74 @@ the sticky actions `[...]` column flush right. The spacer sits before the first
 | `pageChange` | `number` | New page number |
 | `perPageChange` | `number` | New rows-per-page value |
 | `sort` | `string` | Column key to sort by |
+| `sortChange` | `(key: string, dir: 'asc' \| 'desc')` | Column header sort-direction option clicked |
+| `selectionChange` | `number` | Bulk-select checkbox count changed |
+| `hideColumn` | `string` (column `key`) | Column header's own "Hide column" option clicked — see **Column visibility** below |
 | `clearFilters` | — | Inline empty-state "Clear all filters" link clicked — the page resets its search/filters |
+
+***
+
+## Column visibility (show/hide columns)
+
+Any column can be user-hideable via the shared **`ColumnSettingsMenu`** (the
+filter bar's gear icon, `rule/filter-bar-icon-group`) — used to let a page ship a
+column that's hidden by default (e.g. a secondary "Last updated" column) without
+permanently removing it from the table.
+
+There are **two entry points**, both driving the same state:
+
+1. **The gear icon** (`ColumnSettingsMenu` in the filter bar's icon group) — a
+   checklist of every column; toggling a box shows/hides it. The **first
+   (identifying) column is `disabled`** — it can never be hidden.
+2. **The column header's own menu** — clicking a header's sort-options caret
+   includes a **"Hide column"** item, emitted as `@hide-column` on
+   `ErpTablePage`. This is a quick way to hide a column you're looking at
+   without opening the gear popover; there's no per-header "show" — a hidden
+   column only comes back via the gear checklist.
+
+### Wiring (mirrors `DimensionsIndexPage.vue`'s "Last updated" column)
+
+```ts
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+
+const columns: TableColumn[] = [
+  { key: 'name',        label: 'Name',         kind: 'name', sortable: true },
+  // ...
+  { key: 'lastUpdated', label: 'Last updated', kind: 'date' },
+]
+
+// Hidden by default — only 'lastUpdated' starts unchecked.
+const columnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map((c) => [c.key, c.key !== 'lastUpdated'])),
+)
+// items for the gear popover — disable the first (identifying) column.
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+// what actually renders — filter down to the visible set.
+const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
+```
+
+```vue
+<ErpTablePage
+  :columns="visibleColumns"
+  ...
+  @hide-column="hideColumn"
+>
+  <template #filters>
+    ...
+    <div class="filter-btn-group">
+      <ColumnSettingsMenu id="my-page-columns" :items="columnItems" :visibility="columnVisibility" />
+      <!-- Export, etc. — same rounded-ghost icon group -->
+    </div>
+  </template>
+</ErpTablePage>
+```
+
+**Rules:**
+- Pass `:columns="visibleColumns"` (the filtered computed), never the raw `columns` array, or a hidden column still renders.
+- `columnVisibility` is a plain reactive map mutated in place by `ColumnSettingsMenu` — don't recreate it on every render.
+- Wire `@hide-column="hideColumn"` on `ErpTablePage` even if you don't expect users to use the header's hide option — it's part of the standard header menu and silently no-ops without a listener.
+- Default a column to hidden by seeding `columnVisibility` with `false` for that key (as above) — don't hide it with a `v-if` on the column def, which would also drop it from the gear checklist.
 
 ***
 
