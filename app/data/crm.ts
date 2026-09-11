@@ -1313,7 +1313,7 @@ export function persistDealModuleSetup() { saveSnapshot('crm-deal-module-setup-v
 export interface DetailLayoutSection {
   id: string
   name: string
-  columns: 1 | 2 | 3            // property-grid columns
+  columns: 1 | 2 | 3 | 4         // property-grid columns
   propertyIds: string[]          // ordered refs into dealProperties (by DealProperty.id)
   kind?: 'products'              // system block (products table + totals) — non-property, locked
   system?: boolean              // locked section (can't delete / add props)

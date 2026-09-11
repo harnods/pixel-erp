@@ -82,6 +82,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Export wired to a silent download | open `ExportModal` | `rule/export-modal` |
 | Share-via-email as a form-only dialog | `ShareViaEmailModal` (form + PDF preview) | `rule/share-via-email-modal` |
 | Copy-link as a modal or silent toast | `CopyLinkDrawer` | `rule/copy-link-drawer` |
+| Whole-row `draggable` + swap-on-drop reorder | handle-initiated + live sortable | `rule/dnd-live-sortable` |
 
 ---
 
@@ -1036,6 +1037,35 @@ component — reuse it, never rebuild.
   **`ExportModal`** (format + scope options), never an immediate silent download.
   *Don't:* wire Export straight to a file download or put Export on the page title.
   **Why:** one export surface, consistent options. **Source:** `ExportModal.vue`.
+
+## Drag & drop — reorder
+
+- **`rule/dnd-live-sortable`** — *Do:* build every reorderable list to the
+  **edit-pipeline standard** (swimlanes + card-property rows in
+  `CrmModuleBuilderPage.vue`):
+  1. **Handle-initiated** — `draggable="true"` sits on a **drag handle** (an
+     `MpIcon name="drag"` in a `<span class="…-drag" :aria-label="t('Drag to reorder')">`),
+     never on the whole row/card.
+  2. **Ghost = the whole card** — in `dragstart`, `effectAllowed = 'move'` and
+     `e.dataTransfer.setDragImage(el.closest('.<card>'), x, y)` so the drag preview
+     is the card, not the handle.
+  3. **Live sortable** — in `dragover` (on the row): `preventDefault()`,
+     `dropEffect = 'move'`, and if `src !== i` **reorder the array in place now**
+     (`splice` the dragged item to index `i`, then set `src = i`). The list opens a
+     slot as you hover — do **not** wait for `drop` to swap, and do not draw a
+     `--over` border/insertion line as the sole feedback.
+  4. **Faded source** — the item being dragged gets `opacity: 0.4` (`.is-dragging`).
+  5. **FLIP animation** — wrap the list in `<TransitionGroup name="x" tag="div">`
+     and add `.x-move { transition: transform ~0.18–0.2s cubic-bezier(0.2,0,0,1); }`
+     so siblings slide to make room.
+  6. **Drag-handle colour** — `color: var(--mp-colors-icon-default)` at
+     `opacity: 0.75`; `cursor: grab` (→ `grabbing` on `:active`). Not `icon-subtle`.
+
+  *Don't:* put `draggable` on the whole card, reorder only on `drop`, or rely on a
+  border highlight instead of live reordering. **Why:** one drag feel across the
+  app — the Deals board, pipeline editor, and layout builder all reorder identically.
+  **Source:** `CrmModuleBuilderPage.vue` (swimlanes), `CrmDetailLayoutBuilder.vue`.
+  **Lint:** review.
 
 ## Adding a rule
 

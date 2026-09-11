@@ -16,10 +16,9 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButtonGroup,
 } from '@mekari/pixel3'
-import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
   dealProperties, DEAL_PROPERTY_TYPE_ICON, newDetailSectionId,
-  type DealDetailLayout, type DetailLayoutSection,
+  type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
 } from '~/data/crm'
 
 // moduleIcon kept for API compatibility (parent passes it); not shown in this canvas.
@@ -31,7 +30,9 @@ const COL_OPTIONS = [
   { id: 'col-1', label: '1', value: '1' },
   { id: 'col-2', label: '2', value: '2' },
   { id: 'col-3', label: '3', value: '3' },
+  { id: 'col-4', label: '4', value: '4' },
 ]
+type ColCount = 1 | 2 | 3 | 4
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 const activeTabId = ref<string>(props.detail.tabs.find((tp) => tp.editable)?.id ?? props.detail.tabs[0]?.id ?? '')
@@ -42,6 +43,17 @@ function addTab() {
   const id = `tab-custom-${tabSeq++}`
   props.detail.tabs.push({ id, key: id, label: t('New tab'), editable: true, visible: true, sections: [] })
   activeTabId.value = id
+}
+// Tab rename (inline) + delete — from the hover kebab. Nothing is saved until
+// "Save changes", so deletes are immediate (no confirm).
+const renamingTabId = ref('')
+const renameValue = ref('')
+function startRenameTab(tp: DetailLayoutTab) { renamingTabId.value = tp.id; renameValue.value = t(tp.label) }
+function commitRenameTab(tp: DetailLayoutTab) { if (renameValue.value.trim()) tp.label = renameValue.value.trim(); renamingTabId.value = '' }
+function deleteTab(tp: DetailLayoutTab) {
+  const i = props.detail.tabs.findIndex((x) => x.id === tp.id)
+  props.detail.tabs = props.detail.tabs.filter((x) => x.id !== tp.id)
+  if (activeTabId.value === tp.id) activeTabId.value = props.detail.tabs[Math.max(0, i - 1)]?.id ?? props.detail.tabs[0]?.id ?? ''
 }
 
 // ── Property lookup ─────────────────────────────────────────────────────────────
@@ -65,14 +77,14 @@ function addSection() {
 const editOpen = ref(false)
 const editTarget = ref<DetailLayoutSection | null>(null)
 const editName = ref('')
-const editCols = ref<'1' | '2' | '3'>('3')
+const editCols = ref<'1' | '2' | '3' | '4'>('3')
 const editError = ref('')
 function openEditSection(s: DetailLayoutSection) {
-  editTarget.value = s; editName.value = s.name; editCols.value = String(s.columns) as '1' | '2' | '3'; editError.value = ''; editOpen.value = true
+  editTarget.value = s; editName.value = s.name; editCols.value = String(s.columns) as '1' | '2' | '3' | '4'; editError.value = ''; editOpen.value = true
 }
 function saveEditSection() {
   if (!editName.value.trim()) { editError.value = t('Enter a section name.'); return }
-  if (editTarget.value) { editTarget.value.name = editName.value.trim(); editTarget.value.columns = Number(editCols.value) as 1 | 2 | 3 }
+  if (editTarget.value) { editTarget.value.name = editName.value.trim(); editTarget.value.columns = Number(editCols.value) as ColCount }
   editOpen.value = false
 }
 
@@ -88,28 +100,45 @@ const addFiltered = computed(() => {
 function addProperty(id: string) { if (addTarget.value && !addTarget.value.propertyIds.includes(id)) addTarget.value.propertyIds.push(id) }
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
-// Delete-section (ConfirmModal when non-empty)
-const confirmDelete = ref<DetailLayoutSection | null>(null)
-function requestDeleteSection(s: DetailLayoutSection) { s.propertyIds.length ? (confirmDelete.value = s) : doDeleteSection(s) }
-function doDeleteSection(s: DetailLayoutSection) {
+// Delete section — immediate (nothing is saved until "Save changes", so no confirm).
+function deleteSection(s: DetailLayoutSection) {
   const tab = activeTab.value
   if (tab?.sections) tab.sections = tab.sections.filter((x) => x.id !== s.id)
-  confirmDelete.value = null
 }
 
-// ── Drag & drop (sections, properties) — hand-rolled HTML5 pattern ──────────────
-function moveInArray<T>(arr: T[], from: number, to: number) { const c = [...arr]; const [m] = c.splice(from, 1); c.splice(to, 0, m!); return c }
-const secDrag = ref<{ src: number | null; over: number | null }>({ src: null, over: null })
-function onSecDrop(i: number) {
+// ── Drag & drop — the ERP standard (rule/dnd-live-sortable, same as edit-pipeline):
+//    handle-initiated, ghost = whole card via setDragImage, LIVE sortable (reorder
+//    on dragover), faded source (.is-dragging), FLIP-animated via <TransitionGroup>.
+const secDragSrc = ref<number | null>(null)
+function onSecDragStart(i: number, e: DragEvent) {
+  secDragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+  const card = (e.target as HTMLElement).closest('.dlb-section') as HTMLElement | null
+  if (card) e.dataTransfer!.setDragImage(card, 16, 16)
+}
+function onSecDragOver(i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
   const tab = activeTab.value
-  if (!tab?.sections || secDrag.value.src === null || secDrag.value.src === i) { secDrag.value.over = null; return }
-  tab.sections = moveInArray(tab.sections, secDrag.value.src, i); secDrag.value = { src: null, over: null }
+  if (!tab?.sections || secDragSrc.value === null || secDragSrc.value === i) return
+  const arr = [...tab.sections]; const [m] = arr.splice(secDragSrc.value, 1); arr.splice(i, 0, m!)
+  tab.sections = arr; secDragSrc.value = i
 }
-const propDrag = ref<{ sec: string; src: number | null; over: number | null }>({ sec: '', src: null, over: null })
-function onPropDrop(section: DetailLayoutSection, i: number) {
-  if (propDrag.value.sec !== section.id || propDrag.value.src === null || propDrag.value.src === i) { propDrag.value.over = null; return }
-  section.propertyIds = moveInArray(section.propertyIds, propDrag.value.src, i); propDrag.value = { sec: '', src: null, over: null }
+function onSecDragEnd() { secDragSrc.value = null }
+
+const propDrag = ref<{ sec: string; src: number | null }>({ sec: '', src: null })
+function onPropDragStart(section: DetailLayoutSection, i: number, e: DragEvent) {
+  propDrag.value = { sec: section.id, src: i }
+  e.dataTransfer!.effectAllowed = 'move'
+  const card = (e.target as HTMLElement).closest('.dlb-prop') as HTMLElement | null
+  if (card) e.dataTransfer!.setDragImage(card, 12, 12)
 }
+function onPropDragOver(section: DetailLayoutSection, i: number, e: DragEvent) {
+  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
+  if (propDrag.value.sec !== section.id || propDrag.value.src === null || propDrag.value.src === i) return
+  const arr = [...section.propertyIds]; const [m] = arr.splice(propDrag.value.src, 1); arr.splice(i, 0, m!)
+  section.propertyIds = arr; propDrag.value.src = i
+}
+function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
 </script>
 
 <template>
@@ -120,66 +149,90 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
       <p class="dlb-desc">{{ t('Arrange the tabs, sections and properties shown on a deal record.') }}</p>
     </div>
 
-    <!-- Text tab strip (green underline) + New tab -->
+    <!-- Text tab strip (green underline) + New tab. Each tab reveals a kebab on
+         hover: Rename (inline) / Delete. -->
     <div class="dlb-tabstrip">
-      <button
-        v-for="tp in detail.tabs" :key="tp.id" type="button" class="dlb-tab"
-        :class="{ 'dlb-tab--active': tp.id === activeTabId }" @click="selectTab(tp.id)"
-      >{{ t(tp.label) }}</button>
+      <div v-for="tp in detail.tabs" :key="tp.id" class="dlb-tab" :class="{ 'dlb-tab--active': tp.id === activeTabId }">
+        <MpInput
+          v-if="renamingTabId === tp.id" :id="`dlb-tabname-${tp.id}`" v-model="renameValue" class="dlb-tab-input"
+          autofocus @keydown.enter="commitRenameTab(tp)" @keydown.esc="renamingTabId = ''" @blur="commitRenameTab(tp)"
+        />
+        <template v-else>
+          <button type="button" class="dlb-tab-btn" @click="selectTab(tp.id)">{{ t(tp.label) }}</button>
+          <span class="dlb-kebab dlb-tab-kebab">
+            <MpPopover :id="`dlb-tab-${tp.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Tab actions')" @click.stop />
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="startRenameTab(tp)">{{ t('Rename tab') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="deleteTab(tp)">{{ t('Delete tab') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </span>
+        </template>
+      </div>
       <button type="button" class="dlb-newtab" @click="addTab"><MpIcon name="add" size="sm" />{{ t('New tab') }}</button>
     </div>
 
     <!-- Active tab body -->
     <div class="dlb-body">
       <template v-if="activeTab?.editable">
-        <section
-          v-for="(section, si) in (activeTab.sections ?? [])" :key="section.id"
-          class="dlb-section" :class="{ 'dlb-section--over': secDrag.over === si && secDrag.src !== si }"
-          draggable="true"
-          @dragstart="secDrag.src = si" @dragover.prevent="secDrag.over = si" @drop.prevent="onSecDrop(si)" @dragend="secDrag = { src: null, over: null }"
-        >
-          <header class="dlb-sec-head">
-            <MpIcon name="drag" size="sm" class="dlb-drag" />
-            <span class="dlb-sec-name">{{ t(section.name) }}</span>
-            <span class="dlb-spacer" />
-            <MpPopover :id="`dlb-sec-${section.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-              <MpPopoverTrigger>
-                <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Section actions')" />
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '180px' })">
-                <MpPopoverList>
-                  <MpPopoverListItem @click="openAddProperty(section)">{{ t('Add property') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="openEditSection(section)">{{ t('Edit section') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="requestDeleteSection(section)">{{ t('Delete section') }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </header>
+        <TransitionGroup name="dlb-sec" tag="div" class="dlb-sections">
+          <section
+            v-for="(section, si) in (activeTab.sections ?? [])" :key="section.id"
+            class="dlb-section" :class="{ 'is-dragging': secDragSrc === si }"
+            @dragover="onSecDragOver(si, $event)" @drop.prevent="onSecDragEnd"
+          >
+            <header class="dlb-sec-head">
+              <span class="dlb-drag" draggable="true" :aria-label="t('Drag to reorder')" @dragstart="onSecDragStart(si, $event)" @dragend="onSecDragEnd"><MpIcon name="drag" size="sm" /></span>
+              <span class="dlb-sec-name">{{ t(section.name) }}</span>
+              <span class="dlb-spacer" />
+              <span class="dlb-kebab">
+                <MpPopover :id="`dlb-sec-${section.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                  <MpPopoverTrigger>
+                    <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Section actions')" />
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '180px' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem @click="openAddProperty(section)">{{ t('Add property') }}</MpPopoverListItem>
+                      <MpPopoverListItem @click="openEditSection(section)">{{ t('Edit section') }}</MpPopoverListItem>
+                      <MpPopoverListItem @click="deleteSection(section)">{{ t('Delete section') }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+              </span>
+            </header>
 
-          <div class="dlb-grid" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
-            <div
-              v-for="(pid, pi) in section.propertyIds" :key="pid"
-              class="dlb-prop" :class="{ 'dlb-prop--over': propDrag.sec === section.id && propDrag.over === pi && propDrag.src !== pi }"
-              draggable="true"
-              @dragstart="propDrag = { sec: section.id, src: pi, over: null }" @dragover.prevent="propDrag.sec === section.id && (propDrag.over = pi)" @drop.prevent="onPropDrop(section, pi)" @dragend="propDrag = { sec: '', src: null, over: null }"
-            >
-              <MpIcon name="drag" size="sm" class="dlb-drag" />
-              <div class="dlb-prop-text">
-                <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
-                <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+            <TransitionGroup name="dlb-prop" tag="div" class="dlb-grid" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
+              <div
+                v-for="(pid, pi) in section.propertyIds" :key="pid"
+                class="dlb-prop" :class="{ 'is-dragging': propDrag.sec === section.id && propDrag.src === pi }"
+                @dragover="onPropDragOver(section, pi, $event)" @drop.prevent="onPropDragEnd"
+              >
+                <span class="dlb-drag" draggable="true" :aria-label="t('Drag to reorder')" @dragstart="onPropDragStart(section, pi, $event)" @dragend="onPropDragEnd"><MpIcon name="drag" size="sm" /></span>
+                <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
+                <div class="dlb-prop-text">
+                  <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
+                  <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+                </div>
+                <span class="dlb-kebab">
+                  <MpPopover :id="`dlb-prop-${section.id}-${pid}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Property actions')" @click.stop />
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '160px' })">
+                      <MpPopoverList><MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem></MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </span>
               </div>
-              <MpPopover :id="`dlb-prop-${section.id}-${pid}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                <MpPopoverTrigger>
-                  <MpButton variant="ghost" is-rounded left-icon="menu-kebab" :aria-label="t('Property actions')" @click.stop />
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '160px' })">
-                  <MpPopoverList><MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem></MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
+            </TransitionGroup>
             <p v-if="!section.propertyIds.length" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
-          </div>
-        </section>
+          </section>
+        </TransitionGroup>
 
         <div class="dlb-add-section">
           <MpButton variant="secondary" is-rounded left-icon="add" @click="addSection">{{ t('New section') }}</MpButton>
@@ -247,15 +300,6 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
-
-    <ConfirmModal
-      :is-open="!!confirmDelete"
-      :title="t('Delete section?')"
-      :description="t('Its properties return to the property list. This can’t be undone.')"
-      :confirm-label="t('Delete section')"
-      @update:is-open="(v) => { if (!v) confirmDelete = null }"
-      @confirm="confirmDelete && doDeleteSection(confirmDelete)"
-    />
   </div>
 </template>
 
@@ -267,27 +311,41 @@ function onPropDrop(section: DetailLayoutSection, i: number) {
 .dlb-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
 .dlb-desc { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
-/* Text tab strip with a green active underline */
-.dlb-tabstrip { display: flex; align-items: center; gap: var(--mp-spacing-6); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.dlb-tab { position: relative; padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
-.dlb-tab--active { color: var(--mp-colors-text-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
+/* Text tab strip with a green active underline; each tab reveals a hover kebab */
+.dlb-tabstrip { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.dlb-tab { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+.dlb-tab-btn { padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
+.dlb-tab--active .dlb-tab-btn { color: var(--mp-colors-text-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-colors-background-success-bold, #16b364); }
+.dlb-tab-input { width: 132px; }
+.dlb-tab-kebab { margin: -8px -6px -8px -2px; }
 .dlb-newtab { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
 .dlb-newtab:hover { color: var(--mp-colors-text-default, #080d0e); }
 
 /* Body */
-.dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
-.dlb-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-radius: 8px; }
-.dlb-section--over { outline: 1px solid var(--mp-colors-border-success, #16b364); outline-offset: 6px; }
+.dlb-body { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.dlb-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+/* Divider + 20px gap between sections (Overview / Transaction data / Products). */
+.dlb-section:not(:first-child) { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); padding-top: var(--mp-spacing-5); }
+.dlb-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-radius: 8px; transition: opacity 0.12s ease; }
 .dlb-sec-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.dlb-drag { color: var(--mp-colors-icon-subtle, #97a0a1); cursor: grab; flex-shrink: 0; }
+/* Drag handle — default icon colour at 75% opacity (rule/dnd-live-sortable). */
+.dlb-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-default, #536062); opacity: 0.75; cursor: grab; flex-shrink: 0; }
+.dlb-drag:active { cursor: grabbing; }
 .dlb-sec-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); }
 .dlb-spacer { flex: 1; }
+/* Kebab reveals on card/section hover (or keyboard focus) only. */
+.dlb-kebab { display: inline-flex; opacity: 0; transition: opacity 0.12s ease; }
+.dlb-section:hover > .dlb-sec-head > .dlb-kebab, .dlb-prop:hover .dlb-kebab, .dlb-tab:hover .dlb-kebab, .dlb-kebab:focus-within { opacity: 1; }
+/* Faded source while dragging + FLIP move animation (same feel as edit-pipeline). */
+.dlb-section.is-dragging, .dlb-prop.is-dragging { opacity: 0.4; }
+.dlb-sec-move { transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1); }
+.dlb-prop-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
 
 /* Property grid + field cards */
 .dlb-grid { display: grid; gap: var(--mp-spacing-4); }
-.dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; }
-.dlb-prop--over { border-color: var(--mp-colors-border-success, #16b364); background: var(--mp-colors-background-success-subtlest, #f0fdf4); }
+.dlb-prop { display: flex; align-items: center; gap: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-neutral, #fff); min-width: 0; min-height: 56px; transition: opacity 0.12s ease; }
+.dlb-prop-type { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
