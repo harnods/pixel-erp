@@ -1042,50 +1042,49 @@ component — reuse it, never rebuild.
 
 ## Drag & drop — reorder
 
-- **`rule/dnd-live-sortable`** — *Do:* build every reorderable list to the
-  **edit-pipeline standard** (swimlanes + card-property rows in
-  `CrmModuleBuilderPage.vue`):
-  1. **Handle-initiated** — `draggable="true"` sits on a **drag handle** (an
-     `MpIcon name="drag"` in a `<span class="…-drag" :aria-label="t('Drag to reorder')">`),
-     never on the whole row/card.
-  2. **Ghost = the whole card** — in `dragstart`, `effectAllowed = 'move'` and
-     `e.dataTransfer.setDragImage(el.closest('.<card>'), x, y)` so the drag preview
-     is the card, not the handle.
-  3. **Live sortable** — in `dragover` (on the row): `preventDefault()`,
-     `dropEffect = 'move'`, and if `src !== i` **reorder the array in place now**
-     (`splice` the dragged item to index `i`, then set `src = i`). The list opens a
-     slot as you hover — do **not** wait for `drop` to swap, and do not draw a
-     `--over` border/insertion line as the sole feedback.
-     - **A multi-column layout is N INDEPENDENT column lists, not one array in a
-       CSS grid.** A row-major grid physically balances rows, so it can never let
-       one column hold more cards than another — model each column as its own
-       ordered list (`cols: string[][]`) rendered as N vertical drop lists. Reorder
-       is a **pointer-based, column-aware sortable**: `pointerdown` on the handle →
-       global `pointermove` picks the target **column by cursor X** and the target
-       **row by cursor Y** (above a card's midpoint → before; past all → end) and
-       moves the id across `cols` live → `pointerup` commits. Put
-       `touch-action: none; user-select: none` on the handle; give empty columns a
-       `min-height` so they stay droppable. Native HTML5 DnD was unreliable here
-       (drags that never start / never fire over gaps) — use the pointer sortable.
-       For the polished feel, the dragged item LIFTS into a **floating ghost that
-       tracks the cursor** (Teleport to body, `position: fixed`, drop shadow +
-       slight tilt, `pointer-events: none`); its in-list slot becomes a **dashed
-       placeholder** (`content visibility:hidden`, size kept) that live-moves as you
-       drag, and siblings FLIP-slide (`<TransitionGroup>` `-move`/`-leave-active`
-       `position:absolute`) to open the gap where it will land. Source:
-       `CrmDetailLayoutBuilder.vue › onPropPointerDown` + `.dlb-ghost`, `crm.ts ›
-       DetailLayoutSection.cols`.
-  4. **Faded source** — the item being dragged gets `opacity: 0.4` (`.is-dragging`).
-  5. **FLIP animation** — wrap the list in `<TransitionGroup name="x" tag="div">`
-     and add `.x-move { transition: transform ~0.18–0.2s cubic-bezier(0.2,0,0,1); }`
-     so siblings slide to make room.
+- **`rule/dnd-live-sortable`** — *Do:* build **every** reorderable list to the
+  **pointer-sortable standard** — a lifted card that follows the cursor, a dashed
+  drop-slot that shows where it lands, and siblings that slide to open the gap.
+  This is **pointer-based, NOT native HTML5 DnD** (`draggable`/`dragstart`/
+  `dragover` proved unreliable here — drags that never start or never fire over
+  gaps; do not use them). For a single-axis list use the shared composable
+  **`~/composables/usePointerSortable`**; the multi-column layout builder follows
+  the same pattern by hand.
+  1. **Handle-initiated** — `@pointerdown="start(i, $event)"` on a **drag handle**
+     (`MpIcon name="drag"` in a `<span class="…-drag" :aria-label="t('Drag to reorder')">`),
+     never on the whole row/card. Handle CSS: `cursor: grab`, `touch-action: none`,
+     `user-select: none`.
+  2. **Floating ghost follows the cursor** — the grabbed item lifts into a clone
+     Teleported to `body`: `position: fixed`, positioned from the composable's
+     `ghost` (offset by where inside the item you pressed), drop shadow + slight
+     tilt (`rotate(-1.5deg) scale(1.02)`), `pointer-events: none`. (Shadow is a
+     deliberate, transient exception to `rule/surface-border-no-shadow`.)
+  3. **Live sortable + dashed placeholder** — as you move, reorder the array in
+     place (`splice`) so the item's slot travels with the cursor; the in-list slot
+     is a **dashed drop-slot** (`.is-dragging`: dashed brand border/outline,
+     brand-subtle bg, children `visibility: hidden`, size kept). Never wait for
+     drop; never rely on a `--over` line alone.
+  4. **Siblings FLIP-slide** — wrap the list in `<TransitionGroup name="x" tag="div">`
+     with `.x-move { transition: transform ~0.18–0.2s cubic-bezier(0.2,0,0,1); }`
+     (+ `-enter/-leave` fade, `-leave-active { position: absolute }`) so the gap
+     opens/closes smoothly.
+  5. **Insertion math** — single axis: before the first item whose axis-midpoint is
+     past the cursor, else the end; `if (target > from) target--`. Multi-column: a
+     layout section is **N INDEPENDENT column lists** (`cols: string[][]`, one
+     ordered list per column) — a row-major CSS grid can't let one column hold more
+     cards than another. Pick the target **column by cursor X**, the **row by
+     cursor Y**, move the id across `cols` live; give empty columns a `min-height`
+     so they stay droppable.
   6. **Drag-handle colour** — `color: var(--mp-colors-icon-default)` at
-     `opacity: 0.75`; `cursor: grab` (→ `grabbing` on `:active`). Not `icon-subtle`.
+     `opacity: 0.75` (layout builder) / `icon-subtle` (pipeline); `cursor: grab`.
 
-  *Don't:* put `draggable` on the whole card, reorder only on `drop`, or rely on a
-  border highlight instead of live reordering. **Why:** one drag feel across the
-  app — the Deals board, pipeline editor, and layout builder all reorder identically.
-  **Source:** `CrmModuleBuilderPage.vue` (swimlanes), `CrmDetailLayoutBuilder.vue`.
+  *Don't:* use native HTML5 DnD (`draggable`, `setDragImage`, `dragover`), put the
+  drag start on the whole card, reorder only on `drop`, model a multi-column layout
+  as one flat array in a CSS grid, or rely on a border highlight instead of the
+  floating ghost + live placeholder. **Why:** one seamless drag feel across the app
+  — Deals board, pipeline editor (swimlanes + card-property rows), and layout
+  builder all reorder identically. **Source:** `~/composables/usePointerSortable.ts`,
+  `CrmModuleBuilderPage.vue` (lanes + rows), `CrmDetailLayoutBuilder.vue` (columns).
   **Lint:** review.
 
 ## Adding a rule

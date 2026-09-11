@@ -38,6 +38,7 @@ import {
   type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
+import { usePointerSortable } from '~/composables/usePointerSortable'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
@@ -147,31 +148,16 @@ function commitStageName(s: DealPipelineStage) {
   editingStageId.value = null
 }
 
-// Drag-reorder the swimlanes.
-const dragSrc = ref<number | null>(null)
-const dragOver = ref<number | null>(null)
-function onStageDragStart(i: number, e: DragEvent) {
-  dragSrc.value = i
-  e.dataTransfer!.effectAllowed = 'move'
-  // Drag the whole lane as the ghost (not just the handle) — this is what makes
-  // the reorder feel like the Deals board's card drag.
-  const lane = (e.target as HTMLElement).closest('.pipe-lane') as HTMLElement | null
-  if (lane) e.dataTransfer!.setDragImage(lane, 24, 24)
-}
-// Live sortable: as the dragged lane hovers over another, swap them in place so the
-// board physically opens a slot where it'll drop (animated via <TransitionGroup>).
-function onStageDragOver(i: number, e: DragEvent) {
-  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
-  const pipe = currentPipe.value
-  if (!pipe || dragSrc.value === null || dragSrc.value === i) return
-  const arr = [...pipe.stages]
-  const [m] = arr.splice(dragSrc.value, 1)
-  arr.splice(i, 0, m!)
-  pipe.stages = arr
-  dragSrc.value = i // the dragged lane now lives at index i
-}
-function onStageDrop() { dragSrc.value = null; dragOver.value = null }
-function onStageDragEnd() { dragSrc.value = null; dragOver.value = null }
+// Drag-reorder the swimlanes — the ERP pointer sortable (floating ghost + dashed
+// slot + FLIP), identical feel to the Layout builder. rule/dnd-live-sortable.
+const { dragIndex: laneDragIndex, ghost: laneGhost, start: laneStart } = usePointerSortable({
+  axis: 'x', itemSelector: '.pipe-lane',
+  move: (from, to) => {
+    const pipe = currentPipe.value; if (!pipe) return
+    const arr = [...pipe.stages]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); pipe.stages = arr
+  },
+})
+const draggedStage = computed(() => (laneDragIndex.value !== null ? pipeStages.value[laneDragIndex.value] : null))
 
 function addStage() {
   const pipe = currentPipe.value; if (!pipe) return
@@ -194,27 +180,15 @@ const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(stores.valu
 const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
 
-// Drag-reorder the card-property rows (order = the order fields stack on a card).
-const fieldDragSrc = ref<number | null>(null)
-const fieldDragOver = ref<number | null>(null)
-function onFieldDragStart(i: number, e: DragEvent) {
-  fieldDragSrc.value = i
-  e.dataTransfer!.effectAllowed = 'move'
-  const row = (e.target as HTMLElement).closest('.pipe-side-row') as HTMLElement | null
-  if (row) e.dataTransfer!.setDragImage(row, 12, 12)
-}
-// Live sortable (same feel as the swimlanes): swap rows in place on hover.
-function onFieldDragOver(i: number, e: DragEvent) {
-  e.preventDefault(); e.dataTransfer!.dropEffect = 'move'
-  if (fieldDragSrc.value === null || fieldDragSrc.value === i) return
-  const arr = [...disp.cardFields]
-  const [m] = arr.splice(fieldDragSrc.value, 1)
-  arr.splice(i, 0, m!)
-  disp.cardFields = arr
-  fieldDragSrc.value = i
-}
-function onFieldDrop() { fieldDragSrc.value = null; fieldDragOver.value = null }
-function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = null }
+// Drag-reorder the card-property rows (order = the order fields stack on a card) —
+// same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
+const { dragIndex: fieldDragIndex, ghost: fieldGhost, start: fieldStart } = usePointerSortable({
+  axis: 'y', itemSelector: '.pipe-side-row--drag',
+  move: (from, to) => {
+    const arr = [...disp.cardFields]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); disp.cardFields = arr
+  },
+})
+const draggedField = computed(() => (fieldDragIndex.value !== null ? disp.cardFields[fieldDragIndex.value] : null))
 
 // ── "+ Add property" to the Kanban card (Pipeline ▸ Card properties) ──
 // A two-pane drawer (same as Access "Select users"); adds picked deal properties
@@ -879,13 +853,12 @@ function cancel() { router.push('/crm/settings/modules') }
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'is-dragging': dragSrc === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
-                    @dragover="onStageDragOver(i, $event)" @drop="onStageDrop()"
+                    :class="{ 'is-dragging': laneDragIndex === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
                   >
                     <div class="pipe-lane-head">
                       <span
-                        class="pipe-lane-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                        @dragstart="onStageDragStart(i, $event)" @dragend="onStageDragEnd"
+                        class="pipe-lane-drag" :aria-label="t('Drag to reorder')"
+                        @pointerdown="laneStart(i, $event)"
                       ><MpIcon name="drag" size="md" /></span>
                       <div class="pipe-lane-label">
                         <MpInput
@@ -959,14 +932,13 @@ function cancel() { router.push('/crm/settings/modules') }
                       <div
                         v-for="(f, i) in disp.cardFields" :key="f.key"
                         class="pipe-side-row pipe-side-row--drag"
-                        :class="{ 'is-dragging': fieldDragSrc === i }"
-                        @dragover="onFieldDragOver(i, $event)" @drop="onFieldDrop()"
+                        :class="{ 'is-dragging': fieldDragIndex === i }"
                       >
                         <MpToggle :id="`disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
                         <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
                         <span
-                          class="pipe-side-drag" draggable="true" :aria-label="t('Drag to reorder')"
-                          @dragstart="onFieldDragStart(i, $event)" @dragend="onFieldDragEnd"
+                          class="pipe-side-drag" :aria-label="t('Drag to reorder')"
+                          @pointerdown="fieldStart(i, $event)"
                         ><MpIcon name="drag" size="md" /></span>
                       </div>
                     </TransitionGroup>
@@ -1316,6 +1288,21 @@ function cancel() { router.push('/crm/settings/modules') }
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <!-- Floating drag ghosts (ERP pointer sortable): a lifted clone follows the
+         cursor while a stage lane / card-property row is dragged. -->
+    <Teleport to="body">
+      <div v-if="laneGhost && draggedStage" class="dnd-ghost dnd-ghost--lane" :style="{ left: `${laneGhost.x}px`, top: `${laneGhost.y}px`, width: `${laneGhost.w}px` }">
+        <MpIcon name="drag" size="md" />
+        <span class="dnd-ghost-label">{{ draggedStage.name }}</span>
+      </div>
+    </Teleport>
+    <Teleport to="body">
+      <div v-if="fieldGhost && draggedField" class="dnd-ghost dnd-ghost--row" :style="{ left: `${fieldGhost.x}px`, top: `${fieldGhost.y}px`, width: `${fieldGhost.w}px` }">
+        <span class="dnd-ghost-label">{{ t(draggedField.label) }}</span>
+        <MpIcon name="drag" size="md" />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1392,8 +1379,10 @@ function cancel() { router.push('/crm/settings/modules') }
   background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
   transition: opacity 0.12s ease, border-color 0.12s ease;
 }
-.pipe-lane--over { border-color: var(--mp-colors-border-selected, #029861); }
-.pipe-lane.is-dragging { opacity: 0.4; }
+/* Drag placeholder: the lane's slot becomes a dashed drop target (content hidden,
+   size kept) while the lifted clone (.dnd-ghost) follows the cursor. */
+.pipe-lane.is-dragging { border-style: dashed !important; border-color: var(--mp-colors-border-selected, #029861) !important; background: var(--mp-colors-background-brand-subtle, #eafaf1) !important; }
+.pipe-lane.is-dragging > * { visibility: hidden; }
 /* Color stage columns (toggle): tint the lane by outcome. */
 .pipe-lane--won  { background: var(--mp-colors-background-brand-subtle, #eafaf1); border-color: var(--mp-colors-border-selected, #029861); }
 .pipe-lane--lost { background: var(--mp-colors-background-critical-subtle, #fdeceb); border-color: var(--mp-colors-border-danger, #dc2626); }
@@ -1512,9 +1501,26 @@ function cancel() { router.push('/crm/settings/modules') }
 .pipe-side-rowlabel { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
 .pipe-side-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
 .pipe-side-drag:active { cursor: grabbing; }
-/* Drop-target insertion line (top edge) + faded source, like the Deals board drag. */
-.pipe-side-row--over::before { content: ''; position: absolute; left: 0; right: 0; top: -1px; height: 2px; border-radius: 2px; background: var(--mp-colors-border-selected, #029861); }
-.pipe-side-row.is-dragging { opacity: 0.4; }
+/* Drag placeholder: the row's slot becomes a dashed drop target (content hidden,
+   size kept via outline so no layout shift) while the .dnd-ghost follows the cursor. */
+.pipe-side-row.is-dragging { outline: 1px dashed var(--mp-colors-border-selected, #029861); outline-offset: -1px; border-radius: var(--mp-radii-sm); background: var(--mp-colors-background-brand-subtle, #eafaf1); }
+.pipe-side-row.is-dragging > * { visibility: hidden; }
+
+/* ── Floating drag ghost (ERP pointer sortable, shared by lanes + rows) ──
+   Shadow deviates from rule/surface-border-no-shadow ON PURPOSE: transient drag
+   affordance (only while grabbed), not a resting surface elevation. */
+.dnd-ghost {
+  position: fixed; z-index: 1000; pointer-events: none;
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  background: var(--mp-colors-background-neutral, #fff);
+  border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 8px);
+  box-shadow: 0 12px 28px rgba(8, 13, 14, 0.18), 0 2px 6px rgba(8, 13, 14, 0.12);
+  transform: rotate(-1.5deg) scale(1.02); transform-origin: center; cursor: grabbing;
+}
+.dnd-ghost--lane { padding: var(--mp-spacing-3); }
+.dnd-ghost--row { padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2); }
+.dnd-ghost-label { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnd-ghost :deep(svg) { color: var(--mp-colors-icon-subtle, #97a0af); flex-shrink: 0; }
 .pipe-side-row--sep { border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 /* Live reorder — rows slide to make room (FLIP), same feel as the swimlanes. */
 .pipe-side-rows { display: contents; }
