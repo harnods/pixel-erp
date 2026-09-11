@@ -1321,11 +1321,11 @@ export const DEAL_PROPERTY_TYPES = [
 export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
 export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
-  'Single-line text': 'text', 'Multi-line text': 'text-align-left', 'Rich text': 'code',
-  'Phone number': 'call', 'Number': 'hashtag', 'Date picker': 'calendar',
-  'Date and time picker': 'calendar', 'Single checkbox': 'checkbox', 'Multiple checkboxes': 'checklist',
-  'Dropdown select': 'chevrons-down', 'Radio select': 'radio-button', 'Calculation': 'calculator',
-  'User': 'profile', 'Rollup': 'stats', 'Object coordinates': 'location',
+  'Single-line text': 'text-editor-text', 'Multi-line text': 'textarea', 'Rich text': 'text-editor-write',
+  'Phone number': 'phone', 'Number': 'number', 'Date picker': 'calendar',
+  'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
+  'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
+  'User': 'profile', 'Rollup': 'chart-line', 'Object coordinates': 'location',
 }
 export interface DealProperty { id: string; name: string; type: DealPropertyType; system: boolean; fillRate: number }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
