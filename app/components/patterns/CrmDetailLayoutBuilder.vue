@@ -115,11 +115,9 @@ function onAddPropSave(ids: string[]) { if (addTarget.value) addTarget.value.pro
 // then swap back after the property is created (it appears in the Add list).
 const newPropOpen = ref(false)
 function openNewProperty() { addOpen.value = false; newPropOpen.value = true }
-function onNewPropertySaved(payload: NewPropertyPayload) {
-  props.createProperty(payload)
-  newPropOpen.value = false
-  addOpen.value = true
-}
+function onNewPropertySaved(payload: NewPropertyPayload) { props.createProperty(payload) }
+// Closing the New-property drawer (save OR cancel) swaps back to Add-property.
+function onNewPropertyClose(open: boolean) { newPropOpen.value = open; if (!open) addOpen.value = true }
 function removeProperty(section: DetailLayoutSection, id: string) { section.propertyIds = section.propertyIds.filter((x) => x !== id) }
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
@@ -289,7 +287,7 @@ function onPropDragEnd() { propDrag.value = { sec: '', src: null } }
     </SelectAccessDrawer>
 
     <!-- New-property drawer — swapped in from the Add-property footer, swaps back on save. -->
-    <CrmPropertyDrawer :open="newPropOpen" mode="add" :property="null" @update:open="newPropOpen = $event" @save="onNewPropertySaved" />
+    <CrmPropertyDrawer :open="newPropOpen" mode="add" :property="null" @update:open="onNewPropertyClose" @save="onNewPropertySaved" />
 
     <!-- Edit-section modal -->
     <MpModal id="dlb-editsec-modal" :is-open="editOpen" :is-keep-alive="false" size="sm" @close="editOpen = false">
