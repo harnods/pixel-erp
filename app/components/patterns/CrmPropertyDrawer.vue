@@ -275,7 +275,10 @@ function save() {
 .cpd-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .cpd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 /* Dropdowns in this drawer sit at 50% of the field width (~3 of 6 grid cols). */
+/* ErpFilterSelect's trigger is a fixed 176px inline-flex; force it to fill a 50% box. */
 .cpd-half { width: 50%; }
+.cpd-half :deep(.efs) { width: 100%; }
+.cpd-half :deep(.efs-trigger) { width: 100%; }
 .cpd-labelrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .cpd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .cpd-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
