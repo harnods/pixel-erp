@@ -221,19 +221,28 @@ function onFieldDragEnd() { fieldDragSrc.value = null; fieldDragOver.value = nul
 // A two-pane drawer (same as Access "Select users"); adds picked deal properties
 // as extra card fields. Built-in fields (company/dealName/…) are left untouched.
 const cardPropsDrawerOpen = ref(false)
-const cardPropOptions = computed(() =>
-  propList.value.map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })),
-)
-const cardPropPropIds = computed(() => new Set(propList.value.map((p) => p.id)))
-const cardPropSelected = computed(() => disp.cardFields.filter((f) => cardPropPropIds.value.has(f.key)).map((f) => f.key))
+// Options = the card's current fields (shown selected, right pane) + deal properties
+// not already on the card (left pane). Dedupe by name so a built-in field like
+// "Deal value" doesn't also appear as its property twin.
+const cardPropOptions = computed(() => {
+  const byId = new Map<string, { id: string; name: string; subtitle?: string; icon?: string }>()
+  const labels = new Set(disp.cardFields.map((f) => t(f.label).toLowerCase()))
+  for (const f of disp.cardFields) byId.set(f.key, { id: f.key, name: t(f.label) })
+  for (const p of propList.value) {
+    if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
+    byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })
+  }
+  return [...byId.values()]
+})
+const cardPropSelected = computed(() => disp.cardFields.map((f) => f.key))
 function onCardPropsSaved(ids: string[]) {
   const idSet = new Set(ids)
-  // Keep built-in fields + still-selected property fields (in current order); append new picks.
-  const kept = disp.cardFields.filter((f) => !cardPropPropIds.value.has(f.key) || idSet.has(f.key))
+  // Keep still-selected fields (preserving order + on/off state); append new picks.
+  const kept = disp.cardFields.filter((f) => idSet.has(f.key))
   const keptKeys = new Set(kept.map((f) => f.key))
   const added = ids.filter((id) => !keptKeys.has(id)).map((id) => {
-    const p = propList.value.find((x) => x.id === id)!
-    return { key: id, label: p.name, on: true }
+    const p = propList.value.find((x) => x.id === id)
+    return { key: id, label: p ? p.name : id, on: true }
   })
   disp.cardFields = [...kept, ...added]
   cardPropsDrawerOpen.value = false
