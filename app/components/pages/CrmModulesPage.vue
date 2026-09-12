@@ -12,13 +12,20 @@
  * `.detail-stage`, mirroring the Teams page so every Settings surface matches.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import {
+  MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpButtonGroup, MpFormControl, MpFormLabel, MpInput,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS } from '~/data/crm'
+import {
+  crmModules, type CrmModule, CRM_CONVERSION_LABELS,
+  CRM_MODULE_ICONS, createCustomModule, genericRecordsFor,
+} from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -27,12 +34,36 @@ const router = useRouter()
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
 
+// ── "+ New module" — creates a real, functional custom module (its own
+//    Setup/Properties/Pipeline/Layout config + records workspace) and opens the
+//    builder immediately so the user can configure it. ──────────────────────────
+const MODULE_NAME_MAX = 40
+const newModuleOpen = ref(false)
+const newModuleName = ref('')
+const newModuleIcon = ref('pipeline')
+const newModuleError = ref('')
+const newModuleIconMenuOpen = ref(false)
+function openNewModule() {
+  newModuleName.value = ''; newModuleIcon.value = 'pipeline'; newModuleError.value = ''; newModuleIconMenuOpen.value = false
+  newModuleOpen.value = true
+}
+function pickNewModuleIcon(icon: string) { newModuleIcon.value = icon; newModuleIconMenuOpen.value = false }
+function submitNewModule() {
+  if (!newModuleName.value.trim()) { newModuleError.value = t('Enter a module name.'); return }
+  const id = createCustomModule(newModuleName.value.trim(), newModuleIcon.value)
+  newModuleOpen.value = false
+  router.push(`/crm/settings/modules/${id}`)
+}
+
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 // The Modules index lists EVERY module — the Deals system module (edited via its
 // Pipeline/Layout builder) plus any custom modules.
 const rows = computed<ModuleRow[]>(() =>
   crmModules.map((m) => ({
     ...m,
+    // Generic custom modules (any id besides the hand-built 'deals'/'services')
+    // keep their own live record count instead of the static seeded field.
+    recordCount: (!m.system && m.id !== 'services') ? genericRecordsFor(m.id).length : m.recordCount,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
   })),
@@ -91,7 +122,7 @@ watch(statusFilter, () => setPage(1))
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton variant="primary" is-rounded left-icon="add" @click="soon(t('New module'))">{{ t('New module') }}</MpButton>
+        <MpButton variant="primary" is-rounded left-icon="add" @click="openNewModule">{{ t('New module') }}</MpButton>
       </div>
     </header>
 
@@ -173,10 +204,65 @@ watch(statusFilter, () => setPage(1))
         </template>
       </ErpTablePage>
     </div>
+
+    <!-- New module — name + icon; on create, opens straight into its builder. -->
+    <MpModal id="new-module-modal" :is-open="newModuleOpen" :is-keep-alive="false" size="sm" @close="newModuleOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('New module') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <MpFormControl id="new-module-name-fc">
+            <MpFormLabel>{{ t('Module name') }}</MpFormLabel>
+            <div class="nmm-name-row">
+              <MpPopover id="new-module-icon-menu" :is-open="newModuleIconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="newModuleIconMenuOpen = false">
+                <MpPopoverTrigger>
+                  <button type="button" class="nmm-icon-trigger" :aria-label="t('Change icon')" @click="newModuleIconMenuOpen = !newModuleIconMenuOpen">
+                    <MpIcon :name="newModuleIcon" size="md" />
+                    <MpIcon name="chevrons-down" size="sm" class="nmm-icon-caret" />
+                  </button>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)', width: '240px' })">
+                  <div class="nmm-icon-grid">
+                    <button
+                      v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
+                      class="nmm-icon-choice" :class="{ 'nmm-icon-choice--active': newModuleIcon === ic }"
+                      :aria-label="ic" @click="pickNewModuleIcon(ic)"
+                    ><MpIcon :name="ic" size="md" /></button>
+                  </div>
+                </MpPopoverContent>
+              </MpPopover>
+              <MpInput
+                id="new-module-name" v-model="newModuleName" is-full-width :maxlength="MODULE_NAME_MAX"
+                @update:model-value="newModuleError = ''" @keydown.enter="submitNewModule"
+              />
+            </div>
+            <p v-if="newModuleError" class="nmm-error">{{ newModuleError }}</p>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton variant="ghost" is-rounded @click="newModuleOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="submitNewModule">{{ t('Create module') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
 <style scoped>
+/* New module modal — name field with an icon-picker prefix (mirrors the module
+   builder's Setup ▸ Module name icon trigger). */
+.nmm-name-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.nmm-icon-trigger { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); cursor: pointer; color: var(--mp-text-default); }
+.nmm-icon-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.nmm-icon-caret { color: var(--mp-icon-default, #536062); }
+.nmm-icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-1); }
+.nmm-icon-choice { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-sm); background: none; cursor: pointer; color: var(--mp-icon-default, #536062); }
+.nmm-icon-choice:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.nmm-icon-choice--active { background: var(--mp-background-brand-subtle, #eafaf1); color: var(--mp-icon-brand, #0a6e4e); }
+.nmm-error { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #a8352d); }
+
 /* Shell — mirrors CrmSettingsPage's Teams surface exactly. */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }

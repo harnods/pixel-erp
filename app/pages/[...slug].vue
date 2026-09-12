@@ -8,6 +8,7 @@ const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-load
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
+import { getCrmModule } from '~/data/crm'
 import { getAgent, type CoworkAgent } from '~/data/cowork'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { useAireneChat, DEFAULT_CONTEXT_SUGGESTIONS } from '~/composables/useAireneChat'
@@ -369,6 +370,8 @@ const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
 const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
+const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
+const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -469,6 +472,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
     if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
     if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
+    // /crm/<moduleId>[/recordId] → any OTHER published custom module (created via
+    // "+ New module") gets the generic records workspace/detail, driven entirely
+    // by its own pipeline/properties (no per-module page needed). Guarded by a
+    // real, non-system module lookup so it can't hijack reserved CRM subpaths.
+    {
+      const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
+      if (customMod && !customMod.system) {
+        return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
+      }
+    }
     // /crm/orders/:id, /crm/products/:id → CRM detail pages.
     if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }

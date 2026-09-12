@@ -1720,23 +1720,192 @@ export const serviceDetailLayout = reactive<DealDetailLayout>(
 )
 export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v3', [serviceDetailLayout]) }
 
-/** True for the Deals-style modules that use the Setup/Properties/Pipeline/Layout builder. */
-export function isDealLikeModule(id: string): boolean { return id === 'deals' || id === 'services' }
-/** Resolve the builder's config stores for a Deals-like module. */
-export function moduleStores(id: string) {
-  const svc = id === 'services'
+// ═══════════════════════════════════════════════════════════════════════════════
+// GENERIC custom modules — any module created via "+ New module" (Settings ▸
+// Modules) beyond the hand-built 'deals'/'services'. Each gets its OWN pipeline,
+// display, setup, properties and detail-layout config (seeded fresh, editable via
+// the SAME Setup/Properties/Pipeline/Layout builder — CrmModuleBuilderPage.vue
+// already reads everything through moduleStores()/isDealLikeModule(), so a new
+// generic module needs zero builder changes) plus its own records, rendered by the
+// generic workspace pages (CrmGenericModulePage/CrmGenericRecordDetailPage).
+// ═══════════════════════════════════════════════════════════════════════════════
+let genericStageSeq = 1
+function newStageId(): string { return `stage-${genericStageSeq++}` }
+
+export interface GenericModuleConfig {
+  pipelines: DealPipeline[]
+  display: DealPipelineDisplay
+  setup: DealModuleSetup
+  properties: DealProperty[]
+  detailLayout: DealDetailLayout
+}
+const genericModuleConfigs = reactive<Record<string, GenericModuleConfig>>(
+  loadSnapshot<Record<string, GenericModuleConfig>>('crm-generic-module-configs-v1')?.[0] ?? {},
+)
+function persistGenericModuleConfigs() { saveSnapshot('crm-generic-module-configs-v1', [genericModuleConfigs]) }
+
+/** Generic detail layout: Overview/Info/Products + the 4 system tabs — same shape
+ *  as the Service deals seed, with ids namespaced per module so multiple generic
+ *  modules never collide. */
+function genericDetailLayoutSeed(moduleId: string): DealDetailLayout {
   return {
-    pipelines: svc ? servicePipelines : dealPipelines,
-    persistPipelines: svc ? persistServicePipelines : persistDealPipelines,
-    display: svc ? servicePipelineDisplay : dealPipelineDisplay,
-    persistDisplay: svc ? persistServicePipelineDisplay : persistDealPipelineDisplay,
-    setup: svc ? serviceModuleSetup : dealModuleSetup,
-    persistSetup: svc ? persistServiceModuleSetup : persistDealModuleSetup,
-    properties: svc ? serviceProperties : dealProperties,
-    persistProperties: svc ? persistServiceProperties : persistDealProperties,
-    detailLayout: svc ? serviceDetailLayout : dealDetailLayout,
-    persistDetailLayout: svc ? persistServiceDetailLayout : persistDealDetailLayout,
+    tabs: [
+      { id: `${moduleId}-tab-details`, key: 'details', label: 'Details', editable: true, visible: true, sections: [
+        { id: newDetailSectionId(), name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
+        { id: newDetailSectionId(), name: 'Info', columns: 3, cols: distributeCols(['currency', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no'], 3) },
+        { id: newDetailSectionId(), name: 'Products', columns: 1, cols: [['products']] },
+      ] },
+      { id: `${moduleId}-tab-activity`, key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Activity', columns: 1, cols: [['activity-log']] }] },
+      { id: `${moduleId}-tab-notes`, key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Notes', columns: 1, cols: [['notes']] }] },
+      { id: `${moduleId}-tab-files`, key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Files', columns: 1, cols: [['files']] }] },
+      { id: `${moduleId}-tab-orders`, key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }] },
+    ],
   }
+}
+function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
+  return {
+    pipelines: [{
+      id: 'default', name: 'Default pipeline',
+      stages: [
+        { id: newStageId(), name: 'Open', kind: 'open', isDefault: true },
+        { id: newStageId(), name: 'In progress', kind: 'open' },
+        { id: newStageId(), name: 'Won', kind: 'won' },
+        { id: newStageId(), name: 'Lost', kind: 'lost' },
+      ],
+    }],
+    display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+    setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days', access: [] },
+    properties: defaultDealProperties(),
+    detailLayout: genericDetailLayoutSeed(moduleId),
+  }
+}
+function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
+  return genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+}
+
+/** True for every module that uses the Setup/Properties/Pipeline/Layout builder —
+ *  the two hand-built modules ('deals'/'services') plus any generic custom module. */
+export function isDealLikeModule(id: string): boolean {
+  return id === 'deals' || id === 'services' || id in genericModuleConfigs
+}
+/** Resolve the builder's config stores for a Deals-like module. Any id that isn't
+ *  'deals'/'services' is treated as a generic custom module and lazily seeded on
+ *  first access (e.g. right after creation, when the builder opens immediately). */
+export function moduleStores(id: string) {
+  if (id === 'services') {
+    return {
+      pipelines: servicePipelines, persistPipelines: persistServicePipelines,
+      display: servicePipelineDisplay, persistDisplay: persistServicePipelineDisplay,
+      setup: serviceModuleSetup, persistSetup: persistServiceModuleSetup,
+      properties: serviceProperties, persistProperties: persistServiceProperties,
+      detailLayout: serviceDetailLayout, persistDetailLayout: persistServiceDetailLayout,
+    }
+  }
+  if (id === 'deals') {
+    return {
+      pipelines: dealPipelines, persistPipelines: persistDealPipelines,
+      display: dealPipelineDisplay, persistDisplay: persistDealPipelineDisplay,
+      setup: dealModuleSetup, persistSetup: persistDealModuleSetup,
+      properties: dealProperties, persistProperties: persistDealProperties,
+      detailLayout: dealDetailLayout, persistDetailLayout: persistDealDetailLayout,
+    }
+  }
+  const cfg = ensureGenericModuleConfig(id)
+  return {
+    pipelines: cfg.pipelines, persistPipelines: persistGenericModuleConfigs,
+    display: cfg.display, persistDisplay: persistGenericModuleConfigs,
+    setup: cfg.setup, persistSetup: persistGenericModuleConfigs,
+    properties: cfg.properties, persistProperties: persistGenericModuleConfigs,
+    detailLayout: cfg.detailLayout, persistDetailLayout: persistGenericModuleConfigs,
+  }
+}
+
+// ── Generic module records — the workspace data for any custom module beyond
+//    Service deals. A lighter shape than Deal/ServiceDeal (Core-workspace scope):
+//    name + stage + the default-property values, no line-items/tabs/archive. ──────
+export interface GenericModuleRecord {
+  id: string
+  name: string
+  stage: string
+  owner: string
+  values: {
+    customer?: string
+    contactPerson?: string
+    dealValue?: number
+    currency?: string
+    transactionDate?: string
+    dueDate?: string
+    paymentTerms?: string
+    referenceNo?: string
+    description?: string
+    memo?: string
+  }
+  createdAt: string
+}
+const genericModuleRecords = reactive<Record<string, GenericModuleRecord[]>>(
+  loadSnapshot<Record<string, GenericModuleRecord[]>>('crm-generic-module-records-v1')?.[0] ?? {},
+)
+function persistGenericModuleRecords() { saveSnapshot('crm-generic-module-records-v1', [genericModuleRecords]) }
+export function genericRecordsFor(moduleId: string): GenericModuleRecord[] {
+  return genericModuleRecords[moduleId] ?? (genericModuleRecords[moduleId] = [])
+}
+export function getGenericRecord(moduleId: string, id: string): GenericModuleRecord | undefined {
+  return genericRecordsFor(moduleId).find((r) => r.id === id)
+}
+/** Stages of a generic module's pipeline, as [{name, kind}] — same shape as
+ *  `serviceStages()`, used to drive the kanban + stage badges + stage picker. */
+export function genericModuleStages(moduleId: string): { name: string; kind: DealStageKind }[] {
+  return (moduleStores(moduleId).pipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
+}
+export function genericStageBadgeType(moduleId: string, stage: string): 'completed' | 'announcement' | 'information' | 'warning' {
+  const stages = moduleStores(moduleId).pipelines[0]?.stages ?? []
+  const st = stages.find((s) => s.name === stage)
+  if (!st) return 'information'
+  if (st.kind === 'won') return 'completed'
+  if (st.kind === 'lost') return 'announcement'
+  const open = stages.filter((s) => s.kind === 'open')
+  const idx = open.findIndex((s) => s.name === stage)
+  return idx >= 0 && idx >= Math.ceil(open.length / 2) ? 'warning' : 'information'
+}
+export function createGenericRecord(moduleId: string): GenericModuleRecord {
+  const list = genericRecordsFor(moduleId)
+  const stages = moduleStores(moduleId).pipelines[0]?.stages ?? []
+  const stage = stages.find((s) => s.kind === 'open' && s.isDefault)?.name ?? stages[0]?.name ?? 'Open'
+  const rec: GenericModuleRecord = {
+    id: `REC-${Date.now().toString(36)}`, name: 'Untitled', stage, owner: CRM_CURRENT_USER, values: {},
+    createdAt: new Date().toISOString().slice(0, 10),
+  }
+  list.unshift(rec)
+  persistGenericModuleRecords()
+  return rec
+}
+export function persistGenericRecordEdit(): void { persistGenericModuleRecords() }
+export function moveGenericRecordStage(moduleId: string, id: string, stage: string): void {
+  const r = getGenericRecord(moduleId, id)
+  if (r) { r.stage = stage; persistGenericModuleRecords() }
+}
+
+// ── Custom module creation ("+ New module", Settings ▸ Modules) ──────────────────
+function slugifyModuleId(name: string): string {
+  const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'module'
+  let id = base, n = 2
+  while (crmModules.some((m) => m.id === id)) { id = `${base}-${n++}` }
+  return id
+}
+/** Create + publish a new custom module: registers it in crmModules (live in the
+ *  nav immediately), seeds its builder config, and returns the new module's id so
+ *  the caller can route straight into its builder. */
+export function createCustomModule(name: string, icon: string): string {
+  const id = slugifyModuleId(name)
+  crmModules.push({
+    id, name: name.trim(), system: false, accessLevel: 'company', status: 'published',
+    sections: [], fields: [], views: [], conversionTarget: null, recordCount: 0,
+    icon, updatedAt: new Date().toISOString().slice(0, 19), updatedBy: CRM_CURRENT_USER,
+  })
+  persistCrmModules()
+  ensureGenericModuleConfig(id)
+  persistGenericModuleConfigs()
+  return id
 }
 
 // ── Service deals — records for the custom "Service deals" module workspace ──────
