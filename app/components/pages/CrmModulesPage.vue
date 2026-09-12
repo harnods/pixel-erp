@@ -216,7 +216,7 @@ watch(statusFilter, () => setPage(1))
     </div>
 
     <!-- New module — name + icon; on create, opens straight into its builder. -->
-    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="new-module-modal" :is-open="newModuleOpen" :is-keep-alive="false" size="sm" @close="newModuleOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="new-module-modal" :is-open="newModuleOpen" :is-keep-alive="false" size="md" @close="newModuleOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('New module') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
