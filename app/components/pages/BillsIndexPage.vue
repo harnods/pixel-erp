@@ -654,12 +654,10 @@ function confirmBulkDelete() {
   />
 
   <!-- ── Bulk delete confirmation modal (same pattern as WarehousesPage) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="bills-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkDeleteModal"
   >
@@ -682,12 +680,10 @@ function confirmBulkDelete() {
   </MpModal>
 
   <!-- ── Export modal (same pattern as ProductsPage's export modal) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="bills-export-modal"
     :is-open="exportModalOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeExportModal"
   >

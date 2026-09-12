@@ -45,9 +45,8 @@ function doUpload() {
 </script>
 
 <template>
-  <MpModal
-    id="pi-import-ocr-modal" :is-open="open" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="handleClose"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="pi-import-ocr-modal" :is-open="open" size="md" :is-keep-alive="false" @close="handleClose"
   >
     <MpModalContent>
       <MpModalHeader>{{ t(title) }}<MpModalCloseButton /></MpModalHeader>

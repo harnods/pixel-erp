@@ -263,9 +263,26 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/modal-alert-top-align`** — *Do:* alert/confirm modals align to the **top**
   (`is-centered=false`; use `ConfirmModal.vue`). **Why:** house convention. **Lint:**
   review.
+- **`rule/modal-drawer-close-explicit-only`** — *Do:* every `MpModal` and `MpDrawer`
+  sets **`:is-close-on-esc="false" :is-close-on-overlay-click="false"`** (both, even
+  though the library defaults both to `true`), and always renders a real
+  `MpModalCloseButton`/× control — that × (or an explicit Cancel/Save) is the ONLY
+  way to dismiss it. Every hand-rolled Teleport drawer's `.xxx-overlay` div has **NO**
+  `@click.self="close"` (or any close handler) — the overlay is just a backdrop, not
+  a dismiss target — and there is **no** global `keydown Escape → close` listener
+  anywhere in the file. Applies to **every** modal/drawer, including confirm dialogs
+  and non-form ones — not just forms. *Don't:* let a stray click outside, or an Esc
+  press, silently discard a modal/drawer — even a read-only one the user didn't
+  intend to dismiss. **Why:** accidental outside-clicks and Esc presses were closing
+  drawers/modals and discarding in-progress input or losing context, with no
+  confirmation. **Supersedes** the old `is-close-on-overlay-click` prescription in
+  `rule/activity-log-modal` below, and the CLAUDE.md/`docs/patterns/Drawer.md`
+  wording "close only via ×/Cancel/**Esc**" — Esc is now excluded too, everywhere.
+  **Lint:** review.
 - **`rule/activity-log-modal`** — *Do:* the record **audit trail** always uses the
   shared **`ActivityLogModal.vue`** (`~/components/patterns/ActivityLogModal.vue`) —
-  an `MpModal` size **`xl`**, `is-close-on-overlay-click`, `:is-keep-alive="false"`,
+  an `MpModal` size **`xl`**, `:is-close-on-esc="false" :is-close-on-overlay-click="false"`
+  (`rule/modal-drawer-close-explicit-only`), `:is-keep-alive="false"`,
   header **"Activity log"** + `MpModalCloseButton`. Wire it from a detail page with
   `:is-open` / `@close` and pass `:subject` (the record name) + `:entries`. *Don't:*
   hand-roll an activity/history/audit modal, a timeline, or a drawer for this — reuse
@@ -729,9 +746,11 @@ ERP override wins.
 ## Drawers — source: `docs/patterns/Drawer.md`
 
 - **`rule/drawer-custom-shell`** — *Do:* build drawers as a **hand-rolled Teleport
-  overlay** (copy `BillsFiltersDrawer.vue`). *Don't:* use Pixel `MpDrawer` — it has
-  no structural CSS in this build (header/footer detach). **Why:** MpDrawer renders
-  broken here. **Lint:** pixel-police.
+  overlay** (copy `BillsFiltersDrawer.vue`). The `.xxx-overlay` div carries **no**
+  click handler (per `rule/modal-drawer-close-explicit-only` — close is × only, the
+  overlay is just a backdrop). *Don't:* use Pixel `MpDrawer` — it has no structural
+  CSS in this build (header/footer detach). **Why:** MpDrawer renders broken here.
+  **Lint:** pixel-police.
 - **`rule/drawer-header-fill`** — *Do:* the drawer header has a **background fill**;
   the panel has **no box-shadow**. **Lint:** review.
 - **`rule/drawer-open-via-manage`** — *Do:* a drawer opens **only** via a **Manage**
@@ -740,10 +759,12 @@ ERP override wins.
   filter surface for a list page) is the `rule/drawer-custom-shell` panel with header
   **"All filters"**, opened from the filter bar's **All filters** button
   (`rule/filter-bar-all-filters-drawer`). It edits a **local draft** and commits to the
-  parent **only on Apply** (re-syncs the draft from the applied value on every open); as
-  a form it **ignores the overlay click** — close only via ×, Cancel, or Apply.
-  *Don't:* mutate the parent's filter state live, or close-on-overlay-click and lose
-  input. **Why:** one predictable filter surface; edits are never half-applied or lost.
+  parent **only on Apply** (re-syncs the draft from the applied value on every open);
+  it ignores the overlay click AND Esc — close only via ×, Cancel, or Apply
+  (`rule/modal-drawer-close-explicit-only`).
+  *Don't:* mutate the parent's filter state live, or close-on-overlay-click/Esc and
+  lose input. **Why:** one predictable filter surface; edits are never half-applied
+  or lost.
   **Source:** `BillsFiltersDrawer.vue` (canonical; 15 across the ERP). **Lint:** review.
 - **`rule/filter-drawer-fields`** — *Do:* each filter is a **bold label above a reused
   field control** from the shared vocabulary — **Keyword** (text + inline column-scope

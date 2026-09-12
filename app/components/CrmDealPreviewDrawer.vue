@@ -87,7 +87,7 @@ function stampTime(id: string): string {
 <template>
   <Teleport to="body">
     <Transition name="cdp">
-      <div v-if="open && d" class="cdp-overlay" @click.self="emit('close')">
+      <div v-if="open && d" class="cdp-overlay">
         <div class="cdp-panel" role="dialog" aria-label="Deal preview">
           <header class="cdp-header">
             <div class="cdp-header-main">

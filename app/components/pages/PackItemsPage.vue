@@ -581,7 +581,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <button class="detail-breadcrumb" @click="goPacking">{{ t('Back to Packing') }}</button>
   </div>
 
-  <MpModal id="pak-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pak-confirm" :is-open="showConfirm" size="md" :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
         {{ draftOutstanding > 0 ? t('Finish packing with unpacked items?') : t('Finish packing?') }}

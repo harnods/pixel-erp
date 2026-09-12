@@ -314,7 +314,7 @@ const deleteDescription = computed(() =>
     />
 
     <!-- Associate to (select company) -->
-    <MpModal id="con-associate-modal" :is-open="associateOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="associateOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="con-associate-modal" :is-open="associateOpen" size="md" :is-keep-alive="false" @close="associateOpen = false">
       <MpModalContent>
         <MpModalHeader>Associate to company<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

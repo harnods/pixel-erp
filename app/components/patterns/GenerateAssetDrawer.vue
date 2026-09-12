@@ -115,7 +115,7 @@ async function saveToAssets() {
 </script>
 
 <template>
-  <MpDrawer id="buzz-generate-drawer" :is-open="isOpen" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="close">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="buzz-generate-drawer" :is-open="isOpen" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="close">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="gad">

@@ -455,7 +455,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     <CrmPropertyDrawer :open="newPropOpen" mode="add" :property="null" @update:open="onNewPropertyClose" @save="onNewPropertySaved" />
 
     <!-- Edit-section modal -->
-    <MpModal id="dlb-editsec-modal" :is-open="editOpen" :is-keep-alive="false" size="sm" @close="editOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="dlb-editsec-modal" :is-open="editOpen" :is-keep-alive="false" size="sm" @close="editOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Edit section') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -480,7 +480,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     </MpModal>
 
     <!-- Conditional-logic modal (per property card) -->
-    <MpModal id="dlb-cond-modal" :is-open="condOpen" :is-keep-alive="false" size="md" @close="condOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="dlb-cond-modal" :is-open="condOpen" :is-keep-alive="false" size="md" @close="condOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Conditional logic') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

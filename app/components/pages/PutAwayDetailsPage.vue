@@ -579,8 +579,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     />
 
     <!-- ── Cancel confirmation ── -->
-    <MpModal id="pad-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pad-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
         <MpModalHeader>Cancel {{ task.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -598,8 +597,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Acknowledge canceled-PO confirmation (reached via Start/Continue
          put-away while blocked) ── -->
-    <MpModal id="pad-ack-cancel" :is-open="ackCancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pad-ack-cancel" :is-open="ackCancelOpen" size="md" :is-keep-alive="false" @close="ackCancelOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Acknowledge canceled purchase order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

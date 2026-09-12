@@ -461,7 +461,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
     </div>
 
     <!-- ── Change-stage modal (single + bulk) ── -->
-    <MpModal id="svc-stage-modal" :is-open="stageModalOpen" :is-keep-alive="false" size="sm" @close="stageModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="svc-stage-modal" :is-open="stageModalOpen" :is-keep-alive="false" size="sm" @close="stageModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Change stage') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

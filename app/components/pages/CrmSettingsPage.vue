@@ -711,11 +711,10 @@ const integrations: Integration[] = [
     />
 
     <!-- ── Users: Manage teams modal (add/remove this user across CRM teams) ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cru-teams-modal"
       :is-open="userTeamsModalOpen"
       size="md"
-      is-close-on-esc
       :is-keep-alive="false"
       @close="userTeamsModalOpen = false"
     >
@@ -782,12 +781,10 @@ const integrations: Integration[] = [
     />
 
     <!-- Members list — opened by clicking the "N members" cell -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cmt-members-modal"
       :is-open="membersModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="membersModalOpen = false"
     >

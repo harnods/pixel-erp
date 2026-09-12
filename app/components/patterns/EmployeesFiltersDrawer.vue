@@ -120,7 +120,7 @@ function applyFilter() {
 
 <template>
   <Transition name="ef-filters">
-    <div v-if="isOpen" class="ef-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="ef-filters-overlay">
       <div class="ef-filters-panel" role="dialog" aria-label="All filters">
         <header class="ef-filters-header">
           <span class="ef-filters-title">All filters</span>

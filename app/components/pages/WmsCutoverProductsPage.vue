@@ -824,7 +824,7 @@ onUnmounted(() => {
     <!-- ── Import product mapping drawer ── -->
     <Teleport to="body">
       <Transition name="imd">
-        <div v-if="isImportOpen" class="imd-overlay" @click.self="closeImport">
+        <div v-if="isImportOpen" class="imd-overlay">
           <aside class="imd-panel" role="dialog" :aria-label="t('Import product mapping')">
             <header class="imd-header">
               <MpText weight="semiBold">{{ t('Import product mapping') }}</MpText>

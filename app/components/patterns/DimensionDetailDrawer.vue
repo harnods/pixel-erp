@@ -97,7 +97,7 @@ function confirmTransfer() {
 
 <template>
   <Transition name="ddd">
-    <div v-if="isOpen && dimension" class="ddd-overlay" @click.self="close">
+    <div v-if="isOpen && dimension" class="ddd-overlay">
       <div class="ddd-panel" role="dialog" :aria-label="`${dimension.name} ${t('preview')}`">
         <header class="ddd-header">
           <span class="ddd-title">{{ dimension.name }} {{ t('preview') }}</span>
@@ -204,12 +204,10 @@ function confirmTransfer() {
   </Transition>
 
   <!-- ── Transfer value — moves one value from this dimension onto another. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="ddd-transfer-modal"
     :is-open="transferOpen"
     size="sm"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeTransfer"
   >

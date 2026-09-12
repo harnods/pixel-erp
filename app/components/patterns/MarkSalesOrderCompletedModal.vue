@@ -36,12 +36,10 @@ function confirm() { emit('confirm'); close() }
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="mark-so-completed-modal"
     :is-open="isOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >

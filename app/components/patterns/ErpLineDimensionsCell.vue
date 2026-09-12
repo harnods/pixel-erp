@@ -213,9 +213,8 @@ function confirmAddValue() {
       </MpPopover>
     </div>
 
-    <MpModal
-      v-if="addValueOpen" :id="`${id}-add-value-modal`" :is-open="true" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      v-if="addValueOpen" :id="`${id}-add-value-modal`" :is-open="true" size="md" :is-keep-alive="false"
       @close="addValueOpen = false"
     >
       <MpModalContent>

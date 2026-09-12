@@ -515,8 +515,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   />
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal id="pick-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pick-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>

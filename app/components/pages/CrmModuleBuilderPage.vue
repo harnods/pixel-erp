@@ -1164,7 +1164,7 @@ function cancel() { router.push('/crm/settings/modules') }
     <CrmPropertyDrawer :open="propDrawerOpen" :mode="propMode" :property="editingProp" @update:open="propDrawerOpen = $event" @save="onPropertySave" />
 
     <!-- ════════ Field modal ════════ -->
-    <MpModal id="cmb-field-modal" :is-open="fieldModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="fieldModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmb-field-modal" :is-open="fieldModalOpen" size="md" :is-keep-alive="false" @close="fieldModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ fieldModalTitle }}</MpModalHeader>
         <MpModalBody>
@@ -1252,7 +1252,7 @@ function cancel() { router.push('/crm/settings/modules') }
     </MpModal>
 
     <!-- ════════ Section modal ════════ -->
-    <MpModal id="cmb-section-modal" :is-open="sectionModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="sectionModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmb-section-modal" :is-open="sectionModalOpen" size="md" :is-keep-alive="false" @close="sectionModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ sectionModalTitle }}</MpModalHeader>
         <MpModalBody>
@@ -1275,7 +1275,7 @@ function cancel() { router.push('/crm/settings/modules') }
     </MpModal>
 
     <!-- ════════ View modal ════════ -->
-    <MpModal id="cmb-view-modal" :is-open="viewModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="viewModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmb-view-modal" :is-open="viewModalOpen" size="md" :is-keep-alive="false" @close="viewModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ viewModalTitle }}</MpModalHeader>
         <MpModalBody>

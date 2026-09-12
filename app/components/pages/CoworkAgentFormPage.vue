@@ -831,7 +831,7 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
   />
 
   <!-- Audience modal — the actual people behind the visibility count (View) -->
-  <MpModal id="caf-audience-modal" :is-open="audienceModalOpen" size="md" scroll-behavior="inside" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="audienceModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="caf-audience-modal" :is-open="audienceModalOpen" size="md" scroll-behavior="inside" :is-keep-alive="false" @close="audienceModalOpen = false">
     <MpModalContent>
       <MpModalHeader>{{ audienceCount }} {{ audienceCount === 1 ? 'person' : 'people' }} with access<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -851,12 +851,10 @@ function idr(n: number): string { return 'Rp ' + n.toLocaleString('id-ID') }
   </MpModal>
 
   <!-- Approval-mode confirmation modal (switching a skill to auto) -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="caf-auto-sheet"
     :is-open="autoSheet.open"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="autoSheet.open = false"
   >

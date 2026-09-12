@@ -495,7 +495,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 
     <!-- ── All views drawer ── -->
     <Transition name="glr-vd">
-      <div v-if="allViewsOpen" class="glr-vd-overlay" @click.self="allViewsOpen = false">
+      <div v-if="allViewsOpen" class="glr-vd-overlay">
         <div class="glr-vd-panel" role="dialog" :aria-label="t('All views')">
           <header class="glr-vd-head">
             <span class="glr-vd-title">{{ t('All views') }}</span>

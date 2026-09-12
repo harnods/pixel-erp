@@ -267,12 +267,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="awf-delete-modal"
     :is-open="deleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeDeleteModal"
   >
@@ -296,12 +294,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Turn off confirmation modal — reversible, so primary button is the
        standard (non-danger) state, per the Archive-confirmation pattern. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="awf-turn-off-modal"
     :is-open="turnOffModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeTurnOffModal"
   >

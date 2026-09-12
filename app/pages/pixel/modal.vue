@@ -25,7 +25,7 @@ const open = ref(false)
   </MpModalContent>
 </MpModal>">
       <MpButton variant="primary" is-rounded @click="open = true">Open modal</MpButton>
-      <MpModal id="px-modal" :is-open="open" size="md" @close="open = false">
+      <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="px-modal" :is-open="open" size="md" @close="open = false">
         <MpModalContent>
           <MpModalHeader>Confirm action<MpModalCloseButton /></MpModalHeader>
           <MpModalBody>This is a Pixel modal body.</MpModalBody>

@@ -142,7 +142,7 @@ const columns: TableColumn[] = [
   <CreatePostDrawer v-model:is-open="showCreatePost" />
 
   <!-- ── New campaign drawer (metadata only) ── -->
-  <MpDrawer id="buzz-new-campaign-drawer" :is-open="showCreate" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="showCreate = false">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="buzz-new-campaign-drawer" :is-open="showCreate" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="showCreate = false">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="bd-card">

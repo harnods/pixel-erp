@@ -130,13 +130,12 @@ async function save() {
 </script>
 
 <template>
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="new-loc-drawer"
     :is-open="isOpen"
     placement="right"
     size="md"
     variant="floating"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >

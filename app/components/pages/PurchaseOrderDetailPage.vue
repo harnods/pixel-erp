@@ -624,13 +624,11 @@ function goBack() { closePurchaseOrder?.() }
   </div>
 
   <!-- ── Reject confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="reject-transaction-modal"
     :is-open="showRejectModal"
     size="md"
     is-centered
-    is-close-on-esc
-    is-close-on-overlay-click
     @close="onCancelReject"
   >
     <MpModalContent>

@@ -744,8 +744,7 @@ function goBack() {
     </footer>
 
     <!-- ── Cancel confirmation ── -->
-    <MpModal id="rcvgd-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvgd-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
         <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -762,8 +761,7 @@ function goBack() {
     </MpModal>
 
     <!-- ── Acknowledge canceled-PO confirmation ── -->
-    <MpModal id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md" :is-keep-alive="false" @close="ackCancelOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Acknowledge canceled purchase order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -789,8 +787,7 @@ function goBack() {
 
     <!-- ── View changes — the per-SKU before/after table behind the Needs
          Re-arrangement freeze; Apply changes is the actual acknowledge. ── -->
-    <MpModal id="rcvgd-view-changes" :is-open="viewChangesOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="viewChangesOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvgd-view-changes" :is-open="viewChangesOpen" size="md" :is-keep-alive="false" @close="viewChangesOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Review the changes') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

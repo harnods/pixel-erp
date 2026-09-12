@@ -102,7 +102,7 @@ function cancel() { emit('update:isOpen', false) }
 <template>
   <Teleport to="body">
     <Transition name="kap">
-      <div v-if="isOpen" class="kap-overlay" @click.self="cancel">
+      <div v-if="isOpen" class="kap-overlay">
         <div class="kap-panel" role="dialog" aria-modal="true" aria-label="Attach knowledge">
           <header class="kap-head">
             <h2 class="kap-title">Attach knowledge</h2>

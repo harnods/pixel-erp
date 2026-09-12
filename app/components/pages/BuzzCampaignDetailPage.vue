@@ -139,7 +139,7 @@ function confirmDelete() {
     <!-- Zoom lightbox -->
     <Teleport to="body">
       <Transition name="zm">
-        <div v-if="zoom !== null && creatives[zoom]" class="zm-overlay" @click.self="zoom = null">
+        <div v-if="zoom !== null && creatives[zoom]" class="zm-overlay">
           <button class="zm-close" type="button" aria-label="Close" @click="zoom = null"><MpIcon name="close" size="md" /></button>
           <button v-if="creatives.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
           <video v-if="creatives[zoom].media === 'video'" :src="imgs.get(creatives[zoom].id)" class="zm-img" autoplay loop controls playsinline />

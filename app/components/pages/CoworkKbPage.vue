@@ -558,7 +558,7 @@ const deleteMessage = computed(() => {
   </Teleport>
 
   <!-- New folder / rename -->
-  <MpModal id="kbp-name-modal" :is-open="nameModal.open" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="nameModal.open = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-name-modal" :is-open="nameModal.open" size="md" :is-keep-alive="false" @close="nameModal.open = false">
     <MpModalContent>
       <MpModalHeader>{{ nameModal.mode === 'new' ? (nameModal.parentId ? 'New sub-folder' : 'New folder') : 'Rename' }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -575,7 +575,7 @@ const deleteMessage = computed(() => {
   </MpModal>
 
   <!-- Move -->
-  <MpModal id="kbp-move-modal" :is-open="moveModal.open" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="moveModal.open = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-move-modal" :is-open="moveModal.open" size="md" :is-keep-alive="false" @close="moveModal.open = false">
     <MpModalContent>
       <MpModalHeader>Move to<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -594,7 +594,7 @@ const deleteMessage = computed(() => {
   </MpModal>
 
   <!-- Choose folder to upload into (shown when uploading from the root) -->
-  <MpModal id="kbp-upload-picker" :is-open="uploadPicker" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="uploadPicker = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-upload-picker" :is-open="uploadPicker" size="md" :is-keep-alive="false" @close="uploadPicker = false">
     <MpModalContent>
       <MpModalHeader>Upload to which folder?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -614,7 +614,7 @@ const deleteMessage = computed(() => {
   </MpModal>
 
   <!-- Bulk move -->
-  <MpModal id="kbp-bulk-move" :is-open="bulkMoveOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkMoveOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-bulk-move" :is-open="bulkMoveOpen" size="md" :is-keep-alive="false" @close="bulkMoveOpen = false">
     <MpModalContent>
       <MpModalHeader>Move {{ bulkRows.length }} item{{ bulkRows.length > 1 ? 's' : '' }} to<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>

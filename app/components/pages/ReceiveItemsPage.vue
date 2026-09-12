@@ -680,11 +680,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   </div>
 
   <!-- ── Finish receiving confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="ri-confirm"
     :is-open="showConfirm"
     :size="draftOutstanding > 0 ? 'lg' : 'md'"
-    is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
   >

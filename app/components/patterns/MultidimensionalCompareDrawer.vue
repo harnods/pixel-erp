@@ -52,7 +52,7 @@ function apply() {
 
 <template>
   <Transition name="cmp-drawer">
-    <div v-if="isOpen" class="cmp-overlay" @click.self="close">
+    <div v-if="isOpen" class="cmp-overlay">
       <div class="cmp-panel" role="dialog" :aria-label="t('Comparison')">
         <header class="cmp-head">
           <span class="cmp-title">{{ t('Comparison') }}</span>

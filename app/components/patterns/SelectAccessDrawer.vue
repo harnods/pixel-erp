@@ -79,7 +79,7 @@ async function save() {
 
 <template>
   <Transition name="sad">
-    <div v-if="open" class="sad-overlay" @click.self="close">
+    <div v-if="open" class="sad-overlay">
       <div class="sad-panel" role="dialog" :aria-label="title">
         <!-- Header -->
         <header class="sad-header">

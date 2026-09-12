@@ -46,7 +46,7 @@ function clearAll() { accountKeyword.value = ''; types.value = []; hideEmpty.val
 
 <template>
   <Transition name="glf">
-    <div v-if="isOpen" class="glf-overlay" @click.self="close">
+    <div v-if="isOpen" class="glf-overlay">
       <div class="glf-panel" role="dialog" :aria-label="t('All filters')">
         <header class="glf-head">
           <span class="glf-title">{{ t('All filters') }}</span>

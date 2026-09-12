@@ -130,12 +130,10 @@ function generate() {
     <MpIcon name="settings" size="sm" />
   </span>
 
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     :id="`barcode-settings-modal-${props.kind}`"
     :is-open="isOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >

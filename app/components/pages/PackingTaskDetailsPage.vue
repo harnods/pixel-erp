@@ -688,8 +688,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     </footer>
 
     <!-- ── Cancel confirmation ── -->
-    <MpModal id="pck-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pck-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel') }} {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

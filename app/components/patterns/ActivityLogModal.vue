@@ -95,11 +95,10 @@ function formatWhen(iso: string) {
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="activity-log-modal"
     :is-open="isOpen"
     size="xl"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"
   >

@@ -41,7 +41,7 @@ function clearAll() { accountKeyword.value = ''; onlyExceeding.value = false; sh
 
 <template>
   <Transition name="bvf">
-    <div v-if="isOpen" class="bvf-overlay" @click.self="close">
+    <div v-if="isOpen" class="bvf-overlay">
       <div class="bvf-panel" role="dialog" :aria-label="t('All filters')">
         <header class="bvf-head">
           <span class="bvf-title">{{ t('All filters') }}</span>

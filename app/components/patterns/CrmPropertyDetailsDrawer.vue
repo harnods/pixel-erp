@@ -27,7 +27,7 @@ function dataSourceLine(p: DefaultProperty): string {
 <template>
   <Teleport to="body">
     <Transition name="cpd">
-      <div v-if="open && property" class="cpd-overlay" @click.self="close">
+      <div v-if="open && property" class="cpd-overlay">
         <div class="cpd-panel" role="dialog" :aria-label="t('Property details')">
           <header class="cpd-header">
             <span class="cpd-title">{{ property.name }}</span>

@@ -150,7 +150,7 @@ function createCard() {
   </ErpTablePage>
 
   <!-- ── New card drawer ── -->
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="xpm-new-card-drawer"
     :is-open="showCreateDrawer"
     placement="right"

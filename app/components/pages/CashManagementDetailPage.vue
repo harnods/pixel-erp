@@ -810,7 +810,7 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
     />
 
     <!-- ── Archive confirmation ── -->
-    <MpModal id="cmd-archive-modal" :is-open="archiveModalOpen" size="sm" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="archiveModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmd-archive-modal" :is-open="archiveModalOpen" size="sm" :is-keep-alive="false" @close="archiveModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Archive account?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t("Archived accounts will be hidden from the list and can't be used in any transactions.") }}</MpModalBody>
@@ -825,7 +825,7 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
     </MpModal>
 
     <!-- ── Delete confirmation ── -->
-    <MpModal id="cmd-delete-modal" :is-open="deleteModalOpen" size="sm" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmd-delete-modal" :is-open="deleteModalOpen" size="sm" :is-keep-alive="false" @close="deleteModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Delete account?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t('Deleted accounts cannot be restored.') }}</MpModalBody>

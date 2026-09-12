@@ -221,7 +221,7 @@ function save() {
 
 <template>
   <Transition name="dfd">
-    <div v-if="isOpen" class="dfd-overlay" @click.self="close">
+    <div v-if="isOpen" class="dfd-overlay">
       <div class="dfd-panel" role="dialog" :aria-label="mode === 'create' ? t('New dimension') : t('Edit dimension')">
         <header class="dfd-header">
           <span class="dfd-title">{{ mode === 'create' ? t('New dimension') : t('Edit dimension') }}</span>
@@ -408,12 +408,10 @@ function save() {
   />
 
   <!-- ── Transfer (bulk) — merge the selected values into one kept value. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="dfd-transfer-modal"
     :is-open="transferOpen"
     size="sm"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="transferOpen = false"
   >

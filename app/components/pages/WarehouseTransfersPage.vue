@@ -467,9 +467,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   />
 
   <!-- ── Cancel confirmation (single row + bulk share this) ── -->
-  <MpModal
-    id="wt-bulk-cancel" :is-open="bulkCancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="wt-bulk-cancel" :is-open="bulkCancelOpen" size="md" :is-keep-alive="false" @close="bulkCancelOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ bulkCancelIds.length > 1 ? bulkCancelIds.length + ' ' + t('warehouse transfers') : t('warehouse transfer') }}?<MpModalCloseButton /></MpModalHeader>

@@ -429,12 +429,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   </ErpTablePage>
 
   <!-- ── Archive confirmation (Figma 5506-162835) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="cash-archive-modal"
     :is-open="archiveTarget !== null"
     size="sm"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="archiveTarget = null"
   >
@@ -457,12 +455,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   </MpModal>
 
   <!-- ── Delete confirmation (Figma 5507-164858) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="cash-delete-modal"
     :is-open="deleteTarget !== null"
     size="sm"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="deleteTarget = null"
   >

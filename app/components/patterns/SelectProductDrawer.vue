@@ -53,7 +53,7 @@ async function save() {
 
 <template>
   <Transition name="spd">
-  <div v-if="open" class="spd-overlay" @click.self="close">
+  <div v-if="open" class="spd-overlay">
     <div class="spd-panel" role="dialog" aria-label="Select product">
       <!-- Header -->
       <header class="spd-header">

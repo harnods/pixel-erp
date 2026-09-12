@@ -385,12 +385,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Archive confirmation modal — reversible (can be re-activated), so the
        primary button is the standard (non-danger) state. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="dim-archive-modal"
     :is-open="archiveModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeArchiveModal"
   >
@@ -413,12 +411,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="dim-delete-modal"
     :is-open="deleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeDeleteModal"
   >
@@ -442,12 +438,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Add quota modal — self-serve quota increases aren't supported yet;
        points the user at their account manager / support instead. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="dim-add-quota-modal"
     :is-open="addQuotaModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeAddQuotaModal"
   >

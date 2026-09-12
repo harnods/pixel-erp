@@ -621,12 +621,10 @@ function confirmBulkDelete() {
   />
 
   <!-- ── Bulk delete confirmation modal (same pattern as BillsIndexPage) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="si-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkDeleteModal"
   >

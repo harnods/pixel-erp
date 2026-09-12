@@ -118,7 +118,7 @@ async function create() {
 <template>
   <Teleport to="body">
     <Transition name="nbm">
-      <div v-if="isOpen" class="nbm-overlay" @click.self="close">
+      <div v-if="isOpen" class="nbm-overlay">
         <div class="nbm-panel" role="dialog" aria-modal="true" aria-label="New brand kit">
           <header class="nbm-head">
             <p class="nbm-title">New brand kit</p>

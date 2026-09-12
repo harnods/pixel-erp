@@ -98,7 +98,7 @@ function handleSave() {
 
 <template>
   <Transition name="pbd">
-  <div v-if="open" class="pbd-overlay" @click.self="handleCancel">
+  <div v-if="open" class="pbd-overlay">
     <div class="pbd-panel" role="dialog" :aria-label="title">
 
       <header class="pbd-header">

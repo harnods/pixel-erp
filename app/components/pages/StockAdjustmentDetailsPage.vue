@@ -1311,9 +1311,8 @@ onUnmounted(() => {
     />
 
     <!-- Cancel stock adjustment -->
-    <MpModal
-      id="sad-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel stock adjustment?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1331,9 +1330,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Close task (WMS cycle count) -->
-    <MpModal
-      id="sad-close" :is-open="closeOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-close" :is-open="closeOpen" size="md" :is-keep-alive="false" @close="closeOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1351,9 +1349,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Start-counting blocked: an inbound/outbound task sharing a SKU is still in progress -->
-    <MpModal
-      id="sad-start-blocked" :is-open="startBlockedOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-start-blocked" :is-open="startBlockedOpen" size="md" :is-keep-alive="false" @close="startBlockedOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cannot start counting yet') }}<MpModalCloseButton /></MpModalHeader>
@@ -1375,9 +1372,8 @@ onUnmounted(() => {
 
     <!-- Approve with misplaced serials still unresolved — a reminder, not a
          blocker: the manager can approve now and reconcile the bins after. -->
-    <MpModal
-      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md" :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Misplaced serial numbers not resolved') }}<MpModalCloseButton /></MpModalHeader>

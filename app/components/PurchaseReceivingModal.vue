@@ -155,11 +155,10 @@ function handleCreate() {
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="pr-modal"
     :is-open="open"
     size="xl"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"
   >

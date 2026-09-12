@@ -1083,8 +1083,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </footer>
 
     <!-- ── Cancel confirmation ── -->
-    <MpModal id="pkd-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel') }} {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1101,8 +1100,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </MpModal>
 
     <!-- ── Acknowledge cancelled order before continuing picking ── -->
-    <MpModal id="pkd-ack-cancel" :is-open="ackModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-ack-cancel" :is-open="ackModalOpen" size="md" :is-keep-alive="false" @close="ackModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Acknowledge cancelled order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1122,8 +1120,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </MpModal>
 
     <!-- ── Warehouse Manager clears the D7 re-arrangement freeze (AC#9) ── -->
-    <MpModal id="pkd-clear-rearrange" :is-open="clearRearrangeModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="clearRearrangeModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-clear-rearrange" :is-open="clearRearrangeModalOpen" size="md" :is-keep-alive="false" @close="clearRearrangeModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Clear re-arrangement?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1195,7 +1192,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   />
 
   <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->
-  <MpModal id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="cantPackModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" :is-keep-alive="false" @close="cantPackModalOpen = false">
     <MpModalContent>
       <MpModalHeader>
         {{ t('Nothing can be packed yet') }}

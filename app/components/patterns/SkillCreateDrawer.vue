@@ -15,7 +15,7 @@
  * an overlay click is intentionally ignored so an in-progress draft is never
  * lost by a stray click.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import CoworkChatPanel from '~/components/patterns/CoworkChatPanel.vue'
 import type { CoworkModule } from '~/data/cowork'
@@ -85,11 +85,6 @@ function renderMd(md: string): string {
 const renderedMd = computed(() => (draft.value ? renderMd(draft.value.markdown) : ''))
 
 function save() { if (draft.value) emit('save', { ...draft.value }) }
-
-// Esc closes (matches the other drawers' keyboard behaviour).
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) close() }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -188,8 +183,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .scd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .scd-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
@@ -201,23 +196,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   border: none !important; background: none !important; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.scd-close:hover { background: var(--mp-background-neutral-hovered); }
+.scd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .scd-body { flex: 1; min-height: 0; overflow: hidden; }
 .scd-cols { display: grid; grid-template-columns: 1fr; height: 100%; min-height: 0; }
 .scd-cols--split { grid-template-columns: 420px minmax(0, 1fr); }
 .scd-chat { min-height: 0; height: 100%; }
-.scd-cols--split .scd-chat { border-right: 1px solid var(--mp-border-default); }
+.scd-cols--split .scd-chat { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 
 .scd-preview { min-height: 0; display: flex; flex-direction: column; }
-.scd-preview__head { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.scd-preview__head { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .scd-preview__meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .scd-name { border: none; outline: none; font-family: inherit; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); background: none; padding: 2px 0; }
 .scd-desc { border: none; outline: none; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); background: none; padding: 2px 0; }
 .scd-name:focus, .scd-desc:focus { box-shadow: inset 0 -1px 0 var(--mp-border-bold, #8c9596); }
 .scd-edit { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; }
 .scd-preview__doc { flex: 1; min-height: 0; overflow-y: auto; }
-.scd-editor { display: block; width: 100%; height: 100%; box-sizing: border-box; border: none; outline: none; resize: none; padding: var(--mp-spacing-4); font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; color: var(--mp-text-default); background: var(--mp-background-neutral); }
+.scd-editor { display: block; width: 100%; height: 100%; box-sizing: border-box; border: none; outline: none; resize: none; padding: var(--mp-spacing-4); font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; color: var(--mp-text-default); background: var(--mp-background-neutral, #ffffff); }
 .scd-md { padding: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .scd-md :deep(h1) { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
 .scd-md :deep(h2) { font-size: 16px; font-weight: 700; margin: 20px 0 6px; }
@@ -226,12 +221,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .scd-md :deep(ul) { margin: 0 0 10px; padding-inline-start: 22px; list-style: disc outside; }
 .scd-md :deep(ol) { margin: 0 0 10px; padding-inline-start: 22px; list-style: decimal outside; }
 .scd-md :deep(li) { margin: 2px 0; display: list-item; }
-.scd-md :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; background: var(--mp-background-neutral-subtle); padding: 1px 5px; border-radius: 4px; }
+.scd-md :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 1px 5px; border-radius: 4px; }
 
 .scd-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .scd-foot-hint { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .scd-footer-right { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); }

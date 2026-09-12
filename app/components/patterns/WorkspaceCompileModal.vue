@@ -112,7 +112,7 @@ const renderedMd = computed(() => renderMd(streamed.value))
 </script>
 
 <template>
-  <MpModal id="ws-compile" :is-open="open" size="lg" is-close-on-esc :is-keep-alive="false" @close="close">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ws-compile" :is-open="open" size="lg" :is-keep-alive="false" @close="close">
     <MpModalContent>
       <MpModalHeader>
         Compile workspace

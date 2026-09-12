@@ -722,7 +722,7 @@ const ADVANCED_TOGGLES = [
     </section>
 
     <!-- ── Activate Multi-currency modal ────────────────────────────────────── -->
-    <MpModal id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Activate Multi-currency?') }}
@@ -767,7 +767,7 @@ const ADVANCED_TOGGLES = [
     </MpModal>
 
     <!-- ── Validate & create Klikpajak account modal ───────────────────────────── -->
-    <MpModal id="cp-validate-klikpajak-modal" :is-open="klikpajakConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateNpwpConfirm">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-validate-klikpajak-modal" :is-open="klikpajakConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateNpwpConfirm">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Validate & create Klikpajak account?') }}
@@ -787,7 +787,7 @@ const ADVANCED_TOGGLES = [
     </MpModal>
 
     <!-- ── Validate coretax info (signee/PIC) modal — requires a Coretax passphrase ── -->
-    <MpModal id="cp-validate-coretax-modal" :is-open="coretaxConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateCoretax">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-validate-coretax-modal" :is-open="coretaxConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateCoretax">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Validate coretax info') }}

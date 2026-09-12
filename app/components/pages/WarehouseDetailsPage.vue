@@ -1723,12 +1723,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </div><!-- /detail-stage -->
 
     <!-- ── Archive confirmation modal (same content as the index page's) ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-detail-archive-modal"
       :is-open="archiveModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="archiveModalOpen = false"
     >
@@ -1761,12 +1759,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </MpModal>
 
     <!-- ── Delete confirmation modal ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-detail-delete-modal"
       :is-open="deleteModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="deleteModalOpen = false"
     >
@@ -1789,12 +1785,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </MpModal>
 
     <!-- ── Add/edit team member modal ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-team-modal"
       :is-open="teamModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="closeTeamModal"
     >
@@ -1842,12 +1836,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       <MpModalOverlay />
     </MpModal>
 
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-remove-team-modal"
       :is-open="removeTeamModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="removeTeamModalOpen = false"
     >

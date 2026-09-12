@@ -758,7 +758,7 @@ function confirmDelete() {
     </div>
 
     <!-- Mark as resign confirm -->
-    <MpModal id="ed-resign-modal" :is-open="resignModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="resignModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ed-resign-modal" :is-open="resignModalOpen" size="md" :is-keep-alive="false" @close="resignModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Mark as resign') }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ employee.fullName }} {{ t('will be marked as resigned with today as the resign date. You can undo this by editing the employee.') }}</MpModalBody>
@@ -773,7 +773,7 @@ function confirmDelete() {
     </MpModal>
 
     <!-- Delete confirm -->
-    <MpModal id="ed-delete-modal" :is-open="deleteModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ed-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="deleteModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Delete') }} {{ employee.fullName }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t('Deleted employees cannot be restored.') }}</MpModalBody>

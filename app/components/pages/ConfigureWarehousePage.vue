@@ -645,12 +645,10 @@ const toggleConfirmItems = computed((): string[] => {
     </div>
 
     <!-- ── Discard confirmation dialog ────────────────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-discard-dialog"
       :is-open="discardOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="discardOpen = false"
     >
       <MpModalContent>
@@ -670,12 +668,10 @@ const toggleConfirmItems = computed((): string[] => {
     </MpModal>
 
     <!-- ── Picking / Put-away toggle confirmation ─────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-toggle-confirm-dialog"
       :is-open="toggleConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="cancelToggleConfirm"
     >
       <MpModalContent>
@@ -697,12 +693,10 @@ const toggleConfirmItems = computed((): string[] => {
     </MpModal>
 
     <!-- ── Non-retroactive location priority change confirmation ────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-rule-confirm-dialog"
       :is-open="ruleConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="ruleConfirmOpen = false"
     >
       <MpModalContent>

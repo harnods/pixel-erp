@@ -266,7 +266,7 @@ function close() { emit('update:open', false) }
 
 <template>
   <Transition name="vbd">
-  <div v-if="open" class="vbd-overlay" @click.self="close">
+  <div v-if="open" class="vbd-overlay">
     <div class="vbd-panel" role="dialog" :aria-label="t('View batch')">
 
       <header class="vbd-header">

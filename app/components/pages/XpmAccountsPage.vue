@@ -518,7 +518,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   />
 
   <!-- ── Edit wallet drawer ── -->
-  <MpDrawer id="xpm-edit-wallet-drawer" :is-open="showEdit" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeEdit">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="xpm-edit-wallet-drawer" :is-open="showEdit" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="closeEdit">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="dr-card">
@@ -559,7 +559,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   </MpDrawer>
 
   <!-- ── Move money drawer ── -->
-  <MpDrawer id="xpm-move-money-drawer" :is-open="showMove" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeMove">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="xpm-move-money-drawer" :is-open="showMove" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="closeMove">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="dr-card">
@@ -590,7 +590,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   </MpDrawer>
 
   <!-- ── Top up drawer ── -->
-  <MpDrawer id="xpm-top-up-drawer" :is-open="showTopUp" placement="right" size="md" variant="floating" is-close-on-overlay-click :is-keep-alive="false" @close="closeTopUp">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="xpm-top-up-drawer" :is-open="showTopUp" placement="right" size="md" variant="floating" :is-keep-alive="false" @close="closeTopUp">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="dr-card">

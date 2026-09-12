@@ -637,8 +637,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </div>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
       <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -655,8 +654,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Bulk cancel confirmation modal ── -->
-  <MpModal id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md" :is-keep-alive="false" @close="bulkCancelOpen = false">
     <MpModalContent>
       <MpModalHeader>Cancel {{ cancelableTaskObjs.length }} {{ cancelableTaskObjs.length === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>

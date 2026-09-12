@@ -300,7 +300,7 @@ function confirmDelete() {
     />
 
     <!-- ── Delete confirmation modal ── -->
-    <MpModal id="itd-delete-modal" :is-open="deleteModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="itd-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="deleteModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Delete') }} {{ t('Internal transfer') }} {{ displayNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t('Deleted internal transfers cannot be restored.') }}</MpModalBody>

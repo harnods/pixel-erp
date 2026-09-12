@@ -286,12 +286,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Deactivate confirmation — reversible, so a standard primary confirm ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="usr-deactivate-modal"
     :is-open="!!deactivateTarget"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="deactivateTarget = null"
   >
@@ -312,12 +310,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Delete confirmation — destructive, verb+noun danger primary ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="usr-delete-modal"
     :is-open="!!deleteTarget"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="deleteTarget = null"
   >

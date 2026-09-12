@@ -182,13 +182,6 @@ async function save() {
 }
 
 function close() { emit('close') }
-
-function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') close() }
-watch(() => props.isOpen, (open) => {
-  if (!import.meta.client) return
-  if (open) document.addEventListener('keydown', onKeydown)
-  else document.removeEventListener('keydown', onKeydown)
-})
 </script>
 
 <template>
@@ -375,8 +368,8 @@ watch(() => props.isOpen, (open) => {
 .crd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .crd-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
@@ -388,7 +381,7 @@ watch(() => props.isOpen, (open) => {
   border: none !important; background: none !important; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.crd-close:hover { background: var(--mp-background-neutral-hovered); }
+.crd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .crd-body {
   flex: 1; overflow-y: auto;
@@ -418,7 +411,7 @@ watch(() => props.isOpen, (open) => {
 /* ── Authority matrix — feature rail + permission grid ── */
 .crd-matrix {
   display: flex; align-items: stretch;
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
   overflow: hidden;
 }
@@ -431,8 +424,8 @@ watch(() => props.isOpen, (open) => {
 .crd-grid-head, .crd-th {
   height: var(--mp-sizes-7, 28px);
   padding: var(--mp-spacing-1) var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-sm);
   text-transform: uppercase; text-align: left; color: var(--mp-text-default);
@@ -444,7 +437,7 @@ watch(() => props.isOpen, (open) => {
 
 .crd-rail {
   flex: 0 0 208px; display: flex; flex-direction: column;
-  border-right: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .crd-rail-list {
   flex: 1; margin: 0; padding: 0; list-style: none;
@@ -454,14 +447,14 @@ watch(() => props.isOpen, (open) => {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   border-left: 2px solid transparent;
   cursor: pointer; user-select: none;
 }
 .crd-rail-item:last-child { border-bottom: none; }
-.crd-rail-item:hover { background: var(--mp-background-neutral-hovered); }
+.crd-rail-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .crd-rail-item--active {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-left-color: var(--mp-background-brand);
 }
 .crd-rail-label {
@@ -484,7 +477,7 @@ watch(() => props.isOpen, (open) => {
 .crd-td {
   height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   vertical-align: middle;
 }
@@ -492,7 +485,7 @@ watch(() => props.isOpen, (open) => {
 .crd-td-label { white-space: normal; }
 .crd-na { color: var(--mp-text-secondary); }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
-.crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered); }
+.crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Footer — ghost Cancel + one primary. Alignment and the ≤640px stacked,
    full-width, primary-on-top behaviour come from the global .erp-action-footer
@@ -500,7 +493,7 @@ watch(() => props.isOpen, (open) => {
 .crd-footer {
   flex-shrink: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 @media (max-width: 640px) {
