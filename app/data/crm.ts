@@ -997,7 +997,11 @@ export const convertDealToSalesOrder = convertDeal
 export const CRM_TEAM_MODULES = [
   { key: 'deals', label: 'Deals' },
 ] as const
-export type CrmTeamModule = typeof CRM_TEAM_MODULES[number]['key']
+// Relaxed from a fixed literal union to a plain module id — a team's `modules`
+// list must be able to hold ANY module (Service deals, any custom module a user
+// creates), not just the seeded 'deals'. CRM_TEAM_MODULES itself is left as the
+// Teams settings page's own picker seed (unrelated, out of scope here).
+export type CrmTeamModule = string
 
 export type CrmTeamStatus = 'active' | 'inactive'
 
@@ -1892,20 +1896,66 @@ function slugifyModuleId(name: string): string {
   while (crmModules.some((m) => m.id === id)) { id = `${base}-${n++}` }
   return id
 }
-/** Create + publish a new custom module: registers it in crmModules (live in the
- *  nav immediately), seeds its builder config, and returns the new module's id so
- *  the caller can route straight into its builder. */
-export function createCustomModule(name: string, icon: string): string {
+/** Create a new custom module as a DRAFT: registers it in crmModules, seeds its
+ *  builder config, and returns the new module's id so the caller can route
+ *  straight into its builder. A draft is NOT in the CRM nav (CrmSidebar only lists
+ *  `status === 'published'` modules) until explicitly published — see
+ *  publishCrmModule(). `accessLevel` + (for 'team') `teamIds` are set immediately
+ *  so the Setup tab's user picker is already scoped correctly on first open. */
+export function createCustomModule(name: string, icon: string, accessLevel: 'company' | 'team', teamIds: string[]): string {
   const id = slugifyModuleId(name)
   crmModules.push({
-    id, name: name.trim(), system: false, accessLevel: 'company', status: 'published',
+    id, name: name.trim(), system: false, accessLevel, status: 'draft',
     sections: [], fields: [], views: [], conversionTarget: null, recordCount: 0,
     icon, updatedAt: new Date().toISOString().slice(0, 19), updatedBy: CRM_CURRENT_USER,
   })
   persistCrmModules()
+  if (accessLevel === 'team' && teamIds.length) setModuleTeams(id, teamIds)
   ensureGenericModuleConfig(id)
   persistGenericModuleConfigs()
   return id
+}
+/** Publish a draft module — makes it live in the CRM nav (CrmSidebar filters on
+ *  `status === 'published'`). */
+export function publishCrmModule(id: string): void {
+  const m = getCrmModule(id); if (!m) return
+  m.status = 'published'; m.updatedAt = new Date().toISOString().slice(0, 19); m.updatedBy = CRM_CURRENT_USER
+  persistCrmModules()
+}
+/** Revert a published module back to draft — removes it from the CRM nav. */
+export function unpublishCrmModule(id: string): void {
+  const m = getCrmModule(id); if (!m) return
+  m.status = 'draft'; m.updatedAt = new Date().toISOString().slice(0, 19); m.updatedBy = CRM_CURRENT_USER
+  persistCrmModules()
+}
+
+// ── Module ↔ Team access — single source of truth is CrmTeam.modules (the same
+//    relation the Teams settings page already edits for 'deals'); a module's
+//    accessLevel just says whether that relation is even consulted. ─────────────
+/** Teams that currently have `moduleId` in their `modules` list. */
+export function teamsForModule(moduleId: string): CrmTeam[] {
+  return crmTeams.filter((t) => t.modules.includes(moduleId))
+}
+/** Set the exact set of teams that can access `moduleId` (adds/removes moduleId
+ *  from each team's `modules` array to match). */
+export function setModuleTeams(moduleId: string, teamIds: string[]): void {
+  for (const t of crmTeams) {
+    const has = t.modules.includes(moduleId)
+    const should = teamIds.includes(t.id)
+    if (should && !has) t.modules = [...t.modules, moduleId]
+    if (!should && has) t.modules = t.modules.filter((m) => m !== moduleId)
+  }
+  persistCrmTeams()
+}
+/** Access-picker options scoped to the members of the given teams (union, active
+ *  employees only) — used by the module builder's Setup ▸ Access picker when the
+ *  module's access level is 'team' rather than the CRM_OWNERS-wide company list. */
+export function teamScopedAccessOptions(teamIds: string[]): { id: string; name: string; subtitle: string }[] {
+  const empIds = new Set<string>()
+  for (const t of crmTeams) if (teamIds.includes(t.id)) for (const id of t.memberIds) empIds.add(id)
+  return employees
+    .filter((e) => empIds.has(e.id) && e.status === 'active')
+    .map((e) => ({ id: e.fullName, name: e.fullName, subtitle: e.email || '' }))
 }
 
 // ── Service deals — records for the custom "Service deals" module workspace ──────
