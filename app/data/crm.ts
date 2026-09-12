@@ -1896,16 +1896,18 @@ function slugifyModuleId(name: string): string {
   while (crmModules.some((m) => m.id === id)) { id = `${base}-${n++}` }
   return id
 }
-/** Create a new custom module as a DRAFT: registers it in crmModules, seeds its
- *  builder config, and returns the new module's id so the caller can route
- *  straight into its builder. A draft is NOT in the CRM nav (CrmSidebar only lists
- *  `status === 'published'` modules) until explicitly published — see
- *  publishCrmModule(). `accessLevel` + (for 'team') `teamIds` are set immediately
- *  so the Setup tab's user picker is already scoped correctly on first open. */
-export function createCustomModule(name: string, icon: string, accessLevel: 'company' | 'team', teamIds: string[]): string {
+/** Create a new custom module — registers it in crmModules, seeds its builder
+ *  config, and returns the new module's id so the caller can route straight into
+ *  its builder. `status` defaults to 'draft' (NOT in the CRM nav — CrmSidebar only
+ *  lists `status === 'published'` modules — until explicitly published; see
+ *  publishCrmModule()), or pass 'published' to publish immediately (the "+ New
+ *  module" modal's Publish action). `accessLevel` + (for 'team') `teamIds` are set
+ *  immediately so the Setup tab's user picker is already scoped correctly on first
+ *  open. */
+export function createCustomModule(name: string, icon: string, accessLevel: 'company' | 'team', teamIds: string[], status: CrmModuleStatus = 'draft'): string {
   const id = slugifyModuleId(name)
   crmModules.push({
-    id, name: name.trim(), system: false, accessLevel, status: 'draft',
+    id, name: name.trim(), system: false, accessLevel, status,
     sections: [], fields: [], views: [], conversionTarget: null, recordCount: 0,
     icon, updatedAt: new Date().toISOString().slice(0, 19), updatedBy: CRM_CURRENT_USER,
   })

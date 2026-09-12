@@ -57,10 +57,10 @@ function openNewModule() {
   newModuleOpen.value = true
 }
 function pickNewModuleIcon(icon: string) { newModuleIcon.value = icon; newModuleIconMenuOpen.value = false }
-function submitNewModule() {
+function submitNewModule(status: 'draft' | 'published') {
   if (!newModuleName.value.trim()) { newModuleError.value = t('Enter a module name.'); return }
   if (newModuleAccessLevel.value === 'team' && !newModuleTeamIds.value.length) { newModuleError.value = t('Select at least one team.'); return }
-  const id = createCustomModule(newModuleName.value.trim(), newModuleIcon.value, newModuleAccessLevel.value, newModuleTeamIds.value)
+  const id = createCustomModule(newModuleName.value.trim(), newModuleIcon.value, newModuleAccessLevel.value, newModuleTeamIds.value, status)
   newModuleOpen.value = false
   router.push(`/crm/settings/modules/${id}`)
 }
@@ -267,7 +267,8 @@ watch(statusFilter, () => setPage(1))
         <MpModalFooter>
           <MpButtonGroup class="erp-action-footer">
             <MpButton variant="ghost" is-rounded @click="newModuleOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="submitNewModule">{{ t('Create module') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" is-rounded @click="submitNewModule('draft')">{{ t('Save as draft') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="submitNewModule('published')">{{ t('Publish') }}</MpButton>
           </MpButtonGroup>
         </MpModalFooter>
       </MpModalContent>

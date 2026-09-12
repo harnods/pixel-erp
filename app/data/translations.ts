@@ -577,6 +577,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Select at least one team.': 'Pilih minimal satu tim.',
   'No active teams yet.': 'Belum ada tim aktif.',
   'Publish': 'Publikasikan',
+  'Save as draft': 'Simpan sebagai draft',
   'Unpublish': 'Batalkan publikasi',
   'Module published': 'Modul berhasil dipublikasikan',
   'Module unpublished': 'Modul dikembalikan ke draft',
