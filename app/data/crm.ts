@@ -1419,6 +1419,63 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'User': 'profile', 'Rollup': 'chart-line',
   'Product list': 'products', 'Related list': 'table-view-list', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
 }
+
+// ── Default properties library (CRM ▸ Settings ▸ Properties) ────────────────────
+// The predefined, NON-editable properties every module gets by default (Deals +
+// any custom module). Association types ('Contact', 'Company') reference another
+// record; their `linkedFields` are that record's own fields, shown read-only in the
+// View-details drawer (a Deal doesn't carry them as separate properties).
+export interface DefaultPropertyField { name: string; type: string }
+export interface DefaultProperty {
+  id: string
+  name: string
+  fieldType: string            // display label (may be an association type not in DEAL_PROPERTY_TYPES)
+  variableName: string
+  description: string
+  linkedFields?: DefaultPropertyField[]   // present for association types (Contact / Company)
+}
+/** Icon for a default-property field type (extends the deal-property icon map with
+ *  the association types). */
+export function defaultPropertyIcon(fieldType: string): string {
+  if (fieldType === 'Contact') return 'profile'
+  if (fieldType === 'Company') return 'company'
+  return (DEAL_PROPERTY_TYPE_ICON as Record<string, string>)[fieldType] ?? 'text-editor-text'
+}
+export const DEFAULT_PROPERTIES: DefaultProperty[] = [
+  { id: 'name', name: 'Name', fieldType: 'Single-line text', variableName: 'name', description: "The record's primary display name (e.g. the deal name)." },
+  { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', linkedFields: [
+    { name: 'Company name', type: 'Single-line text' }, { name: 'Industry', type: 'Dropdown select' },
+    { name: 'Address', type: 'Multi-line text' }, { name: 'Country', type: 'Dropdown select' },
+    { name: 'Tax number (NPWP)', type: 'Single-line text' }, { name: 'Company owner', type: 'User' },
+  ] },
+  { id: 'contact-person', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', linkedFields: [
+    { name: 'Name', type: 'Single-line text' }, { name: 'Email', type: 'Email' },
+    { name: 'Phone number', type: 'Phone number' }, { name: 'Associated company', type: 'Company' },
+    { name: 'Address', type: 'Multi-line text' }, { name: 'Country', type: 'Dropdown select' },
+  ] },
+  { id: 'owner', name: 'Owner', fieldType: 'User', variableName: 'owner', description: 'The user who owns this record.' },
+  { id: 'value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
+  { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'The currency the record is transacted in.' },
+  { id: 'stage', name: 'Stage', fieldType: 'Radio select', variableName: 'stage', description: "The record's current pipeline stage." },
+  { id: 'priority', name: 'Priority', fieldType: 'Dropdown select', variableName: 'priority', description: 'How urgent this record is (Low / Medium / High).' },
+  { id: 'transaction-date', name: 'Transaction date', fieldType: 'Date picker', variableName: 'transaction_date', description: 'The date the record was transacted.' },
+  { id: 'due-date', name: 'Due date', fieldType: 'Date picker', variableName: 'due_date', description: 'The date the record is due to close.' },
+  { id: 'transaction-no', name: 'Transaction no.', fieldType: 'Single-line text', variableName: 'transaction_no', description: 'The unique document number for the record.' },
+  { id: 'reference-no', name: 'Reference no.', fieldType: 'Single-line text', variableName: 'reference_no', description: 'An external reference number.' },
+  { id: 'description', name: 'Description', fieldType: 'Multi-line text', variableName: 'description', description: 'A free-text description of the record.' },
+  { id: 'tags', name: 'Tags', fieldType: 'Multiple checkboxes', variableName: 'tags', description: 'Labels used to group and filter records.' },
+  { id: 'created-date', name: 'Created date', fieldType: 'Date and time picker', variableName: 'created_date', description: 'When the record was created (set automatically).' },
+  { id: 'created-by', name: 'Created by', fieldType: 'User', variableName: 'created_by', description: 'The user who created the record (set automatically).' },
+  { id: 'last-activity-date', name: 'Last activity date', fieldType: 'Date and time picker', variableName: 'last_activity_date', description: 'When the record last had activity (set automatically).' },
+  { id: 'products', name: 'Products', fieldType: 'Product list', variableName: 'products', description: 'The line items (products) attached to the record.' },
+  { id: 'files', name: 'Files', fieldType: 'Related list', variableName: 'files', description: 'Files and attachments on the record.' },
+  { id: 'notes', name: 'Notes', fieldType: 'Related list', variableName: 'notes', description: 'Notes logged against the record.' },
+  { id: 'activity-log', name: 'Activity log', fieldType: 'Related list', variableName: 'activity_log', description: 'The timeline of activity on the record.' },
+  { id: 'erp-transactions', name: 'ERP transactions', fieldType: 'Related list', variableName: 'erp_transactions', description: 'Linked ERP transactions (sales orders, invoices).' },
+]
+/** Unique field-type labels present in DEFAULT_PROPERTIES — for the index filter. */
+export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
+
 /** Field types offered when CREATING a property (drawer). Subset of the catalogue —
  *  excludes computed/relation types (Calculation, Rollup, User, …) that aren't
  *  user-authorable. */

@@ -368,6 +368,7 @@ const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUs
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
+const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -480,6 +481,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
+    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPropertiesPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }

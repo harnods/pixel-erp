@@ -53,6 +53,7 @@ const navGroups = computed<Item[][]>(() => [
       { name: 'Users',            to: '/crm/settings/users' },
       { name: 'Teams',            to: '/crm/settings/teams' },
       { name: 'Modules',          to: '/crm/settings/modules' },
+      { name: 'Properties',       to: '/crm/settings/properties' },
     ] },
   ],
 ])

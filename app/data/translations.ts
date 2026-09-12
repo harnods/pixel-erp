@@ -558,6 +558,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Closing this month': 'Tutup bulan ini',
   'Past due date': 'Lewat tanggal jatuh tempo',
   'Past 30 days': '30 hari terakhir',
+  // ── Settings ▸ Properties (default properties library) ──
+  'Properties': 'Properti',
+  'Field type': 'Tipe field',
+  'Search properties...': 'Cari properti...',
+  'View details': 'Lihat detail',
+  'Property details': 'Detail properti',
+  'Availability': 'Ketersediaan',
+  'Default property — available in every module and cannot be edited.': 'Properti default — tersedia di semua modul dan tidak bisa diubah.',
+  'Linked record fields': 'Field record tertaut',
+  'These fields live on the linked record, not on this module.': 'Field ini ada di record tertaut, bukan di modul ini.',
   // ── Service deals workspace ──
   'Service deals': 'Service deal',
   'New service': 'Service deal',
@@ -3309,4 +3319,15 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "No custom roles": "Belum ada peran kustom",
   "Custom roles will appear here.": "Peran kustom akan muncul di sini.",
   "copy": "salinan",
+
+  // ── Access gate (Google @mekari.com login) ──────────────────────────────────
+  "Sign in with your @mekari.com Google account to continue.":
+    "Masuk dengan akun Google @mekari.com Anda untuk melanjutkan.",
+  "Sign-in is not configured on this deployment.":
+    "Fitur masuk belum dikonfigurasi di deployment ini.",
+  "Signing in…": "Sedang masuk…",
+  "Restricted to Mekari employees.": "Khusus untuk karyawan Mekari.",
+  "Tidak bisa memuat Google Sign-In. Periksa koneksi Anda.":
+    "Tidak bisa memuat Google Sign-In. Periksa koneksi Anda.",
+  "Login gagal. Coba lagi.": "Login gagal. Coba lagi.",
 }
