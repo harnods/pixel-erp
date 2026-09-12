@@ -1209,7 +1209,7 @@ const MODULES_SEED: CrmModule[] = [
   {
     // Deals-style module for service (non-shipping) deals — consulting, machine
     // service, training. Uses the same builder as Deals via moduleStores('services').
-    id: 'services', name: 'Service deals', system: false, accessLevel: 'company', status: 'published', icon: 'briefcase',
+    id: 'services', name: 'Service deals', system: false, accessLevel: 'company', status: 'draft', icon: 'briefcase',
     sections: ['Service information', 'Scope & value'],
     fields: [
       { id: 'name',     label: 'Service name',       type: 'text',      required: true,  system: true, isPrimary: true, section: 'Service information', column: 1 },

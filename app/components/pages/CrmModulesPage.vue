@@ -14,18 +14,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpButtonGroup, MpFormControl, MpFormLabel, MpInput, MpRadio, MpCheckbox,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import {
-  crmModules, type CrmModule, CRM_CONVERSION_LABELS,
-  CRM_MODULE_ICONS, createCustomModule, genericRecordsFor, crmTeams,
-} from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -33,37 +28,8 @@ const router = useRouter()
 
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
-
-// ── "+ New module" — creates a real, functional custom module (its own
-//    Setup/Properties/Pipeline/Layout config + records workspace) and opens the
-//    builder immediately so the user can configure it. ──────────────────────────
-const MODULE_NAME_MAX = 40
-const newModuleOpen = ref(false)
-const newModuleName = ref('')
-const newModuleIcon = ref('pipeline')
-const newModuleError = ref('')
-const newModuleIconMenuOpen = ref(false)
-const newModuleAccessLevel = ref<'company' | 'team'>('company')
-const newModuleTeamIds = ref<string[]>([])
-const activeTeams = computed(() => crmTeams.filter((t) => t.status === 'active'))
-function toggleNewModuleTeam(id: string) {
-  newModuleTeamIds.value = newModuleTeamIds.value.includes(id)
-    ? newModuleTeamIds.value.filter((x) => x !== id)
-    : [...newModuleTeamIds.value, id]
-}
-function openNewModule() {
-  newModuleName.value = ''; newModuleIcon.value = 'pipeline'; newModuleError.value = ''; newModuleIconMenuOpen.value = false
-  newModuleAccessLevel.value = 'company'; newModuleTeamIds.value = []
-  newModuleOpen.value = true
-}
-function pickNewModuleIcon(icon: string) { newModuleIcon.value = icon; newModuleIconMenuOpen.value = false }
-function submitNewModule(status: 'draft' | 'published') {
-  if (!newModuleName.value.trim()) { newModuleError.value = t('Enter a module name.'); return }
-  if (newModuleAccessLevel.value === 'team' && !newModuleTeamIds.value.length) { newModuleError.value = t('Select at least one team.'); return }
-  const id = createCustomModule(newModuleName.value.trim(), newModuleIcon.value, newModuleAccessLevel.value, newModuleTeamIds.value, status)
-  newModuleOpen.value = false
-  router.push(`/crm/settings/modules/${id}`)
-}
+// "+ New module" is its own page (/crm/settings/modules/new) — not a modal.
+function openNewModule() { router.push('/crm/settings/modules/new') }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 // The Modules index lists EVERY module — the Deals system module (edited via its
@@ -214,85 +180,10 @@ watch(statusFilter, () => setPage(1))
         </template>
       </ErpTablePage>
     </div>
-
-    <!-- New module — name + icon; on create, opens straight into its builder. -->
-    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="new-module-modal" :is-open="newModuleOpen" :is-keep-alive="false" size="md" @close="newModuleOpen = false">
-      <MpModalContent>
-        <MpModalHeader>{{ t('New module') }}<MpModalCloseButton /></MpModalHeader>
-        <MpModalBody>
-          <MpFormControl id="new-module-name-fc">
-            <MpFormLabel>{{ t('Module name') }}</MpFormLabel>
-            <div class="nmm-name-row">
-              <MpPopover id="new-module-icon-menu" :is-open="newModuleIconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="newModuleIconMenuOpen = false">
-                <MpPopoverTrigger>
-                  <button type="button" class="nmm-icon-trigger" :aria-label="t('Change icon')" @click="newModuleIconMenuOpen = !newModuleIconMenuOpen">
-                    <MpIcon :name="newModuleIcon" size="md" />
-                    <MpIcon name="chevrons-down" size="sm" class="nmm-icon-caret" />
-                  </button>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)', width: '240px' })">
-                  <div class="nmm-icon-grid">
-                    <button
-                      v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
-                      class="nmm-icon-choice" :class="{ 'nmm-icon-choice--active': newModuleIcon === ic }"
-                      :aria-label="ic" @click="pickNewModuleIcon(ic)"
-                    ><MpIcon :name="ic" size="md" /></button>
-                  </div>
-                </MpPopoverContent>
-              </MpPopover>
-              <MpInput
-                id="new-module-name" v-model="newModuleName" is-full-width :maxlength="MODULE_NAME_MAX"
-                @update:model-value="newModuleError = ''" @keydown.enter="submitNewModule"
-              />
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="new-module-access-fc" class="nmm-access-fc">
-            <MpFormLabel>{{ t('Access level') }}</MpFormLabel>
-            <div class="nmm-radio-row">
-              <MpRadio id="nmm-access-company" name="nmm-access" value="company" :is-checked="newModuleAccessLevel === 'company'" @change="newModuleAccessLevel = 'company'">{{ t('Company') }}</MpRadio>
-              <MpRadio id="nmm-access-team" name="nmm-access" value="team" :is-checked="newModuleAccessLevel === 'team'" @change="newModuleAccessLevel = 'team'">{{ t('Team') }}</MpRadio>
-            </div>
-            <div v-if="newModuleAccessLevel === 'team'" class="nmm-team-list">
-              <MpCheckbox
-                v-for="tm in activeTeams" :key="tm.id" :id="`nmm-team-${tm.id}`"
-                :is-checked="newModuleTeamIds.includes(tm.id)" @change="toggleNewModuleTeam(tm.id)"
-              >{{ tm.name }}</MpCheckbox>
-              <p v-if="!activeTeams.length" class="nmm-team-empty">{{ t('No active teams yet.') }}</p>
-            </div>
-          </MpFormControl>
-
-          <p v-if="newModuleError" class="nmm-error">{{ newModuleError }}</p>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButtonGroup class="erp-action-footer">
-            <MpButton variant="ghost" is-rounded @click="newModuleOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton class="btn-enterprise btn-enterprise--secondary" is-rounded @click="submitNewModule('draft')">{{ t('Save as draft') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="submitNewModule('published')">{{ t('Publish') }}</MpButton>
-          </MpButtonGroup>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
   </div>
 </template>
 
 <style scoped>
-/* New module modal — name field with an icon-picker prefix (mirrors the module
-   builder's Setup ▸ Module name icon trigger). */
-.nmm-name-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.nmm-icon-trigger { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); cursor: pointer; color: var(--mp-text-default); }
-.nmm-icon-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.nmm-icon-caret { color: var(--mp-icon-default, #536062); }
-.nmm-icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-1); }
-.nmm-icon-choice { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-sm); background: none; cursor: pointer; color: var(--mp-icon-default, #536062); }
-.nmm-icon-choice:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.nmm-icon-choice--active { background: var(--mp-background-brand-subtle, #eafaf1); color: var(--mp-icon-brand, #0a6e4e); }
-.nmm-error { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #a8352d); }
-.nmm-access-fc { margin-top: var(--mp-spacing-5); }
-.nmm-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
-.nmm-team-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; max-height: 180px; overflow-y: auto; }
-.nmm-team-empty { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* Shell — mirrors CrmSettingsPage's Teams surface exactly. */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
