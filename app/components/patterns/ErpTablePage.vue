@@ -448,10 +448,15 @@ const spacerBeforeIndex = computed(() => {
   const i = props.columns.findIndex(c => c.isTrailingAction)
   return i === -1 ? props.columns.length : i
 })
+// Whether ANY action column sits flush right — the sticky [...] actions slot OR a
+// trailing-action column (e.g. a "View details" button). Either way we insert the
+// single flexible spacer so the action column is always pushed to the far right.
+const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAction))
+const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
 
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 2 : 0) +   // actions column + its flexible spacer
+  (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
   (props.hasAiChat ? 1 : 0)
 )
 
@@ -499,7 +504,7 @@ const bulkCountLabel = computed(() => {
                placed before the first trailing-action column (spacerBeforeIndex), else
                right before the actions slot. -->
           <template v-for="(col, ci) in columns" :key="col.key">
-            <col v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-col-spacer" />
+            <col v-if="showSpacer && ci === spacerBeforeIndex" class="erp-col-spacer" />
             <col :style="colStyle(col)" />
           </template>
           <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
@@ -544,7 +549,7 @@ const bulkCountLabel = computed(() => {
           <!-- Normal column headers -->
           <tr v-else>
             <template v-for="(col, ci) in columns" :key="col.key">
-            <th v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
+            <th v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
             <th
               class="erp-th"
               :class="{
@@ -645,7 +650,7 @@ const bulkCountLabel = computed(() => {
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
               <template v-for="(col, ci) in columns" :key="col.key">
-              <td v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
                 class="erp-td"
                 :class="{
@@ -715,7 +720,7 @@ const bulkCountLabel = computed(() => {
           <template v-if="showSkeleton">
             <tr v-for="n in 3" :key="`sk-${n}`" class="erp-tr erp-tr--skeleton">
               <template v-for="(col, ci) in columns" :key="col.key">
-              <td v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
                 class="erp-td"
                 :class="{
@@ -1124,7 +1129,7 @@ const bulkCountLabel = computed(() => {
    (rule/table-no-hover-no-actions). !important so it always beats the base
    .erp-tr:hover .erp-td rule regardless of scoped-selector specificity/order. */
 .erp-table-page--no-row-hover .erp-tr:hover .erp-td {
-  background: var(--mp-background-neutral) !important;
+  background: var(--mp-background-neutral, #ffffff) !important;
 }
 .erp-table-page--no-row-hover .erp-tr { cursor: default; }
 

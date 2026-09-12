@@ -251,6 +251,13 @@ flexible spacer column that soaks up leftover width — keeping the caps intact 
 the sticky actions `[...]` column flush right. The spacer sits before the first
 `isTrailingAction` column when present, else right before the actions slot.
 
+**The action column is ALWAYS flush right, pushed by exactly one spacer column** —
+whether that action is the `[...]` kebab (`#actions` slot) OR a trailing button such
+as "View details" (`isTrailingAction: true`). The spacer is inserted whenever there
+is an `#actions` slot **or** any `isTrailingAction` column, so a table with only a
+"View details" button (no kebab) still pushes it to the far right. Give the
+trailing-action column `align: 'right'` so the button hugs the edge inside its cell.
+
 ## Slots
 
 | Slot | Scope | Description |

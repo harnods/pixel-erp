@@ -21,7 +21,7 @@ const rows = computed<DefaultProperty[]>(() => DEFAULT_PROPERTIES)
 const columns: TableColumn[] = [
   { key: 'name', label: 'Name', kind: 'name', sortable: true, sortType: 'text' },
   { key: 'fieldType', label: 'Field type', kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'view', label: '', isTrailingAction: true, width: '148px', noHeader: true, noSkeleton: true },
+  { key: 'view', label: '', isTrailingAction: true, width: '148px', align: 'right', noHeader: true, noSkeleton: true },
 ]
 
 const fieldTypeOptions = DEFAULT_PROPERTY_FIELD_TYPES.map((ft) => ({ value: ft, label: ft }))
