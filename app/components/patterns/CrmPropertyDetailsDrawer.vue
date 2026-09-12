@@ -57,7 +57,10 @@ function close() { emit('close') }
               <ul class="cpd-linked-list">
                 <li v-for="f in property.linkedFields" :key="f.name" class="cpd-linked-row">
                   <MpIcon :name="defaultPropertyIcon(f.type)" size="sm" class="cpd-linked-icon" />
-                  <span class="cpd-linked-name">{{ f.name }}</span>
+                  <span class="cpd-linked-text">
+                    <span class="cpd-linked-name">{{ f.name }}</span>
+                    <code class="cpd-linked-var">{{ f.variableName }}</code>
+                  </span>
                   <span class="cpd-linked-type">{{ f.type }}</span>
                 </li>
               </ul>
@@ -99,7 +102,9 @@ function close() { emit('close') }
 .cpd-linked-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cpd-linked-row { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 8px; }
 .cpd-linked-icon { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
-.cpd-linked-name { flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cpd-linked-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cpd-linked-name { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cpd-linked-var { font-family: var(--mp-fonts-mono, ui-monospace, monospace); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cpd-linked-type { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); flex-shrink: 0; }
 
 .cpd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-stage, #fff); }

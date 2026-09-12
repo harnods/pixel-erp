@@ -1425,7 +1425,7 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
 // any custom module). Association types ('Contact', 'Company') reference another
 // record; their `linkedFields` are that record's own fields, shown read-only in the
 // View-details drawer (a Deal doesn't carry them as separate properties).
-export interface DefaultPropertyField { name: string; type: string }
+export interface DefaultPropertyField { name: string; type: string; variableName: string }
 export interface DefaultProperty {
   id: string
   name: string
@@ -1444,14 +1444,14 @@ export function defaultPropertyIcon(fieldType: string): string {
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
   { id: 'name', name: 'Name', fieldType: 'Single-line text', variableName: 'name', description: "The record's primary display name (e.g. the deal name)." },
   { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', linkedFields: [
-    { name: 'Company name', type: 'Single-line text' }, { name: 'Industry', type: 'Dropdown select' },
-    { name: 'Address', type: 'Multi-line text' }, { name: 'Country', type: 'Dropdown select' },
-    { name: 'Tax number (NPWP)', type: 'Single-line text' }, { name: 'Company owner', type: 'User' },
+    { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
+    { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
+    { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
   ] },
   { id: 'contact-person', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', linkedFields: [
-    { name: 'Name', type: 'Single-line text' }, { name: 'Email', type: 'Email' },
-    { name: 'Phone number', type: 'Phone number' }, { name: 'Associated company', type: 'Company' },
-    { name: 'Address', type: 'Multi-line text' }, { name: 'Country', type: 'Dropdown select' },
+    { name: 'Name', type: 'Single-line text', variableName: 'name' }, { name: 'Email', type: 'Email', variableName: 'email' },
+    { name: 'Phone number', type: 'Phone number', variableName: 'phone_number' }, { name: 'Associated company', type: 'Company', variableName: 'associated_company' },
+    { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
   ] },
   { id: 'owner', name: 'Owner', fieldType: 'User', variableName: 'owner', description: 'The user who owns this record.' },
   { id: 'value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
