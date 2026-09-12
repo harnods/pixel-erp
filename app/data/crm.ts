@@ -21,6 +21,7 @@ import { formatMoney } from '~/utils/currency'
 import { CATALOG } from './catalog'
 import { salesOrders } from './salesOrders'
 import type { SalesOrder } from './types'
+import { WAREHOUSES, PAYMENT_TERMS, UNIT_OPTIONS, TAX_OPTIONS } from './purchaseOrderDetails'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -1428,6 +1429,10 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
 // record; their `linkedFields` are that record's own fields, shown read-only in the
 // View-details drawer (a Deal doesn't carry them as separate properties).
 export interface DefaultPropertyField { name: string; type: string; variableName: string }
+/** Where a property's values actually come from — surfaced in the master
+ *  Properties ▸ View details drawer, so it's honest about what's real ERP data vs
+ *  CRM-only vs a plain field with no master. See docs in the property audit below. */
+export type DataSourceOrigin = 'erp' | 'crm' | 'catalog' | 'none'
 export interface DefaultProperty {
   id: string
   name: string
@@ -1435,6 +1440,26 @@ export interface DefaultProperty {
   variableName: string
   description: string
   linkedFields?: DefaultPropertyField[]   // present for association types (Contact / Company)
+  dataSource?: { label: string; origin: DataSourceOrigin; note?: string }
+}
+/** A real, shared list a Dropdown/Radio/Multiple-checkbox property can bind its
+ *  options to (instead of freeform typed values) — offered in CrmPropertyDrawer's
+ *  "Options source" picker for ANY module (Deals or a custom module). Selecting one
+ *  copies its `values` into the property's options once (not a live binding). */
+export interface DataSourceOption {
+  key: string
+  label: string
+  origin: DataSourceOrigin
+  values: readonly string[]
+}
+export const DATA_SOURCES: DataSourceOption[] = [
+  { key: 'erp-warehouses',    label: 'Warehouses',    origin: 'erp', values: WAREHOUSES },
+  { key: 'erp-payment-terms', label: 'Payment terms', origin: 'erp', values: PAYMENT_TERMS },
+  { key: 'erp-units',         label: 'Units',         origin: 'erp', values: UNIT_OPTIONS },
+  { key: 'erp-tax',           label: 'Tax',           origin: 'erp', values: TAX_OPTIONS },
+]
+export function dataSourceByKey(key?: string): DataSourceOption | undefined {
+  return DATA_SOURCES.find((d) => d.key === key)
 }
 /** Icon for a default-property field type (extends the deal-property icon map with
  *  the association types). */
@@ -1450,30 +1475,30 @@ export function defaultPropertyIcon(fieldType: string): string {
 // them). Association types (Company / Contact) reference another record — their
 // linkedFields live on that record, not on the module.
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
-  { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', linkedFields: [
+  { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
     { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
     { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
   ] },
-  { id: 'primary-contact', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', linkedFields: [
+  { id: 'primary-contact', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', dataSource: { label: 'Contacts (CrmContactPerson)', origin: 'crm' }, linkedFields: [
     { name: 'Name', type: 'Single-line text', variableName: 'name' }, { name: 'Email', type: 'Email', variableName: 'email' },
     { name: 'Phone number', type: 'Phone number', variableName: 'phone_number' }, { name: 'Associated company', type: 'Company', variableName: 'associated_company' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
   ] },
   { id: 'deal-value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
-  { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'The currency the record is transacted in.' },
+  { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'The currency the record is transacted in.', dataSource: { label: 'Deal currencies', origin: 'none', note: 'CRM-only list — no shared ERP currency master exists yet.' } },
   { id: 'transaction-date', name: 'Transaction date', fieldType: 'Date picker', variableName: 'transaction_date', description: 'The date the record was transacted.' },
   { id: 'due-date', name: 'Due date', fieldType: 'Date picker', variableName: 'due_date', description: 'The date the record is due to close.' },
   { id: 'transaction-no', name: 'Transaction no.', fieldType: 'Single-line text', variableName: 'transaction_no', description: 'The unique document number for the record.' },
   { id: 'reference-no', name: 'Reference no.', fieldType: 'Single-line text', variableName: 'reference_no', description: 'An external reference number.' },
-  { id: 'payment-terms', name: 'Payment terms', fieldType: 'Dropdown select', variableName: 'payment_terms', description: 'The payment terms for the record (e.g. Net 30).' },
+  { id: 'payment-terms', name: 'Payment terms', fieldType: 'Dropdown select', variableName: 'payment_terms', description: 'The payment terms for the record (e.g. Net 30).', dataSource: { label: 'Payment terms', origin: 'erp', note: 'Shared with Purchase Orders.' } },
   { id: 'description', name: 'Description', fieldType: 'Multi-line text', variableName: 'description', description: 'A free-text description of the record.' },
   { id: 'memo', name: 'Memo', fieldType: 'Multi-line text', variableName: 'memo', description: 'An internal memo/note on the record.' },
-  { id: 'products', name: 'Products', fieldType: 'Product list', variableName: 'products', description: 'The line items (products) attached to the record.' },
+  { id: 'products', name: 'Products', fieldType: 'Product list', variableName: 'products', description: 'The line items (products) attached to the record.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
   { id: 'files', name: 'Files', fieldType: 'Related list', variableName: 'files', description: 'Files and attachments on the record.' },
   { id: 'notes', name: 'Notes', fieldType: 'Related list', variableName: 'notes', description: 'Notes logged against the record.' },
   { id: 'activity-log', name: 'Activity log', fieldType: 'Related list', variableName: 'activity_log', description: 'The timeline of activity on the record.' },
-  { id: 'erp-transactions', name: 'ERP transactions', fieldType: 'Related list', variableName: 'erp_transactions', description: 'Linked ERP transactions (sales orders, invoices).' },
+  { id: 'erp-transactions', name: 'ERP transactions', fieldType: 'Related list', variableName: 'erp_transactions', description: 'Linked ERP transactions (sales orders, invoices).', dataSource: { label: 'Sales orders', origin: 'erp' } },
 ]
 /** Unique field-type labels present in DEFAULT_PROPERTIES — for the index filter. */
 export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
@@ -1508,6 +1533,10 @@ export interface DealPropertyConfig {
   defaultDateAdvance?: unknown   // DateFilterValue | null (advance picker)
   defaultBool?: '' | 'Yes' | 'No'
   options?: DealPropertyOption[]
+  /** Set when `options` was populated from a real DATA_SOURCES entry (e.g.
+   *  'erp-warehouses') rather than typed freehand — tags where the values really
+   *  came from; not a live binding (options stay editable after selection). */
+  sourceKey?: string
   optionStyle?: 'default' | 'badge'
   defaultOption?: string
   fileAccess?: 'private' | 'public'

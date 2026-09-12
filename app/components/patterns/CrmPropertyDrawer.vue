@@ -18,7 +18,7 @@ import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
 import { TODAY } from '~/data/master'
 import type { DateFilterValue } from '~/utils/dateFilter'
 import {
-  NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON, toVariableName,
+  NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON, toVariableName, DATA_SOURCES, dataSourceByKey,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type DealPropertyOption,
 } from '~/data/crm'
 
@@ -85,6 +85,21 @@ function clearOptions() { config.options = [] }
 const defaultOptionOptions = computed(() =>
   (config.options ?? []).filter((o) => o.label.trim()).map((o) => ({ value: o.value, label: o.label })),
 )
+
+// Options SOURCE — bind to a real ERP list instead of typing values by hand. A
+// one-time copy into `config.options` (tagged via `config.sourceKey`), not a live
+// binding — the editor below stays fully editable afterward.
+const optionsSourceOptions = computed(() => [
+  { value: 'custom', label: t('Type your own') },
+  ...DATA_SOURCES.map((d) => ({ value: d.key, label: d.label })),
+])
+function onOptionsSourceChange(v: string) {
+  if (v === 'custom') { config.sourceKey = undefined; return }
+  const src = dataSourceByKey(v)
+  if (!src) return
+  config.sourceKey = v
+  config.options = src.values.map((val) => ({ label: val, value: toVariableName(val), inForms: true }))
+}
 
 function close() { emit('update:open', false) }
 function save() {
@@ -246,6 +261,13 @@ function save() {
 
             <!-- Multiple checkboxes / Radio / Dropdown — options editor -->
             <template v-if="isOptionType">
+              <div class="cpd-field">
+                <span class="cpd-label">{{ t('Options source') }}</span>
+                <ErpFilterSelect
+                  id="cpd-opt-source" class="cpd-half" :model-value="config.sourceKey ?? 'custom'" :options="optionsSourceOptions"
+                  :is-clearable="false" is-full-width @update:model-value="onOptionsSourceChange"
+                />
+              </div>
               <div class="cpd-field">
                 <span class="cpd-label">{{ t('Default value') }}</span>
                 <ErpFilterSelect

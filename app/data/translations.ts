@@ -568,6 +568,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Default property — available in every module and cannot be edited.': 'Properti default — tersedia di semua modul dan tidak bisa diubah.',
   'Default': 'Default',
   'Linked record fields': 'Field record tertaut',
+  'Data source': 'Sumber data',
+  'Options source': 'Sumber opsi',
+  'Type your own': 'Ketik sendiri',
+  'ERP': 'ERP',
+  'Catalog': 'Katalog',
+  'CRM-only': 'Khusus CRM',
   'These fields live on the linked record, not on this module.': 'Field ini ada di record tertaut, bukan di modul ini.',
   // ── Service deals workspace ──
   'Service deals': 'Service deal',

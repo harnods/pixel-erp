@@ -7,12 +7,21 @@
  * fields (read-only) — since a module carries the association, not those fields.
  */
 import { MpButton, MpIcon } from '@mekari/pixel3'
-import { defaultPropertyIcon, type DefaultProperty } from '~/data/crm'
+import { defaultPropertyIcon, type DefaultProperty, type DataSourceOrigin } from '~/data/crm'
 
 defineProps<{ open: boolean; property: DefaultProperty | null }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useLocale()
 function close() { emit('close') }
+
+/** "ERP — Payment terms" / "CRM — Companies (crmCustomers)" / "Catalog — …" /
+ *  "CRM-only" (no real ERP source — the `note` explains the gap). */
+const ORIGIN_LABEL: Record<DataSourceOrigin, string> = { erp: 'ERP', crm: 'CRM', catalog: 'Catalog', none: 'CRM-only' }
+function dataSourceLine(p: DefaultProperty): string {
+  const ds = p.dataSource
+  if (!ds) return ''
+  return ds.origin === 'none' ? t(ORIGIN_LABEL[ds.origin]) : `${t(ORIGIN_LABEL[ds.origin])} — ${ds.label}`
+}
 </script>
 
 <template>
@@ -43,6 +52,12 @@ function close() { emit('close') }
             <div class="cpd-field">
               <span class="cpd-label">{{ t('Description') }}</span>
               <p class="cpd-desc">{{ property.description }}</p>
+            </div>
+            <!-- Data source — where the property's values actually come from -->
+            <div v-if="property.dataSource" class="cpd-field">
+              <span class="cpd-label">{{ t('Data source') }}</span>
+              <p class="cpd-desc">{{ dataSourceLine(property) }}</p>
+              <p v-if="property.dataSource.note" class="cpd-source-note">{{ property.dataSource.note }}</p>
             </div>
             <!-- Default badge -->
             <div class="cpd-field">
@@ -96,6 +111,7 @@ function close() { emit('close') }
 .cpd-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
 .cpd-var { font-family: var(--mp-fonts-mono, ui-monospace, monospace); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f4f5f7); border-radius: var(--mp-radii-sm, 4px); padding: 2px 6px; width: fit-content; }
 .cpd-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cpd-source-note { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 .cpd-linked { display: flex; flex-direction: column; gap: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); padding-top: var(--mp-spacing-5); }
 .cpd-linked-hint { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
