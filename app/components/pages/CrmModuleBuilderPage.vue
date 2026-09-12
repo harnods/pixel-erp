@@ -823,11 +823,12 @@ function cancel() { router.push('/crm/settings/modules') }
               <template #cell-type="{ row }">
                 <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
-              <template #cell-createdBy="{ row }">{{ t((row as unknown as DealProperty).system ? 'System' : 'You') }}</template>
+              <template #cell-createdBy="{ row }">{{ t((row as unknown as DealProperty).isDefault ? 'Default' : (row as unknown as DealProperty).system ? 'System' : 'You') }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
+              <!-- Default properties (from the master library) + related lists are non-editable. -->
               <template #actions="{ row }">
-                <MpPopover v-if="!isRelatedListType((row as unknown as DealProperty).type)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover v-if="!(row as unknown as DealProperty).isDefault && !isRelatedListType((row as unknown as DealProperty).type)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
                     <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
                   </MpPopoverTrigger>

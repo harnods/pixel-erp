@@ -1403,6 +1403,7 @@ export const DEAL_PROPERTY_TYPES = [
   'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
   'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup',
   'Product list', 'Related list', 'File', 'URL', 'Email',
+  'Company', 'Contact',   // association types — reference another record (Company / Contact)
 ] as const
 /** Types that embed a whole table/collection of related records (Products, Files,
  *  Notes, Sales orders, Activity log). System-owned — not user-editable/creatable. */
@@ -1418,6 +1419,7 @@ export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
   'User': 'profile', 'Rollup': 'chart-line',
   'Product list': 'products', 'Related list': 'table-view-list', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
+  'Company': 'company', 'Contact': 'profile',
 }
 
 // ── Default properties library (CRM ▸ Settings ▸ Properties) ────────────────────
@@ -1441,32 +1443,32 @@ export function defaultPropertyIcon(fieldType: string): string {
   if (fieldType === 'Company') return 'company'
   return (DEAL_PROPERTY_TYPE_ICON as Record<string, string>)[fieldType] ?? 'text-editor-text'
 }
+// The predefined DEFAULT set — the SINGLE SOURCE for the properties every module
+// gets. Both the Deals module and any custom module (e.g. Service deals) are seeded
+// from this list (see defaultDealProperties()), so Settings ▸ Properties and each
+// module's Properties tab always agree. ids are stable (layout `cols` reference
+// them). Association types (Company / Contact) reference another record — their
+// linkedFields live on that record, not on the module.
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
-  { id: 'name', name: 'Name', fieldType: 'Single-line text', variableName: 'name', description: "The record's primary display name (e.g. the deal name)." },
   { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', linkedFields: [
     { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
     { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
   ] },
-  { id: 'contact-person', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', linkedFields: [
+  { id: 'primary-contact', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', linkedFields: [
     { name: 'Name', type: 'Single-line text', variableName: 'name' }, { name: 'Email', type: 'Email', variableName: 'email' },
     { name: 'Phone number', type: 'Phone number', variableName: 'phone_number' }, { name: 'Associated company', type: 'Company', variableName: 'associated_company' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
   ] },
-  { id: 'owner', name: 'Owner', fieldType: 'User', variableName: 'owner', description: 'The user who owns this record.' },
-  { id: 'value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
+  { id: 'deal-value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
   { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'The currency the record is transacted in.' },
-  { id: 'stage', name: 'Stage', fieldType: 'Radio select', variableName: 'stage', description: "The record's current pipeline stage." },
-  { id: 'priority', name: 'Priority', fieldType: 'Dropdown select', variableName: 'priority', description: 'How urgent this record is (Low / Medium / High).' },
   { id: 'transaction-date', name: 'Transaction date', fieldType: 'Date picker', variableName: 'transaction_date', description: 'The date the record was transacted.' },
   { id: 'due-date', name: 'Due date', fieldType: 'Date picker', variableName: 'due_date', description: 'The date the record is due to close.' },
   { id: 'transaction-no', name: 'Transaction no.', fieldType: 'Single-line text', variableName: 'transaction_no', description: 'The unique document number for the record.' },
   { id: 'reference-no', name: 'Reference no.', fieldType: 'Single-line text', variableName: 'reference_no', description: 'An external reference number.' },
+  { id: 'payment-terms', name: 'Payment terms', fieldType: 'Dropdown select', variableName: 'payment_terms', description: 'The payment terms for the record (e.g. Net 30).' },
   { id: 'description', name: 'Description', fieldType: 'Multi-line text', variableName: 'description', description: 'A free-text description of the record.' },
-  { id: 'tags', name: 'Tags', fieldType: 'Multiple checkboxes', variableName: 'tags', description: 'Labels used to group and filter records.' },
-  { id: 'created-date', name: 'Created date', fieldType: 'Date and time picker', variableName: 'created_date', description: 'When the record was created (set automatically).' },
-  { id: 'created-by', name: 'Created by', fieldType: 'User', variableName: 'created_by', description: 'The user who created the record (set automatically).' },
-  { id: 'last-activity-date', name: 'Last activity date', fieldType: 'Date and time picker', variableName: 'last_activity_date', description: 'When the record last had activity (set automatically).' },
+  { id: 'memo', name: 'Memo', fieldType: 'Multi-line text', variableName: 'memo', description: 'An internal memo/note on the record.' },
   { id: 'products', name: 'Products', fieldType: 'Product list', variableName: 'products', description: 'The line items (products) attached to the record.' },
   { id: 'files', name: 'Files', fieldType: 'Related list', variableName: 'files', description: 'Files and attachments on the record.' },
   { id: 'notes', name: 'Notes', fieldType: 'Related list', variableName: 'notes', description: 'Notes logged against the record.' },
@@ -1475,6 +1477,17 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
 ]
 /** Unique field-type labels present in DEFAULT_PROPERTIES — for the index filter. */
 export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
+/** ids of the default properties — used to flag/seed module property lists. */
+export const DEFAULT_PROPERTY_IDS = new Set(DEFAULT_PROPERTIES.map((p) => p.id))
+/** The default properties as module `DealProperty` rows (system + isDefault). Both
+ *  the Deals and Service module property lists prepend these, so the master library
+ *  and every module stay in sync by construction. */
+export function defaultDealProperties(): DealProperty[] {
+  return DEFAULT_PROPERTIES.map((p) => ({
+    id: p.id, name: p.name, variableName: p.variableName, type: p.fieldType as DealPropertyType,
+    system: true, isDefault: true, fillRate: isRelatedListType(p.fieldType as DealPropertyType) ? 100 : 0,
+  }))
+}
 
 /** Field types offered when CREATING a property (drawer). Subset of the catalogue —
  *  excludes computed/relation types (Calculation, Rollup, User, …) that aren't
@@ -1505,6 +1518,9 @@ export interface DealPropertyConfig {
 }
 export interface DealProperty {
   id: string; name: string; variableName: string; type: DealPropertyType; system: boolean; fillRate: number
+  /** True for the predefined DEFAULT properties (from DEFAULT_PROPERTIES) that every
+   *  module gets — non-editable in the module builder, listed in Settings ▸ Properties. */
+  isDefault?: boolean
   config?: DealPropertyConfig
 }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
@@ -1512,25 +1528,12 @@ function propId(name: string): string { return name.toLowerCase().replace(/[^a-z
 export function toVariableName(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
+// Deal-SPECIFIC properties only — the shared defaults (Customer, Contact person,
+// Deal value, Currency, Transaction date, Due date, Transaction no., Reference no.,
+// Payment terms, Description, Memo, Products, Files, Notes, Activity log, ERP
+// transactions) come from DEFAULT_PROPERTIES via defaultDealProperties(), so they
+// are NOT re-listed here.
 const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
-  // ── From the deal creation form (form naming wins on duplicates) ──
-  ['Deal value', 'Number', 0],
-  ['Currency', 'Dropdown select', 0],
-  ['Transaction date', 'Date picker', 0],
-  ['Due date', 'Date picker', 0],
-  ['Transaction no.', 'Single-line text', 0],
-  ['Reference no.', 'Single-line text', 0],
-  ['Customer', 'Dropdown select', 0],
-  ['Primary contact', 'Dropdown select', 0],
-  ['Products', 'Product list', 0],
-  // ── Related lists (whole embedded tables/collections) — system, non-editable ──
-  ['Files', 'Related list', 100],
-  ['Notes', 'Related list', 100],
-  ['ERP transactions', 'Related list', 100],
-  ['Activity log', 'Related list', 100],
-  ['Payment terms', 'Dropdown select', 0],
-  ['Description', 'Multi-line text', 0],
-  ['Memo', 'Multi-line text', 0],
   ['Requires shipping', 'Single checkbox', 0],
   ['Shipping fee', 'Number', 0],
   ['Ship to', 'Multi-line text', 0],
@@ -1597,11 +1600,21 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Weighted amount', 'Calculation', 80],
   ['Weighted amount in company currency', 'Calculation', 80],
 ]
-const DEAL_PROPERTIES_SEED: DealProperty[] = DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
-  id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
-}))
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v7', DEAL_PROPERTIES_SEED))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v7', dealProperties) }
+/** A module's property list = the shared DEFAULT properties + the module's own
+ *  extras, deduped by id (a default wins over a same-id extra). */
+function withDefaultProperties(extras: DealProperty[]): DealProperty[] {
+  const out = defaultDealProperties()
+  const seen = new Set(out.map((p) => p.id))
+  for (const e of extras) if (!seen.has(e.id)) { out.push(e); seen.add(e.id) }
+  return out
+}
+const DEAL_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
+  DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
+    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
+  })),
+)
+export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v8', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICES module — a second Deals-like module for service (non-shipping) deals:
@@ -1642,31 +1655,19 @@ export const serviceModuleSetup = reactive<DealModuleSetup>(
 )
 export function persistServiceModuleSetup() { saveSnapshot('crm-service-module-setup-v1', [serviceModuleSetup]) }
 
-// Service properties — like Deals minus the shipping/logistics fields.
+// Service-SPECIFIC properties only — the shared defaults come from
+// defaultDealProperties(); Service just adds "Service type" (and, unlike Deals, has
+// no shipping/logistics fields).
 const SERVICE_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
-  ['Deal value', 'Number', 0],
-  ['Currency', 'Dropdown select', 0],
   ['Service type', 'Dropdown select', 0],
-  ['Transaction date', 'Date picker', 0],
-  ['Due date', 'Date picker', 0],
-  ['Transaction no.', 'Single-line text', 0],
-  ['Reference no.', 'Single-line text', 0],
-  ['Customer', 'Dropdown select', 0],
-  ['Primary contact', 'Dropdown select', 0],
-  ['Products', 'Product list', 0],
-  ['Files', 'Related list', 100],
-  ['Notes', 'Related list', 100],
-  ['ERP transactions', 'Related list', 100],
-  ['Activity log', 'Related list', 100],
-  ['Payment terms', 'Dropdown select', 0],
-  ['Description', 'Multi-line text', 0],
-  ['Memo', 'Multi-line text', 0],
 ]
-const SERVICE_PROPERTIES_SEED: DealProperty[] = SERVICE_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
-  id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
-}))
-export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v2', SERVICE_PROPERTIES_SEED))
-export function persistServiceProperties() { saveSnapshot('crm-service-properties-v2', serviceProperties) }
+const SERVICE_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
+  SERVICE_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
+    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
+  })),
+)
+export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED))
+export function persistServiceProperties() { saveSnapshot('crm-service-properties-v3', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   tabs: [

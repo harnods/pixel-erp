@@ -566,6 +566,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Property details': 'Detail properti',
   'Availability': 'Ketersediaan',
   'Default property — available in every module and cannot be edited.': 'Properti default — tersedia di semua modul dan tidak bisa diubah.',
+  'Default': 'Default',
   'Linked record fields': 'Field record tertaut',
   'These fields live on the linked record, not on this module.': 'Field ini ada di record tertaut, bukan di modul ini.',
   // ── Service deals workspace ──
