@@ -369,7 +369,6 @@ const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUs
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
-const CrmNewModulePage = asyncPage(() => import('~/components/pages/CrmNewModulePage.vue'))
 const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
@@ -493,7 +492,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
     // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
-    if (sub === 'settings' && id === 'modules' && segs[3] === 'new') return { component: CrmNewModulePage, id: 'new' }
+    // "New module" is also handled by the builder — orderId 'new' — so every
+    // config tab (Setup/Properties/Pipeline/Layout) is available immediately,
+    // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
     if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPropertiesPage, id: '' }

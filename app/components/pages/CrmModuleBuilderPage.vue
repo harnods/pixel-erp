@@ -26,9 +26,9 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import {
-  getCrmModule, persistCrmModule,
+  getCrmModule, persistCrmModule, createCustomModule,
   CRM_FIELD_TYPE_LABELS, CRM_OWNERS, CRM_MODULE_ICONS,
-  moduleStores, isDealLikeModule,
+  moduleStores, isDealLikeModule, resetGenericModuleDraft,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
   deals,
   crmTeams, teamsForModule, setModuleTeams, teamScopedAccessOptions,
@@ -51,9 +51,24 @@ const AUTHOR = 'Rizal Candra'
 function nowStamp(): string { return new Date().toISOString().slice(0, 19) }
 function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T }
 
-const mod = computed<CrmModule | undefined>(() => getCrmModule(props.orderId))
+// 'new' is a not-yet-created module: the builder opens live before any save, so a
+// fresh scratch config is discarded on entry (any prior aborted creation attempt).
+const isCreating = props.orderId === 'new'
+if (isCreating) resetGenericModuleDraft('new')
+
+const newModuleStub: CrmModule = reactive({
+  id: 'new', name: '', system: false, accessLevel: 'company', status: 'draft',
+  sections: [], fields: [], views: [], layoutDriver: undefined, conversionTarget: null,
+  recordCount: 0, icon: 'pipeline', updatedAt: '', updatedBy: '',
+})
+const mod = computed<CrmModule | undefined>(() => isCreating ? newModuleStub : getCrmModule(props.orderId))
 // Deals-style modules (Deals + Service deals) each read/write their OWN config stores.
 const stores = computed(() => moduleStores(props.orderId))
+// Eager-touch: forces ensureGenericModuleConfig('new') to run now, BEFORE
+// isDealLikeModule()/tabs/activeTab (declared further below) are first evaluated —
+// otherwise a brand-new id wouldn't yet be a registered generic module at that point
+// and activeTab would wrongly default to the non-deal-like tab set.
+void stores.value
 
 // ── Local editable deep-clone ────────────────────────────────────────────────
 const UNUSED = '__unused__'
@@ -666,6 +681,37 @@ function saveChanges() {
 }
 // Every module (Deals system module included) is edited from the Modules index.
 function cancel() { router.push('/crm/settings/modules') }
+
+// ── Creation (orderId === 'new') ────────────────────────────────────────────
+const nameError = ref('')
+const teamError = ref('')
+function saveNewModule(status: 'draft' | 'published') {
+  nameError.value = ''
+  teamError.value = ''
+  if (!draft.name.trim()) { nameError.value = t('Enter a module name.'); return }
+  if (draft.accessLevel === 'team' && draft.teamIds.length === 0) {
+    teamError.value = t('Select at least one team.')
+    return
+  }
+  const id = createCustomModule(draft.name.trim(), draft.icon, draft.accessLevel, draft.teamIds, status)
+  // Commit whatever was configured in THIS creation session (Properties/Pipeline/
+  // Layout/Setup) into the freshly-created module's real stores — overwriting the
+  // auto-seeded generic defaults `createCustomModule` just wrote.
+  const s = moduleStores(id)
+  s.pipelines.splice(0, s.pipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
+  s.persistPipelines()
+  Object.assign(s.display, JSON.parse(JSON.stringify(disp)))
+  s.persistDisplay()
+  Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
+  s.persistSetup()
+  s.properties.splice(0, s.properties.length, ...JSON.parse(JSON.stringify(propList.value)))
+  s.persistProperties()
+  Object.assign(s.detailLayout, JSON.parse(JSON.stringify(draft.detailLayout)))
+  s.persistDetailLayout()
+  resetGenericModuleDraft('new')
+  successToast(t(status === 'published' ? 'Module published' : 'Module saved as draft'))
+  router.push(`/crm/settings/modules/${id}`)
+}
 </script>
 
 <template>
@@ -674,15 +720,16 @@ function cancel() { router.push('/crm/settings/modules') }
       <div class="detail-bar-left">
         <NuxtLink v-if="mod" class="detail-breadcrumb" to="/crm/settings/modules">{{ t('Modules') }}</NuxtLink>
         <div class="detail-titlerow-left">
-          <h1 v-if="!mod || isDeals" class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
+          <h1 v-if="isCreating || !mod || isDeals" class="detail-title">{{ isCreating ? t('New module') : mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
           <!-- Status badge + Publish/Unpublish — about draft/published lifecycle,
                not about which builder UI the module uses, so it's keyed off
                `!mod.system` (every module except the true Deals system module) —
-               NOT `!isDeals`, which is true for every deal-like module now. -->
-          <ErpStatusBadge v-if="mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
-          <MpButton v-if="mod && !mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-          <MpButton v-if="mod && !mod.system && mod.status === 'published'" variant="ghost" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
+               NOT `!isDeals`, which is true for every deal-like module now. Hidden
+               while creating: the footer's Save as draft/Publish carry that action. -->
+          <ErpStatusBadge v-if="!isCreating && mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
+          <MpButton v-if="!isCreating && mod && !mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
+          <MpButton v-if="!isCreating && mod && !mod.system && mod.status === 'published'" variant="ghost" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
         </div>
       </div>
     </header>
@@ -734,6 +781,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   </MpInputLeftAddon>
                   <MpInput id="setup-module-name" v-model="draft.name" :maxlength="MODULE_NAME_MAX" is-full-width />
                 </MpInputGroup>
+                <MpFormErrorMessage v-if="nameError">{{ nameError }}</MpFormErrorMessage>
               </MpFormControl>
 
               <!-- Base currency -->
@@ -793,6 +841,7 @@ function cancel() { router.push('/crm/settings/modules') }
                   >{{ tm.name }}</MpCheckbox>
                   <p v-if="!activeTeams.length" class="setup-access-empty">{{ t('No active teams yet.') }}</p>
                 </div>
+                <MpFormErrorMessage v-if="teamError">{{ teamError }}</MpFormErrorMessage>
               </div>
 
               <!-- Access — selected users listed with an email caption + (−) remove -->
@@ -1127,10 +1176,18 @@ function cancel() { router.push('/crm/settings/modules') }
     </div>
 
     <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Save changes -->
-    <footer v-if="mod" class="builder-footer">
+    <footer v-if="mod && !isCreating" class="builder-footer">
       <MpButtonGroup class="erp-action-footer">
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
         <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+      </MpButtonGroup>
+    </footer>
+    <!-- Creation footer: module isn't persisted until Save as draft/Publish here. -->
+    <footer v-else-if="isCreating" class="builder-footer">
+      <MpButtonGroup class="erp-action-footer">
+        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="saveNewModule('draft')">{{ t('Save as draft') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="saveNewModule('published')">{{ t('Publish') }}</MpButton>
       </MpButtonGroup>
     </footer>
 

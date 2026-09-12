@@ -580,6 +580,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Save as draft': 'Simpan sebagai draft',
   'Unpublish': 'Batalkan publikasi',
   'Module published': 'Modul berhasil dipublikasikan',
+  'Module saved as draft': 'Modul disimpan sebagai draft',
   'Module unpublished': 'Modul dikembalikan ke draft',
   'Choose whether this module is company-wide or limited to specific teams.': 'Pilih apakah modul ini berlaku untuk seluruh perusahaan atau terbatas pada tim tertentu.',
   'Choose who, within the selected team(s), can access this module.': 'Pilih siapa, dari tim yang dipilih, yang bisa mengakses modul ini.',

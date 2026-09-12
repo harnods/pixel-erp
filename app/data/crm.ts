@@ -1786,6 +1786,11 @@ function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
 function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
   return genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
 }
+/** Discard an in-memory (unsaved) scratch config — used for the 'new' module id so a
+ *  fresh module-creation session always starts from a clean seed, not a prior attempt. */
+export function resetGenericModuleDraft(moduleId: string): void {
+  delete genericModuleConfigs[moduleId]
+}
 
 /** True for every module that uses the Setup/Properties/Pipeline/Layout builder —
  *  the two hand-built modules ('deals'/'services') plus any generic custom module. */
