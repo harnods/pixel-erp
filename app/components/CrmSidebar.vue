@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { useLocale } from '~/composables/useLocale'
-import { getCrmModule, crmModules } from '~/data/crm'
+import { getCrmModule, crmModules, isModuleVisibleToCurrentUser } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 
 const router = useRouter()
@@ -28,10 +28,11 @@ if (import.meta.client) {
 interface Child { name: string; to: string }
 interface Item { icon: string; name: string; to: string; children?: Child[] }
 // Published custom (non-system) modules — e.g. "Service deals" — sit in the Deals
-// group, so a new divider separates them from Reports/Customers.
+// group, so a new divider separates them from Reports/Customers. A team-scoped
+// module only shows up for members of a team it's assigned to.
 const customModuleItems = computed<Item[]>(() =>
   crmModules
-    .filter((m) => !m.system && m.status === 'published')
+    .filter((m) => !m.system && m.status === 'published' && isModuleVisibleToCurrentUser(m))
     .map((m) => ({ icon: m.icon || 'pipeline', name: m.name, to: `/crm/${m.id}` })),
 )
 // Each array is a nav group; the border-bottom between them is a divider.

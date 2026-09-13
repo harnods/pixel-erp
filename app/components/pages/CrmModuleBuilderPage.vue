@@ -27,11 +27,11 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import {
   getCrmModule, persistCrmModule, createCustomModule,
-  CRM_FIELD_TYPE_LABELS, CRM_OWNERS, CRM_MODULE_ICONS,
-  moduleStores, isDealLikeModule, resetGenericModuleDraft,
+  CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
+  moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
   deals,
-  crmTeams, teamsForModule, setModuleTeams, teamScopedAccessOptions,
+  crmTeams, teamsForModule, setModuleTeams,
   publishCrmModule, unpublishCrmModule,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
   type CrmModule, type CrmModuleField, type CrmFieldType,
@@ -41,7 +41,7 @@ import {
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
-import { successToast } from '~/utils/toasts'
+import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -69,6 +69,15 @@ const stores = computed(() => moduleStores(props.orderId))
 // otherwise a brand-new id wouldn't yet be a registered generic module at that point
 // and activeTab would wrongly default to the non-deal-like tab set.
 void stores.value
+// Only the admin (workspace owner) and the module's own creator can edit it.
+// A new module has no creator yet, so creation is always allowed.
+if (!isCreating) {
+  const m = getCrmModule(props.orderId)
+  if (m && !canEditModule(m)) {
+    infoToast(t("You don't have permission to edit this module."))
+    router.replace('/crm/settings/modules')
+  }
+}
 
 // ── Local editable deep-clone ────────────────────────────────────────────────
 const UNUSED = '__unused__'
@@ -86,9 +95,12 @@ interface Draft {
 }
 const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] }, accessLevel: 'company', teamIds: [] })
 const activeTeams = computed(() => crmTeams.filter((tm) => tm.status === 'active'))
-function toggleDraftTeam(id: string) {
-  draft.teamIds = draft.teamIds.includes(id) ? draft.teamIds.filter((x) => x !== id) : [...draft.teamIds, id]
-}
+// Team picker — the same "pick many" drawer pattern as Add users, scoped to teams.
+const teamDrawerOpen = ref(false)
+const teamOptions = computed(() => activeTeams.value.map((tm) => ({ id: tm.id, name: tm.name, subtitle: tm.description })))
+const selectedTeams = computed(() => activeTeams.value.filter((tm) => draft.teamIds.includes(tm.id)))
+function onTeamsSaved(ids: string[]) { draft.teamIds = ids; teamDrawerOpen.value = false }
+function removeDraftTeam(id: string) { draft.teamIds = draft.teamIds.filter((x) => x !== id) }
 
 function loadDraft() {
   const m = mod.value
@@ -120,26 +132,6 @@ const CLOSE_UNIT_OPTIONS = [
   { value: 'weeks', label: t('Weeks') },
   { value: 'months', label: t('Months') },
 ]
-// Access picker (drawer) — options are the CRM staff (name + email caption).
-const OWNER_EMAIL: Record<string, string> = {
-  'Dewi Lestari': 'dewi.lestari@centralperk.co.id',
-  'Fajar Nugroho': 'fajar.nugroho@centralperk.co.id',
-  'Rizal Candra': 'rizal.candra@centralperk.co.id',
-}
-function ownerEmail(name: string): string {
-  return OWNER_EMAIL[name] || `${name.toLowerCase().replace(/\s+/g, '.')}@centralperk.co.id`
-}
-const accessDrawerOpen = ref(false)
-// Company-wide access picks from the CRM staff list; team-scoped access narrows
-// to the members of the team(s) selected above, so you can't grant access to
-// someone outside the module's own team.
-const accessOptions = computed(() =>
-  draft.accessLevel === 'team'
-    ? teamScopedAccessOptions(draft.teamIds)
-    : CRM_OWNERS.map((n) => ({ id: n, name: n, subtitle: ownerEmail(n) })),
-)
-function onAccessSaved(ids: string[]) { setup.access = ids; accessDrawerOpen.value = false }
-function removeAccess(id: string) { setup.access = setup.access.filter((x) => x !== id) }
 function publishModule() { if (mod.value) { publishCrmModule(mod.value.id); successToast(t('Module published')) } }
 function unpublishModule() { if (mod.value) { unpublishCrmModule(mod.value.id); successToast(t('Module unpublished')) } }
 
@@ -823,8 +815,8 @@ function saveNewModule(status: 'draft' | 'published') {
                 </div>
               </div>
 
-              <!-- Access level — Company (all CRM staff) or specific Team(s). Scopes
-                   the user picker below to the selected team's members. -->
+              <!-- Access level — Company (all CRM staff) or specific Team(s). Team
+                   selection uses the same "pick many" drawer as Add users. -->
               <div class="setup-field">
                 <div class="setup-labelgroup">
                   <span class="setup-fieldlabel">{{ t('Access level') }}</span>
@@ -834,37 +826,21 @@ function saveNewModule(status: 'draft' | 'published') {
                   <MpRadio id="setup-access-company" name="setup-access-level" value="company" :is-checked="draft.accessLevel === 'company'" @change="draft.accessLevel = 'company'">{{ t('Company') }}</MpRadio>
                   <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
-                <div v-if="draft.accessLevel === 'team'" class="setup-team-list">
-                  <MpCheckbox
-                    v-for="tm in activeTeams" :key="tm.id" :id="`setup-team-${tm.id}`"
-                    :is-checked="draft.teamIds.includes(tm.id)" @change="toggleDraftTeam(tm.id)"
-                  >{{ tm.name }}</MpCheckbox>
-                  <p v-if="!activeTeams.length" class="setup-access-empty">{{ t('No active teams yet.') }}</p>
+                <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
+                  <div v-if="selectedTeams.length" class="setup-team-grid">
+                    <span v-for="tm in selectedTeams" :key="tm.id" class="setup-team-chip">
+                      <span class="setup-team-chip-name">{{ tm.name }}</span>
+                      <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
+                        <button type="button" class="setup-team-chip-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
+                          <MpIcon name="close" size="sm" />
+                        </button>
+                      </MpTooltip>
+                    </span>
+                  </div>
+                  <p v-else class="setup-access-empty">{{ t('No team selected') }}</p>
+                  <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="teamDrawerOpen = true">{{ t('Select team') }}</MpButton>
                 </div>
                 <MpFormErrorMessage v-if="teamError">{{ teamError }}</MpFormErrorMessage>
-              </div>
-
-              <!-- Access — selected users listed with an email caption + (−) remove -->
-              <div class="setup-field">
-                <div class="setup-labelgroup">
-                  <span class="setup-fieldlabel">{{ t('Access') }}</span>
-                  <span class="setup-caption">{{ draft.accessLevel === 'team' ? t('Choose who, within the selected team(s), can access this module.') : t('Choose who can access this module.') }}</span>
-                </div>
-                <ul v-if="setup.access.length" class="setup-user-list">
-                  <li v-for="id in setup.access" :key="id" class="setup-user-row">
-                    <span class="setup-user-info">
-                      <span class="setup-user-name">{{ id }}</span>
-                      <span class="setup-user-email">{{ accessOptions.find((o) => o.id === id)?.subtitle ?? ownerEmail(id) }}</span>
-                    </span>
-                    <MpTooltip :id="`acc-rm-${id}`" :label="t('Remove')" placement="top" use-portal>
-                      <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${id}`" @click="removeAccess(id)">
-                        <MpIcon name="minus-circular" size="md" />
-                      </button>
-                    </MpTooltip>
-                  </li>
-                </ul>
-                <p v-else class="setup-access-empty">{{ t('No users selected') }}</p>
-                <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="accessDrawerOpen = true">{{ t('Add users') }}</MpButton>
               </div>
             </div>
           </div>
@@ -1191,17 +1167,17 @@ function saveNewModule(status: 'draft' | 'published') {
       </MpButtonGroup>
     </footer>
 
-    <!-- ════════ Access drawer (Setup ▸ Access) ════════ -->
+    <!-- ════════ Team drawer (Setup ▸ Access level ▸ Team) ════════ -->
     <SelectAccessDrawer
-      :open="accessDrawerOpen"
-      :title="t('Select users')"
-      :list-title="t('Users')"
-      :options="accessOptions"
-      :model-value="setup.access"
-      :empty-title="t('No users selected')"
-      :empty-caption="t('Pick who can access this module.')"
-      @update:open="accessDrawerOpen = $event"
-      @save="onAccessSaved($event)"
+      :open="teamDrawerOpen"
+      :title="t('Select teams')"
+      :list-title="t('Teams')"
+      :options="teamOptions"
+      :model-value="draft.teamIds"
+      :empty-title="t('No teams selected')"
+      :empty-caption="t('Pick which team(s) can access this module.')"
+      @update:open="teamDrawerOpen = $event"
+      @save="onTeamsSaved($event)"
     />
 
     <!-- ════════ Add-card-property drawer (Pipeline ▸ Card properties) ════════ -->
@@ -1589,17 +1565,19 @@ function saveNewModule(status: 'draft' | 'published') {
 /* "Time from record creation" input + unit = 3 grid cols (~279px) */
 .setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); max-width: 224px; }
 .setup-amount-input { flex: 1; min-width: 0; }
-/* Access — selected users list (mirrors the Team members list: name + email + (−)) */
-.setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }
-.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup-user-email { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
-.setup-user-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
+/* Access level ▸ Team — selected teams as a 6-column chip grid + "Select team" btn */
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
-.setup-team-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); padding: var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; max-width: 320px; }
+.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
+.setup-team-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--mp-spacing-2); }
+.setup-team-chip {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1);
+  min-width: 0; padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
+}
+.setup-team-chip-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-team-chip-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-full, 999px); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-team-chip-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .setup-access-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }

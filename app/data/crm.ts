@@ -1167,6 +1167,10 @@ export interface CrmModule {
   icon?: string
   updatedAt: string
   updatedBy: string
+  /** Author who created the module — only they (or the workspace owner/admin)
+   *  can edit it. Undefined for the hand-seeded system/custom modules predates
+   *  this field; canEditModule() treats a missing createdBy as admin-only. */
+  createdBy?: string
 }
 
 /** Icon choices offered by the module builder's Name-field icon picker — menu-bar
@@ -1227,7 +1231,7 @@ const MODULES_SEED: CrmModule[] = [
     ],
     conversionTarget: 'sales-order',
     recordCount: 5,
-    updatedAt: '2026-09-09T10:00:00', updatedBy: 'Rizal Candra',
+    updatedAt: '2026-09-09T10:00:00', updatedBy: 'Rizal Candra', createdBy: 'Rizal Candra',
   },
 ]
 
@@ -1291,7 +1295,7 @@ export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
 
-/** Deals module Setup-tab settings (base currency, default close date, access). */
+/** Deals module Setup-tab settings (base currency, default close date). */
 export interface DealModuleSetup {
   baseCurrency: string
   applyCloseDate: boolean
@@ -1299,11 +1303,10 @@ export interface DealModuleSetup {
   closePeriod: 'this-month' | 'next-month'
   closeAmount: number
   closeUnit: 'days' | 'weeks' | 'months'
-  access: string[]                 // user names who can access the module
 }
 const DEAL_MODULE_SETUP_SEED: DealModuleSetup = {
   baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
-  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
+  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days',
 }
 export const dealModuleSetup = reactive<DealModuleSetup>(
   loadSnapshot<DealModuleSetup>('crm-deal-module-setup-v2')?.[0]
@@ -1680,7 +1683,7 @@ export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipe
 
 const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
   baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
-  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days', access: [],
+  closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days',
 }
 export const serviceModuleSetup = reactive<DealModuleSetup>(
   loadSnapshot<DealModuleSetup>('crm-service-module-setup-v1')?.[0]
@@ -1778,7 +1781,7 @@ function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
       ],
     }],
     display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
-    setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days', access: [] },
+    setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days' },
     properties: defaultDealProperties(),
     detailLayout: genericDetailLayoutSeed(moduleId),
   }
@@ -1915,6 +1918,7 @@ export function createCustomModule(name: string, icon: string, accessLevel: 'com
     id, name: name.trim(), system: false, accessLevel, status,
     sections: [], fields: [], views: [], conversionTarget: null, recordCount: 0,
     icon, updatedAt: new Date().toISOString().slice(0, 19), updatedBy: CRM_CURRENT_USER,
+    createdBy: CRM_CURRENT_USER,
   })
   persistCrmModules()
   if (accessLevel === 'team' && teamIds.length) setModuleTeams(id, teamIds)
@@ -1954,15 +1958,14 @@ export function setModuleTeams(moduleId: string, teamIds: string[]): void {
   }
   persistCrmTeams()
 }
-/** Access-picker options scoped to the members of the given teams (union, active
- *  employees only) — used by the module builder's Setup ▸ Access picker when the
- *  module's access level is 'team' rather than the CRM_OWNERS-wide company list. */
-export function teamScopedAccessOptions(teamIds: string[]): { id: string; name: string; subtitle: string }[] {
-  const empIds = new Set<string>()
-  for (const t of crmTeams) if (teamIds.includes(t.id)) for (const id of t.memberIds) empIds.add(id)
-  return employees
-    .filter((e) => empIds.has(e.id) && e.status === 'active')
-    .map((e) => ({ id: e.fullName, name: e.fullName, subtitle: e.email || '' }))
+/** Is `moduleId` visible in the CRM nav for the signed-in user? Company-wide
+ *  modules are visible to everyone; team-scoped modules only to members of a
+ *  team the module is assigned to (CrmSidebar filters on this). */
+export function isModuleVisibleToCurrentUser(m: CrmModule): boolean {
+  if (m.accessLevel === 'company') return true
+  const emp = employees.find((e) => e.fullName === CRM_CURRENT_USER)
+  if (!emp) return false
+  return teamsForModule(m.id).some((t) => t.memberIds.includes(emp.id))
 }
 
 // ── Service deals — records for the custom "Service deals" module workspace ──────
@@ -2320,6 +2323,14 @@ export function currentUserPerms(): CrmPermSet { return permSetForUser(CRM_CURRE
 /** Can the signed-in user do `key` (a permission flag)? Reactive — re-reads the
  *  shared store, so gated buttons update the moment access is changed. */
 export function can(key: string): boolean { return !!currentUserPerms()[key] }
+
+/** Only the admin (workspace owner) and the module's own creator can edit a
+ *  module's builder (Setup/Properties/Pipeline/Layout). The Deals system module
+ *  has no single owner, so it's always editable. */
+export function canEditModule(m: CrmModule): boolean {
+  if (m.system) return true
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || m.createdBy === CRM_CURRENT_USER
+}
 
 /** One-line summary of a permission set for the User & roles index. */
 export function permSummary(s: CrmPermSet): string {

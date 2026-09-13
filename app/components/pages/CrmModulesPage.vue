@@ -20,7 +20,7 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor } from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -143,10 +143,15 @@ watch(statusFilter, () => setPage(1))
           </div>
         </template>
 
-        <!-- Module name + system/custom caption -->
+        <!-- Module name + system/custom caption. Only the admin (workspace owner)
+             and the module's own creator can open it — everyone else sees plain text. -->
         <template #cell-name="{ row }">
           <div class="cru-name">
-            <span class="cell-link cell-text" @click.stop="manage(row as unknown as ModuleRow)">{{ (row as unknown as ModuleRow).name }}</span>
+            <span
+              v-if="canEditModule(row as unknown as ModuleRow)" class="cell-link cell-text"
+              @click.stop="manage(row as unknown as ModuleRow)"
+            >{{ (row as unknown as ModuleRow).name }}</span>
+            <span v-else class="cell-text">{{ (row as unknown as ModuleRow).name }}</span>
             <span class="cru-email">{{ (row as unknown as ModuleRow).system ? t('System module') : t('Custom module') }}</span>
           </div>
         </template>
@@ -172,7 +177,7 @@ watch(statusFilter, () => setPage(1))
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="manage(row as unknown as ModuleRow)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEditModule(row as unknown as ModuleRow)" @click="manage(row as unknown as ModuleRow)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="!(row as unknown as ModuleRow).system" @click="soon(t('Delete module'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
