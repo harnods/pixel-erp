@@ -373,26 +373,8 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
-    {
-      // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
-      // Connections), each its own /cowork* route rendered in the stage.
-      name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
-      panelSubmenu: [
-        [
-          { label: 'Workspaces', to: 'Cowork workspaces' },
-          { label: 'Chats', to: 'Cowork chats' },
-          { label: 'New task', to: 'Cowork' },
-          { label: 'Tasks', to: 'Cowork tasks' },
-          { label: 'Schedule', to: 'Cowork schedule' },
-        ],
-        [
-          { label: 'Connections', to: 'Cowork connections' },
-          { label: 'Agents', to: 'Cowork agents' },
-          { label: 'Skills', to: 'Cowork skills' },
-          { label: 'File manager', to: 'Cowork knowledge' },
-        ],
-      ],
-    },
+    // Cowork nav entry hidden — Cowork now lives as its own standalone app
+    // (Mekari Envoy). Routes/pages are left intact, just not linked from here.
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the
@@ -1203,7 +1185,7 @@ function cancelClose() {
 
 .sidebar {
   width: 52px;                        /* custom — not in token scale */
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1258,7 +1240,7 @@ function cancelClose() {
   gap: var(--mp-spacing-0\.5);
   padding-bottom: var(--mp-spacing-2);
   margin-bottom: var(--mp-spacing-1);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 .nav-group:last-child { border-bottom: none; }
@@ -1291,7 +1273,7 @@ function cancelClose() {
 .nav-item:hover img, .nav-item.is-flyout-open img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
 .nav-item:hover .nav-label, .nav-item.is-flyout-open .nav-label { color: var(--mp-text-link, #165082); }
 
-.nav-item.active { background-color: var(--mp-background-neutral-pressed); }
+.nav-item.active { background-color: var(--mp-background-neutral-pressed, #ebf0f1); }
 .nav-item.active .nav-icon-line { display: none; }
 .nav-item .nav-icon-fill { display: none; }
 .nav-item.active .nav-icon-fill {
@@ -1327,7 +1309,7 @@ function cancelClose() {
 /* ── Secondary sidebar panel ── */
 .sidebar-panel {
   width: 188px;               /* custom — not in token scale */
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1359,7 +1341,7 @@ function cancelClose() {
 
 .panel-divider {
   height: 1px;               /* custom — intentional 1px divider */
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   margin: var(--mp-spacing-1) 0;
 }
 
@@ -1460,8 +1442,8 @@ function cancelClose() {
   position: fixed;
   z-index: 1000;
   width: 188px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
@@ -1482,7 +1464,7 @@ function cancelClose() {
 .submenu-group { display: flex; flex-direction: column; }
 
 .submenu-group.has-border {
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-2);
 }
 
