@@ -488,6 +488,23 @@ function resolveBatchAttributes(
   return { values, errors }
 }
 
+/** The checks `createBatch` runs, without writing — for forms that collect new batches
+ *  and create them later (e.g. a purchase delivery on save). `alsoTaken` holds numbers
+ *  already claimed by other not-yet-created batches in the same form. */
+export function validateNewBatch(
+  sku: string,
+  input: { batchNo: string; attributes?: BatchAttributeInput },
+  alsoTaken: readonly string[] = [],
+): BatchError[] {
+  const errors: BatchError[] = []
+  const batchNoError = validateBatchNo(sku, input.batchNo)
+  const n = input.batchNo.trim().toLowerCase()
+  if (batchNoError) errors.push(batchNoError)
+  else if (alsoTaken.some((x) => x.trim().toLowerCase() === n)) errors.push({ code: 'taken', field: 'batchNo' })
+  errors.push(...resolveBatchAttributes(sku, {}, input.attributes ?? {}).errors)
+  return errors
+}
+
 /** Create a batch against a product — master data only: number, description and
  *  attribute values. It starts at qty 0; stock only enters through an inventory
  *  transaction. Batch number is unique per product, not across products. */

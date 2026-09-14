@@ -286,6 +286,15 @@ function goBack() { router.push('/purchase-deliveries') }
                   <span class="detail-item-primary">
                     <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
                     <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
+                    <!-- Batches that received this line (Batch Attribute story 10). -->
+                    <span v-for="b in it.batches ?? []" :key="b.batchId" class="detail-item-sku">
+                      {{ t('Batch') }}:
+                      <a
+                        class="cell-link"
+                        @click.stop="router.push(`/product-list/${it.sku}/batches/${encodeURIComponent(b.batchNo)}`)"
+                      >{{ b.batchNo }}</a>
+                      · {{ b.qty }} {{ it.unit }}
+                    </span>
                   </span>
                 </div>
               </td>
@@ -491,7 +500,7 @@ function goBack() { router.push('/purchase-deliveries') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -545,7 +554,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -554,7 +563,7 @@ function goBack() { router.push('/purchase-deliveries') }
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -570,7 +579,7 @@ function goBack() { router.push('/purchase-deliveries') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -585,7 +594,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -611,7 +620,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -619,7 +628,7 @@ function goBack() { router.push('/purchase-deliveries') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -699,7 +708,7 @@ function goBack() { router.push('/purchase-deliveries') }
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -722,12 +731,12 @@ function goBack() { router.push('/purchase-deliveries') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -743,7 +752,7 @@ function goBack() { router.push('/purchase-deliveries') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -781,7 +790,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;

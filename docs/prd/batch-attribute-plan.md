@@ -249,6 +249,22 @@ Prerequisite: a batch drawer on `NewPurchaseDeliveryPage.vue` (and the purchase-
 
 Separate branch, after Phases 0–4 land.
 
+**As built (Phase 5, 14 Sep 2026):** user chose the Purchase delivery form (not WMS receiving) and batches on delivery details. Built on `feat/batch-attribute`.
+- **Form:** `NewPurchaseDeliveryPage.vue` gets a **Batch** column. A batch-tracked line shows **Manage batch** (`rule/drawer-open-via-manage`), which opens `DeliveryBatchDrawer.vue` (`rule/drawer-custom-shell`).
+  - In the drawer: pick existing batches or add new ones (batch number + the product's attributes) and split the line qty. Batch qty must add up to the line qty.
+- **Rules** live in `app/data/purchaseDeliveryBatches.ts` (`tests/purchase-delivery-batches.spec.ts`):
+  - A new batch's Vendor follows the delivery vendor unless the user changed it.
+  - Existing batches from another vendor → one `ConfirmModal` on Save listing them; their vendor is never overwritten.
+  - Existing batches with no vendor are filled on Save.
+  - New batches are created only when the delivery is saved, via `createBatch` (a no-write `validateNewBatch` checks them earlier).
+- **Vendor change:** changing the vendor while batches are set shows a confirm. There's no edit flow for saved deliveries in the prototype, so this is the only "change vendor" point.
+- **Saved data:** `PurchaseDelivery.lines` keeps the entered lines with their batches. Delivery details shows each line's batches, linking to the batch page.
+- **Not built:**
+  - Stock qty doesn't move into batches (a delivery is "in transit"; no inventory transaction is modelled).
+  - The expiry Date/Month switch isn't in the drawer (day precision only there).
+  - Purchase invoice create flow doesn't exist.
+  - WMS receiving is unchanged.
+
 ---
 
 ## 5. Copy (`app/data/translations.ts`)
