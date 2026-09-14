@@ -40,6 +40,7 @@ import {
   type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
 import { successToast, infoToast } from '~/utils/toasts'
 
@@ -704,6 +705,20 @@ function saveNewModule(status: 'draft' | 'published') {
   successToast(t(status === 'published' ? 'Module published' : 'Module saved as draft'))
   router.push(`/crm/settings/modules/${id}`)
 }
+// Publish (from creation) needs confirmation — it goes straight into the CRM nav
+// for anyone with access. Save as draft has no such consequence, so no confirm.
+const publishNewConfirmOpen = ref(false)
+function askPublishNew() {
+  nameError.value = ''
+  teamError.value = ''
+  if (!draft.name.trim()) { nameError.value = t('Enter a module name.'); return }
+  if (draft.accessLevel === 'team' && draft.teamIds.length === 0) {
+    teamError.value = t('Select at least one team.')
+    return
+  }
+  publishNewConfirmOpen.value = true
+}
+function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModule('published') }
 </script>
 
 <template>
@@ -827,16 +842,18 @@ function saveNewModule(status: 'draft' | 'published') {
                   <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
                 <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
-                  <div v-if="selectedTeams.length" class="setup-team-grid">
-                    <span v-for="tm in selectedTeams" :key="tm.id" class="setup-team-chip">
-                      <span class="setup-team-chip-name">{{ tm.name }}</span>
+                  <ul v-if="selectedTeams.length" class="setup-user-list">
+                    <li v-for="tm in selectedTeams" :key="tm.id" class="setup-user-row">
+                      <span class="setup-user-info">
+                        <span class="setup-user-name">{{ tm.name }}</span>
+                      </span>
                       <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
-                        <button type="button" class="setup-team-chip-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
-                          <MpIcon name="close" size="sm" />
+                        <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
+                          <MpIcon name="minus-circular" size="md" />
                         </button>
                       </MpTooltip>
-                    </span>
-                  </div>
+                    </li>
+                  </ul>
                   <p v-else class="setup-access-empty">{{ t('No team selected') }}</p>
                   <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="teamDrawerOpen = true">{{ t('Select team') }}</MpButton>
                 </div>
@@ -1163,7 +1180,7 @@ function saveNewModule(status: 'draft' | 'published') {
       <MpButtonGroup class="erp-action-footer">
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
         <MpButton variant="secondary" is-rounded @click="saveNewModule('draft')">{{ t('Save as draft') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="saveNewModule('published')">{{ t('Publish') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="askPublishNew">{{ t('Publish') }}</MpButton>
       </MpButtonGroup>
     </footer>
 
@@ -1384,6 +1401,16 @@ function saveNewModule(status: 'draft' | 'published') {
         <MpIcon name="drag" size="md" />
       </div>
     </Teleport>
+
+    <!-- Publish (from creation) needs confirmation; Save as draft does not. -->
+    <ConfirmModal
+      v-model:is-open="publishNewConfirmOpen"
+      :title="t('Publish this module?')"
+      :description="t('Once published, this module appears in the CRM nav for anyone with access.')"
+      :confirm-label="t('Publish')"
+      :is-danger="false"
+      @confirm="confirmPublishNew"
+    />
   </div>
 </template>
 
@@ -1565,19 +1592,17 @@ function saveNewModule(status: 'draft' | 'published') {
 /* "Time from record creation" input + unit = 3 grid cols (~279px) */
 .setup-amount { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); max-width: 224px; }
 .setup-amount-input { flex: 1; min-width: 0; }
-/* Access level ▸ Team — selected teams as a 6-column chip grid + "Select team" btn */
+/* Access level ▸ Team — selected teams list (mirrors the old Access ▸ Add users
+   list: name + (−) remove + "Remove" tooltip), not a chip/pill grid. */
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
-.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
-.setup-team-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--mp-spacing-2); }
-.setup-team-chip {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1);
-  min-width: 0; padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2);
-  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
-}
-.setup-team-chip-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup-team-chip-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-full, 999px); color: var(--mp-colors-text-secondary, #3a4749); }
-.setup-team-chip-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
+.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); max-width: 320px; }
+.setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }
+.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-user-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .setup-access-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
 .pipe-side-section { display: flex; flex-direction: column; }
 .pipe-side-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }

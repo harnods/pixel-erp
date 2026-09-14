@@ -266,16 +266,12 @@ function commitMove(id: string, stage: DealStage, lostReason?: string) {
 function confirmWon() { const p = pendingMove.value; if (p) commitMove(p.id, 'Won'); wonConfirmOpen.value = false }
 function confirmReopen() { const p = pendingMove.value; if (p) commitMove(p.id, p.stage); reopenConfirmOpen.value = false }
 
-// Open the stage modal preset to Lost (captures the required reason) for 1..N deals.
+// Open the stage modal preset to Lost (captures the required reason) for 1..N deals
+// — kanban drag-to-Lost only. The free picker (row menu / bulk) never uses a modal;
+// see the popover-based `stagePicker` below.
 function openStageModalForLost(ids: string[]) {
   stageModalIds.value = ids; stageModalCount.value = ids.length
   stageModalPreset.value = 'Lost'; stageModalAllowed.value = undefined; stageModalOpen.value = true
-}
-// Row menu "Change stage" — free picker for a single deal.
-function openStageModal(d: Deal) {
-  stageModalIds.value = [d.id]; stageModalCount.value = 1; stageModalPreset.value = null
-  stageModalAllowed.value = d.stage === 'Lost' ? [...ONGOING_STAGES] : undefined
-  stageModalOpen.value = true
 }
 function onStageModalConfirm(payload: { stage: DealStage; lostReason?: string }) {
   const ids = stageModalIds.value
@@ -288,10 +284,55 @@ function onStageModalConfirm(payload: { stage: DealStage; lostReason?: string })
   stageModalOpen.value = false
 }
 
-// Keyboard: Enter opens the quick preview; "m" opens the stage-move modal.
+// ── Change stage — popover, never a modal (row menu + bulk Actions) ──
+// The popover's own content swaps in place (stage list → Lost-reason mini-form)
+// instead of opening a separate dialog; see the #actions / #bulk-actions templates.
+const stagePicker = reactive<{
+  mode: 'row' | 'bulk' | null; ids: string[]; awaitingLostReason: boolean; lostReason: string; error: string
+}>({ mode: null, ids: [], awaitingLostReason: false, lostReason: '', error: '' })
+function stageOptionsFor(ids: string[]): DealStage[] {
+  if (ids.length === 1 && getDeal(ids[0]!)?.stage === 'Lost') return [...ONGOING_STAGES]
+  return [...DEAL_STAGES]
+}
+function openRowStagePicker(d: Deal) {
+  stagePicker.mode = 'row'; stagePicker.ids = [d.id]
+  stagePicker.awaitingLostReason = false; stagePicker.lostReason = ''; stagePicker.error = ''
+}
+function openBulkStagePicker(ids: string[]) {
+  stagePicker.mode = 'bulk'; stagePicker.ids = ids
+  stagePicker.awaitingLostReason = false; stagePicker.lostReason = ''; stagePicker.error = ''
+}
+function closeStagePicker() {
+  stagePicker.mode = null; stagePicker.ids = []
+  stagePicker.awaitingLostReason = false; stagePicker.lostReason = ''; stagePicker.error = ''
+}
+function cancelLostReason() { stagePicker.awaitingLostReason = false; stagePicker.lostReason = ''; stagePicker.error = '' }
+function pickStage(stage: DealStage) {
+  if (stage === 'Lost') { stagePicker.awaitingLostReason = true; return }
+  commitStagePick(stage)
+}
+function confirmLostReason() {
+  if (!stagePicker.lostReason.trim()) { stagePicker.error = t('A Lost reason is required.'); return }
+  commitStagePick('Lost', stagePicker.lostReason.trim())
+}
+function commitStagePick(stage: DealStage, lostReason?: string) {
+  const ids = stagePicker.ids
+  if (ids.length === 1) commitMove(ids[0]!, stage, lostReason)
+  else { const res = bulkChangeStage(ids, stage, { lostReason }); reportBulk(res, `${t('stage')} → ${stage}`) }
+  closeStagePicker()
+}
+
+// Keyboard: Enter opens the quick preview; "m" opens the stage-move modal — the
+// popover stage picker needs a trigger element to anchor to, which a bare keypress
+// doesn't have, so this one shortcut still goes through CrmDealStageModal.
 function onCardKey(e: KeyboardEvent, d: Deal) {
   if (e.key === 'Enter') { openPreview(d); return }
-  if (e.key.toLowerCase() === 'm') { e.preventDefault(); openStageModal(d) }
+  if (e.key.toLowerCase() === 'm') {
+    e.preventDefault()
+    stageModalIds.value = [d.id]; stageModalCount.value = 1; stageModalPreset.value = null
+    stageModalAllowed.value = d.stage === 'Lost' ? [...ONGOING_STAGES] : undefined
+    stageModalOpen.value = true
+  }
 }
 
 // ── Quick preview drawer (kanban card → preview → View details) ──
@@ -314,11 +355,6 @@ function selectedIds(selected: Set<number>): string[] {
   return [...selected].map((i) => paginated.value[i]?.id).filter(Boolean) as string[]
 }
 function openBulkOwner(selected: Set<number>) { bulkIds.value = selectedIds(selected); ownerModalOpen.value = true }
-function openBulkStage(selected: Set<number>) {
-  bulkIds.value = selectedIds(selected)
-  stageModalIds.value = bulkIds.value; stageModalCount.value = bulkIds.value.length
-  stageModalPreset.value = null; stageModalAllowed.value = undefined; stageModalOpen.value = true
-}
 function onBulkOwner(owner: string) {
   const res = bulkChangeOwner(bulkIds.value, owner)
   reportBulk(res, `${t('owner')} → ${owner}`)
@@ -339,15 +375,42 @@ function onQuickOpenFull(seed: DealDraftSeed) { dealDraftSeed.value = seed; quic
 // The detailed form is a PAGE (PRD) — Edit navigates there.
 function openEdit(d: Deal) { router.push(`/crm/deals/${d.id}/edit`) }
 
-// ── Archive / Restore / Delete + Convert (row menu) ──
-function onArchive(d: Deal) { archiveDeal(d.id); successToast(t('Deal archived')) }
+// ── Archive (confirmed) / Restore / Delete + Convert (row menu + bulk) ──
 function onRestore(d: Deal) { restoreDeal(d.id); successToast(t('Deal restored')) }
+const archiveConfirmOpen = ref(false)
+const archiveTargetIds = ref<string[]>([])
+let archiveDeselect: (() => void) | null = null
+function askArchive(d: Deal) { archiveTargetIds.value = [d.id]; archiveDeselect = null; archiveConfirmOpen.value = true }
+function askBulkArchive(ids: string[], deselect?: () => void) {
+  if (!ids.length) return
+  archiveTargetIds.value = ids; archiveDeselect = deselect ?? null; archiveConfirmOpen.value = true
+}
+const archiveConfirmTitle = computed(() => archiveTargetIds.value.length > 1 ? `${t('Archive')} ${archiveTargetIds.value.length} ${t('deals')}?` : t('Archive deal?'))
+const archiveConfirmDescription = computed(() => archiveTargetIds.value.length > 1
+  ? t('The selected deals will be archived. You can restore them later.')
+  : t('This deal will be archived. You can restore it later.'))
+function confirmArchive() {
+  const ids = archiveTargetIds.value
+  ids.forEach((id) => archiveDeal(id))
+  archiveDeselect?.(); archiveDeselect = null
+  successToast(`${ids.length} ${ids.length === 1 ? t('deal') : t('deals')} ${t('archived')}`)
+  archiveConfirmOpen.value = false; archiveTargetIds.value = []
+}
 const deleteConfirmOpen = ref(false)
-const deleteTarget = ref<Deal | null>(null)
-function askDelete(d: Deal) { deleteTarget.value = d; deleteConfirmOpen.value = true }
+const deleteTargetIds = ref<string[]>([])
+let deleteDeselect: (() => void) | null = null
+function askDelete(d: Deal) { deleteTargetIds.value = [d.id]; deleteDeselect = null; deleteConfirmOpen.value = true }
+function askBulkDelete(ids: string[], deselect?: () => void) {
+  if (!ids.length) return
+  deleteTargetIds.value = ids; deleteDeselect = deselect ?? null; deleteConfirmOpen.value = true
+}
+const deleteConfirmTitle = computed(() => deleteTargetIds.value.length > 1 ? `${t('Delete')} ${deleteTargetIds.value.length} ${t('deals')}?` : t('Delete deal?'))
 function confirmDelete() {
-  if (deleteTarget.value) { deleteDeal(deleteTarget.value.id); successToast(t('Deal deleted')) }
-  deleteConfirmOpen.value = false; deleteTarget.value = null
+  const ids = deleteTargetIds.value
+  ids.forEach((id) => deleteDeal(id))
+  deleteDeselect?.(); deleteDeselect = null
+  successToast(ids.length === 1 ? t('Deal deleted') : `${ids.length} ${t('deals')} ${t('deleted')}`)
+  deleteConfirmOpen.value = false; deleteTargetIds.value = []
 }
 function onConvert(d: Deal) {
   const r = convertDeal(d.id)
@@ -362,6 +425,7 @@ function onImportUpload(files: File[]) {
   successToast(`${files.length} ${files.length === 1 ? t('file') : t('files')} ${t('queued for import')}`)
 }
 const exportOpen = ref(false)
+const selectedCount = ref(0)
 const exportColumns = [
   { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
   { key: 'owner', label: t('Deal owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
@@ -569,14 +633,17 @@ const toggleAirene = inject<() => void>('toggleAirene')
         @sort-change="setSort"
         @clear-filters="clearFilters"
         @hide-column="hideColumn"
+        @selection-change="(count: number) => (selectedCount = count)"
       >
         <template #cell-id="{ row }">
-          <span class="cell-link cell-text cc-num" @click.stop="goDetail(asDeal(row).id)">{{ dealNo(asDeal(row).id) }}</span>
+          <span class="cc-id-cell">
+            <span class="cell-link cell-text cc-num" @click.stop="goDetail(asDeal(row).id)">{{ dealNo(asDeal(row).id) }}</span>
+            <ErpStatusBadge v-if="asDeal(row).archived" status="archived" badge-for="tableStatus" size="sm" />
+          </span>
         </template>
 
         <template #cell-name="{ row }">
           <span class="cell-link cell-text" @click.stop="goDetail(asDeal(row).id)">{{ asDeal(row).name }}</span>
-          <span v-if="asDeal(row).archived" class="cc-sub cell-text">{{ t('Archived') }}</span>
         </template>
 
         <template #cell-company="{ row }">
@@ -599,35 +666,84 @@ const toggleAirene = inject<() => void>('toggleAirene')
         </template>
 
         <template #actions="{ row }">
-          <MpPopover :id="`deal-actions-${asDeal(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopover :id="`deal-actions-${asDeal(row).id}`" use-portal :is-keep-alive="false" placement="bottom-end" @close="closeStagePicker" v-slot="{ onClosePopover }">
             <MpPopoverTrigger>
               <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
-              <MpPopoverList>
-                <MpPopoverListItem @click="goDetail(asDeal(row).id)">{{ t('View details') }}</MpPopoverListItem>
-                <template v-if="!asDeal(row).archived">
-                  <MpPopoverListItem @click="openEdit(asDeal(row))">{{ t('Edit') }}</MpPopoverListItem>
-                  <MpPopoverListItem @click="openStageModal(asDeal(row))">{{ t('Change stage') }}</MpPopoverListItem>
-                  <MpPopoverListItem
-                    v-if="asDeal(row).conversion === 'none' && asDeal(row).products?.length"
-                    @click="onConvert(asDeal(row))"
-                  >{{ t('Create') }} {{ dealConversionTarget }}</MpPopoverListItem>
-                </template>
-              </MpPopoverList>
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem v-if="asDeal(row).archived" @click="onRestore(asDeal(row))">{{ t('Restore') }}</MpPopoverListItem>
-                <MpPopoverListItem v-else @click="onArchive(asDeal(row))">{{ t('Archive') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="askDelete(asDeal(row))">{{ t('Delete') }}</MpPopoverListItem>
-              </MpPopoverList>
+              <!-- Change stage swaps this SAME popover's content — no modal (rule/dnd… see CLAUDE.md). -->
+              <div v-if="stagePicker.mode === 'row' && stagePicker.ids[0] === asDeal(row).id" class="stage-picker">
+                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
+                <button
+                  v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
+                  @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
+                >{{ t(dealStageLabel(s)) }}</button>
+                <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
+                  <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
+                  <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
+                  <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
+                  <div class="stage-picker-lost-actions">
+                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
+                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                  </div>
+                </div>
+              </div>
+              <template v-else>
+                <MpPopoverList>
+                  <MpPopoverListItem @click="goDetail(asDeal(row).id); onClosePopover()">{{ t('View details') }}</MpPopoverListItem>
+                  <template v-if="!asDeal(row).archived">
+                    <MpPopoverListItem @click="openEdit(asDeal(row)); onClosePopover()">{{ t('Edit') }}</MpPopoverListItem>
+                    <MpPopoverListItem @click="openRowStagePicker(asDeal(row))">{{ t('Change stage') }}</MpPopoverListItem>
+                    <MpPopoverListItem
+                      v-if="asDeal(row).conversion === 'none' && asDeal(row).products?.length"
+                      @click="onConvert(asDeal(row)); onClosePopover()"
+                    >{{ t('Create') }} {{ dealConversionTarget }}</MpPopoverListItem>
+                  </template>
+                </MpPopoverList>
+                <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+                <MpPopoverList>
+                  <MpPopoverListItem v-if="asDeal(row).archived" @click="onRestore(asDeal(row)); onClosePopover()">{{ t('Restore') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-else @click="askArchive(asDeal(row)); onClosePopover()">{{ t('Archive') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="askDelete(asDeal(row)); onClosePopover()">{{ t('Delete') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </template>
             </MpPopoverContent>
           </MpPopover>
         </template>
 
-        <template #bulk-actions="{ selectedRows }">
-          <button type="button" class="erp-bulk-action" @click="openBulkOwner(selectedRows as Set<number>)">{{ t('Change owner') }}</button>
-          <button type="button" class="erp-bulk-action" @click="openBulkStage(selectedRows as Set<number>)">{{ t('Change stage') }}</button>
+        <!-- Bulk "Actions" dropdown — Change stage, Change owner, Archive, Delete
+             (mirrors the Contacts pattern). Change stage swaps the popover content
+             in place, same as the row kebab — never a separate modal. -->
+        <template #bulk-actions="{ selectedRows, deselectAll }">
+          <MpPopover id="deal-bulk-actions" use-portal :is-keep-alive="false" placement="bottom-start" @close="closeStagePicker" v-slot="{ onClosePopover }">
+            <MpPopoverTrigger>
+              <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <div v-if="stagePicker.mode === 'bulk'" class="stage-picker">
+                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
+                <button
+                  v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
+                  @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
+                >{{ t(dealStageLabel(s)) }}</button>
+                <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
+                  <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
+                  <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
+                  <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
+                  <div class="stage-picker-lost-actions">
+                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
+                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                  </div>
+                </div>
+              </div>
+              <MpPopoverList v-else>
+                <MpPopoverListItem @click="openBulkStagePicker(selectedIds(selectedRows as Set<number>))">{{ t('Change stage') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="openBulkOwner(selectedRows as Set<number>); onClosePopover()">{{ t('Change owner') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="askBulkArchive(selectedIds(selectedRows as Set<number>), deselectAll); onClosePopover()">{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="askBulkDelete(selectedIds(selectedRows as Set<number>), deselectAll); onClosePopover()">{{ t('Delete') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </template>
 
         <template #empty>
@@ -663,7 +779,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
       @view-details="(id) => { previewOpen = false; goDetail(id) }"
       @edit="(d) => { previewOpen = false; openEdit(d) }"
       @move-stage="onPreviewMove"
-      @archive="(d) => { previewOpen = false; onArchive(d) }"
+      @archive="(d) => { previewOpen = false; askArchive(d) }"
       @delete="(d) => { previewOpen = false; askDelete(d) }"
     />
 
@@ -695,10 +811,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
     />
     <ConfirmModal
       v-model:is-open="deleteConfirmOpen"
-      :title="t('Delete deal?')"
+      :title="deleteConfirmTitle"
       :description="t('Deleted deal cannot be restored.')"
       :confirm-label="t('Delete deal')"
       @confirm="confirmDelete"
+    />
+    <ConfirmModal
+      v-model:is-open="archiveConfirmOpen"
+      :title="archiveConfirmTitle"
+      :description="archiveConfirmDescription"
+      :confirm-label="t('Archive')"
+      :is-danger="false"
+      @confirm="confirmArchive"
     />
 
     <!-- ── Import / Export ── -->
@@ -709,6 +833,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
       :entity-label="t('deals')"
       :columns="exportColumns"
       :total="source.length"
+      :selected-count="selectedCount"
       @close="exportOpen = false"
       @export="onExport"
     />
@@ -797,12 +922,33 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cc-sub { display: block; margin-top: 1px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cc-num { font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); }
+.cc-id-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .cc-muted { color: var(--mp-text-subtle, #97a0af); }
 .deal-attention { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning, #b54708); }
 
-/* Bulk-bar action buttons (sm secondary look — bulk bar only) */
-.erp-bulk-action { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
-.erp-bulk-action:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* Change-stage popover sub-view — swaps in place inside the row/bulk Actions
+   popover instead of opening a separate modal (rule/dnd... see CLAUDE.md /
+   docs/design/RULES.md: Change stage is always a popover, never a modal). */
+.stage-picker { display: flex; flex-direction: column; padding: var(--mp-spacing-1) 0; min-width: 200px; }
+.stage-picker-back {
+  display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: none; background: transparent; cursor: pointer; text-align: left;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary, #536062);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-1);
+}
+.stage-picker-back:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.stage-picker-item {
+  display: block; width: 100%; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: none; background: transparent; cursor: pointer; text-align: left;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.stage-picker-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.stage-picker-lost { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
+.stage-picker-lost-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.stage-picker-textarea { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 56px; font-family: inherit; }
+.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.stage-picker-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
+.stage-picker-lost-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 
 /* ── Kanban board (swimlanes fill the stage height) ── */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }
