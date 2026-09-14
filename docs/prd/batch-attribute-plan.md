@@ -118,7 +118,7 @@
 **Fix Track stock by persistence**
 - Add an optional `trackStockBy` to the custom `Product`, and save it from `NewProductPage.buildPayload()`.
 - `getProductDetail` / `isBatchTracked` checks prefer the product's own value and fall back to the category rule for seed products.
-- Also covers `StockInOutFormPage.vue:76`, which duplicates `BATCH_CATS`: route it through the same helper.
+- *Built as `productTrackStockBy(sku)` / `isProductBatchTracked(sku)` in `productDetails.ts`.* The category-only `BATCH_CATS` / `SERIAL_CATS` copy is duplicated in ~15 WMS pages (`StockInOutFormPage`, `ReceiveItemsPage`, `PickItemsPage`, …). Those flows read warehouse lots, not the product's batch list, so they're **left as-is** here and tracked as a separate cleanup.
 
 **Tests** (`tests/batch-attribute.spec.ts`):
 - config 1–3 / duplicate / fallback rules

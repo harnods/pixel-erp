@@ -66,7 +66,11 @@ function formatQty(n: number, unit: string) {
   return `${n.toLocaleString('id-ID')} ${unit}`
 }
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
+  // A batch can have no expiry (the Unassigned batch, or an optional Expiry left
+  // empty) — Intl throws "Invalid time value" on an invalid Date, so render "—".
+  const d = new Date(iso)
+  if (!iso || Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
 }
 const updatedLabel = computed(() => batch.value ? formatDateTimeLong(batch.value.updatedAt) : '')
 
@@ -172,7 +176,8 @@ const pagedWarehouseStock = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem>Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="openPrintBarcode">Print barcode</MpPopoverListItem>
+            <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
+            <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -412,7 +417,7 @@ const pagedWarehouseStock = computed(() => {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -443,7 +448,7 @@ const pagedWarehouseStock = computed(() => {
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -487,8 +492,8 @@ const pagedWarehouseStock = computed(() => {
 .pd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral); color: var(--mp-text-subtle);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-subtle);
 }
 .pd-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); min-width: 0; }
 .pd-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -499,7 +504,7 @@ const pagedWarehouseStock = computed(() => {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.pd-search-clear:hover { background: var(--mp-background-neutral-hovered); }
+.pd-search-clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors ProductDetailsPage.vue's tab tables) ── */
 .pd-table-scroll { overflow-x: auto; }
@@ -507,20 +512,20 @@ const pagedWarehouseStock = computed(() => {
 .pd-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .pd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral, #ffffff);
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
-.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }
+.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Number / Warehouse cells — value is a link to detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
