@@ -22,6 +22,10 @@ import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
+import {
+  getBatchAttributeConfig, batchAttributeConfigActivity, batchAttributeDef,
+  type BatchAttributeSetting,
+} from '~/data/batchAttributes'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
@@ -109,10 +113,40 @@ const createdLabel = computed(() => product.value ? formatDateTimeLong(product.v
 
 // ── Activity log ───────────────────────────────────────────────────────────────
 const activityOpen = ref(false)
+
+/** A batch attribute set as one line: "Expiry date (required), Vendor, Grade". */
+function formatAttributeSet(settings: readonly { key: string; required: boolean }[]): string {
+  if (!settings.length) return '—'
+  return settings
+    // Optional chaining: a failed attempt can carry a key that isn't in the catalog.
+    .map(s => `${batchAttributeDef(s.key as BatchAttributeSetting['key'])?.label ?? s.key}${s.required ? ' (required)' : ''}`)
+    .join(', ')
+}
+const batchAttributesLabel = computed(() => (product.value ? formatAttributeSet(getBatchAttributeConfig(product.value.sku)) : ''))
+
+const ATTRIBUTE_ERROR_TEXT: Record<string, string> = {
+  'too-many': 'More than 3 attributes',
+  duplicate: 'Same attribute selected twice',
+  'unknown-key': 'Attribute is not in the catalog',
+}
+
 const activityEntries = computed<ActivityEntry[]>(() => {
   const p = product.value
   if (!p) return []
-  return [{
+  // Batch attribute set changes (Batch Attribute PRD story 6a), newest first —
+  // failed attempts included, shown as old → new like any other edit.
+  const attributeChanges: ActivityEntry[] = batchAttributeConfigActivity(p.sku).map(e => ({
+    date: e.date,
+    user: e.user,
+    activity: e.outcome === 'success' ? 'Updated batch attributes' : 'Failed to update batch attributes',
+    details: [
+      { label: 'Batch attributes', value: `${formatAttributeSet(e.previous)} → ${formatAttributeSet(e.next)}` },
+      ...(e.outcome === 'failed'
+        ? [{ label: 'Result', value: `Failed — ${e.errors.map(c => ATTRIBUTE_ERROR_TEXT[c] ?? c).join('; ')}` }]
+        : []),
+    ],
+  }))
+  return [...attributeChanges, {
     date: p.createdAt,
     user: p.createdBy,
     activity: 'Created',
@@ -377,6 +411,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <!-- Product type is an ERP concept — every WMS Standalone product is single. -->
             <ContentList v-if="!isWms" label="Product type" :value="product.productType" />
             <ContentList label="Track stock by" :value="product.trackStockBy" />
+            <ContentList v-if="product.trackStockBy === 'Batch'" label="Batch attributes" :value="batchAttributesLabel" />
             <ContentList v-if="!isWms" label="Default inventory account">
               <span v-if="isMigrationPending">—</span>
               <a v-else class="pd-link">{{ product.defaultInventoryAccount }}</a>

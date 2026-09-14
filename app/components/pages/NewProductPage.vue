@@ -6,15 +6,21 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, toast,
+  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, MpButtonGroup, MpText, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
 import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
-import { productTrackStockBy } from '~/data/productDetails'
+import { productTrackStockBy, getProductBatches } from '~/data/productDetails'
+import {
+  BATCH_ATTRIBUTE_CATALOG, MAX_BATCH_ATTRIBUTES, DEFAULT_BATCH_ATTRIBUTES,
+  getBatchAttributeConfig, setBatchAttributeConfig, sameBatchAttributeConfig,
+  type BatchAttributeKey, type BatchAttributeSetting,
+} from '~/data/batchAttributes'
 
 const { t } = useLocale()
 
@@ -50,6 +56,42 @@ const trackStock = ref(true)
 const minStock = ref('')
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
+
+// ── Batch attributes (Track stock by = Batch) — Batch Attribute PRD stories 5, 6 ──
+// Which attributes every batch of this product records, and which are required.
+// Rows survive switching Track stock by away from Batch and back, so the choice
+// isn't lost to an accidental toggle.
+interface AttributeRow { id: number; key: BatchAttributeKey | ''; required: boolean }
+let attributeRowSeq = 0
+function rowsFrom(settings: readonly BatchAttributeSetting[]): AttributeRow[] {
+  return settings.map(s => ({ id: attributeRowSeq++, key: s.key, required: s.required }))
+}
+const attributeRows = ref<AttributeRow[]>(rowsFrom(DEFAULT_BATCH_ATTRIBUTES))
+/** The set as saved, in edit mode — changing it on Save changes shows the warning. */
+const savedAttributes = ref<BatchAttributeSetting[]>(DEFAULT_BATCH_ATTRIBUTES.map(a => ({ ...a })))
+const attributeError = ref('')
+const isBatchTrackedForm = computed(() => (isWms.value || trackStock.value) && trackStockBy.value === 'Batch')
+
+/** One row's options: the catalog minus attributes other rows already picked. */
+function attributeOptionsFor(row: AttributeRow) {
+  const taken = new Set(attributeRows.value.filter(r => r.id !== row.id).map(r => r.key))
+  return BATCH_ATTRIBUTE_CATALOG.filter(a => !taken.has(a.key)).map(a => ({ label: t(a.label), value: a.key }))
+}
+function addAttributeRow() {
+  if (attributeRows.value.length >= MAX_BATCH_ATTRIBUTES) return
+  attributeRows.value.push({ id: attributeRowSeq++, key: '', required: false })
+}
+function removeAttributeRow(id: number) {
+  // A batch-tracked product always keeps at least one attribute; the last row's
+  // remove control isn't rendered, this is just the guard.
+  if (attributeRows.value.length <= 1) return
+  attributeRows.value = attributeRows.value.filter(r => r.id !== id)
+}
+function attributeSettings(): BatchAttributeSetting[] {
+  return attributeRows.value
+    .filter(r => r.key)
+    .map(r => ({ key: r.key as BatchAttributeKey, required: r.required }))
+}
 
 const doesBuy = ref(true)
 const purchaseCost = ref('')
@@ -102,6 +144,10 @@ onMounted(async () => {
   salesPrice.value = p.sellPrice ? String(p.sellPrice) : ''
   // The product's own choice, or its category's default for a seed product.
   trackStockBy.value = productTrackStockBy(p.sku)
+  // The attribute set lives in its own SKU-keyed store (like tax info), so seed
+  // catalog products carry one too. Remember it to spot a change on save.
+  savedAttributes.value = getBatchAttributeConfig(p.sku)
+  attributeRows.value = rowsFrom(savedAttributes.value)
 
   // Tax info lives in its own SKU-keyed store, not on the product record (it
   // applies to read-only CATALOG products too) — see productsIndex.ts.
@@ -324,7 +370,12 @@ function validate(): boolean {
   if (!category.value) categoryError.value = t('You must select category')
   if (!unit.value) unitError.value = t('You must select base unit')
 
-  return !(nameError.value || skuError.value || categoryError.value || unitError.value)
+  // Only while the Batch attributes block is shown — nothing else reads the rows.
+  attributeError.value = isBatchTrackedForm.value && attributeRows.value.some(r => !r.key)
+    ? t('You must select attribute')
+    : ''
+
+  return !(nameError.value || skuError.value || categoryError.value || unitError.value || attributeError.value)
 }
 
 function buildPayload(): Omit<Product, 'id'> {
@@ -368,12 +419,36 @@ function resetForm() {
   productClassification.value = ''
   classificationCode.value = ''
   djpUnit.value = ''
+  attributeRows.value = rowsFrom(DEFAULT_BATCH_ATTRIBUTES)
+  attributeError.value = ''
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
 }
 
+// Edit mode: changing a batch-tracked product's attribute set asks first — existing
+// batches aren't rewritten and have to be updated one by one (PRD story 6).
+const attributeConfirmOpen = ref(false)
+const existingBatchCount = computed(() =>
+  isEdit.value ? getProductBatches(props.orderId!).filter(b => !b.isUnassigned).length : 0,
+)
+const attributeSetChanged = computed(() =>
+  isBatchTrackedForm.value && !sameBatchAttributeConfig(savedAttributes.value, attributeSettings()),
+)
+
 async function save() {
   if (!validate()) return
+  if (isEdit.value && attributeSetChanged.value) {
+    attributeConfirmOpen.value = true
+    return
+  }
+  await commitSave()
+}
 
+async function confirmAttributeChange() {
+  attributeConfirmOpen.value = false
+  await commitSave()
+}
+
+async function commitSave() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const payload = buildPayload()
@@ -382,13 +457,16 @@ async function save() {
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
     saveTaxInfo(payload.sku)
+    saveBatchAttributes(payload.sku)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
     // Seed (CATALOG) product — read-only master data, so the operational fields
     // aren't persisted. Tax info still is: it lives in its own SKU-keyed store
     // precisely so Tax/Finance can classify catalogue products they can't edit.
+    // The batch attribute set is SKU-keyed the same way.
     saveTaxInfo(props.orderId!)
+    saveBatchAttributes(props.orderId!)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
@@ -396,6 +474,7 @@ async function save() {
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
     saveTaxInfo(created.sku)
+    saveBatchAttributes(created.sku)
     toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
@@ -412,6 +491,15 @@ function saveTaxInfo(productSku: string) {
   })
 }
 
+/** Persist the batch attribute set — only for a batch-tracked product. Rows of a
+ *  quantity/serial product are ignored rather than cleared, so a stored set survives
+ *  switching Track stock by back later. Saving it unchanged is a no-op and isn't
+ *  logged (see setBatchAttributeConfig). */
+function saveBatchAttributes(productSku: string) {
+  if (!isBatchTrackedForm.value) return
+  setBatchAttributeConfig(productSku, attributeSettings())
+}
+
 // Create mode only — persist then reset the form to add the next product.
 async function saveAndAdd() {
   if (!validate()) return
@@ -419,6 +507,7 @@ async function saveAndAdd() {
   await new Promise(r => setTimeout(r, 600))
   const created = addCustomProduct({ ...buildPayload(), barcode: barcode.value.trim() || undefined })
   saveTaxInfo(created.sku)
+  saveBatchAttributes(created.sku)
   toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()
@@ -637,6 +726,54 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   />
                 </MpFormControl>
               </div>
+
+              <!-- Batch attributes — what every batch of this product records, and which
+                   are required (Batch Attribute PRD stories 5, 6). Not wrapped in one
+                   MpFormControl: it hands its id to the child control, and three selects
+                   sharing an id would share one popover. -->
+              <div
+                v-if="isBatchTrackedForm" class="np-toggle-fields"
+                :class="css({ display: 'flex', flexDirection: 'column', gap: '2' })"
+              >
+                <p :class="css({ fontSize: 'md', color: 'var(--mp-colors-text-default, #232933)' })">{{ t('Batch attributes') }}</p>
+                <div
+                  v-for="row in attributeRows" :key="row.id"
+                  :class="css({ display: 'flex', alignItems: 'center', gap: '6' })"
+                >
+                  <MpAutocomplete
+                    :id="`np-batch-attribute-${row.id}`" v-model="row.key" class="np-field-270"
+                    :data="attributeOptionsFor(row)" label-prop="label" value-prop="value"
+                    :placeholder="t('Select attribute')" use-portal is-full-width
+                    :is-invalid="!!attributeError && !row.key" @update:model-value="attributeError = ''"
+                  />
+                  <MpCheckbox
+                    :id="`np-batch-attribute-required-${row.id}`" :is-checked="row.required"
+                    @change="row.required = !row.required"
+                  >{{ t('Required') }}</MpCheckbox>
+                  <!-- rule/remove-icon-tooltip. The last row has no remove: a batch-tracked
+                       product always keeps at least one attribute. -->
+                  <MpTooltip
+                    v-if="attributeRows.length > 1" :id="`np-batch-attribute-remove-tt-${row.id}`"
+                    :label="t('Remove')" placement="top" use-portal
+                  >
+                    <MpButton
+                      variant="ghost" is-rounded left-icon="minus-circular"
+                      :aria-label="t('Remove')" @click="removeAttributeRow(row.id)"
+                    />
+                  </MpTooltip>
+                </div>
+                <!-- The inline error replaces the caption (uxw-mekari-erp-terms). -->
+                <p
+                  v-if="attributeError" role="alert"
+                  :class="css({ fontSize: 'sm', color: 'var(--mp-colors-text-critical, #d93b3b)' })"
+                >{{ attributeError }}</p>
+                <p v-else :class="css({ fontSize: 'sm', color: 'var(--mp-colors-text-secondary, #626b79)' })">
+                  {{ t('Up to 3 attributes recorded on every batch') }}
+                </p>
+                <div v-if="attributeRows.length < MAX_BATCH_ATTRIBUTES">
+                  <MpButton variant="ghost" is-rounded left-icon="add" @click="addAttributeRow">{{ t('Add attribute') }}</MpButton>
+                </div>
+              </div>
             </div>
 
             <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
@@ -810,6 +947,35 @@ onUnmounted(() => { footerObserver?.disconnect() })
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <!-- ── Batch attribute change warning (edit mode, Batch Attribute PRD story 6) ──
+         A confirmation, not destructive: primary Save changes + ghost Cancel. -->
+    <MpModal
+      id="np-attribute-confirm" :is-open="attributeConfirmOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="attributeConfirmOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Save batch attribute changes?') }}</MpModalHeader>
+        <MpModalBody>
+          <MpText>{{ t('Existing batches will need to be manually updated to have the new attribute information.') }}</MpText>
+          <MpText
+            v-if="existingBatchCount > 0"
+            :class="css({ marginTop: '2', color: 'var(--mp-colors-text-secondary, #626b79)' })"
+          >
+            {{ existingBatchCount === 1
+              ? t('This product has 1 batch.')
+              : t('This product has {count} batches.').replace('{count}', String(existingBatchCount)) }}
+          </MpText>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton variant="ghost" is-rounded @click="attributeConfirmOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmAttributeChange">{{ t('Save changes') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
