@@ -290,4 +290,38 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  /** Set when this order was raised from the replenishment worklist. */
+  replenishment?: PurchaseOrderReplenishmentOrigin
+}
+
+/**
+ * Provenance for a PO raised from Inventory › Replenishment — the audit trail that
+ * makes replenishment accounting-native rather than a parallel path (PRD OD-012).
+ *
+ * `deviation` is stored rather than derived: it is the auditable fact ("someone
+ * ordered 8 more than recommended"), and recomputing it later would compare against
+ * a recommendation that has since moved.
+ */
+export interface PurchaseOrderReplenishmentOrigin {
+  source: 'replenishment'
+  /** The worklist snapshot date this came from (stock clock, not the PO clock). */
+  asOf: string
+  runNo: number
+  warehouseId: string
+  createdBy: string
+  lines: {
+    sku: string
+    vendorItemId: string
+    /** Engine output, in purchase units. */
+    recommendedQty: number
+    /** What was actually ordered. */
+    finalQty: number
+    deviation: number
+    leadTimeDays: number
+    safetyDays: number
+    avgDailySales: number
+    reorderPoint: number
+    available: number
+    onOrder: number
+  }[]
 }

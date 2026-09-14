@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -18,15 +18,20 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
-import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
+import { vendorItemsForSku, preferredVendorItem, vendorNameFor } from '~/data/vendorItems'
+import {
+  unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
+} from '~/data/productUnits'
 import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
@@ -64,7 +69,11 @@ const stockTabName = computed(() => {
   if (t === 'Serial number') return 'serials'
   return 'warehouses'
 })
-const TAB_NAMES = computed(() => ['transactions', 'unit-conversions', stockTabName.value])
+// Stock by warehouses is last and always present — and for a quantity-tracked
+// product it IS the tracking tab, so de-dupe instead of listing it twice. The
+// list has to match the rendered tab order exactly: MpTabs addresses tabs by
+// index, so an entry missing here sends ?section= to the wrong tab.
+const TAB_NAMES = computed(() => ['transactions', 'vendors', 'unit-conversions', ...new Set([stockTabName.value, 'warehouses'])])
 const activeTabIndex = computed({
   get(): number {
     const tab = route.query.section as string | undefined
@@ -75,6 +84,89 @@ const activeTabIndex = computed({
     router.replace({ query: { ...route.query, section: TAB_NAMES.value[idx] ?? 'transactions' } })
   },
 })
+
+// ── Unit conversions (the product's multi-unit setup) ─────────────────────────
+// One larger unit = N base units. Vendor MOQ and pack size are quoted in one of
+// these, so this table is what gives the vendor form its unit options.
+const unitTick = ref(0)
+const conversions = computed(() => {
+  void unitTick.value
+  return product.value ? unitConversionsForSku(product.value.sku) : []
+})
+
+const newUnitName = ref('')
+const newUnitFactor = ref('')
+const unitError = ref('')
+
+function addConversion() {
+  if (!product.value) return
+  const name = newUnitName.value.trim()
+  const factor = Number(newUnitFactor.value)
+  // Validate on click and show an inline error — never a disabled button.
+  if (!name) { unitError.value = 'Enter a unit name'; return }
+  if (name.toLowerCase() === product.value.unit.toLowerCase()) {
+    unitError.value = `"${name}" is already the base unit`
+    return
+  }
+  if (!factor || Number.isNaN(factor) || factor <= 1 || !Number.isInteger(factor)) {
+    unitError.value = 'Quantity must be a whole number greater than 1'
+    return
+  }
+  upsertUnitConversion(product.value.sku, name, factor)
+  newUnitName.value = ''
+  newUnitFactor.value = ''
+  unitError.value = ''
+  unitTick.value++
+  // Vendor terms quote MOQ in these units, so their labels change too.
+  vendorTick.value++
+}
+
+function editFactor(name: string, raw: string) {
+  if (!product.value) return
+  const factor = Number(raw)
+  if (!factor || Number.isNaN(factor) || factor <= 1) return
+  upsertUnitConversion(product.value.sku, name, factor)
+  unitTick.value++
+  vendorTick.value++
+}
+
+function deleteConversion(name: string) {
+  if (!product.value) return
+  // A unit still used by a vendor's MOQ cannot be removed without silently
+  // changing what that MOQ means, so say so instead of doing it.
+  const inUse = vendorItemsForSku(product.value.sku).filter((v) => v.purchaseUnit === name)
+  if (inUse.length) {
+    unitError.value = `${name} is used by ${inUse.length === 1 ? 'a vendor' : inUse.length + ' vendors'}. Change their MOQ unit first.`
+    return
+  }
+  removeUnitConversion(product.value.sku, name)
+  unitError.value = ''
+  unitTick.value++
+}
+
+// ── Vendors (who sells us this product, and on what terms) ────────────────────
+// Read live from the vendor↔item link table, so the terms shown here are the same
+// ones the replenishment engine uses to size a suggested order.
+const vendorOpen = ref(false)
+const vendorTick = ref(0)
+
+const vendorRows = computed(() => {
+  void vendorTick.value // re-read after the drawer saves
+  return product.value ? vendorItemsForSku(product.value.sku) : []
+})
+
+const preferredVendor = computed(() => {
+  void vendorTick.value
+  return product.value ? preferredVendorItem(product.value.sku) : undefined
+})
+
+/** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
+ *  meaningless on its own when a pallet is 20 sacks. */
+function moqLabel(moq: number, purchaseUnit: string, unitsPer: number): string {
+  const base = `${moq.toLocaleString('id-ID')} ${purchaseUnit}`
+  if (unitsPer <= 1 || !product.value) return base
+  return `${base} = ${(moq * unitsPer).toLocaleString('id-ID')} ${product.value.unit}`
+}
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 function formatQty(n: number, unit: string) {
@@ -133,6 +225,32 @@ const pagedWarehouseStock = computed(() => {
   const start = (whPage.value - 1) * whPerPage.value
   return warehouseStock.value.slice(start, start + whPerPage.value)
 })
+
+// Min. stock is the only figure here a person SETS — on hand, reserved, available
+// and in transit are all measured by the warehouse, so they stay read only. Edits
+// are held in a draft until Save: min. stock drives low-stock counts and
+// replenishment, so a half-typed number shouldn't take effect on the way to the
+// right one.
+const whEditing = ref(false)
+const whMinDraft = reactive<Record<string, string>>({})
+function startEditMinStock() {
+  for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
+  for (const s of warehouseStock.value) whMinDraft[s.warehouseId] = String(s.minStock)
+  whEditing.value = true
+}
+function saveMinStock() {
+  if (!product.value) return
+  for (const s of warehouseStock.value) {
+    const cleaned = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
+    // A cleared field means "I didn't finish typing", not "no floor" — leave the
+    // warehouse as it was. Zero is still settable by typing it.
+    if (cleaned === '') continue
+    const next = Number(cleaned)
+    if (next === s.minStock) continue
+    setWarehouseMinStock(s.warehouseId, product.value.sku, next)
+  }
+  whEditing.value = false
+}
 
 // ── Stock by batches tab (batch-tracked products only) ────────────────────────────
 const allBatches = computed(() => product.value ? getProductBatches(product.value.sku) : [])
@@ -360,6 +478,21 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <a v-else class="pd-link">{{ product.defaultPurchaseAccount }}</a>
               </ContentList>
               <ContentList label="Default purchase tax" :value="isMigrationPending ? '—' : product.defaultPurchaseTax" />
+              <!-- Preferred vendor + its minimum order — the two facts a buyer
+                   opens this page for. The full comparison is in the Vendors tab. -->
+              <ContentList label="Preferred vendor">
+                <template v-if="preferredVendor">
+                  <span>{{ vendorNameFor(preferredVendor.vendorId) }}</span>
+                  <span class="pd-vendor-note">
+                    Lead time {{ preferredVendor.leadTimeDays }} days ·
+                    MOQ {{ moqLabel(preferredVendor.moq, preferredVendor.purchaseUnit, preferredVendor.unitsPerPurchaseUnit) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="pd-vendor-none">Not set</span>
+                  <span class="pd-vendor-note">This product cannot be ordered until a vendor is added.</span>
+                </template>
+              </ContentList>
             </div>
           </div>
         </section>
@@ -395,10 +528,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       <MpTabs id="pd-detail-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="pd-tab-transactions" value="transactions">Transactions</MpTab>
+          <MpTab id="pd-tab-vendors" value="vendors">Vendors</MpTab>
           <MpTab id="pd-tab-units" value="unit-conversions">Unit conversions</MpTab>
           <MpTab v-if="product.trackStockBy === 'Batch'" id="pd-tab-batches" value="batches">Stock by batches</MpTab>
           <MpTab v-else-if="product.trackStockBy === 'Serial number'" id="pd-tab-serials" value="serials">Stock by serial numbers</MpTab>
-          <MpTab v-else id="pd-tab-warehouses" value="warehouses">Stock by warehouses</MpTab>
+          <!-- Every product sits in warehouses, whatever it's tracked by — and this is
+               the only place a warehouse's min. stock can be set, so batch- and
+               serial-tracked products need it too, not just quantity-tracked ones.
+               Kept last so no existing tab shifts position. -->
+          <MpTab id="pd-tab-warehouses" value="warehouses">Stock by warehouses</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -473,7 +611,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="pd-tr">
                     <td class="pd-td">{{ formatDate(tx.date) }}</td>
                     <td class="pd-td">
-                      <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
+                      <!-- Plain text, not a link: a warehouse manager shouldn't be able to
+                           open transactions from warehouses they aren't assigned to. -->
+                      <span class="pd-tx-number">{{ tx.number }}</span>
                     </td>
                     <td class="pd-td">
                       <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
@@ -507,11 +647,182 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           </MpTabPanel>
 
           <!-- Unit conversions -->
-          <MpTabPanel value="unit-conversions">
-            <div class="empty-full">
+          <!-- Vendors — who supplies this product and on what terms. Same numbers
+               the replenishment engine sizes an order from, so a buyer can see why
+               a suggested quantity came out the way it did. -->
+          <MpTabPanel value="vendors">
+            <div v-if="vendorRows.length" class="pd-vendor-panel">
+              <div class="pd-filter-bar pd-filter-bar--end">
+                <button
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  type="button"
+                  @click="vendorOpen = true"
+                >Edit vendors</button>
+              </div>
+              <div class="pd-table-scroll">
+                <table class="pd-table">
+                  <colgroup>
+                    <col style="width: 240px" />
+                    <col style="width: 116px" />
+                    <col style="width: 104px" />
+                    <col style="width: 110px" />
+                    <col style="width: 130px" />
+                    <col style="width: 160px" />
+                    <col style="width: 104px" />
+                    <col style="width: 160px" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pd-th">Vendor</th>
+                      <th class="pd-th">Preference</th>
+                      <th class="pd-th pd-th--num">Lead time</th>
+                      <th class="pd-th pd-th--num">MOQ</th>
+                      <th class="pd-th">MOQ unit</th>
+                      <th class="pd-th pd-th--num">In base unit</th>
+                      <th class="pd-th pd-th--num">Pack size</th>
+                      <th class="pd-th pd-th--num">Unit cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="vi in vendorRows" :key="vi.id" class="pd-tr">
+                      <td class="pd-td">
+                        <span class="pd-vendor-name">{{ vendorNameFor(vi.vendorId) }}</span>
+                        <span class="pd-vendor-note">
+                          Buys by the {{ vi.purchaseUnit }}
+                          <template v-if="vi.unitsPerPurchaseUnit > 1">
+                            = {{ vi.unitsPerPurchaseUnit }} {{ product.unit }}
+                          </template>
+                        </span>
+                      </td>
+                      <td class="pd-td">
+                        <MpBadge v-if="vi.isPreferred" for="tableStatus" type="completed">Preferred</MpBadge>
+                        <span v-else class="pd-vendor-alt">Alternate</span>
+                      </td>
+                      <td class="pd-td pd-td--num">{{ vi.leadTimeDays }} days</td>
+                      <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
+                      <td class="pd-td">
+                        {{ vi.purchaseUnit }}
+                        <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
+                          multi-unit
+                        </span>
+                        <span v-else class="pd-vendor-note">base unit</span>
+                      </td>
+                      <td class="pd-td pd-td--num">
+                        {{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}
+                      </td>
+                      <td class="pd-td pd-td--num">{{ vi.packSize }} {{ vi.purchaseUnit }}</td>
+                      <td class="pd-td pd-td--num">{{ formatIDR(vi.unitCost) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="pd-vendor-hint">
+                An order is raised to the vendor's minimum, then rounded up to a whole pack.
+                The preferred vendor is used by default when a draft purchase order is created.
+              </p>
+            </div>
+            <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No unit conversions</p>
-              <p class="empty-full-desc">Unit conversions will appear here.</p>
+              <p class="empty-full-title">No vendors</p>
+              <p class="empty-full-desc">
+                No vendor supplies this product yet, so it cannot be ordered or replenished.
+              </p>
+              <button
+                class="btn-enterprise btn-enterprise--secondary empty-cta"
+                type="button"
+                @click="vendorOpen = true"
+              >Add vendor</button>
+            </div>
+          </MpTabPanel>
+
+          <!-- Unit conversions — larger units this product is handled in. Vendor MOQ
+               and pack size are quoted in one of these, so editing a factor here
+               changes what every vendor's minimum means. -->
+          <MpTabPanel value="unit-conversions">
+            <div class="pd-unit-panel">
+              <p class="pd-unit-intro">
+                Base unit is <strong>{{ product.unit }}</strong>. Add the larger units this product
+                is bought or handled in — a vendor's minimum order can then be quoted in any of them.
+              </p>
+
+              <div v-if="conversions.length" class="pd-table-scroll">
+                <table class="pd-table">
+                  <colgroup>
+                    <col style="width: 220px" />
+                    <col style="width: 160px" />
+                    <col style="width: 240px" />
+                    <col style="width: 200px" />
+                    <col style="width: 90px" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pd-th">Unit</th>
+                      <th class="pd-th pd-th--num">Quantity</th>
+                      <th class="pd-th">Conversion</th>
+                      <th class="pd-th">Used by</th>
+                      <th class="pd-th" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="c in conversions" :key="c.id" class="pd-tr">
+                      <td class="pd-td">{{ c.name }}</td>
+                      <td class="pd-td pd-td--num">
+                        <MpInput
+                          :id="`pd-uc-factor-${c.name}`"
+                          :model-value="String(c.factor)"
+                          type="number"
+                          :class="css({ width: '88px' })"
+                          @update:model-value="(v: string) => editFactor(c.name, v)"
+                        />
+                      </td>
+                      <td class="pd-td">1 {{ c.name }} = {{ c.factor }} {{ product.unit }}</td>
+                      <td class="pd-td">
+                        <span v-if="vendorRows.filter(v => v.purchaseUnit === c.name).length" class="pd-vendor-note">
+                          {{ vendorRows.filter(v => v.purchaseUnit === c.name).length }}
+                          vendor MOQ
+                        </span>
+                        <span v-else class="pd-vendor-alt">—</span>
+                      </td>
+                      <td class="pd-td pd-td--num">
+                        <button
+                          class="pd-uc-remove"
+                          type="button"
+                          aria-label="Remove"
+                          @click="deleteConversion(c.name)"
+                        ><MpIcon name="minus-circular" size="md" /></button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="pd-unit-empty">
+                No larger units yet — this product is only handled by the {{ product.unit }}.
+              </p>
+
+              <div class="pd-unit-add">
+                <span class="pd-unit-add-label">Add unit</span>
+                <MpInput
+                  id="pd-uc-new-name"
+                  v-model="newUnitName"
+                  placeholder="Pack"
+                  :class="css({ width: '160px' })"
+                />
+                <span class="pd-unit-eq">=</span>
+                <MpInput
+                  id="pd-uc-new-factor"
+                  v-model="newUnitFactor"
+                  type="number"
+                  placeholder="12"
+                  :class="css({ width: '96px' })"
+                />
+                <span class="pd-unit-eq">{{ product.unit }}</span>
+                <button
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  type="button"
+                  @click="addConversion"
+                >Add</button>
+              </div>
+              <p v-if="unitError" class="pd-unit-error">{{ unitError }}</p>
             </div>
           </MpTabPanel>
 
@@ -682,8 +993,29 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             />
           </MpTabPanel>
 
-          <!-- Stock by warehouses -->
-          <MpTabPanel v-else value="warehouses">
+          <!-- Stock by warehouses — shown for every product, alongside the batch /
+               serial breakdown rather than instead of it. -->
+          <MpTabPanel value="warehouses">
+            <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
+              <div v-if="whEditing" class="pd-filter-right">
+                <button
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  type="button"
+                  @click="whEditing = false"
+                >Cancel</button>
+                <button
+                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  type="button"
+                  @click="saveMinStock"
+                >Save</button>
+              </div>
+              <button
+                v-else
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                type="button"
+                @click="startEditMinStock"
+              >Edit</button>
+            </div>
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
@@ -715,7 +1047,17 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ s.minStock.toLocaleString('id-ID') }}</td>
+                    <td class="pd-td pd-td--num">
+                      <MpInput
+                        v-if="whEditing"
+                        :id="`pd-wh-min-stock-${s.warehouseId}`"
+                        v-model="whMinDraft[s.warehouseId]"
+                        type="number"
+                        :aria-label="`Min. stock for ${s.warehouseName}`"
+                        :class="css({ width: '88px' })"
+                      />
+                      <template v-else>{{ s.minStock.toLocaleString('id-ID') }}</template>
+                    </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
                 </tbody>
@@ -768,6 +1110,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       :filename="barcodePreviewFilename"
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
+    />
+
+    <!-- Same drawer the replenishment worklist uses, so vendor terms are edited in
+         exactly one place no matter where the user came from. -->
+    <VendorItemDrawer
+      v-model:is-open="vendorOpen"
+      :sku="product.sku"
+      @saved="vendorTick++"
     />
   </div>
 
@@ -894,6 +1244,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   white-space: nowrap;
 }
 .pd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.pd-tx-number { color: var(--mp-text-default); }
 .pd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
@@ -940,4 +1291,42 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-section-head .linked-section-title { margin: 0; }
 .detail-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-text-default, #080d0e); color: var(--mp-text-default); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+
+/* ── Unit conversions ── */
+.pd-unit-panel { display: flex; flex-direction: column; }
+.pd-unit-intro { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin-bottom: var(--mp-spacing-3); }
+.pd-unit-empty {
+  padding: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
+.pd-unit-add {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-4); flex-wrap: wrap;
+}
+.pd-unit-add-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pd-unit-eq { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pd-unit-error { margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.pd-uc-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary);
+}
+.pd-uc-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger); }
+
+/* ── Vendors ── */
+.pd-vendor-panel { display: flex; flex-direction: column; }
+.pd-vendor-name { display: block; color: var(--mp-text-default); }
+.pd-vendor-note {
+  display: block; margin-top: 2px;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
+}
+.pd-vendor-none { color: var(--mp-text-secondary); }
+.pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.pd-vendor-hint {
+  margin-top: var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
 </style>

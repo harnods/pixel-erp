@@ -1,4 +1,5 @@
 import { purchaseOrders } from './purchaseOrders'
+import { getPurchaseOrderDocument } from './purchaseOrderLines'
 import type { PurchaseOrder } from './types'
 
 /**
@@ -276,7 +277,13 @@ export function getPurchaseOrderDetail(id: string): PurchaseOrderDetail {
   const idx = Math.max(0, purchaseOrders.findIndex(o => o.id === id))
   const order = purchaseOrders[idx] ?? purchaseOrders[0]!
 
-  const { items, totals } = buildLineItems(order.total, order.itemCount, idx + 1)
+  // A PO created in-app (e.g. from the replenishment worklist) has REAL stored line
+  // items and a REAL warehouse; only the 60 seed orders fall back to the generated
+  // industrial-parts lines and the free-text WAREHOUSES list below.
+  const stored = getPurchaseOrderDocument(id)
+  const { items, totals } = stored
+    ? { items: stored.lineItems, totals: stored.totals }
+    : buildLineItems(order.total, order.itemCount, idx + 1)
 
   const attachments: POAttachment[] = order.hasAttachment
     ? [
@@ -290,12 +297,12 @@ export function getPurchaseOrderDetail(id: string): PurchaseOrderDetail {
     email: emailFor(order.vendor.name),
     billingAddress: pick(BILLING_ADDRESSES, idx),
     shipTo: pick(SHIP_TO, idx),
-    shipDate: addDays(order.date, 3),
+    shipDate: stored?.shipDate ?? addDays(order.date, 3),
     shipVia: pick(SHIP_VIA, idx),
     trackingNo: `TRK${String(1000 + idx)}`,
     referenceNo: `REF-${order.number.slice(-3)}`,
-    paymentTerms: pick(PAYMENT_TERMS, idx),
-    warehouse: pick(WAREHOUSES, idx),
+    paymentTerms: stored?.paymentTerms ?? pick(PAYMENT_TERMS, idx),
+    warehouse: stored?.warehouse ?? pick(WAREHOUSES, idx),
     lineItems: items,
     message: 'Please deliver during working hours (08:00–16:00). Confirm receipt on arrival.',
     memo: 'Approved budget line: procurement Q2. Verify item specs against the attached quotation.',

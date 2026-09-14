@@ -31,11 +31,16 @@ import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
-import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+// Needed by the cycle-count recommendation banner. Was already referenced by the
+// "recommendations are off" branch, which only escaped a crash because it returns
+// early before touching it — so that branch would 500 the moment a warehouse was
+// filtered.
+import { warehouses } from '~/data/warehouses'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
+import { replenishmentDueCount, replenishmentSetupCount, replenishmentRevision } from '~/data/replenishment'
 import { employees } from '~/data/employees'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 import { useCoworkContext } from '~/composables/useCoworkContext'
@@ -85,6 +90,8 @@ const pageRegistry: Record<string, Component> = {
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
+  'Replenishment':     defineAsyncComponent(() => import('~/components/pages/ReplenishmentPage.vue')),
+  'Replenishment settings': defineAsyncComponent(() => import('~/components/pages/SettingsReplenishmentPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
@@ -225,6 +232,8 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const ReplenishmentPage = asyncPage(() => import('~/components/pages/ReplenishmentPage.vue'))
+const ReplenishmentSetupPage = asyncPage(() => import('~/components/pages/ReplenishmentSetupPage.vue'))
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
@@ -234,6 +243,17 @@ const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/Cr
 // built with; port to real routes if/when it needs deep-linking). ──────────────
 const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
 provide('purchaseOrdersTab', purchaseOrdersTab)
+// ?poTab= lets another page (e.g. the replenishment worklist after creating drafts)
+// land directly on the right Purchase orders tab.
+watch(() => [currentPageKey.value, route.query.poTab] as const, ([key, tab]) => {
+  if (key !== 'Purchase orders') return
+  if (tab === 'all' || tab === 'awaiting' || tab === 'rejected') purchaseOrdersTab.value = tab
+}, { immediate: true })
+
+// Recalculate lives in the shell's title bar but the state lives in the page, so
+// the click is passed down as a signal (same shape as the other title-bar actions).
+const replenishRecalcSignal = ref(0)
+provide('replenishRecalcSignal', replenishRecalcSignal)
 const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
 const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
 const poDetailOrderId = ref<string | null>(null)
@@ -718,6 +738,7 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  'Replenishment':     ['To order', 'Needs setup'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -734,11 +755,25 @@ const pageTabs: Record<string, string[]> = {
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
 // Cycle counts' Recommendations tab has its own single-warehouse selector.
-const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
+const { warehouseId: recommendationWarehouseId, setWarehouse: setRecommendationWarehouse } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
   if (currentPageKey.value === 'Overview') return {}
+  if (currentPageKey.value === 'Replenishment') {
+    // Depend on the revision so muting/un-muting a product updates the badge —
+    // the count functions are plain reads and offer nothing else to track.
+    void replenishmentRevision.value
+    // Same scope + same functions the worklist table uses, so the badge can never
+    // disagree with the list it labels.
+    const scope = wh.length === 1 ? wh[0]! : 'all'
+    const out: Record<string, number> = {}
+    const due = replenishmentDueCount(scope === 'all' ? undefined : scope)
+    if (due) out['To order'] = due
+    const setup = replenishmentSetupCount(scope === 'all' ? undefined : scope)
+    if (setup) out['Needs setup'] = setup
+    return out
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -869,13 +904,77 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
-// product names, only shown once the Recommendations tab actually has SKUs
-// flagged for counting.
-const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
-const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
+// ── Daily "Recommended for counting today" banner (Cycle counts index, Count
+// task tab only) ─────────────────────────────────────────────────────────────
+// Recommendations are computed per warehouse, so this banner is too: it answers
+// for exactly the warehouse(s) the index is filtered to, and never names a SKU
+// from a warehouse the table is hiding.
+const onCycleCountTab = computed(() =>
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task',
 )
+
+// The warehouses the banner speaks for. No filter set means "every warehouse the
+// user can see" — the same question a multi-warehouse filter asks, so it gets the
+// same answer shape.
+const cycleCountBannerScope = computed(() => {
+  const picked = activeWarehouseFilter.value
+  const all = warehouses.filter(w => w.status === 'active' && !w.isDefault)
+  return picked.length ? all.filter(w => picked.includes(w.id)) : all
+})
+// Warehouses with recommendations switched off (or nothing flagged) drop out
+// rather than reporting a bare "0 SKUs".
+const cycleCountBannerCounts = computed(() =>
+  cycleCountBannerScope.value
+    .map(w => ({ id: w.id, name: w.name, count: recommendationCount(w.id) }))
+    .filter(w => w.count > 0),
+)
+const cycleCountBannerTotal = computed(() =>
+  cycleCountBannerCounts.value.reduce((sum, w) => sum + w.count, 0),
+)
+
+// Two shapes, chosen by how many warehouses are IN SCOPE — not by how many have
+// something flagged. With several in scope, naming 3 products across them answers
+// the wrong question (the manager wants to know where the work is) and, worse,
+// reads as if the list covered every warehouse in the filter. So each warehouse
+// reports its own count, as a link straight into the Recommendations tab already
+// filtered to it. Only a scope of exactly one warehouse names the products, where
+// there is nothing to misattribute.
+const cycleCountBannerMulti = computed(() =>
+  onCycleCountTab.value && cycleCountBannerScope.value.length > 1 && cycleCountBannerCounts.value.length > 0,
+)
+const cycleCountBannerSingleId = computed(() =>
+  cycleCountBannerScope.value.length === 1 ? cycleCountBannerScope.value[0]!.id : undefined,
+)
+const cycleCountBannerNames = computed(() =>
+  topRecommendedProductNames(3, cycleCountBannerSingleId.value ? [cycleCountBannerSingleId.value] : activeWarehouseFilter.value),
+)
+const cycleCountBannerVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length > 0,
+)
+
+// Recommendations are opt-in per warehouse. Filter to one that has them switched
+// off and there is nothing to recommend — but silently dropping the banner reads
+// as a bug ("where did it go?"), so say why and point at the setting instead.
+// Only when EVERY filtered warehouse is off: if any one is on, its list is the
+// useful thing to show.
+const cycleCountRecOffNames = computed(() => {
+  const ids = activeWarehouseFilter.value
+  if (!ids.length) return []
+  const off = warehouses.filter(w => ids.includes(w.id) && !getWarehouseConfig(w.id).cycleCountRec)
+  return off.length === ids.length ? off.map(w => w.name) : []
+})
+const cycleCountRecOffConfigId = computed(() =>
+  activeWarehouseFilter.value.length === 1 ? activeWarehouseFilter.value[0] : null,
+)
+const cycleCountRecOffVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length === 0 && cycleCountRecOffNames.value.length > 0,
+)
+
+/** Open the Recommendations tab, pre-filtered to one warehouse when given. */
+function openRecommendations(warehouseId?: string) {
+  if (warehouseId) setRecommendationWarehouse(warehouseId)
+  selectTab('Recommendations')
+}
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 // WMS analytics — one page, direction per tab. Shared by the ERP "WMS analytics"
@@ -939,6 +1038,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  'Replenishment': {
+    'To order': ReplenishmentPage,
+    // Not-tracked products are deliberate, so they get no tab of their own — the
+    // Needs setup tab reveals them on demand instead (see ReplenishmentSetupPage).
+    'Needs setup': () => h(ReplenishmentSetupPage, { mode: 'needs-setup' }),
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
@@ -1708,6 +1813,22 @@ function startResize(e: MouseEvent) {
             New sales order
           </button>
         </div>
+        <!-- Replenishment: the worklist is DERIVED, so there is no "+ New" primary.
+             Recalculate is the primary action, Settings the secondary. -->
+        <div v-else-if="currentPageKey === 'Replenishment'" class="page-title-actions">
+          <button
+            class="btn-enterprise btn-enterprise--secondary"
+            @click="router.push('/replenishment-settings')"
+          >
+            {{ t('Settings') }}
+          </button>
+          <button
+            class="btn-enterprise btn-enterprise--primary"
+            @click="replenishRecalcSignal++"
+          >
+            {{ t('Recalculate') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
@@ -2129,12 +2250,38 @@ function startResize(e: MouseEvent) {
       </div>
 
       <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
-        <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
+        <!-- Several warehouses in scope: where the work is, not which products. -->
+        <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>Recommended for counting today</MpBannerTitle>
+          <MpBannerDescription>
+            <template v-for="(w, i) in cycleCountBannerCounts" :key="w.id">
+              <MpButton variant="textLink" size="sm" @click="openRecommendations(w.id)">
+                {{ w.count }} {{ w.count === 1 ? 'SKU' : 'SKUs' }}
+              </MpButton>
+              <span>&nbsp;in {{ w.name }}</span>
+              <span v-if="i < cycleCountBannerCounts.length - 2">, </span>
+              <span v-else-if="i === cycleCountBannerCounts.length - 2"> and </span>
+            </template>
+            <span>&nbsp;{{ cycleCountBannerTotal === 1 ? 'is' : 'are' }} recommended for counting today.</span>
+          </MpBannerDescription>
+        </MpBanner>
+        <!-- Exactly one warehouse in scope: the top 3 products themselves. -->
+        <MpBanner v-else-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
           <MpBannerDescription>{{ cycleCountBannerNames.join(', ') }}</MpBannerDescription>
           <MpBannerLink>
-            <MpButton variant="textLink" size="sm" @click="selectTab('Recommendations')">View all recommendations</MpButton>
+            <MpButton variant="textLink" size="sm" @click="openRecommendations(cycleCountBannerSingleId)">View all recommendations</MpButton>
+          </MpBannerLink>
+        </MpBanner>
+        <!-- Nothing to recommend because the setting is off, not because nothing needs counting. -->
+        <MpBanner v-else-if="cycleCountRecOffVisible" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>{{ cycleCountRecOffNames.length === 1 ? `Cycle count recommendations are off for ${cycleCountRecOffNames[0]}` : 'Cycle count recommendations are off for the selected warehouses' }}</MpBannerTitle>
+          <MpBannerDescription>Turn them on in Configure warehouse to see which SKUs need counting here.</MpBannerDescription>
+          <MpBannerLink v-if="cycleCountRecOffConfigId">
+            <MpButton variant="textLink" size="sm" @click="router.push(`/warehouses/${cycleCountRecOffConfigId}/configure`)">Configure warehouse</MpButton>
           </MpBannerLink>
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />

@@ -56,9 +56,14 @@ const RULE_KEY = { neg: 'cycleCountRuleNeg', min: 'cycleCountRuleMin', var: 'cyc
  *  own score/sort so the "N recommended for counting today" summary (e.g. a daily
  *  banner on the Cycle counts index) never drifts from what that table shows first.
  *  Each warehouse has its own rule order/weights, so these are recomputed per warehouse. */
-export function topRecommendedProductNames(limit = 3): string[] {
+export function topRecommendedProductNames(limit = 3, warehouseIds?: string[]): string[] {
   const scored: { name: string; score: number }[] = []
+  // Recommendations are computed per warehouse, so the summary has to be too:
+  // pass the warehouse(s) on screen and it names only their SKUs. No filter set
+  // → every warehouse the user can see, same as the Recommendations tab.
+  const scope = warehouseIds?.length ? new Set(warehouseIds) : null
   for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
+    if (scope && !scope.has(wh.id)) continue
     const cfg = getWarehouseConfig(wh.id)
     if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
@@ -85,5 +90,16 @@ export function topRecommendedProductNames(limit = 3): string[] {
     }
   }
   scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, limit).map((r) => r.name)
+  // One product can be recommended in several warehouses; the summary is a list
+  // of products, so keep each name once (its highest score) rather than spending
+  // a slot naming the same thing twice.
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const r of scored) {
+    if (seen.has(r.name)) continue
+    seen.add(r.name)
+    names.push(r.name)
+    if (names.length === limit) break
+  }
+  return names
 }

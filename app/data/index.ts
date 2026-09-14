@@ -48,6 +48,17 @@ export * from './purchaseReceivings'
 export * from './purchaseInvoices'
 export * from './inboundSync'
 
+// ── Replenishment (vendor terms → demand → recommendation → draft PO) ───────
+export * from './productUnits'
+export * from './vendorItems'
+export * from './replenishmentConfig'
+export * from './replenishmentSettings'
+export * from './demandHistory'
+export * from './replenishmentRuns'
+export * from './replenishment'
+export * from './purchaseOrderLines'
+export * from './replenishmentDraftPo'
+
 // ── Outbound (order → picking → packing → delivery → shipment) ──────────────
 export * from './outgoing'
 export * from './pickingTasks'

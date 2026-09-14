@@ -344,7 +344,14 @@ function closeExportModal() { exportModalOpen.value = false }
           <div class="stat-title">Low stock</div>
           <div class="stat-period">Below minimum stock</div>
           <div class="stat-amount stat-amount--warning">{{ lowStockRows.length }}</div>
-          <a class="stat-link" @click="viewLowStock">View products</a>
+          <!-- Two different questions, so two links. "View products" filters THIS
+               list to what is low against min. stock. "Reorder plan" leaves for the
+               worklist, which answers how much to order per warehouse — a demand-
+               driven figure, so its count legitimately differs from this one. -->
+          <div class="stat-links">
+            <a class="stat-link" @click="viewLowStock">View products</a>
+            <a class="stat-link" @click="router.push('/replenishment')">Reorder plan</a>
+          </div>
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">Out of stock</div>
@@ -521,6 +528,7 @@ function closeExportModal() { exportModalOpen.value = false }
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/replenishment')">Reorder plan</MpPopoverListItem>
             <MpPopoverListItem @click="router.push(`/product-list/${(row as ProductIndexRow).sku}/edit`)">Edit</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
@@ -763,6 +771,8 @@ function closeExportModal() { exportModalOpen.value = false }
 
 .stat-amount--warning { color: var(--mp-text-warning); }
 .stat-amount--danger { color: var(--mp-text-danger); }
+
+.stat-links { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 
 .stat-link {
   display: inline-flex;

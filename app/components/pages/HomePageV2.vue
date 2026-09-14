@@ -10,6 +10,7 @@
  */
 import { h, ref, computed, onMounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
+import { replenishmentDueCount } from '~/data/replenishment'
 import { MpIcon, toast } from '@mekari/pixel3'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import HomeWidgetV2 from '~/components/pages/HomeWidgetV2.vue'
@@ -71,12 +72,21 @@ const strip = [
 ]
 
 // KPI stats — cross-module.
-const stats = [
+// The replenishment tile reads the SAME function the worklist and its tab badge
+// read, so the number on the home page can never contradict the list it links to.
+const replenishDue = computed(() => replenishmentDueCount())
+const stats = computed(() => [
   { label: 'Revenue (MTD)',        value: 'Rp1.24 M', delta: '+8.2% vs Jul',        deltaTone: 'up' as const,    ai: 'Ask AI what drove growth' },
   { label: 'Cash balance',         value: 'Rp486 M',  delta: 'Across 8 accounts',   deltaTone: 'muted' as const, ai: 'Forecast next 30 days' },
   { label: 'Overdue receivables',  value: 'Rp92 M',   delta: '11 invoices past due', deltaTone: 'warn' as const,  ai: 'Draft reminders with AI' },
-  { label: 'Low-stock SKUs',       value: '14',       delta: '3 below reorder point', deltaTone: 'warn' as const, ai: 'AI suggested reorder plan' },
-]
+  {
+    label: 'Products to reorder',
+    value: String(replenishDue.value),
+    delta: 'At or below reorder point',
+    deltaTone: 'warn' as const,
+    ai: 'Open the replenishment worklist',
+  },
+])
 
 // ── Widget layout (Manage widgets): drag to reorder, add/remove, persisted ──────
 type WidgetKey = 'approvals' | 'cash-flow' | 'recent-tx' | 'due-soon' | 'warehouse' | 'production' | 'pnl' | 'expenses' | 'bank-accounts'

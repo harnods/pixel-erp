@@ -2,6 +2,9 @@ import { reactive } from 'vue'
 import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
+import { loadCreated, saveCreated } from './persist'
+
+const CREATED_KEY = 'purchase-orders-created-v1'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -64,4 +67,44 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
-export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
+// User-created orders are persisted and merged ON TOP of the freshly generated
+// seed — `loadCreated`, not `loadSnapshot`, because this feature only ever appends
+// (the 60 seed orders are never mutated), which is exactly the case persist.ts
+// documents for the append-only helpers.
+const createdOrders = loadCreated<PurchaseOrder>(CREATED_KEY)
+
+export const purchaseOrders: PurchaseOrder[] = reactive([...createdOrders, ...buildPurchaseOrders()])
+
+/** Persist just the user-created orders (newest first). */
+export function persistCreatedPurchaseOrders(): void {
+  saveCreated(CREATED_KEY, purchaseOrders.filter((o) => o.id.startsWith('po-new-')))
+}
+
+/** Next sequential id for a created order — kept clear of the `po-0NN` seed range. */
+export function nextPurchaseOrderId(): string {
+  const used = purchaseOrders.filter((o) => o.id.startsWith('po-new-')).length
+  return `po-new-${String(used + 1).padStart(3, '0')}`
+}
+
+/** Next document number, continuing the seed's `PO-2026-NNNN` sequence. */
+export function nextPurchaseOrderNumber(): string {
+  const max = purchaseOrders.reduce((m, o) => {
+    const n = parseInt(o.number.match(/(\d+)$/)?.[1] ?? '0', 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `PO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+/**
+ * Add a purchase order.
+ *
+ * `unshift`, not `push`: `purchaseOrders` is sorted newest-first, so appending
+ * would bury a brand-new order at the bottom of the index. (Note
+ * `PurchaseOrderFormPage.vue` still pushes — that is a pre-existing bug, tracked
+ * separately, not something this feature relies on.)
+ */
+export function addPurchaseOrder(order: PurchaseOrder): PurchaseOrder {
+  purchaseOrders.unshift(order)
+  persistCreatedPurchaseOrders()
+  return order
+}
