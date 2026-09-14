@@ -280,7 +280,7 @@ export type AuthorityAction = 'view' | 'create' | 'edit' | 'delete'
 
 export const AUTHORITY_ACTIONS: { value: AuthorityAction; label: string }[] = [
   { value: 'view', label: 'View' },
-  { value: 'create', label: 'Create/Add' },
+  { value: 'create', label: 'Create' },
   { value: 'edit', label: 'Edit' },
   { value: 'delete', label: 'Delete' },
 ]
