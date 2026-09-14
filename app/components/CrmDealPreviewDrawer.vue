@@ -112,7 +112,7 @@ function stampTime(id: string): string {
                 <ContentList label="Customer" :value="d.company" />
                 <ContentList label="Stage"><ErpStatusBadge v-bind="stageBadge(d.stage)" /></ContentList>
                 <ContentList label="Created" :value="`${formatDate(d.createdAt)}, ${stampTime(d.id)}`" />
-                <ContentList label="Due date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
+                <ContentList label="Close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
                 <ContentList label="Reference number" :value="d.referenceNumber || '—'" />
                 <ContentList v-if="d.stage === 'Lost'" label="Lost reason" :value="d.lostReason || '—'" />
               </div>

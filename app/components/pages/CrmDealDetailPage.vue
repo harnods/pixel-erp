@@ -439,7 +439,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction date')" :value="fmtDate(deal.transactionDate || deal.createdAt)" />
-                  <ContentList :label="t('Due date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Close date')" :value="fmtDate(deal.expectedCloseDate)" />
                   <ContentList :label="t('Payment terms')" :value="deal.paymentTerms || '—'" />
                 </div>
                 <div class="content-list-col">

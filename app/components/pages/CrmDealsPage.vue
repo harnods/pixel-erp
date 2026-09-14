@@ -430,7 +430,7 @@ const exportColumns = [
   { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
   { key: 'picName', label: t('Contact person') },
   { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
-  { key: 'expectedCloseDate', label: t('Due date') }, { key: 'conversion', label: t('Conversion status') },
+  { key: 'expectedCloseDate', label: t('Close date') }, { key: 'conversion', label: t('Conversion status') },
   { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
 function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
@@ -450,10 +450,10 @@ const baseColumns: TableColumn[] = [
   { key: 'contactPerson', label: t('Contact person'), kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'stage',         label: t('Stage'),          kind: 'status',  sortable: true, sortType: 'text'   },
   { key: 'owner',         label: t('Owner'),          kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'expectedCloseDate', label: t('Close date'), kind: 'date',    sortable: true, sortType: 'text'   },
   { key: 'value',         label: t('Deal value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
-  { key: 'expectedCloseDate', label: t('Due date'),     kind: 'date',    sortable: true, sortType: 'text' },
   { key: 'lastActivity',      label: t('Last updated'), kind: 'default', sortable: true, sortType: 'text' },
 ]
 const allCols: TableColumn[] = [...baseColumns, ...optionalColumns]
@@ -652,7 +652,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <span class="cell-link cell-text" @click.stop="goCustomer(asDeal(row).customerId)">{{ asDeal(row).company }}</span>
         </template>
 
-        <template #cell-contactPerson="{ row }"><span class="cell-text">{{ asDeal(row).picName || '—' }}</span></template>
+        <template #cell-contactPerson="{ row }">
+          <span class="cc-contact-cell">
+            <span class="cell-text">{{ asDeal(row).contacts?.[0]?.name || '—' }}</span>
+            <span v-if="asDeal(row).contacts?.[0]?.email" class="cc-sub cell-text">{{ asDeal(row).contacts?.[0]?.email }}</span>
+          </span>
+        </template>
 
         <template #cell-stage="{ row }">
           <ErpStatusBadge :status="asDeal(row).stage" v-bind="stageBadge(asDeal(row).stage)" />
@@ -927,6 +932,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .cc-sub { display: block; margin-top: 1px; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cc-num { font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); }
 .cc-id-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.cc-contact-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cc-muted { color: var(--mp-text-subtle, #97a0af); }
 .deal-attention { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning, #b54708); }
 
