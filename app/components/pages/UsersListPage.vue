@@ -27,7 +27,7 @@ import UserViewDrawer from '~/components/patterns/UserViewDrawer.vue'
 import { successToast } from '~/utils/toasts'
 import {
   accountUsers, userRoleNames, userRoleTypes, userRoleTypeLabels, timeLimitText,
-  deleteAccountUser, type AccountUser,
+  deleteAccountUser, setAccountUserStatus, type AccountUser,
 } from '~/data/usersRoles'
 
 const { t } = useLocale()
@@ -109,6 +109,11 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 // ─── Row actions ────────────────────────────────────────────────────────────
 function resendInvitation(user: AccountUser) {
   successToast(`${t('Invitation sent to')} ${user.email}`)
+}
+
+function reactivate(user: AccountUser) {
+  setAccountUserStatus(user.id, 'active')
+  successToast(t('User reactivated'))
 }
 
 const viewTarget = ref<AccountUser | null>(null)
@@ -257,6 +262,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               v-if="(row as unknown as AccountUser).status === 'invited'"
               @click="resendInvitation(row as unknown as AccountUser)"
             >{{ t('Resend invitation') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as AccountUser).status === 'inactive'"
+              @click="reactivate(row as unknown as AccountUser)"
+            >{{ t('Reactivate') }}</MpPopoverListItem>
             <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="deleteTarget = (row as unknown as AccountUser)"

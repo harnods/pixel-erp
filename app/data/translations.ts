@@ -194,6 +194,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'OK': 'OK',
   'Team deactivated': 'Tim dinonaktifkan',
   'Team reactivated': 'Tim diaktifkan',
+  'User reactivated': 'Pengguna diaktifkan kembali',
   'Deactivate': 'Nonaktifkan',
   'Reactivate': 'Aktifkan',
   'Team Admin': 'Team admin',

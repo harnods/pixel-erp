@@ -7,13 +7,14 @@
  * structural CSS in this build), opened from the page title bar and from the
  * empty state's CTA.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButton, MpButtonGroup, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CustomRoleDrawer from '~/components/patterns/CustomRoleDrawer.vue'
 import { successToast } from '~/utils/toasts'
 import {
@@ -29,13 +30,18 @@ const { t } = useLocale()
 const { isOpen, editingId, openCreate, openEdit, close } = useCustomRoleDrawer()
 
 // ─── Columns ────────────────────────────────────────────────────────────────
-const columns: TableColumn[] = [
+const allCols: TableColumn[] = [
   { key: 'name',          label: 'Role name',     kind: 'name',    sortType: 'text' },
   { key: 'description',   label: 'Description',   kind: 'address' },
   { key: 'features',      label: 'Features',      align: 'right',  sortType: 'number' },
   { key: 'assignedUsers', label: 'Users assigned', align: 'right', sortType: 'number' },
   { key: 'updatedAt',     label: 'Last updated',  kind: 'date',    sortType: 'date' },
 ]
+const columnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(allCols.map((c) => [c.key, true])),
+)
+const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibility[c.key]))
 
 const rows = computed<CustomRole[]>(() =>
   [...customRoles].sort((a, b) => a.name.localeCompare(b.name)),
@@ -105,18 +111,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Tool icons: ghost icon-only MpButtons in one group (rule/filter-bar-icon-group),
              each tooltipped and aria-labelled (rule/btn-icon-tooltip). -->
         <MpButtonGroup class="filter-btn-group">
-          <MpTooltip id="tt-cr-columns" :label="t('Column settings')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="table-view-column" :aria-label="t('Column settings')"
-            />
-          </MpTooltip>
-          <MpTooltip id="tt-cr-export" :label="t('Export')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="download" :aria-label="t('Export')"
-            />
-          </MpTooltip>
+          <ColumnSettingsMenu id="cr-columns" :items="columnItems" :visibility="columnVisibility" />
         </MpButtonGroup>
 
         <div class="filter-search">
@@ -224,14 +219,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 
 .filter-btn-group { display: flex; align-items: center; }
-/* Ghost MpButton squared off to the 36x36 filter-bar tool size. The !important
-   overrides are Pixel's own atomic min-width/padding on .mp-button. */
-.filter-icon-btn {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important;
-  min-width: 0 !important; padding: var(--mp-spacing-2) !important;
-  color: var(--mp-text-default);
-}
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
