@@ -62,8 +62,8 @@
 | 6a | Product ↔ attribute audit log | **Build** — entries in the product's Activity log (Phase 2) |
 | 7 | Batch-update behaviour after an attribute change | **Build** — Batch edit form (Phase 3) |
 | 8 | Batch creation (web) — master data only, qty 0 | **Build** (Phase 3); API not built |
-| 9 | Update Batch via import | **Build** — stepped import page with a scenario FAB (Phase 4) |
-| 10 | Vendor attribute in Purchase transactions | **Deferred** (D1) — Phase 5 |
+| 9 | Update Batch via import | **Built** — stepped import page with real row validation; the scenario FAB only adds demo outcomes (Phase 4) |
+| 10 | Vendor attribute in Purchase transactions | **Built** on the Purchase delivery form (Phase 5, D1 lifted). WMS receiving and the purchase invoice flow are not covered. |
 
 ---
 
@@ -212,14 +212,14 @@
     - Product is not tracked by batch
     - Batch number not found
     - Duplicated Product and Batch combination
-    - This product does not use attribute xxx
+    - This product does not use Attribute xxx
     - Attribute xxx must be filled
     - Format must be in DD/MM/YYYY (or MM/YYYY)
-    - Grade name not found
+    - Grade Name not found
     - Grade is not active
   - The error table has a download-error-file action.
   - Semantics to spell out in the template help panel: `null` clears a value, and a blank cell leaves it unchanged.
-  - **Grade matching (A1):** by **Name** only, case-insensitive. Unknown → "Grade name not found". Inactive → "Grade is not active". Import never creates a grade.
+  - **Grade matching (A1):** by **Name** only, case-insensitive. Unknown → "Grade Name not found". Inactive → "Grade is not active". Import never creates a grade.
   - **Expiry (A2):** each row may be `DD/MM/YYYY` *or* `MM/YYYY`, and that row's value keeps that precision.
   - **Unassigned batch (A5):** a row naming it with any attribute filled is rejected. Proposed copy: "Unassigned batch can't have attributes" / "Batch Unassigned tidak dapat memiliki atribut". The copy is **pending PM confirmation (A7)**. Description-only rows are also rejected, since it's a system batch.
   - The template matches batches **by batch number**, so it can't rename them. Renames are web-only.
