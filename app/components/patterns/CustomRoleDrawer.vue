@@ -2,28 +2,35 @@
 /**
  * CustomRoleDrawer — Settings › Users & roles › Custom role → "Add / Edit custom
  * role". Follows Figma "Drawer / Custom Role / Add"
- * (kbjbVaG7fw9Jzv2jX1zBDf, node 4426:29058).
+ * (kbjbVaG7fw9Jzv2jX1zBDf, node 4426:29058) exactly.
  *
  * Rebuilt on the ERP drawer standard: a hand-rolled Teleport overlay
  * (rule/drawer-custom-shell — Pixel MpDrawer has no structural CSS in this
  * build). It is a FORM drawer, so an overlay click is ignored — closing is only
  * via ×, Cancel, or Esc, and in-progress input is never lost by a stray click.
  *
- * The permission matrix is ONE flat expandable table (not a master-detail rail
- * + grid): every feature is a row with a tri-state checkbox per action column;
- * a feature with sub-features gets an expand chevron revealing its sub-rows
- * indented underneath. A quick filter (Granted / Not granted) and a name search
- * scope which feature rows show; while searching, matching groups auto-expand.
+ * The permission matrix is ONE flat expandable table, up to 3 levels deep
+ * (Feature ▸ Level 1 ▸ Level 2, e.g. Settings ▸ Sales ▸ General settings ▸
+ * Sales quote): every level-1 row can expand to reveal level-2 rows, and a
+ * level-2 row can itself expand to reveal level-3 rows when it has children.
+ * A "Feature" quick filter (the 9 categories) and a name search scope which
+ * rows show; while searching, matching groups auto-expand at every level so a
+ * match is never hidden behind a collapsed chevron.
+ *
+ * The right-hand column mirrors Figma's "N permissions selected" summary: one
+ * block per category with any grant, either "View all {category} features"
+ * when the whole category is fully granted, or one bullet per distinct action
+ * granted anywhere in it ("View {category}", "Create {category}", …).
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  AUTHORITY_ACTIONS, DESCRIPTION_MAX, ROLE_NAME_MAX,
-  addCustomRole, authorityActionsFor, authorityFeaturesFor, authorityRowKeys,
+  AUTHORITY_ACTIONS, AUTHORITY_CATEGORIES, AUTHORITY_FEATURES, DESCRIPTION_MAX, ROLE_NAME_MAX,
+  addCustomRole, authorityActionsFor, authorityRowKeys, authoritySubRowKeys,
   getCustomRole, grantedFeatureCount, updateCustomRole,
-  type AuthorityAction, type AuthorityFeature, type AuthorityGrants,
+  type AuthorityAction, type AuthorityCategory, type AuthorityFeature, type AuthorityGrants, type AuthoritySubfeature,
 } from '~/data/usersRoles'
 
 const props = defineProps<{
@@ -37,12 +44,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useLocale()
 
 const isEdit = computed(() => !!props.roleId)
-
-// Project Accounting is a billing component, not a standard module — a tenant
-// without it never sees its authority rows (same gate as the Approval workflows
-// "Applies to: Project Action" condition).
-const { projectAccountingEnabled } = useApprovalWorkflowScenario()
-const features = computed(() => authorityFeaturesFor(projectAccountingEnabled.value))
+const features = AUTHORITY_FEATURES
 
 // ─── Draft state ────────────────────────────────────────────────────────────
 const name = ref('')
@@ -55,12 +57,11 @@ const isSaving = ref(false)
 
 // ─── Permission table — filter + search + expand state ─────────────────────
 const search = ref('')
-const quickFilter = ref('')
-const QUICK_FILTER_OPTIONS = [
-  { value: 'granted', label: 'Granted' },
-  { value: 'not-granted', label: 'Not granted' },
-]
+const quickFilter = ref<AuthorityCategory | ''>('')
+/** Level-1 expand state, keyed by feature.id. */
 const expandedFeatures = reactive<Record<string, boolean>>({})
+/** Level-2 expand state (only for subfeatures that have level-3 children), keyed `${featureId}.${subId}`. */
+const expandedSubs = reactive<Record<string, boolean>>({})
 
 /** Re-seed the draft on every open, so a discarded edit is forgotten next time. */
 watch(() => props.isOpen, (open) => {
@@ -72,36 +73,42 @@ watch(() => props.isOpen, (open) => {
   quickFilter.value = ''
   for (const key of Object.keys(grants)) delete grants[key]
   for (const key of Object.keys(expandedFeatures)) delete expandedFeatures[key]
+  for (const key of Object.keys(expandedSubs)) delete expandedSubs[key]
 
   const role = props.roleId ? getCustomRole(props.roleId) : undefined
   name.value = role?.name ?? ''
   description.value = role?.description ?? ''
   if (role) {
     for (const [key, actions] of Object.entries(role.grants)) grants[key] = [...actions]
-    // Expand every feature that already has something granted — the user
+    // Expand every group that already has something granted — the user
     // almost always wants to see where the role's authority actually is.
-    for (const f of features.value) {
-      if (f.subfeatures.length && authorityRowKeys(f).some((k) => grants[k]?.length)) expandedFeatures[f.id] = true
+    for (const f of features) {
+      if (!f.subfeatures.length) continue
+      if (authorityRowKeys(f).some((k) => grants[k]?.length)) expandedFeatures[f.id] = true
+      for (const s of f.subfeatures) {
+        if (s.children?.length && authoritySubRowKeys(f.id, s).some((k) => grants[k]?.length)) expandedSubs[`${f.id}.${s.id}`] = true
+      }
     }
   }
 }, { immediate: true })
 
 const featureCount = computed(() => grantedFeatureCount(grants))
 
-/** Feature rows the table shows — scoped by the quick filter and name search. */
+/** Feature rows the table shows — scoped by the category quick filter and name search. */
 const visibleFeatures = computed(() => {
   const s = search.value.trim().toLowerCase()
-  return features.value.filter((f) => {
-    const matchesSearch = !s || f.label.toLowerCase().includes(s) || f.subfeatures.some((sf) => sf.label.toLowerCase().includes(s))
-    if (!matchesSearch) return false
-    if (!quickFilter.value) return true
-    const granted = featureState(f).checked || featureState(f).indeterminate
-    return quickFilter.value === 'granted' ? granted : !granted
+  return features.filter((f) => {
+    if (quickFilter.value && f.category !== quickFilter.value) return false
+    if (!s) return true
+    if (f.label.toLowerCase().includes(s)) return true
+    return f.subfeatures.some((sub) =>
+      sub.label.toLowerCase().includes(s) || (sub.children ?? []).some((c) => c.label.toLowerCase().includes(s)),
+    )
   })
 })
 
-/** While searching, force-expand every visible group so a matched sub-feature
- *  is never hidden behind a collapsed chevron. */
+/** While searching, force-expand every visible group at every level so a
+ *  matched row is never hidden behind a collapsed chevron. */
 function isExpanded(f: AuthorityFeature): boolean {
   if (search.value.trim()) return true
   return !!expandedFeatures[f.id]
@@ -109,6 +116,15 @@ function isExpanded(f: AuthorityFeature): boolean {
 function toggleExpand(f: AuthorityFeature) {
   if (!f.subfeatures.length) return
   expandedFeatures[f.id] = !expandedFeatures[f.id]
+}
+function isSubExpanded(f: AuthorityFeature, sub: AuthoritySubfeature): boolean {
+  if (search.value.trim()) return true
+  return !!expandedSubs[`${f.id}.${sub.id}`]
+}
+function toggleSubExpand(f: AuthorityFeature, sub: AuthoritySubfeature) {
+  if (!sub.children?.length) return
+  const key = `${f.id}.${sub.id}`
+  expandedSubs[key] = !expandedSubs[key]
 }
 
 // ─── Grant helpers ──────────────────────────────────────────────────────────
@@ -127,34 +143,65 @@ function setGrant(rowKey: string, action: AuthorityAction, on: boolean) {
   authorityError.value = ''
 }
 
-/** Row checkbox — all actions for that one sub-feature row. */
-function rowState(feature: AuthorityFeature, rowKey: string): { checked: boolean; indeterminate: boolean } {
-  const actions = authorityActionsFor(feature)
-  const on = actions.filter((a) => has(rowKey, a)).length
-  return { checked: on === actions.length, indeterminate: on > 0 && on < actions.length }
-}
-
-function toggleRow(feature: AuthorityFeature, rowKey: string, on: boolean) {
-  for (const action of authorityActionsFor(feature)) setGrant(rowKey, action, on)
-}
-
-/** Feature row's own checkbox — every action of every row in that feature. */
-function featureState(feature: AuthorityFeature): { checked: boolean; indeterminate: boolean } {
-  const keys = authorityRowKeys(feature)
+/** Tri-state over an arbitrary set of leaf row keys (a level-2 or level-1 group). */
+function groupState(feature: AuthorityFeature, keys: string[]): { checked: boolean; indeterminate: boolean } {
   const actions = authorityActionsFor(feature)
   const total = keys.length * actions.length
-  const on = keys.reduce((sum, k) => sum + actions.filter((a) => grants[k]?.includes(a)).length, 0)
-  return { checked: on === total, indeterminate: on > 0 && on < total }
+  const on = keys.reduce((sum, k) => sum + actions.filter((a) => has(k, a)).length, 0)
+  return { checked: total > 0 && on === total, indeterminate: on > 0 && on < total }
 }
-
-function toggleFeature(feature: AuthorityFeature, on: boolean) {
+function setGroup(feature: AuthorityFeature, keys: string[], on: boolean) {
   const actions = authorityActionsFor(feature)
-  for (const key of authorityRowKeys(feature)) {
+  for (const key of keys) {
     if (on) grants[key] = [...actions]
     else delete grants[key]
   }
   authorityError.value = ''
 }
+
+/** Leaf row checkbox — all actions for that one row. */
+function rowState(feature: AuthorityFeature, rowKey: string) { return groupState(feature, [rowKey]) }
+function toggleRow(feature: AuthorityFeature, rowKey: string, on: boolean) { setGroup(feature, [rowKey], on) }
+
+/** Level-2 row's own checkbox — itself if leaf, or every level-3 child if it has any. */
+function subState(feature: AuthorityFeature, sub: AuthoritySubfeature) {
+  return groupState(feature, authoritySubRowKeys(feature.id, sub))
+}
+function toggleSub(feature: AuthorityFeature, sub: AuthoritySubfeature, on: boolean) {
+  setGroup(feature, authoritySubRowKeys(feature.id, sub), on)
+}
+
+/** Level-1 (feature) row's own checkbox — every leaf row underneath it. */
+function featureState(feature: AuthorityFeature) { return groupState(feature, authorityRowKeys(feature)) }
+function toggleFeature(feature: AuthorityFeature, on: boolean) { setGroup(feature, authorityRowKeys(feature), on) }
+
+// ─── Right column — "N permissions selected" summary, grouped by category ──
+const ACTION_VERB: Record<AuthorityAction, string> = { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' }
+
+const selectedSummary = computed(() => {
+  return AUTHORITY_CATEGORIES
+    .map((cat) => {
+      const catFeatures = features.filter((f) => f.category === cat.value)
+      const allKeys = catFeatures.flatMap((f) => authorityRowKeys(f))
+      const grantedActions = new Set<AuthorityAction>()
+      let totalCells = 0
+      let onCells = 0
+      for (const f of catFeatures) {
+        const actions = authorityActionsFor(f)
+        for (const key of authorityRowKeys(f)) {
+          totalCells += actions.length
+          for (const a of actions) if (has(key, a)) { onCells++; grantedActions.add(a) }
+        }
+      }
+      if (!onCells) return null
+      const fullyGranted = onCells === totalCells
+      const bullets = fullyGranted
+        ? [`${t('View all')} ${t(cat.label).toLowerCase()} ${t('features')}`]
+        : AUTHORITY_ACTIONS.filter((a) => grantedActions.has(a.value)).map((a) => `${t(ACTION_VERB[a.value])} ${t(cat.label).toLowerCase()}`)
+      return { category: cat, bullets }
+    })
+    .filter((x): x is { category: typeof AUTHORITY_CATEGORIES[number]; bullets: string[] } => !!x)
+})
 
 // ─── Save ───────────────────────────────────────────────────────────────────
 function validate(): boolean {
@@ -199,176 +246,220 @@ function close() { emit('close') }
           </header>
 
           <div class="crd-body">
-            <!-- ── Role info ── -->
-            <section class="crd-section">
-              <h2 class="crd-section-title">{{ t('Role info') }}</h2>
+            <div class="crd-col crd-col--main">
+              <!-- ── Role info ── -->
+              <section class="crd-section">
+                <h2 class="crd-section-title">{{ t('Role info') }}</h2>
 
-              <MpFormControl :id="`${id}-name`" is-required :is-invalid="!!nameError">
+                <MpFormControl :id="`${id}-name`" is-required :is-invalid="!!nameError">
+                  <div class="crd-label-row">
+                    <MpFormLabel>{{ t('Role name') }}</MpFormLabel>
+                    <span class="crd-counter">{{ name.length }} / {{ ROLE_NAME_MAX }}</span>
+                  </div>
+                  <MpInput
+                    :id="`${id}-name-input`"
+                    v-model="name"
+                    :maxlength="ROLE_NAME_MAX"
+                    :placeholder="t('Example: Warehouse supervisor')"
+                    is-full-width
+                    @update:model-value="nameError = ''"
+                  />
+                  <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
+                </MpFormControl>
+
+                <MpFormControl :id="`${id}-description`">
+                  <div class="crd-label-row">
+                    <MpFormLabel>{{ t('Description') }}</MpFormLabel>
+                    <span class="crd-counter">{{ description.length }} / {{ DESCRIPTION_MAX }}</span>
+                  </div>
+                  <MpTextarea
+                    :id="`${id}-description-input`"
+                    v-model="description"
+                    :maxlength="DESCRIPTION_MAX"
+                    :placeholder="t('Optional')"
+                    is-full-width
+                  />
+                </MpFormControl>
+              </section>
+
+              <!-- ── Role permissions — one flat expandable table, up to 3 levels
+                   deep (Figma "Drawer / Custom Role / Add"), not a rail + grid. ── -->
+              <section class="crd-section">
                 <div class="crd-label-row">
-                  <MpFormLabel>{{ t('Role name') }}</MpFormLabel>
-                  <span class="crd-counter">{{ name.length }} / {{ ROLE_NAME_MAX }}</span>
+                  <h2 class="crd-section-title">
+                    {{ t('Role permissions') }}<span class="crd-required">*</span>
+                  </h2>
                 </div>
-                <MpInput
-                  :id="`${id}-name-input`"
-                  v-model="name"
-                  :maxlength="ROLE_NAME_MAX"
-                  :placeholder="t('Example: Warehouse supervisor')"
-                  is-full-width
-                  @update:model-value="nameError = ''"
-                />
-                <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
-              </MpFormControl>
+                <p class="crd-section-desc">
+                  {{ t('Roles with Edit or Delete permissions are automatically granted') }}
+                  <strong>{{ t('List Manager') }}</strong>
+                  {{ t('authority.') }}
+                </p>
 
-              <MpFormControl :id="`${id}-description`">
-                <div class="crd-label-row">
-                  <MpFormLabel>{{ t('Description') }}</MpFormLabel>
-                  <span class="crd-counter">{{ description.length }} / {{ DESCRIPTION_MAX }}</span>
+                <!-- Filter bar: Feature category quick filter + name search. -->
+                <div class="crd-filter-bar">
+                  <ErpFilterSelect
+                    id="crd-quick-filter"
+                    v-model="quickFilter"
+                    :placeholder="t('Feature')"
+                    :options="AUTHORITY_CATEGORIES.map((c) => ({ value: c.value, label: t(c.label) }))"
+                    width="160px"
+                  />
+                  <div class="crd-search">
+                    <MpIcon name="search" size="sm" />
+                    <input v-model="search" class="crd-search-input" type="text" :placeholder="t('Search feature name')">
+                    <button v-if="search" class="crd-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
+                      <MpIcon name="close" size="sm" />
+                    </button>
+                  </div>
                 </div>
-                <MpTextarea
-                  :id="`${id}-description-input`"
-                  v-model="description"
-                  :maxlength="DESCRIPTION_MAX"
-                  :placeholder="t('Optional')"
-                  is-full-width
-                />
-              </MpFormControl>
-            </section>
 
-            <!-- ── Role permissions — one flat expandable table (Figma "Drawer /
-                 Custom Role / Add"), not a rail + single-feature grid. ── -->
-            <section class="crd-section">
-              <div class="crd-label-row">
-                <h2 class="crd-section-title">
-                  {{ t('Role permissions') }}<span class="crd-required">*</span>
-                </h2>
-              </div>
-              <p class="crd-section-desc">
-                {{ t('Roles with Edit or Delete permissions are automatically granted') }}
-                <strong>{{ t('List Manager') }}</strong>
-                {{ t('authority.') }}
-              </p>
-
-              <!-- Filter bar: quick filter + name search — scope which rows show. -->
-              <div class="crd-filter-bar">
-                <ErpFilterSelect
-                  id="crd-quick-filter"
-                  v-model="quickFilter"
-                  :placeholder="t('Feature')"
-                  :options="QUICK_FILTER_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))"
-                  width="160px"
-                />
-                <div class="crd-search">
-                  <MpIcon name="search" size="sm" />
-                  <input v-model="search" class="crd-search-input" type="text" :placeholder="t('Search feature name')">
-                  <button v-if="search" class="crd-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
-                    <MpIcon name="close" size="sm" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="crd-matrix" :class="{ 'crd-matrix--invalid': !!authorityError }">
-                <table class="crd-table">
-                  <thead>
-                    <tr>
-                      <th class="crd-th crd-th--feature">{{ t('Feature') }}</th>
-                      <th v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-th crd-th--action">
-                        {{ t(action.label) }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template v-for="feature in visibleFeatures" :key="feature.id">
-                      <!-- Feature row — chevron (only if it has sub-features) + tri-state
-                           checkbox for the whole group, or the feature's own grant when leaf. -->
-                      <tr class="crd-row crd-row--feature">
-                        <td class="crd-td crd-td--feature">
-                          <div class="crd-td-inner">
-                            <button
-                              v-if="feature.subfeatures.length"
-                              type="button"
-                              class="crd-chevron"
-                              :class="{ 'crd-chevron--open': isExpanded(feature) }"
-                              :aria-label="isExpanded(feature) ? t('Collapse') : t('Expand')"
-                              @click="toggleExpand(feature)"
-                            >
-                              <MpIcon name="chevron-down" size="sm" />
-                            </button>
+                <div class="crd-matrix" :class="{ 'crd-matrix--invalid': !!authorityError }">
+                  <table class="crd-table">
+                    <thead>
+                      <tr>
+                        <th class="crd-th crd-th--feature">{{ t('Feature') }}</th>
+                        <th v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-th crd-th--action">
+                          {{ t(action.label) }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template v-for="feature in visibleFeatures" :key="feature.id">
+                        <!-- Level 1 — chevron (only if it has children) + tri-state checkbox
+                             for the whole group, or its own per-action grant when leaf. -->
+                        <tr class="crd-row crd-row--l1">
+                          <td class="crd-td crd-td--feature">
+                            <div class="crd-td-inner">
+                              <button
+                                v-if="feature.subfeatures.length"
+                                type="button"
+                                class="crd-chevron"
+                                :class="{ 'crd-chevron--open': isExpanded(feature) }"
+                                :aria-label="isExpanded(feature) ? t('Collapse') : t('Expand')"
+                                @click="toggleExpand(feature)"
+                              >
+                                <MpIcon name="caret-down" size="sm" />
+                              </button>
+                              <MpCheckbox
+                                v-if="feature.subfeatures.length"
+                                :id="`${id}-feature-${feature.id}`"
+                                :aria-label="`${t('All authority')} — ${t(feature.label)}`"
+                                :is-checked="featureState(feature).checked"
+                                :is-indeterminate="featureState(feature).indeterminate"
+                                @change="(on: boolean) => toggleFeature(feature, on)"
+                              />
+                              <span class="crd-td-label">{{ t(feature.label) }}</span>
+                            </div>
+                          </td>
+                          <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                            <!-- Leaf feature (no children): its own cells carry the real
+                                 grant. A feature with children shows nothing here — its
+                                 checkboxes live on the rows below. -->
                             <MpCheckbox
-                              v-if="feature.subfeatures.length"
-                              :id="`${id}-feature-${feature.id}`"
-                              :aria-label="`${t('All authority')} — ${t(feature.label)}`"
-                              :is-checked="featureState(feature).checked"
-                              :is-indeterminate="featureState(feature).indeterminate"
-                              @change="(on: boolean) => toggleFeature(feature, on)"
+                              v-if="!feature.subfeatures.length && authorityActionsFor(feature).includes(action.value)"
+                              :id="`${id}-cell-${feature.id}-${action.value}`"
+                              :aria-label="`${t(action.label)} — ${t(feature.label)}`"
+                              :is-checked="has(feature.id, action.value)"
+                              @change="(on: boolean) => setGrant(feature.id, action.value, on)"
                             />
-                            <span class="crd-td-label">{{ t(feature.label) }}</span>
-                          </div>
-                        </td>
-                        <td
-                          v-for="action in AUTHORITY_ACTIONS"
-                          :key="action.value"
-                          class="crd-td crd-td--action"
-                        >
-                          <!-- Leaf feature (no sub-features): the feature row IS the only
-                               row, so its own cells carry the real per-action grant. A
-                               feature with sub-features shows nothing here — its checkboxes
-                               live on the sub-rows below. -->
-                          <MpCheckbox
-                            v-if="!feature.subfeatures.length && authorityActionsFor(feature).includes(action.value)"
-                            :id="`${id}-cell-${feature.id}-${action.value}`"
-                            :aria-label="`${t(action.label)} — ${t(feature.label)}`"
-                            :is-checked="has(feature.id, action.value)"
-                            @change="(on: boolean) => setGrant(feature.id, action.value, on)"
-                          />
-                          <span v-else-if="!feature.subfeatures.length" class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                            <span v-else-if="!feature.subfeatures.length" class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                          </td>
+                        </tr>
+
+                        <template v-for="sub in feature.subfeatures" :key="`${feature.id}.${sub.id}`">
+                          <!-- Level 2 — indented; chevron only if it has level-3 children. -->
+                          <tr v-show="isExpanded(feature)" class="crd-row crd-row--l2">
+                            <td class="crd-td crd-td--feature crd-td--l2">
+                              <div class="crd-td-inner">
+                                <button
+                                  v-if="sub.children?.length"
+                                  type="button"
+                                  class="crd-chevron"
+                                  :class="{ 'crd-chevron--open': isSubExpanded(feature, sub) }"
+                                  :aria-label="isSubExpanded(feature, sub) ? t('Collapse') : t('Expand')"
+                                  @click="toggleSubExpand(feature, sub)"
+                                >
+                                  <MpIcon name="caret-down" size="sm" />
+                                </button>
+                                <MpCheckbox
+                                  :id="`${id}-row-${feature.id}.${sub.id}`"
+                                  :aria-label="`${t('All authority')} — ${t(sub.label)}`"
+                                  :is-checked="subState(feature, sub).checked"
+                                  :is-indeterminate="subState(feature, sub).indeterminate"
+                                  @change="(on: boolean) => toggleSub(feature, sub, on)"
+                                />
+                                <span class="crd-td-label">{{ t(sub.label) }}</span>
+                              </div>
+                            </td>
+                            <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                              <MpCheckbox
+                                v-if="!sub.children?.length && authorityActionsFor(feature).includes(action.value)"
+                                :id="`${id}-cell-${feature.id}.${sub.id}-${action.value}`"
+                                :aria-label="`${t(action.label)} — ${t(sub.label)}`"
+                                :is-checked="has(`${feature.id}.${sub.id}`, action.value)"
+                                @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}`, action.value, on)"
+                              />
+                              <span v-else-if="!sub.children?.length" class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                            </td>
+                          </tr>
+
+                          <!-- Level 3 — indented further, one leaf row per child. -->
+                          <tr
+                            v-for="child in sub.children ?? []"
+                            v-show="isExpanded(feature) && isSubExpanded(feature, sub)"
+                            :key="`${feature.id}.${sub.id}.${child.id}`"
+                            class="crd-row crd-row--l3"
+                          >
+                            <td class="crd-td crd-td--feature crd-td--l3">
+                              <div class="crd-td-inner">
+                                <MpCheckbox
+                                  :id="`${id}-row-${feature.id}.${sub.id}.${child.id}`"
+                                  :aria-label="`${t('All authority')} — ${t(child.label)}`"
+                                  :is-checked="rowState(feature, `${feature.id}.${sub.id}.${child.id}`).checked"
+                                  :is-indeterminate="rowState(feature, `${feature.id}.${sub.id}.${child.id}`).indeterminate"
+                                  @change="(on: boolean) => toggleRow(feature, `${feature.id}.${sub.id}.${child.id}`, on)"
+                                />
+                                <span class="crd-td-label">{{ t(child.label) }}</span>
+                              </div>
+                            </td>
+                            <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                              <MpCheckbox
+                                v-if="authorityActionsFor(feature).includes(action.value)"
+                                :id="`${id}-cell-${feature.id}.${sub.id}.${child.id}-${action.value}`"
+                                :aria-label="`${t(action.label)} — ${t(child.label)}`"
+                                :is-checked="has(`${feature.id}.${sub.id}.${child.id}`, action.value)"
+                                @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}.${child.id}`, action.value, on)"
+                              />
+                              <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                            </td>
+                          </tr>
+                        </template>
+                      </template>
+                      <tr v-if="!visibleFeatures.length">
+                        <td class="crd-td crd-empty" :colspan="1 + AUTHORITY_ACTIONS.length">
+                          {{ t('No features match your search.') }}
                         </td>
                       </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p v-if="authorityError" class="crd-error">{{ authorityError }}</p>
+              </section>
+            </div>
 
-                      <!-- Sub-feature rows — indented, own grant per row. -->
-                      <tr
-                        v-for="sub in feature.subfeatures"
-                        v-show="isExpanded(feature)"
-                        :key="`${feature.id}.${sub.id}`"
-                        class="crd-row crd-row--sub"
-                      >
-                        <td class="crd-td crd-td--feature crd-td--sub">
-                          <div class="crd-td-inner">
-                            <MpCheckbox
-                              :id="`${id}-row-${feature.id}.${sub.id}`"
-                              :aria-label="`${t('All authority')} — ${t(sub.label)}`"
-                              :is-checked="rowState(feature, `${feature.id}.${sub.id}`).checked"
-                              :is-indeterminate="rowState(feature, `${feature.id}.${sub.id}`).indeterminate"
-                              @change="(on: boolean) => toggleRow(feature, `${feature.id}.${sub.id}`, on)"
-                            />
-                            <span class="crd-td-label">{{ t(sub.label) }}</span>
-                          </div>
-                        </td>
-                        <td
-                          v-for="action in AUTHORITY_ACTIONS"
-                          :key="action.value"
-                          class="crd-td crd-td--action"
-                        >
-                          <MpCheckbox
-                            v-if="authorityActionsFor(feature).includes(action.value)"
-                            :id="`${id}-cell-${feature.id}.${sub.id}-${action.value}`"
-                            :aria-label="`${t(action.label)} — ${t(sub.label)}`"
-                            :is-checked="has(`${feature.id}.${sub.id}`, action.value)"
-                            @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}`, action.value, on)"
-                          />
-                          <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
-                        </td>
-                      </tr>
-                    </template>
-                    <tr v-if="!visibleFeatures.length">
-                      <td class="crd-td crd-empty" :colspan="1 + AUTHORITY_ACTIONS.length">
-                        {{ t('No features match your search.') }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <!-- ── Right column — "N permissions selected" summary, Figma's List Group. ── -->
+            <div class="crd-col crd-col--summary">
+              <h2 class="crd-summary-title">
+                {{ selectedSummary.length }} {{ selectedSummary.length === 1 ? t('permission selected') : t('permissions selected') }}
+              </h2>
+              <div v-for="group in selectedSummary" :key="group.category.value" class="crd-summary-group">
+                <p class="crd-summary-label">{{ t(group.category.label) }}</p>
+                <ul class="crd-summary-list">
+                  <li v-for="bullet in group.bullets" :key="bullet">{{ bullet }}</li>
+                </ul>
               </div>
-              <p v-if="authorityError" class="crd-error">{{ authorityError }}</p>
-            </section>
+            </div>
           </div>
 
           <footer class="crd-footer erp-action-footer">
@@ -398,8 +489,9 @@ function close() { emit('close') }
 }
 .crd-panel {
   margin: var(--mp-spacing-3);
-  /* The permission table is a flat 5-column grid, no side rail. */
-  width: min(720px, calc(100% - 24px));
+  /* Two columns: the permission table (flexible) + a fixed 260px summary rail —
+     matches Figma's 1200px-wide drawer (884px main col + 260px summary col). */
+  width: min(1200px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -426,8 +518,41 @@ function close() { emit('close') }
 
 .crd-body {
   flex: 1; overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-6);
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
+}
+.crd-col--main {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-6);
+}
+.crd-col--summary {
+  flex: 0 0 260px;
+  display: flex; flex-direction: column;
+  background: var(--mp-background-neutral-subtle, #f0f1f3);
+  border-radius: var(--mp-radii-xl, 12px);
+  padding: var(--mp-spacing-6, 24px);
+  position: sticky; top: 0;
+}
+.crd-summary-title {
+  margin: 0 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.crd-summary-group + .crd-summary-group { margin-top: var(--mp-spacing-2); }
+.crd-summary-label {
+  margin: 0; padding: var(--mp-spacing-2) 0;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.crd-summary-list {
+  margin: 0; padding-left: var(--mp-spacing-5, 20px);
+  list-style: disc outside;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
+}
+.crd-summary-list li {
+  display: list-item;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
 }
 
 /* ── Sections ── */
@@ -509,7 +634,10 @@ function close() { emit('close') }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
 .crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
-.crd-row--sub .crd-td--feature { padding-left: var(--mp-spacing-9, 44px); }
+/* Indentation matches Figma exactly: level 1 = 20px (base cell padding), level 2
+   = 64px, level 3 = 88px. */
+.crd-td--l2 { padding-left: 64px; }
+.crd-td--l3 { padding-left: 88px; }
 
 .crd-chevron {
   display: inline-flex; align-items: center; justify-content: center;
@@ -532,5 +660,10 @@ function close() { emit('close') }
   flex-shrink: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default, #e3e7e9);
+}
+
+@media (max-width: 960px) {
+  .crd-body { flex-direction: column; }
+  .crd-col--summary { flex-basis: auto; width: 100%; position: static; }
 }
 </style>
