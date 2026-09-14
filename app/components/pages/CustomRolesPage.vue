@@ -159,7 +159,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <MpButton variant="ghost" class="row-kebab" left-icon="menu-kebab" :aria-label="t('More actions')" />
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -236,8 +236,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
 .filter-search-input {
@@ -263,14 +263,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal; word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Kebab — 20px tall so the actions cell stays within the 40px baseline row. */
-.row-kebab {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-5, 20px) !important;
-  min-width: 0 !important; padding: 0 !important;
-  margin-left: auto; color: var(--mp-text-secondary);
-}
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

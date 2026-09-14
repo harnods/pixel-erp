@@ -247,7 +247,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <MpButton variant="ghost" class="row-kebab" left-icon="menu-kebab" :aria-label="t('More actions')" />
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -355,13 +355,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal; word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-
-.row-kebab {
-  display: flex !important; align-items: center; justify-content: center;
-  padding: var(--mp-spacing-1) !important; min-width: 0 !important;
-  border: none !important; background: transparent !important; cursor: pointer;
-  border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
-}
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }
