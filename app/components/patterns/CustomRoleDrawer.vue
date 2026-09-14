@@ -348,6 +348,7 @@ function close() { emit('close') }
                                 >
                                   <MpIcon name="caret-down" size="sm" />
                                 </button>
+                                <span v-else class="crd-chevron-spacer" aria-hidden="true" />
                                 <span class="crd-td-label">{{ t(feature.label) }}</span>
                               </div>
                             </td>
@@ -381,6 +382,7 @@ function close() { emit('close') }
                                   >
                                     <MpIcon name="caret-down" size="sm" />
                                   </button>
+                                  <span v-else class="crd-chevron-spacer" aria-hidden="true" />
                                   <span class="crd-td-label">{{ t(sub.label) }}</span>
                                 </div>
                               </td>
@@ -405,6 +407,7 @@ function close() { emit('close') }
                             >
                               <td class="crd-td crd-td--feature crd-td--l3">
                                 <div class="crd-td-inner">
+                                  <span class="crd-chevron-spacer" aria-hidden="true" />
                                   <span class="crd-td-label">{{ t(child.label) }}</span>
                                 </div>
                               </td>
@@ -643,6 +646,7 @@ function close() { emit('close') }
   transition: transform 150ms;
 }
 .crd-chevron--open { transform: rotate(180deg); }
+.crd-chevron-spacer { display: inline-block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); flex-shrink: 0; }
 
 .crd-empty {
   text-align: center; color: var(--mp-text-secondary);
