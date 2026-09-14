@@ -126,6 +126,15 @@ everywhere else for a "selected" state (`text.selected`, underline
 per page with a local `:deep()` override (many older detail pages still carry one;
 harmless but redundant now that the fix is global).
 
+## 9. MpCheckbox — disabled control border
+
+Pixel 3 DT 2.4 Enterprise's disabled checkbox border (~`#ebf0f1`) has almost no
+contrast against the page's off-white background (~`#f8f9f9`) — a disabled-but-
+available checkbox (e.g. a role's "Access limitation" before the role itself is
+ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
+`.mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control` to use
+`border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
+
 ---
 
 ## Rule of thumb

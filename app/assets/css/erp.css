@@ -703,3 +703,18 @@ input[type="number"] {
 .mp-tab-selected-border--isSelected_true {
   background-color: var(--mp-border-selected, #029861) !important;
 }
+
+/* ── MpCheckbox — disabled control border (global ERP override) ────────────────
+   Pixel 3 DT 2.4 Enterprise's disabled checkbox border (~#ebf0f1) has almost no
+   contrast against the page's off-white background (~#f8f9f9) — a disabled-but-
+   available checkbox (e.g. "Access limitation" before its role is ticked) reads
+   as if the checkbox isn't there at all. Give it the same visible-but-muted
+   border every other disabled/inactive control in the ERP uses.
+   Same @layer pixel_reset trick as the MpToggle override above — Panda's
+   disabled rule lives in @layer pixel_recipes._base with !important, and
+   @layer pixel_reset has higher cascade priority, so this always wins. */
+@layer pixel_reset {
+  .mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control {
+    border-color: var(--mp-border-default, #e3e7e9) !important;
+  }
+}
