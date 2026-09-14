@@ -224,6 +224,7 @@ function onBulkOwner(owner: string) {
 // ── Export — filter-bar icon button (next to Column settings), same
 //    ExportModal master component used across the ERP (e.g. CrmDealsPage). ──
 const exportOpen = ref(false)
+const selectedCount = ref(0)
 const exportColumns = [
   { key: 'name', label: t('Name') }, { key: 'company', label: t('Company') },
   { key: 'email', label: t('Email') }, { key: 'phone', label: t('Mobile') },
@@ -266,6 +267,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
         @sort-change="setSort"
         @hide-column="hideColumn"
         @clear-filters="clearFilters"
+        @selection-change="(count: number) => (selectedCount = count)"
       >
         <template #filters>
           <div class="filter-left">
@@ -410,6 +412,8 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
       :entity-label="t('contacts')"
       :columns="exportColumns"
       :total="total"
+      :selected-count="selectedCount"
+      :show-column-search="false"
       @close="exportOpen = false"
       @export="onExport"
     />

@@ -23,9 +23,13 @@ const props = withDefaults(defineProps<{
   customFields?: string[]
   total: number                    // count for "All"
   selectedCount?: number           // for "Selected N" (default 0)
+  /** Hide the "Search column" box — for a short column list where searching adds
+   *  no value (e.g. Contacts' 7 columns). Defaults to true (shown). */
+  showColumnSearch?: boolean
 }>(), {
   customFields: () => [],
   selectedCount: 0,
+  showColumnSearch: true,
 })
 
 const emit = defineEmits<{
@@ -152,8 +156,9 @@ function onExport() {
           <div class="export-section">
             <p class="export-section__label">{{ t('Select columns to export') }}</p>
 
-            <!-- Search (sanctioned search field — placeholder allowed) -->
-            <div class="export-col-search">
+            <!-- Search (sanctioned search field — placeholder allowed); hidden when
+                 the column list is short enough to scan without it. -->
+            <div v-if="showColumnSearch" class="export-col-search">
               <MpIcon name="search" size="md" />
               <input
                 v-model="columnSearch"
@@ -275,7 +280,7 @@ function onExport() {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-colors-border-default, #d5dadd);
   border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   color: var(--mp-text-secondary);
 }
 /* Focus/active = neutral border-bold + 1px inset ring, never green
