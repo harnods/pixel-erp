@@ -75,6 +75,7 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouses',
   'Storage locations',
   'Couriers',
+  'Grades',
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
@@ -226,6 +227,11 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Couriers': [
     a('Add', 'built'), a('Edit', 'built'), a('Delete', 'built'),
   ],
+  'Grades': [
+    a('New', 'built'), a('Edit', 'built'), a('Activate', 'built'), a('Deactivate', 'built'),
+    a('Delete', 'built', 'blocked while a batch uses the grade → offers Deactivate'),
+    a('Activity log', 'built', 'per grade, from the Last updated cell'), a('Export', 'partial', 'modal only; no file'),
+  ],
   'Warehouse transfers': [
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Duplicate', 'built'),
     a('Approve', 'built'), a('Cancel', 'built'), a('Import', 'partial'),
@@ -350,6 +356,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Categories'),
       leaf('Variant options'),
       leaf('Units'),
+      leaf('Grades'),
       leaf('Price rules'),
     ],
   },

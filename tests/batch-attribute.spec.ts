@@ -156,6 +156,20 @@ describe('grade list', () => {
     expect(latest!.activity).toBe('Failed to create grade')
     expect(latest!.details.find((d) => d.label === 'Result')?.value).toMatch(/^Failed — Name is already used/)
   })
+
+  it('keeps each grade’s own activity, failed attempts included', () => {
+    const d = api.createGrade({ name: 'D' })
+    const dId = d.ok ? d.value.id : ''
+    api.updateGrade(dId, { name: 'B' }) // fails: name taken
+    api.updateGrade(dId, { description: 'Moisture under 12%' })
+    api.createGrade({ name: 'd' }) // fails: no grade exists yet, so it belongs to none
+
+    expect(api.gradeActivityFor(dId).map((e) => e.activity)).toEqual([
+      'Updated grade', 'Failed to update grade', 'Created grade',
+    ])
+    expect(api.gradeActivityFor(api.SEED_GRADE_IDS.A)).toEqual([])
+    expect(api.gradeActivity()[0]!.gradeId).toBeUndefined()
+  })
 })
 
 describe('batches', () => {

@@ -516,6 +516,8 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Categories' },
           { label: 'Variant options' },
           { label: 'Units' },
+          // Batch Attribute: the company's Grade List (PM-confirmed placement).
+          { label: 'Grades' },
           { label: 'Price rules' },
         ],
         [
