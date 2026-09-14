@@ -397,18 +397,18 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   {
     id: 'contacts-others', label: 'Others', category: 'contacts',
     subfeatures: [
-      { id: 'others', label: 'Others' },
+      { id: 'employees', label: 'Employees' },
       { id: 'contact-groups', label: 'Contact groups' },
     ],
   },
 
   // ── Inventory ──
   { id: 'inv-products', label: 'Products', category: 'inventory', subfeatures: [] },
-  { id: 'inv-stock-adjustments', label: 'Stock adjustments', category: 'inventory', subfeatures: [] },
-  { id: 'inv-fulfillments', label: 'Fulfillments', category: 'inventory', subfeatures: [] },
 
   // ── Warehouses ──
   { id: 'wh-warehouses', label: 'Warehouses', category: 'warehouses', subfeatures: [] },
+  { id: 'wh-stock-adjustments', label: 'Stock adjustments', category: 'warehouses', subfeatures: [] },
+  { id: 'wh-fulfillments', label: 'Fulfillments', category: 'warehouses', subfeatures: [] },
 
   // ── Reports (view-only) ──
   { id: 'rep-financial', label: 'Financial reports', category: 'reports', subfeatures: [], viewOnly: true },
@@ -433,8 +433,10 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   {
     id: 'set-sales', label: 'Sales', category: 'settings',
     subfeatures: [
+      { id: 'general-settings', label: 'General settings' },
+      { id: 'invoice-reminder', label: 'Invoice reminder' },
       {
-        id: 'general-settings', label: 'General settings',
+        id: 'email-template', label: 'Email template',
         children: [
           { id: 'sales-quote', label: 'Sales quote' },
           { id: 'sales-order', label: 'Sales order' },
@@ -443,14 +445,22 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
           { id: 'receipt', label: 'Receipt' },
         ],
       },
-      { id: 'invoice-reminder', label: 'Invoice reminder' },
+      {
+        id: 'whatsapp-template', label: 'WhatsApp template',
+        children: [
+          { id: 'sales-invoice', label: 'Sales invoice' },
+          { id: 'sales-order', label: 'Sales order' },
+        ],
+      },
+      { id: 'document-layout-branding', label: 'Document layout & branding' },
     ],
   },
   {
     id: 'set-purchases', label: 'Purchases', category: 'settings',
     subfeatures: [
+      { id: 'general-settings', label: 'General settings' },
       {
-        id: 'general-settings', label: 'General settings',
+        id: 'email-template', label: 'Email template',
         children: [
           { id: 'purchase-orders', label: 'Purchase orders' },
           { id: 'purchase-invoices', label: 'Purchase invoices' },
@@ -531,8 +541,8 @@ export const customRoles = reactive<CustomRole[]>([
     grants: {
       'wh-warehouses': ['view', 'create', 'edit', 'delete'],
       'inv-products': ['view'],
-      'inv-stock-adjustments': ['view', 'create'],
-      'inv-fulfillments': ['view', 'create'],
+      'wh-stock-adjustments': ['view', 'create'],
+      'wh-fulfillments': ['view', 'create'],
       'rep-inventory': ['view'],
     },
     assignedUsers: 4,
