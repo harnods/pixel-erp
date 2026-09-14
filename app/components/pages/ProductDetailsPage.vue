@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -18,14 +18,17 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import {
-  getBatchAttributeConfig, batchAttributeConfigActivity, batchAttributeDef,
+  getBatchAttributeConfig, batchAttributeConfigActivity, batchAttributeDef, formatExpiry,
   type BatchAttributeSetting,
 } from '~/data/batchAttributes'
+import { gradeById } from '~/data/grades'
+import { vendors } from '~/data/vendors'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
@@ -247,6 +250,43 @@ function expiryTooltip(iso: string) {
 function viewBatch(batchNo: string) {
   if (!product.value) return
   router.push(`/product-list/${product.value.sku}/batches/${encodeURIComponent(batchNo)}`)
+}
+
+// ── Batch attributes in the batches table + New / Edit batch (Batch Attribute Phase 3) ──
+/** One column per attribute on the product, in its order. */
+const batchAttributeColumns = computed(() =>
+  product.value
+    ? getBatchAttributeConfig(product.value.sku).map(a => ({ key: a.key, label: batchAttributeDef(a.key).label }))
+    : [],
+)
+/** An attribute as a table cell. Stored values are raw (vendor id, grade id, ISO date),
+ *  so this names them; table dates stay numeric (rule/format-date). */
+function batchAttributeCell(b: ProductBatchSummary, key: BatchAttributeSetting['key']): string {
+  const value = b.attributes[key]
+  if (!value) return '—'
+  switch (key) {
+    case 'expiry_date': return formatExpiry(value)
+    case 'manufacturing_date':
+    case 'best_before_date': return formatDate(value)
+    case 'supplier': return vendors.find(v => v.id === value)?.name ?? value
+    case 'grade': {
+      const grade = gradeById(value)
+      return grade ? `${grade.name} (Rank ${grade.rank})` : value
+    }
+    default: return value
+  }
+}
+
+const batchFormOpen = ref(false)
+/** null = New batch; a batch id = Edit that batch. */
+const batchFormBatchId = ref<string | null>(null)
+function openNewBatch() {
+  batchFormBatchId.value = null
+  batchFormOpen.value = true
+}
+function openEditBatch(b: ProductBatchSummary) {
+  batchFormBatchId.value = b.id
+  batchFormOpen.value = true
 }
 
 type PrintBarcodeTarget =
@@ -646,6 +686,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 >
                   Print all barcode
                 </button>
+                <!-- rule/filter-bar-action-tertiary: a create action beside the search is
+                     the black tertiary button, not a second primary. -->
+                <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewBatch">New batch</MpButton>
               </div>
             </div>
 
@@ -653,7 +696,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <table class="pd-table">
                 <colgroup>
                   <col style="width: 140px" />
-                  <col style="width: 130px" />
+                  <!-- One column per batch attribute on the product (Batch Attribute Phase 3). -->
+                  <col
+                    v-for="c in batchAttributeColumns" :key="c.key"
+                    :style="{ width: c.key === 'supplier' ? '220px' : '140px' }"
+                  />
                   <col style="width: 220px" />
                   <col style="width: 110px" />
                   <col style="width: 110px" />
@@ -664,7 +711,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <thead>
                   <tr>
                     <th class="pd-th">Number</th>
-                    <th class="pd-th">Expiration date</th>
+                    <th v-for="c in batchAttributeColumns" :key="c.key" class="pd-th">{{ c.label }}</th>
                     <th class="pd-th">Description</th>
                     <th class="pd-th pd-th--num">On hand</th>
                     <th class="pd-th pd-th--num">Reserved</th>
@@ -674,19 +721,25 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="b in pagedBatches" :key="b.batchNo" class="pd-tr">
+                  <!-- Keyed by the stable batch id, so a renamed batch keeps its row. -->
+                  <tr v-for="b in pagedBatches" :key="b.id" class="pd-tr">
                     <td class="pd-td">
                       <a class="cell-link cell-text" @click.stop="viewBatch(b.batchNo)">{{ b.batchNo }}</a>
                     </td>
-                    <td class="pd-td">
-                      <span class="pd-expiry-cell" :class="{ 'pd-expiry-cell--danger': isExpiryWarning(b.expiryDate) }">
-                        {{ formatDate(b.expiryDate) }}
+                    <td v-for="c in batchAttributeColumns" :key="c.key" class="pd-td">
+                      <!-- Expiry keeps its near-expiry warning; a month expiry counts as its last day. -->
+                      <span
+                        v-if="c.key === 'expiry_date' && b.attributes.expiry_date"
+                        class="pd-expiry-cell" :class="{ 'pd-expiry-cell--danger': isExpiryWarning(b.expiryDate) }"
+                      >
+                        {{ batchAttributeCell(b, c.key) }}
                         <MpTooltip v-if="isExpiryWarning(b.expiryDate)" :id="`pd-tt-exp-${b.batchNo}`" :label="expiryTooltip(b.expiryDate)" placement="top" use-portal>
                           <span class="pd-expiry-warn" @click.stop><MpIcon name="warning-triangle" size="sm" /></span>
                         </MpTooltip>
                       </span>
+                      <template v-else>{{ batchAttributeCell(b, c.key) }}</template>
                     </td>
-                    <td class="pd-td">{{ b.description }}</td>
+                    <td class="pd-td">{{ b.description || '—' }}</td>
                     <td class="pd-td pd-td--num">{{ b.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ b.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ b.available.toLocaleString('id-ID') }}</td>
@@ -703,6 +756,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="viewBatch(b.batchNo)">View details</MpPopoverListItem>
+                            <!-- The Unassigned batch can't be edited (PM answer A5). -->
+                            <MpPopoverListItem v-if="!b.isUnassigned" @click="openEditBatch(b)">Edit</MpPopoverListItem>
                             <MpPopoverListItem v-if="!b.isUnassigned" @click="printBatchBarcode(b)">Print barcode</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
@@ -903,6 +958,16 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       :filename="barcodePreviewFilename"
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
+    />
+
+    <!-- New batch / Edit batch — the list re-reads getProductBatches, so a saved batch
+         shows up (or updates) in the Stock by batches table on its own. -->
+    <BatchFormModal
+      v-if="product.trackStockBy === 'Batch'"
+      :open="batchFormOpen"
+      :sku="product.sku"
+      :batch-id="batchFormBatchId"
+      @close="batchFormOpen = false"
     />
   </div>
 

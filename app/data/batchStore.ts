@@ -58,12 +58,47 @@ export function batchRecordsForSku(sku: string): BatchRecord[] {
   return records.filter((r) => r.sku === sku)
 }
 
-/** Insert or replace a record by id, then persist. */
-export function saveBatchRecord(record: BatchRecord): void {
+// ── Batch activity (create / edit history) ────────────────────────────────────────
+/** One field that changed. Values stay raw (vendor id, grade id, ISO date) so each
+ *  page formats them for display; an empty value is null. */
+export interface BatchActivityChange {
+  field: 'batchNo' | 'description' | BatchAttributeKey
+  from: string | null
+  to: string | null
+}
+
+export interface BatchActivity {
+  batchId: string
+  sku: string
+  date: string
+  user: string
+  action: 'created' | 'updated'
+  changes: BatchActivityChange[]
+}
+
+const ACTIVITY_KEY = 'batch-activity-v1'
+const activity = reactive<BatchActivity[]>(loadSnapshot<BatchActivity>(ACTIVITY_KEY) ?? [])
+function persistActivity() { saveSnapshot(ACTIVITY_KEY, activity) }
+
+/** One batch's recorded creates and edits, newest first. */
+export function batchActivityFor(batchId: string): BatchActivity[] {
+  return activity.filter((e) => e.batchId === batchId).reverse()
+}
+
+/** Insert or replace a record by id, then persist — and, when given, record what
+ *  changed for the batch's activity log. */
+export function saveBatchRecord(
+  record: BatchRecord,
+  change?: Omit<BatchActivity, 'batchId' | 'sku'>,
+): void {
   const i = records.findIndex((r) => r.id === record.id)
   if (i === -1) records.push(record)
   else records.splice(i, 1, record)
   persistRecords()
+  if (change) {
+    activity.push({ batchId: record.id, sku: record.sku, ...change })
+    persistActivity()
+  }
 }
 
 let idSeq = records.length

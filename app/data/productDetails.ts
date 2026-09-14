@@ -508,19 +508,41 @@ export function createBatch(
 
   const at = new Date().toISOString()
   const id = newBatchId(sku)
+  const batchNo = input.batchNo.trim()
+  const description = (input.description ?? '').trim()
   saveBatchRecord({
-    id, sku, created: true,
-    batchNo: input.batchNo.trim(),
-    description: (input.description ?? '').trim(),
+    id, sku, created: true, batchNo, description,
     attributes: { ...values },
     createdAt: at, updatedAt: at, updatedBy: by,
+  }, {
+    date: at, user: by, action: 'created',
+    changes: batchChanges({ batchNo: '', description: '', attributes: {} }, { batchNo, description, attributes: values }),
   })
   return { ok: true, value: getProductBatchById(sku, id)! }
 }
 
+type BatchChanges = NonNullable<Parameters<typeof saveBatchRecord>[1]>['changes']
+
+/** What differs between two versions of a batch, for its activity log. Values stay
+ *  raw (vendor id, grade id, ISO date); an empty value is recorded as null. */
+function batchChanges(
+  before: { batchNo: string; description: string; attributes: BatchAttributeValues },
+  after: { batchNo: string; description: string; attributes: BatchAttributeValues },
+): BatchChanges {
+  const changes: BatchChanges = []
+  const compare = (field: BatchField, from: string | undefined, to: string | undefined) => {
+    if ((from || '') !== (to || '')) changes.push({ field, from: from || null, to: to || null })
+  }
+  compare('batchNo', before.batchNo, after.batchNo)
+  compare('description', before.description, after.description)
+  for (const key of BATCH_ATTRIBUTE_KEYS) compare(key, before.attributes[key], after.attributes[key])
+  return changes
+}
+
 /** Edit a batch. `batchNo` may change while the batch has no movements (A4 + A9);
  *  attributes follow `BatchAttributeInput` semantics and are reconciled with the
- *  product's current set. The Unassigned batch can't be edited (A5). */
+ *  product's current set. The Unassigned batch can't be edited (A5). Saving with
+ *  nothing changed writes nothing, so "last updated" stays true. */
 export function updateBatch(
   sku: string,
   id: string,
@@ -543,18 +565,26 @@ export function updateBatch(
   errors.push(...attributeErrors)
   if (errors.length) return { ok: false, errors }
 
+  const nextDescription = patch.description !== undefined ? patch.description.trim() : batch.description
+  const changes = batchChanges(
+    { batchNo: batch.batchNo, description: batch.description, attributes: batch.attributes },
+    { batchNo: nextBatchNo, description: nextDescription, attributes: values },
+  )
+  if (!changes.length) return { ok: true, value: batch }
+
   // Store every key explicitly (null = no value) so the result no longer depends on
   // what the seed derives — a purged seeded expiry stays gone.
   const attributes: BatchAttributeInput = {}
   for (const key of BATCH_ATTRIBUTE_KEYS) attributes[key] = values[key] ?? null
+  const at = new Date().toISOString()
   saveBatchRecord({
     ...(findBatchRecord(id) ?? { id, sku, created: false }),
     ...(renamed ? { batchNo: nextBatchNo } : {}),
-    ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
+    ...(patch.description !== undefined ? { description: nextDescription } : {}),
     attributes,
-    updatedAt: new Date().toISOString(),
+    updatedAt: at,
     updatedBy: by,
-  })
+  }, { date: at, user: by, action: 'updated', changes })
   if (renamed) moveBatchBarcode(sku, batch.batchNo, nextBatchNo)
   return { ok: true, value: getProductBatchById(sku, id)! }
 }
@@ -574,6 +604,10 @@ export interface BatchDetail {
   unit: string
   updatedBy: string
   updatedAt: string
+  /** When the batch came to exist — its creation record for an in-app batch, the
+   *  seed's own date otherwise. Absent on warehouse lots. */
+  createdAt?: string
+  createdBy?: string
   barcode: string
   attributes: BatchAttributeValues
   isUnassigned: boolean
@@ -585,6 +619,9 @@ export function getBatchDetail(sku: string, batchNo: string): BatchDetail | unde
   const { at, by } = lastUpdatedFor(`batch-${sku}-${batchNo}`)
   const batch = getProductBatches(sku).find((b) => b.batchNo === batchNo)
   if (batch) {
+    // A person's edit is the real "last updated"; the seed's date only stands in
+    // until then.
+    const rec = findBatchRecord(batch.id)
     return {
       id: batch.id,
       sku,
@@ -597,8 +634,10 @@ export function getBatchDetail(sku: string, batchNo: string): BatchDetail | unde
       available: batch.available,
       minStock: row.minStock,
       unit: batch.unit,
-      updatedBy: by,
-      updatedAt: at,
+      updatedBy: rec?.updatedBy ?? by,
+      updatedAt: rec?.updatedAt ?? at,
+      createdAt: rec?.createdAt ?? at,
+      createdBy: rec?.created ? rec.updatedBy ?? by : by,
       barcode: batch.barcode,
       attributes: batch.attributes,
       isUnassigned: batch.isUnassigned,
