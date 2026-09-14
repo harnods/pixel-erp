@@ -15,6 +15,7 @@
  * filter-bar icon button (next to Column settings), not a bulk action.
  */
 import { computed, reactive, ref, watch } from 'vue'
+import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { MpButton, MpButtonGroup, MpBadge, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -373,7 +374,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
                   v-if="(row as unknown as ContactRow).erpStatus === 'created'"
                   @click="onOpenErpCustomer(row as unknown as ContactRow)"
                 >
-                  <span class="cc-menu-row">{{ t('Open contact in ERP') }}<MpIcon name="newtab" size="sm" /></span>
+                  <span class="cc-menu-row">{{ t('Open contact in ERP') }}<img :src="shortcutIconUrl" class="cc-shortcut-icon" alt="" /></span>
                 </MpPopoverListItem>
                 <MpPopoverListItem v-if="canEdit" @click="openArchive([(row as unknown as ContactRow).id])">{{ showArchived ? t('Restore') : t('Archive') }}</MpPopoverListItem>
               </MpPopoverList>
@@ -476,7 +477,8 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
 
 /* "Open contact in ERP" row menu item — label left, newtab icon flush right. */
 .cc-menu-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); width: 100%; }
-.cc-menu-row :deep(svg), .cc-menu-row .mp-icon { color: var(--mp-icon-default, #536062); }
+/* Same "opens elsewhere" shortcut glyph + treatment as ErpSidebar's shortcut rows. */
+.cc-shortcut-icon { width: var(--mp-sizes-4); height: var(--mp-sizes-4); flex-shrink: 0; filter: brightness(0) opacity(0.5); }
 
 /* Default (no-data) empty state — illustration + title + caption + secondary CTA. */
 .cc-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10) var(--mp-spacing-6); }
