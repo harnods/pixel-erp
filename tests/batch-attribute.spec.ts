@@ -59,6 +59,37 @@ describe('batch attribute set per product', () => {
     api.setBatchAttributeConfig('1001', [])
     expect(api.getBatchAttributeConfig('1001')).toEqual([{ key: 'expiry_date', required: false }])
   })
+
+  it('logs each change with before/after, records failed attempts, and skips no-op saves', () => {
+    // Saving what the product already has (the Expiry default) is not a change.
+    api.setBatchAttributeConfig('1005', [{ key: 'expiry_date' }])
+    expect(api.batchAttributeConfigActivity('1005')).toEqual([])
+
+    api.setBatchAttributeConfig('1005', [{ key: 'grade', required: true }, { key: 'expiry_date' }])
+    api.setBatchAttributeConfig('1005', [{ key: 'grade' }, { key: 'grade' }])
+
+    const [failed, changed, ...rest] = api.batchAttributeConfigActivity('1005')
+    expect(rest).toEqual([])
+    expect(failed).toMatchObject({ outcome: 'failed', errors: ['duplicate'] })
+    expect(changed).toMatchObject({
+      outcome: 'success',
+      previous: [{ key: 'expiry_date', required: false }],
+      next: [{ key: 'grade', required: true }, { key: 'expiry_date', required: false }],
+    })
+    // Other products' logs are untouched.
+    expect(api.batchAttributeConfigActivity('1001')).toEqual([])
+  })
+
+  it('treats a required-flag or order change as a change', () => {
+    expect(api.sameBatchAttributeConfig(
+      [{ key: 'expiry_date', required: false }, { key: 'grade', required: false }],
+      [{ key: 'grade', required: false }, { key: 'expiry_date', required: false }],
+    )).toBe(false)
+    expect(api.sameBatchAttributeConfig(
+      [{ key: 'expiry_date', required: false }],
+      [{ key: 'expiry_date', required: true }],
+    )).toBe(false)
+  })
 })
 
 describe('expiry values (day or month precision)', () => {

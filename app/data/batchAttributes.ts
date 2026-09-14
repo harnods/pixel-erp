@@ -120,19 +120,76 @@ export function validateBatchAttributeConfig(
   return { ok: true, value }
 }
 
+// ── Attribute-set activity (story 6a) ──────────────────────────────────────────────
+/** Stand-in for the signed-in user until the prototype has a session. */
+const CURRENT_USER = 'Rizal Candra'
+
+/** One attempt to change a product's attribute set. Stored structured (not as display
+ *  text) so the product's activity log can render it in the viewer's language. */
+export interface BatchAttributeConfigActivity {
+  sku: string
+  date: string
+  user: string
+  outcome: 'success' | 'failed'
+  previous: BatchAttributeSetting[]
+  /** What was saved — or, for a failed attempt, what was proposed. */
+  next: { key: string; required: boolean }[]
+  errors: BatchAttributeConfigError['code'][]
+}
+
+const CONFIG_ACTIVITY_KEY = 'batch-attr-config-activity-v1'
+const configActivity = reactive<BatchAttributeConfigActivity[]>(
+  loadSnapshot<BatchAttributeConfigActivity>(CONFIG_ACTIVITY_KEY) ?? [],
+)
+function persistConfigActivity() { saveSnapshot(CONFIG_ACTIVITY_KEY, configActivity) }
+
+/** One product's attribute-set changes, newest first — failed attempts included. */
+export function batchAttributeConfigActivity(sku: string): BatchAttributeConfigActivity[] {
+  return configActivity.filter((e) => e.sku === sku).reverse()
+}
+
+/** Same selection, same order, same required flags. */
+export function sameBatchAttributeConfig(
+  a: readonly BatchAttributeSetting[],
+  b: readonly BatchAttributeSetting[],
+): boolean {
+  return a.length === b.length && a.every((x, i) => x.key === b[i]!.key && x.required === b[i]!.required)
+}
+
 /** Replace the product's attribute set (replace, not merge — same as the PRD's API
  *  semantics). Existing batches are NOT rewritten; they're reconciled one at a time
- *  when edited (story 7, see updateBatch in productDetails.ts). */
+ *  when edited (story 7, see updateBatch in productDetails.ts).
+ *
+ *  Every real change and every failed attempt is recorded for the product's activity
+ *  log. Saving the set unchanged is a no-op — no write, no entry — so a product form
+ *  that always calls this on save doesn't flood the log. */
 export function setBatchAttributeConfig(
   sku: string,
   next: readonly { key: string; required?: boolean }[],
+  by = CURRENT_USER,
 ): DataResult<BatchAttributeSetting[], BatchAttributeConfigError> {
+  const previous = getBatchAttributeConfig(sku)
   const result = validateBatchAttributeConfig(next)
-  if (!result.ok) return result
+  if (!result.ok) {
+    configActivity.push({
+      sku, date: new Date().toISOString(), user: by, outcome: 'failed', previous,
+      next: next.map((a) => ({ key: a.key, required: a.required ?? false })),
+      errors: result.errors.map((e) => e.code),
+    })
+    persistConfigActivity()
+    return result
+  }
+  if (sameBatchAttributeConfig(previous, result.value)) return { ok: true, value: previous }
+
   const existing = configs.find((c) => c.sku === sku)
   if (existing) existing.attributes = result.value
   else configs.push({ sku, attributes: result.value })
   persistConfigs()
+  configActivity.push({
+    sku, date: new Date().toISOString(), user: by, outcome: 'success', previous,
+    next: result.value.map((a) => ({ ...a })), errors: [],
+  })
+  persistConfigActivity()
   return { ok: true, value: result.value.map((a) => ({ ...a })) }
 }
 
