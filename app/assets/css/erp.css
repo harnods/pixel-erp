@@ -689,3 +689,17 @@ input[type="number"] {
   color: var(--mp-text-link, #165082);
   font-weight: var(--mp-font-weights-semi-bold, 600);
 }
+
+/* ── MpTabs variant-color="green" — ERP override (global) ──────────────────────
+   Pixel 3 DT 2.4 Enterprise's "green" tab variant paints the selected tab + its
+   underline in a pale mint (mp-c_green.400, ~#7dc7a8) — reads as disabled, not
+   selected. Every detail page that got this right was doing so with its own
+   copy-pasted :deep() override (~24 pages); pages without one (e.g. Invite user's
+   Existing/Custom tabs) render the pale, wrong green. Fix it once, globally. */
+.mp-tab--variantColor_green.mp-tab--isSelected_true,
+.mp-tab--variantColor_green.mp-tab--isSelected_true:hover {
+  color: var(--mp-text-selected) !important;
+}
+.mp-tab-selected-border--isSelected_true {
+  background-color: var(--mp-border-selected, #029861) !important;
+}

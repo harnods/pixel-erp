@@ -115,6 +115,17 @@ A content/detail page's header summary and any key→value display use the
 sizes; compose status/tags inside it with `ErpStatusBadge` / `ErpTagList`. See
 `ContentList.md` and `details-page-format.md`.
 
+## 8. MpTabs `variant-color="green"` — selected tab color
+
+Pixel 3 DT 2.4 Enterprise's "green" tab variant paints the selected tab text and
+underline in a **pale mint** (`mp-c_green.400`, ~`#7dc7a8`) — it reads as
+disabled/muted, not selected. The ERP standard is the same dark brand green used
+everywhere else for a "selected" state (`text.selected`, underline
+`border.selected`/`#029861`). Fixed globally in `erp.css` ›
+`.mp-tab--variantColor_green.mp-tab--isSelected_true` — do **not** re-patch this
+per page with a local `:deep()` override (many older detail pages still carry one;
+harmless but redundant now that the fix is global).
+
 ---
 
 ## Rule of thumb
