@@ -405,7 +405,11 @@ function close() { emit('close') }
                         <template v-for="feature in featuresInCategory(cat.value)" :key="feature.id">
                           <!-- Level 1 (feature) — indented under its category; chevron only
                                if it has children, else its own cells carry the real grant. -->
-                          <tr v-show="isCategoryExpanded(cat.value)" class="crd-row crd-row--l1">
+                          <tr
+                            v-if="isCategoryExpanded(cat.value)"
+                            class="crd-row crd-row--l1"
+                            :class="{ 'crd-row--crm-access': feature.id === 'crm-access' }"
+                          >
                             <td class="crd-td crd-td--feature crd-td--l1">
                               <div class="crd-td-inner">
                                 <button
@@ -423,21 +427,25 @@ function close() { emit('close') }
                               </div>
                             </td>
                             <!-- CRM module access — Admin vs. member is a mutually-exclusive
-                                 choice, not an independent action, so it gets its own inline
-                                 two-checkbox control (spanning the action columns) instead of
-                                 the generic per-column grid used everywhere else. -->
-                            <td v-if="feature.id === 'crm-access'" colspan="4" class="crd-td crd-td--crm-access">
+                                 choice, not an independent action. The base checkbox lives in
+                                 the ordinary View column (so it lines up with the category's
+                                 own View checkbox above it), and Create/Edit/Delete collapse
+                                 into one cell holding the "Access to CRM module" label plus,
+                                 once granted, the Administrator escalation — its checkbox
+                                 lines up with that label above it for free, since both start
+                                 at the same left edge of the same cell. -->
+                            <td v-if="feature.id === 'crm-access'" class="crd-td crd-td--action">
+                              <MpCheckbox
+                                :id="`${id}-crm-access`"
+                                :aria-label="t('Access to CRM module')"
+                                :is-checked="has('crm-access', 'view')"
+                                @change="(on: boolean) => setGrant('crm-access', 'view', on)"
+                              />
+                            </td>
+                            <td v-if="feature.id === 'crm-access'" colspan="3" class="crd-td crd-td--crm-access">
                               <div class="crd-crm-access">
-                                <label class="crd-crm-access-row">
-                                  <MpCheckbox
-                                    :id="`${id}-crm-access`"
-                                    :aria-label="t('Access to CRM module')"
-                                    :is-checked="has('crm-access', 'view')"
-                                    @change="(on: boolean) => setGrant('crm-access', 'view', on)"
-                                  />
-                                  <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
-                                </label>
-                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row crd-crm-access-row--admin">
+                                <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
+                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row">
                                   <MpCheckbox
                                     :id="`${id}-crm-admin`"
                                     :aria-label="t('Full access as Administrator')"
@@ -469,7 +477,7 @@ function close() { emit('close') }
 
                           <template v-for="sub in feature.subfeatures" :key="`${feature.id}.${sub.id}`">
                             <!-- Level 2 — indented further; chevron only if it has level-3 children. -->
-                            <tr v-show="isCategoryExpanded(cat.value) && isExpanded(feature)" class="crd-row crd-row--l2">
+                            <tr v-if="isCategoryExpanded(cat.value) && isExpanded(feature)" class="crd-row crd-row--l2">
                               <td class="crd-td crd-td--feature crd-td--l2">
                                 <div class="crd-td-inner">
                                   <button
@@ -500,29 +508,30 @@ function close() { emit('close') }
                             </tr>
 
                             <!-- Level 3 — indented further still, one leaf row per child. -->
-                            <tr
-                              v-for="child in sub.children ?? []"
-                              v-show="isCategoryExpanded(cat.value) && isExpanded(feature) && isSubExpanded(feature, sub)"
-                              :key="`${feature.id}.${sub.id}.${child.id}`"
-                              class="crd-row crd-row--l3"
-                            >
-                              <td class="crd-td crd-td--feature crd-td--l3">
-                                <div class="crd-td-inner">
-                                  <span class="crd-chevron-spacer" aria-hidden="true" />
-                                  <span class="crd-td-label">{{ t(child.label) }}</span>
-                                </div>
-                              </td>
-                              <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
-                                <MpCheckbox
-                                  v-if="authorityActionsFor(feature).includes(action.value)"
-                                  :id="`${id}-cell-${feature.id}.${sub.id}.${child.id}-${action.value}`"
-                                  :aria-label="`${t(action.label)} — ${t(child.label)}`"
-                                  :is-checked="has(`${feature.id}.${sub.id}.${child.id}`, action.value)"
-                                  @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}.${child.id}`, action.value, on)"
-                                />
-                                <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
-                              </td>
-                            </tr>
+                            <template v-if="isCategoryExpanded(cat.value) && isExpanded(feature) && isSubExpanded(feature, sub)">
+                              <tr
+                                v-for="child in sub.children ?? []"
+                                :key="`${feature.id}.${sub.id}.${child.id}`"
+                                class="crd-row crd-row--l3"
+                              >
+                                <td class="crd-td crd-td--feature crd-td--l3">
+                                  <div class="crd-td-inner">
+                                    <span class="crd-chevron-spacer" aria-hidden="true" />
+                                    <span class="crd-td-label">{{ t(child.label) }}</span>
+                                  </div>
+                                </td>
+                                <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                                  <MpCheckbox
+                                    v-if="authorityActionsFor(feature).includes(action.value)"
+                                    :id="`${id}-cell-${feature.id}.${sub.id}.${child.id}-${action.value}`"
+                                    :aria-label="`${t(action.label)} — ${t(child.label)}`"
+                                    :is-checked="has(`${feature.id}.${sub.id}.${child.id}`, action.value)"
+                                    @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}.${child.id}`, action.value, on)"
+                                  />
+                                  <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                                </td>
+                              </tr>
+                            </template>
                           </template>
                         </template>
                       </template>
@@ -691,12 +700,12 @@ function close() { emit('close') }
 /* ── Permission table — one flat expandable table, feature rows + indented
    sub-feature rows, matching Figma "Drawer / Custom Role / Add". ── */
 .crd-matrix {
-  /* No bottom border here — the last VISIBLE row's own border-bottom draws that
-     edge. tbody tr:last-child isn't reliable for it: when the last category is
-     collapsed, the actual last <tr> in the DOM is one of its hidden (v-show)
-     children, not the visible category row, so a wrapper bottom border would
-     double up with that row's border instead of replacing it. */
-  border-width: 1px 1px 0 1px; border-style: solid; border-color: var(--mp-border-default, #e3e7e9);
+  /* Outer border always uses border-bold (not border-default) per the ERP
+     container-border convention. Collapsed rows render via v-if (not v-show),
+     so the actual last <tr> in the DOM is always the last VISIBLE one — the
+     tbody tr:last-child rule below reliably strips its border-bottom, so this
+     wrapper border is the only line drawn at the bottom edge (no doubling). */
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md, 6px);
   overflow: hidden;
 }
@@ -737,11 +746,20 @@ function close() { emit('close') }
 .crd-na { color: var(--mp-text-secondary); }
 
 /* CRM module access — left-aligned (not centered like the generic action
-   cells), since this is prose-labeled, not a column of identical checkboxes. */
+   cells), since this is prose-labeled, not a column of identical checkboxes.
+   The row is taller than a normal row (label + admin sub-row stacked), so its
+   cells vertical-align to the top instead of the table default's middle —
+   otherwise the Feature-column label and the View-column checkbox would sit
+   centered against the full row height instead of lining up with the first
+   line of content on the right. */
+.crd-row--crm-access .crd-td { vertical-align: top; }
+.crd-row--crm-access .crd-td-inner { align-items: flex-start; }
 .crd-td--crm-access { text-align: left; }
 .crd-crm-access { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/* The admin checkbox+label sit flush with this cell's left edge — same as the
+   "Access to CRM module" label right above it — so it lines up with that
+   label for free, without a hardcoded indent value. */
 .crd-crm-access-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; }
-.crd-crm-access-row--admin { padding-left: 28px; }
 .crd-crm-access-label { display: flex; flex-direction: column; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .crd-crm-access-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
