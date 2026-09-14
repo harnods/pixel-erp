@@ -367,8 +367,10 @@ function goBack() { router.push('/users-and-roles') }
                           </div>
                         </div>
 
-                        <!-- Access limitation -->
-                        <div v-if="role.accessLimitation" class="inv-subgroup">
+                        <!-- Access limitation — only relevant for a role that ISN'T full
+                             access (a full-access/admin user can't sensibly be restricted
+                             to only their own records). -->
+                        <div v-if="role.accessLimitation && !roleFullAccess[role.id]" class="inv-subgroup">
                           <span class="inv-subgroup-label">{{ t('Access limitation') }}</span>
                           <MpCheckbox
                             :id="`inv-limit-${role.id}`"
@@ -563,10 +565,19 @@ function goBack() { router.push('/users-and-roles') }
   list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-4);
   display: flex; flex-direction: column; gap: var(--mp-spacing-1);
 }
-/* Roles with a Full access checkbox above the bullets (e.g. CRM) get extra
-   indent so each bullet's TEXT lines up under the checkbox's label text
-   ("Full access to all..."), not under the checkbox box itself. */
-.inv-permissions--indented { margin-left: var(--mp-spacing-3, 12px); }
+/* Roles with a Full access checkbox above the bullets (e.g. CRM): the DOT of
+   each bullet lines up under the checkbox's label text ("Full access to
+   all..."), not under the checkbox box itself — measured offset (checkbox
+   box + its internal gap) from the shared left margin. Custom bullet (not
+   list-style) so the dot's exact x-position is controllable. */
+.inv-permissions--indented {
+  list-style: none; margin-left: 28px; padding-left: 0;
+}
+.inv-permissions--indented li { position: relative; padding-left: var(--mp-spacing-4); }
+.inv-permissions--indented li::before {
+  content: ''; position: absolute; left: 0; top: 0.55em;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--mp-text-secondary, #3a4749);
+}
 .inv-permissions li {
   display: list-item;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);

@@ -74,6 +74,8 @@ const statusConfig: Record<string, StatusConfig> = {
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},
+  // Settings › Users & roles — invitation sent, account not yet accepted.
+  invited:    { type: 'warning',      label: 'Invited'    },
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -107,8 +109,6 @@ const statusConfig: Record<string, StatusConfig> = {
 
   // ── information — blue ────────────────────────────
   invoice:    { type: 'information',  label: 'Invoice'    },
-  // Settings › Users & roles — invitation sent, account not yet accepted.
-  invited:    { type: 'information',  label: 'Invited'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
   'partially-processed': { type: 'information', label: 'Partially processed' },
   'partially produced': { type: 'warning', label: 'Partially produced' },

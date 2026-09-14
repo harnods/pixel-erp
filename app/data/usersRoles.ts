@@ -214,7 +214,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
     fullAccessPermissions: [
       'View and create all CRM deals, contacts, and companies.',
       'View and manage the entire deal pipeline, including changing stage and owner.',
-      'View CRM reports and manage CRM settings, including user permissions.',
+      'View CRM reports.',
+      'Manage CRM settings: create custom modules, set user permissions, and create teams.',
       'Edit and delete any deals, contacts, and companies if ticking List manager.',
     ],
     supportsTimeLimit: true,

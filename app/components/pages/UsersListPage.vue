@@ -356,13 +356,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* Kebab — 20px tall so the actions cell stays within the 40px baseline row */
-/* Kebab — 20px tall so the actions cell stays within the 40px baseline row. */
 .row-kebab {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-5, 20px) !important;
-  min-width: 0 !important; padding: 0 !important;
-  margin-left: auto; color: var(--mp-text-secondary);
+  display: flex !important; align-items: center; justify-content: center;
+  padding: var(--mp-spacing-1) !important; min-width: 0 !important;
+  border: none !important; background: transparent !important; cursor: pointer;
+  border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
 }
 
 /* ── Empty state ── */
