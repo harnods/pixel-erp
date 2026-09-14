@@ -14,7 +14,8 @@ import {
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
-import { orderSkuLines, productBySku } from '~/data/inventory'
+import { orderSkuLines } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
@@ -69,8 +70,6 @@ const locationOptions = computed(() => {
 })
 
 // ─── Batch / serial helpers (same heuristic as receiving / put-away / picking) ───
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(warehouseId.value)
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -78,14 +77,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')

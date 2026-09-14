@@ -5,22 +5,18 @@ import { loadSnapshot, saveSnapshot } from "./persist";
 import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
-import { CATALOG } from "./catalog";
 import { getWarehouseConfig } from "./warehouseConfig";
 import {
   applyStockInOut, registerNewBatch, receiveNewSerials, unregisterBatch, removeReceivedSerials, binForSku,
 } from "./warehouseDetails";
 import { addWmsAdjustment } from "./wmsStockAdjustments";
-
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans']);
-const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
+import { isProductBatchTracked, isProductSerialTracked } from "./trackStockBy";
 
 function isSerialSku(sku: string): boolean {
-  return SERIAL_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+  return isProductSerialTracked(sku);
 }
 function isBatchSku(sku: string): boolean {
-  return BATCH_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+  return isProductBatchTracked(sku);
 }
 
 /** Generate deterministic serial numbers for seed receiving data. */
