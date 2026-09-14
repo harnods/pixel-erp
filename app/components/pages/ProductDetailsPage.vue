@@ -19,6 +19,9 @@ import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import { BATCH_UPDATE_COLUMNS, batchUpdateTemplateRows } from '~/data/batchUpdateImport'
+import { successToast } from '~/utils/toasts'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
@@ -287,6 +290,21 @@ function openNewBatch() {
 function openEditBatch(b: ProductBatchSummary) {
   batchFormBatchId.value = b.id
   batchFormOpen.value = true
+}
+
+// Export batches (rule/export-modal) — same columns as the Update batches import
+// template, so an export can be edited and imported back.
+const batchExportOpen = ref(false)
+const batchExportColumns = BATCH_UPDATE_COLUMNS.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 }))
+async function exportBatches({ columns }: { columns: string[] }) {
+  batchExportOpen.value = false
+  const picked = BATCH_UPDATE_COLUMNS.filter((c) => columns.includes(c.key))
+  const rows = batchUpdateTemplateRows([product.value!.sku]).map((r) => picked.map((c) => r[c.key]))
+  const XLSX = await import('xlsx')
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([picked.map((c) => c.label), ...rows]), 'Batches')
+  XLSX.writeFile(book, `${product.value!.sku}-batches.xlsx`)
+  successToast('Export ready — check your downloads')
 }
 
 type PrintBarcodeTarget =
@@ -686,6 +704,25 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 >
                   Print all barcode
                 </button>
+                <button class="detail-btn detail-btn--secondary" type="button" @click="batchExportOpen = true">
+                  Export
+                </button>
+                <!-- rule/btn-dropdown-mppopover: Import opens a menu of import types. -->
+                <MpPopover id="pd-batch-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                  <MpPopoverTrigger>
+                    <button class="detail-btn detail-btn--secondary" type="button">
+                      Import
+                      <MpIcon name="chevrons-down" size="sm" />
+                    </button>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem
+                        @click="router.push({ path: '/product-list/import-batches', query: { sku: product.sku } })"
+                      >Update batches from spreadsheet</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
                 <!-- rule/filter-bar-action-tertiary: a create action beside the search is
                      the black tertiary button, not a second primary. -->
                 <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewBatch">New batch</MpButton>
@@ -968,6 +1005,17 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       :sku="product.sku"
       :batch-id="batchFormBatchId"
       @close="batchFormOpen = false"
+    />
+
+    <ExportModal
+      v-if="product.trackStockBy === 'Batch'"
+      :open="batchExportOpen"
+      title="Export batches"
+      entity-label="batches"
+      :columns="batchExportColumns"
+      :total="batchUpdateTemplateRows([product.sku]).length"
+      @close="batchExportOpen = false"
+      @export="exportBatches"
     />
   </div>
 

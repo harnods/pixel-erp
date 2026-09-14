@@ -191,6 +191,7 @@ const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/Pu
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const ImportBatchUpdatePage = asyncPage(() => import('~/components/pages/ImportBatchUpdatePage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
@@ -851,6 +852,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/import-batches?sku= → Update batches from spreadsheet (must precede /product-list/:sku)
+  if (segs.length === 2 && segs[0] === 'product-list' && segs[1] === 'import-batches') {
+    return { component: ImportBatchUpdatePage, id: 'import-batches' }
   }
   // /product-list/:sku/edit → reuse the product form in edit mode
   if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
