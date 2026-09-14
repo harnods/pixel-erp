@@ -652,7 +652,12 @@ function close() { emit('close') }
 /* ── Permission table — one flat expandable table, feature rows + indented
    sub-feature rows, matching Figma "Drawer / Custom Role / Add". ── */
 .crd-matrix {
-  border: 1px solid var(--mp-border-default, #e3e7e9);
+  /* No bottom border here — the last VISIBLE row's own border-bottom draws that
+     edge. tbody tr:last-child isn't reliable for it: when the last category is
+     collapsed, the actual last <tr> in the DOM is one of its hidden (v-show)
+     children, not the visible category row, so a wrapper bottom border would
+     double up with that row's border instead of replacing it. */
+  border-width: 1px 1px 0 1px; border-style: solid; border-color: var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
   overflow: hidden;
 }
@@ -683,6 +688,11 @@ function close() { emit('close') }
   vertical-align: middle;
 }
 .crd-td--action { text-align: center; }
+/* MpCheckbox's root is display:flex (block-level), so text-align:center above has
+   no effect on it — force inline-flex so it actually participates in the centering.
+   It also reserves a 12px gap for a label slot we never fill (no label text on
+   these action-column checkboxes), which would otherwise skew the box off-center. */
+.crd-td--action :deep(.mp-checkbox__root) { display: inline-flex; gap: 0; }
 .crd-td-inner { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .crd-td-label { white-space: normal; }
 .crd-na { color: var(--mp-text-secondary); }
