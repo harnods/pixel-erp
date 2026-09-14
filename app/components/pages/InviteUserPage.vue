@@ -348,7 +348,7 @@ function goBack() { router.push('/users-and-roles') }
                           </MpCheckbox>
                         </div>
 
-                        <ul class="inv-permissions">
+                        <ul class="inv-permissions" :class="{ 'inv-permissions--indented': role.fullAccessOption }">
                           <li v-for="p in permissionsFor(role)" :key="p">{{ t(p) }}</li>
                         </ul>
 
@@ -563,6 +563,10 @@ function goBack() { router.push('/users-and-roles') }
   list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-4);
   display: flex; flex-direction: column; gap: var(--mp-spacing-1);
 }
+/* Roles with a Full access checkbox above the bullets (e.g. CRM) get extra
+   indent so each bullet's TEXT lines up under the checkbox's label text
+   ("Full access to all..."), not under the checkbox box itself. */
+.inv-permissions--indented { margin-left: var(--mp-spacing-3, 12px); }
 .inv-permissions li {
   display: list-item;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
