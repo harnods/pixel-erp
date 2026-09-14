@@ -163,6 +163,56 @@ function setGrant(rowKey: string, action: AuthorityAction, on: boolean) {
   authorityError.value = ''
 }
 
+/**
+ * One action column, aggregated over a set of leaf row keys — used to render a
+ * single action checkbox on a parent row (category/feature/subfeature) that
+ * reflects and cascades to every leaf underneath it. A parent row's checkbox is
+ * checked when every descendant leaf has that action, indeterminate when only
+ * some do, and toggling it sets/clears that action on every descendant leaf —
+ * this is how selecting a parent auto-selects (or clears) its children.
+ */
+function actionState(rowKeys: string[], action: AuthorityAction): { checked: boolean; indeterminate: boolean } {
+  if (!rowKeys.length) return { checked: false, indeterminate: false }
+  const on = rowKeys.filter((k) => has(k, action)).length
+  return { checked: on === rowKeys.length, indeterminate: on > 0 && on < rowKeys.length }
+}
+function toggleAction(rowKeys: string[], action: AuthorityAction, on: boolean) {
+  for (const key of rowKeys) setGrant(key, action, on)
+}
+
+/** Level 1 (feature) — works for leaf features (single row key) and features with
+ *  subfeatures alike, since authorityRowKeys() already flattens to the leaves. */
+function featureActionState(feature: AuthorityFeature, action: AuthorityAction) {
+  return actionState(authorityRowKeys(feature), action)
+}
+function toggleFeatureAction(feature: AuthorityFeature, action: AuthorityAction, on: boolean) {
+  toggleAction(authorityRowKeys(feature), action, on)
+}
+
+/** Level 2 (subfeature) — same idea, over its own leaf key or its level-3 children. */
+function subActionState(feature: AuthorityFeature, sub: AuthoritySubfeature, action: AuthorityAction) {
+  return actionState(authoritySubRowKeys(feature.id, sub), action)
+}
+function toggleSubAction(feature: AuthorityFeature, sub: AuthoritySubfeature, action: AuthorityAction, on: boolean) {
+  toggleAction(authoritySubRowKeys(feature.id, sub), action, on)
+}
+
+/** Category — every leaf row across every feature in the category that supports this action. */
+function categoryActionKeys(cat: AuthorityCategory, action: AuthorityAction): string[] {
+  return featuresInCategory(cat)
+    .filter((f) => authorityActionsFor(f).includes(action))
+    .flatMap((f) => authorityRowKeys(f))
+}
+function categoryActionAvailable(cat: AuthorityCategory, action: AuthorityAction): boolean {
+  return featuresInCategory(cat).some((f) => authorityActionsFor(f).includes(action))
+}
+function categoryActionState(cat: AuthorityCategory, action: AuthorityAction) {
+  return actionState(categoryActionKeys(cat, action), action)
+}
+function toggleCategoryAction(cat: AuthorityCategory, action: AuthorityAction, on: boolean) {
+  toggleAction(categoryActionKeys(cat, action), action, on)
+}
+
 // ─── Right column — "N permissions selected" summary, grouped by category ──
 const ACTION_VERB: Record<AuthorityAction, string> = { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' }
 
@@ -329,7 +379,17 @@ function close() { emit('close') }
                               <span class="crd-td-label crd-td-label--category">{{ t(cat.label) }}</span>
                             </div>
                           </td>
-                          <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action" />
+                          <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                            <MpCheckbox
+                              v-if="categoryActionAvailable(cat.value, action.value)"
+                              :id="`${id}-cell-cat-${cat.value}-${action.value}`"
+                              :aria-label="`${t(action.label)} — ${t(cat.label)}`"
+                              :is-checked="categoryActionState(cat.value, action.value).checked"
+                              :is-indeterminate="categoryActionState(cat.value, action.value).indeterminate"
+                              @change="(on: boolean) => toggleCategoryAction(cat.value, action.value, on)"
+                            />
+                            <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                          </td>
                         </tr>
 
                         <template v-for="feature in featuresInCategory(cat.value)" :key="feature.id">
@@ -353,17 +413,18 @@ function close() { emit('close') }
                               </div>
                             </td>
                             <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
-                              <!-- Leaf feature (no children): its own cells carry the real
-                                   grant. A feature with children shows nothing here — its
-                                   checkboxes live on the rows below. -->
+                              <!-- Works for a leaf feature (its own single row) and a feature
+                                   with subfeatures alike — checking it here grants/clears that
+                                   action across every descendant leaf row. -->
                               <MpCheckbox
-                                v-if="!feature.subfeatures.length && authorityActionsFor(feature).includes(action.value)"
+                                v-if="authorityActionsFor(feature).includes(action.value)"
                                 :id="`${id}-cell-${feature.id}-${action.value}`"
                                 :aria-label="`${t(action.label)} — ${t(feature.label)}`"
-                                :is-checked="has(feature.id, action.value)"
-                                @change="(on: boolean) => setGrant(feature.id, action.value, on)"
+                                :is-checked="featureActionState(feature, action.value).checked"
+                                :is-indeterminate="featureActionState(feature, action.value).indeterminate"
+                                @change="(on: boolean) => toggleFeatureAction(feature, action.value, on)"
                               />
-                              <span v-else-if="!feature.subfeatures.length" class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                              <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
                             </td>
                           </tr>
 
@@ -388,13 +449,14 @@ function close() { emit('close') }
                               </td>
                               <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
                                 <MpCheckbox
-                                  v-if="!sub.children?.length && authorityActionsFor(feature).includes(action.value)"
+                                  v-if="authorityActionsFor(feature).includes(action.value)"
                                   :id="`${id}-cell-${feature.id}.${sub.id}-${action.value}`"
                                   :aria-label="`${t(action.label)} — ${t(sub.label)}`"
-                                  :is-checked="has(`${feature.id}.${sub.id}`, action.value)"
-                                  @change="(on: boolean) => setGrant(`${feature.id}.${sub.id}`, action.value, on)"
+                                  :is-checked="subActionState(feature, sub, action.value).checked"
+                                  :is-indeterminate="subActionState(feature, sub, action.value).indeterminate"
+                                  @change="(on: boolean) => toggleSubAction(feature, sub, action.value, on)"
                                 />
-                                <span v-else-if="!sub.children?.length" class="crd-na" :aria-label="t('Not available for this feature')">—</span>
+                                <span v-else class="crd-na" :aria-label="t('Not available for this feature')">—</span>
                               </td>
                             </tr>
 
