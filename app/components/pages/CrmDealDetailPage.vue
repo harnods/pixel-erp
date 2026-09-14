@@ -549,12 +549,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </section>
           </MpTabPanel>
 
-          <!-- ── Activity — every event for this deal (same table as the activity log) ── -->
-          <MpTabPanel value="activity">
-            <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
-            <ActivityLogTable :entries="dealActivity" />
-          </MpTabPanel>
-
           <!-- ── Notes — write + threaded notes/comments (self + teammates) ── -->
           <MpTabPanel value="notes">
             <h3 class="detail-tab-heading">{{ t('Notes') }}</h3>
@@ -668,6 +662,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </tbody>
             </table>
             <p v-else class="detail-tab-empty">{{ t('No sales order created from this deal yet.') }}</p>
+          </MpTabPanel>
+
+          <!-- ── Activity — every event for this deal (same table as the activity log) ── -->
+          <MpTabPanel value="activity">
+            <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
+            <ActivityLogTable :entries="dealActivity" />
           </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
