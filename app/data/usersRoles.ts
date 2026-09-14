@@ -189,6 +189,18 @@ export const SYSTEM_ROLES: SystemRole[] = [
     accessLimitation: 'Restrict this user to warehouses they are assigned to',
     supportsTimeLimit: true,
   },
+  {
+    id: 'crm',
+    name: 'CRM',
+    permissions: [
+      'View and create all CRM deals, contacts, and companies.',
+      'View and manage the deal pipeline, including changing stage and owner.',
+      'View pages of customer contacts, products, other lists, and CRM settings.',
+      'Edit and delete data of deals, contacts, and companies if ticking List manager.',
+    ],
+    accessLimitation: 'Restrict this user to view CRM deals created by other users',
+    supportsTimeLimit: true,
+  },
 ]
 
 export function getSystemRole(id: string): SystemRole | undefined {
