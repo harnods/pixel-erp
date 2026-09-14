@@ -427,25 +427,25 @@ function close() { emit('close') }
                               </div>
                             </td>
                             <!-- CRM module access — Admin vs. member is a mutually-exclusive
-                                 choice, not an independent action. The base checkbox lives in
-                                 the ordinary View column (so it lines up with the category's
-                                 own View checkbox above it), and Create/Edit/Delete collapse
-                                 into one cell holding the "Access to CRM module" label plus,
-                                 once granted, the Administrator escalation — its checkbox
-                                 lines up with that label above it for free, since both start
-                                 at the same left edge of the same cell. -->
-                            <td v-if="feature.id === 'crm-access'" class="crd-td crd-td--action">
-                              <MpCheckbox
-                                :id="`${id}-crm-access`"
-                                :aria-label="t('Access to CRM module')"
-                                :is-checked="has('crm-access', 'view')"
-                                @change="(on: boolean) => setGrant('crm-access', 'view', on)"
-                              />
-                            </td>
-                            <td v-if="feature.id === 'crm-access'" colspan="3" class="crd-td crd-td--crm-access">
+                                 choice, not an independent action, so it's one merged cell with
+                                 its own layout instead of the generic per-column grid. The base
+                                 checkbox is nudged in by .crd-crm-access-row--main so it still
+                                 lines up with the category's own View checkbox above it (same
+                                 120px-column center), while its label sits a normal 12px gap
+                                 away — the Administrator escalation row below it then aligns to
+                                 that label's left edge. -->
+                            <td v-if="feature.id === 'crm-access'" colspan="4" class="crd-td crd-td--crm-access">
                               <div class="crd-crm-access">
-                                <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
-                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row">
+                                <label class="crd-crm-access-row crd-crm-access-row--main">
+                                  <MpCheckbox
+                                    :id="`${id}-crm-access`"
+                                    :aria-label="t('Access to CRM module')"
+                                    :is-checked="has('crm-access', 'view')"
+                                    @change="(on: boolean) => setGrant('crm-access', 'view', on)"
+                                  />
+                                  <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
+                                </label>
+                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row crd-crm-access-row--admin">
                                   <MpCheckbox
                                     :id="`${id}-crm-admin`"
                                     :aria-label="t('Full access as Administrator')"
@@ -756,10 +756,19 @@ function close() { emit('close') }
 .crd-row--crm-access .crd-td-inner { align-items: flex-start; }
 .crd-td--crm-access { text-align: left; }
 .crd-crm-access { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-/* The admin checkbox+label sit flush with this cell's left edge — same as the
-   "Access to CRM module" label right above it — so it lines up with that
-   label for free, without a hardcoded indent value. */
-.crd-crm-access-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; }
+.crd-crm-access-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-3, 12px); cursor: pointer; }
+/* MpCheckbox's root reserves a 12px gap for an unfilled label slot (see the
+   action-column fix above) — kill it here too so the 16px checkbox box is the
+   true width our own padding math below is based on. */
+.crd-crm-access-row :deep(.mp-checkbox__root) { gap: 0; }
+/* Nudges the checkbox so its center lands on the (merged) View column's own
+   center — 60px from this cell's left edge — so it still lines up with the
+   category's View checkbox above it: 40px row padding + 12px inherited td
+   padding + half the 16px checkbox box ≈ 60px. */
+.crd-crm-access-row--main { padding-left: 40px; }
+/* Lines up with the "Access to CRM module" label above it: same 40px row
+   padding, plus the 16px checkbox box and the 12px gap before that label. */
+.crd-crm-access-row--admin { padding-left: 68px; }
 .crd-crm-access-label { display: flex; flex-direction: column; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .crd-crm-access-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
