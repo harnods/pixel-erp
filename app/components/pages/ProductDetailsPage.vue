@@ -806,8 +806,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No batches</p>
-              <p class="empty-full-desc">Batches will appear here.</p>
+              <!-- Search-not-matched differs from first-run (docs/design/reachable-states.md). -->
+              <template v-if="batchSearch.trim()">
+                <p class="empty-full-title">No batches found</p>
+                <p class="empty-full-desc">No batch matches your search. Try a different keyword.</p>
+              </template>
+              <template v-else>
+                <p class="empty-full-title">No batches</p>
+                <p class="empty-full-desc">Batches will appear here.</p>
+              </template>
             </div>
 
             <ErpPagination
