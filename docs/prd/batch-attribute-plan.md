@@ -226,6 +226,19 @@
 - Runs as a background process: after submit, push an entry into the header activity popover (`uploadCenter.ts`) and return to the product. Success → toast.
 - **Not built:** the "Product Batch" filter on Other lists › Export & import, because that page doesn't exist in the prototype. Track as a follow-up.
 
+**As built (Phase 4):**
+- Validation is **real**, not simulated: `app/data/batchUpdateImport.ts` reads each row and applies only the valid ones through `updateBatch`, so activity is logged per batch (`tests/batch-update-import.spec.ts`).
+  - The page reads CSV / XLS / XLSX with `xlsx`. The template download is a real XLSX, prefilled with the product's batches in the import's own formats.
+  - Dates accept `DD/MM/YYYY`, `DD-MMM-YYYY`, and (expiry only) `MM/YYYY`.
+  - Rows are also rejected for an empty product name or batch number, and for an unknown vendor ("Vendor name not found", pending PRD copy under A6).
+- The `ScenarioFab` keeps demo outcomes (succeeded / some rows failed / all rows failed). They come from running the real validator on sample rows, and nothing is written.
+- **Deviations:**
+  - **No activity-popover entry.** `uploadCenter.ts` only models OCR review files, so the import runs on the page instead (spinner in the dropzone).
+    - All valid → toast "Batches updated" and back to the product's batches tab.
+    - Any invalid → a result view on the page: summary, failed-row table, Download error file, Import again.
+  - The failed-row list is a small hand-rolled table, not `ErpTablePage`. It is an unpaginated result list, not an index.
+  - Export writes the same columns as the template, so an export can be edited and imported back.
+
 ### Phase 5 — deferred: Vendor attribute in Purchase transactions (story 10)
 
 Prerequisite: a batch drawer on `NewPurchaseDeliveryPage.vue` (and the purchase-invoice create flow when one exists). Then:
