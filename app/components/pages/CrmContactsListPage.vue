@@ -15,12 +15,13 @@
  * filter-bar icon button (next to Column settings), not a bulk action.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpButtonGroup, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpBadge, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
+import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import CrmDealOwnerModal from '~/components/patterns/CrmDealOwnerModal.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import CrmContactsFiltersDrawer, { emptyContactsFilters, type ContactsFiltersValue } from '~/components/patterns/CrmContactsFiltersDrawer.vue'
@@ -223,6 +224,12 @@ function onBulkOwner(owner: string) {
 
 // ── Export — filter-bar icon button (next to Column settings), same
 //    ExportModal master component used across the ERP (e.g. CrmDealsPage). ──
+// ── Import — shared spreadsheet-dropzone modal (same as Deals) ──
+const importOpen = ref(false)
+function onImportUpload(files: File[]) {
+  successToast(`${files.length} ${files.length === 1 ? t('file') : t('files')} ${t('queued for import')}`)
+}
+
 const exportOpen = ref(false)
 const selectedCount = ref(0)
 const exportColumns = [
@@ -243,7 +250,10 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton v-if="canCreate && !showArchived" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/contacts/new')">{{ t('New contact') }}</MpButton>
+        <MpButtonGroup>
+          <MpButton v-if="canCreate" variant="secondary" is-rounded @click="importOpen = true">{{ t('Import') }}</MpButton>
+          <MpButton v-if="canCreate && !showArchived" variant="primary" is-rounded left-icon="add" @click="router.push('/crm/customers/contacts/new')">{{ t('New contact') }}</MpButton>
+        </MpButtonGroup>
       </div>
     </header>
 
@@ -316,7 +326,19 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
 
         <!-- Name -->
         <template #cell-name="{ row }">
-          <span class="cell-link cell-text" @click.stop="open(row as unknown as ContactRow)">{{ (row as unknown as ContactRow).name }}</span>
+          <span class="cc-name-cell">
+            <span class="cell-link cell-text" @click.stop="open(row as unknown as ContactRow)">{{ (row as unknown as ContactRow).name }}</span>
+            <MpTooltip
+              v-if="(row as unknown as ContactRow).erpStatus === 'created'"
+              :id="`cc-erp-badge-${(row as unknown as ContactRow).rowKey}`"
+              :label="`${t('Created in ERP')} — ${(row as unknown as ContactRow).erpCustomerId}`"
+              placement="top" use-portal
+            >
+              <MpBadge for="tableStatus" type="announcement" size="sm" class="cc-erp-badge">
+                <MpIcon name="arrows-right" size="sm" />{{ t('ERP') }}
+              </MpBadge>
+            </MpTooltip>
+          </span>
         </template>
         <template #cell-company="{ row }">
           <span v-if="(row as unknown as ContactRow).companyId" class="cell-link cell-text" @click.stop="router.push(`/crm/customers/companies/${(row as unknown as ContactRow).companyId}`)">{{ (row as unknown as ContactRow).companyName }}</span>
@@ -405,6 +427,9 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
     <!-- Bulk: Change owner -->
     <CrmDealOwnerModal :open="ownerModalOpen" :count="bulkIds.length" noun="contacts" @close="ownerModalOpen = false" @confirm="onBulkOwner" />
 
+    <!-- Import (title bar) -->
+    <ImportSpreadsheetModal :open="importOpen" :title="t('Import contacts')" :entity-label="t('contacts')" @close="importOpen = false" @upload="onImportUpload" />
+
     <!-- Export (filter-bar icon button) -->
     <ExportModal
       :open="exportOpen"
@@ -436,6 +461,10 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Name cell — link + a gray "→ ERP" badge for contacts already created in ERP. */
+.cc-name-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.cc-erp-badge { display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
 
 .row-kebab {
   display: flex !important; align-items: center; justify-content: center;

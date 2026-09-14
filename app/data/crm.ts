@@ -2545,6 +2545,16 @@ const PROVINCE_BY_CITY: Record<string, string> = {
   Semarang: 'Jawa Tengah', Bali: 'Bali', Bandung: 'Jawa Barat', Surabaya: 'Jawa Timur',
 }
 function provinceFor(city: string): string { return PROVINCE_BY_CITY[city] ?? 'DKI Jakarta' }
+
+// Deterministic (not Math.random — avoids SSR/client hydration mismatch) Indonesian
+// mobile number generator for CRM contacts — real carrier prefixes, varied digits.
+const MOBILE_PREFIXES = ['0811', '0812', '0813', '0821', '0822', '0852', '0853', '0857', '0858', '0878', '0895', '0896']
+function mobileNumberFor(seed: number): string {
+  const prefix = MOBILE_PREFIXES[seed % MOBILE_PREFIXES.length]
+  const n = (seed * 104729 + 733) % 100000000
+  const digits = String(n).padStart(8, '0')
+  return `${prefix}-${digits.slice(0, 4)}-${digits.slice(4)}`
+}
 function slugDomain(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '') }
 
 // Seed companies + their primary contacts from the coffee accounts.
@@ -2576,7 +2586,8 @@ const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
   fullName: c.contact,
   jobTitle: jobTitleFor(c.contact),
   email: c.email,
-  phone: c.phone,
+  phone: mobileNumberFor(i + 1),
+  source: CRM_SOURCE_OPTIONS[i % CRM_SOURCE_OPTIONS.length],
   companyIds: [`CO-${String(i + 1).padStart(3, '0')}`],
   owner: c.owner,
   createdAt: '2026-01-05', lastActivity: c.lastActivity,
@@ -2586,7 +2597,7 @@ const _contactSeed: CrmContactPerson[] = crmCustomers.map((c, i) => ({
 //  • CO-001 gains a second contact (CT-100) — CT-001 stays primary (multi-contact company).
 _contactSeed.push({
   id: 'CT-100', name: 'Bagus Prasetyo', fullName: 'Bagus Prasetyo', jobTitle: 'Group Procurement Lead',
-  email: 'bagus.prasetyo@centralperk.co.id', phone: '021-5550100',
+  email: 'bagus.prasetyo@centralperk.co.id', phone: mobileNumberFor(100), source: 'Referral',
   companyIds: ['CO-001', 'CO-002'], owner: 'Fajar Nugroho', createdAt: '2026-02-01', lastActivity: '2026-02-27',
 })
 if (_companySeed[0]) _companySeed[0].contactIds = ['CT-001', 'CT-100']

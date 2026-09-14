@@ -692,6 +692,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Change owner': 'Ubah pemilik',
   'Create a deal to start tracking an opportunity.': 'Buat deal untuk mulai melacak peluang.',
   'Import deals': 'Impor deal',
+  'Import contacts': 'Impor kontak',
+  'Created in ERP': 'Sudah dibuat di ERP',
   'Export deals': 'Ekspor deal',
   'Edit': 'Ubah',
   'Add': 'Tambah',
