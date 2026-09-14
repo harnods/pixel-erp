@@ -55,6 +55,8 @@ const selectedCustomRoles = ref<string[]>([])
 const roleAuthority = reactive<Record<string, string[]>>({})
 /** roleId → access-limitation checkbox. */
 const roleLimitation = reactive<Record<string, boolean>>({})
+/** roleId → full-access (module administrator) checkbox. */
+const roleFullAccess = reactive<Record<string, boolean>>({})
 const isListManager = ref(false)
 
 /** Which role accordions are expanded — all open by default, as in Jurnal. */
@@ -88,7 +90,7 @@ function toggleSystemRole(role: SystemRole, on: boolean) {
   selectedSystemRoles.value = on
     ? [...new Set([...selectedSystemRoles.value, role.id])]
     : selectedSystemRoles.value.filter((id) => id !== role.id)
-  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id] }
+  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id]; delete roleFullAccess[role.id] }
   roleError.value = ''
 }
 function isSystemRoleOn(id: string) { return selectedSystemRoles.value.includes(id) }
@@ -347,6 +349,17 @@ function goBack() { router.push('/users-and-roles') }
                             @change="(on: boolean) => roleLimitation[role.id] = on"
                           >{{ t(role.accessLimitation) }}</MpCheckbox>
                         </div>
+
+                        <!-- Full access (module administrator) -->
+                        <div v-if="role.fullAccessOption" class="inv-subgroup">
+                          <span class="inv-subgroup-label">{{ t('Full access') }}</span>
+                          <MpCheckbox
+                            :id="`inv-full-${role.id}`"
+                            :is-checked="!!roleFullAccess[role.id]"
+                            :is-disabled="!isSystemRoleOn(role.id)"
+                            @change="(on: boolean) => roleFullAccess[role.id] = on"
+                          >{{ t(role.fullAccessOption) }}</MpCheckbox>
+                        </div>
                       </div>
                     </li>
                   </ul>
@@ -441,7 +454,7 @@ function goBack() { router.push('/users-and-roles') }
 
 .inv-titlebar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--mp-spacing-6);
 }
@@ -464,7 +477,7 @@ function goBack() { router.push('/users-and-roles') }
 
 .inv-stage {
   flex: 1;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0;
   overflow-x: hidden; overflow-y: auto;
   padding: var(--mp-spacing-6) var(--mp-spacing-6) 80px;
@@ -482,7 +495,7 @@ function goBack() { router.push('/users-and-roles') }
   color: var(--mp-text-default);
 }
 .inv-required { color: var(--mp-text-critical, var(--mp-text-danger)); }
-.inv-divider { height: 1px; background: var(--mp-border-default); }
+.inv-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 .inv-field-row { display: flex; gap: var(--mp-spacing-4); }
 .inv-field-row > * { flex: 1; min-width: 0; }
@@ -514,7 +527,7 @@ function goBack() { router.push('/users-and-roles') }
 .inv-tab-with-badge { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 
 .inv-roles { list-style: none; margin: 0; padding: 0; }
-.inv-role { padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default); }
+.inv-role { padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .inv-role:last-child { border-bottom: none; }
 .inv-role-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .inv-role-toggle {
@@ -556,9 +569,9 @@ function goBack() { router.push('/users-and-roles') }
 
 /* ── Side card ── */
 .inv-terms {
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
 }
 .inv-terms-head {
   display: flex !important; align-items: center; justify-content: space-between;

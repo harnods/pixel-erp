@@ -34,6 +34,13 @@ export interface SystemRole {
    * they created themselves. Only meaningful once the role is ticked.
    */
   accessLimitation?: string
+  /**
+   * Optional "Full access" checkbox — the inverse shape of accessLimitation:
+   * unchecked (default) scopes the role to its own records; checking it elevates
+   * the user to see/manage everyone's data within the module (a module-level
+   * administrator). Only meaningful once the role is ticked.
+   */
+  fullAccessOption?: string
   /** Owner/Ultimate can't be time-limited (see ACCESS_TIME_LIMIT_NOTE). */
   supportsTimeLimit: boolean
   /**
@@ -198,7 +205,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       'View pages of customer contacts, products, other lists, and CRM settings.',
       'Edit and delete data of deals, contacts, and companies if ticking List manager.',
     ],
-    accessLimitation: 'Restrict this user to view CRM deals created by other users',
+    fullAccessOption: 'Full access to all CRM data and settings (CRM Administrator)',
     supportsTimeLimit: true,
   },
 ]
@@ -525,6 +532,8 @@ export interface AccountUser {
   status: AccountUserStatus
   /** ISO timestamp; null while the invitation is still pending. */
   lastActiveAt: string | null
+  /** ISO date the user was invited/created. */
+  joinedAt: string
 }
 
 export const accountUsers = reactive<AccountUser[]>([
@@ -539,6 +548,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-08T08:42:00+07:00',
+    joinedAt: '2025-01-10',
   },
   {
     id: 'au-2',
@@ -551,6 +561,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-07T17:20:00+07:00',
+    joinedAt: '2025-03-02',
   },
   {
     id: 'au-3',
@@ -563,6 +574,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'mon-fri', startHour: '08:00', endHour: '17:00' },
     status: 'active',
     lastActiveAt: '2026-09-08T07:55:00+07:00',
+    joinedAt: '2025-04-18',
   },
   {
     id: 'au-4',
@@ -575,6 +587,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'mon-sat', startHour: '07:00', endHour: '16:00' },
     status: 'active',
     lastActiveAt: '2026-09-06T14:03:00+07:00',
+    joinedAt: '2025-05-27',
   },
   {
     id: 'au-5',
@@ -587,6 +600,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: '2026-09-10',
   },
   {
     id: 'au-6',
@@ -599,6 +613,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-05T09:31:00+07:00',
+    joinedAt: '2025-07-14',
   },
   {
     id: 'au-7',
@@ -611,6 +626,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'inactive',
     lastActiveAt: '2026-05-19T10:12:00+07:00',
+    joinedAt: '2025-02-20',
   },
   {
     id: 'au-8',
@@ -623,6 +639,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'everyday', startHour: '06:00', endHour: '22:00' },
     status: 'active',
     lastActiveAt: '2026-09-08T06:14:00+07:00',
+    joinedAt: '2025-06-05',
   },
   {
     id: 'au-9',
@@ -635,6 +652,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-04T13:48:00+07:00',
+    joinedAt: '2025-08-22',
   },
   {
     id: 'au-10',
@@ -647,6 +665,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: '2026-09-09',
   },
   {
     id: 'au-11',
@@ -659,6 +678,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-08T09:05:00+07:00',
+    joinedAt: '2025-09-30',
   },
 ])
 
@@ -684,6 +704,7 @@ export function addAccountUser(input: AccountUserInput): AccountUser {
     isOwner: false,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: new Date().toISOString().slice(0, 10),
   }
   accountUsers.push(user)
   bumpAssignedUserCounts()
@@ -733,6 +754,17 @@ export function userRoleTypes(user: AccountUser): UserRoleType[] {
   if (user.systemRoleIds.length) types.push('existing')
   if (user.customRoleIds.length) types.push('custom')
   return types
+}
+
+const USER_ROLE_TYPE_LABELS: Record<UserRoleType, string> = {
+  owner: 'Owner',
+  existing: 'Existing role',
+  custom: 'Custom role',
+}
+
+/** Display labels for the Type column — "Owner", or "Existing role" / "Custom role". */
+export function userRoleTypeLabels(user: AccountUser): string[] {
+  return userRoleTypes(user).map((t) => USER_ROLE_TYPE_LABELS[t])
 }
 
 /** Human-readable access window, or "—" when the user has no limit. */
