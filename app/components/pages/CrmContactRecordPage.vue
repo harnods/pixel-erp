@@ -28,9 +28,12 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { infoToast, successToast } from '~/utils/toasts'
+import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import {
   getContactPerson, getCompany, companiesOfContact, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
   archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, dealStageLabel, type Deal,
+  createContactInErp,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -209,6 +212,15 @@ function confirmArchive() {
   restoreCrmContactPerson(contact.value.id)
   toast.notify({ variant: 'success', title: t('Contact restored'), maxWidth: 'max-content' })
 }
+
+// ── Create in ERP — mirrors the Contacts list row action ──
+async function onCreateInErp() {
+  if (!contact.value) return
+  const r = await createContactInErp(contact.value.id)
+  if (r.ok) successToast(t('Contact created in ERP'))
+  else infoToast(r.error ?? t('Could not create in ERP'))
+}
+function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
 </script>
 
 <template>
@@ -230,6 +242,16 @@ function confirmArchive() {
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem v-if="!isArchived" @click="router.push(`/crm/customers/contacts/${contact.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem
+                    v-if="!isArchived && contact.erpStatus !== 'created' && contact.erpStatus !== 'in-sync'"
+                    @click="onCreateInErp"
+                  >{{ t('Create contact in ERP') }}</MpPopoverListItem>
+                  <MpPopoverListItem
+                    v-if="contact.erpStatus === 'created'"
+                    @click="onOpenErpCustomer"
+                  >
+                    <span class="cr-menu-row">{{ t('Open contact in ERP') }}<img :src="shortcutIconUrl" class="cr-shortcut-icon" alt="" /></span>
+                  </MpPopoverListItem>
                   <MpPopoverListItem @click="archiveOpen = true">{{ isArchived ? t('Restore') : t('Archive') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -512,6 +534,9 @@ function confirmArchive() {
   border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
 }
 .cr-kebab:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
+
+.cr-menu-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); width: 100%; }
+.cr-shortcut-icon { width: var(--mp-sizes-4); height: var(--mp-sizes-4); flex-shrink: 0; filter: brightness(0) opacity(0.5); }
 
 .cr-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: 80px; color: var(--mp-text-secondary); }
 </style>

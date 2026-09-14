@@ -393,10 +393,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <MpTabs :key="deal.id" id="deal-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="deal-tab-details" value="details">{{ t('Deal details') }}</MpTab>
-          <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
           <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
