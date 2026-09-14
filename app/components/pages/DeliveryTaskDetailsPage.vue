@@ -17,7 +17,7 @@ import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { productBySku } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -31,8 +31,6 @@ const isShipped = computed(() => status.value === 'shipped')
 const isPending = computed(() => status.value === 'ready to ship')
 
 // ── Batch / serial tracking heuristic (same as picking/packing/receiving) ───────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -40,14 +38,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ── View batch / View serial number — read-only, which batch/SN is being shipped ─

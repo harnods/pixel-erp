@@ -13,6 +13,7 @@ import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES, stockAdjustments } from '~/data/stockAdjustments'
@@ -73,19 +74,15 @@ const locationOptions = computed(() => {
 })
 
 // ── Batch / serial helpers ────────────────────────────────────────────────────────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────────

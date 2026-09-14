@@ -18,7 +18,8 @@ import {
   orderPackedFromPickingTask,
 } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
-import { orderSkuLines, productBySku } from '~/data/inventory'
+import { orderSkuLines } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail, binForSku } from '~/data/warehouseDetails'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
@@ -207,8 +208,6 @@ function pickingListBlockReasons(pt: PickingTask): string[] {
 // can be picked across several lists, so the batch/serial picks are aggregated
 // across ALL of them (merging by batchNo, deduping serials), not just the one
 // list this form happened to be opened from. ────────────────────────────────────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(warehouseId.value)
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -216,14 +215,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 /** Picked qty for a batch/serial-tracked line, broken down by which bin it was
  *  actually picked from — a batch/serial always sits in exactly ONE fixed

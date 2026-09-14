@@ -22,7 +22,7 @@ import {
 import { getPutAwayLineItems, allPutAwayTasksFlat, type PutAwayLineItem } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { productBySku } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePutAwaySlipPdf } from '~/utils/putAwaySlipPdf'
 import type jsPDF from 'jspdf'
@@ -48,8 +48,6 @@ const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId)
 const storedQty = computed(() => lineItems.value.reduce((a, it) => a + it.stored, 0))
 
 // ── Batch / serial helpers (same heuristic as receiving / picking / packing) ───
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -57,14 +55,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 /** Real destination bin(s) already assigned for this row's batches/serials —
