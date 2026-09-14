@@ -6,6 +6,9 @@
  * (breadcrumb, Actions dropdown, activity log link + modal, MpTabs) but a simpler
  * 2-column info section (no photo, no Purchase/Sales info) since a batch has no
  * accounting fields of its own — those live on the parent product.
+ *
+ * Batch Attribute (plan Phase 3): Batch info lists the product's attributes in its
+ * order, Edit opens BatchFormModal, and the activity log shows recorded creates/edits.
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -17,13 +20,19 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
 import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
 import type jsPDF from 'jspdf'
 import {
   getBatchDetail, getWarehouseBatchDetail, getBatchTransactions, getBatchWarehouseStock,
+  type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { formatDateTimeLong } from '~/utils/date'
+import { batchAttributeDef, formatExpiry, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
+import { batchActivityFor } from '~/data/batchStore'
+import { gradeById } from '~/data/grades'
+import { vendors } from '~/data/vendors'
+import { formatDateLong, formatDateTimeLong } from '~/utils/date'
 
 // orderId is "sku::batchNo" from the Products path, OR "warehouseId::sku::batchNo" when
 // opened from Warehouse Details — the batch page stays under /warehouses in that case,
@@ -74,20 +83,86 @@ function formatDate(iso: string) {
 }
 const updatedLabel = computed(() => batch.value ? formatDateTimeLong(batch.value.updatedAt) : '')
 
+/** One attribute (or batch number / description) value as shown to people. Stored
+ *  values are raw — vendor id, grade id, ISO date — so this is where they're named. */
+function formatAttributeValue(field: BatchAttributeKey | 'batchNo' | 'description', value: string | null | undefined): string {
+  if (!value) return '—'
+  switch (field) {
+    case 'expiry_date': return formatExpiry(value, 'long')
+    case 'manufacturing_date':
+    case 'best_before_date': return formatDateLong(value)
+    case 'supplier': return vendors.find(v => v.id === value)?.name ?? value
+    case 'grade': {
+      const grade = gradeById(value)
+      if (!grade) return value
+      return `${grade.name} (Rank ${grade.rank})${grade.status === 'inactive' ? ' · Inactive' : ''}`
+    }
+    default: return value
+  }
+}
+
+// ── Batch attributes ─────────────────────────────────────────────────────────────
+/** The product's current attribute set, in its order. The Unassigned batch never
+ *  carries attributes (PM answer A5), so it shows none. */
+const attributeRows = computed(() => {
+  const b = batch.value
+  if (!b || b.isUnassigned) return []
+  return getBatchAttributeConfig(sku.value).map(a => ({
+    key: a.key,
+    label: batchAttributeDef(a.key).label,
+    value: formatAttributeValue(a.key, b.attributes[a.key]),
+  }))
+})
+
+// ── Edit ─────────────────────────────────────────────────────────────────────────
+/** Product batches only: warehouse lots are seed data outside the product's batch
+ *  list, and the Unassigned batch can't be edited (PM answer A5). */
+const canEdit = computed(() => !!batch.value && !batch.value.isUnassigned && !batch.value.id.includes('::lot::'))
+const editOpen = ref(false)
+function onBatchSaved(saved: ProductBatchSummary) {
+  // A rename changes the batch number in the URL — follow it so the page still resolves.
+  if (!warehouseId.value && saved.batchNo !== batchNo.value) {
+    router.replace({ path: `/product-list/${sku.value}/batches/${encodeURIComponent(saved.batchNo)}`, query: route.query })
+  }
+}
+
 // ── Activity log ───────────────────────────────────────────────────────────────
+const CHANGE_LABELS: Record<string, string> = { batchNo: 'Number', description: 'Description' }
+function changeLabel(field: string): string {
+  return CHANGE_LABELS[field] ?? batchAttributeDef(field as BatchAttributeKey)?.label ?? field
+}
+
 const activityOpen = ref(false)
 const activityEntries = computed<ActivityEntry[]>(() => {
   const b = batch.value
   if (!b) return []
-  return [{
-    date: b.updatedAt,
-    user: b.updatedBy,
-    activity: 'Updated',
-    details: [
-      { label: 'Number', value: b.batchNo },
-      { label: 'Expiration date', value: formatDate(b.expiryDate) },
-    ],
-  }]
+  const recorded = batchActivityFor(b.id)
+  // Recorded creates/edits, newest first — an edit reads old → new.
+  const entries: ActivityEntry[] = recorded.map(e => ({
+    date: e.date,
+    user: e.user,
+    activity: e.action === 'created' ? 'Created' : 'Updated',
+    details: e.changes.map(c => ({
+      label: changeLabel(c.field),
+      value: e.action === 'created'
+        ? formatAttributeValue(c.field, c.to)
+        : `${formatAttributeValue(c.field, c.from)} → ${formatAttributeValue(c.field, c.to)}`,
+    })),
+  }))
+  // Seed batches existed before anything was recorded — start their trail from the
+  // record itself (rule/activity-log-entries).
+  if (!recorded.some(e => e.action === 'created')) {
+    entries.push({
+      date: b.createdAt ?? b.updatedAt,
+      user: b.createdBy ?? b.updatedBy,
+      activity: 'Created',
+      details: [
+        { label: 'Number', value: b.batchNo },
+        ...(b.attributes.expiry_date ? [{ label: 'Expiry date', value: formatExpiry(b.attributes.expiry_date, 'long') }] : []),
+      ],
+    })
+  }
+  return entries
 })
 
 // empty-state illustration (runtime public path, not a build-time import)
@@ -175,7 +250,7 @@ const pagedWarehouseStock = computed(() => {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Edit</MpPopoverListItem>
+            <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
             <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
             <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
@@ -193,9 +268,10 @@ const pagedWarehouseStock = computed(() => {
         <div class="pd-info-row">
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="Number" :value="batch.batchNo" />
-            <ContentList label="Expiration date" :value="formatDate(batch.expiryDate)" />
+            <!-- The product's batch attributes, in its order (Batch Attribute Phase 3). -->
+            <ContentList v-for="a in attributeRows" :key="a.key" :label="a.label" :value="a.value" />
             <ContentList label="Description">
-              <ClampText :text="batch.description" :lines="2" />
+              <ClampText :text="batch.description || '—'" :lines="2" />
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
@@ -401,6 +477,15 @@ const pagedWarehouseStock = computed(() => {
       :filename="barcodePreviewFilename"
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
+    />
+
+    <BatchFormModal
+      v-if="canEdit"
+      :open="editOpen"
+      :sku="sku"
+      :batch-id="batch.id"
+      @close="editOpen = false"
+      @saved="onBatchSaved"
     />
   </div>
 

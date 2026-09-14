@@ -351,5 +351,34 @@ describe('batches', () => {
       const seed0 = api.getProductBatches('1001')[0]!
       expect(codes(api.updateBatch('1001', seed0.id, { attributes: { colour: 'red' } as never }))).toEqual(['colour:not-selected'])
     })
+
+    it('records creates and edits for the batch activity log, and skips no-op saves', () => {
+      const created = api.createBatch('1001', { batchNo: 'LOT-9', attributes: { supplier: 'V002', expiry_date: '2027-02' } })
+      const id = created.ok ? created.value.id : ''
+      // Saving the same values changes nothing — no write, no entry.
+      expect(api.updateBatch('1001', id, { description: '', attributes: { supplier: 'V002' } }).ok).toBe(true)
+      api.updateBatch('1001', id, { batchNo: 'LOT-9A', attributes: { supplier: 'V001', expiry_date: null } })
+
+      const [updated, first, ...rest] = api.batchActivityFor(id)
+      expect(rest).toEqual([])
+      expect(first).toMatchObject({
+        action: 'created',
+        changes: [
+          { field: 'batchNo', from: null, to: 'LOT-9' },
+          { field: 'expiry_date', from: null, to: '2027-02' },
+          { field: 'supplier', from: null, to: 'V002' },
+        ],
+      })
+      expect(updated).toMatchObject({
+        action: 'updated',
+        changes: [
+          { field: 'batchNo', from: 'LOT-9', to: 'LOT-9A' },
+          { field: 'expiry_date', from: '2027-02', to: null },
+          { field: 'supplier', from: 'V002', to: 'V001' },
+        ],
+      })
+      // The detail reports the real last edit, not the seed's stand-in date.
+      expect(api.getBatchDetail('1001', 'LOT-9A')?.updatedAt).toBe(updated!.date)
+    })
   })
 })
