@@ -712,6 +712,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Last active': 'Terakhir aktif',
   'Full access': 'Akses penuh',
   'Full access to all CRM data and settings (CRM Administrator)': 'Akses penuh ke semua data dan pengaturan CRM (Administrator CRM)',
+  'Without full access, the user can\'t open CRM Reports or Settings. A CRM Administrator manages module permissions from Settings › Users & roles.':
+    'Tanpa akses penuh, pengguna tidak bisa membuka Laporan atau Pengaturan CRM. Administrator CRM mengelola izin modul dari Pengaturan › Pengguna & peran.',
   'Export deals': 'Ekspor deal',
   'Edit': 'Ubah',
   'Add': 'Tambah',

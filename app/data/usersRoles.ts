@@ -41,6 +41,11 @@ export interface SystemRole {
    * administrator). Only meaningful once the role is ticked.
    */
   fullAccessOption?: string
+  /**
+   * The permission bullets shown when fullAccessOption is CHECKED — replaces
+   * `permissions` (the default/restricted set) for as long as it's ticked.
+   */
+  fullAccessPermissions?: string[]
   /** Owner/Ultimate can't be time-limited (see ACCESS_TIME_LIMIT_NOTE). */
   supportsTimeLimit: boolean
   /**
@@ -200,12 +205,18 @@ export const SYSTEM_ROLES: SystemRole[] = [
     id: 'crm',
     name: 'CRM',
     permissions: [
-      'View and create all CRM deals, contacts, and companies.',
-      'View and manage the deal pipeline, including changing stage and owner.',
-      'View pages of customer contacts, products, other lists, and CRM settings.',
-      'Edit and delete data of deals, contacts, and companies if ticking List manager.',
+      'View and create deals, contacts, and companies assigned to you.',
+      'View and manage the pipeline for your own deals, including changing stage.',
+      'View pages of customer contacts, products, and other lists.',
+      'Edit and delete your own deals, contacts, and companies if ticking List manager.',
     ],
     fullAccessOption: 'Full access to all CRM data and settings (CRM Administrator)',
+    fullAccessPermissions: [
+      'View and create all CRM deals, contacts, and companies.',
+      'View and manage the entire deal pipeline, including changing stage and owner.',
+      'View CRM reports and manage CRM settings, including user permissions.',
+      'Edit and delete any deals, contacts, and companies if ticking List manager.',
+    ],
     supportsTimeLimit: true,
   },
 ]

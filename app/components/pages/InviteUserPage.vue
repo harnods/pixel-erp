@@ -18,7 +18,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpCheckbox, MpBadge,
-  MpButton, MpIcon,
+  MpButton, MpIcon, MpTooltip,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { successToast } from '~/utils/toasts'
@@ -106,6 +106,11 @@ function isCustomRoleOn(id: string) { return selectedCustomRoles.value.includes(
 function toggleAuthorityOption(roleId: string, value: string, on: boolean) {
   const current = roleAuthority[roleId] ?? []
   roleAuthority[roleId] = on ? [...new Set([...current, value])] : current.filter((v) => v !== value)
+}
+
+/** The permission bullets to show — swaps to fullAccessPermissions once ticked. */
+function permissionsFor(role: SystemRole): string[] {
+  return roleFullAccess[role.id] && role.fullAccessPermissions ? role.fullAccessPermissions : role.permissions
 }
 
 /**
@@ -320,8 +325,31 @@ function goBack() { router.push('/users-and-roles') }
                       </div>
 
                       <div v-if="expanded[role.id]" class="inv-role-body">
+                        <!-- Full access (module administrator) — sits ABOVE the permission
+                             bullets since ticking it swaps which bullets are shown below. -->
+                        <div v-if="role.fullAccessOption" class="inv-subgroup">
+                          <span class="inv-subgroup-label">{{ t('Full access') }}</span>
+                          <MpCheckbox
+                            :id="`inv-full-${role.id}`"
+                            :is-checked="!!roleFullAccess[role.id]"
+                            :is-disabled="!isSystemRoleOn(role.id)"
+                            @change="(on: boolean) => roleFullAccess[role.id] = on"
+                          >
+                            <span class="inv-full-access-label">
+                              {{ t(role.fullAccessOption) }}
+                              <MpTooltip
+                                :id="`inv-full-tt-${role.id}`"
+                                :label="t('Without full access, the user can\'t open CRM Reports or Settings. A CRM Administrator manages module permissions from Settings › Users & roles.')"
+                                placement="top" use-portal
+                              >
+                                <span class="inv-full-access-info"><MpIcon name="info" size="sm" /></span>
+                              </MpTooltip>
+                            </span>
+                          </MpCheckbox>
+                        </div>
+
                         <ul class="inv-permissions">
-                          <li v-for="p in role.permissions" :key="p">{{ t(p) }}</li>
+                          <li v-for="p in permissionsFor(role)" :key="p">{{ t(p) }}</li>
                         </ul>
 
                         <!-- Default sales / purchasing authority -->
@@ -348,17 +376,6 @@ function goBack() { router.push('/users-and-roles') }
                             :is-disabled="!isSystemRoleOn(role.id)"
                             @change="(on: boolean) => roleLimitation[role.id] = on"
                           >{{ t(role.accessLimitation) }}</MpCheckbox>
-                        </div>
-
-                        <!-- Full access (module administrator) -->
-                        <div v-if="role.fullAccessOption" class="inv-subgroup">
-                          <span class="inv-subgroup-label">{{ t('Full access') }}</span>
-                          <MpCheckbox
-                            :id="`inv-full-${role.id}`"
-                            :is-checked="!!roleFullAccess[role.id]"
-                            :is-disabled="!isSystemRoleOn(role.id)"
-                            @change="(on: boolean) => roleFullAccess[role.id] = on"
-                          >{{ t(role.fullAccessOption) }}</MpCheckbox>
                         </div>
                       </div>
                     </li>
@@ -555,6 +572,9 @@ function goBack() { router.push('/users-and-roles') }
 .inv-subgroup { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .inv-subgroup-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .inv-subgroup-options { display: flex; align-items: center; gap: var(--mp-spacing-5, 20px); flex-wrap: wrap; }
+
+.inv-full-access-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.inv-full-access-info { display: inline-flex; color: var(--mp-icon-subtle, var(--mp-text-secondary)); cursor: help; }
 
 .inv-custom-meta {
   margin-top: var(--mp-spacing-1); padding-left: var(--mp-spacing-6);

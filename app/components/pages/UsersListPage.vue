@@ -12,7 +12,7 @@
  * deactivated or removed from inside the product (rule: permission-gated actions
  * are hidden, not disabled-without-reason).
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
@@ -22,10 +22,12 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import UserViewDrawer from '~/components/patterns/UserViewDrawer.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  accountUsers, userRoleNames, userRoleTypes, timeLimitText,
-  setAccountUserStatus, deleteAccountUser, type AccountUser,
+  accountUsers, userRoleNames, userRoleTypes, userRoleTypeLabels, timeLimitText,
+  deleteAccountUser, type AccountUser,
 } from '~/data/usersRoles'
 
 const { t } = useLocale()
@@ -36,15 +38,26 @@ function goEdit(user: AccountUser) {
   router.push(`/users-and-roles/${user.id}/edit`)
 }
 
-// ─── Columns ────────────────────────────────────────────────────────────────
-const columns: TableColumn[] = [
-  { key: 'name',        label: 'User name',         kind: 'name',    sortType: 'text' },
-  { key: 'roles',       label: 'Role',              kind: 'tags' },
-  { key: 'timeLimit',   label: 'Access time limit', kind: 'address' },
-  { key: 'listManager', label: 'List manager' },
-  { key: 'status',      label: 'Status',            kind: 'status',  sortType: 'text' },
-  { key: 'lastActive',  label: 'Last active',       kind: 'date',    sortType: 'date' },
+// ─── Columns — Name, Role, List manager, Access time, Status, Type, Join date by
+// default; Last active is optional (hidden), toggleable from Column settings. ──
+const baseColumns: TableColumn[] = [
+  { key: 'name',        label: 'Name',        kind: 'name',    sortType: 'text' },
+  { key: 'roles',       label: 'Role',        kind: 'tags' },
+  { key: 'listManager', label: 'List manager', sortType: 'text' },
+  { key: 'timeLimit',   label: 'Access time', kind: 'address', sortType: 'text' },
+  { key: 'status',      label: 'Status',      kind: 'status',  sortType: 'text' },
+  { key: 'type',        label: 'Type',        kind: 'tags' },
+  { key: 'joinedAt',    label: 'Join date',   kind: 'date',    sortType: 'date' },
 ]
+const optionalColumns: TableColumn[] = [
+  { key: 'lastActive',  label: 'Last active', kind: 'date', sortType: 'date' },
+]
+const allCols: TableColumn[] = [...baseColumns, ...optionalColumns]
+const columnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(allCols.map((c) => [c.key, baseColumns.some((b) => b.key === c.key)])),
+)
+const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibility[c.key]))
 
 // ─── Filters ────────────────────────────────────────────────────────────────
 // Two independent selects, so `useTableState`'s single statusFilter drives Status
@@ -98,18 +111,8 @@ function resendInvitation(user: AccountUser) {
   successToast(`${t('Invitation sent to')} ${user.email}`)
 }
 
-const deactivateTarget = ref<AccountUser | null>(null)
-function confirmDeactivate() {
-  if (!deactivateTarget.value) return
-  setAccountUserStatus(deactivateTarget.value.id, 'inactive')
-  successToast(t('User deactivated'))
-  deactivateTarget.value = null
-}
-
-function activate(user: AccountUser) {
-  setAccountUserStatus(user.id, 'active')
-  successToast(t('User activated'))
-}
+const viewTarget = ref<AccountUser | null>(null)
+function viewDetails(user: AccountUser) { viewTarget.value = user }
 
 const deleteTarget = ref<AccountUser | null>(null)
 function confirmDelete() {
@@ -120,7 +123,7 @@ function confirmDelete() {
 }
 
 // ─── Formatting ─────────────────────────────────────────────────────────────
-function formatLastActive(iso: string | null): string {
+function formatDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -170,18 +173,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Tool icons: ghost icon-only MpButtons in one group (rule/filter-bar-icon-group),
              each tooltipped and aria-labelled (rule/btn-icon-tooltip). -->
         <MpButtonGroup class="filter-btn-group">
-          <MpTooltip id="tt-usr-columns" :label="t('Column settings')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="table-view-column" :aria-label="t('Column settings')"
-            />
-          </MpTooltip>
-          <MpTooltip id="tt-usr-export" :label="t('Export')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="download" :aria-label="t('Export')"
-            />
-          </MpTooltip>
+          <ColumnSettingsMenu id="usr-columns" :items="columnItems" :visibility="columnVisibility" />
         </MpButtonGroup>
 
         <div class="filter-search">
@@ -195,14 +187,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── User name + email ── -->
+    <!-- ── Name + email ── -->
     <template #cell-name="{ row }">
       <div class="usr-identity">
-        <a
+        <span
           v-if="!(row as unknown as AccountUser).isOwner"
           class="cell-link"
           @click.stop="goEdit(row as unknown as AccountUser)"
-        >{{ (row as unknown as AccountUser).name }}</a>
+        >{{ (row as unknown as AccountUser).name }}</span>
         <span v-else class="usr-name">{{ (row as unknown as AccountUser).name }}</span>
         <span class="usr-email">{{ (row as unknown as AccountUser).email }}</span>
       </div>
@@ -211,11 +203,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Roles ── -->
     <template #cell-roles="{ row }">
       <ErpTagList :tags="userRoleNames(row as unknown as AccountUser)" />
-    </template>
-
-    <!-- ── Access time limit ── -->
-    <template #cell-timeLimit="{ row }">
-      <span class="usr-wrap">{{ timeLimitText(row as unknown as AccountUser) }}</span>
     </template>
 
     <!-- ── List manager ── -->
@@ -227,14 +214,29 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span v-else class="usr-muted">—</span>
     </template>
 
+    <!-- ── Access time ── -->
+    <template #cell-timeLimit="{ row }">
+      <span class="usr-wrap">{{ timeLimitText(row as unknown as AccountUser) }}</span>
+    </template>
+
     <!-- ── Status ── -->
     <template #cell-status="{ row }">
       <ErpStatusBadge :status="(row as unknown as AccountUser).status" />
     </template>
 
-    <!-- ── Last active ── -->
+    <!-- ── Type — Owner / Existing role / Custom role ── -->
+    <template #cell-type="{ row }">
+      <ErpTagList :tags="userRoleTypeLabels(row as unknown as AccountUser)" />
+    </template>
+
+    <!-- ── Join date ── -->
+    <template #cell-joinedAt="{ row }">
+      {{ formatDate((row as unknown as AccountUser).joinedAt) }}
+    </template>
+
+    <!-- ── Last active (optional column) ── -->
     <template #cell-lastActive="{ row }">
-      {{ formatLastActive((row as unknown as AccountUser).lastActiveAt) }}
+      {{ formatDate((row as unknown as AccountUser).lastActiveAt) }}
     </template>
 
     <!-- ── Actions kebab — hidden for the Owner row (nothing is permitted) ── -->
@@ -249,23 +251,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit access') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as AccountUser)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="(row as unknown as AccountUser).status === 'invited'"
               @click="resendInvitation(row as unknown as AccountUser)"
             >{{ t('Resend invitation') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as AccountUser).status === 'inactive'"
-              @click="activate(row as unknown as AccountUser)"
-            >{{ t('Activate user') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              v-else
-              @click="deactivateTarget = (row as unknown as AccountUser)"
-            >{{ t('Deactivate user') }}</MpPopoverListItem>
-            <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="deleteTarget = (row as unknown as AccountUser)"
-            >{{ t('Delete user') }}</MpPopoverListItem>
+            >{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -285,29 +280,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
   </ErpTablePage>
 
-  <!-- ── Deactivate confirmation — reversible, so a standard primary confirm ── -->
-  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
-    id="usr-deactivate-modal"
-    :is-open="!!deactivateTarget"
-    size="md"
-    :is-keep-alive="false"
-    @close="deactivateTarget = null"
-  >
-    <MpModalContent>
-      <MpModalHeader>
-        {{ t('Deactivate user?') }}
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        {{ t('This user loses access immediately. You can activate them again anytime.') }}
-      </MpModalBody>
-      <MpModalFooter>
-        <MpButton variant="ghost" is-rounded @click="deactivateTarget = null">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="confirmDeactivate">{{ t('Deactivate user') }}</MpButton>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
+  <!-- ── View details drawer ── -->
+  <UserViewDrawer
+    id="usr-view-drawer"
+    :is-open="!!viewTarget"
+    :user="viewTarget"
+    @update:is-open="(v: boolean) => { if (!v) viewTarget = null }"
+  />
 
   <!-- ── Delete confirmation — destructive, verb+noun danger primary ── -->
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
@@ -340,20 +319,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 
 .filter-btn-group { display: flex; align-items: center; }
-/* Ghost MpButton squared off to the 36x36 filter-bar tool size. The !important
-   overrides are Pixel's own atomic min-width/padding on .mp-button. */
-.filter-icon-btn {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important;
-  min-width: 0 !important; padding: var(--mp-spacing-2) !important;
-  color: var(--mp-text-default);
-}
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
 .filter-search-input {
