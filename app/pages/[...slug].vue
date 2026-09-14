@@ -97,6 +97,7 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  'Grades':            defineAsyncComponent(() => import('~/components/pages/GradesPage.vue')),
   // Contacts — one index page serves all three role lists; the route slug picks
   // which role it filters by. New/detail/edit resolve via detailMatch below.
   'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
@@ -280,6 +281,8 @@ const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+// Same pattern for Inventory › Grades: "New grade" here, the modal in GradesPage.
+const { openCreate: openGradeCreate } = useGradeModal()
 const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
@@ -1834,6 +1837,10 @@ function startResize(e: MouseEvent) {
             variant="primary" is-rounded left-icon="add"
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
+        </div>
+        <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
+        <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="openGradeCreate()">{{ t('New grade') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">

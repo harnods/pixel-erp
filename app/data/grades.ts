@@ -50,12 +50,15 @@ export type GradeError = DataError<
   'name' | 'description'
 >
 
-/** Same shape as ActivityLogModal's ActivityEntry, so the page can pass it straight in. */
+/** Same shape as ActivityLogModal's ActivityEntry, so the page can pass it straight in.
+ *  `gradeId` ties the entry to one grade so its own log can be shown; a failed create
+ *  has none, because no grade exists yet. */
 export interface GradeActivity {
   date: string
   user: string
   activity: string
   details: { label: string; value: string }[]
+  gradeId?: string
 }
 
 const SEED_AT = '2026-01-05T09:00:00'
@@ -114,6 +117,11 @@ export function gradeActivity(): GradeActivity[] {
   return [...activity].reverse()
 }
 
+/** One grade's own activity, newest first — failed attempts on it included. */
+export function gradeActivityFor(gradeId: string): GradeActivity[] {
+  return gradeActivity().filter((e) => e.gradeId === gradeId)
+}
+
 // ── Writes ────────────────────────────────────────────────────────────────────────
 const ERROR_TEXT: Record<GradeError['code'], string> = {
   'not-found': 'Grade not found',
@@ -127,15 +135,18 @@ const ERROR_TEXT: Record<GradeError['code'], string> = {
 }
 
 function log(
-  activityText: string,
-  details: { label: string; value: string }[],
+  entry: { activity: string; details: { label: string; value: string }[]; gradeId?: string },
   errors: GradeError[] = [],
   by = CURRENT_USER,
 ): void {
   const result = errors.length
     ? [{ label: 'Result', value: `Failed — ${errors.map((e) => ERROR_TEXT[e.code]).join('; ')}` }]
     : []
-  activity.push({ date: now(), user: by, activity: activityText, details: [...details, ...result] })
+  activity.push({
+    date: now(), user: by, activity: entry.activity,
+    details: [...entry.details, ...result],
+    ...(entry.gradeId ? { gradeId: entry.gradeId } : {}),
+  })
   persistActivity()
 }
 
@@ -172,7 +183,7 @@ export function createGrade(input: { name: string; description?: string }, by = 
   const details = [{ label: 'Name', value: name }, { label: 'Description', value: description || '—' }]
 
   if (errors.length) {
-    log('Failed to create grade', details, errors, by)
+    log({ activity: 'Failed to create grade', details }, errors, by)
     return { ok: false, errors }
   }
   const at = now()
@@ -183,7 +194,10 @@ export function createGrade(input: { name: string; description?: string }, by = 
   }
   store.push(grade)
   persistGrades()
-  log('Created grade', [...details, { label: 'Rank', value: String(grade.rank) }, { label: 'Status', value: 'Active' }], [], by)
+  log({
+    activity: 'Created grade', gradeId: grade.id,
+    details: [...details, { label: 'Rank', value: String(grade.rank) }, { label: 'Status', value: 'Active' }],
+  }, [], by)
   return { ok: true, value: { ...grade } }
 }
 
@@ -196,7 +210,7 @@ export function updateGrade(
   const grade = gradeById(id)
   if (!grade || grade.deleted) {
     const errors: GradeError[] = [{ code: 'not-found' }]
-    log('Failed to update grade', [{ label: 'Grade', value: id }], errors, by)
+    log({ activity: 'Failed to update grade', gradeId: id, details: [{ label: 'Grade', value: id }] }, errors, by)
     return { ok: false, errors }
   }
   const errors = validateFields(patch, id)
@@ -205,7 +219,7 @@ export function updateGrade(
   if (patch.description !== undefined) details.push({ label: 'Description', value: `${grade.description || '—'} → ${patch.description || '—'}` })
 
   if (errors.length) {
-    log('Failed to update grade', details, errors, by)
+    log({ activity: 'Failed to update grade', gradeId: id, details }, errors, by)
     return { ok: false, errors }
   }
   if (patch.name !== undefined) grade.name = patch.name.trim()
@@ -213,7 +227,7 @@ export function updateGrade(
   grade.updatedAt = now()
   grade.updatedBy = by
   persistGrades()
-  log('Updated grade', details, [], by)
+  log({ activity: 'Updated grade', gradeId: id, details }, [], by)
   return { ok: true, value: { ...grade } }
 }
 
@@ -223,7 +237,7 @@ export function setGradeStatus(id: string, status: GradeStatus, by = CURRENT_USE
   const verb = status === 'active' ? 'activate' : 'deactivate'
   if (!grade || grade.deleted) {
     const errors: GradeError[] = [{ code: 'not-found' }]
-    log(`Failed to ${verb} grade`, [{ label: 'Grade', value: id }], errors, by)
+    log({ activity: `Failed to ${verb} grade`, gradeId: id, details: [{ label: 'Grade', value: id }] }, errors, by)
     return { ok: false, errors }
   }
   if (grade.status === status) return { ok: true, value: { ...grade } }
@@ -234,14 +248,14 @@ export function setGradeStatus(id: string, status: GradeStatus, by = CURRENT_USE
   const details = [{ label: 'Grade', value: grade.name }, { label: 'Status', value: status === 'active' ? 'Inactive → Active' : 'Active → Inactive' }]
 
   if (errors.length) {
-    log(`Failed to ${verb} grade`, details, errors, by)
+    log({ activity: `Failed to ${verb} grade`, gradeId: id, details }, errors, by)
     return { ok: false, errors }
   }
   grade.status = status
   grade.updatedAt = now()
   grade.updatedBy = by
   persistGrades()
-  log(status === 'active' ? 'Activated grade' : 'Deactivated grade', details, [], by)
+  log({ activity: status === 'active' ? 'Activated grade' : 'Deactivated grade', gradeId: id, details }, [], by)
   return { ok: true, value: { ...grade } }
 }
 
@@ -252,7 +266,7 @@ export function deleteGrade(id: string, by = CURRENT_USER): DataResult<Grade, Gr
   const grade = gradeById(id)
   if (!grade || grade.deleted) {
     const errors: GradeError[] = [{ code: 'not-found' }]
-    log('Failed to delete grade', [{ label: 'Grade', value: id }], errors, by)
+    log({ activity: 'Failed to delete grade', gradeId: id, details: [{ label: 'Grade', value: id }] }, errors, by)
     return { ok: false, errors }
   }
   const errors: GradeError[] = []
@@ -262,13 +276,13 @@ export function deleteGrade(id: string, by = CURRENT_USER): DataResult<Grade, Gr
   const details = [{ label: 'Grade', value: grade.name }, { label: 'Rank', value: String(grade.rank) }]
 
   if (errors.length) {
-    log('Failed to delete grade', details, errors, by)
+    log({ activity: 'Failed to delete grade', gradeId: id, details }, errors, by)
     return { ok: false, errors }
   }
   grade.deleted = true
   grade.updatedAt = now()
   grade.updatedBy = by
   persistGrades()
-  log('Deleted grade', details, [], by)
+  log({ activity: 'Deleted grade', gradeId: id, details }, [], by)
   return { ok: true, value: { ...grade } }
 }
