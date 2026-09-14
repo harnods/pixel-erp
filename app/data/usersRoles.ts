@@ -285,10 +285,11 @@ export const AUTHORITY_ACTIONS: { value: AuthorityAction; label: string }[] = [
   { value: 'delete', label: 'Delete' },
 ]
 
-/** The "Feature" quick-filter categories — Figma "Drawer / Custom Role / Add". */
+/** The "Feature" quick-filter categories — Figma "Drawer / Custom Role / Add",
+ *  plus CRM appended after Settings (not part of the original Figma scope). */
 export type AuthorityCategory =
   | 'accounting' | 'sales' | 'purchases' | 'expenses' | 'contacts'
-  | 'inventory' | 'warehouses' | 'reports' | 'settings'
+  | 'inventory' | 'warehouses' | 'reports' | 'settings' | 'crm'
 
 export const AUTHORITY_CATEGORIES: { value: AuthorityCategory; label: string }[] = [
   { value: 'accounting', label: 'Accounting' },
@@ -300,6 +301,7 @@ export const AUTHORITY_CATEGORIES: { value: AuthorityCategory; label: string }[]
   { value: 'warehouses', label: 'Warehouses' },
   { value: 'reports', label: 'Reports' },
   { value: 'settings', label: 'Settings' },
+  { value: 'crm', label: 'CRM' },
 ]
 
 /** Level 3 — a leaf under a level-2 row (e.g. Settings ▸ Sales ▸ General settings ▸ Sales quote). */
@@ -320,6 +322,12 @@ export interface AuthorityFeature {
   subfeatures: AuthoritySubfeature[]
   /** Report-style features are view-only — their create/edit/delete cells are omitted. */
   viewOnly?: boolean
+  /**
+   * Override the default action set (view/create/edit/delete) with an explicit
+   * list — e.g. the CRM module-access row only uses view ("has access") and
+   * edit ("is Administrator"); create/delete don't apply and are hidden.
+   */
+  actions?: AuthorityAction[]
 }
 
 /** The full permission matrix — verbatim from Figma "Drawer / Custom Role / Add"
@@ -485,6 +493,17 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   { id: 'set-payment-terms', label: 'Payment terms', category: 'settings', subfeatures: [] },
   { id: 'set-payment-methods', label: 'Payment methods', category: 'settings', subfeatures: [] },
   { id: 'set-tags', label: 'Tags', category: 'settings', subfeatures: [] },
+
+  // ── CRM ──
+  /**
+   * Admin vs. member access is a mutually-exclusive choice, not an independent
+   * action — so it only uses 'view' (has access, scoped to own records) and
+   * 'edit' (full access as Administrator; implies view via the existing
+   * create/edit/delete-implies-view rule in setGrant). No create/delete.
+   * Rendered with its own two-checkbox UI (CustomRoleDrawer.vue), not the
+   * generic per-column action cells — see the 'crm-access' special case there.
+   */
+  { id: 'crm-access', label: 'Access to CRM module', category: 'crm', subfeatures: [], actions: ['view', 'edit'] },
 ]
 
 /**
@@ -505,8 +524,10 @@ export function authorityRowKeys(feature: AuthorityFeature): string[] {
   return feature.subfeatures.flatMap((s) => authoritySubRowKeys(feature.id, s))
 }
 
-/** Actions a feature's rows can actually hold — reports are view-only. */
+/** Actions a feature's rows can actually hold — reports are view-only, and a
+ *  feature can explicitly override the set (see AuthorityFeature.actions). */
 export function authorityActionsFor(feature: AuthorityFeature): AuthorityAction[] {
+  if (feature.actions) return feature.actions
   return feature.viewOnly ? ['view'] : ['view', 'create', 'edit', 'delete']
 }
 

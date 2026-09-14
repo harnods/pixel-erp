@@ -219,6 +219,16 @@ const ACTION_VERB: Record<AuthorityAction, string> = { view: 'View', create: 'Cr
 const selectedSummary = computed(() => {
   return AUTHORITY_CATEGORIES
     .map((cat) => {
+      // CRM is an acronym (not a lowercase-able word) and Admin/member is a
+      // single either/or choice, not a set of granted actions — so it gets its
+      // own plain-language bullet instead of the generic action-list phrasing.
+      if (cat.value === 'crm') {
+        if (!has('crm-access', 'view')) return null
+        const bullets = has('crm-access', 'edit')
+          ? [t('Full access to CRM data and settings (Administrator)')]
+          : [t('Access to CRM, scoped to their own records')]
+        return { category: cat, bullets }
+      }
       const catFeatures = features.filter((f) => f.category === cat.value)
       const allKeys = catFeatures.flatMap((f) => authorityRowKeys(f))
       const grantedActions = new Set<AuthorityAction>()
@@ -412,7 +422,36 @@ function close() { emit('close') }
                                 <span class="crd-td-label">{{ t(feature.label) }}</span>
                               </div>
                             </td>
-                            <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
+                            <!-- CRM module access — Admin vs. member is a mutually-exclusive
+                                 choice, not an independent action, so it gets its own inline
+                                 two-checkbox control (spanning the action columns) instead of
+                                 the generic per-column grid used everywhere else. -->
+                            <td v-if="feature.id === 'crm-access'" colspan="4" class="crd-td crd-td--crm-access">
+                              <div class="crd-crm-access">
+                                <label class="crd-crm-access-row">
+                                  <MpCheckbox
+                                    :id="`${id}-crm-access`"
+                                    :aria-label="t('Access to CRM module')"
+                                    :is-checked="has('crm-access', 'view')"
+                                    @change="(on: boolean) => setGrant('crm-access', 'view', on)"
+                                  />
+                                  <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
+                                </label>
+                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row crd-crm-access-row--admin">
+                                  <MpCheckbox
+                                    :id="`${id}-crm-admin`"
+                                    :aria-label="t('Full access as Administrator')"
+                                    :is-checked="has('crm-access', 'edit')"
+                                    @change="(on: boolean) => setGrant('crm-access', 'edit', on)"
+                                  />
+                                  <span class="crd-crm-access-label">
+                                    {{ t('Full access as Administrator') }}
+                                    <span class="crd-crm-access-hint">{{ t('Unchecked: access scoped to their own records.') }}</span>
+                                  </span>
+                                </label>
+                              </div>
+                            </td>
+                            <td v-for="action in AUTHORITY_ACTIONS" v-else :key="action.value" class="crd-td crd-td--action">
                               <!-- Works for a leaf feature (its own single row) and a feature
                                    with subfeatures alike — checking it here grants/clears that
                                    action across every descendant leaf row. -->
@@ -696,6 +735,15 @@ function close() { emit('close') }
 .crd-td-inner { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .crd-td-label { white-space: normal; }
 .crd-na { color: var(--mp-text-secondary); }
+
+/* CRM module access — left-aligned (not centered like the generic action
+   cells), since this is prose-labeled, not a column of identical checkboxes. */
+.crd-td--crm-access { text-align: left; }
+.crd-crm-access { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.crd-crm-access-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; }
+.crd-crm-access-row--admin { padding-left: 28px; }
+.crd-crm-access-label { display: flex; flex-direction: column; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.crd-crm-access-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
 .crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
