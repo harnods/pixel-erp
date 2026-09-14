@@ -26,6 +26,13 @@ import {
 import type { PurchaseDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import DeliveryBatchDrawer from '~/components/patterns/DeliveryBatchDrawer.vue'
+import { isProductBatchTracked } from '~/data/productDetails'
+import {
+  checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
+  type DeliveryBatchAllocation, type DeliveryBatchLine, type SavedDeliveryBatch,
+} from '~/data/purchaseDeliveryBatches'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -80,8 +87,30 @@ function onTagsChange(data: DataInterface[])  { tagsList.value = data }
 // vendor master actually carries (there's no address on the record).
 function onVendorChange(id: unknown) {
   vendorError.value = false
+  const next = String(id ?? '')
+  // Batches already set up follow the vendor, so changing it asks first (story 10).
+  if (committedVendorId.value && next !== committedVendorId.value && items.value.some(it => it.batches.length)) {
+    vendorChangeOpen.value = true
+    return
+  }
+  applyVendor(next)
+}
+
+// The vendor the line batches currently follow — a cancelled change reverts to it.
+const committedVendorId = ref('')
+const vendorChangeOpen = ref(false)
+function applyVendor(id: string) {
+  committedVendorId.value = id
+  // New batches that still follow the delivery take the new vendor (story 10, rule 1).
+  items.value.forEach(it => { if (it.batches.length) it.batches = followDeliveryVendor(it.sku, it.batches, id) })
   const v = vendors.find(x => x.id === id)
   if (v?.email && !emailTags.value.length) emailTags.value = toTagData([v.email])
+}
+// ConfirmModal emits confirm before closing, so a confirmed change is already
+// committed here and only a cancel reverts.
+function onVendorChangeModal(open: boolean) {
+  vendorChangeOpen.value = open
+  if (!open) vendorId.value = committedVendorId.value
 }
 
 // ── Line items ────────────────────────────────────────────────────────────────
@@ -97,11 +126,37 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** Batch-tracked products: how the qty splits across batches (Batch Attribute story 10). */
+  batches: DeliveryBatchAllocation[]
+  batchError: boolean
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
+
+// ── Line batches (Manage batch drawer) ───────────────────────────────────────
+const isBatchLine = (item: LineItem) => !!item.sku && isProductBatchTracked(item.sku)
+const batchDrawerKey = ref<number | null>(null)
+const batchDrawerItem = computed(() => items.value.find(it => it._key === batchDrawerKey.value))
+function lineBatchInput(item: LineItem): DeliveryBatchLine {
+  return { sku: item.sku, productName: item.product, qty: item.qty, batches: item.batches }
+}
+/** New batch numbers for the same product on the delivery's other lines. */
+function otherNewBatchNos(item: LineItem): string[] {
+  return items.value
+    .filter(o => o._key !== item._key && o.sku === item.sku)
+    .flatMap(o => o.batches.filter(b => !b.batchId).map(b => b.batchNo))
+}
+function onBatchesSaved(batches: DeliveryBatchAllocation[]) {
+  const item = batchDrawerItem.value
+  if (!item) return
+  item.batches = batches
+  item.batchError = false
+}
+function batchSummary(item: LineItem): string {
+  return item.batches.length === 1 ? t('1 batch') : t('{n} batches').replace('{n}', String(item.batches.length))
+}
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
 }
@@ -121,6 +176,9 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
   item.unit = p.unit
   item.unitPrice = p.price
   item.productError = false
+  // Batches belong to the product — a different product starts over.
+  item.batches = []
+  item.batchError = false
   openProductRow.value = null
 }
 
@@ -139,6 +197,8 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    batches: [],
+    batchError: false,
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -174,7 +234,7 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
-const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError || it.batchError))
 const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
 
 // ── Totals ────────────────────────────────────────────────────────────────────
@@ -233,6 +293,12 @@ function validate(): boolean {
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    if (it.product && it.qty > 0 && isBatchLine(it)) {
+      // Batches added before a vendor was picked pick it up now (story 10, rule 1).
+      it.batches = followDeliveryVendor(it.sku, it.batches, vendorId.value)
+      it.batchError = !deliveryBatchCheckOk(checkDeliveryBatches(lineBatchInput(it), otherNewBatchNos(it)))
+      if (it.batchError) ok = false
+    }
   })
   return ok
 }
@@ -250,11 +316,39 @@ function nextDeliveryId(): string {
 
 function onCancel() { router.push('/purchase-deliveries') }
 
+// Existing batches from another vendor — one confirmation for all of them (story 10, rule 2).
+const mismatchOpen = ref(false)
+const mismatchText = ref('')
+
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
+  const mismatches = deliveryVendorMismatches(items.value.filter(isBatchLine).map(lineBatchInput), vendorId.value)
+  if (mismatches.length) {
+    const list = mismatches.map(m => `${m.batchNo} (${m.productName}, ${m.vendorName})`).join('; ')
+    mismatchText.value = `${t('These batches are from another vendor and keep their own vendor:')} ${list}`
+    mismatchOpen.value = true
+    return
+  }
+  commitSave()
+}
+
+function commitSave() {
+  // Create new batches and fill vendor-less ones (rules 1 + 3). Checked in validate(),
+  // so a failure here only means the batches changed meanwhile — flag the line.
+  const savedBatches = new Map<number, SavedDeliveryBatch[]>()
+  for (const it of items.value.filter(isBatchLine)) {
+    const result = commitDeliveryBatches(lineBatchInput(it), vendorId.value)
+    if (!result.ok) { it.batchError = true; return }
+    savedBatches.set(it._key, result.batches)
+  }
   const vendor = vendors.find(v => v.id === vendorId.value)!
   const delivery: PurchaseDelivery = {
+    lines: items.value.map(it => ({
+      product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit,
+      unitPrice: it.unitPrice, discountPct: it.discountPct, taxLabel: it.taxLabel,
+      ...(savedBatches.has(it._key) ? { batches: savedBatches.get(it._key) } : {}),
+    })),
     id: nextDeliveryId(),
     number: nextDeliveryNumber(),
     vendor: { id: vendor.id, name: vendor.name },
@@ -411,6 +505,7 @@ function onSave() {
               <col class="si-col-product" />
               <col class="si-col-desc" />
               <col class="si-col-qty" />
+              <col class="si-col-batch" />
               <col class="si-col-unit" />
               <col class="si-col-price" />
               <col class="si-col-discount" />
@@ -424,6 +519,7 @@ function onSave() {
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
+                <th class="si-th">{{ t('Batch') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
@@ -491,6 +587,22 @@ function onSave() {
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                </td>
+
+                <!-- Batch-tracked products split the qty across batches in a drawer
+                     (rule/drawer-open-via-manage). -->
+                <td class="si-td si-td--border si-td--batch" :class="{ 'si-td--error': item.batchError }">
+                  <template v-if="isBatchLine(item)">
+                    <MpTooltip
+                      v-if="item.batchError" :id="`si-batch-tt-${item._key}`"
+                      :label="t('Check the batches for this line')" placement="top" use-portal
+                    >
+                      <MpTextlink :id="`si-batch-${item._key}`" as="a" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</MpTextlink>
+                    </MpTooltip>
+                    <MpTextlink v-else :id="`si-batch-${item._key}`" as="a" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</MpTextlink>
+                    <span v-if="item.batches.length" class="si-batch-count">{{ batchSummary(item) }}</span>
+                  </template>
+                  <span v-else class="si-batch-na">-</span>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -565,7 +677,7 @@ function onSave() {
                 </td>
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
-                <td class="si-td si-td--border" /><td class="si-td si-td--del" />
+                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--del" />
               </tr>
             </tbody>
           </table>
@@ -704,6 +816,29 @@ function onSave() {
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
     />
+
+    <DeliveryBatchDrawer
+      v-if="batchDrawerItem"
+      :open="batchDrawerKey !== null"
+      :sku="batchDrawerItem.sku" :product-name="batchDrawerItem.product" :unit="batchDrawerItem.unit"
+      :qty="batchDrawerItem.qty" :vendor-id="vendorId"
+      :model-value="batchDrawerItem.batches" :other-new-batch-nos="otherNewBatchNos(batchDrawerItem)"
+      @update:open="(v) => { if (!v) batchDrawerKey = null }"
+      @save="onBatchesSaved"
+    />
+
+    <ConfirmModal
+      :is-open="vendorChangeOpen" :title="t('Change vendor?')"
+      :description="t('New batches on this delivery will use the new vendor. Existing batches keep their own vendor.')"
+      :confirm-label="t('Change vendor')" :is-danger="false"
+      @update:is-open="onVendorChangeModal" @confirm="applyVendor(vendorId)"
+    />
+
+    <ConfirmModal
+      :is-open="mismatchOpen" :title="t('Use batches from another vendor?')" :description="mismatchText"
+      :confirm-label="t('Save')" :is-danger="false"
+      @update:is-open="(v) => { mismatchOpen = v }" @confirm="commitSave"
+    />
   </div>
 </template>
 
@@ -726,7 +861,7 @@ function onSave() {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   align-items: center;
@@ -759,7 +894,7 @@ function onSave() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -770,7 +905,7 @@ function onSave() {
 
 .si-dashed-divider {
   padding-bottom: var(--mp-spacing-5);
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 
 /* ── Header section 1 ── */
@@ -822,13 +957,17 @@ function onSave() {
 .si-items-scroll { overflow-x: auto; }
 
 .si-items-table {
-  width: 100%; min-width: 1340px;
+  width: 100%; min-width: 1508px;
   table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
 .si-col-qty      { width: 64px; }
+.si-col-batch    { width: 168px; }
+.si-td--batch { white-space: nowrap; }
+.si-batch-count { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.si-batch-na { color: var(--mp-text-placeholder); }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
@@ -843,7 +982,7 @@ function onSave() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .si-th--drag, .si-th--del { padding: 0; }
@@ -855,10 +994,10 @@ function onSave() {
   padding: 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
-.si-td--border { border-right: 1px solid var(--mp-border-default); }
+.si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
@@ -899,7 +1038,7 @@ function onSave() {
 .si-affix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
@@ -916,7 +1055,7 @@ function onSave() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.si-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Notes + Attachment + Totals ── */
 .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
@@ -970,7 +1109,7 @@ function onSave() {
   padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone (non-table) prefixed fields use MpInputGroup + MpInputLeftAddon,
@@ -979,7 +1118,7 @@ function onSave() {
 .si-unit-field { width: 180px; flex-shrink: 0; }
 .si-unit-addon :deep(.mp-input-addon__root) {
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
 }
 .si-unit-trigger {
@@ -994,7 +1133,7 @@ function onSave() {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md) !important;
 }
-.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Less: Withholding / Deposit ── */

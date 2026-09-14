@@ -306,6 +306,22 @@ export interface PurchaseDelivery {
   billingStatus: BillingStatus            // unbilled | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
+  /** Lines as entered on the New purchase delivery form. Seeded deliveries have none —
+   *  the details page synthesises their lines. */
+  lines?: PurchaseDeliveryLine[]
+}
+
+export interface PurchaseDeliveryLine {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  taxLabel: string
+  /** Batch-tracked lines: which batches received the qty (Batch Attribute story 10). */
+  batches?: { batchId: string; batchNo: string; qty: number }[]
 }
 
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
