@@ -701,6 +701,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Import deals': 'Impor deal',
   'Import contacts': 'Impor kontak',
   'Created in ERP': 'Sudah dibuat di ERP',
+  'Yes': 'Ya',
+  'No': 'Tidak',
   'Export deals': 'Ekspor deal',
   'Edit': 'Ubah',
   'Add': 'Tambah',

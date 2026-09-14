@@ -66,6 +66,14 @@ const sourceText = computed(() => {
   if (!c?.source) return undefined
   return c.source === 'Other' && c.sourceOther ? c.sourceOther : t(c.source)
 })
+// "Created in ERP" — Yes + the ERP Customer number once created, In progress while
+// syncing, No otherwise. Mirrors the badge tooltip copy on the Contacts list.
+const erpStatusText = computed(() => {
+  const c = contact.value
+  if (c?.erpStatus === 'created') return `${t('Yes')} — ${c.erpCustomerId}`
+  if (c?.erpStatus === 'in-sync') return t('In progress')
+  return t('No')
+})
 // Billing address — one composed line (address, city, province+postal, country),
 // same format as the company detail. e.g. "Jl. … No. 18, Jakarta, DKI Jakarta 10660, Indonesia".
 const billingAddressText = computed(() => {
@@ -312,6 +320,7 @@ function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
                 <div class="cr-grid">
                   <ContentList :label="t('Account owner')" :value="contact.owner || undefined" />
                   <ContentList :label="t('Source')" :value="sourceText" />
+                  <ContentList :label="t('Created in ERP')" :value="erpStatusText" />
                 </div>
               </section>
 
