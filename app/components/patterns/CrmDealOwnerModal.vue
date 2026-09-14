@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * CrmDealOwnerModal — reassign the Deal Owner for a single record or a bulk
+ * CrmDealOwnerModal — reassign the Owner for a single record or a bulk
  * selection (PRD Bulk owner reassignment). Confirmation shows the affected count
  * and the new owner. Built on Pixel MpModal; Cancel = ghost; errors inline.
  */

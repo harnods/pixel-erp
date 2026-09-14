@@ -145,7 +145,7 @@ const keywordColumns = [
   { key: 'name',            label: t('Deal name') },
   { key: 'id',              label: t('Deal number') },
   { key: 'company',         label: t('Customer') },
-  { key: 'owner',           label: t('Deal owner') },
+  { key: 'owner',           label: t('Owner') },
   { key: 'referenceNumber', label: t('Reference number') },
 ]
 const ownerOptions = [...CRM_OWNERS]
@@ -428,7 +428,8 @@ const exportOpen = ref(false)
 const selectedCount = ref(0)
 const exportColumns = [
   { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
-  { key: 'owner', label: t('Deal owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
+  { key: 'picName', label: t('Contact person') },
+  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
   { key: 'expectedCloseDate', label: t('Due date') }, { key: 'conversion', label: t('Conversion status') },
   { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
@@ -443,12 +444,13 @@ function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'i
 // ── Columns — the 6 defaults, plus optional PRD columns hidden by default and
 // toggleable from Column settings. ──
 const baseColumns: TableColumn[] = [
-  { key: 'id',      label: t('Number'),    kind: 'default', sortable: true, sortType: 'text'   },
-  { key: 'name',    label: t('Deal name'), kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'company', label: t('Customer'),  kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'stage',   label: t('Stage'),     kind: 'status',  sortable: true, sortType: 'text'   },
-  { key: 'owner',   label: t('Deal owner'), kind: 'name',   sortable: true, sortType: 'text'   },
-  { key: 'value',   label: t('Deal value'), kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'id',            label: t('Number'),         kind: 'default', sortable: true, sortType: 'text'   },
+  { key: 'name',          label: t('Deal name'),      kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'company',       label: t('Customer'),       kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'contactPerson', label: t('Contact person'), kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'stage',         label: t('Stage'),          kind: 'status',  sortable: true, sortType: 'text'   },
+  { key: 'owner',         label: t('Owner'),          kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'value',         label: t('Deal value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
   { key: 'expectedCloseDate', label: t('Due date'),     kind: 'date',    sortable: true, sortType: 'text' },
@@ -649,6 +651,8 @@ const toggleAirene = inject<() => void>('toggleAirene')
         <template #cell-company="{ row }">
           <span class="cell-link cell-text" @click.stop="goCustomer(asDeal(row).customerId)">{{ asDeal(row).company }}</span>
         </template>
+
+        <template #cell-contactPerson="{ row }"><span class="cell-text">{{ asDeal(row).picName || '—' }}</span></template>
 
         <template #cell-stage="{ row }">
           <ErpStatusBadge :status="asDeal(row).stage" v-bind="stageBadge(asDeal(row).stage)" />

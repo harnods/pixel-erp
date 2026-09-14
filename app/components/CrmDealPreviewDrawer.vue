@@ -103,7 +103,7 @@ function stampTime(id: string): string {
               <h3 class="cdp-section-title">Overview</h3>
               <div class="cdp-grid">
                 <ContentList label="Expected deal value" :value="money(dealExpectedValue(d))" />
-                <ContentList label="Deal owner">
+                <ContentList label="Owner">
                   <span class="cdp-owner">
                     <span class="cdp-avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}

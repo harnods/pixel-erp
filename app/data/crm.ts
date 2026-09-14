@@ -644,7 +644,7 @@ export function dealActivityLog(d: Deal): DealActivityEntry[] {
       { label: 'Deal name', value: d.name },
       { label: 'Deal number', value: dealNo(d.id) },
       { label: 'Customer', value: d.company },
-      { label: 'Deal owner', value: d.owner },
+      { label: 'Owner', value: d.owner },
       { label: 'Stage', value: 'Open Lead' },
       { label: 'Deal value', value: money(total) },
       { label: 'Currency', value: d.currency },
@@ -666,7 +666,7 @@ export function dealActivityLog(d: Deal): DealActivityEntry[] {
     date: isoAt(d.createdAt, closeIndex + 1, 14), user: editor, activity: 'Updated deal',
     details: [
       { label: 'Deal value', value: `${money(Math.round(total * 0.9))} → ${money(total)}` },
-      { label: 'Deal owner', value: `${otherOwner} → ${d.owner}` },
+      { label: 'Owner', value: `${otherOwner} → ${d.owner}` },
       { label: 'Payment terms', value: `Net 14 → ${d.paymentTerms || 'Net 30'}` },
       { label: 'Due date', value: `${isoAt(d.expectedCloseDate, -14, 0).slice(0, 10)} → ${d.expectedCloseDate}` },
     ],
@@ -1595,7 +1595,7 @@ const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
   ['Days to close', 'Calculation', 88],
   ['Deal collaborator', 'User', 35],
   ['Deal name', 'Single-line text', 100],
-  ['Deal owner', 'User', 100],
+  ['Owner', 'User', 100],
   ['Deal probability', 'Number', 80],
   ['Deal stage', 'Radio select', 100],
   ['Deal type', 'Radio select', 45],
@@ -2120,7 +2120,7 @@ export function serviceStageBadgeType(
   return idx >= 0 && idx >= Math.ceil(open.length / 2) ? 'warning' : 'information'
 }
 
-/** The signed-in CRM user (mock) — the default Deal Owner + createdBy on a new deal. */
+/** The signed-in CRM user (mock) — the default Owner + createdBy on a new deal. */
 export const CRM_CURRENT_USER = 'Rizal Candra'
 /** Default Stage for a new Deal — the pipeline's default OPEN stage from settings,
  *  normalized to a DEAL_STAGES identity; falls back to Open Lead (PRD default). */

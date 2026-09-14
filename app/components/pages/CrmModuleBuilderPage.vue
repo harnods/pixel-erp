@@ -973,7 +973,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                             <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
                             <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Deal value') }}</span>
                             <div v-else-if="f.key === 'owner'" class="pipe-card-foot">
-                              <span class="pipe-card-owner">{{ t('Deal owner') }}</span>
+                              <span class="pipe-card-owner">{{ t('Owner') }}</span>
                               <span v-if="disp.showAging" class="pipe-card-aging">2d</span>
                             </div>
                             <span v-else-if="f.key === 'date'" class="pipe-card-sub">{{ t('Date') }}</span>

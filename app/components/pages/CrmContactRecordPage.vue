@@ -105,7 +105,7 @@ const dealColumns: TableColumn[] = [
   { key: 'number',  label: 'Number',          kind: 'number', sortable: true, sortType: 'text' },
   { key: 'name',    label: 'Deal name',       kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'stage',   label: 'Stage',           kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'owner',   label: 'Deal owner',      kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'owner',   label: 'Owner',      kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'value',   label: 'Value',           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'updated', label: 'Last updated',    kind: 'date' },
 ]
@@ -119,7 +119,7 @@ const dealFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const dealFiltersOpen = ref(false)
 const dealOwnerOptions = [...CRM_OWNERS]
 const dealContactOptions = computed(() => (contact.value ? [contact.value.name] : []))
-const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Deal owner' }]
+const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Owner' }]
 function applyDealFilters(v: CrmDealsFiltersValue) { Object.assign(dealFilters, v); dealFiltersOpen.value = false }
 const dealFilterCount = computed(() => {
   const f = dealFilters
