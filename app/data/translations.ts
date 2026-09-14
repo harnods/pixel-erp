@@ -727,6 +727,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'The selected contacts will be archived. You can restore them later.': 'Kontak yang dipilih akan diarsipkan. Kamu bisa memulihkannya nanti.',
   'This contact will be restored to the active list.': 'Kontak ini akan dipulihkan ke daftar aktif.',
   'The selected contacts will be restored to the active list.': 'Kontak yang dipilih akan dipulihkan ke daftar aktif.',
+  // Create in ERP (PRD: Mekari ERP CRM Customers and Companies Management V1)
+  'Create contact in ERP': 'Buat kontak di ERP',
+  'Open contact in ERP': 'Buka kontak di ERP',
+  'Contact created in ERP': 'Kontak berhasil dibuat di ERP',
+  'Could not create in ERP': 'Gagal membuat kontak di ERP',
+  'ERP Customer': 'Pelanggan ERP',
+  'created in ERP': 'dibuat di ERP',
+  'contact': 'kontak',
+  'contacts': 'kontak',
+  'Export contacts': 'Ekspor kontak',
   // CRM Contacts / Companies empty states (ErpTablePage.md fixed format)
   'No contacts': 'Belum ada kontak',
   'Contacts will appear here.': 'Kontak akan muncul di sini.',

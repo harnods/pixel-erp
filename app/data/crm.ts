@@ -2500,6 +2500,11 @@ export interface CrmContactPerson {
   archived?: boolean         // soft-archive (PRD: no permanent delete in V1)
   createdAt: string
   lastActivity: string
+  /** Protected ERP Status — Not in ERP / In Sync / Created in ERP (PRD line 50-52,
+   *  203). Undefined/missing is treated as 'not-in-erp'. */
+  erpStatus?: 'not-in-erp' | 'in-sync' | 'created'
+  /** Verified ERP Customer ID, set only once erpStatus === 'created' (PRD line 204). */
+  erpCustomerId?: string
 }
 
 /** Source — protected pick list, fixed in V1 (PRD §199). Not user-extensible. */
@@ -2705,6 +2710,50 @@ export function restoreCrmCompany(id: string): void {
 }
 
 function nowDate(): string { return new Date().toISOString().slice(0, 10) }
+
+// ── Create in ERP (PRD line 31, 50-56, 249-254, 375-376) ─────────────────────
+// One-time, create-only ERP Customer push for a CRM Contact. Not in ERP → In
+// Sync (transient, while the request is "processing") → Created in ERP with a
+// verified ERP Customer ID. No Merge/Link/Unlink — a fresh ERP Customer only.
+function nextErpCustomerId(): string {
+  const max = crmContactPeople.reduce((m, c) => {
+    const n = Number((c.erpCustomerId ?? '').replace(/\D/g, '')) || 0
+    return Math.max(m, n)
+  }, 5000)
+  return `CUST-${max + 1}`
+}
+export interface ErpCreateResult { ok: boolean; error?: string }
+/** Manual single Create in ERP (row action). Skips a Contact that's archived,
+ *  already In Sync, or already Created in ERP (PRD line 250, 253). */
+export async function createContactInErp(id: string): Promise<ErpCreateResult> {
+  const c = getContactPerson(id)
+  if (!c) return { ok: false, error: 'Contact not found.' }
+  if (c.archived) return { ok: false, error: 'Archived contact.' }
+  if (c.erpStatus === 'in-sync') return { ok: false, error: 'Already syncing to ERP.' }
+  if (c.erpStatus === 'created') return { ok: false, error: 'Already created in ERP.' }
+  c.erpStatus = 'in-sync'; persistCrmContactPeople()
+  await new Promise((r) => setTimeout(r, 600))
+  c.erpStatus = 'created'; c.erpCustomerId = nextErpCustomerId(); c.lastActivity = nowDate()
+  persistCrmContactPeople()
+  return { ok: true }
+}
+/** Bulk Create in ERP — eligible pool is active + Not in ERP; Created in ERP is
+ *  silently skipped, In Sync/archived fail with an explicit reason (PRD line 375-376). */
+export async function bulkCreateContactsInErp(ids: string[]): Promise<BulkOutcome[]> {
+  const eligible = ids.filter((id) => getContactPerson(id)?.erpStatus !== 'created')
+  const out = await Promise.all(eligible.map(async (id) => ({ id, ...(await createContactInErp(id)) })))
+  return out
+}
+/** Bulk owner reassignment for Contacts (mirrors bulkChangeOwner for Deals). */
+export function bulkChangeContactOwner(ids: string[], owner: string): BulkOutcome[] {
+  const out = ids.map((id) => {
+    const c = getContactPerson(id)
+    if (!c) return { id, ok: false, error: 'Contact not found.' }
+    if (c.archived) return { id, ok: false, error: 'Archived contact.' }
+    c.owner = owner; c.lastActivity = nowDate(); return { id, ok: true }
+  })
+  persistCrmContactPeople(); return out
+}
 
 // ── Edit (patch) — update a record + keep reverse links coherent ──
 export function updateCrmContactPerson(id: string, patch: Partial<Pick<CrmContactPerson, 'name' | 'fullName' | 'jobTitle' | 'email' | 'phone' | 'emails' | 'phones' | 'source' | 'sourceOther' | 'country' | 'province' | 'city' | 'address' | 'postalCode' | 'description' | 'owner' | 'companyIds'>>): void {

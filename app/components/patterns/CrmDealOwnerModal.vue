@@ -12,14 +12,14 @@ import {
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { CRM_OWNERS } from '~/data/crm'
 
-const props = withDefaults(defineProps<{ open: boolean; count?: number }>(), { count: 1 })
+const props = withDefaults(defineProps<{ open: boolean; count?: number; noun?: string }>(), { count: 1, noun: 'deals' })
 const emit = defineEmits<{ close: []; confirm: [owner: string] }>()
 
 const owner = ref<string>('')
 const error = ref('')
 watch(() => props.open, (open) => { if (open) { owner.value = ''; error.value = '' } })
 
-const title = computed(() => (props.count > 1 ? `Change owner for ${props.count} deals` : 'Change owner'))
+const title = computed(() => (props.count > 1 ? `Change owner for ${props.count} ${props.noun}` : 'Change owner'))
 function confirm() {
   if (!owner.value) { error.value = 'Select a new owner.'; return }
   emit('confirm', owner.value)
