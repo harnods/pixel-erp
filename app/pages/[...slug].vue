@@ -367,6 +367,8 @@ const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPa
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
 const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
+const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
+const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
 const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
@@ -487,6 +489,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
+    if (sub === 'reports' && id === 'new') return { component: CrmReportBuilderPage, id: 'new' }
+    if (sub === 'reports' && id === 'archived') return { component: CrmReportsPage, id: 'archived' }
+    if (sub === 'reports' && id && segs[3] === 'edit') return { component: CrmReportBuilderPage, id }
+    if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
     if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }

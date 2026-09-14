@@ -1,246 +1,341 @@
 <script setup lang="ts">
 /**
- * CRM (Qontak) — Reports (/crm/reports).
+ * CRM — Reports library (/crm/reports).
  *
- * A full-bleed CRM page (owns its `.crm-titlebar` + scrollable `.cc-stage`),
- * mirroring CrmDealsPage's shell. Every number is DERIVED from the real CRM
- * datasets in `~/data/crm` — nothing is invented:
- *   • KPI row       — from dealMetrics + Won/Lost tallies.
- *   • Pipeline funnel — count + value per DEAL_STAGES stage (dealsInStage).
- *   • Deals by owner  — open count + open value per CRM_OWNERS member.
- *   • Won → Sales Orders — converted deals linked to their crmOrders.
+ * Rebuilt per "PRD: Mekari ERP CRM — Reports V1" — replaces the old Deals
+ * pipeline dashboard entirely. The canonical Reports landing page: a
+ * permission-aware (mocked) library of report DEFINITIONS, not a fixed set of
+ * charts. See app/data/crmReports.ts for the data model / scope notes.
  */
-import { computed } from 'vue'
-import { formatIDR } from '~/utils/currency'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  deals,
-  dealMetrics,
-  dealsInStage,
-  isDealOpen,
-  DEAL_STAGES,
-  CRM_OWNERS,
-} from '~/data/crm'
+  MpIcon, MpButton, MpButtonGroup, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+} from '@mekari/pixel3'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import { useTableState } from '~/composables/useTableState'
+import { successToast } from '~/utils/toasts'
+import {
+  crmReports, reportSourceModules, reportIsMine, reportIsSharedWithMe, reportIsAccessibleToMe,
+  cloneCrmReport, archiveCrmReport, restoreCrmReport, transferCrmReport, setCrmReportVisibility,
+  REPORT_OWNER_OPTIONS, type CrmReport, type ReportVisibility,
+} from '~/data/crmReports'
+import { CRM_CURRENT_USER, getCrmModule } from '~/data/crm'
+
+const props = defineProps<{ orderId: string }>()
 
 const { t } = useLocale()
+const router = useRouter()
 
-const m = dealMetrics
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
-// ── KPI derivations ──
-const wonDeals = computed(() => deals.filter((d) => d.stage === 'Won'))
-const lostDeals = computed(() => deals.filter((d) => d.stage === 'Lost'))
-const wonValue = computed(() => wonDeals.value.reduce((n, d) => n + d.value, 0))
-const winRate = computed(() => {
-  const decided = wonDeals.value.length + lostDeals.value.length
-  return decided ? Math.round((wonDeals.value.length / decided) * 100) : 0
-})
-const convertedDeals = computed(() =>
-  deals.filter((d) => d.conversion === 'converted' && d.salesOrderId),
-)
+// ─── Library view tabs ──────────────────────────────────────────────────────
+type LibraryView = 'all' | 'mine' | 'shared' | 'archived'
+const activeView = ref<LibraryView>(props.orderId === 'archived' ? 'archived' : 'all')
 
-// ── Pipeline funnel — count + value per stage ──
-type StageRow = { stage: string; count: number; value: number; pct: number }
-const funnel = computed<StageRow[]>(() => {
-  const rows = DEAL_STAGES.map((stage) => {
-    const inStage = dealsInStage(stage)
-    return { stage, count: inStage.length, value: inStage.reduce((n, d) => n + d.value, 0) }
-  })
-  const maxValue = Math.max(1, ...rows.map((r) => r.value))
-  return rows.map((r) => ({ ...r, pct: Math.round((r.value / maxValue) * 100) }))
+const visibleByView = computed<CrmReport[]>(() => {
+  switch (activeView.value) {
+    case 'mine': return crmReports.filter((r) => r.status !== 'archived' && reportIsMine(r))
+    case 'shared': return crmReports.filter((r) => r.status !== 'archived' && reportIsSharedWithMe(r))
+    case 'archived': return crmReports.filter((r) => r.status === 'archived' && reportIsAccessibleToMe(r))
+    default: return crmReports.filter((r) => r.status !== 'archived' && reportIsAccessibleToMe(r))
+  }
 })
 
-// ── Deals by owner — open count + open value ──
-type OwnerRow = { owner: string; open: number; openValue: number; won: number }
-const byOwner = computed<OwnerRow[]>(() =>
-  CRM_OWNERS.map((owner) => {
-    const mine = deals.filter((d) => d.owner === owner)
-    const open = mine.filter(isDealOpen)
-    return {
-      owner,
-      open: open.length,
-      openValue: open.reduce((n, d) => n + d.value, 0),
-      won: mine.filter((d) => d.stage === 'Won').length,
-    }
-  }).sort((a, b) => b.openValue - a.openValue),
+// ─── Filters ────────────────────────────────────────────────────────────────
+const moduleFilter = ref('')
+const ownerFilter = ref('')
+const visibilityFilter = ref('')
+
+const moduleOptions = computed(() => reportSourceModules.value.map((m) => ({ value: m.id, label: m.name })))
+const ownerOptions = REPORT_OWNER_OPTIONS.map((o) => ({ value: o, label: o }))
+const visibilityOptions = [
+  { value: 'private', label: t('Private') },
+  { value: 'selected', label: t('Selected Users/Teams') },
+  { value: 'everyone', label: t('Everyone eligible') },
+]
+
+const filteredRows = computed<CrmReport[]>(() =>
+  visibleByView.value.filter((r) =>
+    (!moduleFilter.value || r.primaryModuleId === moduleFilter.value)
+    && (!ownerFilter.value || r.ownerId === ownerFilter.value)
+    && (!visibilityFilter.value || r.visibility === visibilityFilter.value),
+  ),
 )
 
-function fmtDate(iso: string): string {
-  const [y, mo, d] = iso.split('-')
-  return `${d}/${mo}/${y}`
+// ─── Table ──────────────────────────────────────────────────────────────────
+const allCols: TableColumn[] = [
+  { key: 'name', label: 'Report name', kind: 'name', sortType: 'text' },
+  { key: 'primaryModuleId', label: 'Primary module', sortType: 'text' },
+  { key: 'ownerId', label: 'Owner', sortType: 'text' },
+  { key: 'visibility', label: 'Visibility', sortType: 'text' },
+  { key: 'status', label: 'Status', kind: 'status' },
+  { key: 'updatedAt', label: 'Last modified', kind: 'date', sortType: 'date' },
+]
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map((c) => [c.key, true])))
+const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibility[c.key]))
+
+const {
+  search, currentPage, paginated, total, perPage,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState<CrmReport>(filteredRows, {
+  perPage: 25,
+  filterFn: (row, s) => !s || row.name.toLowerCase().includes(s) || (row.description ?? '').toLowerCase().includes(s),
+})
+
+function moduleName(id: string): string { return getCrmModule(id)?.name ?? id }
+function visibilityLabel(v: ReportVisibility): string {
+  return v === 'private' ? t('Private') : v === 'selected' ? t('Selected Users/Teams') : t('Everyone eligible')
 }
+function statusType(status: CrmReport['status']): 'completed' | 'warning' | 'announcement' {
+  return status === 'active' ? 'completed' : status === 'needs-attention' ? 'warning' : 'announcement'
+}
+function statusLabel(status: CrmReport['status']): string {
+  return status === 'active' ? t('Active') : status === 'needs-attention' ? t('Needs attention') : t('Archived')
+}
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// ─── Row actions ────────────────────────────────────────────────────────────
+function openReport(r: CrmReport) { router.push(`/crm/reports/${r.id}`) }
+function editReport(r: CrmReport) { router.push(`/crm/reports/${r.id}/edit`) }
+function duplicate(r: CrmReport) {
+  const clone = cloneCrmReport(r.id)
+  if (clone) successToast(t('Report duplicated'))
+}
+function doArchive(r: CrmReport) { archiveCrmReport(r.id); successToast(t('Report archived')) }
+function doRestore(r: CrmReport) { restoreCrmReport(r.id); successToast(t('Report restored')) }
+
+// Transfer ownership modal
+const transferTarget = ref<CrmReport | null>(null)
+const transferTo = ref('')
+function openTransfer(r: CrmReport) { transferTarget.value = r; transferTo.value = '' }
+function confirmTransfer() {
+  if (!transferTarget.value || !transferTo.value) return
+  transferCrmReport(transferTarget.value.id, transferTo.value)
+  successToast(t('Report ownership transferred'))
+  transferTarget.value = null
+}
+
+// Change visibility modal
+const visTarget = ref<CrmReport | null>(null)
+const visChoice = ref<ReportVisibility>('private')
+function openVisibility(r: CrmReport) { visTarget.value = r; visChoice.value = r.visibility }
+function confirmVisibility() {
+  if (!visTarget.value) return
+  setCrmReportVisibility(visTarget.value.id, visChoice.value, visChoice.value === 'selected' ? [CRM_CURRENT_USER] : undefined)
+  successToast(t('Report visibility updated'))
+  visTarget.value = null
+}
+
+const emptyIllustration = '/illustrations/empty-folder.png'
+const emptyCopy = computed(() => {
+  if (activeView.value === 'archived') return { title: t('No archived reports'), desc: t('Reports you archive will appear here.') }
+  if (activeView.value === 'mine') return { title: t('No reports yet'), desc: t('Reports you create will appear here.') }
+  if (activeView.value === 'shared') return { title: t('No reports shared with you'), desc: t('Reports another user shares with you will appear here.') }
+  return { title: t('No reports yet'), desc: t('Create a report to summarize your CRM data.') }
+})
 </script>
 
 <template>
   <div class="crm">
-    <!-- ── Title bar ── -->
     <header class="crm-titlebar">
       <div class="crm-titlebar__left">
         <h1 class="crm-title">{{ t('Reports') }}</h1>
-        <span class="crm-subtitle">{{ t('Pipeline performance from your live deals') }}</span>
+        <span class="crm-subtitle">{{ t('Build, run, and share operational reports over your CRM data.') }}</span>
+      </div>
+      <div class="crm-titlebar__right">
+        <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/crm/reports/new')">
+          {{ t('Create report') }}
+        </MpButton>
       </div>
     </header>
 
+    <nav class="cc-viewtabs">
+      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'all' }" type="button" @click="activeView = 'all'">{{ t('All accessible reports') }}</button>
+      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'mine' }" type="button" @click="activeView = 'mine'">{{ t('My reports') }}</button>
+      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'shared' }" type="button" @click="activeView = 'shared'">{{ t('Shared with me') }}</button>
+      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'archived' }" type="button" @click="activeView = 'archived'">{{ t('Archived') }}</button>
+    </nav>
+
     <div class="cc-stage">
-      <!-- ── KPI row ── -->
-      <div class="cc-stats">
-        <div class="stats-section">
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Total pipeline value') }}</div>
-            <div class="stat-amount">{{ formatIDR(m.openValue) }}</div>
-            <div class="stat-sub">{{ m.active }} {{ t('active deals') }}</div>
+      <ErpTablePage
+        :columns="columns"
+        :rows="(paginated as unknown as Record<string, unknown>[])"
+        :total="total"
+        :current-page="currentPage"
+        :per-page="perPage"
+        :sort-key="sortKey"
+        :sort-dir="sortDir"
+        :loading="loading"
+        :has-active-search="!!search || !!moduleFilter || !!ownerFilter || !!visibilityFilter"
+        filter-empty-label="report"
+        @page-change="setPage"
+        @per-page-change="setPerPage"
+        @sort="toggleSort"
+        @sort-change="setSort"
+        @clear-filters="search = ''; moduleFilter = ''; ownerFilter = ''; visibilityFilter = ''"
+      >
+        <template #filters>
+          <div class="filter-left">
+            <ErpFilterSelect id="rpt-module-filter" v-model="moduleFilter" :placeholder="t('Primary module')" :options="moduleOptions" />
+            <ErpFilterSelect id="rpt-owner-filter" v-model="ownerFilter" :placeholder="t('Owner')" :options="ownerOptions" />
+            <ErpFilterSelect id="rpt-visibility-filter" v-model="visibilityFilter" :placeholder="t('Visibility')" :options="visibilityOptions" />
           </div>
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Won value') }}</div>
-            <div class="stat-amount">{{ formatIDR(wonValue) }}</div>
-            <div class="stat-sub">{{ wonDeals.length }} {{ t('deals won') }}</div>
-          </div>
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Win rate') }}</div>
-            <div class="stat-amount">{{ winRate }}%</div>
-            <div class="stat-sub">{{ wonDeals.length }} {{ t('won') }} · {{ lostDeals.length }} {{ t('lost') }}</div>
-          </div>
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Converted to Sales Order') }}</div>
-            <div class="stat-amount">{{ convertedDeals.length }}</div>
-            <div class="stat-sub" :class="{ 'stat-sub--warning': m.conversionAttentionCount > 0 }">
-              {{ m.conversionAttentionCount }} {{ t('need attention') }}
+          <div class="filter-right">
+            <MpButtonGroup class="filter-btn-group">
+              <ColumnSettingsMenu id="rpt-columns" :items="columnItems" :visibility="columnVisibility" />
+            </MpButtonGroup>
+            <div class="filter-search">
+              <MpIcon name="search" size="md" />
+              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search reports...')">
+              <MpButton v-if="search" variant="ghost" class="filter-search-clear" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-title">{{ t('Overdue') }}</div>
-            <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
-            <div class="stat-sub">{{ t('Past expected close') }}</div>
+        </template>
+
+        <template #cell-name="{ value, row }">
+          <a class="cell-link" @click.stop="openReport(row as unknown as CrmReport)">{{ value }}</a>
+        </template>
+        <template #cell-primaryModuleId="{ value }">{{ moduleName(value as string) }}</template>
+        <template #cell-ownerId="{ value }">{{ value }}</template>
+        <template #cell-visibility="{ value }">{{ visibilityLabel(value as ReportVisibility) }}</template>
+        <template #cell-status="{ row }">
+          <ErpStatusBadge :status="(row as unknown as CrmReport).status" :type="statusType((row as unknown as CrmReport).status)" :label="statusLabel((row as unknown as CrmReport).status)" />
+        </template>
+        <template #cell-updatedAt="{ row }">
+          <div class="rpt-updated">
+            <span>{{ formatDate((row as unknown as CrmReport).updatedAt) }}</span>
+            <span class="rpt-updated-by">{{ (row as unknown as CrmReport).updatedBy }}</span>
           </div>
-        </div>
-      </div>
+        </template>
 
-      <!-- ── Pipeline funnel ── -->
-      <section class="rp-block">
-        <h2 class="rp-block-title">{{ t('Pipeline by stage') }}</h2>
-        <div class="rp-funnel">
-          <div v-for="row in funnel" :key="row.stage" class="rp-funnel-row">
-            <span class="rp-funnel-label">{{ t(row.stage) }}</span>
-            <div class="rp-funnel-track">
-              <div class="rp-funnel-fill" :style="{ width: row.pct + '%' }" />
-            </div>
-            <span class="rp-funnel-count">{{ row.count }} {{ row.count === 1 ? t('deal') : t('deals') }}</span>
-            <span class="rp-funnel-value">{{ formatIDR(row.value) }}</span>
+        <template #actions="{ row }">
+          <MpPopover :id="`rpt-actions-${(row as unknown as CrmReport).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="openReport(row as unknown as CrmReport)">{{ t('Run') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="editReport(row as unknown as CrmReport)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="duplicate(row as unknown as CrmReport)">{{ t('Clone') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="openVisibility(row as unknown as CrmReport)">{{ t('Change visibility') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="openTransfer(row as unknown as CrmReport)">{{ t('Transfer ownership') }}</MpPopoverListItem>
+                <MpPopoverListItem
+                  v-if="(row as unknown as CrmReport).status !== 'archived'"
+                  :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+                  @click="doArchive(row as unknown as CrmReport)"
+                >{{ t('Archive') }}</MpPopoverListItem>
+                <MpPopoverListItem v-else @click="doRestore(row as unknown as CrmReport)">{{ t('Restore') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
+
+        <template #empty>
+          <div class="empty-full">
+            <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+            <p class="empty-full-title">{{ emptyCopy.title }}</p>
+            <p class="empty-full-desc">{{ emptyCopy.desc }}</p>
+            <MpButton v-if="activeView !== 'archived' && activeView !== 'shared'" variant="secondary" is-rounded left-icon="add" @click="router.push('/crm/reports/new')">
+              {{ t('Create report') }}
+            </MpButton>
           </div>
-        </div>
-      </section>
-
-      <!-- ── Deals by owner ── -->
-      <section class="rp-block">
-        <h2 class="rp-block-title">{{ t('Deals by owner') }}</h2>
-        <div class="rp-tablewrap">
-          <table class="rp-table">
-            <thead>
-              <tr>
-                <th>{{ t('Owner') }}</th>
-                <th class="rp-num">{{ t('Open deals') }}</th>
-                <th class="rp-num">{{ t('Open value') }}</th>
-                <th class="rp-num">{{ t('Won') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in byOwner" :key="r.owner">
-                <td>{{ r.owner }}</td>
-                <td class="rp-num">{{ r.open }}</td>
-                <td class="rp-num">{{ formatIDR(r.openValue) }}</td>
-                <td class="rp-num">{{ r.won }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ── Won → Sales Orders ── -->
-      <section class="rp-block">
-        <h2 class="rp-block-title">{{ t('Won deals converted to Sales Orders') }}</h2>
-        <div v-if="convertedDeals.length" class="rp-tablewrap">
-          <table class="rp-table">
-            <thead>
-              <tr>
-                <th>{{ t('Deal') }}</th>
-                <th>{{ t('Customer') }}</th>
-                <th class="rp-num">{{ t('Value') }}</th>
-                <th>{{ t('Sales Order') }}</th>
-                <th>{{ t('Closed') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="d in convertedDeals" :key="d.id">
-                <td>
-                  <NuxtLink class="cell-link" :to="`/crm/deals/${d.id}`">{{ d.name }}</NuxtLink>
-                  <span class="rp-sub">{{ d.id }}</span>
-                </td>
-                <td>{{ d.company }}</td>
-                <td class="rp-num">{{ formatIDR(d.value) }}</td>
-                <td><NuxtLink class="cell-link" :to="`/crm/orders/${d.salesOrderId}`">{{ d.salesOrderId }}</NuxtLink></td>
-                <td>{{ fmtDate(d.lastActivity) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p v-else class="rp-empty">{{ t('No deals have been converted to Sales Orders yet.') }}</p>
-      </section>
+        </template>
+      </ErpTablePage>
     </div>
+
+    <!-- ── Transfer ownership ── -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rpt-transfer-modal" :is-open="!!transferTarget" size="md" :is-keep-alive="false" @close="transferTarget = null">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Transfer ownership') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="rpt-modal-desc">{{ t('The new owner can edit, share, and manage this report. This does not change its visibility or shared audience.') }}</p>
+          <ErpFilterSelect id="rpt-transfer-to" v-model="transferTo" :placeholder="t('New owner')" :options="ownerOptions" width="100%" />
+        </MpModalBody>
+        <MpModalFooter>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="!transferTo" @click="confirmTransfer">{{ t('Transfer') }}</button>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Change visibility ── -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rpt-visibility-modal" :is-open="!!visTarget" size="md" :is-keep-alive="false" @close="visTarget = null">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Change visibility') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <ErpFilterSelect id="rpt-vis-choice" v-model="visChoice" :placeholder="t('Visibility')" :options="visibilityOptions" width="100%" />
+          <p class="rpt-modal-desc">{{ t('Sharing lets others discover and run this report. It does not grant them edit, export, or underlying data access beyond their own permissions.') }}</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="visTarget = null">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmVisibility">{{ t('Save') }}</button>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
 <style scoped>
 .crm { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-/* ── Title bar (mirrors CrmDealsPage) ── */
 .crm-titlebar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.crm-titlebar__left { display: flex; align-items: baseline; gap: var(--mp-spacing-3); }
+.crm-titlebar__left { display: flex; flex-direction: column; gap: 2px; }
 .crm-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default, #272b32); }
 .crm-subtitle { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #656f80); }
 
-/* ── Stage ── */
+.cc-viewtabs {
+  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-1);
+  padding: 0 var(--mp-spacing-6); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-neutral, #fff);
+}
+.page-tab {
+  border: none; background: none; cursor: pointer; padding: var(--mp-spacing-3) var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); border-bottom: 2px solid transparent;
+}
+.page-tab--active { color: var(--mp-text-link, #165082); font-weight: var(--mp-font-weights-semi-bold); border-bottom-color: var(--mp-border-brand-bold, #029861); }
+
 .cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
-/* ── KPI row (shared stat-card idiom) ── */
-.cc-stats { margin-bottom: var(--mp-spacing-10); }
-.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
-.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
-.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
-.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
-.stat-amount--danger { color: var(--mp-text-danger); }
-.stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
-.stat-sub--warning { color: var(--mp-text-warning, #b54708); }
-
-/* ── Report blocks ── */
-.rp-block { margin-bottom: var(--mp-spacing-8); }
-.rp-block-title { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: 24px; }
-
-/* ── Funnel ── */
-.rp-funnel { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); padding: var(--mp-spacing-5); }
-.rp-funnel-row { display: grid; grid-template-columns: 140px 1fr 100px 160px; align-items: center; gap: var(--mp-spacing-4); }
-.rp-funnel-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.rp-funnel-track { height: 8px; background: var(--mp-background-neutral-subtle, #f1f5f9); border-radius: var(--mp-radii-full, 999px); overflow: hidden; }
-.rp-funnel-fill { height: 100%; background: var(--mp-background-brand-bold, #029861); border-radius: var(--mp-radii-full, 999px); min-width: 2px; transition: width 200ms ease; }
-.rp-funnel-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: right; white-space: nowrap; }
-.rp-funnel-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); text-align: right; white-space: nowrap; }
-
-/* ── Tables (plain styled, mirrors detail-page related tables) ── */
-.rp-tablewrap { overflow-x: auto; }
-.rp-table { width: 100%; border-collapse: collapse; }
-.rp-table thead th { text-align: left; text-transform: uppercase; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f5f9); padding: var(--mp-spacing-2) var(--mp-spacing-4); height: var(--mp-sizes-7, 28px); box-sizing: border-box; white-space: nowrap; }
-.rp-table tbody td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
-.rp-num { text-align: right; }
-.rp-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cell-link { color: var(--mp-text-link, #165082); text-decoration: none; }
-.cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.rp-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-
-@media (max-width: 900px) {
-  .rp-funnel-row { grid-template-columns: 120px 1fr 90px; }
-  .rp-funnel-value { display: none; }
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
+.filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.filter-search-clear { display: inline-flex !important; align-items: center; justify-content: center; width: 20px !important; height: 20px !important; min-width: 0 !important; padding: 0 !important; color: var(--mp-text-subtle); }
+
+.rpt-updated { display: flex; flex-direction: column; gap: 2px; }
+.rpt-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.rpt-modal-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); }
+
+.cell-link { color: var(--mp-text-link); cursor: pointer; white-space: normal; word-break: break-word; }
+.cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: 2px; margin-bottom: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

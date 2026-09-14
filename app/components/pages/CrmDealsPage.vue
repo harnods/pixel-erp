@@ -44,6 +44,7 @@ import {
   dealPipelineDisplay,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
+import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmReports'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -100,6 +101,10 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const m = dealMetrics
 const convTargetShort = computed(() => (dealConversionTarget.value === 'Sales Quote' ? t('Sales Quotes') : t('Sales Orders')))
+
+// ── Optional report-backed metric pins — an extension area after the 5
+// protected fixed cards above (never replaces/reorders them). ──
+const pinnedDealMetrics = computed(() => pinsForModule('deals'))
 
 // ── Saved views (PRD system views) ──
 const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently modified', 'Won', 'Lost', 'Archived'] as const
@@ -512,6 +517,19 @@ const toggleAirene = inject<() => void>('toggleAirene')
             <div class="stat-sub">{{ t('Past 30 days') }}</div>
           </button>
         </div>
+        <!-- ── Optional report-backed pins — a distinct extension area after the
+             protected fixed cards above (never replaces/reorders them). ── -->
+        <div v-if="pinnedDealMetrics.length" class="cc-pinned-metrics">
+          <div v-for="pin in pinnedDealMetrics" :key="pin.id" class="pinned-metric-card">
+            <button type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
+              <div class="stat-title">{{ pin.label }}</div>
+              <div class="stat-amount">{{ metricPinValue(pin) ?? '—' }}</div>
+            </button>
+            <button type="button" class="pinned-metric-unpin" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)">
+              <MpIcon name="close" size="sm" />
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- ── Filter bar ── -->
@@ -885,6 +903,15 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .stat-amount--danger { color: var(--mp-text-danger); }
 .stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+
+/* Optional report-backed metric pins — visually distinct extension row below
+   the protected fixed cards, never mixed into that row. */
+.cc-pinned-metrics { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); }
+.pinned-metric-card { position: relative; display: flex; align-items: center; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); }
+.pinned-metric-body { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-8) var(--mp-spacing-3) var(--mp-spacing-4); background: none; border: none; text-align: left; cursor: pointer; }
+.pinned-metric-body:hover .stat-title { color: var(--mp-text-link); }
+.pinned-metric-unpin { position: absolute; top: var(--mp-spacing-2); right: var(--mp-spacing-2); display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: var(--mp-radii-md); }
+.pinned-metric-unpin:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Filter bar ── */
 /* Scrolls with the list (not pinned) — the bar moves out of view as the user
