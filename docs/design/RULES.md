@@ -964,6 +964,15 @@ ERP override wins.
   text tied to a **specific field/control** is fine — this bans only the page/section
   descriptor. **Lint:** review (grep for a lead `<p>` immediately under a page/section
   title).
+- **`rule/id-format-module-hash-number`** — *Do:* any transaction/record number or
+  ID shown to a user is **"`<Module name> #<number>`"** — e.g. `Customer #10090`,
+  `Deal #10090`, `Invoice #10090` — the module/entity name, a space, `#`, then a
+  plain number. *Don't:* invent a prefix-code style ID (`CUST-5001`, `DL-260898`)
+  for anything **new** you're building. **Why:** a handful of older modules
+  (Deals `DL-*`, Sales Orders `SO-*`, Invoices `INV-*`) predate this convention and
+  are grandfathered — don't rewrite them — but every new ID surfaced to a user
+  (e.g. the ERP Customer ID stamped by CRM's "Create in ERP") follows this format.
+  **Lint:** review.
 
 ---
 

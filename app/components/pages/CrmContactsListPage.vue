@@ -192,7 +192,7 @@ async function onCreateInErp(row: ContactRow) {
   else infoToast(r.error ?? t('Could not create in ERP'))
 }
 function onOpenErpCustomer(row: ContactRow) {
-  infoToast(`${t('ERP Customer')} ${row.erpCustomerId}`)
+  infoToast(row.erpCustomerId ?? '')
 }
 async function onBulkCreateInErp(ids: string[], deselect?: () => void) {
   if (!ids.length) return
@@ -331,7 +331,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
             <MpTooltip
               v-if="(row as unknown as ContactRow).erpStatus === 'created'"
               :id="`cc-erp-badge-${(row as unknown as ContactRow).rowKey}`"
-              :label="`${t('Created in ERP')} — ${(row as unknown as ContactRow).erpCustomerId}`"
+              :label="`${t('Created in ERP')} - ${(row as unknown as ContactRow).erpCustomerId}`"
               placement="top" use-portal
             >
               <MpBadge for="tableStatus" type="announcement" size="sm" class="cc-erp-badge">

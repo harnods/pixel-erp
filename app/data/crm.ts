@@ -2726,12 +2726,13 @@ function nowDate(): string { return new Date().toISOString().slice(0, 10) }
 // One-time, create-only ERP Customer push for a CRM Contact. Not in ERP → In
 // Sync (transient, while the request is "processing") → Created in ERP with a
 // verified ERP Customer ID. No Merge/Link/Unlink — a fresh ERP Customer only.
+// rule/id-format-module-hash-number: "<Module name> #<number>" — e.g. "Customer #10090".
 function nextErpCustomerId(): string {
   const max = crmContactPeople.reduce((m, c) => {
     const n = Number((c.erpCustomerId ?? '').replace(/\D/g, '')) || 0
     return Math.max(m, n)
-  }, 5000)
-  return `CUST-${max + 1}`
+  }, 10000)
+  return `Customer #${max + 1}`
 }
 export interface ErpCreateResult { ok: boolean; error?: string }
 /** Manual single Create in ERP (row action). Skips a Contact that's archived,
