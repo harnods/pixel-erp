@@ -163,55 +163,6 @@ function setGrant(rowKey: string, action: AuthorityAction, on: boolean) {
   authorityError.value = ''
 }
 
-/** Tri-state over an arbitrary set of leaf row keys (a level-2 or level-1 group). */
-function groupState(feature: AuthorityFeature, keys: string[]): { checked: boolean; indeterminate: boolean } {
-  const actions = authorityActionsFor(feature)
-  const total = keys.length * actions.length
-  const on = keys.reduce((sum, k) => sum + actions.filter((a) => has(k, a)).length, 0)
-  return { checked: total > 0 && on === total, indeterminate: on > 0 && on < total }
-}
-function setGroup(feature: AuthorityFeature, keys: string[], on: boolean) {
-  const actions = authorityActionsFor(feature)
-  for (const key of keys) {
-    if (on) grants[key] = [...actions]
-    else delete grants[key]
-  }
-  authorityError.value = ''
-}
-
-/** Leaf row checkbox — all actions for that one row. */
-function rowState(feature: AuthorityFeature, rowKey: string) { return groupState(feature, [rowKey]) }
-function toggleRow(feature: AuthorityFeature, rowKey: string, on: boolean) { setGroup(feature, [rowKey], on) }
-
-/** Level-2 row's own checkbox — itself if leaf, or every level-3 child if it has any. */
-function subState(feature: AuthorityFeature, sub: AuthoritySubfeature) {
-  return groupState(feature, authoritySubRowKeys(feature.id, sub))
-}
-function toggleSub(feature: AuthorityFeature, sub: AuthoritySubfeature, on: boolean) {
-  setGroup(feature, authoritySubRowKeys(feature.id, sub), on)
-}
-
-/** Level-1 (feature) row's own checkbox — every leaf row underneath it. */
-function featureState(feature: AuthorityFeature) { return groupState(feature, authorityRowKeys(feature)) }
-function toggleFeature(feature: AuthorityFeature, on: boolean) { setGroup(feature, authorityRowKeys(feature), on) }
-
-/** Category row's own checkbox — every leaf row across every feature in that category. */
-function categoryState(cat: AuthorityCategory): { checked: boolean; indeterminate: boolean } {
-  let total = 0
-  let on = 0
-  for (const f of featuresInCategory(cat)) {
-    const actions = authorityActionsFor(f)
-    for (const key of authorityRowKeys(f)) {
-      total += actions.length
-      on += actions.filter((a) => has(key, a)).length
-    }
-  }
-  return { checked: total > 0 && on === total, indeterminate: on > 0 && on < total }
-}
-function toggleCategory(cat: AuthorityCategory, on: boolean) {
-  for (const f of featuresInCategory(cat)) setGroup(f, authorityRowKeys(f), on)
-}
-
 // ─── Right column — "N permissions selected" summary, grouped by category ──
 const ACTION_VERB: Record<AuthorityAction, string> = { view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete' }
 
@@ -375,13 +326,6 @@ function close() { emit('close') }
                               >
                                 <MpIcon name="caret-down" size="sm" />
                               </button>
-                              <MpCheckbox
-                                :id="`${id}-category-${cat.value}`"
-                                :aria-label="`${t('All authority')} — ${t(cat.label)}`"
-                                :is-checked="categoryState(cat.value).checked"
-                                :is-indeterminate="categoryState(cat.value).indeterminate"
-                                @change="(on: boolean) => toggleCategory(cat.value, on)"
-                              />
                               <span class="crd-td-label crd-td-label--category">{{ t(cat.label) }}</span>
                             </div>
                           </td>
@@ -404,14 +348,6 @@ function close() { emit('close') }
                                 >
                                   <MpIcon name="caret-down" size="sm" />
                                 </button>
-                                <MpCheckbox
-                                  v-if="feature.subfeatures.length"
-                                  :id="`${id}-feature-${feature.id}`"
-                                  :aria-label="`${t('All authority')} — ${t(feature.label)}`"
-                                  :is-checked="featureState(feature).checked"
-                                  :is-indeterminate="featureState(feature).indeterminate"
-                                  @change="(on: boolean) => toggleFeature(feature, on)"
-                                />
                                 <span class="crd-td-label">{{ t(feature.label) }}</span>
                               </div>
                             </td>
@@ -445,13 +381,6 @@ function close() { emit('close') }
                                   >
                                     <MpIcon name="caret-down" size="sm" />
                                   </button>
-                                  <MpCheckbox
-                                    :id="`${id}-row-${feature.id}.${sub.id}`"
-                                    :aria-label="`${t('All authority')} — ${t(sub.label)}`"
-                                    :is-checked="subState(feature, sub).checked"
-                                    :is-indeterminate="subState(feature, sub).indeterminate"
-                                    @change="(on: boolean) => toggleSub(feature, sub, on)"
-                                  />
                                   <span class="crd-td-label">{{ t(sub.label) }}</span>
                                 </div>
                               </td>
@@ -476,13 +405,6 @@ function close() { emit('close') }
                             >
                               <td class="crd-td crd-td--feature crd-td--l3">
                                 <div class="crd-td-inner">
-                                  <MpCheckbox
-                                    :id="`${id}-row-${feature.id}.${sub.id}.${child.id}`"
-                                    :aria-label="`${t('All authority')} — ${t(child.label)}`"
-                                    :is-checked="rowState(feature, `${feature.id}.${sub.id}.${child.id}`).checked"
-                                    :is-indeterminate="rowState(feature, `${feature.id}.${sub.id}.${child.id}`).indeterminate"
-                                    @change="(on: boolean) => toggleRow(feature, `${feature.id}.${sub.id}.${child.id}`, on)"
-                                  />
                                   <span class="crd-td-label">{{ t(child.label) }}</span>
                                 </div>
                               </td>
@@ -639,13 +561,17 @@ function close() { emit('close') }
 }
 
 /* ── Filter bar — quick filter + search, above the permission table ── */
-.crd-filter-bar { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.crd-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .crd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral, #fff);
   border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+.crd-search:focus-within {
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596);
 }
 .crd-search-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent;
@@ -701,7 +627,10 @@ function close() { emit('close') }
 /* Category (top level) sits at the base cell padding; each level below steps
    in further: feature 40px, sub-feature 64px, child 88px. */
 .crd-row--category { background: var(--mp-background-neutral-subtle, #f0f1f3); }
-.crd-td-label--category { text-transform: uppercase; font-weight: var(--mp-font-weights-semi-bold); }
+.crd-td-label--category {
+  text-transform: uppercase; font-weight: var(--mp-font-weights-semi-bold);
+  font-size: 12px; line-height: var(--mp-line-heights-xs, 16px);
+}
 .crd-td--l1 { padding-left: 40px; }
 .crd-td--l2 { padding-left: 64px; }
 .crd-td--l3 { padding-left: 88px; }
