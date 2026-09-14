@@ -218,6 +218,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       'Manage CRM settings: create custom modules, set user permissions, and create teams.',
       'Edit and delete any deals, contacts, and companies if ticking List manager.',
     ],
+    accessLimitation: 'Restrict this user to deals they are assigned to',
     supportsTimeLimit: true,
   },
 ]
