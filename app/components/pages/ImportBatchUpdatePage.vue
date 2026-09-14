@@ -172,9 +172,19 @@ function importAgain() {
 
 const importedCount = computed(() => (result.value ? result.value.total - result.value.failed.length : 0))
 
+/** Row errors are PRD story 9 copy. The two attribute messages carry the attribute's
+ *  label, so they translate through a template rather than a fixed key. */
+function importErrorText(e: string): string {
+  const notUsed = /^This product does not use Attribute (.+)$/.exec(e)
+  if (notUsed) return t('This product does not use Attribute {attribute}').replace('{attribute}', t(notUsed[1]!))
+  const required = /^Attribute (.+) must be filled$/.exec(e)
+  if (required) return t('Attribute {attribute} must be filled').replace('{attribute}', t(required[1]!))
+  return t(e)
+}
+
 function downloadErrorFile() {
   if (!result.value) return
-  const rows = result.value.failed.map((f) => [String(f.rowNumber), f.productName, f.batchNumber, f.errors.map((e) => t(e)).join('; ')])
+  const rows = result.value.failed.map((f) => [String(f.rowNumber), f.productName, f.batchNumber, f.errors.map(importErrorText).join('; ')])
   void writeSheet('update-batches-errors.xlsx', [t('Row'), t('Product name'), t('Batch number'), t('Errors')], rows)
 }
 
@@ -261,7 +271,7 @@ watch(scenario, (s) => {
                 <td>{{ f.batchNumber || '-' }}</td>
                 <td>
                   <ul class="ibu-error-list">
-                    <li v-for="e in f.errors" :key="e">{{ t(e) }}</li>
+                    <li v-for="e in f.errors" :key="e">{{ importErrorText(e) }}</li>
                   </ul>
                 </td>
               </tr>
