@@ -84,7 +84,7 @@ describe('row validation (PRD copy)', () => {
   it('rejects an attribute the product does not use', () => {
     // 1002 uses Expiry date (required) + Grade — not Vendor.
     expect(errorsOf([row({ productName: nameOf('1002'), batchNumber: 'Batch #001', supplier: 'Klasik Beans Cooperative' })]))
-      .toEqual([['This product does not use attribute Vendor']])
+      .toEqual([['This product does not use Attribute Vendor']])
   })
 
   it('rejects clearing, or leaving empty, a required attribute', () => {
@@ -110,7 +110,7 @@ describe('row validation (PRD copy)', () => {
       ['Format must be in DD/MM/YYYY or MM/YYYY'],
       ['Format must be in DD/MM/YYYY'],
       ['Vendor name not found'],
-      ['Grade name not found'],
+      ['Grade Name not found'],
       ['Grade is not active'],
     ])
   })

@@ -30,7 +30,7 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import DeliveryBatchDrawer from '~/components/patterns/DeliveryBatchDrawer.vue'
 import { isProductBatchTracked } from '~/data/productDetails'
 import {
-  checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
+  VENDOR_MISMATCH_COPY, checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
   type DeliveryBatchAllocation, type DeliveryBatchLine, type SavedDeliveryBatch,
 } from '~/data/purchaseDeliveryBatches'
 
@@ -325,8 +325,10 @@ function onSave() {
   if (!validate()) return
   const mismatches = deliveryVendorMismatches(items.value.filter(isBatchLine).map(lineBatchInput), vendorId.value)
   if (mismatches.length) {
-    const list = mismatches.map(m => `${m.batchNo} (${m.productName}, ${m.vendorName})`).join('; ')
-    mismatchText.value = `${t('These batches are from another vendor and keep their own vendor:')} ${list}`
+    const deliveryVendor = vendors.find(v => v.id === vendorId.value)?.name ?? ''
+    mismatchText.value = mismatches
+      .map(m => `${m.batchNo} (${m.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', m.vendorName).replace('{deliveryVendor}', deliveryVendor)}`)
+      .join(' ')
     mismatchOpen.value = true
     return
   }

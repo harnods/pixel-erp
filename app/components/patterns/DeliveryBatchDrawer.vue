@@ -23,7 +23,7 @@ import { getProductBatches, type BatchError } from '~/data/productDetails'
 import { activeGrades } from '~/data/grades'
 import { vendors } from '~/data/vendors'
 import {
-  checkDeliveryBatches, deliveryBatchCheckOk, productUsesVendor, type DeliveryBatchAllocation,
+  VENDOR_MISMATCH_COPY, checkDeliveryBatches, deliveryBatchCheckOk, productUsesVendor, type DeliveryBatchAllocation,
 } from '~/data/purchaseDeliveryBatches'
 
 const props = withDefaults(defineProps<{
@@ -255,7 +255,7 @@ function save() {
 
               <p v-if="existingVendorNote(row)?.kind === 'other'" class="dbd-note dbd-note--warning">
                 <MpIcon name="warning-triangle" size="sm" />
-                {{ t('From another vendor: {vendor}. Its vendor won’t change.').replace('{vendor}', existingVendorNote(row)?.name ?? '') }}
+                {{ t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', existingVendorNote(row)?.name ?? '').replace('{deliveryVendor}', vendorName(vendorId)) }}
               </p>
               <p v-else-if="existingVendorNote(row)?.kind === 'empty'" class="dbd-note">
                 {{ t('No vendor yet. It gets this delivery’s vendor when you save.') }}

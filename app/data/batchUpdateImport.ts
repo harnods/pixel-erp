@@ -163,7 +163,7 @@ export function validateBatchUpdateRows(rows: readonly BatchUpdateRow[]): Checke
       const cell = row[key].trim()
       const label = batchAttributeDef(key).label
       if (!selected.has(key)) {
-        errors.push(`This product does not use attribute ${label}`)
+        errors.push(`This product does not use Attribute ${label}`)
         continue
       }
       if (cell.toLowerCase() === NULL_WORD) {
@@ -192,7 +192,7 @@ export function validateBatchUpdateRows(rows: readonly BatchUpdateRow[]): Checke
         }
         case 'grade': {
           const grade = gradeByName(cell)
-          if (!grade) errors.push('Grade name not found')
+          if (!grade) errors.push('Grade Name not found')
           else if (grade.status !== 'active') errors.push('Grade is not active')
           else attributes[key] = grade.id
           break

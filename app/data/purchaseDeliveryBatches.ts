@@ -60,6 +60,11 @@ export function followDeliveryVendor(
 
 export interface VendorMismatch { sku: string; productName: string; batchNo: string; vendorName: string }
 
+/** PRD story 10 copy for rule 2, "Supplier" → "Vendor" (D2). Fill `{batchVendor}` and
+ *  `{deliveryVendor}` after translating. */
+export const VENDOR_MISMATCH_COPY =
+  'This batch is recorded with vendor {batchVendor}, while this transaction is from {deliveryVendor}. The vendor of the batch will not be changed.'
+
 /** Rule 2: existing batches on the delivery whose vendor isn't the delivery's. */
 export function deliveryVendorMismatches(lines: readonly DeliveryBatchLine[], vendorId: string): VendorMismatch[] {
   const out: VendorMismatch[] = []
