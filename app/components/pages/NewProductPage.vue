@@ -13,6 +13,10 @@ import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.v
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
+import { recommendedMinStock } from '~/data/replenishment'
+import { effectiveSettings, getSkuOverride, saveSkuOverride } from '~/data/replenishmentSettings'
+import { getReplenishmentConfig } from '~/data/replenishmentConfig'
+import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 
 const { t } = useLocale()
 
@@ -46,6 +50,14 @@ const photoDataUrl = ref('')
 // isn't rendered there and this stays true.
 const trackStock = ref(true)
 const minStock = ref('')
+/**
+ * Safety days is the number a person actually DECIDES (PRD §2.1): how much extra
+ * cover to carry beyond the vendor's lead time. Min. stock below is what that
+ * decision works out to — the PRD defines them as one quantity, "Reorder Point =
+ * MINIMUM STOCK THRESHOLD = avg daily demand × (lead time + safety days)" — so
+ * it is recommended rather than invented, and only overwritten deliberately.
+ */
+const safetyDays = ref('')
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
 
@@ -81,7 +93,44 @@ onMounted(() => {
   photoDataUrl.value = p.img
   purchaseCost.value = p.buyPrice ? String(p.buyPrice) : ''
   salesPrice.value = p.sellPrice ? String(p.sellPrice) : ''
+
+  // Only a SKU-level OVERRIDE prefills. Leaving the box empty is what makes the
+  // value inherited rather than pinned, so an inherited figure must show as the
+  // placeholder, never as text in the field.
+  const override = getSkuOverride(p.sku)
+  if (override.safetyDays !== undefined) safetyDays.value = String(override.safetyDays)
+  if (override.reorderPoint !== undefined) minStock.value = String(override.reorderPoint)
 })
+
+/**
+ * What the system would set min. stock to, recomputed live as safety days is
+ * typed. Null while there is no sales history to compute from — a brand-new
+ * product has none, and a fabricated floor is exactly what US-003 forbids.
+ */
+const recommendation = computed(() => {
+  const s = sku.value.trim()
+  if (!s) return null
+  const days = safetyDays.value === '' ? undefined : Number(safetyDays.value)
+  return recommendedMinStock(s, Number.isFinite(days!) ? days : undefined)
+})
+
+/** The safety days in force if the user sets none — category or company default. */
+const inheritedSafetyDays = computed(() => {
+  const s = sku.value.trim()
+  const cfg = getReplenishmentConfig()
+  if (!s) return cfg.safetyDaysGlobal
+  const wh = recommendation.value?.warehouseId
+  return wh ? effectiveSettings(s, wh, cfg).safetyDays : cfg.safetyDaysGlobal
+})
+
+const minStockIsOverridden = computed(() =>
+  minStock.value !== '' && Number(minStock.value) !== recommendation.value?.value,
+)
+
+function useRecommendedMinStock() {
+  const v = recommendation.value?.value
+  if (v !== null && v !== undefined) minStock.value = String(v)
+}
 
 // ── Options ────────────────────────────────────────────────────────────────────
 const categoryOptions = computed(() =>
@@ -316,6 +365,7 @@ function resetForm() {
   description.value = ''
   photoDataUrl.value = ''
   minStock.value = ''
+  safetyDays.value = ''
   trackStock.value = true
   trackStockBy.value = 'Quantity'
   doesBuy.value = true
@@ -328,6 +378,29 @@ function resetForm() {
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
 }
 
+/**
+ * Persist the two replenishment inputs at the SKU tier (US-011 VR-03 precedence:
+ * warehouse-SKU > SKU > category > global).
+ *
+ * An empty box means INHERIT, so it clears the override rather than storing a
+ * zero — storing 0 would pin the product to "no buffer" and quietly stop it ever
+ * being recommended. Min. stock is only stored when it actually differs from the
+ * recommendation; accepting the suggested figure leaves it calculated, so it
+ * keeps tracking demand instead of freezing at today's number.
+ */
+function saveReplenishmentInputs(savedSku: string) {
+  const safety = safetyDays.value.trim()
+  const min = minStock.value.trim()
+  const recommended = recommendation.value?.value ?? null
+
+  saveSkuOverride(savedSku, {
+    safetyDays: safety === '' ? undefined : Math.max(0, Number(safety)),
+    reorderPoint: min === '' || Number(min) === recommended
+      ? undefined
+      : Math.max(0, Number(min)),
+  })
+}
+
 async function save() {
   if (!validate()) return
 
@@ -338,16 +411,20 @@ async function save() {
 
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
+    saveReplenishmentInputs(payload.sku)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
-    // Seed (CATALOG) product — read-only master data, nothing to persist.
+    // Seed (CATALOG) product — its master fields are read-only, but replenishment
+    // settings are the tenant's own policy and DO persist, for seed products too.
+    saveReplenishmentInputs(props.orderId!)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
     // New product → whatever's in the field (free-typed or generated via the
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
+    saveReplenishmentInputs(created.sku)
     toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
@@ -555,12 +632,52 @@ onUnmounted(() => { footerObserver?.disconnect() })
                 <span>{{ t('I track stock for this product') }}</span>
               </label>
               <div v-if="isWms || trackStock" class="nw-row np-toggle-fields">
+                <!-- Safety days is the decision; min. stock is what it works out
+                     to. Ordering matters — the input comes before its result. -->
+                <MpFormControl id="np-safety-days" class="np-field-270">
+                  <MpFormLabel>{{ t('Safety days') }}</MpFormLabel>
+                  <div class="np-suffix-wrap">
+                    <input
+                      id="np-safety-days-input" v-model="safetyDays" class="np-suffix-input"
+                      type="text" inputmode="numeric" :placeholder="String(inheritedSafetyDays)"
+                    />
+                    <span class="np-suffix-chip">{{ t('days') }}</span>
+                  </div>
+                  <span class="np-field-hint">
+                    {{ t('Extra cover beyond the vendor lead time. Leave empty to inherit') }}
+                    {{ inheritedSafetyDays }} {{ t('days') }}.
+                  </span>
+                </MpFormControl>
+
                 <MpFormControl id="np-min-stock" class="np-field-270">
                   <MpFormLabel>{{ t('Min. stock') }}</MpFormLabel>
                   <div class="np-suffix-wrap">
-                    <input id="np-min-stock-input" v-model="minStock" class="np-suffix-input" type="text" inputmode="numeric" placeholder="0" />
+                    <input
+                      id="np-min-stock-input" v-model="minStock" class="np-suffix-input"
+                      type="text" inputmode="numeric"
+                      :placeholder="recommendation?.value !== null && recommendation?.value !== undefined ? String(recommendation.value) : '0'"
+                    />
                     <span class="np-suffix-chip">{{ unit || 'Pcs' }}</span>
                   </div>
+
+                  <!-- Says where the number came from, so overwriting it is an
+                       informed choice rather than a shot in the dark. -->
+                  <span v-if="recommendation && recommendation.value !== null" class="np-field-hint">
+                    {{ t('Recommended') }} {{ recommendation.value }} {{ unit || 'Pcs' }} —
+                    {{ recommendation.avgDailySales.toFixed(2) }}/{{ t('day') }} ×
+                    ({{ recommendation.leadTimeDays }} {{ t('days lead time') }} +
+                    {{ recommendation.safetyDays }} {{ t('safety') }})
+                    <template v-if="recommendation.warehouseCount > 1">
+                      · {{ t('covers') }} {{ recommendation.warehouseName }},
+                      {{ t('your busiest of') }} {{ recommendation.warehouseCount }}
+                    </template>
+                    <a v-if="minStockIsOverridden" class="np-field-link" @click="useRecommendedMinStock">
+                      {{ t('Use recommended') }}
+                    </a>
+                  </span>
+                  <span v-else class="np-field-hint">
+                    {{ t('Calculated from sales history once this product starts moving. Set a figure now if you already know it.') }}
+                  </span>
                 </MpFormControl>
                 <MpFormControl id="np-track-by" class="np-field-270" is-required>
                   <MpFormLabel>{{ t('Track stock by') }}</MpFormLabel>
@@ -833,6 +950,22 @@ onUnmounted(() => { footerObserver?.disconnect() })
 /* ── This page's own layout: Product info (564px) + Product photo (270px), 122px gap (Figma) ── */
 .np-layout { display: flex; gap: 122px; align-items: flex-start; width: 100%; }
 .np-photo-col { flex-shrink: 0; width: 270px; display: flex; flex-direction: column; }
+
+/* Field-level explanation: where a recommended number came from, and how to get
+   back to it after overwriting. Muted so it reads as support, not as an error. */
+.np-field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mp-text-subdued, #6b7280);
+}
+.np-field-link {
+  margin-left: 6px;
+  color: var(--mp-text-brand, #029861);
+  cursor: pointer;
+}
+.np-field-link:hover { text-decoration: underline; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
 

@@ -2028,6 +2028,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Max level': 'Level maksimum',
   'Missing': 'Belum lengkap',
   'Sales history': 'Riwayat penjualan',
+  // Product form — safety days is the input, min. stock is the recommendation.
+  'Extra cover beyond the vendor lead time. Leave empty to inherit':
+    'Cadangan tambahan di luar waktu tunggu vendor. Kosongkan untuk mengikuti',
+  'days lead time': 'hari waktu tunggu',
+  'safety': 'cadangan',
+  'covers': 'mencakup',
+  'your busiest of': 'gudang tersibuk dari',
+  'Use recommended': 'Pakai rekomendasi',
+  'Calculated from sales history once this product starts moving. Set a figure now if you already know it.':
+    'Dihitung dari riwayat penjualan setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
   'at PO': 'saat PO',
   'Pack of': 'Kelipatan',
   'Order up to max level': 'Pesan sampai level maksimum',
@@ -2054,6 +2064,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // ── Replenishment v2 — Purchase Request flow, coverage days, derived lead time.
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
   'Sales history': 'Riwayat penjualan',
+  // Product form — safety days is the input, min. stock is the recommendation.
+  'Extra cover beyond the vendor lead time. Leave empty to inherit':
+    'Cadangan tambahan di luar waktu tunggu vendor. Kosongkan untuk mengikuti',
+  'days lead time': 'hari waktu tunggu',
+  'safety': 'cadangan',
+  'covers': 'mencakup',
+  'your busiest of': 'gudang tersibuk dari',
+  'Use recommended': 'Pakai rekomendasi',
+  'Calculated from sales history once this product starts moving. Set a figure now if you already know it.':
+    'Dihitung dari riwayat penjualan setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
   'at PO': 'saat PO',
   'Pack of': 'Kelipatan',
   'Order up to max level': 'Pesan sampai level maksimum',

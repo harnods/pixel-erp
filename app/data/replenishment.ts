@@ -887,6 +887,99 @@ export function replenishmentWarehouses() {
   )
 }
 
+// ── SKU-level minimum stock recommendation (PRD §2.2 item 3, US-024 AC-03) ───
+
+export interface MinStockRecommendation {
+  /** null when there is no demand or lead-time basis yet — never a guess. */
+  value: number | null
+  avgDailySales: number
+  leadTimeDays: number
+  leadTimeTier: LeadTimeTier
+  safetyDays: number
+  /** The warehouse this figure came from — the one that would run out first. */
+  warehouseId: string
+  warehouseName: string
+  /** How many warehouses stock this SKU, so the UI can say the number varies. */
+  warehouseCount: number
+}
+
+/**
+ * The minimum stock the system RECOMMENDS for a product.
+ *
+ * The PRD is explicit that these are the same quantity, not two policies:
+ * "Reorder Point = MINIMUM STOCK THRESHOLD (units) = Average daily demand ×
+ * (Lead time + Safety days)". So min. stock is not a number a user should have to
+ * invent — safety days is the judgement call, and this is what that judgement
+ * works out to once the vendor's lead time and the product's real sales rate are
+ * taken into account. The user can still overwrite it (US-024 AC-03 keeps a
+ * SKU-level default that per-warehouse settings may override in turn).
+ *
+ * Grain. A reorder point is per item × warehouse, but a product form is per
+ * product, so this returns the SKU-level DEFAULT that warehouses inherit. It
+ * takes the HIGHEST per-warehouse figure rather than an average: a floor that is
+ * too low causes the stockout this feature exists to prevent, while one that is
+ * slightly high costs a little carrying stock in the quieter locations — and
+ * those locations can be tuned individually from the worklist.
+ *
+ * `safetyDaysOverride` lets a form recompute live as the user types, before
+ * anything is saved.
+ */
+export function recommendedMinStock(
+  sku: string,
+  safetyDaysOverride?: number,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+  asOf: string = REPL_ASOF_ISO,
+): MinStockRecommendation {
+  const vendorItem = preferredVendorItem(sku) ?? null
+  const derived = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
+
+  let best: MinStockRecommendation | null = null
+  let count = 0
+
+  for (const wh of replenishmentWarehouses()) {
+    if (!warehouseProducts(wh.id).some((p) => p.sku === sku)) continue
+    count++
+
+    const settings = effectiveSettings(sku, wh.id, cfg)
+    const velocity = velocityFor(sku, wh.id, cfg, asOf)
+    const safetyDays = safetyDaysOverride ?? settings.safetyDays
+    const leadTimeDays = settings.manualLeadTimeDays ?? derived.days ?? cfg.fallbackLeadTimeDays
+
+    // No demand basis means no reorder point — the same rule the worklist uses,
+    // so the form cannot show a number the engine would refuse to stand behind.
+    if (velocity.avgDailySales <= 0) continue
+
+    const value = Math.ceil(velocity.avgDailySales * (leadTimeDays + safetyDays))
+    if (!best || value > best.value!) {
+      best = {
+        value,
+        avgDailySales: velocity.avgDailySales,
+        leadTimeDays,
+        leadTimeTier: settings.manualLeadTimeDays !== null ? 'manual' : derived.tier,
+        safetyDays,
+        warehouseId: wh.id,
+        warehouseName: wh.name,
+        warehouseCount: 0,
+      }
+    }
+  }
+
+  if (best) return { ...best, warehouseCount: count }
+
+  // Nothing to compute from yet — a brand-new product, or one that has never
+  // moved. Report that honestly rather than inventing a floor (US-003 CON-02).
+  return {
+    value: null,
+    avgDailySales: 0,
+    leadTimeDays: derived.days ?? cfg.fallbackLeadTimeDays,
+    leadTimeTier: derived.tier,
+    safetyDays: safetyDaysOverride ?? cfg.safetyDaysGlobal,
+    warehouseId: '',
+    warehouseName: '',
+    warehouseCount: count,
+  }
+}
+
 /**
  * Build the worklist for one warehouse, or all of them.
  *
