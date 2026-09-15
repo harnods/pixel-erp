@@ -353,6 +353,11 @@ function prefillFromInvoice() {
     qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct,
     taxLabel: it.taxLabel,
     productError: false, qtyError: false,
+    // Both are objects the form reads unguarded (validate() writes into
+    // dimensionErrors, hasLineItemErrors does Object.values on it), so a
+    // prefilled row has to carry them exactly like a blank row does.
+    dimensions: { ...(it.dimensions ?? {}) },
+    dimensionErrors: {},
   }))
   // The invoice stores a resolved rupiah discount, not the %/Rp the form was
   // originally filled with — round-trip it as Rp so the number stays exact.
@@ -427,6 +432,10 @@ function editedLineItems(): SILineItem[] {
     product: it.product, sku: it.sku, description: it.description,
     qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct,
     amount: lineAmount(it), taxLabel: it.taxLabel,
+    // Carried, not rebuilt — omitting it here would silently strip every line's
+    // dimension tags on save. They're internal analytics tags, so they never
+    // reach the faktur and never register as a tax change.
+    dimensions: { ...it.dimensions },
   }))
 }
 
