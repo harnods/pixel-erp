@@ -29,8 +29,10 @@ column; `overflow: hidden`) with plain `<header>` / `.body` / `<footer>` inside.
 Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
 `transform: translateX(calc(100% + 12px))` on enter/leave. Footer uses the
 `btn-enterprise--{ghost,primary}` classes: **ghost Cancel + primary Save**
-(`rule/btn-cancel-ghost`). A drawer that is a **form** ignores overlay clicks
-(close only via ×/Cancel/Esc) so in-progress input is never lost.
+(`rule/btn-cancel-ghost`). **Every** drawer — form or not — ignores overlay clicks
+and has no Esc-to-close listener; close is × only
+(`rule/modal-drawer-close-explicit-only`), so in-progress input or context is
+never lost to a stray click or keypress.
 
 ```vue
 <template>

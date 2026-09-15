@@ -347,9 +347,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     />
 
     <!-- Cancel warehouse transfer -->
-    <MpModal
-      id="wtd-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="wtd-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel warehouse transfer?') }}<MpModalCloseButton /></MpModalHeader>

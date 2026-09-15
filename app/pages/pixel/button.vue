@@ -152,7 +152,7 @@ function save() { /* … persist … */ successToast('Product saved') }">
   </MpModalContent>
 </MpModal>">
       <MpButton variant="danger" is-rounded @click="confirmOpen = true">Delete</MpButton>
-      <MpModal id="px-btn-confirm" :is-open="confirmOpen" size="md" @close="confirmOpen = false">
+      <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="px-btn-confirm" :is-open="confirmOpen" size="md" @close="confirmOpen = false">
         <MpModalContent>
           <MpModalHeader>Delete product?<MpModalCloseButton /></MpModalHeader>
           <MpModalBody>Deleted product cannot be restored.</MpModalBody>

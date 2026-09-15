@@ -133,13 +133,12 @@ function saveBudget() {
   </ErpTablePage>
 
   <!-- ── New budget drawer ── -->
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="xpm-budget-drawer"
     :is-open="showBudgetDrawer"
     placement="right"
     size="lg"
     variant="floating"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBudget"
   >

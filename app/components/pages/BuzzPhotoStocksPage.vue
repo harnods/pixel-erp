@@ -187,7 +187,7 @@ function onDropMain(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault
     <!-- ── Photo preview modal ── -->
     <Teleport to="body">
       <Transition name="pv">
-        <div v-if="preview" class="pv-overlay" @click.self="preview = null">
+        <div v-if="preview" class="pv-overlay">
           <div class="pv-panel" role="dialog" aria-modal="true">
             <button class="pv-close" type="button" aria-label="Close" @click="preview = null"><MpIcon name="close" size="md" /></button>
             <div class="pv-imgwrap">

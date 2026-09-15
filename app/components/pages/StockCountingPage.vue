@@ -1012,11 +1012,10 @@ onUnmounted(() => {
   </div>
 
   <!-- ── Finish counting confirmation ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="sco-confirm"
     :is-open="showConfirm"
     size="md"
-    is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
   >
@@ -1048,7 +1047,7 @@ onUnmounted(() => {
 
   <!-- ── Add location drawer ── -->
   <Transition name="sc-loc-drw">
-    <div v-if="locDrawerOpen" class="loc-drw-overlay" @click.self="locDrawerOpen = false">
+    <div v-if="locDrawerOpen" class="loc-drw-overlay">
       <div class="loc-drw-panel" role="dialog" :aria-label="t('Add location')">
         <div class="loc-drw-header">
           <span class="loc-drw-title">{{ t('Add location') }}</span>

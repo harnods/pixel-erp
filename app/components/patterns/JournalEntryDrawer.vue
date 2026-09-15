@@ -24,12 +24,10 @@ function close() { emit('update:isOpen', false) }
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="journal-entry-modal"
     :is-open="isOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >

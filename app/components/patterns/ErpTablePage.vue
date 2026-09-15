@@ -111,6 +111,12 @@ const props = withDefaults(defineProps<{
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
   stickyActions?: boolean
+  /** Keep the actions kebab top-aligned on tall (multi-line) rows instead of the
+   *  default vertical-centering — use when a column can wrap to many lines (e.g.
+   *  a long tag list), where a centered kebab drifts far from the row's first
+   *  line. Off by default (see DimensionsIndexPage.vue for the one table that
+   *  opts in). */
+  actionsAlignTop?: boolean
   /** Remove the row hover background. Use for a purely read-only table that has NO
    *  row [...] actions and no clickable row — nothing to hover-target, so the grey
    *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
@@ -133,6 +139,7 @@ const props = withDefaults(defineProps<{
   filterEmptyLabel: undefined,
   lastColumnFlexible: false,
   stickyActions: true,
+  actionsAlignTop: false,
 })
 
 const emit = defineEmits<{
@@ -441,10 +448,15 @@ const spacerBeforeIndex = computed(() => {
   const i = props.columns.findIndex(c => c.isTrailingAction)
   return i === -1 ? props.columns.length : i
 })
+// Whether ANY action column sits flush right — the sticky [...] actions slot OR a
+// trailing-action column (e.g. a "View details" button). Either way we insert the
+// single flexible spacer so the action column is always pushed to the far right.
+const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAction))
+const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
 
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 2 : 0) +   // actions column + its flexible spacer
+  (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
   (props.hasAiChat ? 1 : 0)
 )
 
@@ -477,7 +489,7 @@ const bulkCountLabel = computed(() => {
     <div
       ref="tableWrapperEl"
       class="erp-table-wrapper"
-      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
       :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
@@ -492,7 +504,7 @@ const bulkCountLabel = computed(() => {
                placed before the first trailing-action column (spacerBeforeIndex), else
                right before the actions slot. -->
           <template v-for="(col, ci) in columns" :key="col.key">
-            <col v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-col-spacer" />
+            <col v-if="showSpacer && ci === spacerBeforeIndex" class="erp-col-spacer" />
             <col :style="colStyle(col)" />
           </template>
           <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
@@ -537,7 +549,7 @@ const bulkCountLabel = computed(() => {
           <!-- Normal column headers -->
           <tr v-else>
             <template v-for="(col, ci) in columns" :key="col.key">
-            <th v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
+            <th v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
             <th
               class="erp-th"
               :class="{
@@ -638,7 +650,7 @@ const bulkCountLabel = computed(() => {
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
               <template v-for="(col, ci) in columns" :key="col.key">
-              <td v-if="$slots.actions && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
                 class="erp-td"
                 :class="{
@@ -708,7 +720,7 @@ const bulkCountLabel = computed(() => {
           <template v-if="showSkeleton">
             <tr v-for="n in 3" :key="`sk-${n}`" class="erp-tr erp-tr--skeleton">
               <template v-for="(col, ci) in columns" :key="col.key">
-              <td v-if="$slots.actions && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
                 class="erp-td"
                 :class="{
@@ -861,15 +873,15 @@ const bulkCountLabel = computed(() => {
   height: 10px;
 }
 .erp-table-wrapper::-webkit-scrollbar-track {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .erp-table-wrapper::-webkit-scrollbar-thumb {
-  background: var(--mp-border-bold);
+  background: var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-full, 999px);
-  border: 2px solid var(--mp-background-neutral-subtle);
+  border: 2px solid var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .erp-table-wrapper::-webkit-scrollbar-thumb:hover {
-  background: var(--mp-text-subtle);
+  background: var(--mp-text-subtle, #656f80);
 }
 
 /* ─── Table base ──────────────────────────────────────────────────────────── */
@@ -901,7 +913,7 @@ const bulkCountLabel = computed(() => {
 
 /*
  * Figma spec → Pixel 3 2.4 Enterprise mapping:
- *   background : var(--mp-background-neutral-subtle)
+ *   background : var(--mp-background-neutral-subtle, #f8f9f9)
  *   height     : var(--mp-sizes-7)         (28px)
  *   padding    : var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2)
  *   font       : var(--mp-font-sizes-sm) / var(--mp-font-weights-semi-bold), uppercase
@@ -923,14 +935,14 @@ const bulkCountLabel = computed(() => {
   overflow: hidden;
   line-height: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal;
   text-transform: uppercase;
   letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   text-align: left;
   white-space: nowrap;
   user-select: none;
@@ -990,7 +1002,7 @@ const bulkCountLabel = computed(() => {
   display: inline-block;        /* honour the cell's text-align (right/center cols) */
   vertical-align: middle;
   background-image: none !important;
-  background-color: var(--mp-border-default) !important;
+  background-color: var(--mp-border-default, #e3e7e9) !important;
   animation: none !important;
 }
 
@@ -999,7 +1011,7 @@ const bulkCountLabel = computed(() => {
   cursor: pointer;
 }
 .erp-th--sortable:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
 /* Sticky right column — shift by 28px when AI column is present */
@@ -1050,7 +1062,7 @@ const bulkCountLabel = computed(() => {
   width: var(--mp-sizes-7);
   min-width: var(--mp-sizes-7);
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
 /* Sort arrows */
@@ -1075,13 +1087,13 @@ const bulkCountLabel = computed(() => {
 }
 .erp-th:hover .erp-sort-btn,
 .erp-sort-btn--active { visibility: visible; }
-.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered); }
+.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .erp-sort-btn--active { color: var(--mp-text-selected, var(--mp-text-default)); }
 /* popover option row: icon + label */
 .erp-sort-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); text-transform: none; width: 100%; }
 .erp-sort-check-tt { margin-left: auto; display: inline-flex; }
 .erp-sort-check { color: var(--mp-text-selected); }
-.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default, #e3e7e9); }
 
 .sort-arrows {
   display: inline-flex;
@@ -1107,17 +1119,17 @@ const bulkCountLabel = computed(() => {
  */
 
 .erp-tr {
-  background: var(--mp-background-neutral);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .erp-tr:hover .erp-td {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
 }
 /* Read-only tables with no row actions opt out of the hover highlight
    (rule/table-no-hover-no-actions). !important so it always beats the base
    .erp-tr:hover .erp-td rule regardless of scoped-selector specificity/order. */
 .erp-table-page--no-row-hover .erp-tr:hover .erp-td {
-  background: var(--mp-background-neutral) !important;
+  background: var(--mp-background-neutral, #ffffff) !important;
 }
 .erp-table-page--no-row-hover .erp-tr { cursor: default; }
 
@@ -1140,6 +1152,9 @@ const bulkCountLabel = computed(() => {
 .erp-tr--align-top .erp-td {
   vertical-align: top;
 }
+/* The actions cell always top-aligns regardless of row height (see
+   `.erp-td--actions` below) — the old opt-in `actionsAlignTop`/`.actions-align-top`
+   override is now a no-op since top-align became the unconditional default. */
 
 /* Right-aligned cells — flip padding */
 .erp-td--right {
@@ -1163,7 +1178,7 @@ const bulkCountLabel = computed(() => {
 /* Sticky separator border only when the table actually overflows horizontally */
 .erp-table-wrapper.is-overflowing .erp-th--fixed,
 .erp-table-wrapper.is-overflowing .erp-td--fixed {
-  box-shadow: inset 1px 0 0 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 0 0 var(--mp-border-default, #e3e7e9);
 }
 .has-ai .erp-td--fixed {
   right: var(--mp-sizes-7);
@@ -1242,8 +1257,8 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   gap: var(--mp-spacing-2);
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-2xl, 24px);
   box-shadow: var(--mp-shadows-lg);
 }
@@ -1346,7 +1361,7 @@ const bulkCountLabel = computed(() => {
 /* ── Bulk selection bar ──────────────────────────────────────────────────────── */
 .erp-tr-bulk .erp-th--bulk {
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   text-transform: none;
   letter-spacing: normal;
   font-weight: var(--mp-font-weights-regular);
@@ -1397,8 +1412,8 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   justify-content: center;
   padding: 0 var(--mp-spacing-1);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-sm);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);

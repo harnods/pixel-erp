@@ -12,13 +12,15 @@
  * `.detail-stage`, mirroring the Teams page so every Settings surface matches.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import {
+  MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS } from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -26,6 +28,8 @@ const router = useRouter()
 
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
+// "+ New module" is its own page (/crm/settings/modules/new) — not a modal.
+function openNewModule() { router.push('/crm/settings/modules/new') }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 // The Modules index lists EVERY module — the Deals system module (edited via its
@@ -33,6 +37,9 @@ type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 const rows = computed<ModuleRow[]>(() =>
   crmModules.map((m) => ({
     ...m,
+    // Generic custom modules (any id besides the hand-built 'deals'/'services')
+    // keep their own live record count instead of the static seeded field.
+    recordCount: (!m.system && m.id !== 'services') ? genericRecordsFor(m.id).length : m.recordCount,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
   })),
@@ -91,7 +98,7 @@ watch(statusFilter, () => setPage(1))
         </div>
       </div>
       <div class="cd-bar-actions">
-        <MpButton variant="primary" is-rounded left-icon="add" @click="soon(t('New module'))">{{ t('New module') }}</MpButton>
+        <MpButton variant="primary" is-rounded left-icon="add" @click="openNewModule">{{ t('New module') }}</MpButton>
       </div>
     </header>
 
@@ -136,10 +143,15 @@ watch(statusFilter, () => setPage(1))
           </div>
         </template>
 
-        <!-- Module name + system/custom caption -->
+        <!-- Module name + system/custom caption. Only the admin (workspace owner)
+             and the module's own creator can open it — everyone else sees plain text. -->
         <template #cell-name="{ row }">
           <div class="cru-name">
-            <span class="cell-link cell-text" @click.stop="manage(row as unknown as ModuleRow)">{{ (row as unknown as ModuleRow).name }}</span>
+            <span
+              v-if="canEditModule(row as unknown as ModuleRow)" class="cell-link cell-text"
+              @click.stop="manage(row as unknown as ModuleRow)"
+            >{{ (row as unknown as ModuleRow).name }}</span>
+            <span v-else class="cell-text">{{ (row as unknown as ModuleRow).name }}</span>
             <span class="cru-email">{{ (row as unknown as ModuleRow).system ? t('System module') : t('Custom module') }}</span>
           </div>
         </template>
@@ -165,7 +177,7 @@ watch(statusFilter, () => setPage(1))
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="manage(row as unknown as ModuleRow)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEditModule(row as unknown as ModuleRow)" @click="manage(row as unknown as ModuleRow)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="!(row as unknown as ModuleRow).system" @click="soon(t('Delete module'))">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
@@ -177,6 +189,7 @@ watch(statusFilter, () => setPage(1))
 </template>
 
 <style scoped>
+
 /* Shell — mirrors CrmSettingsPage's Teams surface exactly. */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }

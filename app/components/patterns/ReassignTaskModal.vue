@@ -74,9 +74,8 @@ function save() {
 </script>
 
 <template>
-  <MpModal
-    id="wms-reassign-task" :is-open="open" size="sm"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="close"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="wms-reassign-task" :is-open="open" size="sm" :is-keep-alive="false" @close="close"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Change assignee') }}<MpModalCloseButton /></MpModalHeader>

@@ -802,9 +802,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation ── -->
-  <MpModal
-    id="sa-cancel" :is-open="cancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="sa-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ cancelIds.length > 1 ? cancelIds.length + ' ' + t('stock adjustments') : t('stock adjustment') }}?<MpModalCloseButton /></MpModalHeader>
@@ -822,9 +821,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Close task confirmation (Cycle counts) ── -->
-  <MpModal
-    id="sa-close" :is-open="closeOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="sa-close" :is-open="closeOpen" size="md" :is-keep-alive="false" @close="closeOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ closeIds.length > 1 ? `${t('Close')} ${closeIds.length} ${t('count tasks')}?` : t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>

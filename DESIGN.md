@@ -79,12 +79,16 @@ Use these directly from `@mekari/pixel3`:
 |-----------|-------|
 | `MpBadge` | Status and tag badges |
 | `MpInput`, `MpInputGroup`, `MpInputLeftAddon` | Search input |
-| `MpSelect` | Dropdown filter |
 | `MpButton` | Action buttons |
 | `MpCheckbox` | Row selection |
 | `MpIcon` | Icons |
 
 > **`MpTable` is not used.** The Enterprise variant does not match the ERP Figma design. Use `ErpTablePage` instead.
+
+> **`MpSelect` is banned repo-wide, no exceptions** (`rule/select-erpfilterselect`
+> in `docs/design/RULES.md`) — it renders a native OS `<select>`, which clips in
+> scroll containers and is off-system. Every dropdown/filter uses `ErpFilterSelect`
+> (an `MpPopover` menu, clearable).
 
 ### Buttons
 
@@ -192,7 +196,7 @@ new Intl.DateTimeFormat('id-ID', {
 >
   <template #filters>
     <MpInputGroup id="search">...</MpInputGroup>
-    <MpSelect id="filter">...</MpSelect>
+    <ErpFilterSelect id="filter">...</ErpFilterSelect>
     <MpButton variant="primary" style="margin-left: auto">Create</MpButton>
   </template>
 

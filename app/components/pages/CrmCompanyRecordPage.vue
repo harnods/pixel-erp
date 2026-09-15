@@ -94,7 +94,7 @@ const dealColumns: TableColumn[] = [
   { key: 'name',    label: 'Deal name',       kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'contact', label: 'Primary contact', kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'stage',   label: 'Stage',           kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'owner',   label: 'Deal owner',      kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'owner',   label: 'Owner',      kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'value',   label: 'Value',           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'updated', label: 'Last updated',    kind: 'date' },
 ]
@@ -112,7 +112,7 @@ const dealFiltersOpen = ref(false)
 const dealOwnerOptions = [...CRM_OWNERS]
 // On a company's Deals tab, the "customer" facet is filtered by Contact person.
 const dealContactOptions = computed(() => [...new Set(contacts.value.map((c) => c.name))])
-const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Deal owner' }]
+const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Owner' }]
 function applyDealFilters(v: CrmDealsFiltersValue) { Object.assign(dealFilters, v); dealFiltersOpen.value = false }
 const dealFilterCount = computed(() => {
   const f = dealFilters

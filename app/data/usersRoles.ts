@@ -34,6 +34,18 @@ export interface SystemRole {
    * they created themselves. Only meaningful once the role is ticked.
    */
   accessLimitation?: string
+  /**
+   * Optional "Full access" checkbox — the inverse shape of accessLimitation:
+   * unchecked (default) scopes the role to its own records; checking it elevates
+   * the user to see/manage everyone's data within the module (a module-level
+   * administrator). Only meaningful once the role is ticked.
+   */
+  fullAccessOption?: string
+  /**
+   * The permission bullets shown when fullAccessOption is CHECKED — replaces
+   * `permissions` (the default/restricted set) for as long as it's ticked.
+   */
+  fullAccessPermissions?: string[]
   /** Owner/Ultimate can't be time-limited (see ACCESS_TIME_LIMIT_NOTE). */
   supportsTimeLimit: boolean
   /**
@@ -189,6 +201,26 @@ export const SYSTEM_ROLES: SystemRole[] = [
     accessLimitation: 'Restrict this user to warehouses they are assigned to',
     supportsTimeLimit: true,
   },
+  {
+    id: 'crm',
+    name: 'CRM',
+    permissions: [
+      'View and create deals, contacts, and companies assigned to you.',
+      'View and manage the pipeline for your own deals, including changing stage.',
+      'View pages of customer contacts, products, and other lists.',
+      'Edit and delete your own deals, contacts, and companies if ticking List manager.',
+    ],
+    fullAccessOption: 'Full access to all CRM data and settings (CRM Administrator)',
+    fullAccessPermissions: [
+      'View and create all CRM deals, contacts, and companies.',
+      'View and manage the entire deal pipeline, including changing stage and owner.',
+      'View CRM reports.',
+      'Manage CRM settings: create custom modules, set user permissions, and create teams.',
+      'Edit and delete any deals, contacts, and companies if ticking List manager.',
+    ],
+    accessLimitation: 'Restrict this user to deals they are assigned to',
+    supportsTimeLimit: true,
+  },
 ]
 
 export function getSystemRole(id: string): SystemRole | undefined {
@@ -248,108 +280,230 @@ export type AuthorityAction = 'view' | 'create' | 'edit' | 'delete'
 
 export const AUTHORITY_ACTIONS: { value: AuthorityAction; label: string }[] = [
   { value: 'view', label: 'View' },
-  { value: 'create', label: 'Create/Add' },
+  { value: 'create', label: 'Create' },
   { value: 'edit', label: 'Edit' },
   { value: 'delete', label: 'Delete' },
 ]
 
+/** The "Feature" quick-filter categories — Figma "Drawer / Custom Role / Add",
+ *  plus CRM appended after Settings (not part of the original Figma scope). */
+export type AuthorityCategory =
+  | 'accounting' | 'sales' | 'purchases' | 'expenses' | 'contacts'
+  | 'inventory' | 'warehouses' | 'reports' | 'settings' | 'crm'
+
+export const AUTHORITY_CATEGORIES: { value: AuthorityCategory; label: string }[] = [
+  { value: 'accounting', label: 'Accounting' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'purchases', label: 'Purchases' },
+  { value: 'expenses', label: 'Expenses' },
+  { value: 'contacts', label: 'Contacts' },
+  { value: 'inventory', label: 'Inventory' },
+  { value: 'warehouses', label: 'Warehouses' },
+  { value: 'reports', label: 'Reports' },
+  { value: 'settings', label: 'Settings' },
+  { value: 'crm', label: 'CRM' },
+]
+
+/** Level 3 — a leaf under a level-2 row (e.g. Settings ▸ Sales ▸ General settings ▸ Sales quote). */
+export interface AuthorityChild { id: string; label: string }
+
+/** Level 2 — a leaf row, or (rarely) its own expandable group of level-3 children. */
+export interface AuthoritySubfeature {
+  id: string
+  label: string
+  children?: AuthorityChild[]
+}
+
+/** Level 1 — a row in the permission table; expandable when it has subfeatures. */
 export interface AuthorityFeature {
   id: string
   label: string
-  /** Sub-features get their own permission row; a feature with none is one row. */
-  subfeatures: { id: string; label: string }[]
+  category: AuthorityCategory
+  subfeatures: AuthoritySubfeature[]
   /** Report-style features are view-only — their create/edit/delete cells are omitted. */
   viewOnly?: boolean
   /**
-   * Feature only exists for tenants that bought the Project Accounting billing
-   * component — the same gate the Approval workflows "Applies to: Project
-   * Action" condition uses (useApprovalWorkflowScenario). Gated features are
-   * omitted from the matrix entirely, not shown-disabled: a tenant without the
-   * component can't grant authority over a module they don't have.
+   * Override the default action set (view/create/edit/delete) with an explicit
+   * list — e.g. the CRM module-access row only uses view ("has access") and
+   * edit ("is Administrator"); create/delete don't apply and are hidden.
    */
-  requiresProjectAccounting?: boolean
+  actions?: AuthorityAction[]
 }
 
-/** Mirrors the ERP sidebar, not Jurnal's module list. */
+/** The full permission matrix — verbatim from Figma "Drawer / Custom Role / Add"
+ *  (kbjbVaG7fw9Jzv2jX1zBDf, node 4426:29058), grouped by the Feature filter's
+ *  9 categories in the same order as the filter dropdown. */
 export const AUTHORITY_FEATURES: AuthorityFeature[] = [
+  // ── Accounting ──
   {
-    id: 'cash-and-bank',
-    label: 'Cash & bank',
+    id: 'acc-cash-management', label: 'Cash management', category: 'accounting',
     subfeatures: [
-      { id: 'bank-transfer', label: 'Bank transfer' },
-      { id: 'bank-deposit', label: 'Bank deposit' },
-      { id: 'bank-withdrawal', label: 'Bank withdrawal' },
-      { id: 'reconciliation', label: 'Reconciliation' },
+      { id: 'transfer-money', label: 'Transfer money' },
+      { id: 'receive-money', label: 'Receive money' },
+      { id: 'spend-money', label: 'Spend money' },
+    ],
+  },
+  { id: 'acc-reconciliations', label: 'Reconciliations', category: 'accounting', subfeatures: [] },
+  {
+    id: 'acc-consolidation', label: 'Consolidation', category: 'accounting',
+    subfeatures: [
+      { id: 'consolidations', label: 'Consolidations' },
+      { id: 'business-units', label: 'Business units' },
+      { id: 'consolidation-accounts', label: 'Consolidation accounts' },
+      { id: 'elimination-rules', label: 'Elimination rules' },
+    ],
+  },
+  { id: 'acc-chart-of-accounts', label: 'Chart of accounts', category: 'accounting', subfeatures: [] },
+  { id: 'acc-close-books', label: 'Close books', category: 'accounting', subfeatures: [] },
+  { id: 'acc-fixed-assets', label: 'Fixed assets', category: 'accounting', subfeatures: [] },
+
+  // ── Sales ──
+  { id: 'sales-quotes', label: 'Sales quotes', category: 'sales', subfeatures: [] },
+  { id: 'sales-orders', label: 'Sales orders', category: 'sales', subfeatures: [] },
+  { id: 'sales-deliveries', label: 'Sales deliveries', category: 'sales', subfeatures: [] },
+  { id: 'sales-invoices', label: 'Sales invoices', category: 'sales', subfeatures: [] },
+  { id: 'sales-return', label: 'Sales return', category: 'sales', subfeatures: [] },
+  { id: 'sales-payment-terms-info', label: 'Payment terms information', category: 'sales', subfeatures: [] },
+
+  // ── Purchases ──
+  { id: 'purch-requests', label: 'Purchase requests', category: 'purchases', subfeatures: [] },
+  { id: 'purch-quotes', label: 'Purchase quotes', category: 'purchases', subfeatures: [] },
+  { id: 'purch-orders', label: 'Purchase orders', category: 'purchases', subfeatures: [] },
+  { id: 'purch-receipts', label: 'Purchase receipts', category: 'purchases', subfeatures: [] },
+  { id: 'purch-deliveries', label: 'Purchase deliveries', category: 'purchases', subfeatures: [] },
+  { id: 'purch-invoices', label: 'Purchase invoices', category: 'purchases', subfeatures: [] },
+  { id: 'purch-returns', label: 'Purchase returns', category: 'purchases', subfeatures: [] },
+  { id: 'purch-payments', label: 'Purchase payments', category: 'purchases', subfeatures: [] },
+  { id: 'purch-payment-terms-info', label: 'Payment terms information', category: 'purchases', subfeatures: [] },
+
+  // ── Expenses ──
+  { id: 'exp-expenses', label: 'Expenses', category: 'expenses', subfeatures: [] },
+  { id: 'exp-pay-bills', label: 'Pay bills', category: 'expenses', subfeatures: [] },
+
+  // ── Contacts ──
+  {
+    id: 'contacts-customers', label: 'Customers', category: 'contacts',
+    subfeatures: [
+      { id: 'customers', label: 'Customers' },
+      { id: 'contact-groups', label: 'Contact groups' },
     ],
   },
   {
-    id: 'sales',
-    label: 'Sales',
+    id: 'contacts-vendors', label: 'Vendors', category: 'contacts',
     subfeatures: [
-      { id: 'sales-quote', label: 'Sales quote' },
-      { id: 'sales-order', label: 'Sales order' },
-      { id: 'sales-invoice', label: 'Sales invoice' },
-      { id: 'sales-payment', label: 'Sales payment' },
-      { id: 'credit-memo', label: 'Credit memo' },
+      { id: 'vendors', label: 'Vendors' },
+      { id: 'contact-groups', label: 'Contact groups' },
     ],
   },
   {
-    id: 'purchases',
-    label: 'Purchases',
+    id: 'contacts-employees', label: 'Employees', category: 'contacts',
     subfeatures: [
-      { id: 'purchase-request', label: 'Purchase request' },
-      { id: 'purchase-order', label: 'Purchase order' },
-      { id: 'purchase-invoice', label: 'Purchase invoice' },
-      { id: 'purchase-payment', label: 'Purchase payment' },
-    ],
-  },
-  { id: 'expenses', label: 'Expenses', subfeatures: [] },
-  {
-    id: 'product',
-    label: 'Product',
-    subfeatures: [
-      { id: 'product-list', label: 'Product list' },
-      { id: 'stock-adjustment', label: 'Stock adjustment' },
-      { id: 'warehouse-transfer', label: 'Warehouse transfer' },
+      { id: 'employees', label: 'Employees' },
+      { id: 'contact-groups', label: 'Contact groups' },
     ],
   },
   {
-    id: 'warehouse',
-    label: 'Warehouse',
+    id: 'contacts-others', label: 'Others', category: 'contacts',
     subfeatures: [
-      { id: 'inbound-delivery', label: 'Inbound delivery' },
-      { id: 'outbound-delivery', label: 'Outbound delivery' },
-      { id: 'cycle-count', label: 'Cycle count' },
+      { id: 'employees', label: 'Employees' },
+      { id: 'contact-groups', label: 'Contact groups' },
+    ],
+  },
+
+  // ── Inventory ──
+  { id: 'inv-products', label: 'Products', category: 'inventory', subfeatures: [] },
+
+  // ── Warehouses ──
+  { id: 'wh-warehouses', label: 'Warehouses', category: 'warehouses', subfeatures: [] },
+  { id: 'wh-stock-adjustments', label: 'Stock adjustments', category: 'warehouses', subfeatures: [] },
+  { id: 'wh-fulfillments', label: 'Fulfillments', category: 'warehouses', subfeatures: [] },
+
+  // ── Reports (view-only) ──
+  { id: 'rep-financial', label: 'Financial reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-sales', label: 'Sales reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-purchase', label: 'Purchase reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-inventory', label: 'Inventory reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-asset', label: 'Asset reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-bank', label: 'Bank reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-tax', label: 'Tax reports', category: 'reports', subfeatures: [], viewOnly: true },
+  { id: 'rep-production', label: 'Production reports', category: 'reports', subfeatures: [], viewOnly: true },
+
+  // ── Settings ──
+  { id: 'set-company-profile', label: 'Company profile', category: 'settings', subfeatures: [] },
+  { id: 'set-billing', label: 'Billing', category: 'settings', subfeatures: [] },
+  {
+    id: 'set-users-roles', label: 'Users & roles', category: 'settings',
+    subfeatures: [
+      { id: 'users', label: 'Users' },
+      { id: 'custom-roles', label: 'Custom roles' },
     ],
   },
   {
-    id: 'production',
-    label: 'Production',
+    id: 'set-sales', label: 'Sales', category: 'settings',
     subfeatures: [
-      { id: 'work-order', label: 'Work order' },
-      { id: 'bill-of-materials', label: 'Bill of materials' },
+      { id: 'general-settings', label: 'General settings' },
+      { id: 'invoice-reminder', label: 'Invoice reminder' },
+      {
+        id: 'email-template', label: 'Email template',
+        children: [
+          { id: 'sales-quote', label: 'Sales quote' },
+          { id: 'sales-order', label: 'Sales order' },
+          { id: 'sales-invoice', label: 'Sales invoice' },
+          { id: 'delivery-note', label: 'Delivery note' },
+          { id: 'receipt', label: 'Receipt' },
+        ],
+      },
+      {
+        id: 'whatsapp-template', label: 'WhatsApp template',
+        children: [
+          { id: 'sales-invoice', label: 'Sales invoice' },
+          { id: 'sales-order', label: 'Sales order' },
+        ],
+      },
+      { id: 'document-layout-branding', label: 'Document layout & branding' },
     ],
   },
   {
-    id: 'project-accounting',
-    label: 'Project Accounting',
-    requiresProjectAccounting: true,
+    id: 'set-purchases', label: 'Purchases', category: 'settings',
     subfeatures: [
-      { id: 'project-setup', label: 'Project setup' },
-      { id: 'cost-tracking', label: 'Cost tracking' },
-      { id: 'recognition-and-billing', label: 'Recognition and billing' },
-      { id: 'change-management', label: 'Change management' },
-      { id: 'project-health', label: 'Project health' },
+      { id: 'general-settings', label: 'General settings' },
+      {
+        id: 'email-template', label: 'Email template',
+        children: [
+          { id: 'purchase-orders', label: 'Purchase orders' },
+          { id: 'purchase-invoices', label: 'Purchase invoices' },
+        ],
+      },
     ],
   },
-  { id: 'contacts', label: 'Contacts', subfeatures: [] },
-  { id: 'business-overview-report', label: 'Business overview report', subfeatures: [], viewOnly: true },
-  { id: 'sales-report', label: 'Sales report', subfeatures: [], viewOnly: true },
-  { id: 'purchases-report', label: 'Purchases report', subfeatures: [], viewOnly: true },
-  { id: 'product-report', label: 'Product report', subfeatures: [], viewOnly: true },
-  { id: 'warehouse-report', label: 'Warehouse report', subfeatures: [], viewOnly: true },
-  { id: 'bank-report', label: 'Bank report', subfeatures: [], viewOnly: true },
-  { id: 'tax-report', label: 'Tax report', subfeatures: [], viewOnly: true },
+  {
+    id: 'set-inventory', label: 'Inventory', category: 'settings',
+    subfeatures: [
+      { id: 'product-settings', label: 'Product settings' },
+      { id: 'batch-reminders', label: 'Batch reminders' },
+      { id: 'warehouse-settings', label: 'Warehouse settings' },
+    ],
+  },
+  { id: 'set-production', label: 'Production', category: 'settings', subfeatures: [] },
+  { id: 'set-default-accounts', label: 'Default accounts', category: 'settings', subfeatures: [] },
+  { id: 'set-approval-workflow', label: 'Approval workflow', category: 'settings', subfeatures: [] },
+  { id: 'set-tagging-rules', label: 'Tagging rules', category: 'settings', subfeatures: [] },
+  { id: 'set-tax-rates', label: 'Tax rates', category: 'settings', subfeatures: [] },
+  { id: 'set-currencies', label: 'Currencies', category: 'settings', subfeatures: [] },
+  { id: 'set-payment-terms', label: 'Payment terms', category: 'settings', subfeatures: [] },
+  { id: 'set-payment-methods', label: 'Payment methods', category: 'settings', subfeatures: [] },
+  { id: 'set-tags', label: 'Tags', category: 'settings', subfeatures: [] },
+
+  // ── CRM ──
+  /**
+   * Admin vs. member access is a mutually-exclusive choice, not an independent
+   * action — so it only uses 'view' (has access, scoped to own records) and
+   * 'edit' (full access as Administrator; implies view via the existing
+   * create/edit/delete-implies-view rule in setGrant). No create/delete.
+   * Rendered with its own two-checkbox UI (CustomRoleDrawer.vue), not the
+   * generic per-column action cells — see the 'crm-access' special case there.
+   */
+  { id: 'crm-access', label: 'Access to CRM module', category: 'crm', subfeatures: [], actions: ['view', 'edit'] },
 ]
 
 /**
@@ -358,23 +512,22 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
  */
 export type AuthorityGrants = Record<string, AuthorityAction[]>
 
-/**
- * The features this tenant can actually grant. Pass whether the Project
- * Accounting billing component is installed (useApprovalWorkflowScenario) —
- * without it, that feature is dropped from the matrix.
- */
-export function authorityFeaturesFor(hasProjectAccounting: boolean): AuthorityFeature[] {
-  return AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting || hasProjectAccounting)
+/** Every leaf row key under one level-2 subfeature — itself, or one per level-3 child. */
+export function authoritySubRowKeys(featureId: string, sub: AuthoritySubfeature): string[] {
+  if (!sub.children?.length) return [`${featureId}.${sub.id}`]
+  return sub.children.map((c) => `${featureId}.${sub.id}.${c.id}`)
 }
 
-/** Row keys the matrix renders for one feature (itself, or one per sub-feature). */
+/** Every leaf row key the feature renders — itself, or recursing through subfeatures/children. */
 export function authorityRowKeys(feature: AuthorityFeature): string[] {
   if (!feature.subfeatures.length) return [feature.id]
-  return feature.subfeatures.map((s) => `${feature.id}.${s.id}`)
+  return feature.subfeatures.flatMap((s) => authoritySubRowKeys(feature.id, s))
 }
 
-/** Actions a feature's rows can actually hold — reports are view-only. */
+/** Actions a feature's rows can actually hold — reports are view-only, and a
+ *  feature can explicitly override the set (see AuthorityFeature.actions). */
 export function authorityActionsFor(feature: AuthorityFeature): AuthorityAction[] {
+  if (feature.actions) return feature.actions
   return feature.viewOnly ? ['view'] : ['view', 'create', 'edit', 'delete']
 }
 
@@ -407,13 +560,11 @@ export const customRoles = reactive<CustomRole[]>([
     name: 'Warehouse supervisor',
     description: 'Runs the floor: inbound, outbound and cycle counts, plus read-only stock reports.',
     grants: {
-      'warehouse.inbound-delivery': ['view', 'create', 'edit'],
-      'warehouse.outbound-delivery': ['view', 'create', 'edit'],
-      'warehouse.cycle-count': ['view', 'create', 'edit', 'delete'],
-      'product.product-list': ['view'],
-      'product.stock-adjustment': ['view', 'create'],
-      'warehouse-report': ['view'],
-      'product-report': ['view'],
+      'wh-warehouses': ['view', 'create', 'edit', 'delete'],
+      'inv-products': ['view'],
+      'wh-stock-adjustments': ['view', 'create'],
+      'wh-fulfillments': ['view', 'create'],
+      'rep-inventory': ['view'],
     },
     assignedUsers: 4,
     updatedAt: '2026-08-24T09:12:00+07:00',
@@ -424,12 +575,12 @@ export const customRoles = reactive<CustomRole[]>([
     name: 'AP clerk',
     description: 'Records vendor bills and payments. Cannot approve or delete purchase documents.',
     grants: {
-      'purchases.purchase-invoice': ['view', 'create', 'edit'],
-      'purchases.purchase-payment': ['view', 'create'],
-      'purchases.purchase-order': ['view'],
-      'expenses': ['view', 'create'],
-      'contacts': ['view'],
-      'purchases-report': ['view'],
+      'purch-invoices': ['view', 'create', 'edit'],
+      'purch-payments': ['view', 'create'],
+      'purch-orders': ['view'],
+      'exp-expenses': ['view', 'create'],
+      'contacts-vendors.vendors': ['view'],
+      'rep-purchase': ['view'],
     },
     assignedUsers: 2,
     updatedAt: '2026-08-11T16:40:00+07:00',
@@ -440,11 +591,11 @@ export const customRoles = reactive<CustomRole[]>([
     name: 'Tax reviewer',
     description: 'Read-only across sales, purchases and tax reporting for the monthly review.',
     grants: {
-      'sales.sales-invoice': ['view'],
-      'purchases.purchase-invoice': ['view'],
-      'tax-report': ['view'],
-      'sales-report': ['view'],
-      'purchases-report': ['view'],
+      'sales-invoices': ['view'],
+      'purch-invoices': ['view'],
+      'rep-tax': ['view'],
+      'rep-sales': ['view'],
+      'rep-purchase': ['view'],
     },
     assignedUsers: 1,
     updatedAt: '2026-07-30T11:05:00+07:00',
@@ -513,6 +664,8 @@ export interface AccountUser {
   status: AccountUserStatus
   /** ISO timestamp; null while the invitation is still pending. */
   lastActiveAt: string | null
+  /** ISO date the user was invited/created. */
+  joinedAt: string
 }
 
 export const accountUsers = reactive<AccountUser[]>([
@@ -527,6 +680,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-08T08:42:00+07:00',
+    joinedAt: '2025-01-10',
   },
   {
     id: 'au-2',
@@ -539,6 +693,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-07T17:20:00+07:00',
+    joinedAt: '2025-03-02',
   },
   {
     id: 'au-3',
@@ -551,6 +706,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'mon-fri', startHour: '08:00', endHour: '17:00' },
     status: 'active',
     lastActiveAt: '2026-09-08T07:55:00+07:00',
+    joinedAt: '2025-04-18',
   },
   {
     id: 'au-4',
@@ -563,6 +719,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'mon-sat', startHour: '07:00', endHour: '16:00' },
     status: 'active',
     lastActiveAt: '2026-09-06T14:03:00+07:00',
+    joinedAt: '2025-05-27',
   },
   {
     id: 'au-5',
@@ -575,6 +732,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: '2026-09-10',
   },
   {
     id: 'au-6',
@@ -587,6 +745,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-05T09:31:00+07:00',
+    joinedAt: '2025-07-14',
   },
   {
     id: 'au-7',
@@ -599,6 +758,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'inactive',
     lastActiveAt: '2026-05-19T10:12:00+07:00',
+    joinedAt: '2025-02-20',
   },
   {
     id: 'au-8',
@@ -611,6 +771,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: { days: 'everyday', startHour: '06:00', endHour: '22:00' },
     status: 'active',
     lastActiveAt: '2026-09-08T06:14:00+07:00',
+    joinedAt: '2025-06-05',
   },
   {
     id: 'au-9',
@@ -623,6 +784,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-04T13:48:00+07:00',
+    joinedAt: '2025-08-22',
   },
   {
     id: 'au-10',
@@ -635,6 +797,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: '2026-09-09',
   },
   {
     id: 'au-11',
@@ -647,6 +810,7 @@ export const accountUsers = reactive<AccountUser[]>([
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-08T09:05:00+07:00',
+    joinedAt: '2025-09-30',
   },
 ])
 
@@ -672,6 +836,7 @@ export function addAccountUser(input: AccountUserInput): AccountUser {
     isOwner: false,
     status: 'invited',
     lastActiveAt: null,
+    joinedAt: new Date().toISOString().slice(0, 10),
   }
   accountUsers.push(user)
   bumpAssignedUserCounts()
@@ -721,6 +886,17 @@ export function userRoleTypes(user: AccountUser): UserRoleType[] {
   if (user.systemRoleIds.length) types.push('existing')
   if (user.customRoleIds.length) types.push('custom')
   return types
+}
+
+const USER_ROLE_TYPE_LABELS: Record<UserRoleType, string> = {
+  owner: 'Owner',
+  existing: 'Existing role',
+  custom: 'Custom role',
+}
+
+/** Display labels for the Type column — "Owner", or "Existing role" / "Custom role". */
+export function userRoleTypeLabels(user: AccountUser): string[] {
+  return userRoleTypes(user).map((t) => USER_ROLE_TYPE_LABELS[t])
 }
 
 /** Human-readable access window, or "—" when the user has no limit. */

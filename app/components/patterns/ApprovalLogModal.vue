@@ -42,9 +42,8 @@ function pendingRows(stage: ApprovalStage): string[] {
 </script>
 
 <template>
-  <MpModal
-    id="approval-log-modal" :is-open="isOpen" size="md"
-    is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="approval-log-modal" :is-open="isOpen" size="md" :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>

@@ -9,7 +9,8 @@
     "preview": "nuxt preview",
     "test": "vitest run",
     "pixel:fix": "node scripts/pixel-fix.mjs",
-    "pixel:fix:check": "node scripts/pixel-fix.mjs --check"
+    "pixel:fix:check": "node scripts/pixel-fix.mjs --check",
+    "prepare": "husky"
   },
   "dependencies": {
     "@ds/proto-review": "file:./packages/proto-review",
@@ -31,7 +32,11 @@
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/test-utils": "^2.4.11",
     "happy-dom": "^20.10.6",
+    "husky": "^9.1.7",
     "playwright": "^1.63.0",
     "vitest": "^1.6.1"
+  },
+  "overrides": {
+    "esbuild": "0.28.2"
   }
 }

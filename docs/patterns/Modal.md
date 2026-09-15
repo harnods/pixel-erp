@@ -28,6 +28,18 @@
 
 ---
 
+## Closing — × only (`rule/modal-drawer-close-explicit-only`)
+
+The library defaults `isCloseOnEsc`/`isCloseOnOverlayClick` to `true`. Override
+**both**, on every `MpModal`, so the only way out is the `MpModalCloseButton` ×
+(or an explicit Cancel/confirm action):
+
+```vue
+<MpModal :is-open="isOpen" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="isOpen = false">
+```
+
+---
+
 ## Example — action flow
 
 ```vue

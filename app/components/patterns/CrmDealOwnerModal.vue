@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * CrmDealOwnerModal — reassign the Deal Owner for a single record or a bulk
+ * CrmDealOwnerModal — reassign the Owner for a single record or a bulk
  * selection (PRD Bulk owner reassignment). Confirmation shows the affected count
  * and the new owner. Built on Pixel MpModal; Cancel = ghost; errors inline.
  */
@@ -12,14 +12,14 @@ import {
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { CRM_OWNERS } from '~/data/crm'
 
-const props = withDefaults(defineProps<{ open: boolean; count?: number }>(), { count: 1 })
+const props = withDefaults(defineProps<{ open: boolean; count?: number; noun?: string }>(), { count: 1, noun: 'deals' })
 const emit = defineEmits<{ close: []; confirm: [owner: string] }>()
 
 const owner = ref<string>('')
 const error = ref('')
 watch(() => props.open, (open) => { if (open) { owner.value = ''; error.value = '' } })
 
-const title = computed(() => (props.count > 1 ? `Change owner for ${props.count} deals` : 'Change owner'))
+const title = computed(() => (props.count > 1 ? `Change owner for ${props.count} ${props.noun}` : 'Change owner'))
 function confirm() {
   if (!owner.value) { error.value = 'Select a new owner.'; return }
   emit('confirm', owner.value)
@@ -27,7 +27,7 @@ function confirm() {
 </script>
 
 <template>
-  <MpModal id="crm-deal-owner-modal" :is-open="open" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="crm-deal-owner-modal" :is-open="open" size="md" :is-keep-alive="false" @close="emit('close')">
     <MpModalContent>
       <MpModalHeader>{{ title }}</MpModalHeader>
       <MpModalBody>

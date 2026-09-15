@@ -62,7 +62,7 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
 <template>
   <Teleport to="body">
     <Transition name="wn">
-      <div v-if="isOpen" class="wn-overlay" @click.self="close">
+      <div v-if="isOpen" class="wn-overlay">
         <div class="wn-card" role="dialog" aria-modal="true" aria-labelledby="wn-title">
           <button class="wn-close" type="button" aria-label="Close" @click="close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

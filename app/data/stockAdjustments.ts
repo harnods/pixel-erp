@@ -115,7 +115,7 @@ export interface StockAdjustment {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
-  lines?: { sku: string; qty: number; prevQty?: number; location?: string }[]
+  lines?: { sku: string; qty: number; prevQty?: number; location?: string; dimensions?: Record<string, string> }[]
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
@@ -266,6 +266,8 @@ export interface AdjustmentLine {
   storageLocation: string
   batchNumber?: string
   batchExpiry?: string
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions?: Record<string, string>
 }
 
 /**
@@ -302,6 +304,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
             key: l.sku, sku: l.sku, product,
             prevOnHand, counted, difference: counted - prevOnHand, unit: product.unit, averageCost: product.averageCost,
             storageLocation: l.location ?? locFor(l.sku),
+            dimensions: l.dimensions,
           }
         }
         const prevOnHand = 50 + (hash100(seedNum(a.id) + l.sku.length) % 150)
@@ -310,6 +313,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
           key: l.sku, sku: l.sku, product,
           prevOnHand, counted, difference: l.qty, unit: product.unit, averageCost: product.averageCost,
           storageLocation: l.location ?? locFor(l.sku),
+          dimensions: l.dimensions,
         }
       })
       .filter(Boolean) as AdjustmentLine[]
@@ -458,7 +462,7 @@ export interface AdjustmentInput {
   category: AdjustmentCategory
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number; prevQty?: number }[]
+  lines: { sku: string; qty: number; prevQty?: number; dimensions?: Record<string, string> }[]
   /** WMS Stock count only */
   assignee?: string
   startDate?: string

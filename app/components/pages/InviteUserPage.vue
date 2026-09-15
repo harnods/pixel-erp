@@ -18,7 +18,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpCheckbox, MpBadge,
-  MpButton, MpIcon,
+  MpButton, MpIcon, MpTooltip,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { successToast } from '~/utils/toasts'
@@ -55,6 +55,8 @@ const selectedCustomRoles = ref<string[]>([])
 const roleAuthority = reactive<Record<string, string[]>>({})
 /** roleId → access-limitation checkbox. */
 const roleLimitation = reactive<Record<string, boolean>>({})
+/** roleId → full-access (module administrator) checkbox. */
+const roleFullAccess = reactive<Record<string, boolean>>({})
 const isListManager = ref(false)
 
 /** Which role accordions are expanded — all open by default, as in Jurnal. */
@@ -88,7 +90,7 @@ function toggleSystemRole(role: SystemRole, on: boolean) {
   selectedSystemRoles.value = on
     ? [...new Set([...selectedSystemRoles.value, role.id])]
     : selectedSystemRoles.value.filter((id) => id !== role.id)
-  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id] }
+  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id]; delete roleFullAccess[role.id] }
   roleError.value = ''
 }
 function isSystemRoleOn(id: string) { return selectedSystemRoles.value.includes(id) }
@@ -104,6 +106,11 @@ function isCustomRoleOn(id: string) { return selectedCustomRoles.value.includes(
 function toggleAuthorityOption(roleId: string, value: string, on: boolean) {
   const current = roleAuthority[roleId] ?? []
   roleAuthority[roleId] = on ? [...new Set([...current, value])] : current.filter((v) => v !== value)
+}
+
+/** The permission bullets to show — swaps to fullAccessPermissions once ticked. */
+function permissionsFor(role: SystemRole): string[] {
+  return roleFullAccess[role.id] && role.fullAccessPermissions ? role.fullAccessPermissions : role.permissions
 }
 
 /**
@@ -318,8 +325,31 @@ function goBack() { router.push('/users-and-roles') }
                       </div>
 
                       <div v-if="expanded[role.id]" class="inv-role-body">
-                        <ul class="inv-permissions">
-                          <li v-for="p in role.permissions" :key="p">{{ t(p) }}</li>
+                        <!-- Full access (module administrator) — sits ABOVE the permission
+                             bullets since ticking it swaps which bullets are shown below. -->
+                        <div v-if="role.fullAccessOption" class="inv-subgroup">
+                          <span class="inv-subgroup-label">{{ t('Full access') }}</span>
+                          <MpCheckbox
+                            :id="`inv-full-${role.id}`"
+                            :is-checked="!!roleFullAccess[role.id]"
+                            :is-disabled="!isSystemRoleOn(role.id)"
+                            @change="(on: boolean) => roleFullAccess[role.id] = on"
+                          >
+                            <span class="inv-full-access-label">
+                              {{ t(role.fullAccessOption) }}
+                              <MpTooltip
+                                :id="`inv-full-tt-${role.id}`"
+                                :label="t('Without full access, the user can\'t open CRM Reports or Settings. A CRM Administrator manages module permissions from Settings › Users & roles.')"
+                                placement="top" use-portal
+                              >
+                                <span class="inv-full-access-info"><MpIcon name="info" size="sm" /></span>
+                              </MpTooltip>
+                            </span>
+                          </MpCheckbox>
+                        </div>
+
+                        <ul class="inv-permissions" :class="{ 'inv-permissions--indented': role.fullAccessOption }">
+                          <li v-for="p in permissionsFor(role)" :key="p">{{ t(p) }}</li>
                         </ul>
 
                         <!-- Default sales / purchasing authority -->
@@ -337,8 +367,10 @@ function goBack() { router.push('/users-and-roles') }
                           </div>
                         </div>
 
-                        <!-- Access limitation -->
-                        <div v-if="role.accessLimitation" class="inv-subgroup">
+                        <!-- Access limitation — only relevant for a role that ISN'T full
+                             access (a full-access/admin user can't sensibly be restricted
+                             to only their own records). -->
+                        <div v-if="role.accessLimitation && !roleFullAccess[role.id]" class="inv-subgroup">
                           <span class="inv-subgroup-label">{{ t('Access limitation') }}</span>
                           <MpCheckbox
                             :id="`inv-limit-${role.id}`"
@@ -441,7 +473,7 @@ function goBack() { router.push('/users-and-roles') }
 
 .inv-titlebar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--mp-spacing-6);
 }
@@ -464,7 +496,7 @@ function goBack() { router.push('/users-and-roles') }
 
 .inv-stage {
   flex: 1;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0;
   overflow-x: hidden; overflow-y: auto;
   padding: var(--mp-spacing-6) var(--mp-spacing-6) 80px;
@@ -482,7 +514,7 @@ function goBack() { router.push('/users-and-roles') }
   color: var(--mp-text-default);
 }
 .inv-required { color: var(--mp-text-critical, var(--mp-text-danger)); }
-.inv-divider { height: 1px; background: var(--mp-border-default); }
+.inv-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 .inv-field-row { display: flex; gap: var(--mp-spacing-4); }
 .inv-field-row > * { flex: 1; min-width: 0; }
@@ -514,7 +546,7 @@ function goBack() { router.push('/users-and-roles') }
 .inv-tab-with-badge { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 
 .inv-roles { list-style: none; margin: 0; padding: 0; }
-.inv-role { padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default); }
+.inv-role { padding: var(--mp-spacing-4) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .inv-role:last-child { border-bottom: none; }
 .inv-role-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .inv-role-toggle {
@@ -533,6 +565,19 @@ function goBack() { router.push('/users-and-roles') }
   list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-4);
   display: flex; flex-direction: column; gap: var(--mp-spacing-1);
 }
+/* Roles with a Full access checkbox above the bullets (e.g. CRM): the DOT of
+   each bullet lines up under the checkbox's label text ("Full access to
+   all..."), not under the checkbox box itself — measured offset (checkbox
+   box + its internal gap) from the shared left margin. Custom bullet (not
+   list-style) so the dot's exact x-position is controllable. */
+.inv-permissions--indented {
+  list-style: none; margin-left: 28px; padding-left: 0;
+}
+.inv-permissions--indented li { position: relative; padding-left: var(--mp-spacing-4); }
+.inv-permissions--indented li::before {
+  content: ''; position: absolute; left: 0; top: 0.55em;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--mp-text-secondary, #3a4749);
+}
 .inv-permissions li {
   display: list-item;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
@@ -542,6 +587,9 @@ function goBack() { router.push('/users-and-roles') }
 .inv-subgroup { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .inv-subgroup-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .inv-subgroup-options { display: flex; align-items: center; gap: var(--mp-spacing-5, 20px); flex-wrap: wrap; }
+
+.inv-full-access-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.inv-full-access-info { display: inline-flex; color: var(--mp-icon-subtle, var(--mp-text-secondary)); cursor: help; }
 
 .inv-custom-meta {
   margin-top: var(--mp-spacing-1); padding-left: var(--mp-spacing-6);
@@ -556,9 +604,9 @@ function goBack() { router.push('/users-and-roles') }
 
 /* ── Side card ── */
 .inv-terms {
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
 }
 .inv-terms-head {
   display: flex !important; align-items: center; justify-content: space-between;

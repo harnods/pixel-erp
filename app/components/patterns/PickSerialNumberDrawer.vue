@@ -87,7 +87,7 @@ function handleSave() {
 
 <template>
   <Transition name="psn">
-  <div v-if="open" class="psn-overlay" @click.self="handleCancel">
+  <div v-if="open" class="psn-overlay">
     <div class="psn-panel" role="dialog" :aria-label="title">
 
       <header class="psn-header">

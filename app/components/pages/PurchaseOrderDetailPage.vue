@@ -13,6 +13,8 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -31,6 +33,12 @@ const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('reject
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([name, value]) => ({ name, value }))
+}
 
 // Awaiting-approval variant: Approve button in the header, secondary Actions
 // footer button, and a Reject item in the Actions menu.
@@ -431,6 +439,7 @@ function goBack() { closePurchaseOrder?.() }
               <th class="detail-th detail-th--num">Unit price</th>
               <th class="detail-th detail-th--num">Discount</th>
               <th class="detail-th">Tax</th>
+              <th v-if="showDimensionsColumn" class="detail-th">Dimensions</th>
               <th class="detail-th detail-th--num">Amount</th>
             </tr>
           </thead>
@@ -454,6 +463,9 @@ function goBack() { closePurchaseOrder?.() }
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
               <td class="detail-td">{{ it.taxLabel }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(it.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>
@@ -612,13 +624,11 @@ function goBack() { closePurchaseOrder?.() }
   </div>
 
   <!-- ── Reject confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="reject-transaction-modal"
     :is-open="showRejectModal"
     size="md"
     is-centered
-    is-close-on-esc
-    is-close-on-overlay-click
     @close="onCancelReject"
   >
     <MpModalContent>

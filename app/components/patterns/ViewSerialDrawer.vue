@@ -240,7 +240,7 @@ function close() { emit('update:open', false) }
 
 <template>
   <Transition name="vsd">
-  <div v-if="open" class="vsd-overlay" @click.self="close">
+  <div v-if="open" class="vsd-overlay">
     <div class="vsd-panel" role="dialog" :aria-label="t('View serial numbers')">
 
       <header class="vsd-header">

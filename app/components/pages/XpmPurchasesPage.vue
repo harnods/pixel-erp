@@ -135,7 +135,7 @@ function createPurchase() {
   </ErpTablePage>
 
   <!-- ── New purchase drawer ── -->
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="xpm-new-purchase-drawer"
     :is-open="showCreateDrawer"
     placement="right"

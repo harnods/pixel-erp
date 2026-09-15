@@ -7,13 +7,14 @@
  * structural CSS in this build), opened from the page title bar and from the
  * empty state's CTA.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButton, MpButtonGroup, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CustomRoleDrawer from '~/components/patterns/CustomRoleDrawer.vue'
 import { successToast } from '~/utils/toasts'
 import {
@@ -29,13 +30,18 @@ const { t } = useLocale()
 const { isOpen, editingId, openCreate, openEdit, close } = useCustomRoleDrawer()
 
 // ─── Columns ────────────────────────────────────────────────────────────────
-const columns: TableColumn[] = [
+const allCols: TableColumn[] = [
   { key: 'name',          label: 'Role name',     kind: 'name',    sortType: 'text' },
   { key: 'description',   label: 'Description',   kind: 'address' },
   { key: 'features',      label: 'Features',      align: 'right',  sortType: 'number' },
   { key: 'assignedUsers', label: 'Users assigned', align: 'right', sortType: 'number' },
   { key: 'updatedAt',     label: 'Last updated',  kind: 'date',    sortType: 'date' },
 ]
+const columnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(allCols.map((c) => [c.key, true])),
+)
+const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibility[c.key]))
 
 const rows = computed<CustomRole[]>(() =>
   [...customRoles].sort((a, b) => a.name.localeCompare(b.name)),
@@ -105,18 +111,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Tool icons: ghost icon-only MpButtons in one group (rule/filter-bar-icon-group),
              each tooltipped and aria-labelled (rule/btn-icon-tooltip). -->
         <MpButtonGroup class="filter-btn-group">
-          <MpTooltip id="tt-cr-columns" :label="t('Column settings')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="table-view-column" :aria-label="t('Column settings')"
-            />
-          </MpTooltip>
-          <MpTooltip id="tt-cr-export" :label="t('Export')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" class="filter-icon-btn"
-              left-icon="download" :aria-label="t('Export')"
-            />
-          </MpTooltip>
+          <ColumnSettingsMenu id="cr-columns" :items="columnItems" :visibility="columnVisibility" />
         </MpButtonGroup>
 
         <div class="filter-search">
@@ -159,7 +154,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <MpButton variant="ghost" class="row-kebab" left-icon="menu-kebab" :aria-label="t('More actions')" />
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -190,12 +185,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <CustomRoleDrawer id="custom-role-drawer" :is-open="isOpen" :role-id="editingId" @close="close" />
 
   <!-- ── Delete confirmation ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="cr-delete-modal"
     :is-open="!!deleteTarget"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="deleteTarget = null"
   >
@@ -226,20 +219,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 
 .filter-btn-group { display: flex; align-items: center; }
-/* Ghost MpButton squared off to the 36x36 filter-bar tool size. The !important
-   overrides are Pixel's own atomic min-width/padding on .mp-button. */
-.filter-icon-btn {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important;
-  min-width: 0 !important; padding: var(--mp-spacing-2) !important;
-  color: var(--mp-text-default);
-}
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
 .filter-search-input {
@@ -265,14 +250,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal; word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Kebab — 20px tall so the actions cell stays within the 40px baseline row. */
-.row-kebab {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-5, 20px) !important;
-  min-width: 0 !important; padding: 0 !important;
-  margin-left: auto; color: var(--mp-text-secondary);
-}
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

@@ -1015,7 +1015,7 @@ async function doCreate() {
   />
 
   <!-- Partial pick confirmation -->
-  <MpModal id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showPartialConfirm = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" :is-keep-alive="false" @close="showPartialConfirm = false">
     <MpModalOverlay />
     <MpModalContent>
       <MpModalHeader>

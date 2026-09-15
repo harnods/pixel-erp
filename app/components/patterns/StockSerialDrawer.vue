@@ -211,7 +211,7 @@ const receiptNumber = computed(() =>
 
 <template>
   <Transition name="ssd">
-  <div v-if="open && product" class="ssd-overlay" @click.self="close">
+  <div v-if="open && product" class="ssd-overlay">
     <div class="ssd-panel" role="dialog" :aria-label="title">
 
       <header class="ssd-header">

@@ -1754,7 +1754,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     <input ref="localFileInput" type="file" multiple class="cw-hidden-file" @change="onLocalFiles" />
 
     <!-- ── Custom MCP server modal ── -->
-    <MpModal id="cw-mcp-modal" :is-open="mcpOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeMcpModal">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-mcp-modal" :is-open="mcpOpen" size="md" :is-keep-alive="false" @close="closeMcpModal">
       <MpModalContent>
         <MpModalHeader>
           <span class="mcp-title">Custom MCP server <MpBadge for="additionalInformation" type="announcement" size="sm">Beta</MpBadge></span>
@@ -1838,7 +1838,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     </MpModal>
 
     <!-- ── Import skills from a repository ── -->
-    <MpModal id="cw-import-modal" :is-open="importOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="importOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-import-modal" :is-open="importOpen" size="md" :is-keep-alive="false" @close="importOpen = false">
       <MpModalContent>
         <MpModalHeader>Import skills from a repository<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1883,7 +1883,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     <SkillCreateDrawer v-model:open="createAIOpen" @save="onCreateAISave" />
 
     <!-- ── Connect consent (OAuth-style authorize screen, per provider) ── -->
-    <MpModal id="cw-consent-modal" :is-open="consentOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelConsent">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-consent-modal" :is-open="consentOpen" size="md" :is-keep-alive="false" @close="cancelConsent">
       <MpModalContent>
         <MpModalHeader>
           <span class="cwc-consent-head">
@@ -1919,7 +1919,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     </MpModal>
 
     <!-- ── Create / edit skill modal ── -->
-    <MpModal id="cw-skill-modal" :is-open="skillOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeSkillModal">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-skill-modal" :is-open="skillOpen" size="md" :is-keep-alive="false" @close="closeSkillModal">
       <MpModalContent>
         <MpModalHeader>
           <span class="mcp-title">Create skill</span>

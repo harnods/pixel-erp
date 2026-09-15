@@ -711,7 +711,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Storage location drawer ── -->
     <Transition name="wtf-loc">
-    <div v-if="locDrawerRow" class="wtf-loc-overlay" @click.self="closeLocDrawer">
+    <div v-if="locDrawerRow" class="wtf-loc-overlay">
       <div class="wtf-loc-panel" role="dialog" :aria-label="t('Manage storage location')">
         <header class="wtf-loc-header">
           <h2 class="wtf-loc-title">{{ t('Manage storage location') }}</h2>

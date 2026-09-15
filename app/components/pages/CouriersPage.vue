@@ -187,7 +187,7 @@ function confirmDelete() {
        instead of as a dimmed, centered dialog). -->
   <Teleport to="body">
     <Transition name="cem">
-      <div v-if="editOpen" class="cem-overlay" @click.self="editOpen = false">
+      <div v-if="editOpen" class="cem-overlay">
         <div class="cem-panel" role="dialog" aria-modal="true" :aria-label="isEdit ? t('Edit courier') : t('Add courier')">
           <p class="cem-title">{{ isEdit ? t('Edit courier') : t('Add courier') }}</p>
           <MpFormControl id="courier-edit-name" class="cem-form">

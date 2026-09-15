@@ -137,12 +137,10 @@ async function saveEdit() {
     </table>
 
     <!-- Edit modal -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="sl-edit-modal"
       :is-open="editOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="editOpen = false"
     >

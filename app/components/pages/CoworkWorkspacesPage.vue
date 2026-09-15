@@ -99,7 +99,7 @@ watchEffect(() => { if (route.query.new === '1') { openCreate(); router.replace(
     </div>
 
     <!-- Create modal -->
-    <MpModal id="ws-create" :is-open="createOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCreate">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ws-create" :is-open="createOpen" size="md" :is-keep-alive="false" @close="closeCreate">
       <MpModalContent>
         <MpModalHeader>New workspace<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

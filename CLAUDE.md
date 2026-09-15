@@ -96,9 +96,11 @@ hand-rolled shell — copy it from **`BillsFiltersDrawer.vue`** ("All filters"):
 ```
 
 Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
-`transform: translateX(calc(100% + 12px))` on enter/leave. A drawer that is a
-**form** ignores overlay clicks (close only via ×/Cancel/Esc) so in-progress input
-is never lost. Buttons use the `btn-enterprise--{ghost,primary,secondary}` classes,
+`transform: translateX(calc(100% + 12px))` on enter/leave. **Every** drawer (and
+every modal) closes **only** via its × button — the overlay ignores clicks and
+there is no Esc-to-close listener (`rule/modal-drawer-close-explicit-only`), so
+in-progress input or context is never lost to a stray click or keypress. Buttons
+use the `btn-enterprise--{ghost,primary,secondary}` classes,
 not raw `MpButton` variants. (Modal vs drawer: drawer when the underlying page
 context helps; modal for a short blocking decision.)
 

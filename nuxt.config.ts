@@ -12,6 +12,12 @@ export default defineNuxtConfig({
   runtimeConfig: {
     geminiApiKey: "",
     geminiModel: "gemini-flash-latest",
+    // Access gate (Google @mekari.com login). Server-only:
+    //   • sessionSecret     — HMAC key that signs the session cookie (NUXT_SESSION_SECRET).
+    //   • allowedEmailDomain — only this Google Workspace domain may sign in.
+    // The gate is disabled (app open) only if googleClientId + sessionSecret are unset.
+    sessionSecret: "",
+    allowedEmailDomain: "mekari.com",
     public: {
       // Google OAuth (client-side, Google Identity Services) for the real Cowork
       // connections (Calendar / Gmail / Contacts). Public client ID — safe to

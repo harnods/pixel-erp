@@ -18,6 +18,8 @@ import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { bills, deleteBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions, getDimensionById } from '~/data/dimensions'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -25,6 +27,12 @@ const router = useRouter()
 const route = useRoute()
 
 const bill = computed(() => bills.find((b) => b.id === props.orderId) ?? null)
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('expenses').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
+}
 
 // "Set as recurring" isn't built yet — kept in the Actions popover markup below
 // (per design) but hidden until the feature ships.
@@ -322,17 +330,21 @@ function goExpenses() {
               <th class="detail-th">{{ t('Account') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
               <th class="detail-th">{{ t('Tax') }}</th>
+              <th v-if="showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
               <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody class="detail-items-body">
             <tr v-if="!bill.lineItems?.length">
-              <td class="detail-td detail-td--muted" colspan="4">{{ t('No accounts.') }}</td>
+              <td class="detail-td detail-td--muted" :colspan="showDimensionsColumn ? 5 : 4">{{ t('No accounts.') }}</td>
             </tr>
             <tr v-for="(li, i) in bill.lineItems" :key="i" class="detail-item-row">
               <td class="detail-td">{{ li.account }}</td>
               <td class="detail-td">{{ li.description || '—' }}</td>
               <td class="detail-td">{{ li.tax }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(li.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(li.amount) }}</td>
             </tr>
           </tbody>

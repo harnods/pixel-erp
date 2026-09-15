@@ -36,9 +36,15 @@ const props = withDefaults(defineProps<{
    *  month / Per year / Custom instead of the day-based presets. Used by the
    *  Credit Memo report and other period reports. */
   periodMode?: boolean
+  /** Names the label prefix after the granularity in play — "Month: December
+   *  2026", "Year: 2026" — instead of the fixed "Date range:". Opt-in, so every
+   *  existing caller keeps its current label. Used by the Multidimensional
+   *  report (Figma 4836-56598). */
+  labelPrefixMode?: boolean
 }>(), {
   direction: 'past',
   periodMode: false,
+  labelPrefixMode: false,
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
@@ -130,6 +136,19 @@ const labelText = computed(() => {
     case 'thisQuarter': return 'This quarter'
     case 'thisYear': return 'This year'
     default: return fieldText.value
+  }
+})
+
+// With `labelPrefixMode`, the prefix names the granularity the label describes
+// ("Month: December 2026") — anything else stays the generic "Date range:".
+const labelPrefix = computed(() => {
+  if (!props.labelPrefixMode) return 'Date range:'
+  switch (mode.value) {
+    case 'month': return 'Month:'
+    case 'year': return 'Year:'
+    case 'day': return 'Date:'
+    case 'week': return 'Week:'
+    default: return 'Date range:'
   }
 })
 
@@ -239,7 +258,7 @@ function onYearClick(y: number) {
 <template>
   <div class="adr-wrap" :class="{ 'adr-wrap--full': isFullWidth }">
     <label v-if="hasValue && !hideLabel" class="adr-label">
-      <span class="adr-label-prefix">Date range:</span>
+      <span class="adr-label-prefix">{{ labelPrefix }}</span>
       <span class="adr-label-value">{{ labelText }}</span>
     </label>
 
@@ -378,7 +397,7 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #fff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-colors-text-default, #080d0e); cursor: pointer; }
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral, #ffffff) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
 .adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }

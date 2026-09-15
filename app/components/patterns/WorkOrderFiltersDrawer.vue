@@ -42,7 +42,7 @@ function clearAll() {
 
 <template>
   <Transition name="wf-filters">
-    <div v-if="isOpen" class="wf-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="wf-filters-overlay">
       <div class="wf-filters-panel" role="dialog" aria-label="All filters">
         <header class="wf-filters-header">
           <span class="wf-filters-title">All filters</span>

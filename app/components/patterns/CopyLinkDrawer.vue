@@ -45,7 +45,7 @@ async function copy(url: string) {
 <template>
   <Teleport to="body">
     <Transition name="cld">
-      <div v-if="open" class="cld-overlay" @click.self="close">
+      <div v-if="open" class="cld-overlay">
         <div class="cld-panel" role="dialog" :aria-label="heading">
           <header class="cld-header">
             <div class="cld-header-text">

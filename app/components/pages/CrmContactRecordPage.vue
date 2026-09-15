@@ -28,9 +28,12 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { infoToast, successToast } from '~/utils/toasts'
+import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import {
   getContactPerson, getCompany, companiesOfContact, dealsForCompany, isDealOpen, dealNo, dealExpectedValue,
   archiveCrmContactPerson, restoreCrmContactPerson, contactBlockingCompany, can, CRM_OWNERS, DEAL_STAGES, dealStageBadgeType, dealStageLabel, type Deal,
+  createContactInErp,
 } from '~/data/crm'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -62,6 +65,14 @@ const sourceText = computed(() => {
   const c = contact.value
   if (!c?.source) return undefined
   return c.source === 'Other' && c.sourceOther ? c.sourceOther : t(c.source)
+})
+// "Created in ERP" — Yes + the ERP Customer number once created, In progress while
+// syncing, No otherwise. Mirrors the badge tooltip copy on the Contacts list.
+const erpStatusText = computed(() => {
+  const c = contact.value
+  if (c?.erpStatus === 'created') return `${t('Yes')} — ${c.erpCustomerId}`
+  if (c?.erpStatus === 'in-sync') return t('In progress')
+  return t('No')
 })
 // Billing address — one composed line (address, city, province+postal, country),
 // same format as the company detail. e.g. "Jl. … No. 18, Jakarta, DKI Jakarta 10660, Indonesia".
@@ -105,7 +116,7 @@ const dealColumns: TableColumn[] = [
   { key: 'number',  label: 'Number',          kind: 'number', sortable: true, sortType: 'text' },
   { key: 'name',    label: 'Deal name',       kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'stage',   label: 'Stage',           kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'owner',   label: 'Deal owner',      kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'owner',   label: 'Owner',      kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'value',   label: 'Value',           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'updated', label: 'Last updated',    kind: 'date' },
 ]
@@ -119,7 +130,7 @@ const dealFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const dealFiltersOpen = ref(false)
 const dealOwnerOptions = [...CRM_OWNERS]
 const dealContactOptions = computed(() => (contact.value ? [contact.value.name] : []))
-const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Deal owner' }]
+const dealDrawerColumns = [{ key: 'name', label: 'Deal name' }, { key: 'id', label: 'Number' }, { key: 'owner', label: 'Owner' }]
 function applyDealFilters(v: CrmDealsFiltersValue) { Object.assign(dealFilters, v); dealFiltersOpen.value = false }
 const dealFilterCount = computed(() => {
   const f = dealFilters
@@ -209,6 +220,15 @@ function confirmArchive() {
   restoreCrmContactPerson(contact.value.id)
   toast.notify({ variant: 'success', title: t('Contact restored'), maxWidth: 'max-content' })
 }
+
+// ── Create in ERP — mirrors the Contacts list row action ──
+async function onCreateInErp() {
+  if (!contact.value) return
+  const r = await createContactInErp(contact.value.id)
+  if (r.ok) successToast(t('Contact created in ERP'))
+  else infoToast(r.error ?? t('Could not create in ERP'))
+}
+function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
 </script>
 
 <template>
@@ -230,6 +250,16 @@ function confirmArchive() {
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem v-if="!isArchived" @click="router.push(`/crm/customers/contacts/${contact.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem
+                    v-if="!isArchived && contact.erpStatus !== 'created' && contact.erpStatus !== 'in-sync'"
+                    @click="onCreateInErp"
+                  >{{ t('Create contact in ERP') }}</MpPopoverListItem>
+                  <MpPopoverListItem
+                    v-if="contact.erpStatus === 'created'"
+                    @click="onOpenErpCustomer"
+                  >
+                    <span class="cr-menu-row">{{ t('Open contact in ERP') }}<img :src="shortcutIconUrl" class="cr-shortcut-icon" alt="" /></span>
+                  </MpPopoverListItem>
                   <MpPopoverListItem @click="archiveOpen = true">{{ isArchived ? t('Restore') : t('Archive') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -290,6 +320,7 @@ function confirmArchive() {
                 <div class="cr-grid">
                   <ContentList :label="t('Account owner')" :value="contact.owner || undefined" />
                   <ContentList :label="t('Source')" :value="sourceText" />
+                  <ContentList :label="t('Created in ERP')" :value="erpStatusText" />
                 </div>
               </section>
 
@@ -512,6 +543,9 @@ function confirmArchive() {
   border-radius: var(--mp-radii-sm) !important; color: var(--mp-text-subtle);
 }
 .cr-kebab:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
+
+.cr-menu-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); width: 100%; }
+.cr-shortcut-icon { width: var(--mp-sizes-4); height: var(--mp-sizes-4); flex-shrink: 0; filter: brightness(0) opacity(0.5); }
 
 .cr-missing { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: 80px; color: var(--mp-text-secondary); }
 </style>

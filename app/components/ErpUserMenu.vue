@@ -76,7 +76,7 @@
             <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row">
+          <button type="button" class="user-menu__row" @click="signOutAndReload(onClosePopover)">
             <span class="user-menu__label">{{ t('Sign out') }}</span>
           </button>
         </nav>
@@ -331,6 +331,15 @@ function selectMigrationScenario(scenario: MigrationScenario, closePopover: () =
 async function resetData(closePopover: () => void) {
   resetDb();
   await clearDynamicAnnotations().catch(() => {});
+  closePopover();
+  if (import.meta.client) window.location.reload();
+}
+
+// End the @mekari.com session and return to the login screen. Reloading drops all
+// in-memory app state and lets the access gate re-resolve as anonymous.
+const { signOut } = useAuth();
+async function signOutAndReload(closePopover: () => void) {
+  await signOut();
   closePopover();
   if (import.meta.client) window.location.reload();
 }

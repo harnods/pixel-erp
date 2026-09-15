@@ -623,9 +623,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal
-    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -648,9 +647,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Close confirmation modal (partial reception → accept as final) ── -->
-  <MpModal
-    id="rcv-close-modal" :is-open="closeModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-close-modal" :is-open="closeModalOpen" size="md" :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -669,9 +667,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
-  <MpModal
-    id="rcv-delete-modal" :is-open="deleteModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="closeDeleteModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -689,9 +686,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Edit tracking no. modal (supports multiple) ── -->
-  <MpModal
-    id="rcv-tracking-modal" :is-open="trackingModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeTrackingModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-tracking-modal" :is-open="trackingModalOpen" size="md" :is-keep-alive="false" @close="closeTrackingModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Edit tracking no.') }}<MpModalCloseButton /></MpModalHeader>

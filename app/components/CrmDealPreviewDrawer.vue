@@ -87,7 +87,7 @@ function stampTime(id: string): string {
 <template>
   <Teleport to="body">
     <Transition name="cdp">
-      <div v-if="open && d" class="cdp-overlay" @click.self="emit('close')">
+      <div v-if="open && d" class="cdp-overlay">
         <div class="cdp-panel" role="dialog" aria-label="Deal preview">
           <header class="cdp-header">
             <div class="cdp-header-main">
@@ -103,7 +103,7 @@ function stampTime(id: string): string {
               <h3 class="cdp-section-title">Overview</h3>
               <div class="cdp-grid">
                 <ContentList label="Expected deal value" :value="money(dealExpectedValue(d))" />
-                <ContentList label="Deal owner">
+                <ContentList label="Owner">
                   <span class="cdp-owner">
                     <span class="cdp-avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
@@ -112,7 +112,7 @@ function stampTime(id: string): string {
                 <ContentList label="Customer" :value="d.company" />
                 <ContentList label="Stage"><ErpStatusBadge v-bind="stageBadge(d.stage)" /></ContentList>
                 <ContentList label="Created" :value="`${formatDate(d.createdAt)}, ${stampTime(d.id)}`" />
-                <ContentList label="Due date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
+                <ContentList label="Close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
                 <ContentList label="Reference number" :value="d.referenceNumber || '—'" />
                 <ContentList v-if="d.stage === 'Lost'" label="Lost reason" :value="d.lostReason || '—'" />
               </div>
@@ -206,7 +206,7 @@ function stampTime(id: string): string {
                 </MpPopoverList>
                 <MpPopoverList v-else>
                   <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
-                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ s }}</MpPopoverListItem>
+                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>

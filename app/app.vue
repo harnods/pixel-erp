@@ -1,7 +1,10 @@
 <template>
-  <NuxtLayout>
-    <NuxtPage />
-  </NuxtLayout>
+  <!-- Access gate: nothing renders until a valid @mekari.com session resolves. -->
+  <AuthGate>
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
+  </AuthGate>
   <!--
     Design-review overlay — mount ONLY when Review mode is on. Mounting it
     unconditionally ran its Supabase annotation fetch (useAnnotations →

@@ -23,7 +23,7 @@ function close() { emit('update:open', false) }
 
 <template>
   <Transition name="brd">
-  <div v-if="open" class="brd-overlay" @click.self="close">
+  <div v-if="open" class="brd-overlay">
     <div class="brd-panel" role="dialog" aria-label="Batch reservations">
 
       <header class="brd-header">

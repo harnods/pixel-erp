@@ -141,7 +141,7 @@ function savePolicy() {
   </ErpTablePage>
 
   <!-- ── Claim policy drawer ── -->
-  <MpDrawer id="xpm-claim-policy" :is-open="showPolicyDrawer" variant="floating" placement="right" size="md" @close="showPolicyDrawer = false">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="xpm-claim-policy" :is-open="showPolicyDrawer" variant="floating" placement="right" size="md" @close="showPolicyDrawer = false">
     <MpDrawerContent>
       <MpDrawerHeader>Claim policy <MpDrawerCloseButton /></MpDrawerHeader>
       <MpDrawerBody>

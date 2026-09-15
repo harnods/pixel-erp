@@ -582,9 +582,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     />
 
     <!-- ── Direct-to-packing modal — marketplace orders only ── -->
-    <MpModal
-      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md" :is-keep-alive="false" @close="closeDirectPacking"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>
@@ -616,7 +615,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </MpModal>
 
     <!-- ── Cancel order confirmation ── -->
-    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>

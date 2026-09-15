@@ -562,12 +562,10 @@ function closeExportModal() { exportModalOpen.value = false }
   />
 
   <!-- ── Export modal (Figma node 8557-162044) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="prod-export-modal"
     :is-open="exportModalOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeExportModal"
   >

@@ -177,7 +177,7 @@ const myLimits = [
   </ErpTablePage>
 
   <!-- ── My limits drawer ── -->
-  <MpDrawer id="xpm-my-limits" :is-open="showLimitsDrawer" variant="floating" placement="right" size="lg" @close="showLimitsDrawer = false">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="xpm-my-limits" :is-open="showLimitsDrawer" variant="floating" placement="right" size="lg" @close="showLimitsDrawer = false">
     <MpDrawerContent>
       <MpDrawerHeader>My limits <MpDrawerCloseButton /></MpDrawerHeader>
       <MpDrawerBody>

@@ -32,7 +32,7 @@ export function emptyCrmDealsFilters(): CrmDealsFiltersValue {
  * CRM Deals — "All filters" drawer. Same custom-Teleport shell as
  * SalesOrderFiltersDrawer.vue (edits a local draft, commits only on Apply;
  * overlay click ignored — it's a form). Fields: keyword + column scope, Deal
- * value (gt / between / lt via AmountComparatorField), Deal owner and Customer
+ * value (gt / between / lt via AmountComparatorField), Owner and Customer
  * (is any of / all of / none of via TagsComparatorField).
  */
 import { reactive, ref, computed, watch } from 'vue'
@@ -125,9 +125,9 @@ const keywordColumnLabel = computed(() =>
             />
           </div>
 
-          <!-- Deal owner — comparator prefix + typeable tag input (Is any of / none of). -->
+          <!-- Owner — comparator prefix + typeable tag input (Is any of / none of). -->
           <div class="cdf-field">
-            <span class="cdf-field-label">Deal owner</span>
+            <span class="cdf-field-label">Owner</span>
             <ErpTagComparatorField
               :id="`${id}-owner`"
               :comparator="draft.ownerComparator"

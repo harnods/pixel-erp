@@ -81,9 +81,8 @@ function save() {
 </script>
 
 <template>
-  <MpModal
-    id="shipping-details-modal" :is-open="isOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="shipping-details-modal" :is-open="isOpen" size="md" :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Shipping details') }}<MpModalCloseButton /></MpModalHeader>

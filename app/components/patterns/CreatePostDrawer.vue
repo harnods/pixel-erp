@@ -183,7 +183,7 @@ async function save() {
 </script>
 
 <template>
-  <MpDrawer id="buzz-create-post-drawer" :is-open="isOpen" placement="right" size="lg" variant="floating" :is-keep-alive="false" @close="close">
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="buzz-create-post-drawer" :is-open="isOpen" placement="right" size="lg" variant="floating" :is-keep-alive="false" @close="close">
     <MpDrawerContent>
       <MpDrawerBody>
         <div class="cpd">
@@ -303,7 +303,7 @@ async function save() {
   <!-- ── Zoom lightbox over the generated designs ── -->
   <Teleport to="body">
     <Transition name="zm">
-      <div v-if="zoomIndex !== null && results[zoomIndex]" class="zm-overlay" @click.self="zoomIndex = null">
+      <div v-if="zoomIndex !== null && results[zoomIndex]" class="zm-overlay">
         <button class="zm-close" type="button" aria-label="Close" @click="zoomIndex = null"><MpIcon name="close" size="md" /></button>
         <button v-if="results.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
         <img :src="results[zoomIndex].dataUrl" alt="Design preview" class="zm-img" />

@@ -186,14 +186,12 @@ function proceedTopUp() {
     </div>
 
     <!-- ── Top up drawer ── -->
-    <MpDrawer
+    <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="xpm-card-topup-drawer"
       :is-open="topUpOpen"
       placement="right"
       size="md"
       variant="floating"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="closeTopUp"
     >

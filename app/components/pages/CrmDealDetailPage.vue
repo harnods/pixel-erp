@@ -36,7 +36,7 @@ import {
   dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder, linkDealSalesOrder,
-  lineSubtotal, crmCustomers, dealNo,
+  lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
 
@@ -76,7 +76,10 @@ const dealNumber = computed(() => (deal.value ? dealNo(deal.value.id) : ''))
 // ── Pipeline stepper (segmented bar) ──
 const FORWARD_STAGES: DealStage[] = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
 const currentStageIndex = computed(() => (deal.value ? FORWARD_STAGES.indexOf(deal.value.stage) : -1))
-const stepLabels = computed(() => ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', isLost.value ? 'Lost' : 'Won'])
+const stepLabels = computed(() =>
+  (['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', isLost.value ? 'Lost' : 'Won'] as DealStage[])
+    .map((s) => t(dealStageLabel(s))),
+)
 const agingMap = computed(() => (deal.value ? dealStageAgingDays(deal.value) : {} as Record<string, number>))
 function isFilled(i: number) { return isLost.value ? i <= 3 : i <= currentStageIndex.value }
 function isLostNode(i: number) { return isLost.value && i === 4 }
@@ -390,10 +393,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <MpTabs :key="deal.id" id="deal-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="deal-tab-details" value="details">{{ t('Deal details') }}</MpTab>
-          <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="deal-tab-orders" value="orders">{{ t('Sales orders') }}</MpTab>
+          <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -436,7 +439,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction date')" :value="fmtDate(deal.transactionDate || deal.createdAt)" />
-                  <ContentList :label="t('Due date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Close date')" :value="fmtDate(deal.expectedCloseDate)" />
                   <ContentList :label="t('Payment terms')" :value="deal.paymentTerms || '—'" />
                 </div>
                 <div class="content-list-col">
@@ -546,12 +549,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </section>
           </MpTabPanel>
 
-          <!-- ── Activity — every event for this deal (same table as the activity log) ── -->
-          <MpTabPanel value="activity">
-            <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
-            <ActivityLogTable :entries="dealActivity" />
-          </MpTabPanel>
-
           <!-- ── Notes — write + threaded notes/comments (self + teammates) ── -->
           <MpTabPanel value="notes">
             <h3 class="detail-tab-heading">{{ t('Notes') }}</h3>
@@ -623,9 +620,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── Sales orders — the linked ERP sales order, same table as the ERP index ── -->
+          <!-- ── ERP transactions — the linked ERP sales order, same table as the ERP index ── -->
           <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('Sales orders') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
@@ -666,6 +663,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </table>
             <p v-else class="detail-tab-empty">{{ t('No sales order created from this deal yet.') }}</p>
           </MpTabPanel>
+
+          <!-- ── Activity — every event for this deal (same table as the activity log) ── -->
+          <MpTabPanel value="activity">
+            <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
+            <ActivityLogTable :entries="dealActivity" />
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
@@ -694,6 +697,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       v-model:is-open="createSoAskOpen"
       :title="t('Create sales order?')"
       :description="t('Start a sales order from this deal. It opens the sales order form, pre-filled from the deal and still editable.')"
+      :cancel-label="t('Later')"
       :confirm-label="t('Create sales order')"
       :is-danger="false"
       @confirm="openSoDrawer"
@@ -702,6 +706,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       v-model:is-open="createSqAskOpen"
       :title="t('Create sales quote?')"
       :description="t('Start a sales quote from this deal. It opens the sales quote form, pre-filled from the deal and still editable.')"
+      :cancel-label="t('Later')"
       :confirm-label="t('Create sales quote')"
       :is-danger="false"
       @confirm="openSqDrawer"

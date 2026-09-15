@@ -82,6 +82,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Export wired to a silent download | open `ExportModal` | `rule/export-modal` |
 | Share-via-email as a form-only dialog | `ShareViaEmailModal` (form + PDF preview) | `rule/share-via-email-modal` |
 | Copy-link as a modal or silent toast | `CopyLinkDrawer` | `rule/copy-link-drawer` |
+| Whole-row `draggable` + swap-on-drop reorder | handle-initiated + live sortable | `rule/dnd-live-sortable` |
 
 ---
 
@@ -185,7 +186,9 @@ is the point: they *feel* normal, which is exactly why they slip through.
   tool a raw `<button>`/square hover while the others are oval, add a `gap:0`
   override, use secondary/filled buttons, scatter them loose, or hand-roll the
   grouping. **Why:** one consistent tool cluster on every list page — every icon
-  the same shape and spacing. Pairs with `rule/filter-bar-search-export`. **Lint:** review.
+  the same shape and spacing. Pairs with `rule/filter-bar-search-export`. **Source
+  (column visibility wiring):** `docs/patterns/ErpTablePage.md` § "Column
+  visibility (show/hide columns)". **Lint:** review.
 - **`rule/icon-pixel-library`** — *Do:* every icon is an **`MpIcon`** with a name from
   the **Pixel icon library** — verify the name via the `mekari-pixel` MCP
   (`get-icon-name`) before using it. *Don't:* use a raw `<svg>`, an emoji, an image, or
@@ -260,9 +263,26 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/modal-alert-top-align`** — *Do:* alert/confirm modals align to the **top**
   (`is-centered=false`; use `ConfirmModal.vue`). **Why:** house convention. **Lint:**
   review.
+- **`rule/modal-drawer-close-explicit-only`** — *Do:* every `MpModal` and `MpDrawer`
+  sets **`:is-close-on-esc="false" :is-close-on-overlay-click="false"`** (both, even
+  though the library defaults both to `true`), and always renders a real
+  `MpModalCloseButton`/× control — that × (or an explicit Cancel/Save) is the ONLY
+  way to dismiss it. Every hand-rolled Teleport drawer's `.xxx-overlay` div has **NO**
+  `@click.self="close"` (or any close handler) — the overlay is just a backdrop, not
+  a dismiss target — and there is **no** global `keydown Escape → close` listener
+  anywhere in the file. Applies to **every** modal/drawer, including confirm dialogs
+  and non-form ones — not just forms. *Don't:* let a stray click outside, or an Esc
+  press, silently discard a modal/drawer — even a read-only one the user didn't
+  intend to dismiss. **Why:** accidental outside-clicks and Esc presses were closing
+  drawers/modals and discarding in-progress input or losing context, with no
+  confirmation. **Supersedes** the old `is-close-on-overlay-click` prescription in
+  `rule/activity-log-modal` below, and the CLAUDE.md/`docs/patterns/Drawer.md`
+  wording "close only via ×/Cancel/**Esc**" — Esc is now excluded too, everywhere.
+  **Lint:** review.
 - **`rule/activity-log-modal`** — *Do:* the record **audit trail** always uses the
   shared **`ActivityLogModal.vue`** (`~/components/patterns/ActivityLogModal.vue`) —
-  an `MpModal` size **`xl`**, `is-close-on-overlay-click`, `:is-keep-alive="false"`,
+  an `MpModal` size **`xl`**, `:is-close-on-esc="false" :is-close-on-overlay-click="false"`
+  (`rule/modal-drawer-close-explicit-only`), `:is-keep-alive="false"`,
   header **"Activity log"** + `MpModalCloseButton`. Wire it from a detail page with
   `:is-open` / `@close` and pass `:subject` (the record name) + `:entries`. *Don't:*
   hand-roll an activity/history/audit modal, a timeline, or a drawer for this — reuse
@@ -726,9 +746,11 @@ ERP override wins.
 ## Drawers — source: `docs/patterns/Drawer.md`
 
 - **`rule/drawer-custom-shell`** — *Do:* build drawers as a **hand-rolled Teleport
-  overlay** (copy `BillsFiltersDrawer.vue`). *Don't:* use Pixel `MpDrawer` — it has
-  no structural CSS in this build (header/footer detach). **Why:** MpDrawer renders
-  broken here. **Lint:** pixel-police.
+  overlay** (copy `BillsFiltersDrawer.vue`). The `.xxx-overlay` div carries **no**
+  click handler (per `rule/modal-drawer-close-explicit-only` — close is × only, the
+  overlay is just a backdrop). *Don't:* use Pixel `MpDrawer` — it has no structural
+  CSS in this build (header/footer detach). **Why:** MpDrawer renders broken here.
+  **Lint:** pixel-police.
 - **`rule/drawer-header-fill`** — *Do:* the drawer header has a **background fill**;
   the panel has **no box-shadow**. **Lint:** review.
 - **`rule/drawer-open-via-manage`** — *Do:* a drawer opens **only** via a **Manage**
@@ -737,10 +759,12 @@ ERP override wins.
   filter surface for a list page) is the `rule/drawer-custom-shell` panel with header
   **"All filters"**, opened from the filter bar's **All filters** button
   (`rule/filter-bar-all-filters-drawer`). It edits a **local draft** and commits to the
-  parent **only on Apply** (re-syncs the draft from the applied value on every open); as
-  a form it **ignores the overlay click** — close only via ×, Cancel, or Apply.
-  *Don't:* mutate the parent's filter state live, or close-on-overlay-click and lose
-  input. **Why:** one predictable filter surface; edits are never half-applied or lost.
+  parent **only on Apply** (re-syncs the draft from the applied value on every open);
+  it ignores the overlay click AND Esc — close only via ×, Cancel, or Apply
+  (`rule/modal-drawer-close-explicit-only`).
+  *Don't:* mutate the parent's filter state live, or close-on-overlay-click/Esc and
+  lose input. **Why:** one predictable filter surface; edits are never half-applied
+  or lost.
   **Source:** `BillsFiltersDrawer.vue` (canonical; 15 across the ERP). **Lint:** review.
 - **`rule/filter-drawer-fields`** — *Do:* each filter is a **bold label above a reused
   field control** from the shared vocabulary — **Keyword** (text + inline column-scope
@@ -940,6 +964,15 @@ ERP override wins.
   text tied to a **specific field/control** is fine — this bans only the page/section
   descriptor. **Lint:** review (grep for a lead `<p>` immediately under a page/section
   title).
+- **`rule/id-format-module-hash-number`** — *Do:* any transaction/record number or
+  ID shown to a user is **"`<Module name> #<number>`"** — e.g. `Customer #10090`,
+  `Deal #10090`, `Invoice #10090` — the module/entity name, a space, `#`, then a
+  plain number. *Don't:* invent a prefix-code style ID (`CUST-5001`, `DL-260898`)
+  for anything **new** you're building. **Why:** a handful of older modules
+  (Deals `DL-*`, Sales Orders `SO-*`, Invoices `INV-*`) predate this convention and
+  are grandfathered — don't rewrite them — but every new ID surfaced to a user
+  (e.g. the ERP Customer ID stamped by CRM's "Create in ERP") follows this format.
+  **Lint:** review.
 
 ---
 
@@ -1036,6 +1069,53 @@ component — reuse it, never rebuild.
   **`ExportModal`** (format + scope options), never an immediate silent download.
   *Don't:* wire Export straight to a file download or put Export on the page title.
   **Why:** one export surface, consistent options. **Source:** `ExportModal.vue`.
+
+## Drag & drop — reorder
+
+- **`rule/dnd-live-sortable`** — *Do:* build **every** reorderable list to the
+  **pointer-sortable standard** — a lifted card that follows the cursor, a dashed
+  drop-slot that shows where it lands, and siblings that slide to open the gap.
+  This is **pointer-based, NOT native HTML5 DnD** (`draggable`/`dragstart`/
+  `dragover` proved unreliable here — drags that never start or never fire over
+  gaps; do not use them). For a single-axis list use the shared composable
+  **`~/composables/usePointerSortable`**; the multi-column layout builder follows
+  the same pattern by hand.
+  1. **Handle-initiated** — `@pointerdown="start(i, $event)"` on a **drag handle**
+     (`MpIcon name="drag"` in a `<span class="…-drag" :aria-label="t('Drag to reorder')">`),
+     never on the whole row/card. Handle CSS: `cursor: grab`, `touch-action: none`,
+     `user-select: none`.
+  2. **Floating ghost follows the cursor** — the grabbed item lifts into a clone
+     Teleported to `body`: `position: fixed`, positioned from the composable's
+     `ghost` (offset by where inside the item you pressed), drop shadow + slight
+     tilt (`rotate(-1.5deg) scale(1.02)`), `pointer-events: none`. (Shadow is a
+     deliberate, transient exception to `rule/surface-border-no-shadow`.)
+  3. **Live sortable + dashed placeholder** — as you move, reorder the array in
+     place (`splice`) so the item's slot travels with the cursor; the in-list slot
+     is a **dashed drop-slot** (`.is-dragging`: dashed brand border/outline,
+     brand-subtle bg, children `visibility: hidden`, size kept). Never wait for
+     drop; never rely on a `--over` line alone.
+  4. **Siblings FLIP-slide** — wrap the list in `<TransitionGroup name="x" tag="div">`
+     with `.x-move { transition: transform ~0.18–0.2s cubic-bezier(0.2,0,0,1); }`
+     (+ `-enter/-leave` fade, `-leave-active { position: absolute }`) so the gap
+     opens/closes smoothly.
+  5. **Insertion math** — single axis: before the first item whose axis-midpoint is
+     past the cursor, else the end; `if (target > from) target--`. Multi-column: a
+     layout section is **N INDEPENDENT column lists** (`cols: string[][]`, one
+     ordered list per column) — a row-major CSS grid can't let one column hold more
+     cards than another. Pick the target **column by cursor X**, the **row by
+     cursor Y**, move the id across `cols` live; give empty columns a `min-height`
+     so they stay droppable.
+  6. **Drag-handle colour** — `color: var(--mp-colors-icon-default)` at
+     `opacity: 0.75` (layout builder) / `icon-subtle` (pipeline); `cursor: grab`.
+
+  *Don't:* use native HTML5 DnD (`draggable`, `setDragImage`, `dragover`), put the
+  drag start on the whole card, reorder only on `drop`, model a multi-column layout
+  as one flat array in a CSS grid, or rely on a border highlight instead of the
+  floating ghost + live placeholder. **Why:** one seamless drag feel across the app
+  — Deals board, pipeline editor (swimlanes + card-property rows), and layout
+  builder all reorder identically. **Source:** `~/composables/usePointerSortable.ts`,
+  `CrmModuleBuilderPage.vue` (lanes + rows), `CrmDetailLayoutBuilder.vue` (columns).
+  **Lint:** review.
 
 ## Adding a rule
 

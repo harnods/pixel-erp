@@ -115,6 +115,26 @@ A content/detail page's header summary and any key→value display use the
 sizes; compose status/tags inside it with `ErpStatusBadge` / `ErpTagList`. See
 `ContentList.md` and `details-page-format.md`.
 
+## 8. MpTabs `variant-color="green"` — selected tab color
+
+Pixel 3 DT 2.4 Enterprise's "green" tab variant paints the selected tab text and
+underline in a **pale mint** (`mp-c_green.400`, ~`#7dc7a8`) — it reads as
+disabled/muted, not selected. The ERP standard is the same dark brand green used
+everywhere else for a "selected" state (`text.selected`, underline
+`border.selected`/`#029861`). Fixed globally in `erp.css` ›
+`.mp-tab--variantColor_green.mp-tab--isSelected_true` — do **not** re-patch this
+per page with a local `:deep()` override (many older detail pages still carry one;
+harmless but redundant now that the fix is global).
+
+## 9. MpCheckbox — disabled control border
+
+Pixel 3 DT 2.4 Enterprise's disabled checkbox border (~`#ebf0f1`) has almost no
+contrast against the page's off-white background (~`#f8f9f9`) — a disabled-but-
+available checkbox (e.g. a role's "Access limitation" before the role itself is
+ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
+`.mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control` to use
+`border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
+
 ---
 
 ## Rule of thumb

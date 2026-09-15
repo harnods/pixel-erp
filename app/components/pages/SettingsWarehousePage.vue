@@ -192,12 +192,10 @@ async function saveEdit() {
     </section>
 
     <!-- ── Discard confirmation dialog ────────────────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="ws-discard-dialog"
       :is-open="discardOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="discardOpen = false"
     >
       <MpModalContent>
@@ -217,12 +215,10 @@ async function saveEdit() {
     </MpModal>
 
     <!-- ── Non-retroactive rule change confirmation ──────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="ws-rule-confirm-dialog"
       :is-open="ruleConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="ruleConfirmOpen = false"
     >
       <MpModalContent>

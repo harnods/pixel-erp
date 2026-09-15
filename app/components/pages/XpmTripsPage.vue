@@ -148,7 +148,7 @@ function savePolicy() {
   </ErpTablePage>
 
   <!-- ── Travel policy drawer ── -->
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="xpm-travel-policy-drawer"
     :is-open="showPolicyDrawer"
     placement="right"

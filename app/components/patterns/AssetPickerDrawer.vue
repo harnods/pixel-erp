@@ -43,7 +43,7 @@ function done() { emit('update:modelValue', [...sel.value]); emit('update:isOpen
 <template>
   <Teleport to="body">
     <Transition name="apd">
-      <div v-if="isOpen" class="apd-overlay" @click.self="cancel">
+      <div v-if="isOpen" class="apd-overlay">
         <div class="apd-panel" role="dialog" aria-modal="true" aria-label="Your assets">
           <header class="apd-head">
             <h2 class="apd-title">Your assets</h2>

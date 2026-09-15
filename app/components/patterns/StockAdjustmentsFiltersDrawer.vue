@@ -51,7 +51,7 @@ function toggleDraftStatus(id: string) { draft.statuses = toggle(draft.statuses,
 
 <template>
   <Transition name="sa-filters">
-    <div v-if="isOpen" class="sa-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="sa-filters-overlay">
       <div class="sa-filters-panel" role="dialog" aria-label="All filters">
         <header class="sa-filters-header">
           <span class="sa-filters-title">All filters</span>

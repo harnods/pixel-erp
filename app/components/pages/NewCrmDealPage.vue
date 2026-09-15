@@ -24,7 +24,7 @@ import {
 import {
   crmCustomers, crmProducts, createDeal, updateDeal, getDeal,
   addDealAttachment, addCrmCustomer, crmCompanies, contactsOfCompany,
-  defaultDealStage, CRM_OWNERS,
+  defaultDealStage, CRM_OWNERS, dealModuleSetup,
   type CrmProduct, type DealInput, type DealLineItem, type CrmCompany,
 } from '~/data/crm'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -49,6 +49,21 @@ function dmyToIso(dmy: string) {
   if (!dmy) return todayISO()
   const [d, m, y] = dmy.split('/')
   return `${y}-${m}-${d}`
+}
+// Default Close date from the Deals module Setup (base = today / record creation).
+function isoOf(dt: Date) { return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}` }
+function defaultCloseDateISO(): string {
+  const s = dealModuleSetup
+  const [y, m, d] = todayISO().split('-').map(Number) as [number, number, number]
+  if (s.closeMode === 'period') {
+    const off = s.closePeriod === 'next-month' ? 2 : 1
+    return isoOf(new Date(y, (m - 1) + off, 0)) // day 0 → last day of the target month
+  }
+  const base = new Date(y, m - 1, d)
+  if (s.closeUnit === 'weeks') base.setDate(base.getDate() + s.closeAmount * 7)
+  else if (s.closeUnit === 'months') base.setMonth(base.getMonth() + s.closeAmount)
+  else base.setDate(base.getDate() + s.closeAmount)
+  return isoOf(base)
 }
 function toTagData(values: string[]): DataInterface[] {
   return values.map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false }))
@@ -321,7 +336,11 @@ function onCancel() {
 
 // On edit, prefill the form from the existing deal (best-effort).
 onMounted(() => {
-  if (!isEdit.value) return
+  if (!isEdit.value) {
+    // Create mode — apply the Deals module Setup default close date.
+    if (dealModuleSetup.applyCloseDate) dueDate.value = isoToDMY(defaultCloseDateISO())
+    return
+  }
   const d = getDeal(props.orderId)
   if (!d) return
   suppressAddressFill.value = true
@@ -375,7 +394,7 @@ function onSave() {
     stage: defaultDealStage(),
     owner: CRM_OWNERS[0] ?? 'You',
     value: total.value,
-    currency: 'IDR',
+    currency: dealModuleSetup.baseCurrency || 'IDR',
     exchangeRate: 1,
     expectedCloseDate: dmyToIso(dueDate.value || txDate.value),
     products,
@@ -482,7 +501,7 @@ function onSave() {
           </MpFormControl>
 
           <MpFormControl id="f-due-date" class="si-field">
-            <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Close date') }}</MpFormLabel>
             <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 

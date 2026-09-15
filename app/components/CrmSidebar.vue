@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { useLocale } from '~/composables/useLocale'
-import { getCrmModule } from '~/data/crm'
+import { getCrmModule, crmModules, isModuleVisibleToCurrentUser } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 
 const router = useRouter()
@@ -27,11 +27,27 @@ if (import.meta.client) {
 
 interface Child { name: string; to: string }
 interface Item { icon: string; name: string; to: string; children?: Child[] }
-// Two groups → the border-bottom between them is the divider (Customers | Settings).
-const navGroups: Item[][] = [
+// Published custom (non-system) modules — e.g. "Service deals" — sit in the Deals
+// group, so a new divider separates them from Reports/Customers. A team-scoped
+// module only shows up for members of a team it's assigned to.
+const customModuleItems = computed<Item[]>(() =>
+  crmModules
+    .filter((m) => !m.system && m.status === 'published' && isModuleVisibleToCurrentUser(m))
+    .map((m) => ({ icon: m.icon || 'pipeline', name: m.name, to: `/crm/${m.id}` })),
+)
+// Each array is a nav group; the border-bottom between them is a divider.
+const navGroups = computed<Item[][]>(() => [
   [
-    { icon: 'pipeline', name: 'Deals',    to: '/crm/deals' },
-    { icon: 'reports',  name: 'Reports',  to: '/crm/reports' },
+    { icon: 'pipeline', name: 'Deals', to: '/crm/deals' },
+    ...customModuleItems.value,
+  ],
+  [
+    { icon: 'reports',  name: 'Reports',  to: '/crm/reports', children: [
+      { name: 'All reports',    to: '/crm/reports' },
+      { name: 'My reports',     to: '/crm/reports/mine' },
+      { name: 'Shared with me', to: '/crm/reports/shared' },
+      { name: 'Archived',       to: '/crm/reports/archived' },
+    ] },
     { icon: 'contact',  name: 'Customers', to: '/crm/customers', children: [
       { name: 'Contacts',  to: '/crm/customers/contacts' },
       { name: 'Companies', to: '/crm/customers/companies' },
@@ -43,22 +59,25 @@ const navGroups: Item[][] = [
       { name: 'Users',            to: '/crm/settings/users' },
       { name: 'Teams',            to: '/crm/settings/teams' },
       { name: 'Modules',          to: '/crm/settings/modules' },
+      { name: 'Properties',       to: '/crm/settings/properties' },
     ] },
   ],
-]
+])
 
 const activeItem = computed<string>(() => {
   if (route.path === '/crm' || route.path === '/crm/deals' || route.path.startsWith('/crm/deals/')) return 'Deals'
+  // Custom-module routes (settings/modules/:id) highlight the module, not Settings.
+  for (const it of customModuleItems.value) if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   if (route.path === '/crm/customers' || route.path.startsWith('/crm/customers/')) return 'Customers'
   if (route.path === '/crm/settings' || route.path.startsWith('/crm/settings/')) return 'Settings'
-  for (const g of navGroups) for (const it of g)
+  for (const g of navGroups.value) for (const it of g)
     if (route.path === it.to || route.path.startsWith(it.to + '/')) return it.name
   return 'Deals'
 })
 
 // Level-2 panel: opens whenever the active section has children (e.g. Customers).
 const activePanel = computed<Item | null>(() => {
-  for (const g of navGroups) for (const it of g)
+  for (const g of navGroups.value) for (const it of g)
     if (it.name === activeItem.value && it.children?.length) return it
   return null
 })
@@ -66,14 +85,24 @@ const activePanel = computed<Item | null>(() => {
 // Rail collapses to the icon rail while a level-2 panel is open (ERP behavior).
 const navExpanded = computed(() => expanded.value && !isNarrowViewport.value && !activePanel.value)
 
+// Longest-prefix match: when one child's `to` is itself a prefix of a sibling's
+// (e.g. Reports' "All reports" → /crm/reports vs. "My reports" → /crm/reports/mine),
+// only the most specific match should highlight — otherwise both light up at once.
+const activeChildTo = computed<string | null>(() => {
+  const children = activePanel.value?.children ?? []
+  const matches = children.filter((c) => route.path === c.to || route.path.startsWith(c.to + '/'))
+  if (!matches.length) return null
+  return matches.reduce((best, c) => (c.to.length > best.to.length ? c : best)).to
+})
 function isChildActive(to: string): boolean {
-  return route.path === to || route.path.startsWith(to + '/')
+  return activeChildTo.value === to
 }
 function handleNavClick(item: Item) { router.push(item.children?.length ? item.children[0]!.to : item.to) }
 
-// The Deals nav item mirrors the Deals module's name (renamable in module settings).
+// The Deals nav item mirrors the Deals module's name + icon (both set in module settings).
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsModuleName.value : t(item.name) }
+function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrmModule('deals')?.icon || item.icon) : item.icon }
 </script>
 
 <template>
@@ -97,8 +126,8 @@ function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsM
           type="button"
           @click="handleNavClick(item)"
         >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="">
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
+          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
           <span class="nav-label">{{ navLabel(item) }}</span>
         </button>
       </div>

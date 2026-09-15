@@ -652,9 +652,8 @@ async function handleSave() {
 
     <!-- Removing a product counted in several locations — a task-wide action, so
          name the locations and let the button say what it actually does. -->
-    <MpModal
-      id="nct-remove-sku" :is-open="!!removeSkuTarget" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="removeSkuTarget = null"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="nct-remove-sku" :is-open="!!removeSkuTarget" size="md" :is-keep-alive="false" @close="removeSkuTarget = null"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Remove this product from the count?') }}<MpModalCloseButton /></MpModalHeader>
@@ -678,7 +677,7 @@ async function handleSave() {
 
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
-      <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
+      <div v-if="locationDrawerOpen" class="loc-spd-overlay">
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>

@@ -21,12 +21,21 @@ import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+// Dimensions (Settings > Dimensions line tagging) — same gate as the other
+// transaction forms; hidden in WMS mode same as Average cost (a Financials
+// concept, not relevant to a warehouse cycle count).
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => !isWms.value && dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
 
 function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -84,7 +93,7 @@ function isSerialTrackedSku(sku: string): boolean {
 }
 
 // ── Product rows (each a counted product) ──────────────────────────────────────────
-interface CountRow { sku: string; counted: string; countedError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface CountRow { sku: string; counted: string; countedError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[]; dimensions: Record<string, string> }
 const rows = ref<CountRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
 function defaultAvgCostInput(sku: string): string {
@@ -135,9 +144,19 @@ function serialTotalFor(row: CountRow): number {
 
 function applyPicker(skus: string[]) {
   const existing = new Map(rows.value.map(r => [r.sku, r]))
-  rows.value = skus.map(sku => existing.get(sku) ?? { sku, counted: '', countedError: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
+  rows.value = skus.map(sku => existing.get(sku) ?? { sku, counted: '', countedError: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku), dimensions: {} })
 }
 function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every visible product's dimensions (a dimension left
+// blank in the popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  rows.value.forEach((row) => { row.dimensions = { ...row.dimensions, ...patch } })
+}
+function onBulkLocDimensions(loc: LocEntry, patch: Record<string, string>) {
+  loc.rows.forEach((row) => { row.dimensions = { ...row.dimensions, ...patch } })
+}
 
 // Average cost per row: 'auto' shows the product's moving-average cost (read-only);
 // 'custom' turns the cell into a "Rp"-prefixed input. Switch via the hover edit menu.
@@ -338,7 +357,7 @@ async function handleSave() {
 }
 
 // ── Storage-location mode ────────────────────────────────────────────────────────
-interface LocRow { sku: string; onHand: number; counted: string; countedError: boolean; isAuto: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface LocRow { sku: string; onHand: number; counted: string; countedError: boolean; isAuto: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[]; dimensions: Record<string, string> }
 interface LocEntry {
   locId: string; fullPath: string
   skuStart: number; skuQty: number
@@ -371,7 +390,7 @@ function rebuildLocsBySkus(skus: string[]) {
       const entry = locMap.get(node.id)!
       if (!entry.rows.some(r => r.sku === sku)) {
         const onHand = getLocationStock(warehouseId.value, node.skuStart, node.skuQty).find(s => s.sku === sku)?.onHand ?? 0
-        entry.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
+        entry.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku), dimensions: {} })
       }
     }
   }
@@ -466,7 +485,7 @@ function confirmLocSelection() {
       const node = all.find(n => n.id === id)
       if (!node) return null
       const stockItems = getLocationStock(warehouseId.value, node.skuStart, node.skuQty)
-      const rows: LocRow[] = stockItems.map(s => ({ sku: s.sku, onHand: s.onHand, counted: '', countedError: false, isAuto: true, avgMode: 'auto', avgCostInput: defaultAvgCostInput(s.sku) }))
+      const rows: LocRow[] = stockItems.map(s => ({ sku: s.sku, onHand: s.onHand, counted: '', countedError: false, isAuto: true, avgMode: 'auto', avgCostInput: defaultAvgCostInput(s.sku), dimensions: {} }))
       const fullPath = findLocation(warehouseId.value, id)?.path.map(n => n.name).join(' / ') ?? node.name
       return { locId: id, fullPath, skuStart: node.skuStart, skuQty: node.skuQty, rows, productDrawerOpen: false }
     })
@@ -559,7 +578,7 @@ function addProductsToLoc(loc: LocEntry, skus: string[]) {
   for (const sku of skus) {
     if (!existingSkus.has(sku)) {
       const onHand = getLocationStock(warehouseId.value, loc.skuStart, loc.skuQty).find(s => s.sku === sku)?.onHand ?? 0
-      loc.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
+      loc.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku), dimensions: {} })
     }
   }
   loc.productDrawerOpen = false
@@ -738,7 +757,7 @@ onMounted(() => {
               <MpAccordionPanel>
               <div class="scf-acc-body">
                 <div class="scf-table-scroll">
-                  <table class="scf-table scf-table--loc">
+                  <table class="scf-table scf-table--loc" :class="{ 'scf-table--with-dimensions': showDimensionsColumn }">
                     <colgroup>
                       <col class="scf-col-prod" />
                       <col class="scf-col-sku" />
@@ -747,6 +766,7 @@ onMounted(() => {
                       <col class="scf-col-diff" />
                       <col class="scf-col-unit" />
                       <col class="scf-col-avg" />
+                      <col v-if="showDimensionsColumn" class="scf-col-dimensions" />
                       <col class="scf-col-del" />
                     </colgroup>
                     <thead>
@@ -758,6 +778,13 @@ onMounted(() => {
                         <th class="scf-th scf-th--num">{{ t('Difference') }}</th>
                         <th class="scf-th">{{ t('Unit') }}</th>
                         <th v-if="!isWms" class="scf-th">{{ t('Average cost') }}</th>
+                        <th v-if="showDimensionsColumn" class="scf-th scf-th--dimensions">
+                          <span class="scf-th-dim-label">
+                            {{ t('Dimensions') }}
+                            <ErpDimensionsInfoPopover :id="`scf-loc-dim-info-${loc.locId}`" />
+                          </span>
+                          <ErpBulkDimensionsPopover :id="`scf-loc-dim-bulk-${loc.locId}`" transaction-type="stock-adjustment" @apply="(patch) => onBulkLocDimensions(loc, patch)" />
+                        </th>
                         <th class="scf-th scf-th--del" />
                       </tr>
                     </thead>
@@ -844,6 +871,12 @@ onMounted(() => {
                             </MpPopover>
                           </div>
                         </td>
+                        <td v-if="showDimensionsColumn" class="scf-td scf-td--dimensions">
+                          <ErpLineDimensionsCell
+                            :model-value="row.dimensions" transaction-type="stock-adjustment" :id="`scf-loc-dim-${loc.locId}-${row.sku}`"
+                            @update:model-value="(v) => row.dimensions = v"
+                          />
+                        </td>
                         <td class="scf-td scf-td--del">
                           <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
                         </td>
@@ -874,9 +907,9 @@ onMounted(() => {
         <!-- Existing flat-table (non-storage-location warehouses) -->
         <div v-else class="scf-table-section">
           <div class="scf-table-scroll">
-            <table class="scf-table">
+            <table class="scf-table" :class="{ 'scf-table--with-dimensions': showDimensionsColumn }">
               <colgroup>
-                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-onhand" /><col class="scf-col-counted" /><col class="scf-col-diff" /><col class="scf-col-unit" /><col class="scf-col-avg" /><col class="scf-col-del" />
+                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-onhand" /><col class="scf-col-counted" /><col class="scf-col-diff" /><col class="scf-col-unit" /><col class="scf-col-avg" /><col v-if="showDimensionsColumn" class="scf-col-dimensions" /><col class="scf-col-del" />
               </colgroup>
               <thead>
                 <tr>
@@ -887,6 +920,13 @@ onMounted(() => {
                   <th class="scf-th scf-th--num">{{ t('Difference') }}</th>
                   <th class="scf-th">{{ t('Unit') }}</th>
                   <th v-if="!isWms" class="scf-th">{{ t('Average cost') }}</th>
+                  <th v-if="showDimensionsColumn" class="scf-th scf-th--dimensions">
+                    <span class="scf-th-dim-label">
+                      {{ t('Dimensions') }}
+                      <ErpDimensionsInfoPopover id="scf-dim-info" />
+                    </span>
+                    <ErpBulkDimensionsPopover id="scf-dim-bulk" transaction-type="stock-adjustment" @apply="onBulkDimensions" />
+                  </th>
                   <th class="scf-th scf-th--del" />
                 </tr>
               </thead>
@@ -973,6 +1013,12 @@ onMounted(() => {
                       </MpPopover>
                     </div>
                   </td>
+                  <td v-if="showDimensionsColumn" class="scf-td scf-td--dimensions">
+                    <ErpLineDimensionsCell
+                      :model-value="row.dimensions" transaction-type="stock-adjustment" :id="`scf-dim-${row.sku}`"
+                      @update:model-value="(v) => row.dimensions = v"
+                    />
+                  </td>
                   <td class="scf-td scf-td--del">
                     <button class="scf-del-btn" type="button" :aria-label="t('Remove product')" @click="removeRow(row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
@@ -1027,7 +1073,7 @@ onMounted(() => {
 
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
-      <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
+      <div v-if="locationDrawerOpen" class="loc-spd-overlay">
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>
@@ -1098,6 +1144,29 @@ onMounted(() => {
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
     />
+    <!-- Storage-location mode's own "Manage batch"/"Manage serial number" drawers —
+         openLocBatchDrawer/openLocSerialDrawer only set locBatchDrawerRow/locSerialDrawerRow;
+         without these instances bound to them, clicking those links in the location-grouped
+         table did nothing (the click handler ran but no drawer was ever mounted to react to it). -->
+    <ManageBatchDrawer
+      v-if="locBatchDrawerRow"
+      :open="locBatchDrawerOpen"
+      :sku="locBatchDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :model-value="locBatchDrawerRow.batchLines ?? []"
+      @update:open="locBatchDrawerOpen = $event"
+      @save="saveLocBatchLines"
+    />
+    <ManageSerialDrawer
+      v-if="locSerialDrawerRow"
+      :open="true"
+      :sku="locSerialDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :target-count="parseCounted(locSerialDrawerRow.counted)"
+      :model-value="(locSerialDrawerRow.serialLines ?? []).map(s => ({ serial: s }))"
+      @update:open="locSerialDrawerOpen = false"
+      @save="saveLocSerialLines"
+    />
     <NumberFormatSettingsModal
       v-model:open="noSettingsOpen"
       :title="t('Transaction no. settings')"
@@ -1149,23 +1218,45 @@ onMounted(() => {
 
 .scf-table-section { margin-top: var(--mp-spacing-5); }
 .scf-table-scroll { overflow-x: auto; }
-.scf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
-.scf-col-prod    { width: 26%; }
-.scf-col-sku     { width: 12%; }
-.scf-col-onhand  { width: 8%; }
-.scf-col-counted { width: 15%; }
-.scf-col-diff    { width: 9%; }
-.scf-col-unit    { width: 8%; }
-.scf-col-avg     { width: 17%; }
+/* Flat px columns, not the original % ones: table-layout:fixed recomputed every
+   %-column's rendered width whenever the table's own width changed (which is what
+   adding Dimensions did), so the line items shifted around. Each value below is
+   the pixel width its % resolved to on the pre-Dimensions table at the app's
+   1320px content width (26/12/8/15/9/8/17% of 1320) — the widths this table has
+   always shown on a 1440px screen — so nothing narrows and nothing moves.
+   Dimensions is added ON TOP of that sum rather than taken out of it, which is
+   why the total can exceed the container; .scf-table-scroll's overflow-x:auto
+   scrolls it instead of squeezing the other columns. */
+.scf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: 1298px; }
+.scf-table--with-dimensions { min-width: 1518px; }
+.scf-col-prod    { width: 343px; }
+.scf-col-sku     { width: 158px; }
+.scf-col-onhand  { width: 106px; }
+.scf-col-counted { width: 198px; }
+.scf-col-diff    { width: 119px; }
+.scf-col-unit    { width: 106px; }
+.scf-col-avg     { width: 224px; }
+.scf-col-dimensions { width: 220px; }
 .scf-col-del     { width: 44px; max-width: 44px; }
 .scf-table--loc .scf-th { background: var(--mp-background-neutral, #fff); }
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap; }
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .scf-th--del { width: 44px; max-width: 44px; padding: 0; }
+/* Dimensions header carries both the label+info-icon (left) and the "Bulk"
+   link (float:right, from ErpBulkDimensionsPopover) — same layout as the
+   Sales/Purchases/Expenses line-items tables. */
+.scf-th--dimensions { text-transform: none; }
+.scf-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); text-transform: uppercase; }
 /* Read-only cells are gray; editable/interactive cells (Product, Counted, custom Average
    cost, the delete-icon column) are white. Every body cell gets a right divider except
    the trailing delete column, which sits flush against the table edge. */
-.scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); border-right: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: middle; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* vertical-align:top (not middle) — identical for every un-stretched row (all
+   cells share the same baseline height, so top vs middle looks the same);
+   only matters once the Dimensions column stacks 2+ values and stretches the
+   row taller, where every other cell must pin to the top of it, not float to
+   its vertical center (feedback_dimensions_row_stretch_top_align). */
+.scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); border-right: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: top; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.scf-td--dimensions { padding: 0; background: var(--mp-background-neutral, #fff); }
 .scf-td--muted { color: var(--mp-text-secondary); }
 .scf-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 .scf-diff--pos { color: var(--mp-text-success, #18794e); }
@@ -1173,10 +1264,15 @@ onMounted(() => {
 .scf-diff--uncounted { color: var(--mp-text-secondary); }
 /* Average cost — value + edit icon to its right. The icon's space is always reserved
    (visibility toggled, not display) so hovering never shifts the row or the icon.
-   height:1px on the td enables height:100% on the child wrap, which then always
-   matches the row's actual (content-driven) height. */
+   height:1px on the td lets height:100% below resolve against the row's actual
+   (possibly Dimensions-stretched) height, so the "Rp" prefix's gray background
+   fills the WHOLE tall cell instead of stopping after its own text line (a
+   stray bare gap below it read as "cropped"). align-items:flex-start on the
+   wrap is the default for its children — the num input and edit icon inherit
+   it and stay pinned to the top (matching "Rp"); only the prefix explicitly
+   overrides to align-self:stretch. */
 .scf-td--avg.scf-td--input { height: 1px; }
-.scf-avg-wrap { display: flex; align-items: stretch; width: 100%; height: 100%; }
+.scf-avg-wrap { display: flex; align-items: flex-start; width: 100%; height: 100%; }
 /* Auto-calculate: fill the whole wrap (prefix to the edit button's reserved slot)
    with the disabled color, so it reads as one seamless block with no white gap —
    applied here (not on the input/button, which are visibility:hidden until hovered
@@ -1184,15 +1280,17 @@ onMounted(() => {
 .scf-avg-wrap--auto { background: var(--mp-background-disabled, rgba(29,31,36,0.04)); }
 /* Average cost is always the "Rp"-prefixed input; disabled (Auto-calculate) just
    greys out the input rather than swapping to plain text. */
-.scf-avg-prefix { align-self: stretch; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary); border-right: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); white-space: nowrap; }
-.scf-avg-num { flex: 1; min-width: 0; height: 100%; padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
+.scf-avg-prefix { align-self: stretch; display: flex; align-items: flex-start; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary); border-right: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); white-space: nowrap; }
+.scf-avg-num { flex: 1; min-width: 0; align-self: flex-start; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .scf-avg-num:disabled { color: var(--mp-text-secondary); cursor: not-allowed; -webkit-text-fill-color: var(--mp-text-secondary); }
-.scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); align-self: center; padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
+.scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 8px var(--mp-spacing-1) 0 0; align-self: flex-start; padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
 .scf-tr:hover .scf-avg-edit { visibility: visible; }
 .scf-avg-edit:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
-.scf-td--prod { width: 40%; max-width: 0; height: 1px; padding: 0; background: var(--mp-background-neutral, #fff); }
-/* Product cell is a button that opens the swap-product popover — reset button chrome. */
-.scf-prod { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; width: 100%; height: 100%; padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); border: none; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.scf-td--prod { width: 40%; max-width: 0; padding: 0; background: var(--mp-background-neutral, #fff); }
+/* Product cell is a button that opens the swap-product popover — reset button chrome.
+   Natural height (not height:100%) so it pins to the TOP of a possibly
+   Dimensions-stretched row instead of centering in it. */
+.scf-prod { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; width: 100%; padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); border: none; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit; }
 .scf-prod:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .scf-prod-chevron { margin-left: auto; flex-shrink: 0; color: var(--mp-icon-default); }
 .scf-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle, #e5e7e7); background: var(--mp-background-neutral, #ffffff); }
@@ -1208,8 +1306,12 @@ onMounted(() => {
 .scf-batch-total { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .scf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 /* Counted cell for batch/serial-tracked rows — value/input on top, "Manage…" link stacked below.
-   Active/white background (not the muted read-only gray) — this column is always editable. */
-.scf-td--counted-batch { padding: 6px var(--mp-spacing-2) 6px var(--mp-spacing-4); vertical-align: middle; white-space: nowrap; }
+   Active/white background (not the muted read-only gray) — this column is always editable.
+   vertical-align:top (not middle) so "Manage batch"/"Manage serial number" pins to the
+   same top edge as every sibling cell once the Product cell's two-line name+desc (or the
+   Dimensions column) stretches the row taller — middle floated it to the row's vertical
+   center instead (feedback_dimensions_row_stretch_top_align). */
+.scf-td--counted-batch { padding: 8px var(--mp-spacing-2) 6px var(--mp-spacing-4); vertical-align: top; white-space: nowrap; }
 .scf-td--active { background: var(--mp-background-neutral, #fff); }
 .scf-qty-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .scf-qty-stack .scf-qty-input { width: 72px; text-align: right; height: 26px; padding: 0 4px; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); background: transparent; }

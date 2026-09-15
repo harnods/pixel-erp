@@ -8,6 +8,7 @@ const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-load
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
+import { getCrmModule } from '~/data/crm'
 import { getAgent, type CoworkAgent } from '~/data/cowork'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { useAireneChat, DEFAULT_CONTEXT_SUGGESTIONS } from '~/composables/useAireneChat'
@@ -48,6 +49,8 @@ import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const { requestDimensionCreate } = useDimensionsFormDrawer()
 const route = useRoute()
 const router = useRouter()
 
@@ -134,6 +137,10 @@ const pageRegistry: Record<string, Component> = {
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
+  'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPage.vue')),
+  // Reports → Financials index (report cards). The Multidimensional report itself
+  // resolves via detailMatch (/financial-report/multidimensional).
+  'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   // Reports → Sales index (flush report-card grid, same format as WMS).
@@ -353,6 +360,9 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
+const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
+const CrmServiceDetailPage = asyncPage(() => import('~/components/pages/CrmServiceDetailPage.vue'))
+const NewCrmServicePage = asyncPage(() => import('~/components/pages/NewCrmServicePage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
@@ -361,8 +371,13 @@ const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPa
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
 const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
+const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
+const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
+const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
+const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
+const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -401,6 +416,9 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
+const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
+const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
+const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -455,18 +473,43 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
+    // /crm/services → Service deals workspace (custom module); /crm/services/new →
+    // create form; /crm/services/:id/edit → edit form; /crm/services/:id → detail.
+    if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
+    if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
+    if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
+    // /crm/<moduleId>[/recordId] → any OTHER published custom module (created via
+    // "+ New module") gets the generic records workspace/detail, driven entirely
+    // by its own pipeline/properties (no per-module page needed). Guarded by a
+    // real, non-system module lookup so it can't hijack reserved CRM subpaths.
+    {
+      const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
+      if (customMod && !customMod.system) {
+        return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
+      }
+    }
     // /crm/orders/:id, /crm/products/:id → CRM detail pages.
     if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
+    if (sub === 'reports' && id === 'new') return { component: CrmReportBuilderPage, id: 'new' }
+    // Level-2 sidebar views (CrmSidebar.vue's Reports children) — library, not
+    // a single report id.
+    if (sub === 'reports' && (id === 'mine' || id === 'shared' || id === 'archived')) return { component: CrmReportsPage, id }
+    if (sub === 'reports' && id && segs[3] === 'edit') return { component: CrmReportBuilderPage, id }
+    if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
     if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
     // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
+    // "New module" is also handled by the builder — orderId 'new' — so every
+    // config tab (Setup/Properties/Pipeline/Layout) is available immediately,
+    // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
+    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPropertiesPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
@@ -529,6 +572,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /sales-report/credit-memo → Credit Memo report (Reports → Sales → View report).
   if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
     return { component: CreditMemoReportPage, id: segs[1]! }
+  }
+  // /financial-report/:slug → the built Financials reports (Reports → Financials
+  // → View report). Only these slugs match; anything else falls through to the
+  // Financials reports index.
+  if (segs.length >= 2 && segs[0] === 'financial-report') {
+    if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
+    if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
+    if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
@@ -1830,6 +1881,14 @@ function startResize(e: MouseEvent) {
             {{ t('New approval workflow') }}
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Dimensions' && dimensionsActivated" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="requestDimensionCreate()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New dimension') }}
+          </button>
+        </div>
         <!-- Settings → Users & roles: the create action follows the active tab. -->
         <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
           <MpButton
@@ -2192,7 +2251,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

@@ -133,8 +133,8 @@ function openFull() { emit('open-full', seed()) }
               <ErpFilterSelect id="cqd-stage" :model-value="stage" placeholder="Stage" :options="[...DEAL_STAGES]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (stage = v as DealStage)" />
             </div>
             <div class="cqd-field">
-              <span class="cqd-label">Deal owner</span>
-              <ErpFilterSelect id="cqd-owner" :model-value="owner" placeholder="Deal owner" :options="[...CRM_OWNERS]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (owner = v)" />
+              <span class="cqd-label">Owner</span>
+              <ErpFilterSelect id="cqd-owner" :model-value="owner" placeholder="Owner" :options="[...CRM_OWNERS]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (owner = v)" />
             </div>
 
             <p v-if="formError" class="cqd-form-error">{{ formError }}</p>

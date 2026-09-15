@@ -234,13 +234,12 @@ function submitToDjp() { save('awaiting-approval') }
 </script>
 
 <template>
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="create-tax-document-drawer"
     :is-open="isOpen"
     placement="right"
     size="full"
     variant="floating"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >
