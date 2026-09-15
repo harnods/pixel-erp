@@ -27,6 +27,8 @@ const { t } = useLocale()
 const reorderPoint = ref('')
 const safetyDays = ref('')
 const maxLevel = ref('')
+const coverageDays = ref('')
+const manualLeadTime = ref('')
 const manualDemand = ref('')
 const tracked = ref(true)
 const error = ref('')
@@ -44,6 +46,8 @@ watch(() => props.isOpen, (open) => {
   reorderPoint.value = override.reorderPoint !== undefined ? String(override.reorderPoint) : ''
   safetyDays.value = override.safetyDays !== undefined ? String(override.safetyDays) : ''
   maxLevel.value = override.maxLevel !== undefined ? String(override.maxLevel) : ''
+  coverageDays.value = override.coverageDays !== undefined ? String(override.coverageDays) : ''
+  manualLeadTime.value = override.manualLeadTimeDays !== undefined ? String(override.manualLeadTimeDays) : ''
   manualDemand.value = override.manualDailyDemand !== undefined ? String(override.manualDailyDemand) : ''
   tracked.value = row.fsn.tracked
   error.value = ''
@@ -67,6 +71,8 @@ function save() {
   const rop = reorderPoint.value === '' ? null : Number(reorderPoint.value)
   const safety = safetyDays.value === '' ? null : Number(safetyDays.value)
   const max = maxLevel.value === '' ? null : Number(maxLevel.value)
+  const coverage = coverageDays.value === '' ? null : Number(coverageDays.value)
+  const lead = manualLeadTime.value === '' ? null : Number(manualLeadTime.value)
   const demand = manualDemand.value === '' ? null : Number(manualDemand.value)
 
   for (const [label, value] of [
@@ -91,6 +97,8 @@ function save() {
     reorderPoint: rop ?? undefined,
     safetyDays: safety ?? undefined,
     maxLevel: max ?? undefined,
+    coverageDays: coverage ?? undefined,
+    manualLeadTimeDays: lead ?? undefined,
     manualDailyDemand: demand ?? undefined,
     tracked: tracked.value ? undefined : false,
   })
@@ -157,13 +165,38 @@ function save() {
             </span>
           </MpFormControl>
 
+          <MpFormControl id="rp-set-coverage-fc">
+            <MpFormLabel>{{ t('Order coverage') }}</MpFormLabel>
+            <MpInputGroup id="rp-set-coverage-g">
+              <MpInput id="rp-set-coverage" v-model="coverageDays" type="number" :placeholder="String(row.coverageDays)" />
+              <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+            </MpInputGroup>
+            <span class="rp-set-hint">
+              {{ t('How many days each order should cover. Sizes the quantity; it never changes when this product becomes due.') }}
+            </span>
+          </MpFormControl>
+
           <MpFormControl id="rp-set-max-fc">
             <MpFormLabel>{{ t('Max level') }}</MpFormLabel>
             <MpInputGroup id="rp-set-max-g">
-              <MpInput id="rp-set-max" v-model="maxLevel" type="number" :placeholder="t('No cap')" />
+              <MpInput id="rp-set-max" v-model="maxLevel" type="number" :placeholder="t('Use order coverage')" />
               <MpInputRightAddon>{{ row.unit }}</MpInputRightAddon>
             </MpInputGroup>
-            <span class="rp-set-hint">{{ t('Caps the suggested quantity. Leave empty for no cap.') }}</span>
+            <span class="rp-set-hint">
+              {{ t('Order up to this level in units instead of using order coverage. Leave empty to size by days.') }}
+            </span>
+          </MpFormControl>
+
+          <!-- Only shown when the ladder found nothing to measure (US-003 AC-02). -->
+          <MpFormControl v-if="row.leadTimeTier === 'none' || row.leadTimeTier === 'manual'" id="rp-set-lead-fc">
+            <MpFormLabel>{{ t('Lead time') }}</MpFormLabel>
+            <MpInputGroup id="rp-set-lead-g">
+              <MpInput id="rp-set-lead" v-model="manualLeadTime" type="number" />
+              <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+            </MpInputGroup>
+            <span class="rp-set-hint">
+              {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.') }}
+            </span>
           </MpFormControl>
 
           <MpFormControl v-if="row.velocity.coldStart" id="rp-set-demand-fc">

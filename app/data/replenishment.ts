@@ -7,11 +7,19 @@
  * cannot drift apart. Nothing here mutates stock; the only writer is
  * `recalculateReplenishment()`, and it writes only the run ledger.
  *
- * Formula (PRD US-008 AC-01), fixed — do not substitute an order-up-to variant:
- *   suggested = (leadDays + safetyDays) × avgDailySales − (available + onOrder)
- * floored at 0. `maxLevel`, where set, only CAPS the result; it never becomes the
- * target. `maxLevel − availableToPromise` is a different policy and would break the
- * PRD's worked example and the trust drawer's arithmetic.
+ * Two formulas, and they are deliberately different (PRD §2.3, US-008):
+ *   reorder point = avgDailySales × (leadDays + safetyDays)
+ *   suggested qty = avgDailySales × (leadDays + safetyDays + coverageDays)
+ *                     − (netAvailable + onOrder)
+ * floored at 0. The reorder point answers WHEN (it is the minimum stock
+ * threshold); coverage days appear ONLY in the quantity and answer HOW MUCH.
+ * Without that second horizon each order would refill exactly to the trigger and
+ * re-fire the next day — which is why every reference ERP takes the extra input
+ * (decision D9).
+ *
+ * `maxLevel`, where set, REPLACES the coverage horizon as the order-up-to target
+ * (US-011 AC-03): the SKU tops up to that level in units instead. It is no longer
+ * a cap on a coverage-days result.
  */
 import { warehouses } from './warehouses'
 import { productBySku, warehouseProducts } from './inventory'
@@ -23,12 +31,13 @@ import { receivedSummaryForReceipt } from './receivingTasks'
 import { shiftDays } from './master'
 import {
   REPL_ASOF_ISO, getReplenishmentConfig, normalizeWindowWeights,
-  type ReplBoundaryMode, type ReplenishmentConfig,
+  type ReplBoundaryMode, type ReplDemandMode, type ReplenishmentConfig,
 } from './replenishmentConfig'
 import { effectiveSettings, type EffectiveReplenishmentSettings } from './replenishmentSettings'
 import { bumpReplenishmentRevision, replenishmentRevision } from './replenishmentStore'
 import {
-  demandCv, demandSeries, demandWindow, invalidateDemandHistory, type DemandDoc,
+  demandCv, demandSeries, demandWindow, demandWindowDamped, invalidateDemandHistory,
+  type DemandDoc,
 } from './demandHistory'
 import {
   preferredVendorItem, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
@@ -37,6 +46,10 @@ import {
   classMemo, currentRunNo, hasRunHistory, memoKey, writeRun,
   type FsnClass, type FsnClassMemo,
 } from './replenishmentRuns'
+import {
+  deriveLeadTime, invalidateLeadTimeHistory, isEstimatedTier, leadTimeTierLabel,
+  type DerivedLeadTime, type LeadTimeTier,
+} from './leadTimeHistory'
 
 // ── Velocity (OD-002 / OD-009) ───────────────────────────────────────────────
 
@@ -59,15 +72,32 @@ export interface VelocityResult {
   cv: number
   volatile: boolean
   citations: DemandDoc[]
+  /** Which rule produced avgDailySales — shown in the trust drawer. */
+  mode: ReplDemandMode
+  /** Window actually averaged over in `lookback` mode (US-002 AC-01). */
+  lookbackDays: number
+  /** Units summed over that window, after damping. */
+  lookbackUnits: number
+  /** Days whose qty was pulled back to the outlier cap (US-002 AC-03). */
+  dampedDays: number
 }
 
 /**
- * Recency-weighted average daily sales.
+ * Average daily sales.
  *
- * Cold start short-circuits BEFORE any computation. That single ordering is what
- * makes "never a fabricated quantity" (US-003 CON-02) enforceable rather than
- * aspirational: there is no code path that returns a computed velocity for a SKU
- * with less than the configured minimum history.
+ * Two rules, because the PRD specifies two and they disagree. §2.2 and US-002
+ * define demand as a flat average over ONE lookback window ("total issued/sold
+ * qty ÷ lookback days", default 60) and the worked example in §2.4 computes
+ * exactly that; US-004 keeps the configurable 7/14/30 windows with weights
+ * totalling 100. `lookback` is the default because it is what the calculation
+ * spec — the part the reorder point is defined against — actually says. The
+ * weighted rule is preserved under `demandMode: 'weighted-windows'` for a
+ * business whose demand shifted recently and should be read that way.
+ *
+ * Cold start short-circuits BEFORE any computation, in either mode. That single
+ * ordering is what makes "never a fabricated quantity" (US-003 CON-02)
+ * enforceable rather than aspirational: there is no code path that returns a
+ * computed velocity for a SKU with less than the configured minimum history.
  */
 export function velocityFor(
   sku: string,
@@ -91,9 +121,13 @@ export function velocityFor(
     }
   })
 
-  const longest = Math.max(...windows.map((w) => w.days))
-  const cv = demandCv(sku, warehouseId, longest, asOf)
-  const citations = demandWindow(sku, warehouseId, longest, asOf).docs
+  const lookbackDays = settings.lookbackDays
+  const usingLookback = cfg.demandMode === 'lookback'
+  // Citations and volatility read the window the number is actually built from,
+  // so the trust drawer never cites documents outside the averaged period.
+  const evidenceDays = usingLookback ? lookbackDays : Math.max(...windows.map((w) => w.days))
+  const cv = demandCv(sku, warehouseId, evidenceDays, asOf)
+  const citations = demandWindow(sku, warehouseId, evidenceDays, asOf).docs
 
   if (coldStart) {
     // No history to compute from — use a manual figure if someone supplied one,
@@ -111,14 +145,38 @@ export function velocityFor(
       cv,
       volatile: false,
       citations,
+      mode: cfg.demandMode,
+      lookbackDays,
+      lookbackUnits: 0,
+      dampedDays: 0,
     }
   }
 
-  // Outlier damping: a promo spike inside a short window would otherwise drag the
-  // blended velocity up for weeks. Cap each window at the configured multiple of
-  // the longest window's rate and flag the SKU rather than silently smoothing it.
-  const baseRate = demandWindow(sku, warehouseId, longest, asOf).perDay
   const volatile = cv > cfg.volatileCvThreshold
+
+  if (usingLookback) {
+    // The spec's own rule: total sold in the window ÷ the window, with single-day
+    // spikes damped first so one promo cannot set the reorder point for months.
+    const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
+    return {
+      avgDailySales: win.perDay,
+      source: win.perDay > 0 ? 'computed' : 'none',
+      historyDays: series.historyDays,
+      coldStart: false,
+      windows: windowResults,
+      cv,
+      volatile,
+      citations,
+      mode: 'lookback',
+      lookbackDays: win.days,
+      lookbackUnits: win.units,
+      dampedDays: win.dampedDays,
+    }
+  }
+
+  // Weighted mode: cap each window at a multiple of the longest window's rate, so
+  // a spike inside the 7-day window cannot drag the blend up for weeks.
+  const baseRate = demandWindow(sku, warehouseId, evidenceDays, asOf).perDay
   const cap = baseRate > 0 ? baseRate * 3 : Number.POSITIVE_INFINITY
 
   const avgDailySales = windowResults.reduce(
@@ -135,6 +193,10 @@ export function velocityFor(
     cv,
     volatile,
     citations,
+    mode: 'weighted-windows',
+    lookbackDays,
+    lookbackUnits: 0,
+    dampedDays: 0,
   }
 }
 
@@ -225,6 +287,7 @@ export function invalidateReplenishmentCaches(): void {
   stockIndexCache.clear()
   onOrderIndexCache.clear()
   invalidateDemandHistory()
+  invalidateLeadTimeHistory()
   // Anything watching the revision (tab badges, home tile) recomputes.
   bumpReplenishmentRevision()
 }
@@ -283,20 +346,38 @@ export interface SuggestionResult {
   raisedByPack: boolean
   cappedByMaxLevel: boolean
   suppressed: boolean
-  suppressReason: 'above-reorder-point' | 'no-demand-basis' | 'not-tracked' | null
+  suppressReason: 'above-reorder-point' | 'no-demand-basis' | 'no-lead-time' | 'not-tracked' | null
   /** Ordered arithmetic steps, for the trust drawer. */
   trace: { label: string; value: string }[]
 }
 
-/** The PRD formula, isolated so a spec can table-drive it. */
+/**
+ * The PRD quantity formula (§2.3, US-008 AC-03), isolated so a spec can
+ * table-drive it:
+ *
+ *   qty = avgDailySales × (lead + safety + coverage) − (netAvailable + onOrder)
+ *
+ * Coverage days are what make this an ORDER-UP-TO quantity rather than a top-up
+ * to the trigger. Drop them and the order refills to exactly the reorder point,
+ * so the SKU is due again the next day — the bug decision D9 exists to prevent.
+ *
+ * Pass `maxLevel` to size in units instead (US-011 AC-03): the target becomes
+ * that level outright, not the coverage horizon. It REPLACES the horizon — it is
+ * not a cap applied afterwards, which would silently produce an order too small
+ * to clear the trigger.
+ */
 export function suggestedRawQty(
   leadDays: number,
   safetyDays: number,
+  coverageDays: number,
   avgDailySales: number,
   available: number,
   onOrder: number,
+  maxLevel: number | null = null,
 ): number {
-  const target = (leadDays + safetyDays) * avgDailySales
+  const target = maxLevel !== null
+    ? maxLevel
+    : (leadDays + safetyDays + coverageDays) * avgDailySales
   return Math.max(0, Math.ceil(target - (available + onOrder)))
 }
 
@@ -541,6 +622,14 @@ export interface WorklistRow {
   maxLevel: number | null
   leadTimeDays: number
   leadTimeEstimated: boolean
+  /** Which rung of the US-001 ladder produced leadTimeDays. */
+  leadTimeTier: LeadTimeTier
+  /** PO-backed receipts averaged, when the tier is `computed`. */
+  leadTimeSampleSize: number
+  /** Receipts skipped for having no upstream PO (US-001 AC-02). */
+  leadTimeExcludedNoPo: number
+  /** Coverage horizon used to size the quantity (D9). */
+  coverageDays: number
 
   atp: AtpResult
   velocity: VelocityResult
@@ -585,28 +674,46 @@ export function buildRow(
 
   const vendorItem = preferredVendorItem(sku) ?? null
   const alternates = vendorItemsForSku(sku).filter((v) => v.vendorId !== vendorItem?.vendorId)
-  const leadTimeDays = vendorItem?.leadTimeDays ?? cfg.fallbackLeadTimeDays
-  const leadTimeEstimated = !vendorItem
+
+  // Lead time is MEASURED from this vendor+product's PO→receipt history, then
+  // falls down the ladder (US-001 VR-04). A hand-entered value outranks the whole
+  // ladder — it is the buyer telling the system something it could not observe.
+  const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
+  const manualLead = settings.manualLeadTimeDays
+  const leadTimeDays = manualLead ?? derivedLead.days ?? cfg.fallbackLeadTimeDays
+  const leadTimeTier: LeadTimeTier = manualLead !== null ? 'manual' : derivedLead.tier
+  const leadTimeEstimated = isEstimatedTier(leadTimeTier)
+  // No vendor and no manual figure means nothing to measure against at all.
+  const leadTimeMissing = manualLead === null && derivedLead.tier === 'none'
 
   const rop = resolveReorderPoint(settings, velocity.avgDailySales, leadTimeDays)
   const cover = daysOfCover(atp.available, velocity.avgDailySales, leadTimeDays)
 
   // ── Suggestion ──
   const hasDemandBasis = velocity.avgDailySales > 0
-  const targetQty = (leadTimeDays + settings.safetyDays) * velocity.avgDailySales
+  // Both inputs must resolve before any number is produced. US-003 CON-02 is a
+  // constraint on the ENGINE, not on the page: a row missing either one must
+  // reach the UI with a zero quantity, so no rendering mistake can ever surface
+  // a fabricated figure.
+  const canRecommend = hasDemandBasis && !leadTimeMissing
+  const coverageDays = settings.coverageDays
+  const usingMaxLevel = settings.maxLevel !== null
+  // The order-up-to level: a units ceiling when one is set (US-011 AC-03),
+  // otherwise the demand that lead + safety + coverage days represents.
+  const targetQty = usingMaxLevel
+    ? settings.maxLevel!
+    : (leadTimeDays + settings.safetyDays + coverageDays) * velocity.avgDailySales
   const gapQty = targetQty - (atp.available + atp.onOrder)
-  let rawQty = hasDemandBasis
-    ? suggestedRawQty(leadTimeDays, settings.safetyDays, velocity.avgDailySales, atp.available, atp.onOrder)
+  const rawQty = canRecommend
+    ? suggestedRawQty(
+        leadTimeDays, settings.safetyDays, coverageDays,
+        velocity.avgDailySales, atp.available, atp.onOrder,
+        settings.maxLevel,
+      )
     : 0
+  const cappedByMaxLevel = usingMaxLevel
 
-  // maxLevel CAPS the order; it is never the target.
-  let cappedByMaxLevel = false
-  if (settings.maxLevel !== null && rawQty > 0) {
-    const room = Math.max(0, settings.maxLevel - (atp.available + atp.onOrder))
-    if (rawQty > room) { rawQty = room; cappedByMaxLevel = true }
-  }
-
-  const suppressedByCover = hasDemandBasis
+  const suppressedByCover = canRecommend
     && rop.source !== 'none'
     && isSuppressed(atp.available, atp.onOrder, rop.value, cfg.reorderBoundary)
 
@@ -615,14 +722,26 @@ export function buildRow(
   const suppressReason: SuggestionResult['suppressReason'] =
     !settings.tracked ? 'not-tracked'
     : !hasDemandBasis ? 'no-demand-basis'
+    : leadTimeMissing ? 'no-lead-time'
     : suppressedByCover ? 'above-reorder-point'
     : null
 
   const trace: { label: string; value: string }[] = [
-    { label: 'Average daily sales', value: `${velocity.avgDailySales.toFixed(2)} ${product?.unit ?? ''}/day` },
-    { label: 'Lead time', value: `${leadTimeDays} days` },
+    {
+      label: 'Average daily sales',
+      value: velocity.mode === 'lookback' && velocity.lookbackDays > 0
+        ? `${velocity.lookbackUnits} ${product?.unit ?? ''} ÷ ${velocity.lookbackDays} days = ${velocity.avgDailySales.toFixed(2)}/day`
+        : `${velocity.avgDailySales.toFixed(2)} ${product?.unit ?? ''}/day`,
+    },
+    { label: 'Lead time', value: `${leadTimeDays} days (${leadTimeTierLabel(leadTimeTier, derivedLead.sampleSize)})` },
     { label: 'Safety days', value: `${settings.safetyDays} days` },
-    { label: 'Demand to cover', value: `(${leadTimeDays} + ${settings.safetyDays}) × ${velocity.avgDailySales.toFixed(2)} = ${targetQty.toFixed(1)}` },
+    { label: 'Coverage days', value: `${coverageDays} days` },
+    {
+      label: usingMaxLevel ? 'Order up to (max level)' : 'Order up to',
+      value: usingMaxLevel
+        ? `${targetQty} ${product?.unit ?? ''}`
+        : `(${leadTimeDays} + ${settings.safetyDays} + ${coverageDays}) × ${velocity.avgDailySales.toFixed(2)} = ${targetQty.toFixed(1)}`,
+    },
     { label: 'Available', value: `${atp.available}` },
     { label: 'On order', value: `${atp.onOrder}` },
     { label: 'Shortfall', value: `${targetQty.toFixed(1)} − (${atp.available} + ${atp.onOrder}) = ${gapQty.toFixed(1)}` },
@@ -652,19 +771,22 @@ export function buildRow(
   }
 
   // ── Bucketing ──
+  const demandMissing = velocity.coldStart && velocity.source === 'none'
   const missing: string[] = []
   if (!vendorItem) missing.push('Vendor')
-  if (velocity.coldStart && velocity.source === 'none') missing.push('Demand history')
-  if (leadTimeEstimated) missing.push('Lead time')
+  if (demandMissing) missing.push('Sales history')
+  if (leadTimeMissing) missing.push('Lead time')
 
   const dueForReorder = settings.tracked
-    && hasDemandBasis
+    && canRecommend
     && rop.source !== 'none'
     && !suppressedByCover
 
   let bucket: WorklistBucket
   if (!settings.tracked) bucket = 'not-tracked'
-  else if (velocity.source === 'none' && velocity.coldStart) bucket = 'needs-setup'
+  // US-003 AC-01/AC-02: either gap routes here. An ESTIMATED lead time is not a
+  // gap — it resolved, it is simply tagged — so it must not land in Needs setup.
+  else if (demandMissing || leadTimeMissing) bucket = 'needs-setup'
   else if (dueForReorder && !vendorItem) bucket = 'no-vendor'
   else if (dueForReorder) bucket = 'reorder'
   else bucket = 'covered'
@@ -702,6 +824,10 @@ export function buildRow(
     maxLevel: settings.maxLevel,
     leadTimeDays,
     leadTimeEstimated,
+    leadTimeTier,
+    leadTimeSampleSize: derivedLead.sampleSize,
+    leadTimeExcludedNoPo: derivedLead.excludedNoPo,
+    coverageDays,
 
     atp,
     velocity,

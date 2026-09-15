@@ -54,9 +54,11 @@ export * from './vendorItems'
 export * from './replenishmentConfig'
 export * from './replenishmentSettings'
 export * from './demandHistory'
+export * from './leadTimeHistory'
 export * from './replenishmentRuns'
 export * from './replenishment'
 export * from './purchaseOrderLines'
+export * from './replenishmentPurchaseRequest'
 export * from './replenishmentDraftPo'
 
 // ── Outbound (order → picking → packing → delivery → shipment) ──────────────

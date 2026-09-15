@@ -349,6 +349,50 @@ export function demandSeries(sku: string, warehouseId: string, asOf: string = RE
 }
 
 /** Aggregate the trailing `days` of the ledger. */
+/**
+ * Demand over a window with single-day spikes pulled back to a cap (US-002 AC-03).
+ *
+ * A promo day or a bulk return is a real event, but averaging it in unchanged
+ * lets one day set the reorder point for the next two months. The cap is a
+ * multiple of the window's MEDIAN moving day — median, not mean, because the mean
+ * is exactly what the outlier has already distorted.
+ *
+ * Damping only ever lowers demand, so it cannot manufacture an order. The SKU is
+ * still flagged volatile by the caller; this smooths the number, it does not hide
+ * the fact.
+ */
+export function demandWindowDamped(
+  sku: string,
+  warehouseId: string,
+  days: number,
+  capMultiple: number,
+  asOf: string = REPL_ASOF_ISO,
+): DemandWindow & { dampedDays: number } {
+  const series = demandSeries(sku, warehouseId, asOf)
+  const span = Math.min(days, series.days.length)
+  const slice = series.days.slice(series.days.length - span)
+
+  const moving = slice.filter((d) => d.qty > 0).map((d) => d.qty).sort((a, b) => a - b)
+  const median = moving.length ? moving[Math.floor(moving.length / 2)]! : 0
+  const cap = median > 0 && capMultiple > 0 ? median * capMultiple : Number.POSITIVE_INFINITY
+
+  let units = 0
+  let movementDays = 0
+  let modelledDays = 0
+  let dampedDays = 0
+  const docs: DemandDoc[] = []
+  for (const day of slice) {
+    const qty = Math.min(day.qty, cap)
+    if (qty < day.qty) dampedDays++
+    units += qty
+    if (day.qty > 0) movementDays++
+    if (day.source === 'modelled') modelledDays++
+    else docs.push(...day.docs)
+  }
+
+  return { days: span, units, movementDays, perDay: span ? units / span : 0, docs, modelledDays, dampedDays }
+}
+
 export function demandWindow(
   sku: string,
   warehouseId: string,

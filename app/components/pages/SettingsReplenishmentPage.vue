@@ -67,6 +67,7 @@ function save() {
   }
   for (const [label, value] of [
     [t('Safety days'), draft.safetyDaysGlobal],
+    [t('Order coverage'), draft.coverageDaysGlobal],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
     [t('Hysteresis band'), draft.fsnHysteresisPct],
@@ -78,10 +79,17 @@ function save() {
     }
   }
 
+  if (Number(draft.lookbackDays) <= 0 || Number.isNaN(Number(draft.lookbackDays))) {
+    error.value = t('The lookback window must be at least 1 day.')
+    return
+  }
+
   const next: ReplenishmentConfig = {
     ...draft,
     windows: draft.windows.map((w) => ({ days: Number(w.days), weightPct: Number(w.weightPct) })),
     safetyDaysGlobal: Number(draft.safetyDaysGlobal),
+    lookbackDays: Number(draft.lookbackDays),
+    coverageDaysGlobal: Number(draft.coverageDaysGlobal),
     coldStartMinDays: Number(draft.coldStartMinDays),
     fsnWindowDays: Number(draft.fsnWindowDays),
     fsnFastPct: Number(draft.fsnFastPct),
@@ -118,6 +126,12 @@ const BASIS_OPTIONS = [
   { id: 'shipped-outbound', name: 'Shipped outbound orders' },
   { id: 'shipped-plus-open', name: 'Shipped and open orders' },
   { id: 'manual-only', name: 'Manual demand only' },
+]
+const DEMAND_MODE_OPTIONS = [
+  // The spec's own rule (§2.2) leads; US-004's weighting stays available for a
+  // business whose demand shifted recently and should be read that way.
+  { id: 'lookback', name: 'Average over one lookback window' },
+  { id: 'weighted-windows', name: 'Weighted 7/14/30-day windows' },
 ]
 const BOUNDARY_OPTIONS = [
   { id: 'inclusive', name: 'Reorder at or below the reorder point' },
@@ -171,6 +185,40 @@ const BOUNDARY_OPTIONS = [
           <span v-else class="rs-value">
             {{ t(BASIS_OPTIONS.find(o => o.id === committed.demandBasis)?.name ?? committed.demandBasis) }}
           </span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Demand rule') }}</span>
+          <span class="rs-label-desc">{{ t('How average daily demand is measured.') }}</span>
+        </div>
+        <div class="rs-control">
+          <MpSelect
+            v-if="isEditing"
+            id="rs-demand-mode"
+            v-model="draft.demandMode"
+            :class="css({ width: '280px' })"
+          >
+            <option v-for="o in DEMAND_MODE_OPTIONS" :key="o.id" :value="o.id">{{ t(o.name) }}</option>
+          </MpSelect>
+          <span v-else class="rs-value">
+            {{ t(DEMAND_MODE_OPTIONS.find(o => o.id === committed.demandMode)?.name ?? committed.demandMode) }}
+          </span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Lookback window') }}</span>
+          <span class="rs-label-desc">{{ t('How far back sales are averaged to get demand per day.') }}</span>
+        </div>
+        <div class="rs-control">
+          <MpInputGroup v-if="isEditing" id="rs-lookback">
+            <MpInput id="rs-lookback-input" v-model="draft.lookbackDays" type="number" :class="css({ width: '96px' })" />
+            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+          </MpInputGroup>
+          <span v-else class="rs-value">{{ committed.lookbackDays }} {{ t('days') }}</span>
         </div>
       </div>
 
@@ -233,6 +281,20 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.safetyDaysGlobal }} {{ t('days') }}</span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Order coverage') }}</span>
+          <span class="rs-label-desc">{{ t('How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due.') }}</span>
+        </div>
+        <div class="rs-control">
+          <MpInputGroup v-if="isEditing" id="rs-coverage">
+            <MpInput id="rs-coverage-input" v-model="draft.coverageDaysGlobal" type="number" :class="css({ width: '96px' })" />
+            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+          </MpInputGroup>
+          <span v-else class="rs-value">{{ committed.coverageDaysGlobal }} {{ t('days') }}</span>
         </div>
       </div>
 

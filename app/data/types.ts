@@ -225,6 +225,14 @@ export interface PurchaseRequest {
   attachment?: boolean                    // has a supporting document attached
   awaitingApproval?: boolean              // sits in the "Awaiting approval" queue
   lines: PurchaseRequestLine[]            // requested products
+  /**
+   * The vendor replenishment SUGGESTS, carried as guidance only (US-020 VR-02).
+   * A PR deliberately needs no bound vendor — purchasing sources it and binds a
+   * vendor at PO time (US-022 AC-06). Absent means "purchasing to source".
+   */
+  suggestedVendor?: { id: string; name: string }
+  /** Set when this request was raised from the replenishment worklist. */
+  replenishment?: PurchaseRequestReplenishmentOrigin
 }
 
 export interface SalesQuote {
@@ -302,8 +310,52 @@ export interface PurchaseOrder {
  * ordered 8 more than recommended"), and recomputing it later would compare against
  * a recommendation that has since moved.
  */
+/**
+ * What a replenishment-raised Purchase Request carries back to the worklist run
+ * that produced it (PRD US-020 AC-02, US-027 AC-02).
+ *
+ * The deviation is stored explicitly rather than recomputed, because it is the
+ * auditable fact — the recommendation it deviated FROM will change on the next
+ * recalculation, so a later subtraction would quietly report a different number
+ * than the one the requester actually saw.
+ */
+export interface PurchaseRequestReplenishmentOrigin {
+  source: 'replenishment'
+  /** The worklist snapshot this came from (stock clock). */
+  asOf: string
+  runNo: number
+  warehouseId: string
+  createdBy: string
+  lines: {
+    sku: string
+    /**
+     * Engine output in STOCK units — the lead-time-adjusted demand-coverage NEED.
+     * Deliberately NOT MOQ/pack rounded: decision D12 applies rounding at PO time
+     * against purchasing's final vendor, so rounding here would round twice, to
+     * the wrong vendor's pack.
+     */
+    recommendedQty: number
+    /** What the requester actually asked for. */
+    finalQty: number
+    deviation: number
+    /** Non-binding — purchasing may source elsewhere (US-022 VR-05). */
+    suggestedVendorId: string | null
+    leadTimeDays: number
+    /** Which rung of the US-001 ladder produced that lead time. */
+    leadTimeTier: string
+    safetyDays: number
+    coverageDays: number
+    avgDailySales: number
+    reorderPoint: number
+    available: number
+    onOrder: number
+  }[]
+}
+
 export interface PurchaseOrderReplenishmentOrigin {
   source: 'replenishment'
+  /** Set when this PO was converted from a replenishment PR (US-027 AC-02). */
+  purchaseRequestId?: string
   /** The worklist snapshot date this came from (stock clock, not the PO clock). */
   asOf: string
   runNo: number

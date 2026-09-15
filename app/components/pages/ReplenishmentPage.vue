@@ -19,7 +19,7 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SuggestionBreakdownDrawer from '~/components/patterns/SuggestionBreakdownDrawer.vue'
-import CreateDraftPoModal from '~/components/patterns/CreateDraftPoModal.vue'
+import CreatePurchaseRequestModal from '~/components/patterns/CreatePurchaseRequestModal.vue'
 import SkuReplenishmentSettingsDrawer from '~/components/patterns/SkuReplenishmentSettingsDrawer.vue'
 import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
 import ReplenishmentFiltersDrawer, {
@@ -31,7 +31,7 @@ import {
 } from '~/data/replenishment'
 import { lastRun } from '~/data/replenishmentRuns'
 import { setTracked } from '~/data/replenishmentSettings'
-import { createDraftPos } from '~/data/replenishmentDraftPo'
+import { createPurchaseRequests } from '~/data/replenishmentPurchaseRequest'
 import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import { CATALOG } from '~/data/catalog'
 import { vendors } from '~/data/vendors'
@@ -253,16 +253,28 @@ const FSN_BADGE: Record<string, { type: string; label: string }> = {
   unclassified: { type: 'announcement', label: 'Unclassified' },
 }
 
+/**
+ * What this vendor's terms WOULD make of the need, shown as secondary detail.
+ *
+ * The primary number is the need itself, in stock units, because that is what a
+ * Purchase Request carries (decision D12) — rounding happens later, at PO time,
+ * against whichever vendor purchasing actually binds. Showing the rounded figure
+ * as the headline would put a different number here than on the request the user
+ * is about to raise, for the same row.
+ */
 function adjustmentNote(row: WorklistRow): string {
   const vi = row.vendorItem
-  if (!vi) return ''
-  if (row.suggestion.raisedByMoq && row.suggestion.raisedByPack) {
-    return `${t('Rounded up to MOQ')} ${vi.moq}, ${t('then pack of')} ${vi.packSize}`
+  if (!vi || row.suggestion.purchaseQty <= 0) return ''
+  if (row.suggestion.cappedByMaxLevel) {
+    return `${t('Order up to max level')} · ${row.suggestion.purchaseQty} ${vi.purchaseUnit} ${t('at PO')}`
   }
-  if (row.suggestion.raisedByMoq) return `${t('Rounded up to MOQ')} ${vi.moq} ${vi.purchaseUnit}`
-  if (row.suggestion.raisedByPack) return `${t('Rounded to pack of')} ${vi.packSize} ${vi.purchaseUnit}`
-  if (row.suggestion.cappedByMaxLevel) return t('Capped by max level')
-  return ''
+  const at = `${row.suggestion.purchaseQty} ${vi.purchaseUnit} ${t('at PO')}`
+  if (row.suggestion.raisedByMoq && row.suggestion.raisedByPack) {
+    return `${t('MOQ')} ${vi.moq} + ${t('pack of')} ${vi.packSize} → ${at}`
+  }
+  if (row.suggestion.raisedByMoq) return `${t('MOQ')} ${vi.moq} → ${at}`
+  if (row.suggestion.raisedByPack) return `${t('Pack of')} ${vi.packSize} → ${at}`
+  return at
 }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
@@ -317,12 +329,15 @@ function selectedWorklistRows(sel: Set<number>): WorklistRow[] {
   return [...sel].map((i) => paginated.value[i]).filter(Boolean) as WorklistRow[]
 }
 
-function bulkCreatePo(sel: Set<number>, deselectAll: () => void) {
+function bulkCreatePr(sel: Set<number>, deselectAll: () => void) {
   openPoForRows(selectedWorklistRows(sel), deselectAll)
 }
 
-function confirmPo(payload: { overrides: Record<string, number>; vendorChoices: Record<string, string> }) {
-  const result = createDraftPos(poRows.value, payload.overrides, payload.vendorChoices)
+function confirmPr(payload: {
+  overrides: Record<string, number>
+  vendorChoices: Record<string, string | null>
+}) {
+  const result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
   poOpen.value = false
   clearSelection?.()
   clearSelection = null
@@ -331,19 +346,25 @@ function confirmPo(payload: { overrides: Record<string, number>; vendorChoices: 
 
   const created = result.created.length
   if (!created) {
-    toast.notify({ variant: 'error', title: t('No draft PO could be created.'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('No purchase request could be created.'), maxWidth: 'max-content' })
     return
   }
+  // Names the next owner, because the requester does not place the order —
+  // purchasing decides which requests become POs (US-020 AC-03).
+  const unsourced = result.created.filter((c) => !c.vendorId).length
+  const parts: string[] = []
+  if (result.skipped.length) {
+    parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? t('line skipped') : t('lines skipped')}.`)
+  }
+  if (unsourced) parts.push(t('Purchasing will source the unassigned lines.'))
   toast.notify({
     variant: 'success',
-    title: created === 1 ? t('Draft PO created.') : `${created} ${t('draft POs created.')}`,
-    description: result.skipped.length
-      ? `${result.skipped.length} ${result.skipped.length === 1 ? t('line skipped') : t('lines skipped')}.`
-      : undefined,
+    title: created === 1 ? t('Purchase request created.') : `${created} ${t('purchase requests created.')}`,
+    description: parts.length ? parts.join(' ') : t('Purchasing will review and decide which become orders.'),
     maxWidth: 'max-content',
   })
-  // Land on the drafts, where the new POs are waiting for a human.
-  router.push({ path: '/purchase-orders', query: { poTab: 'awaiting' } })
+  // Land on the requests, where they are waiting for purchasing.
+  router.push({ path: '/purchase-requests' })
 }
 
 function askMute(row: WorklistRow) {
@@ -516,8 +537,8 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        @click="bulkCreatePo(selectedRows as Set<number>, deselectAll)"
-      >{{ t('Create draft PO') }}</button>
+        @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
+      >{{ t('Request to purchase') }}</button>
       <button
         class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
         @click="bulkMute(selectedRows as Set<number>, deselectAll)"
@@ -606,13 +627,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <template #cell-suggestedQty="{ row }">
       <div class="rp-num">
         <a class="cell-link rp-num-value" @click.stop="openBreakdown(row as unknown as WorklistRow)">
-          {{ num((row as any).suggestion.purchaseQty) }} {{ (row as any).suggestion.purchaseUnit }}
+          {{ num((row as any).suggestion.rawQty) }} {{ (row as any).unit }}
         </a>
         <span v-if="adjustmentNote(row as unknown as WorklistRow)" class="rp-num-sub">
           {{ adjustmentNote(row as unknown as WorklistRow) }}
-        </span>
-        <span v-else-if="(row as any).suggestion.stockingQty !== (row as any).suggestion.purchaseQty" class="rp-num-sub">
-          {{ num((row as any).suggestion.stockingQty) }} {{ (row as any).unit }}
         </span>
       </div>
     </template>
@@ -671,7 +689,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
               {{ t('Vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openPoForRows([row as unknown as WorklistRow])">
-              {{ t('Create draft PO') }}
+              {{ t('Request to purchase') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
               {{ t('Replenishment settings') }}
@@ -712,15 +730,15 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <SuggestionBreakdownDrawer
     v-model:is-open="breakdownOpen"
     :row="breakdownRow"
-    @create-draft-po="(row) => { breakdownOpen = false; openPoForRows([row]) }"
+    @create-purchase-request="(row) => { breakdownOpen = false; openPoForRows([row]) }"
     @edit-settings="(row) => { breakdownOpen = false; openSettings(row) }"
     @edit-vendors="(row) => { breakdownOpen = false; openVendors(row.sku) }"
   />
 
-  <CreateDraftPoModal
+  <CreatePurchaseRequestModal
     v-model:is-open="poOpen"
     :rows="poRows"
-    @confirm="confirmPo"
+    @confirm="confirmPr"
     @assign-vendor="(sku) => { poOpen = false; openVendors(sku) }"
   />
 

@@ -2028,6 +2028,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Max level': 'Level maksimum',
   'Missing': 'Belum lengkap',
   'Sales history': 'Riwayat penjualan',
+  'at PO': 'saat PO',
+  'Pack of': 'Kelipatan',
+  'Order up to max level': 'Pesan sampai level maksimum',
   'Suggested': 'Disarankan',
   'Est. cost': 'Estimasi biaya',
   'Est. total': 'Estimasi total',
@@ -2048,6 +2051,73 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Needs 14': 'Perlu 14',
   'Below reorder point': 'Di bawah titik pemesanan ulang',
   'Demand history': 'Riwayat permintaan',
+  // ── Replenishment v2 — Purchase Request flow, coverage days, derived lead time.
+  // "Vendor" never "Pemasok"; noun-only labels on create actions.
+  'Sales history': 'Riwayat penjualan',
+  'at PO': 'saat PO',
+  'Pack of': 'Kelipatan',
+  'Order up to max level': 'Pesan sampai level maksimum',
+  'Request to purchase': 'Ajukan pembelian',
+  'Create purchase request': 'Buat permintaan pembelian',
+  'purchase requests': 'permintaan pembelian',
+  '1 purchase request': '1 permintaan pembelian',
+  'Purchase request created.': 'Permintaan pembelian berhasil dibuat.',
+  'purchase requests created.': 'permintaan pembelian berhasil dibuat.',
+  'No purchase request could be created.': 'Tidak ada permintaan pembelian yang bisa dibuat.',
+  'Purchasing reviews these requests and decides which become purchase orders.':
+    'Tim pembelian meninjau permintaan ini dan menentukan mana yang menjadi pesanan pembelian.',
+  'Purchasing will review and decide which become orders.':
+    'Tim pembelian akan meninjau dan menentukan mana yang menjadi pesanan.',
+  'Purchasing will source the unassigned lines.':
+    'Tim pembelian akan mencari vendor untuk baris yang belum ditentukan.',
+  'Purchasing to source': 'Dicarikan tim pembelian',
+  'Let purchasing source it': 'Biar tim pembelian yang mencari',
+  'suggested vendor': 'vendor yang disarankan',
+  'no vendor': 'tanpa vendor',
+  'Nothing can be requested from this selection.': 'Tidak ada yang bisa diminta dari pilihan ini.',
+  'Enter a quantity for at least one product.': 'Isi jumlah untuk setidaknya satu produk.',
+  'Request qty': 'Jumlah diminta',
+  'Recommended': 'Rekomendasi',
+  'Est. value': 'Perkiraan nilai',
+  'Needed in': 'Dibutuhkan dalam',
+  'Apply': 'Terapkan',
+  'Keep mine': 'Pakai punya saya',
+  'Vendor MOQ': 'MOQ vendor',
+  'rounded up when purchasing raises the PO': 'dibulatkan saat tim pembelian membuat PO',
+  'Packs of': 'Kelipatan',
+  'rounded up at PO': 'dibulatkan saat PO',
+  'These products need demand or lead-time data before they can be requested.':
+    'Produk ini butuh data permintaan atau waktu tunggu sebelum bisa diminta.',
+  'Open setup': 'Buka penyiapan',
+  'Nothing to request': 'Tidak ada yang diminta',
+  // Order sizing (D9) and the demand rule.
+  'Order coverage': 'Cakupan pesanan',
+  'Coverage days': 'Hari cakupan',
+  'Demand rule': 'Aturan permintaan',
+  'How average daily demand is measured.': 'Cara menghitung rata-rata permintaan harian.',
+  'Average over one lookback window': 'Rata-rata satu periode ke belakang',
+  'Weighted 7/14/30-day windows': 'Periode berbobot 7/14/30 hari',
+  'Lookback window': 'Periode ke belakang',
+  'How far back sales are averaged to get demand per day.':
+    'Seberapa jauh ke belakang penjualan dirata-rata untuk mendapat permintaan per hari.',
+  'The lookback window must be at least 1 day.': 'Periode ke belakang minimal 1 hari.',
+  'How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due.':
+    'Berapa hari permintaan yang harus dipenuhi tiap pesanan. Menentukan jumlah, bukan kapan produk perlu dipesan.',
+  'How many days each order should cover. Sizes the quantity; it never changes when this product becomes due.':
+    'Berapa hari yang harus dipenuhi tiap pesanan. Menentukan jumlah, bukan kapan produk perlu dipesan.',
+  'how much each order covers — not part of the trigger':
+    'seberapa banyak yang dipenuhi tiap pesanan — bukan bagian dari pemicu',
+  'order up to this level': 'pesan sampai level ini',
+  'Order up to this level in units instead of using order coverage. Leave empty to size by days.':
+    'Pesan sampai level ini dalam satuan, bukan pakai cakupan pesanan. Kosongkan untuk memakai hari.',
+  'Use order coverage': 'Pakai cakupan pesanan',
+  // Derived lead time (US-001).
+  'receipt excluded': 'penerimaan dikecualikan',
+  'receipts excluded': 'penerimaan dikecualikan',
+  'bought directly with no purchase order': 'dibeli langsung tanpa pesanan pembelian',
+  'No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.':
+    'Belum ada riwayat pesanan pembelian untuk vendor dan produk ini, jadi waktu tunggu tidak bisa diukur. Isi di sini, atau mulai buat PO dan waktu tunggu akan terukur otomatis.',
+
   'Adjusted for MOQ or pack size': 'Disesuaikan dengan MOQ atau ukuran kemasan',
   'Search product or SKU': 'Cari produk atau SKU',
   'Keywords': 'Kata kunci',

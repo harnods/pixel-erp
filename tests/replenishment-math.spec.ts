@@ -41,27 +41,58 @@ function settings(patch: Partial<EffectiveReplenishmentSettings> = {}): Effectiv
   }
 }
 
-describe('suggestedRawQty — the PRD formula', () => {
-  const cases: { name: string; lead: number; safety: number; advs: number; avail: number; onOrder: number; want: number }[] = [
-    // PRD US-008 AC-01 shape: (lead + safety) × velocity − (available + on-order)
-    { name: 'plain shortfall',            lead: 14, safety: 7, advs: 10, avail: 100, onOrder: 0,  want: 110 },
-    { name: 'on-order reduces the need',  lead: 14, safety: 7, advs: 10, avail: 100, onOrder: 50, want: 60 },
-    { name: 'rounds up to whole units',   lead: 10, safety: 0, advs: 1.05, avail: 0, onOrder: 0,  want: 11 },
-    { name: 'never negative (AC-03)',     lead: 14, safety: 7, advs: 1,  avail: 500, onOrder: 0,  want: 0 },
-    { name: 'exactly covered → 0',        lead: 10, safety: 0, advs: 10, avail: 100, onOrder: 0,  want: 0 },
-    { name: 'zero velocity → 0',          lead: 14, safety: 7, advs: 0,  avail: 0,   onOrder: 0,  want: 0 },
+describe('suggestedRawQty — the PRD formula (§2.3 / US-008 AC-03)', () => {
+  type Case = {
+    name: string; lead: number; safety: number; coverage: number
+    advs: number; avail: number; onOrder: number; want: number
+  }
+  const cases: Case[] = [
+    // qty = velocity × (lead + safety + coverage) − (net available + on-order)
+    { name: 'plain shortfall',           lead: 14, safety: 7, coverage: 0,  advs: 10,   avail: 100, onOrder: 0,  want: 110 },
+    { name: 'on-order reduces the need', lead: 14, safety: 7, coverage: 0,  advs: 10,   avail: 100, onOrder: 50, want: 60 },
+    { name: 'rounds up to whole units',  lead: 10, safety: 0, coverage: 0,  advs: 1.05, avail: 0,   onOrder: 0,  want: 11 },
+    { name: 'never negative (AC-04)',    lead: 14, safety: 7, coverage: 0,  advs: 1,    avail: 500, onOrder: 0,  want: 0 },
+    { name: 'exactly covered → 0',       lead: 10, safety: 0, coverage: 0,  advs: 10,   avail: 100, onOrder: 0,  want: 0 },
+    { name: 'zero velocity → 0',         lead: 14, safety: 7, coverage: 30, advs: 0,    avail: 0,   onOrder: 0,  want: 0 },
+    // The PRD's own worked example, §2.4: lead 14, safety 7, coverage 30,
+    // 10 units/day, 150 available, nothing on order → 510 − 150 = 360.
+    { name: 'PRD §2.4 worked example',   lead: 14, safety: 7, coverage: 30, advs: 10,   avail: 150, onOrder: 0,  want: 360 },
+    // Coverage is what stops an order refilling only to the trigger: without it
+    // this same row would ask for 60, be due again tomorrow, and re-fire forever.
+    { name: 'coverage sizes the order',  lead: 14, safety: 7, coverage: 30, advs: 10,   avail: 150, onOrder: 0,  want: 360 },
   ]
 
   for (const c of cases) {
     it(c.name, () => {
-      expect(suggestedRawQty(c.lead, c.safety, c.advs, c.avail, c.onOrder)).toBe(c.want)
+      expect(suggestedRawQty(c.lead, c.safety, c.coverage, c.advs, c.avail, c.onOrder)).toBe(c.want)
     })
   }
+
+  it('coverage days never change the trigger, only the size', () => {
+    // Same inputs, different coverage: the quantity grows by exactly
+    // coverage × velocity, and nothing else moves.
+    const base = suggestedRawQty(14, 7, 0, 10, 150, 0)
+    expect(suggestedRawQty(14, 7, 30, 10, 150, 0)).toBe(base + 300)
+    expect(suggestedRawQty(14, 7, 60, 10, 150, 0)).toBe(base + 600)
+  })
+
+  it('a Max level replaces the coverage horizon as the target (US-011 AC-03)', () => {
+    // Order up to 400 units regardless of the coverage-days horizon.
+    expect(suggestedRawQty(14, 7, 30, 10, 150, 0, 400)).toBe(250)
+    expect(suggestedRawQty(14, 7, 999, 10, 150, 0, 400)).toBe(250)
+    // Already at or above the level → nothing to order, never negative.
+    expect(suggestedRawQty(14, 7, 30, 10, 400, 0, 400)).toBe(0)
+    expect(suggestedRawQty(14, 7, 30, 10, 500, 0, 400)).toBe(0)
+    // On-order counts toward the level, so it cannot double-order.
+    expect(suggestedRawQty(14, 7, 30, 10, 150, 100, 400)).toBe(150)
+  })
 
   it('is floored at 0 for every plausible input', () => {
     for (let avail = 0; avail < 50; avail += 7) {
       for (let advs = 0; advs < 5; advs += 0.5) {
-        expect(suggestedRawQty(14, 7, advs, avail, 0)).toBeGreaterThanOrEqual(0)
+        for (const coverage of [0, 30, 60]) {
+          expect(suggestedRawQty(14, 7, coverage, advs, avail, 0)).toBeGreaterThanOrEqual(0)
+        }
       }
     }
   })

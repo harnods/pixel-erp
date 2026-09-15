@@ -14,13 +14,14 @@
  */
 import { MpIcon } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
+import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
 const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
-  (e: 'create-draft-po', row: WorklistRow): void
+  (e: 'create-purchase-request', row: WorklistRow): void
   (e: 'edit-settings', row: WorklistRow): void
   (e: 'edit-vendors', row: WorklistRow): void
 }>()
@@ -154,7 +155,8 @@ const longestWindow = computed(() =>
                   {{ t('Edit') }}
                 </a>
                 <span class="rp-bd-dd-note">
-                  {{ row.vendor?.name ?? t('No vendor — using the company default') }}
+                  {{ leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize) }}
+                  · {{ row.vendor?.name ?? t('No vendor — using the company default') }}
                   <template v-if="row.vendorItem">
                     · {{ t('MOQ') }} {{ row.vendorItem.moq }} {{ row.vendorItem.purchaseUnit }}
                     · {{ t('pack of') }} {{ row.vendorItem.packSize }}
@@ -163,12 +165,31 @@ const longestWindow = computed(() =>
                     · {{ row.alternates.length }} {{ t('other vendors') }}
                   </template>
                 </span>
+                <!-- Receipts that could not be measured, and why (US-001 AC-02). -->
+                <span v-if="row.leadTimeExcludedNoPo" class="rp-bd-dd-note">
+                  {{ row.leadTimeExcludedNoPo }}
+                  {{ row.leadTimeExcludedNoPo === 1 ? t('receipt excluded') : t('receipts excluded') }}
+                  — {{ t('bought directly with no purchase order') }}
+                </span>
               </div>
 
               <div class="rp-bd-dt">{{ t('Safety days') }}</div>
               <div class="rp-bd-dd">
                 {{ row.safetyDays }} {{ t('days') }}
                 <span class="rp-bd-dd-note">{{ SOURCE_LABEL[row.safetyDaysSource] }}</span>
+              </div>
+
+              <!-- Sizes the ORDER, never the trigger (decision D9). -->
+              <div class="rp-bd-dt">{{ row.maxLevel !== null ? t('Max level') : t('Coverage days') }}</div>
+              <div class="rp-bd-dd">
+                <template v-if="row.maxLevel !== null">
+                  {{ num(row.maxLevel) }} {{ row.unit }}
+                  <span class="rp-bd-dd-note">{{ t('order up to this level') }}</span>
+                </template>
+                <template v-else>
+                  {{ row.coverageDays }} {{ t('days') }}
+                  <span class="rp-bd-dd-note">{{ t('how much each order covers — not part of the trigger') }}</span>
+                </template>
               </div>
 
               <div class="rp-bd-dt">{{ t('Reorder point') }}</div>
@@ -288,8 +309,8 @@ const longestWindow = computed(() =>
           <button
             class="btn-enterprise btn-enterprise--primary"
             type="button"
-            @click="emit('create-draft-po', row)"
-          >{{ t('Create draft PO') }}</button>
+            @click="emit('create-purchase-request', row)"
+          >{{ t('Request to purchase') }}</button>
         </footer>
       </div>
     </div>

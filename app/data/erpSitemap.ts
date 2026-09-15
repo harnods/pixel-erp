@@ -182,7 +182,7 @@ const ACTIONS: Record<string, EntityAction[]> = {
   // ── Inventory ──
   'Replenishment': [
     a('Worklist', 'built'), a('Why this number', 'built'),
-    a('Create draft PO', 'built'), a('Bulk create draft PO', 'built'),
+    a('Request to purchase', 'built'), a('Bulk request to purchase', 'built'),
     a('Track / untrack', 'built'), a('Product settings', 'built'),
     a('Recalculate', 'built', 'explicit action — there is no scheduler in the prototype'),
     a('Export', 'partial', 'toast only'),

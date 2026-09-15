@@ -22,6 +22,28 @@ export type ReplDemandBasis = 'shipped-outbound' | 'shipped-plus-open' | 'manual
 /** Whether a SKU sitting EXACTLY at its reorder point is due (PRD US-010 AC-02). */
 export type ReplBoundaryMode = 'inclusive' | 'exclusive'
 
+/**
+ * How average daily demand is measured.
+ *
+ * The PRD specifies both and they disagree: §2.2 / US-002 define it as a flat
+ * average over one lookback window (default 60 days), while US-004 keeps the
+ * configurable 7/14/30 windows with weights totalling 100. `lookback` is the
+ * default because it is what the calculation spec and the worked example in §2.4
+ * actually compute; `weighted-windows` preserves US-004's recency weighting for
+ * businesses whose demand moved recently and should be read that way.
+ */
+export type ReplDemandMode = 'lookback' | 'weighted-windows'
+
+/**
+ * How an order's SIZE is decided once a SKU is due (PRD decision D9).
+ *
+ * `coverage-days` orders enough to cover lead + safety + N more days of demand;
+ * `max-level` tops the SKU up to a fixed unit ceiling instead (US-011 AC-03).
+ * Without one of these the order would only refill to the trigger and re-fire
+ * immediately — which is why every reference ERP takes a second input here.
+ */
+export type ReplOrderSizing = 'coverage-days' | 'max-level'
+
 export interface ReplWindowWeight {
   /** Trailing window length in days. */
   days: number
@@ -31,8 +53,38 @@ export interface ReplWindowWeight {
 
 export interface ReplenishmentConfig {
   demandBasis: ReplDemandBasis
+  /** Flat lookback average (spec §2.2) vs US-004's weighted windows. */
+  demandMode: ReplDemandMode
+  /**
+   * How far back to average sales for average daily demand, in days (US-002).
+   * The spec's primary demand input: avg daily demand = qty in window ÷ window.
+   */
+  lookbackDays: number
+  lookbackDaysByCategory: Record<string, number>
   /** Recency-weighted windows — recent demand counts for more (OD-009). */
   windows: ReplWindowWeight[]
+  /**
+   * Demand samples above this multiple of the window median are pulled back to it
+   * before averaging, so a promo spike or a bulk return cannot distort the average
+   * (US-002 AC-03). The SKU is still flagged "volatile demand" rather than hidden.
+   */
+  demandOutlierCapMultiple: number
+  /** Coverage days vs a units Max level (D9 / US-011 AC-03). */
+  orderSizing: ReplOrderSizing
+  /**
+   * Days of demand each order should cover BEYOND lead + safety (D9).
+   * Sizes the quantity; it plays no part in deciding whether a SKU is due.
+   */
+  coverageDaysGlobal: number
+  coverageDaysByCategory: Record<string, number>
+  /** How many of the most recent PO-backed receipts to average (US-001 AC-01). */
+  leadTimeSampleCount: number
+  /** Below this many PO-backed samples the computed tier is not trusted (VR-04). */
+  leadTimeMinSamples: number
+  /** PO→receipt gaps beyond this are dropped as outliers (US-001 AC-06). */
+  leadTimeOutlierCapDays: number
+  /** Tier 3 of the lead-time ladder — a per-category default (US-001 AC-04). */
+  leadTimeByCategory: Record<string, number>
   /** Fallback buffer, in days, when no category or SKU override applies. */
   safetyDaysGlobal: number
   safetyDaysByCategory: Record<string, number>
@@ -60,17 +112,44 @@ export interface ReplenishmentConfig {
   fsnDwellCycles: number
   /** Coefficient of variation above which demand is flagged "volatile" (US-002). */
   volatileCvThreshold: number
-  /** Lead time used when a SKU has no vendor link at all (US-001 AC-03). */
+  /** Tier 4 — the global floor when nothing else resolves (US-001 AC-04). */
   fallbackLeadTimeDays: number
 }
 
 export const REPL_DEFAULTS: ReplenishmentConfig = {
   demandBasis: 'shipped-outbound',
+  demandMode: 'lookback',
+  lookbackDays: 60,
+  lookbackDaysByCategory: {},
   windows: [
     { days: 7, weightPct: 50 },
     { days: 14, weightPct: 30 },
     { days: 30, weightPct: 20 },
   ],
+  demandOutlierCapMultiple: 4,
+  orderSizing: 'coverage-days',
+  coverageDaysGlobal: 30,
+  // Beans move fast and are cheap to hold, so they carry a longer horizon than a
+  // machine nobody wants sitting in a warehouse for a month.
+  coverageDaysByCategory: {
+    'Green Beans': 45,
+    'Roasted Beans': 21,
+    'Espresso Machine': 30,
+    Grinder: 30,
+    Equipment: 30,
+    Accessory: 30,
+  },
+  leadTimeSampleCount: 5,
+  leadTimeMinSamples: 2,
+  leadTimeOutlierCapDays: 90,
+  leadTimeByCategory: {
+    'Green Beans': 21,
+    'Roasted Beans': 10,
+    'Espresso Machine': 30,
+    Grinder: 21,
+    Equipment: 21,
+    Accessory: 10,
+  },
   safetyDaysGlobal: 7,
   safetyDaysByCategory: {
     'Green Beans': 10,
@@ -115,6 +194,9 @@ export function getReplenishmentConfig(): ReplenishmentConfig {
     // Nested values must merge, not replace, or a partial save drops categories.
     safetyDaysByCategory: { ...REPL_DEFAULTS.safetyDaysByCategory, ...(saved.safetyDaysByCategory ?? {}) },
     coldStartCategoryDemand: { ...REPL_DEFAULTS.coldStartCategoryDemand, ...(saved.coldStartCategoryDemand ?? {}) },
+    coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
+    lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
+    leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },
     windows: saved.windows?.length ? saved.windows : REPL_DEFAULTS.windows,
   }
 }
@@ -154,4 +236,22 @@ export function normalizeWindowWeights(windows: ReplWindowWeight[]): ReplWindowW
 /** Safety days for a category, falling back to the global value. */
 export function safetyDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
   return cfg.safetyDaysByCategory[category] ?? cfg.safetyDaysGlobal
+}
+
+/**
+ * Coverage days for a category, falling back to the global value (D9 / US-011).
+ * Only ever sizes the order — never any part of the due/not-due decision.
+ */
+export function coverageDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.coverageDaysByCategory[category] ?? cfg.coverageDaysGlobal
+}
+
+/** Demand lookback window for a category, falling back to the global value (US-002 VR-01). */
+export function lookbackDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.lookbackDaysByCategory[category] ?? cfg.lookbackDays
+}
+
+/** Tier 3 of the lead-time ladder — the category default (US-001 AC-04). */
+export function leadTimeForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number | null {
+  return cfg.leadTimeByCategory[category] ?? null
 }

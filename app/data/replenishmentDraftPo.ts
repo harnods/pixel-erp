@@ -1,5 +1,12 @@
 /**
- * Worklist → draft purchase order (PRD OD-007, OD-012).
+ * Purchase Request → draft purchase order (PRD US-027, OD-012).
+ *
+ * NOT reachable from the worklist. Decision D11 made a Purchase Request the only
+ * thing replenishment produces, and US-023 is a negative story about that: no
+ * data glitch may place a real order. So the entry point here takes a
+ * PurchaseRequest — converting one is a PURCHASING action, downstream of the
+ * request queue. The worklist calls `replenishmentPurchaseRequest.ts` and has no
+ * route to this file at all; that absence is the enforcement.
  *
  * Grouping key is `${vendorId}::${warehouseId}` — one PO per vendor PER WAREHOUSE,
  * not strictly per vendor. Forced by two facts: `PurchaseOrderDetail.warehouse` is a
@@ -17,7 +24,7 @@
  * carries accounting-clock dates, while `replenishment.asOf` records the worklist
  * snapshot it came from. Both dates are visible and neither is a fiction.
  */
-import type { PurchaseOrder, PurchaseOrderReplenishmentOrigin } from './types'
+import type { PurchaseOrder, PurchaseOrderReplenishmentOrigin, PurchaseRequest } from './types'
 import {
   addPurchaseOrder, nextPurchaseOrderId, nextPurchaseOrderNumber,
 } from './purchaseOrders'
@@ -30,7 +37,7 @@ import { SIM_TODAY_ISO } from './simClock'
 import { shiftDays } from './master'
 import { currentRunNo } from './replenishmentRuns'
 import { REPL_ASOF_ISO } from './replenishmentConfig'
-import type { WorklistRow } from './replenishment'
+import { applyMoqAndPack } from './replenishment'
 
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
@@ -82,12 +89,6 @@ export interface SkippedLine {
   reason: SkipReason
 }
 
-export interface DraftPoPlan {
-  groups: DraftPoGroup[]
-  skipped: SkippedLine[]
-  totals: { poCount: number; vendorCount: number; lineCount: number; skippedCount: number }
-}
-
 export interface DraftPoResult {
   created: {
     id: string
@@ -129,102 +130,12 @@ function summarize(group: Omit<DraftPoGroup, 'subtotal' | 'taxAmount' | 'total' 
   }
 }
 
-/**
- * Plan the POs for a selection — grouping, per-vendor totals, and the skip list.
- *
- * Pure: creates nothing. The UI shows this plan for confirmation BEFORE committing,
- * so "3 POs across 3 vendors, 2 lines skipped — no vendor" is a decision the user
- * makes rather than a surprise they read afterwards (US-021 EH-01).
- *
- * `overrides` is keyed by `WorklistRow.key`, so edited quantities can be passed
- * without reshaping rows. `vendorChoices` likewise lets a row be reassigned to an
- * alternate vendor, which re-groups it (US-022 AC-01).
- */
-export function planDraftPos(
-  rows: WorklistRow[],
-  overrides: Record<string, number> = {},
-  vendorChoices: Record<string, string> = {},
-): DraftPoPlan {
-  const groups = new Map<string, Omit<DraftPoGroup, 'subtotal' | 'taxAmount' | 'total' | 'leadTimeDays'>>()
-  const skipped: SkippedLine[] = []
-
-  for (const row of rows) {
-    const warehouseName = row.warehouseName
-
-    if (row.bucket === 'needs-setup') {
-      skipped.push({ sku: row.sku, productName: row.productName, warehouseId: row.warehouseId, warehouseName, reason: 'needs-setup' })
-      continue
-    }
-
-    const chosenVendorId = vendorChoices[row.key] ?? row.vendorItem?.vendorId
-    if (!chosenVendorId) {
-      skipped.push({ sku: row.sku, productName: row.productName, warehouseId: row.warehouseId, warehouseName, reason: 'no-vendor' })
-      continue
-    }
-
-    const vi = vendorItemFor(row.sku, chosenVendorId)
-    if (!vi) {
-      skipped.push({ sku: row.sku, productName: row.productName, warehouseId: row.warehouseId, warehouseName, reason: 'inactive-vendor-item' })
-      continue
-    }
-    if (!vi.unitsPerPurchaseUnit || vi.unitsPerPurchaseUnit < 1) {
-      skipped.push({ sku: row.sku, productName: row.productName, warehouseId: row.warehouseId, warehouseName, reason: 'missing-uom' })
-      continue
-    }
-
-    const recommendedQty = row.suggestion.purchaseQty
-    const finalQty = overrides[row.key] ?? recommendedQty
-    if (!finalQty || finalQty <= 0) {
-      skipped.push({ sku: row.sku, productName: row.productName, warehouseId: row.warehouseId, warehouseName, reason: 'zero-qty' })
-      continue
-    }
-
-    const key = `${chosenVendorId}::${row.warehouseId}`
-    const group = groups.get(key) ?? {
-      key,
-      vendorId: chosenVendorId,
-      vendorName: vendorNameFor(chosenVendorId),
-      warehouseId: row.warehouseId,
-      warehouseName,
-      lines: [] as DraftPoLine[],
-    }
-    group.lines.push({
-      sku: row.sku,
-      productName: row.productName,
-      warehouseId: row.warehouseId,
-      vendorId: chosenVendorId,
-      vendorItem: vi,
-      recommendedQty,
-      finalQty,
-      unitCost: vi.unitCost,
-      purchaseUnit: vi.purchaseUnit,
-      context: {
-        leadTimeDays: vi.leadTimeDays,
-        safetyDays: row.safetyDays,
-        avgDailySales: row.velocity.avgDailySales,
-        reorderPoint: row.reorderPoint,
-        available: row.atp.available,
-        onOrder: row.atp.onOrder,
-      },
-    })
-    groups.set(key, group)
-  }
-
-  const built = [...groups.values()].map(summarize)
-  return {
-    groups: built,
-    skipped,
-    totals: {
-      poCount: built.length,
-      vendorCount: new Set(built.map((g) => g.vendorId)).size,
-      lineCount: built.reduce((s, g) => s + g.lines.length, 0),
-      skippedCount: skipped.length,
-    },
-  }
-}
-
 /** Create one draft PO from a planned group. Always DRAFT — no other status exists here. */
-export function createDraftPoFromGroup(group: DraftPoGroup, createdBy = 'You'): PurchaseOrder {
+export function createDraftPoFromGroup(
+  group: DraftPoGroup,
+  createdBy = 'You',
+  purchaseRequestId?: string,
+): PurchaseOrder {
   const id = nextPurchaseOrderId()
   const number = nextPurchaseOrderNumber()
 
@@ -255,6 +166,8 @@ export function createDraftPoFromGroup(group: DraftPoGroup, createdBy = 'You'): 
 
   const origin: PurchaseOrderReplenishmentOrigin = {
     source: 'replenishment',
+    // journal → PO → the originating request → the worklist run (US-027 AC-02).
+    ...(purchaseRequestId ? { purchaseRequestId } : {}),
     asOf: REPL_ASOF_ISO,
     runNo: currentRunNo(),
     warehouseId: group.warehouseId,
@@ -309,30 +222,69 @@ export function createDraftPoFromGroup(group: DraftPoGroup, createdBy = 'You'): 
 }
 
 /**
- * Plan and commit in one call. Returns what was created AND what was skipped, so
- * the caller can report a partial outcome honestly rather than implying success.
+ * Convert one Purchase Request into a draft PO (US-027 AC-01).
+ *
+ * This is where US-009's MOQ / pack / purchase-UoM rounding finally happens —
+ * once, against the vendor who will actually ship (decision D12). The PR carried
+ * the demand-coverage need in stock units precisely so this rounding could not
+ * be applied twice to two different vendors' packs.
+ *
+ * Still `'draft'`: converting a request produces an order awaiting approval, not
+ * a sent one. Nothing here transitions a PO to sent.
  */
-export function createDraftPos(
-  rows: WorklistRow[],
-  overrides: Record<string, number> = {},
-  vendorChoices: Record<string, string> = {},
+export function createPoFromPurchaseRequest(
+  pr: PurchaseRequest,
+  vendorId: string,
   createdBy = 'You',
-): DraftPoResult {
-  const plan = planDraftPos(rows, overrides, vendorChoices)
-  const created: DraftPoResult['created'] = []
+): { order: PurchaseOrder | null; skipped: SkippedLine[] } {
+  const skipped: SkippedLine[] = []
+  const warehouseId = pr.replenishment?.warehouseId ?? ''
+  const warehouseName = warehouses.find((w) => w.id === warehouseId)?.name ?? ''
+  const lines: DraftPoLine[] = []
 
-  for (const group of plan.groups) {
-    const order = createDraftPoFromGroup(group, createdBy)
-    created.push({
-      id: order.id,
-      number: order.number,
-      vendorId: group.vendorId,
-      vendorName: group.vendorName,
-      warehouseId: group.warehouseId,
-      lineCount: group.lines.length,
-      total: group.total,
+  for (const prLine of pr.lines) {
+    const base = { sku: prLine.sku, productName: prLine.product, warehouseId, warehouseName }
+    const vi = vendorItemFor(prLine.sku, vendorId)
+    if (!vi) { skipped.push({ ...base, reason: 'inactive-vendor-item' }); continue }
+    if (!vi.unitsPerPurchaseUnit || vi.unitsPerPurchaseUnit < 1) {
+      skipped.push({ ...base, reason: 'missing-uom' }); continue
+    }
+
+    // The requested qty is a STOCK-unit need; round it into this vendor's terms now.
+    const rounded = applyMoqAndPack(prLine.requestedQty, vi)
+    if (rounded.purchaseQty <= 0) { skipped.push({ ...base, reason: 'zero-qty' }); continue }
+
+    const origin = pr.replenishment?.lines.find((l) => l.sku === prLine.sku)
+    lines.push({
+      sku: prLine.sku,
+      productName: prLine.product,
+      warehouseId,
+      vendorId,
+      vendorItem: vi,
+      recommendedQty: rounded.purchaseQty,
+      finalQty: rounded.purchaseQty,
+      unitCost: vi.unitCost,
+      purchaseUnit: vi.purchaseUnit,
+      context: {
+        leadTimeDays: origin?.leadTimeDays ?? vi.leadTimeDays,
+        safetyDays: origin?.safetyDays ?? 0,
+        avgDailySales: origin?.avgDailySales ?? 0,
+        reorderPoint: origin?.reorderPoint ?? 0,
+        available: origin?.available ?? 0,
+        onOrder: origin?.onOrder ?? 0,
+      },
     })
   }
 
-  return { created, skipped: plan.skipped }
+  if (!lines.length) return { order: null, skipped }
+
+  const group = summarize({
+    key: `${vendorId}::${warehouseId}`,
+    vendorId,
+    vendorName: vendorNameFor(vendorId),
+    warehouseId,
+    warehouseName,
+    lines,
+  })
+  return { order: createDraftPoFromGroup(group, createdBy, pr.id), skipped }
 }

@@ -1,25 +1,45 @@
 <script setup lang="ts">
 /**
- * Create draft purchase orders from the worklist (PRD OD-007, US-020..US-023).
+ * Raise Purchase Requests from the worklist (PRD OD-007: US-020..US-023).
  *
- * The confirmation step is deliberate: the user sees the per-vendor grouping, the
- * editable quantities and the SKIPPED lines BEFORE anything is created, so
- * "2 lines skipped — no vendor" is a decision rather than a surprise afterwards
- * (US-021 EH-01). The same summary is repeated in the success toast as a record.
+ * v2 changed what this produces. Decision D11 made the output a REQUEST to the
+ * purchasing team rather than a draft PO, so the copy, the grouping and the
+ * quantities all shifted with it:
+ *
+ *  • Quantities are the demand-coverage NEED in stock units. MOQ and pack
+ *    rounding belong to a vendor, and purchasing may source elsewhere, so they
+ *    are applied once at PO time (D12 / US-022 VR-02). The vendor's terms are
+ *    still shown per line — as information about what will happen later, never
+ *    as a rule blocking the request.
+ *  • A line with no suggested vendor is NOT skipped. It groups into a
+ *    "purchasing to source" request, because a PR — unlike a PO — needs no bound
+ *    vendor (US-022 AC-06).
+ *  • Changing the suggested vendor re-sizes the quantity from that vendor's lead
+ *    time (AC-02), except where the user has typed their own number: that is
+ *    never silently overwritten, it is offered (AC-03 / VR-03).
+ *
+ * The confirmation step is deliberate: grouping, quantities and SKIPPED lines are
+ * all visible BEFORE anything is created, so a partial outcome is a decision
+ * rather than a surprise afterwards (US-021 EH-01).
  *
  * Custom Teleport overlay, matching ConfirmModal.vue — MpModal has no structural
  * CSS in this Pixel3 build.
  */
 import { MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
-import { planDraftPos, skipReasonLabel } from '~/data/replenishmentDraftPo'
+import {
+  planPurchaseRequests, prSkipReasonLabel, recomputeQtyForVendor, type PrLine,
+} from '~/data/replenishmentPurchaseRequest'
 import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ isOpen: boolean; rows: WorklistRow[] }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
-  (e: 'confirm', payload: { overrides: Record<string, number>; vendorChoices: Record<string, string> }): void
+  (e: 'confirm', payload: {
+    overrides: Record<string, number>
+    vendorChoices: Record<string, string | null>
+  }): void
   (e: 'assign-vendor', sku: string): void
 }>()
 
@@ -27,66 +47,124 @@ const { t } = useLocale()
 
 /** Local, discarded on close — edits never leak out unless the user confirms. */
 const overrides = reactive<Record<string, number>>({})
-const vendorChoices = reactive<Record<string, string>>({})
+const vendorChoices = reactive<Record<string, string | null>>({})
 const qtyError = ref('')
+
+/**
+ * Pending "apply new recommendation?" prompts, keyed by row (US-022 AC-03).
+ * A vendor change re-sizes the quantity, but a number the user typed themselves
+ * is theirs — so the new recommendation waits here to be accepted or dismissed
+ * instead of overwriting their figure.
+ */
+const pendingRecommend = reactive<Record<string, { from: number; to: number; vendorName: string }>>({})
 
 watch(() => props.isOpen, (open) => {
   if (!open) return
   for (const k of Object.keys(overrides)) delete overrides[k]
   for (const k of Object.keys(vendorChoices)) delete vendorChoices[k]
+  for (const k of Object.keys(pendingRecommend)) delete pendingRecommend[k]
   qtyError.value = ''
 })
 
 /** Re-planned live, so changing a vendor visibly re-groups the line. */
-const plan = computed(() => planDraftPos(props.rows, { ...overrides }, { ...vendorChoices }))
+const plan = computed(() => planPurchaseRequests(props.rows, { ...overrides }, { ...vendorChoices }))
 
 /** Every vendor that can supply this SKU — the alternate picker's options. */
 function alternativesFor(sku: string) {
   return vendorItemsForSku(sku)
 }
 
-function chooseVendor(rowKey: string, vendorId: string) {
+function rowKeyFor(sku: string, warehouseId: string) { return `${sku}::${warehouseId}` }
+
+function rowFor(rowKey: string): WorklistRow | undefined {
+  return props.rows.find((r) => r.key === rowKey)
+}
+
+/**
+ * Switch the suggested vendor and re-size the request for its lead time.
+ *
+ * A slower vendor genuinely needs a bigger order — more demand falls inside the
+ * window before stock lands — so the number must move with the choice. The one
+ * thing that never moves it is a figure the user typed: that gets a prompt.
+ */
+function chooseVendor(rowKey: string, vendorId: string | null) {
+  const row = rowFor(rowKey)
   vendorChoices[rowKey] = vendorId
+  if (!row) return
+
+  const next = recomputeQtyForVendor(row, vendorId)
+  const typed = overrides[rowKey]
+  if (typed === undefined) {
+    delete pendingRecommend[rowKey]
+    return
+  }
+  if (typed === next) { delete pendingRecommend[rowKey]; return }
+  pendingRecommend[rowKey] = {
+    from: typed,
+    to: next,
+    vendorName: vendorId ? vendorNameFor(vendorId) : t('no vendor'),
+  }
+}
+
+function applyRecommendation(rowKey: string) {
+  const pending = pendingRecommend[rowKey]
+  if (!pending) return
+  overrides[rowKey] = pending.to
+  delete pendingRecommend[rowKey]
+}
+
+function dismissRecommendation(rowKey: string) {
+  delete pendingRecommend[rowKey]
 }
 
 function setQty(rowKey: string, raw: string) {
   const n = Number(raw)
   if (raw === '' || Number.isNaN(n)) delete overrides[rowKey]
   else overrides[rowKey] = Math.max(0, Math.floor(n))
+  delete pendingRecommend[rowKey]
   qtyError.value = ''
 }
 
-function rowKeyFor(sku: string, warehouseId: string) { return `${sku}::${warehouseId}` }
-
-/** Vendor-rule advisories — shown per cell, never blocking (they are the vendor's
- *  rules, not validation of the user's intent). */
-function qtyNote(line: ReturnType<typeof planDraftPos>['groups'][number]['lines'][number]): string {
+/**
+ * What this vendor's terms will do to the line LATER, at PO time.
+ *
+ * Informational, never blocking. Under D12 the request carries the raw need and
+ * purchasing rounds once against whoever actually ships — so telling the
+ * requester "this will round up to 100" is useful context, while refusing their
+ * number would be wrong.
+ */
+function termsNote(line: PrLine): string {
   const vi = line.vendorItem
-  if (line.finalQty < vi.moq) return `${t('Below MOQ')} ${vi.moq} ${vi.purchaseUnit}`
-  if (line.finalQty % vi.packSize !== 0) return `${t('Not a whole pack of')} ${vi.packSize}`
+  if (!vi) return ''
+  if (line.finalQty < vi.moq) {
+    return `${t('Vendor MOQ')} ${vi.moq} — ${t('rounded up when purchasing raises the PO')}`
+  }
+  if (vi.packSize > 1 && line.finalQty % vi.packSize !== 0) {
+    return `${t('Packs of')} ${vi.packSize} — ${t('rounded up at PO')}`
+  }
   return ''
 }
 
 const confirmLabel = computed(() => {
-  const n = plan.value.totals.poCount
-  return n === 1 ? t('Create draft PO') : `${t('Create')} ${n} ${t('draft POs')}`
+  const n = plan.value.totals.requestCount
+  return n === 1 ? t('Create purchase request') : `${t('Create')} ${n} ${t('purchase requests')}`
 })
 
 const summaryLine = computed(() => {
-  const { poCount, vendorCount, lineCount } = plan.value.totals
-  if (poCount === 0) return t('Nothing can be ordered from this selection.')
-  const poPart = poCount === 1 ? t('1 draft PO') : `${poCount} ${t('draft POs')}`
+  const { requestCount, vendorCount, lineCount } = plan.value.totals
+  if (requestCount === 0) return t('Nothing can be requested from this selection.')
+  const reqPart = requestCount === 1 ? t('1 purchase request') : `${requestCount} ${t('purchase requests')}`
   const vendorPart = vendorCount === 1 ? t('1 vendor') : `${vendorCount} ${t('vendors')}`
   const linePart = lineCount === 1 ? t('1 line') : `${lineCount} ${t('lines')}`
-  return `${poPart} ${t('across')} ${vendorPart} · ${linePart}`
+  return `${reqPart} · ${vendorPart} · ${linePart}`
 })
 
 function close() { emit('update:isOpen', false) }
 
 function confirm() {
   // No disabled buttons for validation (DESIGN.md) — validate on click.
-  if (plan.value.totals.poCount === 0) {
-    qtyError.value = t('Add a vendor to at least one product.')
+  if (plan.value.totals.requestCount === 0) {
+    qtyError.value = t('Enter a quantity for at least one product.')
     return
   }
   const zeroLines = Object.entries(overrides).filter(([, v]) => v <= 0).length
@@ -101,9 +179,9 @@ function confirm() {
 <template>
   <Transition name="rp-po">
     <div v-if="isOpen" class="rp-po-overlay" @click.self="close">
-      <div class="rp-po-panel" role="dialog" aria-modal="true" :aria-label="t('Create draft purchase orders')">
+      <div class="rp-po-panel" role="dialog" aria-modal="true" :aria-label="t('Request to purchase')">
         <header class="rp-po-header">
-          <span class="rp-po-title">{{ t('Create draft purchase orders') }}</span>
+          <span class="rp-po-title">{{ t('Request to purchase') }}</span>
           <button class="rp-po-close" type="button" :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
           </button>
@@ -111,24 +189,32 @@ function confirm() {
 
         <div class="rp-po-body">
           <p class="rp-po-summary">{{ summaryLine }}</p>
+          <!-- Says plainly that purchasing owns the next step (US-020 AC-03). -->
+          <p class="rp-po-summary rp-po-summary--muted">
+            {{ t('Purchasing reviews these requests and decides which become purchase orders.') }}
+          </p>
           <p v-if="plan.skipped.length" class="rp-po-summary rp-po-summary--warning">
             {{ plan.skipped.length }}
             {{ plan.skipped.length === 1 ? t('line skipped') : t('lines skipped') }}
             — {{ t('see below') }}
           </p>
 
-          <!-- One card per vendor + warehouse: a PO has exactly one ship-to. -->
+          <!-- One card per suggested vendor + warehouse. An unsourced card is a
+               valid request, not an error — purchasing sources it. -->
           <section v-for="group in plan.groups" :key="group.key" class="rp-po-card">
             <header class="rp-po-card-head">
               <div>
-                <p class="rp-po-vendor">{{ group.vendorName }}</p>
+                <p class="rp-po-vendor">
+                  {{ group.vendorId ? group.vendorName : t('Purchasing to source') }}
+                </p>
                 <p class="rp-po-card-sub">
-                  {{ group.warehouseName }} · {{ t('Lead time') }} {{ group.leadTimeDays }} {{ t('days') }}
+                  {{ group.warehouseName }} · {{ t('Needed in') }} {{ group.leadTimeDays }} {{ t('days') }}
+                  <template v-if="group.vendorId"> · {{ t('suggested vendor') }}</template>
                 </p>
               </div>
               <div class="rp-po-card-total">
-                <span class="rp-po-card-total-label">{{ t('Est. total') }}</span>
-                <span class="rp-po-card-total-value">{{ formatIDR(group.total) }}</span>
+                <span class="rp-po-card-total-label">{{ t('Est. value') }}</span>
+                <span class="rp-po-card-total-value">{{ formatIDR(group.estimatedValue) }}</span>
               </div>
             </header>
 
@@ -136,10 +222,10 @@ function confirm() {
               <thead>
                 <tr>
                   <th class="rp-po-th">{{ t('Product') }}</th>
-                  <th class="rp-po-th rp-po-th--num">{{ t('Suggested') }}</th>
-                  <th class="rp-po-th rp-po-th--num">{{ t('Qty') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Recommended') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Request qty') }}</th>
                   <th class="rp-po-th">{{ t('Unit') }}</th>
-                  <th class="rp-po-th rp-po-th--num">{{ t('Est. cost') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Est. value') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -147,10 +233,10 @@ function confirm() {
                   <td class="rp-po-td">
                     <span class="rp-po-product">{{ line.productName }}</span>
                     <span class="rp-po-product-sub">{{ line.sku }}</span>
-                    <!-- Switching vendor re-groups this line into the other card live. -->
+                    <!-- Switching vendor re-groups this line and re-sizes the qty. -->
                     <MpPopover
-                      v-if="alternativesFor(line.sku).length > 1"
-                      :id="`rp-po-vendor-${line.sku}-${line.warehouseId}`"
+                      v-if="alternativesFor(line.sku).length"
+                      :id="`rp-pr-vendor-${line.sku}-${line.warehouseId}`"
                       is-close-on-select
                       use-portal
                       :is-keep-alive="false"
@@ -159,7 +245,7 @@ function confirm() {
                       <MpPopoverTrigger>
                         <a class="rp-po-change">{{ t('Change vendor') }}</a>
                       </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
+                      <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content' })">
                         <MpPopoverList>
                           <MpPopoverListItem
                             v-for="alt in alternativesFor(line.sku)"
@@ -169,6 +255,13 @@ function confirm() {
                           >
                             {{ vendorNameFor(alt.vendorId) }} · {{ alt.leadTimeDays }} {{ t('days') }}
                           </MpPopoverListItem>
+                          <!-- A request needs no vendor at all (US-022 AC-06). -->
+                          <MpPopoverListItem
+                            :is-active="line.vendorId === null"
+                            @click="chooseVendor(rowKeyFor(line.sku, line.warehouseId), null)"
+                          >
+                            {{ t('Let purchasing source it') }}
+                          </MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -176,15 +269,28 @@ function confirm() {
                   <td class="rp-po-td rp-po-td--num rp-po-td--muted">{{ line.recommendedQty }}</td>
                   <td class="rp-po-td rp-po-td--num">
                     <MpInput
-                      :id="`rp-po-qty-${line.sku}-${line.warehouseId}`"
+                      :id="`rp-pr-qty-${line.sku}-${line.warehouseId}`"
                       :model-value="String(line.finalQty)"
                       type="number"
                       :class="css({ width: '96px' })"
                       @update:model-value="(v: string) => setQty(rowKeyFor(line.sku, line.warehouseId), v)"
                     />
-                    <span v-if="qtyNote(line)" class="rp-po-cell-note">{{ qtyNote(line) }}</span>
+                    <span v-if="termsNote(line)" class="rp-po-cell-note">{{ termsNote(line) }}</span>
+                    <!-- Offered, never applied behind the user's back (AC-03). -->
+                    <span
+                      v-if="pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]"
+                      class="rp-po-cell-note rp-po-cell-note--prompt"
+                    >
+                      {{ t('Recommended') }}
+                      {{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.from }}
+                      →
+                      {{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.to }}
+                      ({{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.vendorName }})
+                      <a class="rp-po-change" @click="applyRecommendation(rowKeyFor(line.sku, line.warehouseId))">{{ t('Apply') }}</a>
+                      <a class="rp-po-change" @click="dismissRecommendation(rowKeyFor(line.sku, line.warehouseId))">{{ t('Keep mine') }}</a>
+                    </span>
                   </td>
-                  <td class="rp-po-td">{{ line.purchaseUnit }}</td>
+                  <td class="rp-po-td">{{ line.unit }}</td>
                   <td class="rp-po-td rp-po-td--num">{{ formatIDR(line.finalQty * line.unitCost) }}</td>
                 </tr>
               </tbody>
@@ -200,16 +306,16 @@ function confirm() {
               <li v-for="s in plan.skipped" :key="`${s.sku}-${s.warehouseId}`" class="rp-po-skip-item">
                 <span class="rp-po-skip-name">{{ s.productName }}</span>
                 <span class="rp-po-skip-sub">{{ s.sku }} · {{ s.warehouseName }}</span>
-                <span class="rp-po-skip-reason">{{ skipReasonLabel(s.reason) }}</span>
+                <span class="rp-po-skip-reason">{{ prSkipReasonLabel(s.reason) }}</span>
               </li>
             </ul>
             <p class="rp-po-skip-hint">
-              {{ t('Add a vendor to these products to include them.') }}
+              {{ t('These products need demand or lead-time data before they can be requested.') }}
               <a
                 v-if="plan.skipped[0]"
                 class="rp-po-skip-link"
                 @click="emit('assign-vendor', plan.skipped[0]!.sku)"
-              >{{ t('Assign vendors') }}</a>
+              >{{ t('Open setup') }}</a>
             </p>
           </section>
         </div>
@@ -334,3 +440,6 @@ function confirm() {
 }
 .rp-po-error { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 </style>
+.rp-po-summary--muted { color: var(--mp-text-subdued, #6b7280); }
+.rp-po-cell-note--prompt { display: block; margin-top: 4px; color: var(--mp-text-informational, #1f6feb); }
+.rp-po-cell-note--prompt .rp-po-change { margin-left: 8px; }
