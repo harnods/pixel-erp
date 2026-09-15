@@ -38,11 +38,12 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchStorageLocationsDrawer from '~/components/patterns/BatchStorageLocationsDrawer.vue'
+import BatchJourneyDiagram from '~/components/patterns/BatchJourneyDiagram.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import { buildExportDocument, downloadExport, type ExportFormat, type ExportSection } from '~/utils/traceabilityExport'
 import { successToast } from '~/utils/toasts'
 import {
-  getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchAttributeChanges, relatedBatches, attributeCell,
+  getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchJourneyGraph, batchAttributeChanges, relatedBatches, attributeCell,
   type AttributeChangeMarker, type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
@@ -211,6 +212,8 @@ const newestFirst = ref(false)
 const showChanges = ref(true)
 const timeline = computed(() => batchJourneyTimeline(sku.value, batchNo.value, access.value))
 const changeCount = computed(() => timeline.value.filter((e) => e.kind === 'change').length)
+// The same journey as a left-to-right picture (story 11) — drawn above the table.
+const graph = computed(() => batchJourneyGraph(sku.value, batchNo.value, access.value))
 const journeyEntries = computed(() => {
   const list = showChanges.value ? timeline.value : timeline.value.filter((e) => e.kind === 'movement')
   return newestFirst.value ? [...list].reverse() : list
@@ -469,6 +472,15 @@ defineExpose({ buildSections })
       <!-- 3. Batch journey -->
       <section class="btd-section">
         <h2 class="btd-section-title">{{ t('Batch journey') }}</h2>
+        <BatchJourneyDiagram
+          v-if="journeyRows.length"
+          :graph="graph"
+          :product-name="trace.productName"
+          :batch-no="trace.batchNo"
+          :on-hand="position.totalBase"
+          :unit="unit"
+          @open-batch="openRelated"
+        />
         <!-- Wrapped: MpCheckbox puts id/class on its hidden input, so layout lives on this div. -->
         <div v-if="changeCount" class="btd-changes-toggle">
           <MpCheckbox

@@ -167,3 +167,37 @@ describe('Batch traceability detail — attribute change trail', () => {
     expect(trail.rows[0]).toEqual(expect.arrayContaining(['Web', 'Grade']))
   })
 })
+
+import { batchJourneyGraph } from '~/data/batchTraceability'
+
+describe('Batch traceability detail — visual journey', () => {
+  it('draws came from, this batch and went to, one node per transaction group', async () => {
+    const w = await mountPage('1101::Batch #001')
+    const graph = batchJourneyGraph('1101', 'Batch #001')
+    expect(w.findAll('.bjd-col-title').map((e) => e.text())).toEqual(['Came from', 'This batch', 'Went to'])
+    expect(w.findAll('.bjd-col--in .bjd-node')).toHaveLength(graph.incoming.length)
+    expect(w.findAll('.bjd-col--center .bjd-node')).toHaveLength(graph.internal.length)
+    expect(w.findAll('.bjd-col--out .bjd-node')).toHaveLength(graph.outgoing.length)
+    expect(w.find('.bjd-batch-card').text()).toContain('Batch #001')
+    expect(vueErrors).toEqual([])
+  })
+
+  it('expands a node to the transactions it groups', async () => {
+    const w = await mountPage('1101::Batch #001')
+    const first = batchJourneyGraph('1101', 'Batch #001').incoming[0]!
+    expect(w.find('.bjd-tx').exists()).toBe(false)
+    await w.find('.bjd-col--in .bjd-node-head').trigger('click')
+    expect(w.findAll('.bjd-col--in .bjd-tx')).toHaveLength(first.count)
+    expect(w.find('.bjd-col--in .bjd-tx').text()).toContain(first.transactions[0]!.number)
+  })
+
+  it('opens a source batch from the Work order node, keeping the breadcrumb chain', async () => {
+    const w = await mountPage('1101::Batch #001')
+    const source = relatedBatches('1101', 'Batch #001').sources[0]!
+    await w.find('.bjd-col--in .bjd-batch').trigger('click')
+    expect(push).toHaveBeenCalledWith({
+      path: `/inventory-report/batch-traceability/${source.sku}/${encodeURIComponent(source.batchNo)}`,
+      query: { trail: '1101::Batch #001' },
+    })
+  })
+})

@@ -4178,4 +4178,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Web": "Web",
   "API": "API",
   "Attribute change": "Perubahan atribut",
+  // Visual journey (story 11)
+  "Journey at a glance": "Ringkasan perjalanan",
+  "Came from": "Berasal dari",
+  "This batch": "Batch ini",
+  "Went to": "Dikirim ke",
+  "Moved within the batch": "Dipindahkan tanpa mengubah total batch",
+  "1 transaction": "1 transaksi",
+  "{n} transactions": "{n} transaksi",
 }

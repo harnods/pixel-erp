@@ -392,3 +392,43 @@ describe('attribute change trail', () => {
     expect(api.batchAttributeChanges('1101', batch.batchNo)).toEqual([])
   })
 })
+
+describe('visual journey graph', () => {
+  it('groups every journey line into exactly one node', () => {
+    for (const { sku, batch } of stockedBatches().slice(0, 15)) {
+      const graph = api.batchJourneyGraph(sku, batch.batchNo)
+      const nodes = [...graph.incoming, ...graph.internal, ...graph.outgoing]
+      const journey = api.batchJourney(sku, batch.batchNo)
+      expect(nodes.reduce((sum, g) => sum + g.count, 0), `${sku} ${batch.batchNo}`).toBe(journey.length)
+      expect(new Set(nodes.map((g) => g.key)).size).toBe(nodes.length)
+      for (const g of nodes) expect(g.transactions).toHaveLength(g.count)
+    }
+  })
+
+  it('balances: what came in minus what went out is on hand', () => {
+    for (const { sku, batch } of stockedBatches().slice(0, 15)) {
+      const graph = api.batchJourneyGraph(sku, batch.batchNo)
+      const incoming = graph.incoming.reduce((sum, g) => sum + g.qty, 0)
+      const outgoing = graph.outgoing.reduce((sum, g) => sum + g.qty, 0)
+      expect(incoming - outgoing, `${sku} ${batch.batchNo}`).toBe(batch.onHand)
+      expect(graph.internal.every((g) => g.direction === 'neutral')).toBe(true)
+    }
+  })
+
+  it('hangs the related batches off the Work order nodes', () => {
+    const roasted = api.getProductBatches('1101')[0]!
+    const roastedGraph = api.batchJourneyGraph('1101', roasted.batchNo)
+    const output = roastedGraph.incoming.find((g) => g.type === 'Work order')!
+    expect(output.batches).toEqual(api.relatedBatches('1101', roasted.batchNo).sources)
+
+    const source = output.batches[0]!
+    const consumed = api.batchJourneyGraph(source.sku, source.batchNo).outgoing.find((g) => g.type === 'Work order')!
+    expect(consumed.batches.some((b) => b.sku === '1101' && b.batchNo === roasted.batchNo)).toBe(true)
+  })
+
+  it('has no Work order node for a batch that was never roasted', () => {
+    const graph = api.batchJourneyGraph('1004', 'Batch #001')
+    expect([...graph.incoming, ...graph.outgoing].some((g) => g.type === 'Work order')).toBe(false)
+    expect(graph.incoming.map((g) => g.type)).toContain('Purchase delivery')
+  })
+})

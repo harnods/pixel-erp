@@ -31,7 +31,7 @@ Decisions:
 | 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | **Done** (see §3c) |
 | 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | **Done** (see §3d) |
 | 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | **Done** (see §3e) |
-| Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | Story 9 **done** (see §3f) · story 11 — |
+| Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | Story 9 **done** (see §3f) · story 11 **done** (see §3g) |
 
 ## 3. Phase 0 — as built
 
@@ -185,6 +185,22 @@ The PRD made this story conditional on Batch Attribute keeping a change log. It 
 **Tests:** data spec (regrade sits between receipt and the next movement with matching from/to; markers don't move the balance and don't drop movements; recorded web + import edits with user and from/to; number/description edits excluded) · detail spec (marker line renders between transactions, toggle hides it and keeps every movement, no marker/toggle for an unchanged batch, trail exported with the journey).
 
 **Not built:** the seeded regrade doesn't appear on the product-side Batch details page's Activity log (that page reads only the persisted batch activity).
+
+## 3g. Story 11 — visual journey, as built
+
+The PRD left it open whether this ships in v1 and recommended the table first. The table shipped in Phase 3, so the diagram is added on top as the presentation layer — it introduces no new data.
+
+**Data** — `batchJourneyGraph(sku, batchNo, access)` in `batchTraceability.ts` groups the journey into nodes: every transaction of one **type** moving the batch the same **direction** is one node (count + quantity + its transactions, oldest first). Three sets: **incoming** (in), **internal** (neutral — transfers, stock counts), **outgoing** (out). A Work order node carries the related batches on the other side (sources on the incoming output node, results on the outgoing consumption node), straight from `relatedBatches`.
+
+**Component** `BatchJourneyDiagram.vue`, placed at the top of the Batch journey section, above the change toggle and the table:
+- Three columns — **Came from → This batch → Went to** — joined by `arrows-right` icons. The batch sits in the centre as the one bold-bordered card (batch number, product, on hand); transfers and counts sit under it as *Moved within the batch*.
+- A node shows type · count · signed quantity; clicking (or Enter) expands it to its transactions (number, date, quantity). Grouping by type keeps a busy batch readable, as the PRD asks.
+- Work order nodes list their related batches; each opens that batch's detail page through the same drill-through as Related batch, so the breadcrumb trail is kept.
+- HTML/CSS grid, not a canvas/SVG graph library (the repo has none): text stays selectable, translatable and read in journey order by assistive tech. Below 900px the columns stack and the arrows point down.
+
+**Tests:** data spec (every journey line lands in exactly one node, node keys unique; incoming − outgoing = on hand; Work order nodes carry the same batches as `relatedBatches` in both directions; no Work order node for an unroasted batch) · detail spec (three column titles and a node per group, expanding a node lists its transactions, a source batch opens with the trail).
+
+**Not built:** transaction nodes don't link to transaction detail pages (open question 9) · no zoom/pan — grouping by type keeps the diagram bounded instead.
 
 ## 4. Open questions for PM
 

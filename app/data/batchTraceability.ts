@@ -994,3 +994,58 @@ export function batchJourneyTimeline(sku: string, batchNo: string, access: Trace
   flushBefore(null)
   return out
 }
+
+// ── Visual journey (PRD story 11) ───────────────────────────────────────────────
+/** One diagram node: every transaction of one type moving the batch the same way. */
+export interface JourneyGroup {
+  key: string
+  type: TraceTxType
+  direction: MutationDirection
+  count: number
+  /** Base-unit quantity across the group (moved quantity for a neutral group). */
+  qty: number
+  /** Oldest first — what the node lists when it's expanded. */
+  transactions: { id: string; number: string; date: string; qty: number }[]
+  /** Work order groups only: the batches on the other side of the link (story 10). */
+  batches: RelatedBatchRow[]
+}
+
+export interface JourneyGraph {
+  /** Where the batch came from — receipts, returns, Work order output, stock in. */
+  incoming: JourneyGroup[]
+  /** Movements that don't change the batch total — transfers, stock counts. */
+  internal: JourneyGroup[]
+  /** Where the batch went — deliveries, purchase returns, Work order consumption, stock out. */
+  outgoing: JourneyGroup[]
+}
+
+/**
+ * The journey as a left-to-right picture (story 11): came from → this batch → went to.
+ * A presentation of the journey (story 8) and related batches (story 10) — no new data,
+ * so the table stays the source of truth. Transactions of one type moving the same way
+ * collapse into one node with a count so a busy batch doesn't crowd the diagram.
+ */
+export function batchJourneyGraph(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): JourneyGraph {
+  const rows = batchJourney(sku, batchNo, access)
+  const related = relatedBatches(sku, batchNo)
+  const groups = new Map<string, JourneyGroup>()
+  for (const row of rows) {
+    const key = `${row.direction}:${row.type}`
+    let group = groups.get(key)
+    if (!group) {
+      const batches = row.type === 'Work order' ? (row.direction === 'in' ? related.sources : related.results) : []
+      group = { key, type: row.type, direction: row.direction, count: 0, qty: 0, transactions: [], batches }
+      groups.set(key, group)
+    }
+    group.count++
+    group.qty += row.qty
+    group.transactions.push({ id: row.id, number: row.number, date: row.date, qty: row.qty })
+  }
+  // Map keeps first-seen order, and rows are oldest first — so nodes read in journey order.
+  const all = [...groups.values()]
+  return {
+    incoming: all.filter((g) => g.direction === 'in'),
+    internal: all.filter((g) => g.direction === 'neutral'),
+    outgoing: all.filter((g) => g.direction === 'out'),
+  }
+}
