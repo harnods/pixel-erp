@@ -34,9 +34,14 @@ const router = useRouter()
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
-// ─── Library view tabs ──────────────────────────────────────────────────────
+// ─── Library view — a level-2 sidebar nav item (CrmSidebar.vue's Reports
+// children), not an in-page tab. Driven entirely by the orderId prop the
+// router resolves from /crm/reports, /crm/reports/mine, /shared, /archived. ──
 type LibraryView = 'all' | 'mine' | 'shared' | 'archived'
-const activeView = ref<LibraryView>(props.orderId === 'archived' ? 'archived' : 'all')
+const activeView = computed<LibraryView>(() => {
+  if (props.orderId === 'mine' || props.orderId === 'shared' || props.orderId === 'archived') return props.orderId
+  return 'all'
+})
 
 const visibleByView = computed<CrmReport[]>(() => {
   switch (activeView.value) {
@@ -156,17 +161,6 @@ const emptyCopy = computed(() => {
         </MpButton>
       </div>
     </header>
-
-    <!-- Status tabs (§1, docs/patterns/tabs.md) — page-level index switcher,
-         below the title bar and OUTSIDE the white stage. Hand-rolled
-         .page-tab/.page-tab--active, never MpTabs (that's reserved for
-         in-page detail tabs, §2) and never a custom active color. -->
-    <nav class="cc-viewtabs">
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'all' }" type="button" @click="activeView = 'all'">{{ t('All accessible reports') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'mine' }" type="button" @click="activeView = 'mine'">{{ t('My reports') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'shared' }" type="button" @click="activeView = 'shared'">{{ t('Shared with me') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'archived' }" type="button" @click="activeView = 'archived'">{{ t('Archived') }}</button>
-    </nav>
 
     <div class="cc-stage">
       <ErpTablePage
@@ -301,22 +295,6 @@ const emptyCopy = computed(() => {
 }
 .crm-titlebar__left { display: flex; flex-direction: column; gap: 2px; }
 .crm-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default, #272b32); }
-
-/* Status tabs (§1, docs/patterns/tabs.md) — page-level index switcher, below
-   the title bar and OUTSIDE the white stage (.cc-stage below). This is the
-   fixed .page-tab/.page-tab--active style: never MpTabs, never a custom
-   active color (MpTabs + variant-color is reserved for §2 in-page detail
-   tabs, e.g. a record's own Transactions/Warehouses tabs). */
-.cc-viewtabs { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5); padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.page-tab {
-  position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  background: none; border: none; cursor: pointer; padding: var(--mp-spacing-3) 0;
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); white-space: nowrap; transition: color 100ms;
-}
-.page-tab:not(.page-tab--active):hover { color: var(--mp-text-default); }
-.page-tab--active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
-.page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-text-selected); border-radius: var(--mp-radii-sm, 2px) var(--mp-radii-sm, 2px) 0 0; }
 
 .cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 

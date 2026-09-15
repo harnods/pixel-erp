@@ -42,7 +42,12 @@ const navGroups = computed<Item[][]>(() => [
     ...customModuleItems.value,
   ],
   [
-    { icon: 'reports',  name: 'Reports',  to: '/crm/reports' },
+    { icon: 'reports',  name: 'Reports',  to: '/crm/reports', children: [
+      { name: 'All reports',    to: '/crm/reports' },
+      { name: 'My reports',     to: '/crm/reports/mine' },
+      { name: 'Shared with me', to: '/crm/reports/shared' },
+      { name: 'Archived',       to: '/crm/reports/archived' },
+    ] },
     { icon: 'contact',  name: 'Customers', to: '/crm/customers', children: [
       { name: 'Contacts',  to: '/crm/customers/contacts' },
       { name: 'Companies', to: '/crm/customers/companies' },
@@ -80,8 +85,17 @@ const activePanel = computed<Item | null>(() => {
 // Rail collapses to the icon rail while a level-2 panel is open (ERP behavior).
 const navExpanded = computed(() => expanded.value && !isNarrowViewport.value && !activePanel.value)
 
+// Longest-prefix match: when one child's `to` is itself a prefix of a sibling's
+// (e.g. Reports' "All reports" → /crm/reports vs. "My reports" → /crm/reports/mine),
+// only the most specific match should highlight — otherwise both light up at once.
+const activeChildTo = computed<string | null>(() => {
+  const children = activePanel.value?.children ?? []
+  const matches = children.filter((c) => route.path === c.to || route.path.startsWith(c.to + '/'))
+  if (!matches.length) return null
+  return matches.reduce((best, c) => (c.to.length > best.to.length ? c : best)).to
+})
 function isChildActive(to: string): boolean {
-  return route.path === to || route.path.startsWith(to + '/')
+  return activeChildTo.value === to
 }
 function handleNavClick(item: Item) { router.push(item.children?.length ? item.children[0]!.to : item.to) }
 

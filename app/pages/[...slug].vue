@@ -490,7 +490,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
     // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
     if (sub === 'reports' && id === 'new') return { component: CrmReportBuilderPage, id: 'new' }
-    if (sub === 'reports' && id === 'archived') return { component: CrmReportsPage, id: 'archived' }
+    // Level-2 sidebar views (CrmSidebar.vue's Reports children) — library, not
+    // a single report id.
+    if (sub === 'reports' && (id === 'mine' || id === 'shared' || id === 'archived')) return { component: CrmReportsPage, id }
     if (sub === 'reports' && id && segs[3] === 'edit') return { component: CrmReportBuilderPage, id }
     if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }

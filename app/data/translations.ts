@@ -3424,6 +3424,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Create report": "Buat laporan",
   "Edit report": "Ubah laporan",
   "All accessible reports": "Semua laporan yang dapat diakses",
+  "All reports": "Semua laporan",
   "My reports": "Laporan saya",
   "Shared with me": "Dibagikan untuk saya",
   "Archived": "Diarsipkan",
