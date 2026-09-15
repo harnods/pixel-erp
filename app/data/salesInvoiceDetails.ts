@@ -1,5 +1,6 @@
 import { computeTotals, type SalesOrderTotals } from './salesOrders'
 import { salesInvoices } from './salesInvoices'
+import { getSalesInvoiceEdit } from './salesInvoiceEdits'
 import { CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
@@ -226,9 +227,60 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   }
 }
 
-/** Look up a full detail record by SalesInvoice id; falls back to the first invoice. */
-export function getSalesInvoiceDetail(id: string): SalesInvoiceDetail {
+/**
+ * Apply the user's edit overlay (salesInvoiceEdits.ts) on top of the generated
+ * detail. Totals are RECOMPUTED from the edited line items rather than trusted
+ * from the overlay, so the header total, the tax base and the line rows can
+ * never disagree — which is exactly what PRD-05's change detection diffs on.
+ */
+function applyEdit(detail: SalesInvoiceDetail, id: string): SalesInvoiceDetail {
+  const edit = getSalesInvoiceEdit(id)
+  if (!edit) return detail
+
+  // Mixed per-line tax rates aren't modeled (the seed generator applies one rate
+  // to the whole invoice) — any PPN-bearing line makes the invoice PPN-bearing.
+  const hasPpn = edit.lineItems.some(it => /^ppn/i.test(it.taxLabel))
+  const totals = computeTotals(edit.lineItems, edit.globalDiscount, edit.shippingFee, hasPpn ? undefined : 0)
+  const amountPaid = Math.min(detail.amountPaid, totals.total)
+
+  return {
+    ...detail,
+    customer: { ...edit.customer },
+    date: edit.date,
+    dueDate: edit.dueDate,
+    hasPpn,
+    email: [...edit.email],
+    billingAddress: edit.billingAddress,
+    shipTo: edit.shipTo,
+    paymentTerms: edit.paymentTerms,
+    referenceNo: edit.referenceNo,
+    warehouse: edit.warehouse,
+    tags: [...edit.tags],
+    lineItems: edit.lineItems.map(it => ({ ...it })),
+    itemCount: edit.lineItems.length,
+    message: edit.message,
+    memo: edit.memo,
+    attachments: edit.attachments.map(a => ({ ...a })),
+    hasAttachment: edit.attachments.length > 0,
+    totals,
+    total: totals.total,
+    amountPaid,
+    balance: totals.total - amountPaid,
+    lastUpdatedBy: edit.editedBy,
+    lastUpdatedAt: edit.editedAt,
+  }
+}
+
+/**
+ * Look up a full detail record by SalesInvoice id; falls back to the first invoice.
+ *
+ * Pass `{ pristine: true }` for the invoice as originally issued, with the user's
+ * edit overlay left off — the "before" side of PRD-05's tax change detection when
+ * an issued tax document predates this feature and carries no snapshot of its own.
+ */
+export function getSalesInvoiceDetail(id: string, opts: { pristine?: boolean } = {}): SalesInvoiceDetail {
   const i = salesInvoices.findIndex(inv => inv.id === id)
   const idx = i >= 0 ? i : 0
-  return buildDetail(salesInvoices[idx]!, idx)
+  const detail = buildDetail(salesInvoices[idx]!, idx)
+  return opts.pristine ? detail : applyEdit(detail, detail.id)
 }

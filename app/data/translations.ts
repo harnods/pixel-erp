@@ -2055,4 +2055,118 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Out qty": "Jumlah keluar",
   "On the way": "Dalam perjalanan",
   "Min stock": "Stok minimum",
+
+  // ── Output tax document change management (PRD-05) ──────────────────────────
+  // Sales invoice edit + tax impact review
+  "Edit sales invoice": "Ubah faktur penjualan",
+  "Save changes": "Simpan perubahan",
+  "This invoice has an approved tax document": "Faktur penjualan ini punya dokumen pajak yang sudah disetujui",
+  "Your changes will be reviewed for tax impact before they are saved.": "Perubahan Anda akan ditinjau dampak pajaknya sebelum disimpan.",
+  "Sales invoice updated": "Faktur penjualan diperbarui",
+  "Sales invoice updated and tax document draft generated": "Faktur penjualan diperbarui dan draf dokumen pajak dibuat",
+
+  "Review tax impact": "Tinjau dampak pajak",
+  "Approved tax document": "Dokumen pajak yang disetujui",
+  "Detected changes": "Perubahan terdeteksi",
+  "No changes were detected on this sales invoice.": "Tidak ada perubahan yang terdeteksi pada faktur penjualan ini.",
+  "Tax impact": "Dampak pajak",
+  "Before": "Sebelum",
+  "After": "Sesudah",
+  "Why a replacement is required": "Alasan perlu dokumen pengganti",
+  "Why cancellation is required": "Alasan perlu pembatalan",
+  "Will be generated": "Akan dibuat",
+  "Back to editing": "Kembali ke formulir",
+  "Sales invoice changes": "Perubahan faktur penjualan",
+  "Replacement tax document (draft)": "Dokumen pajak pengganti (draf)",
+  "Cancellation tax document (draft)": "Dokumen pajak pembatalan (draf)",
+  "New output tax document (draft)": "Dokumen pajak keluaran baru (draf)",
+  "Drafts are not sent to DJP automatically. Review them on the Tax document tab and submit when ready.": "Draf tidak dikirim otomatis ke DJP. Tinjau pada tab Dokumen pajak, lalu kirim jika sudah siap.",
+
+  // Tax action verdicts
+  "No tax action": "Tanpa tindakan pajak",
+  "No tax action required": "Tidak perlu tindakan pajak",
+  "Your changes do not affect the approved tax document, so it stays as it is.": "Perubahan Anda tidak memengaruhi dokumen pajak yang sudah disetujui, jadi dokumen tersebut tetap berlaku.",
+  "Replacement tax document required": "Perlu dokumen pajak pengganti",
+  "Your changes correct information that the approved tax document already reports. Saving generates a replacement tax document draft for you to review and submit to DJP.": "Perubahan Anda memperbaiki informasi yang sudah dilaporkan pada dokumen pajak yang disetujui. Menyimpan perubahan akan membuat draf dokumen pajak pengganti untuk Anda tinjau dan kirim ke DJP.",
+  "Save & generate replacement": "Simpan & buat pengganti",
+  "Tax document cancellation required": "Perlu pembatalan dokumen pajak",
+  "Your changes cannot be corrected by a replacement. Saving cancels the approved tax document and generates a new tax document draft for you to review and submit to DJP.": "Perubahan Anda tidak bisa diperbaiki dengan dokumen pengganti. Menyimpan perubahan akan membatalkan dokumen pajak yang disetujui dan membuat draf dokumen pajak baru untuk Anda tinjau dan kirim ke DJP.",
+  "Save & generate cancellation": "Simpan & buat pembatalan",
+
+  // Change matrix — field labels
+  "Tax period": "Masa pajak",
+  "VAT applicability": "Keberlakuan PPN",
+  "Products": "Produk",
+  "Sales invoice total": "Total faktur penjualan",
+  "Dasar pengenaan pajak (DPP)": "Dasar pengenaan pajak (DPP)",
+  "Pajak pertambahan nilai (PPN)": "Pajak pertambahan nilai (PPN)",
+  "Global discount": "Diskon global",
+
+  // Change matrix — reasons
+  "The tax document was issued to a different buyer, so it cannot be corrected by a replacement.": "Dokumen pajak diterbitkan untuk pembeli yang berbeda, sehingga tidak bisa diperbaiki dengan dokumen pengganti.",
+  "The transaction date moves the delivery into another tax period, which a replacement cannot carry.": "Tanggal transaksi memindahkan penyerahan ke masa pajak lain, dan dokumen pengganti tidak bisa memuat perubahan ini.",
+  "The transaction is no longer a VAT-able delivery, so the issued tax document must be withdrawn.": "Transaksi ini bukan lagi penyerahan kena PPN, sehingga dokumen pajak yang sudah terbit harus ditarik.",
+  "The delivered goods or services reported on the tax document changed.": "Barang atau jasa yang dilaporkan pada dokumen pajak berubah.",
+  "The transaction value reported on the tax document changed.": "Nilai transaksi yang dilaporkan pada dokumen pajak berubah.",
+  "The tax base reported to DJP changed.": "Dasar pengenaan pajak yang dilaporkan ke DJP berubah.",
+  "The VAT amount reported to DJP changed.": "Nilai PPN yang dilaporkan ke DJP berubah.",
+  "The discount changes the tax base reported on the tax document.": "Diskon mengubah dasar pengenaan pajak yang dilaporkan pada dokumen pajak.",
+  "The transaction date stated on the tax document changed, but stays inside the same tax period.": "Tanggal transaksi pada dokumen pajak berubah, tetapi masih dalam masa pajak yang sama.",
+  "The buyer address printed on the tax document changed.": "Alamat pembeli yang tercetak pada dokumen pajak berubah.",
+  "A product was added to the invoice after the tax document was issued.": "Ada produk yang ditambahkan ke faktur setelah dokumen pajak terbit.",
+  "A product was removed from the invoice after the tax document was issued.": "Ada produk yang dihapus dari faktur setelah dokumen pajak terbit.",
+  "Payment scheduling is not reported on the tax document.": "Jadwal pembayaran tidak dilaporkan pada dokumen pajak.",
+  "Payment terms are not reported on the tax document.": "Termin pembayaran tidak dilaporkan pada dokumen pajak.",
+  "Fulfilment data is not reported on the tax document.": "Data pemenuhan pesanan tidak dilaporkan pada dokumen pajak.",
+  "The shipping address is not reported on the tax document.": "Alamat pengiriman tidak dilaporkan pada dokumen pajak.",
+  "Internal references are not reported on the tax document.": "Referensi internal tidak dilaporkan pada dokumen pajak.",
+  "Contact details are not reported on the tax document.": "Detail kontak tidak dilaporkan pada dokumen pajak.",
+  "Tags are internal labels only.": "Tag hanya label internal.",
+  "Customer-facing notes are not reported on the tax document.": "Catatan untuk pelanggan tidak dilaporkan pada dokumen pajak.",
+  "Internal notes are not reported on the tax document.": "Catatan internal tidak dilaporkan pada dokumen pajak.",
+
+  // Tax document lineage
+  // DJP e-Faktur classification — "Normal" is the regulator's own term in both
+  // languages, so it stays as-is rather than being translated to "Asli".
+  "Normal": "Normal",
+  "Replacement": "Pengganti",
+  "Cancellation": "Pembatalan",
+  "Replaces": "Mengganti",
+  "Cancels": "Membatalkan",
+  "Replaced": "Diganti",
+  "Cancelled": "Dibatalkan",
+  "Cannot be changed because it is kept as a historical record": "Tidak bisa diubah karena disimpan sebagai catatan riwayat",
+
+  // Sales return → nota retur. A return doesn't correct the faktur, so the
+  // impact is a document we WAIT for rather than one we raise: the buyer issues
+  // the nota retur. "Atas" is the regulator's own phrasing for what a nota retur
+  // cites ("nota retur atas faktur pajak nomor …").
+  "Return note": "Nota retur",
+  "Awaiting from buyer": "Menunggu dari pembeli",
+  "Against": "Atas",
+  "Create sales return": "Buat retur penjualan",
+  "Return note required from the buyer": "Perlu nota retur dari pembeli",
+  "A sales return does not correct the tax document you already issued, so no replacement or cancellation is raised. The buyer issues a return note (nota retur) and sends it to you — that is the document that reduces the VAT you report.": "Retur penjualan tidak memperbaiki dokumen pajak yang sudah Anda terbitkan, jadi tidak ada dokumen pengganti atau pembatalan yang dibuat. Pembeli yang menerbitkan nota retur dan mengirimkannya kepada Anda — dokumen itulah yang mengurangi PPN yang Anda laporkan.",
+  "What you need to do": "Yang perlu Anda lakukan",
+  "Ask the buyer to issue a return note (nota retur) for the returned goods.": "Minta pembeli menerbitkan nota retur untuk barang yang dikembalikan.",
+  "The return note must state the number and date of the tax document being returned against.": "Nota retur harus mencantumkan nomor dan tanggal dokumen pajak yang menjadi dasar retur.",
+  "Record the return note against this invoice once the buyer sends it.": "Catat nota retur pada faktur penjualan ini setelah pembeli mengirimkannya.",
+  "The VAT reduction is reported in the tax period you receive the return note, not the tax period of the original tax document.": "Pengurangan PPN dilaporkan pada masa pajak saat Anda menerima nota retur, bukan masa pajak dokumen pajak awal.",
+  "Return note (awaiting from buyer)": "Nota retur (menunggu dari pembeli)",
+  "Nothing is submitted to DJP. The return note is added to the Tax document tab so the invoice shows what is still outstanding.": "Tidak ada yang dikirim ke DJP. Nota retur ditambahkan pada tab Dokumen pajak agar terlihat apa yang masih perlu ditindaklanjuti.",
+  "This invoice already has a return note awaiting the buyer": "Faktur penjualan ini sudah punya nota retur yang menunggu dari pembeli",
+  "Return note added, awaiting the buyer": "Nota retur ditambahkan, menunggu dari pembeli",
+  "Follow up with the buyer to get the return note (nota retur).": "Tindak lanjuti ke pembeli untuk mendapatkan nota retur.",
+  "Cannot be changed because the return note is issued by the buyer": "Tidak bisa diubah karena nota retur diterbitkan oleh pembeli",
+
+  // Tax submission permission
+  "You do not have permission to submit tax documents to DJP": "Anda tidak punya izin untuk mengirim dokumen pajak ke DJP",
+  "Ask an administrator for tax submission access.": "Minta akses pengiriman dokumen pajak ke administrator.",
+  "Can submit tax documents": "Bisa mengirim dokumen pajak",
+  "No tax submission permission": "Tanpa izin pengiriman dokumen pajak",
+
+  // e-Faktur preview chrome. The faktur form's own field labels stay in
+  // Indonesian whatever the locale — they're the regulator's field names, not
+  // UI copy — so only the modal's buttons appear here.
+  "Download PDF": "Unduh PDF",
 }

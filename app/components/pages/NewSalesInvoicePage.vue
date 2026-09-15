@@ -7,6 +7,13 @@
  * line-items table, its prefix-suffix cells and its error treatment follow
  * NewExpensePage.vue, which is the ERP's reference implementation for all
  * three (see the ERP line-items + transaction-error pattern notes).
+ *
+ * EDIT MODE (`/sales-invoices/:id/edit`, same `orderId`-prop convention as
+ * NewProductPage.vue): the form prefills from the invoice and saves an overlay
+ * (salesInvoiceEdits.ts) instead of appending a record. When the invoice carries
+ * a DJP-approved Output Tax Document, saving first routes through the tax impact
+ * review (PRD-05 US-001) — the invoice is only written once the user has seen
+ * which tax action their edit requires and confirmed it.
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
@@ -23,11 +30,27 @@ import {
   customers, products, salesInvoices,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
-import type { SalesInvoice } from '~/data/types'
+import type { SalesInvoice, SILineItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
+import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
+import { saveSalesInvoiceEdit } from '~/data/salesInvoiceEdits'
+import { getApprovedTaxDocument, generateChangeDrafts, type TaxDocument } from '~/data/taxDocuments'
+import {
+  buildTaxSnapshot, detectTaxChanges, resolveTaxAction,
+  type DetectedTaxChange, type SalesInvoiceTaxSnapshot, type TaxAction,
+} from '~/data/taxDocumentChanges'
 
 const router = useRouter()
 const { t } = useLocale()
+
+// ── Mode ──────────────────────────────────────────────────────────────────────
+// `orderId` is the shared detail-route prop name — [...slug].vue binds it for
+// every detail/edit route; 'new' (or absent) means the create form.
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+/** The invoice being edited, as it stands right now (edit overlay applied). */
+const editingInvoice = computed(() => (isEdit.value ? getSalesInvoiceDetail(props.orderId!) : null))
 
 // Chart of accounts — no master-data module for these yet, so a small local
 // list stands in (same stopgap as NewExpensePage.vue's ACCOUNT_OPTIONS).
@@ -276,6 +299,42 @@ function onFilesChange(e: Event) {
 }
 function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 
+// ── Edit-mode prefill ─────────────────────────────────────────────────────────
+// Runs once at setup — the form owns its state from then on, so a re-render of
+// the underlying invoice (e.g. another tab writing the overlay) never clobbers
+// what the user is typing.
+function prefillFromInvoice() {
+  const inv = editingInvoice.value
+  if (!inv) return
+  customerId.value    = inv.customer.id
+  emailTags.value     = toTagData(inv.email)
+  billingAddress.value = inv.billingAddress
+  shipTo.value        = inv.shipTo
+  shipToDifferent.value = !!inv.shipTo
+  txDate.value        = isoToDMY(inv.date)
+  dueDate.value       = isoToDMY(inv.dueDate)
+  paymentTerms.value  = inv.paymentTerms
+  referenceNo.value   = inv.referenceNo
+  warehouse.value     = inv.warehouse
+  tagsList.value      = toTagData(inv.tags ?? [])
+  items.value = inv.lineItems.map(it => ({
+    _key: ++_seq,
+    product: it.product, sku: it.sku, description: it.description,
+    qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct,
+    taxLabel: it.taxLabel,
+    productError: false, qtyError: false,
+  }))
+  // The invoice stores a resolved rupiah discount, not the %/Rp the form was
+  // originally filled with — round-trip it as Rp so the number stays exact.
+  globalDiscountType.value  = 'Rp'
+  globalDiscountValue.value = inv.totals.globalDiscount
+  shippingFee.value = inv.totals.shippingFee
+  message.value     = inv.message
+  memo.value        = inv.memo
+  attachments.value = inv.attachments.map(a => ({ ...a }))
+}
+prefillFromInvoice()
+
 // ── Save ──────────────────────────────────────────────────────────────────────
 function validate(): boolean {
   let ok = true
@@ -312,7 +371,159 @@ function nextInvoiceId(): string {
   return `SI${String(n).padStart(3, '0')}`
 }
 
-function onCancel() { router.push('/sales-invoices') }
+function onCancel() {
+  router.push(isEdit.value ? `/sales-invoices/${props.orderId}` : '/sales-invoices')
+}
+
+// ── Edit mode: tax impact review before saving (PRD-05 US-001) ────────────────
+/** The DJP-approved tax document this edit has to answer to, if any. */
+const approvedTaxDoc = computed<TaxDocument | null>(() =>
+  isEdit.value ? getApprovedTaxDocument(props.orderId!) : null,
+)
+
+const taxReviewOpen = ref(false)
+const taxReviewChanges = ref<DetectedTaxChange[]>([])
+const taxReviewAction = ref<TaxAction>('none')
+
+/** The line items exactly as the invoice overlay will store them. */
+function editedLineItems(): SILineItem[] {
+  return items.value.map(it => ({
+    product: it.product, sku: it.sku, description: it.description,
+    qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct,
+    amount: lineAmount(it), taxLabel: it.taxLabel,
+  }))
+}
+
+/**
+ * The invoice as this form would save it, projected into the shape the change
+ * matrix compares. Built from the form's own totals rather than re-reading the
+ * invoice, so the review shows the user exactly what they are about to write.
+ */
+function editedSnapshot(): SalesInvoiceTaxSnapshot {
+  const customer = customers.find(c => c.id === customerId.value)!
+  const date = dmyToIso(txDate.value)
+  const lineItems = editedLineItems()
+  return {
+    customerName: customer.name,
+    transactionDate: date,
+    taxPeriod: date.slice(0, 7),
+    hasPpn: taxAmount.value > 0,
+    billingAddress: billingAddress.value,
+    lineItems,
+    total: total.value,
+    dpp: total.value - taxAmount.value,
+    ppn: taxAmount.value,
+    globalDiscount: globalDiscountAmount.value,
+    dueDate: dmyToIso(dueDate.value || txDate.value),
+    paymentTerms: paymentTerms.value,
+    warehouse: warehouse.value,
+    shipTo: shipToDifferent.value ? shipTo.value : '',
+    referenceNo: referenceNo.value,
+    email: emailTags.value.map(e => String(e.value)),
+    tags: tagsList.value.map(tag => String(tag.value)),
+    message: message.value,
+    memo: memo.value,
+  }
+}
+
+/** DD/MM/YYYY — the format the tax document store keeps dates in. */
+function todayDMY(): string {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+/** Write the overlay + keep the index record in step with it. */
+function commitEdit() {
+  const customer = customers.find(c => c.id === customerId.value)!
+  const lineItems = editedLineItems()
+  const date = dmyToIso(txDate.value)
+  const due = dmyToIso(dueDate.value || txDate.value)
+
+  saveSalesInvoiceEdit({
+    salesInvoiceId: props.orderId!,
+    customer: { id: customer.id, name: customer.name },
+    date,
+    dueDate: due,
+    email: emailTags.value.map(e => String(e.value)),
+    billingAddress: billingAddress.value,
+    shipTo: shipToDifferent.value ? shipTo.value : '',
+    paymentTerms: paymentTerms.value,
+    referenceNo: referenceNo.value,
+    warehouse: warehouse.value,
+    tags: tagsList.value.map(tag => String(tag.value)),
+    lineItems,
+    globalDiscount: globalDiscountAmount.value,
+    shippingFee: shippingFee.value,
+    message: message.value,
+    memo: memo.value,
+    attachments: attachments.value.map(a => ({ ...a })),
+    editedAt: new Date().toISOString(),
+    editedBy: 'Rizal Candra',
+  })
+
+  // The Sales invoices index reads the base record directly — without this the
+  // list would keep quoting the pre-edit total next to an edited invoice.
+  const base = salesInvoices.find(inv => inv.id === props.orderId)
+  if (base) {
+    const paid = Math.min(base.total - base.balance, total.value)
+    base.customer = { id: customer.id, name: customer.name }
+    base.date = date
+    base.dueDate = due
+    base.total = total.value
+    base.balance = total.value - paid
+    base.status = base.balance === 0 ? 'paid' : base.status === 'paid' ? 'open' : base.status
+    base.itemCount = lineItems.length
+    base.hasPpn = taxAmount.value > 0
+    base.hasAttachment = attachments.value.length > 0
+    base.tags = tagsList.value.map(tag => String(tag.value))
+  }
+}
+
+/** Confirmed from the review drawer — save, then raise whatever DJP needs. */
+function onTaxReviewConfirm() {
+  commitEdit()
+  const source = approvedTaxDoc.value
+  const action = taxReviewAction.value
+
+  if (source && action !== 'none') {
+    generateChangeDrafts({
+      source, action, changes: taxReviewChanges.value,
+      date: todayDMY(),
+      invoiceSnapshot: editedSnapshot(),
+    })
+  }
+
+  taxReviewOpen.value = false
+  toast.notify({
+    variant: 'success',
+    title: action === 'none' ? t('Sales invoice updated') : t('Sales invoice updated and tax document draft generated'),
+    rootProps: { class: 'toast-enterprise' },
+  })
+  // Land on the Tax document tab when there is a new draft waiting to be reviewed.
+  router.push(action === 'none'
+    ? `/sales-invoices/${props.orderId}`
+    : `/sales-invoices/${props.orderId}?tab=tax-document`)
+}
+
+function saveEdit() {
+  const source = approvedTaxDoc.value
+  // BR-001/BR-002: only an issued (DJP-approved) document triggers evaluation.
+  if (!source) {
+    commitEdit()
+    toast.notify({ variant: 'success', title: t('Sales invoice updated'), rootProps: { class: 'toast-enterprise' } })
+    router.push(`/sales-invoices/${props.orderId}`)
+    return
+  }
+
+  // The version DJP approved. Documents raised before PRD-05 carry no snapshot
+  // of their own — fall back to the invoice with the edit overlay stripped off.
+  const before = source.invoiceSnapshot
+    ?? buildTaxSnapshot(getSalesInvoiceDetail(props.orderId!, { pristine: true }))
+
+  taxReviewChanges.value = detectTaxChanges(before, editedSnapshot())
+  taxReviewAction.value = resolveTaxAction(taxReviewChanges.value)
+  taxReviewOpen.value = true
+}
 
 function onSave() {
   if (!validate()) {
@@ -323,6 +534,8 @@ function onSave() {
     })
     return
   }
+  if (isEdit.value) { saveEdit(); return }
+
   const customer = customers.find(c => c.id === customerId.value)!
   const invoice: SalesInvoice = {
     id: nextInvoiceId(),
@@ -350,13 +563,28 @@ function onSave() {
     <!-- ── Fixed header bar ── -->
     <header class="si-form-bar">
       <div class="si-form-bar-left">
-        <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales invoices') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New sales invoice') }}</h1>
+        <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">
+          {{ isEdit ? `${t('Sales Invoice')} #${editingInvoice?.number}` : t('Sales invoices') }}
+        </MpTextlink>
+        <h1 class="si-form-h1">{{ isEdit ? t('Edit sales invoice') : t('New sales invoice') }}</h1>
       </div>
     </header>
 
     <!-- ── Scrollable stage ── -->
     <div class="si-form-stage">
+
+      <!-- Editing an invoice whose tax document DJP has already approved: say so
+           before the first keystroke, not only at save time (PRD-05 US-001). -->
+      <MpBanner
+        v-if="isEdit && approvedTaxDoc" id="si-taxdoc-banner"
+        variant="info" align-items="center" class="si-taxdoc-banner"
+      >
+        <MpBannerIcon id="si-taxdoc-banner-icon" />
+        <MpBannerTitle>{{ t('This invoice has an approved tax document') }}</MpBannerTitle>
+        <MpBannerDescription>
+          {{ t('Your changes will be reviewed for tax impact before they are saved.') }}
+        </MpBannerDescription>
+      </MpBanner>
 
       <!-- ── Header section 1: Customer + Email + Balance due ── -->
       <section class="si-header1 si-dashed-divider">
@@ -861,6 +1089,14 @@ function onSave() {
       <footer class="si-form-footer">
         <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">{{ t('Cancel') }}</button>
 
+        <!-- Edit mode is a single decisive action: "Save changes" runs the tax
+             impact review, so the create form's draft/share variants (which
+             would each need their own review branch) stay out of the way. -->
+        <button v-if="isEdit" class="btn-enterprise btn-enterprise--primary" @click="onSave">
+          {{ t('Save changes') }}
+        </button>
+
+        <template v-else>
         <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">{{ t('Save & close') }}</button>
 
         <MpPopover id="si-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
@@ -892,6 +1128,7 @@ function onSave() {
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
+        </template>
       </footer>
 
     </div><!-- /si-form-stage -->
@@ -903,6 +1140,14 @@ function onSave() {
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+
+    <TaxImpactReviewDrawer
+      v-model:is-open="taxReviewOpen"
+      :action="taxReviewAction"
+      :changes="taxReviewChanges"
+      :source-document="approvedTaxDoc"
+      @confirm="onTaxReviewConfirm"
     />
   </div>
 </template>
@@ -954,6 +1199,10 @@ function onSave() {
 }
 
 /* ── Scrollable stage ── */
+/* Edit-mode tax notice — sits above the first header section, same 20px gap the
+   form's own sections keep between each other. */
+.si-taxdoc-banner { margin-bottom: var(--mp-spacing-5); }
+
 .si-form-stage {
   flex: 1;
   min-height: 0;

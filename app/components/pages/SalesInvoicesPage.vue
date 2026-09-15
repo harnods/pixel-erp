@@ -14,7 +14,7 @@ import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceF
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
-import { getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
+import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -47,7 +47,11 @@ type Row = SalesInvoice & {
   customerName: string
   attachment: boolean
   hasTaxDocument: boolean
-  /** most recent tax document's status, or 'not-generated' when it has none. */
+  /**
+   * Status of the document that currently speaks for this invoice (see
+   * currentTaxDocument — an invoice can carry a whole lineage), or
+   * 'not-generated' when it has no tax document at all.
+   */
   djpStatus: TaxDocumentStatus | 'not-generated'
   overdueLabel: string | null
 }
@@ -63,13 +67,14 @@ const rows = computed<Row[]>(() =>
         })()
       : null
     const taxDocs = getTaxDocumentsForInvoice(inv.id)
+    const current = currentTaxDocument(inv.id)
 
     return {
       ...inv,
       customerName: inv.customer.name,
       attachment:   inv.hasAttachment ?? false,
       hasTaxDocument: taxDocs.length > 0,
-      djpStatus: taxDocs.length > 0 ? taxDocs[0]!.status : 'not-generated',
+      djpStatus: current ? current.status : 'not-generated',
       overdueLabel,
     }
   })
@@ -228,7 +233,10 @@ function submitBulkToDjp(selectedRows: Set<number>, deselectAll: () => void) {
   const selected = bulkSelectedInvoices(selectedRows)
   if (!selected.length) return
   for (const inv of selected) {
-    const doc = getTaxDocumentsForInvoice(inv.id)[0]
+    // The document the row's status refers to — NOT simply the first in the
+    // list. An invoice with a lineage can have an approved faktur sitting
+    // alongside the draft replacement that actually needs submitting.
+    const doc = currentTaxDocument(inv.id)
     if (doc) updateTaxDocumentStatus(doc.id, 'awaiting-approval')
   }
   toast.notify({ variant: 'success', title: `${selected.length} ${t(selected.length !== 1 ? 'tax documents' : 'tax document')} ${t('submitted to DJP')}` })
@@ -528,7 +536,7 @@ function confirmBulkDelete() {
       <ErpStatusBadge
         v-if="(row as Row).hasTaxDocument"
         :status="(row as Row).djpStatus"
-        :label="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label"
+        :label="t(DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label)"
         :type="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].type"
       />
       <!-- em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
