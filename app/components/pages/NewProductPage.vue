@@ -127,6 +127,23 @@ const minStockIsOverridden = computed(() =>
   minStock.value !== '' && Number(minStock.value) !== recommendation.value?.value,
 )
 
+/**
+ * The min-stock explanation is collapsed by default.
+ *
+ * The recommended NUMBER is already visible — it is the field's placeholder and
+ * the one-line summary — so what is hidden is the reasoning behind it, which
+ * matters the first few times and becomes noise after that. It opens on click
+ * rather than hover because it contains links, and a hover panel you have to
+ * chase with the cursor is a panel whose links never get used.
+ */
+const minStockDetailsOpen = ref(false)
+
+/** Plain string — MpTooltip takes a label, not markup. */
+const safetyDaysTooltip = computed(() =>
+  `${t('Extra cover beyond the vendor lead time, on top of however long delivery takes.')} `
+  + `${t('Leave empty to inherit')} ${inheritedSafetyDays.value} ${t('days')}.`,
+)
+
 /** Where the category and fallback lead times actually live. */
 function openLeadTimeSettings() {
   router.push({ path: '/replenishment-settings', hash: '#lead-time' })
@@ -645,7 +662,17 @@ onUnmounted(() => { footerObserver?.disconnect() })
                 <!-- Safety days is the decision; min. stock is what it works out
                      to. Ordering matters — the input comes before its result. -->
                 <MpFormControl id="np-safety-days" class="np-field-270">
-                  <MpFormLabel>{{ t('Safety days') }}</MpFormLabel>
+                  <MpFormLabel>
+                    <span class="np-label-with-info">
+                      {{ t('Safety days') }}
+                      <MpTooltip
+                        id="np-safety-days-tip" :label="safetyDaysTooltip"
+                        placement="top" use-portal
+                      >
+                        <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
+                      </MpTooltip>
+                    </span>
+                  </MpFormLabel>
                   <div class="np-suffix-wrap">
                     <input
                       id="np-safety-days-input" v-model="safetyDays" class="np-suffix-input"
@@ -653,10 +680,6 @@ onUnmounted(() => { footerObserver?.disconnect() })
                     />
                     <span class="np-suffix-chip">{{ t('days') }}</span>
                   </div>
-                  <span class="np-field-hint">
-                    {{ t('Extra cover beyond the vendor lead time. Leave empty to inherit') }}
-                    {{ inheritedSafetyDays }} {{ t('days') }}.
-                  </span>
                 </MpFormControl>
 
                 <MpFormControl id="np-min-stock" class="np-field-270">
@@ -670,56 +693,75 @@ onUnmounted(() => { footerObserver?.disconnect() })
                     <span class="np-suffix-chip">{{ unit || 'Pcs' }}</span>
                   </div>
 
-                  <!-- Says where the number came from, so overwriting it is an
-                       informed choice rather than a shot in the dark. -->
-                  <span v-if="recommendation && recommendation.value !== null" class="np-field-hint">
-                    {{ t('Recommended') }} {{ recommendation.value }} {{ unit || 'Pcs' }} —
-                    {{ recommendation.avgDailySales.toFixed(2) }}/{{ t('day') }} ×
-                    ({{ recommendation.leadTimeDays }} {{ t('days lead time') }} +
-                    {{ recommendation.safetyDays }} {{ t('safety') }})
-                    <template v-if="recommendation.warehouseCount > 1">
-                      · {{ t('covers') }} {{ recommendation.warehouseName }},
-                      {{ t('your busiest of') }} {{ recommendation.warehouseCount }}
-                    </template>
-                    <a v-if="minStockIsOverridden" class="np-field-link" @click="useRecommendedMinStock">
-                      {{ t('Use recommended') }}
-                    </a>
-                  </span>
+                  <!--
+                    One line always, the reasoning on request. The recommended
+                    number is right there in the placeholder, so what is worth
+                    hiding is the arithmetic behind it — useful the first few
+                    times, clutter every time after.
+                  -->
+                  <template v-if="recommendation && recommendation.value !== null">
+                    <span class="np-field-hint">
+                      {{ t('Recommended') }} {{ recommendation.value }} {{ unit || 'Pcs' }}
+                      <a class="np-field-link" @click="minStockDetailsOpen = !minStockDetailsOpen">
+                        {{ minStockDetailsOpen ? t('Hide details') : t('Why this number?') }}
+                        <MpIcon :name="minStockDetailsOpen ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                      </a>
+                      <a v-if="minStockIsOverridden" class="np-field-link" @click="useRecommendedMinStock">
+                        {{ t('Use recommended') }}
+                      </a>
+                    </span>
+
+                    <div v-if="minStockDetailsOpen" class="np-field-details">
+                      <p class="np-field-details-row">
+                        {{ recommendation.avgDailySales.toFixed(2) }}/{{ t('day') }} ×
+                        ({{ recommendation.leadTimeDays }} {{ t('days lead time') }} +
+                        {{ recommendation.safetyDays }} {{ t('safety') }})
+                        = {{ recommendation.value }} {{ unit || 'Pcs' }}
+                      </p>
+                      <p v-if="recommendation.warehouseCount > 1" class="np-field-details-row">
+                        {{ t('Covers') }} {{ recommendation.warehouseName }},
+                        {{ t('your busiest of') }} {{ recommendation.warehouseCount }}.
+                      </p>
+
+                      <!-- Where the LEAD TIME came from. A category default and an
+                           average of five real receipts look identical once
+                           multiplied out, so the figure has to say which it is
+                           (US-001 AC-03/AC-04). -->
+                      <p class="np-field-details-row">
+                        <template v-if="!recommendation.preferredVendorId">
+                          {{ t('No preferred vendor yet, so this uses your') }}
+                          {{ category || t('category') }} {{ t('default of') }}
+                          {{ recommendation.leadTimeDays }} {{ t('days') }}.
+                          {{ t('Set one and the lead time comes from their actual deliveries.') }}
+                        </template>
+                        <template v-else-if="recommendation.leadTimeEstimated">
+                          {{ t('Lead time is an estimate') }}
+                          ({{ leadTimeTierLabel(recommendation.leadTimeTier) }}) —
+                          {{ recommendation.preferredVendorName }}
+                          {{ t('has no delivered purchase orders yet. It sharpens once they do.') }}
+                        </template>
+                        <template v-else>
+                          {{ t('Lead time measured from') }} {{ recommendation.preferredVendorName }} —
+                          {{ leadTimeTierLabel(recommendation.leadTimeTier, recommendation.leadTimeSampleSize) }}.
+                        </template>
+                      </p>
+
+                      <p class="np-field-details-row">
+                        <a v-if="isEdit && !recommendation.preferredVendorId" class="np-field-link" @click="openVendors">
+                          {{ t('Set preferred vendor') }}
+                        </a>
+                        <span v-if="isEdit && !recommendation.preferredVendorId" class="np-field-sep">·</span>
+                        <a class="np-field-link" @click="openLeadTimeSettings">{{ t('Category defaults') }}</a>
+                      </p>
+                    </div>
+                  </template>
+
+                  <!-- No number to explain — the reason IS the message, so it stays
+                       visible rather than hiding behind a disclosure. -->
                   <span v-else class="np-field-hint">
                     {{ t('Calculated from sales history and your vendor lead time once this product starts moving. Set a figure now if you already know it.') }}
                   </span>
-
-                  <!--
-                    Where the LEAD TIME came from. A category default and an average
-                    of five real receipts look identical once multiplied out, so the
-                    figure has to say which it is (US-001 AC-03/AC-04) — otherwise a
-                    guess reads with the same authority as a measurement.
-                  -->
-                  <span v-if="recommendation && recommendation.value !== null" class="np-field-hint">
-                    <template v-if="!recommendation.preferredVendorId">
-                      {{ t('No preferred vendor yet, so this uses your') }}
-                      {{ category || t('category') }} {{ t('default of') }}
-                      {{ recommendation.leadTimeDays }} {{ t('days') }}.
-                      {{ t('Set one and the lead time comes from their actual deliveries.') }}
-                      <a v-if="isEdit" class="np-field-link" @click="openVendors">{{ t('Set preferred vendor') }}</a>
-                      <!-- The default is a real setting, so link to it rather than
-                           naming a number the user cannot find or change. -->
-                      <span v-if="isEdit" class="np-field-sep">·</span>
-                      <a class="np-field-link" @click="openLeadTimeSettings">{{ t('Category defaults') }}</a>
-                    </template>
-                    <template v-else-if="recommendation.leadTimeEstimated">
-                      {{ t('Lead time is an estimate') }}
-                      ({{ leadTimeTierLabel(recommendation.leadTimeTier) }}) —
-                      {{ recommendation.preferredVendorName }}
-                      {{ t('has no delivered purchase orders yet. It sharpens once they do.') }}
-                      <a class="np-field-link" @click="openLeadTimeSettings">{{ t('Category defaults') }}</a>
-                    </template>
-                    <template v-else>
-                      {{ t('Lead time measured from') }} {{ recommendation.preferredVendorName }} —
-                      {{ leadTimeTierLabel(recommendation.leadTimeTier, recommendation.leadTimeSampleSize) }}.
-                    </template>
-                  </span>
-                </MpFormControl>
+                  </MpFormControl>
                 <MpFormControl id="np-track-by" class="np-field-270" is-required>
                   <MpFormLabel>{{ t('Track stock by') }}</MpFormLabel>
                   <MpAutocomplete
@@ -1008,6 +1050,33 @@ onUnmounted(() => { footerObserver?.disconnect() })
 }
 .np-field-link:hover { text-decoration: underline; }
 .np-field-sep { margin-left: 6px; color: var(--mp-text-subdued, #6b7280); }
+
+/* Label + its info affordance, so the icon sits on the text baseline rather
+   than hanging off the end of the control. */
+.np-label-with-info { display: inline-flex; align-items: center; gap: 4px; }
+.np-info-icon {
+  display: inline-flex;
+  color: var(--mp-icon-subdued, #9ca3af);
+  cursor: help;
+}
+.np-info-icon:hover { color: var(--mp-icon-default, #4b5563); }
+
+/* The expanded reasoning. Indented behind a rule so it reads as support for the
+   field above rather than as a new field of its own. */
+.np-field-details {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--mp-border-subdued, #e5e7eb);
+}
+.np-field-details-row {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mp-text-subdued, #6b7280);
+}
+.np-field-details-row:last-child { margin-bottom: 0; }
+/* The toggle's chevron should ride with its text, not float above it. */
+.np-field-link { display: inline-flex; align-items: center; gap: 2px; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
 

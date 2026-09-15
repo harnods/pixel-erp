@@ -2029,13 +2029,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Missing': 'Belum lengkap',
   'Sales history': 'Riwayat penjualan',
   // Product form — safety days is the input, min. stock is the recommendation.
-  'Extra cover beyond the vendor lead time. Leave empty to inherit':
-    'Cadangan tambahan di luar waktu tunggu vendor. Kosongkan untuk mengikuti',
   'days lead time': 'hari waktu tunggu',
   'safety': 'cadangan',
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
+  'Why this number?': 'Kenapa angka ini?',
+  'Hide details': 'Sembunyikan detail',
+  'Covers': 'Mencakup',
+  'Extra cover beyond the vendor lead time, on top of however long delivery takes.':
+    'Cadangan tambahan di luar waktu tunggu vendor, di atas berapa pun lama pengiriman.',
+  'Leave empty to inherit': 'Kosongkan untuk mengikuti',
   'No preferred vendor yet, so this uses your': 'Belum ada vendor utama, jadi ini memakai',
   'default of': 'standar',
   'Set one and the lead time comes from their actual deliveries.':
@@ -2091,13 +2095,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
   'Sales history': 'Riwayat penjualan',
   // Product form — safety days is the input, min. stock is the recommendation.
-  'Extra cover beyond the vendor lead time. Leave empty to inherit':
-    'Cadangan tambahan di luar waktu tunggu vendor. Kosongkan untuk mengikuti',
   'days lead time': 'hari waktu tunggu',
   'safety': 'cadangan',
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
+  'Why this number?': 'Kenapa angka ini?',
+  'Hide details': 'Sembunyikan detail',
+  'Covers': 'Mencakup',
+  'Extra cover beyond the vendor lead time, on top of however long delivery takes.':
+    'Cadangan tambahan di luar waktu tunggu vendor, di atas berapa pun lama pengiriman.',
+  'Leave empty to inherit': 'Kosongkan untuk mengikuti',
   'No preferred vendor yet, so this uses your': 'Belum ada vendor utama, jadi ini memakai',
   'default of': 'standar',
   'Set one and the lead time comes from their actual deliveries.':
