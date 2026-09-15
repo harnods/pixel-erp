@@ -4157,4 +4157,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Reconciliation mismatch": "Selisih rekonsiliasi",
   "Breadcrumb": "Breadcrumb",
   "Last updated by {user} on {date}": "Terakhir diperbarui oleh {user} pada {date}",
+  // Export (Phase 4)
+  "File format": "Format file",
+  "Excel (.xlsx)": "Excel (.xlsx)",
+  "CSV (.csv)": "CSV (.csv)",
+  "Applied filters": "Filter yang diterapkan",
+  "Exported on": "Diekspor pada",
+  "No filters applied": "Tidak ada filter yang diterapkan",
+  "Export batch": "Ekspor batch",
+  "Batch exported": "Batch berhasil diekspor",
+  "Select sections to export": "Pilih bagian yang akan diekspor",
+  "Selected transactions": "Transaksi yang dipilih",
+  "Search keyword": "Kata kunci pencarian",
+  "Relation": "Relasi",
 }

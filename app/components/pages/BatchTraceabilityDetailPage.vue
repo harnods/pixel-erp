@@ -26,7 +26,8 @@
  *   row, which ErpTablePage can't render, and these are short detail sub-tables with no
  *   filter bar or paging — same as BatchDetailsPage's tab tables.
  * - No title-bar Actions menu (details-page-format §C): a report detail has nothing to
- *   edit or archive. Export arrives in Phase 4.
+ *   edit or archive. Its one action, Export, is a secondary button top-right — there's
+ *   no filter bar to hold it (rule/filter-bar-search-export covers list pages).
  * - No Jump-to switcher (rule/detail-jump-to): the batch's "siblings" are whatever the
  *   report returned, which the breadcrumb already goes back to.
  * - Transaction numbers are plain text (plan open question 9).
@@ -37,6 +38,9 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchStorageLocationsDrawer from '~/components/patterns/BatchStorageLocationsDrawer.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import { buildExportDocument, downloadExport, type ExportFormat, type ExportSection } from '~/utils/traceabilityExport'
+import { successToast } from '~/utils/toasts'
 import {
   getBatchTrace, batchStockPosition, batchJourney, relatedBatches, attributeCell,
   type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
@@ -47,7 +51,7 @@ import { batchActivityFor } from '~/data/batchStore'
 import { batchAttributeDef, formatExpiry, type BatchAttributeKey } from '~/data/batchAttributes'
 import { warehouses } from '~/data/warehouses'
 import { customerName } from '~/data/customers'
-import { formatDate, formatDateTimeLong } from '~/utils/date'
+import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 // orderId is "sku::batchNo" ([...slug].vue decodes the batch number).
 const props = defineProps<{ orderId: string }>()
@@ -217,6 +221,91 @@ function isChanged(row: JourneyRow, key: BatchAttributeKey): boolean {
 }
 
 const JOURNEY_COLUMNS = 11
+
+// ─── Export (story 12) ──────────────────────────────────────────────────────────
+// One batch, so no scope. The modal's "columns" are the page's four sections; each
+// becomes a sheet (xlsx) or a titled block (csv). The journey is always oldest first.
+const exportOpen = ref(false)
+const EXPORT_FORMATS: ExportFormat[] = ['xlsx', 'csv']
+const exportSections = computed(() => [
+  { key: 'information', label: t('Batch information'), required: true },
+  { key: 'position', label: t('Stock position') },
+  { key: 'journey', label: t('Batch journey') },
+  { key: 'related', label: t('Related batch') },
+])
+
+function buildSections(keys: string[]): ExportSection[] {
+  const tr = trace.value
+  const p = position.value
+  if (!tr || !p) return []
+  const secondary = (qty: number | null) => (qty === null ? t('NA') : qtyText(qty, secondaryUnit.value))
+  const sections: ExportSection[] = []
+
+  if (keys.includes('information')) {
+    sections.push({
+      name: t('Batch information'),
+      columns: [t('Product'), t('Product code'), t('Batch number'), t('Description'), t('Created'), ...TRACE_ATTRIBUTE_COLUMNS.map((a) => t(a.label))],
+      rows: [[tr.productName, tr.sku, tr.batchNo, tr.description || '—', createdText.value, ...TRACE_ATTRIBUTE_COLUMNS.map((a) => formatAttribute(a.key))]],
+    })
+  }
+  if (keys.includes('position')) {
+    sections.push({
+      name: t('Stock position'),
+      columns: [t('Warehouse'), t('On hand'), t('On hand (secondary unit)')],
+      rows: [
+        ...p.warehouses.map((w) => [warehouseName(w.warehouseId), qtyText(w.onHandBase, unit.value), secondary(w.onHandSecondary)]),
+        [t('Total on hand'), qtyText(shownOnHand.value, unit.value), secondaryQtyText(shownOnHand.value)],
+        [t('Total received'), qtyText(p.received, unit.value)],
+        [t('Total issued'), qtyText(p.issued, unit.value)],
+        ...(difference.value !== 0 ? [[t('Difference'), qtyText(difference.value, unit.value)]] : []),
+      ],
+    })
+  }
+  if (keys.includes('journey')) {
+    sections.push({
+      name: t('Batch journey'),
+      columns: [
+        t('Date'), t('Transaction type'), t('Transaction number'), t('Warehouse origin'), t('Warehouse destination'),
+        t('Counterparty'), t('Mutation'), t('Mutation (secondary unit)'), t('Balance'), t('Balance (secondary unit)'),
+        ...TRACE_ATTRIBUTE_COLUMNS.map((a) => `${t(a.label)} (${t('Recorded values')})`),
+      ],
+      rows: journey.value.map((row) => [
+        formatDate(row.date), t(row.type), row.number, warehouseName(row.originWarehouseId), warehouseName(row.destinationWarehouseId),
+        counterpartyText(row), mutationText(row.direction, row.qty, unit.value), journeySecondaryMutation(row),
+        qtyText(row.balanceBase, unit.value), secondary(row.balanceSecondary),
+        ...TRACE_ATTRIBUTE_COLUMNS.map((a) => snapshotText(row, a.key)),
+      ]),
+    })
+  }
+  if (keys.includes('related')) {
+    const rows = (group: 'sources' | 'results', label: string) =>
+      related.value[group].map((r) => [label, r.productName, r.batchNo, r.workOrderNumber, formatDate(r.workOrderDate), qtyText(r.qty, r.unit)])
+    sections.push({
+      name: t('Related batch'),
+      columns: [t('Relation'), t('Product'), t('Batch number'), t('Work order number'), t('Work order date'), t('Qty')],
+      rows: [...rows('sources', t('Source batch')), ...rows('results', t('Result batch'))],
+    })
+  }
+  return sections
+}
+
+async function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[]; format?: ExportFormat }) {
+  exportOpen.value = false
+  const tr = trace.value
+  if (!tr) return
+  const doc = buildExportDocument({
+    title: `${t('Batch traceability')} — ${tr.productName} · ${tr.batchNo}`,
+    exportedOn: formatDateTime(new Date().toISOString()),
+    // A detail export isn't filtered — the header names the batch it covers instead.
+    filters: [{ label: t('Product'), value: `${tr.productName} (${tr.sku})` }, { label: t('Batch number'), value: tr.batchNo }],
+    labels: { exportedOn: t('Exported on'), appliedFilters: t('Applied filters'), noFilters: t('No filters applied') },
+    sections: buildSections(payload.columns),
+  })
+  await downloadExport(doc, `batch-traceability-${tr.sku}-${tr.batchNo.replace(/[^\w-]+/g, '-')}`, payload.format ?? 'xlsx')
+  successToast(t('Batch exported'))
+}
+
+defineExpose({ buildSections })
 </script>
 
 <template>
@@ -238,6 +327,7 @@ const JOURNEY_COLUMNS = 11
           <span class="btd-title-product">{{ trace.productName }}</span>
         </div>
       </div>
+      <MpButton variant="secondary" is-rounded @click="exportOpen = true">{{ t('Export') }}</MpButton>
     </header>
 
     <!-- ── Stage ── -->
@@ -460,6 +550,20 @@ const JOURNEY_COLUMNS = 11
       :subject="trace.batchNo"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <ExportModal
+      :open="exportOpen"
+      :formats="EXPORT_FORMATS"
+      :title="t('Export batch')"
+      :entity-label="t('Batches')"
+      :columns="exportSections"
+      :total="1"
+      hide-scope
+      :show-column-search="false"
+      :columns-label="t('Select sections to export')"
+      @close="exportOpen = false"
+      @export="onExport"
     />
 
     <ScenarioFab v-model="scenario" :scenarios="scenarios" />

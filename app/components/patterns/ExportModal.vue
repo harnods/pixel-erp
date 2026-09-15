@@ -13,6 +13,7 @@ import {
 import { computed, reactive, ref, watch } from 'vue'
 
 type ExportScope = 'all' | 'page' | 'selected'
+type ExportFormat = 'xlsx' | 'csv'
 interface ExportColumn { key: string; label: string; required?: boolean }
 
 const props = withDefaults(defineProps<{
@@ -26,21 +27,34 @@ const props = withDefaults(defineProps<{
   /** Hide the "Search column" box — for a short column list where searching adds
    *  no value (e.g. Contacts' 7 columns). Defaults to true (shown). */
   showColumnSearch?: boolean
+  /** Offer a file-format choice (e.g. ['xlsx', 'csv']). The first is preselected and the
+   *  pick is emitted as `format`. Omitted → no format section (every existing caller). */
+  formats?: ExportFormat[]
+  /** Hide the scope radios — for exporting one record (a detail page), where All /
+   *  Current page / Selected don't apply. */
+  hideScope?: boolean
+  /** Overrides the "Select columns to export" heading (e.g. "Select sections to export"). */
+  columnsLabel?: string
 }>(), {
   customFields: () => [],
   selectedCount: 0,
   showColumnSearch: true,
+  formats: () => [],
+  hideScope: false,
+  columnsLabel: '',
 })
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'export', payload: { scope: ExportScope; columns: string[] }): void
+  (e: 'export', payload: { scope: ExportScope; columns: string[]; format?: ExportFormat }): void
 }>()
 
 const { t } = useLocale()
 
 // ─── Internal state ───────────────────────────────────────────────────────────
 const scope = ref<ExportScope>('all')
+const format = ref<ExportFormat>('xlsx')
+const FORMAT_LABELS: Record<ExportFormat, string> = { xlsx: 'Excel (.xlsx)', csv: 'CSV (.csv)' }
 const columnChecked = reactive<Record<string, boolean>>({})
 const customFieldChecked = reactive<Record<string, boolean>>({})
 const columnSearch = ref('')
@@ -54,6 +68,7 @@ function isRequired(key: string): boolean {
 // Reset all internal state whenever the modal opens.
 function resetState() {
   scope.value = (props.selectedCount ?? 0) > 0 ? 'selected' : 'all'
+  format.value = props.formats[0] ?? 'xlsx'
   columnSearch.value = ''
   props.columns.forEach((c) => { columnChecked[c.key] = true }) // all checked by default; required stay checked
   ;(props.customFields ?? []).forEach((f) => { customFieldChecked[f] = false })
@@ -95,7 +110,11 @@ function onCancel() { emit('close') }
 function onExport() {
   const cols = columnKeys.value.filter(k => columnChecked[k] || isRequired(k))
   const fields = (props.customFields ?? []).filter(f => customFieldChecked[f])
-  emit('export', { scope: scope.value, columns: [...cols, ...fields] })
+  emit('export', {
+    scope: scope.value,
+    columns: [...cols, ...fields],
+    ...(props.formats.length ? { format: format.value } : {}),
+  })
 }
 </script>
 
@@ -115,7 +134,7 @@ function onExport() {
       <MpModalBody>
         <div class="export-modal-body">
           <!-- Export scope -->
-          <div class="export-section">
+          <div v-if="!hideScope" class="export-section">
             <p class="export-section__label">{{ t('Export scope') }}</p>
             <div class="export-radio-group">
               <label class="export-radio-item">
@@ -152,9 +171,25 @@ function onExport() {
             </div>
           </div>
 
+          <!-- File format (opt-in via `formats`) -->
+          <div v-if="formats.length" class="export-section">
+            <p class="export-section__label">{{ t('File format') }}</p>
+            <div class="export-radio-group">
+              <label v-for="f in formats" :key="f" class="export-radio-item">
+                <MpRadio
+                  name="export-format"
+                  :value="f"
+                  :is-checked="format === f"
+                  @change="format = f"
+                />
+                <span>{{ t(FORMAT_LABELS[f]) }}</span>
+              </label>
+            </div>
+          </div>
+
           <!-- Select columns -->
           <div class="export-section">
-            <p class="export-section__label">{{ t('Select columns to export') }}</p>
+            <p class="export-section__label">{{ columnsLabel || t('Select columns to export') }}</p>
 
             <!-- Search (sanctioned search field — placeholder allowed); hidden when
                  the column list is short enough to scan without it. -->

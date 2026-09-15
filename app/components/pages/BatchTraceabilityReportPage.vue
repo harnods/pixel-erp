@@ -46,10 +46,14 @@ import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
 import { successToast } from '~/utils/toasts'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
+import {
+  buildExportDocument, describeDateCondition, downloadExport, type ExportFilter, type ExportFormat,
+} from '~/utils/traceabilityExport'
+import { formatDate, formatDateTime } from '~/utils/date'
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, qtyCellText } = useTraceabilityCells()
+const { attributeSortValue, attributeText, qtyCellText, vendorName, gradeName } = useTraceabilityCells()
 
 // ─── Scenario (demo) ────────────────────────────────────────────────────────────
 // The two entitlement scenarios preview what a Jurnal company sees (PRD story 1).
@@ -239,30 +243,44 @@ function openBatch(row: ReportRow) {
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
-// ─── Export ─────────────────────────────────────────────────────────────────────
+// ─── Export (story 12) ──────────────────────────────────────────────────────────
+// xlsx or csv; the file header lists the filters behind the result (traceabilityExport).
 const exportOpen = ref(false)
 const exportColumns = computed(() => allColumns.value.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 })))
+const EXPORT_FORMATS: ExportFormat[] = ['xlsx', 'csv']
 
-function csvEscape(s: string): string {
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[] }) {
+/** The filters behind the current result, as the file header lists them. Greyed-out
+ *  attribute filters (no add-on) aren't applied, so they aren't listed either. */
+const appliedFilters = computed<ExportFilter[]>(() => {
+  const f = attributeFilters.value
+  const addOn = access.value.batchAttribute
+  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  const out: ExportFilter[] = []
+  if (productNames.value.length) out.push({ label: t('Product'), value: productNames.value.join(', ') })
+  if (batchNos.value.length) out.push({ label: t('Batch number'), value: batchNos.value.join(', ') })
+  if (query.value.warehouseIds !== 'all') out.push({ label: t('Warehouse'), value: warehouseNames.value.join(', ') })
+  if (addOn && f.vendorIds.length) out.push({ label: t('Vendor'), value: f.vendorIds.map(vendorName).join(', ') })
+  if (addOn && f.gradeIds.length) out.push({ label: t('Grade'), value: f.gradeIds.map(gradeName).join(', ') })
+  if (f.expiry) out.push({ label: t('Expiry date'), value: describeDateCondition(f.expiry, dateLabels, formatDate) })
+  if (addOn && f.manufacturing) out.push({ label: t('Manufacturing date'), value: describeDateCondition(f.manufacturing, dateLabels, formatDate) })
+  if (addOn && f.bestBefore) out.push({ label: t('Best before date'), value: describeDateCondition(f.bestBefore, dateLabels, formatDate) })
+  if (search.value.trim()) out.push({ label: t('Search keyword'), value: search.value.trim() })
+  return out
+})
+
+async function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[]; format?: ExportFormat }) {
   exportOpen.value = false
   const s = search.value.trim().toLowerCase()
   const lines = payload.scope === 'page' ? (paginated.value as ReportRow[]) : rows.value.filter((r) => matchesSearch(r, s))
   const cols = allColumns.value.filter((c) => payload.columns.includes(c.key))
-  const csv = [
-    cols.map((c) => csvEscape(c.label)).join(','),
-    ...lines.map((r) => cols.map((c) => csvEscape(cellText(r, c.key))).join(',')),
-  ].join('\r\n')
-  const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'batch-traceability-by-batch.csv'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  const doc = buildExportDocument({
+    title: `${t('Batch traceability')} — ${t('By batch')}`,
+    exportedOn: formatDateTime(new Date().toISOString()),
+    filters: appliedFilters.value,
+    labels: { exportedOn: t('Exported on'), appliedFilters: t('Applied filters'), noFilters: t('No filters applied') },
+    sections: [{ name: t('Batches'), columns: cols.map((c) => c.label), rows: lines.map((r) => cols.map((c) => cellText(r, c.key))) }],
+  })
+  await downloadExport(doc, 'batch-traceability-by-batch', payload.format ?? 'xlsx')
   successToast(t('Batches exported'))
 }
 
@@ -395,6 +413,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <ExportModal
       :open="exportOpen"
+      :formats="EXPORT_FORMATS"
       :title="t('Export batches')"
       :entity-label="t('batches')"
       :columns="exportColumns"

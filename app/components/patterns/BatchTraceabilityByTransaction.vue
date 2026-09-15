@@ -48,7 +48,12 @@ import {
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
-import { formatDate } from '~/utils/date'
+import { formatDate, formatDateTime } from '~/utils/date'
+import { customerName } from '~/data/customers'
+import {
+  buildExportDocument, describeDateCondition, downloadExport,
+  type ExportFilter, type ExportFormat, type ExportSection,
+} from '~/utils/traceabilityExport'
 import { successToast } from '~/utils/toasts'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 
@@ -60,7 +65,7 @@ const props = defineProps<{
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, mutationText } = useTraceabilityCells()
+const { attributeSortValue, attributeText, mutationText, vendorName } = useTraceabilityCells()
 
 const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
 function warehouseName(id: string | null): string {
@@ -284,34 +289,71 @@ const asLine = (row: unknown) => row as BatchLine
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 400) })
 
-// ─── Export (transactions) ──────────────────────────────────────────────────────
-// Phase 4 adds the batches-in-selection sheet and the applied-filter file header.
+// ─── Export (story 12) ──────────────────────────────────────────────────────────
+// The transactions list (all / page / selected), plus — when anything is selected —
+// the batches in the selected transactions. File header lists the applied filters.
 const exportOpen = ref(false)
 const exportColumns = computed(() => txColumns.value.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 })))
+const EXPORT_FORMATS: ExportFormat[] = ['xlsx', 'csv']
 
-function csvEscape(s: string): string {
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+function warehouseListText(ids: string[]): string {
+  return ids.length === activeWarehouses.value.length ? t('All warehouse') : ids.map(warehouseName).join(', ')
 }
+
+/** The filters behind the current result, as the file header lists them. */
+const appliedFilters = computed<ExportFilter[]>(() => {
+  const d = drawerFilters.value
+  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  const out: ExportFilter[] = []
+  if (typeLabels.value.length) out.push({ label: t('Transaction type'), value: typeLabels.value.join(', ') })
+  if (dateCondition.value) out.push({ label: t('Transaction date'), value: describeDateCondition(dateCondition.value, dateLabels, formatDate) })
+  if (d.numbers.length) out.push({ label: t('Transaction number'), value: d.numbers.join(', ') })
+  if (d.customerIds.length) out.push({ label: t('Customer'), value: d.customerIds.map(customerName).join(', ') })
+  if (d.vendorIds.length) out.push({ label: t('Vendor'), value: d.vendorIds.map(vendorName).join(', ') })
+  if (d.originWarehouseIds.length) out.push({ label: t('Warehouse origin'), value: warehouseListText(d.originWarehouseIds) })
+  if (d.destinationWarehouseIds.length) out.push({ label: t('Warehouse destination'), value: warehouseListText(d.destinationWarehouseIds) })
+  if (search.value.trim()) out.push({ label: t('Search keyword'), value: search.value.trim() })
+  return out
+})
+
 function txCellText(row: TxRow, key: string): string {
   return key === 'date' ? formatDate(row.date) : String(row[key] ?? '')
 }
-function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[] }) {
+function batchLineText(line: BatchLine, key: string): string {
+  if (key === 'transactionDate') return formatDate(line.transactionDate)
+  if (key === 'mutation') return mutationText(line.source.direction, line.source.qty, line.source.unit)
+  if (key === 'mutationSecondary') return secondaryMutationText(line)
+  if (TRACE_ATTRIBUTE_COLUMNS.some((a) => a.column === key)) return attributeCellText(line, key)
+  return String(line[key] ?? '')
+}
+
+async function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[]; format?: ExportFormat }) {
   exportOpen.value = false
   const s = search.value.trim().toLowerCase()
-  const lines = payload.scope === 'page' ? (txPaginated.value as TxRow[]) : txRows.value.filter((r) => matchesSearch(r, s))
+  const lines = payload.scope === 'page'
+    ? (txPaginated.value as TxRow[])
+    : payload.scope === 'selected'
+      ? txRows.value.filter((r) => selected.value.has(r.number))
+      : txRows.value.filter((r) => matchesSearch(r, s))
   const cols = txColumns.value.filter((c) => payload.columns.includes(c.key))
-  const csv = [
-    cols.map((c) => csvEscape(c.label)).join(','),
-    ...lines.map((r) => cols.map((c) => csvEscape(txCellText(r, c.key))).join(',')),
-  ].join('\r\n')
-  const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'batch-traceability-by-transaction.csv'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  const sections: ExportSection[] = [
+    { name: t('Transactions'), columns: cols.map((c) => c.label), rows: lines.map((r) => cols.map((c) => txCellText(r, c.key))) },
+  ]
+  if (selected.value.size) {
+    sections.push({
+      name: t('Batches in selected transactions'),
+      columns: batchColumns.value.map((c) => c.label),
+      rows: batchLines.value.map((line) => batchColumns.value.map((c) => batchLineText(line, c.key))),
+    })
+  }
+  const doc = buildExportDocument({
+    title: `${t('Batch traceability')} — ${t('By transaction')}`,
+    exportedOn: formatDateTime(new Date().toISOString()),
+    filters: appliedFilters.value,
+    labels: { exportedOn: t('Exported on'), appliedFilters: t('Applied filters'), noFilters: t('No filters applied') },
+    sections,
+  })
+  await downloadExport(doc, 'batch-traceability-by-transaction', payload.format ?? 'xlsx')
   successToast(t('Transactions exported'))
 }
 
@@ -467,6 +509,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <ExportModal
       :open="exportOpen"
+      :formats="EXPORT_FORMATS"
+      :selected-count="selected.size"
       :title="t('Export transactions')"
       :entity-label="t('transactions')"
       :columns="exportColumns"

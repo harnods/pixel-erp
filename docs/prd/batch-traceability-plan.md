@@ -30,7 +30,7 @@ Decisions:
 | 1 — Report, by batch | card, route, mode switch, filters + drawer, table, empty/loading states | **Done** (see §3b) |
 | 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | **Done** (see §3c) |
 | 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | **Done** (see §3d) |
-| 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | — |
+| 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | **Done** (see §3e) |
 | Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | — |
 
 ## 3. Phase 0 — as built
@@ -144,6 +144,28 @@ Receipt quantities are solved backwards so no warehouse goes negative.
 - Transaction numbers stay plain text (open question 9).
 
 **Not built:** Attribute change trail markers inside the journey (story 9, SHOULD HAVE) · Visual journey diagram (story 11) · Warehouse switcher on the journey (open question 6) · per-module privilege on transaction links (depends on question 9).
+
+## 3e. Phase 4 — as built
+
+**Builder** `app/utils/traceabilityExport.ts` (pure, copy passed in): a document is one **header block** — report title · *Exported on* · *Applied filters* (one row per filter, or *No filters applied*) — plus one or more **sections** (a table each).
+- **xlsx** (default): one sheet per section, each repeating the header (sheet names ≤ 31 chars, forbidden characters dropped, de-duplicated). Same `xlsx` `aoa_to_sheet` / `writeFile` approach as ProductDetailsPage and CrmReportViewerPage.
+- **csv**: no sheets, so the header is written once and the sections stack under their titles; UTF-8 BOM so Excel reads Indonesian names and "−".
+- Date filters read as set: "Is before 01/08/2026", "Is between 01/06/2026 - 30/06/2026".
+
+**`ExportModal`** (shared) — three **opt-in** props, so its other 15 callers are unchanged: `formats` (adds a *File format* radio — Excel (.xlsx) / CSV (.csv) — and emits `format`), `hideScope` (hides All / Current page / Selected), `columnsLabel` (renames the column picker). This also brings the modal in line with `rule/export-modal`'s "format + scope options".
+
+**Three export points (story 12):**
+| From | Scope | Sections | Header filters |
+|------|-------|----------|----------------|
+| By batch | All matching / current page | Batches (picked columns, same cell text as the table — NA / blank / value) | Product · Batch number · Warehouse (when not All) · Vendor · Grade · the three dates · search keyword. Greyed-out filters (no add-on) aren't applied, so aren't listed. |
+| By transaction | All matching / current page / **selected** (preselected when anything is ticked) | Transactions (picked columns) + **Batches in selected transactions** whenever a selection exists | Transaction type · date · number · customer · vendor · warehouse origin / destination (All warehouse when every one is ticked) · search keyword |
+| Batch detail | — (scope hidden) | Picked from *Batch information* (required) · *Stock position* (per warehouse + Total on hand, Total received, Total issued, Difference when mismatched) · *Batch journey* (oldest first, incl. the attribute values recorded on each transaction) · *Related batch* (Relation = Source / Result) | Not a filtered result — the header names the batch it covers (Product, Batch number) |
+
+The detail page's **Export** is a secondary button top-right of its title bar: it has no filter bar, and it's the page's only action (recorded in the page header against `rule/filter-bar-search-export`, which is about list pages).
+
+**Tests:** `tests/traceability-export.spec.ts` (header block, no-filters row, csv stacking + titles + escaping, xlsx sheet names, date filter text) · detail spec: the section builder produces the four picked sections with matching journey rows, stock totals and relation labels, and only the picked ones.
+
+**Not built:** BPOM / halal register format (PRD TBD) · a combined export of both searches (out of scope — the searches can't be combined).
 
 ## 4. Open questions for PM
 

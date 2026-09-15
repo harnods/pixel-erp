@@ -103,3 +103,33 @@ describe('Batch traceability detail', () => {
     expect(w.text()).toContain('Batch not found')
   })
 })
+
+describe('Batch traceability detail — export', () => {
+  it('builds one section per picked part of the page, each with its own table', async () => {
+    const w = await mountPage('1101::Batch #001')
+    const buildSections = (w.vm as unknown as { buildSections: (keys: string[]) => { name: string; columns: string[]; rows: (string | number)[][] }[] }).buildSections
+    const sections = buildSections(['information', 'position', 'journey', 'related'])
+    expect(sections.map((s) => s.name)).toEqual(['Batch information', 'Stock position', 'Batch journey', 'Related batch'])
+
+    const [information, position, journey, related] = sections
+    expect(information!.rows).toHaveLength(1)
+    expect(information!.rows[0]!.slice(0, 3)).toEqual(['Roasted Beans House Blend Medium', '1101', 'Batch #001'])
+
+    const stock = batchStockPosition('1101', 'Batch #001')!
+    expect(position!.rows.map((r) => r[0])).toEqual(expect.arrayContaining(['Total on hand', 'Total received', 'Total issued']))
+    expect(position!.rows).toContainEqual(['Total received', `${stock.received} Bag`])
+
+    expect(journey!.rows).toHaveLength(batchJourney('1101', 'Batch #001').length)
+    expect(journey!.columns.length).toBe(journey!.rows[0]!.length)
+
+    const sources = relatedBatches('1101', 'Batch #001').sources
+    expect(related!.rows.filter((r) => r[0] === 'Source batch')).toHaveLength(sources.length)
+    expect(vueErrors).toEqual([])
+  })
+
+  it('only builds the sections that were picked', async () => {
+    const w = await mountPage('1101::Batch #001')
+    const buildSections = (w.vm as unknown as { buildSections: (keys: string[]) => { name: string }[] }).buildSections
+    expect(buildSections(['information', 'journey']).map((s) => s.name)).toEqual(['Batch information', 'Batch journey'])
+  })
+})
