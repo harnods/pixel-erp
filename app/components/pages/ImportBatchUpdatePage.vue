@@ -90,9 +90,9 @@ const uploadErrorText = computed(() => ({
   'no-file': t('You must upload the completed template file'),
   format: t('File format not supported. Upload a CSV, XLS, or XLSX file'),
   size: t('File size exceeds the 10 MB limit'),
-  template: t('File doesn’t match the template. Download the template and try again'),
-  empty: t('File has no batch rows to import'),
-  rows: t('File has more than 1.000 rows. Split it into smaller files'),
+  template: t('File structure is incorrect. Use the provided template without modifying the columns'),
+  empty: t('File is empty. Upload a file with data'),
+  rows: t('File contains more than 1.000 rows. Split into smaller files and import separately'),
 }[uploadError.value]))
 
 function pad(n: number) { return String(n).padStart(2, '0') }

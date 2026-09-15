@@ -840,7 +840,7 @@ function commitSave() {
 
     <ConfirmModal
       :is-open="mismatchOpen" :title="t('Use batches from another vendor?')" :description="mismatchText"
-      :confirm-label="t('Save')" :is-danger="false"
+      :confirm-label="t('Use batches')" :is-danger="false"
       @update:is-open="(v) => { mismatchOpen = v }" @confirm="commitSave"
     />
   </div>
@@ -969,7 +969,8 @@ function commitSave() {
 .si-col-desc     { width: auto; }
 .si-col-qty      { width: 64px; }
 .si-col-batch    { width: 168px; }
-.si-td--batch { white-space: nowrap; }
+/* Cells pin to the top (tall Dimensions cell), so the link sits where the other cells' text does. */
+.si-td.si-td--batch { white-space: nowrap; padding-top: var(--mp-sizes-2\.5, 10px); }
 .si-batch-count { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .si-batch-na { color: var(--mp-text-placeholder); }
 .si-col-unit     { width: 104px; }

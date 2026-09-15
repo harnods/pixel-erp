@@ -258,7 +258,7 @@ function save() {
                 {{ t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', existingVendorNote(row)?.name ?? '').replace('{deliveryVendor}', vendorName(vendorId)) }}
               </p>
               <p v-else-if="existingVendorNote(row)?.kind === 'empty'" class="dbd-note">
-                {{ t('No vendor yet. It gets this delivery’s vendor when you save.') }}
+                {{ t('No vendor yet. It gets this delivery’s vendor when you save') }}
               </p>
 
               <!-- New batch: the product's attributes, in its order. -->

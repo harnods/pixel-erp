@@ -10,7 +10,7 @@
 
 | # | Decision | Why |
 |---|----------|-----|
-| D1 | **Story 10 (Supplier in Purchase transactions) is deferred to phase 2.** | The ERP Purchase delivery form (`NewPurchaseDeliveryPage.vue`) has no batch drawer today. Building one is its own project. Only WMS Receiving has a batch drawer (`ManageBatchDrawer` `kind="receiving"`). |
+| D1 | ~~Story 10 (Supplier in Purchase transactions) is deferred to phase 2.~~ **Lifted 14 Sep 2026:** story 10 is built in Phase 5, on the Purchase delivery form with a new batch drawer. The original reason is kept below. | The ERP Purchase delivery form (`NewPurchaseDeliveryPage.vue`) has no batch drawer today. Building one is its own project. Only WMS Receiving has a batch drawer (`ManageBatchDrawer` `kind="receiving"`). |
 | D2 | **The UI label is "Vendor", not "Supplier"**; the stable key stays `supplier`. | `rule/copy-vendor-not-supplier` + CLAUDE.md terminology. The PRD's semantic point still holds: the value is the *origin* vendor, not necessarily the billed one. **Flag to PM:** the PRD copy ("Supplier Batch Attribute…") needs the same rename. |
 | D3 | **No API, billing or Jurnal-brand work in the prototype.** | The prototype has no API layer and runs as the ERP brand, where Batch Attribute is built in. API stories are listed in §3 for completeness only. |
 
@@ -239,7 +239,7 @@
   - The failed-row list is a small hand-rolled table, not `ErpTablePage`. It is an unpaginated result list, not an index.
   - Export writes the same columns as the template, so an export can be edited and imported back.
 
-### Phase 5 — deferred: Vendor attribute in Purchase transactions (story 10)
+### Phase 5 — Vendor attribute in Purchase transactions (story 10)
 
 Prerequisite: a batch drawer on `NewPurchaseDeliveryPage.vue` (and the purchase-invoice create flow when one exists). Then:
 - A new batch created there has Vendor prefilled from the transaction vendor. The field stays editable and follows vendor changes while the form is unsaved.
@@ -247,7 +247,7 @@ Prerequisite: a batch drawer on `NewPurchaseDeliveryPage.vue` (and the purchase-
 - An existing batch with an empty vendor gets silently filled from the transaction.
 - Changing the vendor on an already-created purchase shows a warning.
 
-Separate branch, after Phases 0–4 land.
+Originally planned as a separate branch after Phases 0–4; built on `feat/batch-attribute` instead.
 
 **As built (Phase 5, 14 Sep 2026):** user chose the Purchase delivery form (not WMS receiving) and batches on delivery details. Built on `feat/batch-attribute`.
 - **Form:** `NewPurchaseDeliveryPage.vue` gets a **Batch** column. A batch-tracked line shows **Manage batch** (`rule/drawer-open-via-manage`), which opens `DeliveryBatchDrawer.vue` (`rule/drawer-custom-shell`).
@@ -270,6 +270,23 @@ Separate branch, after Phases 0–4 land.
 ## 5. Copy (`app/data/translations.ts`)
 
 All new strings go through `t()`. Indonesian follows uxw-mekari (run the `uxw-mekari-erp-core` + `uxw-mekari-erp-terms` skills on the final set).
+
+**Copy review done (15 Sep 2026, uxw-mekari-erp-terms).**
+- **Filled missing ID strings:**
+  - Download template, Products, Qty
+  - Three upload errors: file format not supported, file size exceeds 10 MB, you must upload the completed template file
+- **Patterns applied:**
+  - Required field → "Anda harus memasukkan …".
+  - Import file errors use the library's structure / empty / too-many-rows copy.
+  - Success toasts follow "[Object] [past participle]" / "[Object] berhasil …" ("Grades exported", "Batches exported", "Batch berhasil diperbarui").
+  - Qty is never translated ("Qty diterima").
+  - Confirm-modal primary mirrors the title verb ("Use batches").
+  - Search-no-result empty state uses `"{typed}" not found`.
+  - Caption-style notes drop the trailing period.
+- **Kept on purpose:**
+  - Noun-only create labels ("Batch", "Grade") — repo rule `rule/copy-add-noun-only` overrides the library's "{object} baru".
+  - "Download the template" / "Upload your file" step titles — they match the existing import pages.
+  - PRD-provided copy (import errors, vendor-mismatch sentence, attribute-change warning).
 
 | EN | ID (PRD-provided or proposed) |
 |----|----------------------------|

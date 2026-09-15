@@ -272,7 +272,7 @@ const exportColumns = [
 ]
 function onExport() {
   exportOpen.value = false
-  successToast(t('Export ready — check your downloads'))
+  successToast(t('Grades exported'))
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
