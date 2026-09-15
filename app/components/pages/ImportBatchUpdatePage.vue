@@ -16,7 +16,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpTextlink } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import FormatRequirementsAccordion from '~/components/patterns/FormatRequirementsAccordion.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
@@ -227,10 +227,10 @@ watch(scenario, (s) => {
     <header class="ibu-bar">
       <div class="ibu-bar-left">
         <div class="ibu-breadcrumb-row">
-          <button class="ibu-breadcrumb" @click="router.push('/product-list')">{{ t('Products') }}</button>
+          <MpTextlink id="ibu-crumb-products" as="a" class="ibu-breadcrumb" @click.prevent="router.push('/product-list')">{{ t('Products') }}</MpTextlink>
           <template v-if="product">
             <span class="ibu-breadcrumb-sep">/</span>
-            <button class="ibu-breadcrumb" @click="goBack">{{ product.name }}</button>
+            <MpTextlink id="ibu-crumb-product" as="a" class="ibu-breadcrumb" @click.prevent="goBack">{{ product.name }}</MpTextlink>
           </template>
         </div>
         <h1 class="ibu-title">{{ t('Update batches') }}</h1>

@@ -704,13 +704,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 >
                   Print all barcode
                 </button>
-                <button class="detail-btn detail-btn--secondary" type="button" @click="batchExportOpen = true">
+                <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="batchExportOpen = true">
                   Export
                 </button>
                 <!-- rule/btn-dropdown-mppopover: Import opens a menu of import types. -->
                 <MpPopover id="pd-batch-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
-                    <button class="detail-btn detail-btn--secondary" type="button">
+                    <button class="btn-enterprise btn-enterprise--secondary" type="button">
                       Import
                       <MpIcon name="chevrons-down" size="sm" />
                     </button>
@@ -736,7 +736,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <!-- One column per batch attribute on the product (Batch Attribute Phase 3). -->
                   <col
                     v-for="c in batchAttributeColumns" :key="c.key"
-                    :style="{ width: c.key === 'supplier' ? '220px' : '140px' }"
+                    :class="c.key === 'supplier' ? 'pd-col-attr pd-col-attr--vendor' : 'pd-col-attr'"
                   />
                   <col style="width: 220px" />
                   <col style="width: 110px" />
@@ -1133,6 +1133,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-filter-bar--end { justify-content: flex-end; }
 .pd-filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pd-filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* Batch attribute columns (Stock by batches) — Vendor names need more room than dates and grades. */
+.pd-col-attr { width: var(--mp-sizes-36, 144px); }
+.pd-col-attr--vendor { width: var(--mp-sizes-56, 224px); }
 .pd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
