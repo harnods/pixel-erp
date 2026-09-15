@@ -32,6 +32,7 @@
  * transactions and the Jurnal "Unassigned warehouse" are out of Phase 0.
  */
 import { warehouses } from './warehouses'
+import { getWarehouseDetail } from './warehouseDetails'
 import { vendors } from './vendors'
 import { customers } from './customers'
 import { productIndexRows } from './productsIndex'
@@ -882,4 +883,33 @@ export function relatedBatches(sku: string, batchNo: string): { sources: Related
     sources: sources.filter((r): r is RelatedBatchRow => r !== null),
     results: results.filter((r): r is RelatedBatchRow => r !== null),
   }
+}
+
+export interface BatchStorageLocation {
+  /** Bin path ("Rack A / Bin 3"), or '' when the warehouse has no storage tree. */
+  location: string
+  onHand: number
+}
+
+/** Share of a batch's warehouse stock per bin, by how many bins the product uses there. */
+const BIN_SHARES: Record<number, number[]> = { 1: [1], 2: [0.6, 0.4], 3: [0.5, 0.3, 0.2] }
+
+/**
+ * Where a batch sits inside one warehouse (the Stock position "View locations" drawer).
+ * The batch's on-hand in that warehouse comes from the ledger; it's spread over the bins
+ * the product already occupies there (`getWarehouseDetail`), so the locations match the
+ * warehouse's own storage tree. The parts always sum back to the warehouse on-hand.
+ */
+export function batchStorageLocations(sku: string, batchNo: string, warehouseId: string): BatchStorageLocation[] {
+  const qty = batchStockPosition(sku, batchNo)?.warehouses.find((w) => w.warehouseId === warehouseId)?.onHandBase ?? 0
+  if (qty <= 0) return []
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const bins = (item?.bins.map((b) => b.location) ?? item?.locations ?? []).filter(Boolean).slice(0, 3)
+  const list = bins.length ? bins : ['']
+  const shares = BIN_SHARES[list.length]!
+  const parts = shares.map((share) => Math.floor(qty * share))
+  parts[0]! += qty - parts.reduce((sum, p) => sum + p, 0)
+  return list
+    .map((location, i) => ({ location, onHand: parts[i]! }))
+    .filter((l) => l.onHand > 0)
 }

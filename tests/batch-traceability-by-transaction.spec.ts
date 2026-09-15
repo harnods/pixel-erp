@@ -19,6 +19,7 @@ import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabil
 import ErpTablePage from '~/components/patterns/ErpTablePage.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import { searchTransactions, batchesInTransactions, FULL_ACCESS } from '~/data/batchTraceability'
+import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 
 const { nextTick } = vue
 
@@ -38,7 +39,13 @@ vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
 let wrapper: VueWrapper | null = null
-afterEach(() => { wrapper?.unmount(); wrapper = null })
+// Filters and the selection live in a module-level store (so the report survives a trip
+// to a batch's detail page) — reset it so each test starts from a fresh report.
+afterEach(() => {
+  wrapper?.unmount()
+  wrapper = null
+  useBatchTraceabilityReportState().resetTransactionSearch()
+})
 
 async function mountView() {
   wrapper = mount(BatchTraceabilityByTransaction, { props: { access: FULL_ACCESS, empty: false } })

@@ -29,7 +29,7 @@ Decisions:
 | **0 — Data** | `app/data/batchTraceability.ts` + `tests/batch-traceability.spec.ts` | **Done** (see §3) |
 | 1 — Report, by batch | card, route, mode switch, filters + drawer, table, empty/loading states | **Done** (see §3b) |
 | 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | **Done** (see §3c) |
-| 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | — |
+| 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | **Done** (see §3d) |
 | 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | — |
 | Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | — |
 
@@ -118,6 +118,32 @@ Receipt quantities are solved backwards so no warehouse goes negative.
 **Selection rules are pinned by a component test** (`tests/batch-traceability-by-transaction.spec.ts`, happy-dom mount): first page of all matching transactions · nothing selected on load (batches table on its hint) · select-all picks every matching transaction, not just the page · selection survives paging · a filter change resets it · a Work order shows its output as + and raw materials as −.
 
 **Deviations (in the component header):** no row actions / hover on either table; batches table keeps the PRD order (its date column is `transactionDate` so `useTableState` doesn't re-sort newest-first); empty states without a CTA (nothing to create — the selection hint is the next action); **transaction numbers are plain text** — the seeded report transactions aren't records in the Sales/Purchase/Inventory modules, so a link would open "not found" (see open question 9).
+
+## 3d. Phase 3 — as built
+
+**Route:** `/inventory-report/batch-traceability/:sku/:batchNo` (`[...slug].vue`, batch number URI-decoded — "Batch #001" carries a `#`). Batch numbers in both searches now open it: By batch passes `?warehouse=` (that warehouse line is highlighted in Stock position), By transaction passes `?transaction=` (that line is highlighted in the journey). The page opens at the top either way; the entry point never changes content (story 7).
+
+**Page** `BatchTraceabilityDetailPage.vue` — master-data detail shell (72px title bar, breadcrumb above the H1, 32px section gaps):
+1. **Batch information** — Product · Product code · Batch number · Description · Created (date + the transaction that created it); a second column captioned *Current values on the batch master* with the five attributes (NA / value; an empty value shows "—" per the detail-page convention). "Last updated by … on …" opens `ActivityLogModal` with the batch's recorded create/edit trail (`rule/activity-log-trigger`).
+2. **Stock position** — Total on hand (base + secondary), `Total received − Total issued = N` with a warning + difference when it doesn't match on hand, and a per-warehouse table (On hand in both units · **View locations** → `BatchStorageLocationsDrawer`). 0 on hand → "Not stocked in any warehouse" with a note that the journey still shows where it went.
+3. **Batch journey** — every transaction, oldest first (Date header toggles newest first): Date · Type · Number · Warehouse origin · Warehouse destination · Counterparty (customer / vendor) · Mutation · Mutation (secondary unit) · Balance · Balance (secondary unit). Clicking anywhere on a row expands it to the attribute values **recorded on that transaction** (`rule/table-accordion-row-click`); a dot + tooltip "Value at the time of this transaction" marks values that differ from the batch master. Neutral lines (transfer, count) show their own quantity rather than a signed mutation.
+4. **Related batch** — *Source batch* (consumed by the Work order that produced this batch) and *Result batch* (produced from it): Product · Batch number (opens that batch) · Work order number · date · Qty consumed / produced. Each group has its own empty line. Drill-through appends the current batch to `?trail=`, and the breadcrumb renders the chain so the user can walk back.
+
+**Return to the report (story 7):** the report's mode, filters, search, sort, page and selected transactions now live in `useBatchTraceabilityReportState` (module-level; the app never keep-alives pages). Both searches read/write it; the *Batch traceability* breadcrumb lands on the report exactly as it was. Switching modes resets both searches (story 6).
+
+**Storage locations:** `batchStorageLocations(sku, batchNo, warehouseId)` spreads the batch's ledger on-hand in that warehouse over the bins the product already occupies there (`getWarehouseDetail` › `bins`), 1 / 60–40 / 50–30–20; parts always sum back. Pinned in `tests/batch-traceability.spec.ts`.
+
+**Scenario FAB:** Default · Without Batch Attribute add-on · Without Dual Unit Inventory · **Reconciliation mismatch** (adds 5 to on hand so the warning can be previewed — the seeded ledger always reconciles).
+
+**Tests:** `tests/batch-traceability-detail.spec.ts` (happy-dom mount: four sections with no Vue runtime errors · reconciliation line · every journey line + expand to recorded values · transaction highlight · related drill-through keeps the trail · not-found) · `tests/batch-traceability-report-state.spec.ts` (state survives a remount; mode switch resets both searches) · storage-location tests in the data spec. The By transaction spec resets the store between tests.
+
+**Deviations (in the page header):**
+- The three tables render the ErpTablePage header/row spec directly instead of `ErpTablePage` (`rule/table-use-erptablepage`) — the journey needs a full-width expanded row, and these are short detail sub-tables with no filter bar or paging (same as `BatchDetailsPage`'s tab tables).
+- No title-bar Actions menu (details-page-format §C) — nothing to edit or archive on a report detail; Export is Phase 4.
+- No Jump-to switcher (`rule/detail-jump-to`) — the breadcrumb returns to the report result the batch came from.
+- Transaction numbers stay plain text (open question 9).
+
+**Not built:** Attribute change trail markers inside the journey (story 9, SHOULD HAVE) · Visual journey diagram (story 11) · Warehouse switcher on the journey (open question 6) · per-module privilege on transaction links (depends on question 9).
 
 ## 4. Open questions for PM
 

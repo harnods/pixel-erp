@@ -5,8 +5,9 @@
  *
  * One report, two searches. The pill switch picks the mode — By batch or By transaction
  * — and switching resets every filter, because the two searches can't be combined
- * (PRD story 6). By transaction lives in BatchTraceabilityByTransaction, mounted only
- * while that mode is active, so its filters and selection also start clean.
+ * (PRD story 6). By transaction lives in BatchTraceabilityByTransaction. Both searches
+ * keep their filters, search, sort and page in useBatchTraceabilityReportState, so the
+ * detail page's breadcrumb returns to the report exactly as it was (story 7).
  *
  * By batch (stories 2, 3): Product, Batch number and Warehouse sit in the filter bar; the
  * attribute filters (Vendor, Grade, the three dates) live behind All filters. Rows come
@@ -23,10 +24,8 @@
  *   the data layer's order until the user sorts a column.
  * - A greyed-out filter for a missing add-on (PRD story 1) — not a disabled button for
  *   validation (rule/btn-no-disabled-validation), but an entitlement the user can't lift.
- * - Until the detail page ships (Phase 3), the batch number opens the product's existing
- *   Batch details page.
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, toRef, watch } from 'vue'
 import { MpButton, MpButtonGroup, MpIcon, MpSegmentedControl, MpTooltip } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -35,7 +34,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchTraceabilityFiltersDrawer, {
-  emptyBatchAttributeFilters, countBatchAttributeFilters, type BatchAttributeFiltersValue,
+  countBatchAttributeFilters, type BatchAttributeFiltersValue,
 } from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
 import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
 import {
@@ -46,6 +45,7 @@ import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/use
 import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
 import { successToast } from '~/utils/toasts'
+import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -65,17 +65,19 @@ const access = computed<TraceabilityAccess>(() => ({
   dualUnit: scenario.value !== 'no-dual-unit',
 }))
 
-// ─── Mode ───────────────────────────────────────────────────────────────────────
+// ─── Mode & report state ────────────────────────────────────────────────────────
+// Filters, search, sort and page live in useBatchTraceabilityReportState so a batch's
+// detail page can send the user back to the report exactly as they left it (story 7).
 type Mode = 'batch' | 'transaction'
-const mode = ref<Mode>('batch')
+const { state: reportState, setMode: setReportMode, resetBatchSearch } = useBatchTraceabilityReportState()
+const mode = computed<Mode>(() => reportState.mode)
 const modeOptions = [
   { id: 'bt-mode-batch', label: t('By batch'), value: 'batch' },
   { id: 'bt-mode-transaction', label: t('By transaction'), value: 'transaction' },
 ]
+/** Both searches reset on a mode switch (story 6) — the store does it. */
 function setMode(next: string) {
-  if (next === mode.value) return
-  mode.value = next as Mode
-  resetFilters()
+  setReportMode(next as Mode)
 }
 
 // ─── Filters ────────────────────────────────────────────────────────────────────
@@ -87,15 +89,15 @@ const batchNumberOptions = computed(() => traceBatchNumberOptions())
 const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
 const warehouseOptionNames = computed(() => activeWarehouses.value.map((w) => w.name))
 
-const productNames = ref<string[]>([])
-const batchNos = ref<string[]>([])
+const productNames = toRef(reportState.batch, 'productNames')
+const batchNos = toRef(reportState.batch, 'batchNos')
 // Empty or every warehouse ticked = All warehouse: one summed line per batch.
-const warehouseNames = ref<string[]>([])
-const attributeFilters = reactive<BatchAttributeFiltersValue>(emptyBatchAttributeFilters())
+const warehouseNames = toRef(reportState.batch, 'warehouseNames')
+const attributeFilters = toRef(reportState.batch, 'attributeFilters')
 const filtersOpen = ref(false)
-const drawerFilterCount = computed(() => countBatchAttributeFilters(attributeFilters, access.value))
+const drawerFilterCount = computed(() => countBatchAttributeFilters(attributeFilters.value, access.value))
 
-function applyAttributeFilters(v: BatchAttributeFiltersValue) { Object.assign(attributeFilters, v) }
+function applyAttributeFilters(v: BatchAttributeFiltersValue) { attributeFilters.value = v }
 
 const query = computed<BatchSearchFilter>(() => {
   const skuByName = new Map(productOptions.value.map((p) => [p.name, p.sku]))
@@ -105,11 +107,11 @@ const query = computed<BatchSearchFilter>(() => {
     productSkus: productNames.value.map((n) => skuByName.get(n)).filter((s): s is string => !!s),
     batchNos: batchNos.value,
     warehouseIds: allWarehouses ? 'all' : warehouseNames.value.map((n) => idByName.get(n)).filter((s): s is string => !!s),
-    vendorIds: attributeFilters.vendorIds,
-    gradeIds: attributeFilters.gradeIds,
-    expiry: attributeFilters.expiry ?? undefined,
-    manufacturing: attributeFilters.manufacturing ?? undefined,
-    bestBefore: attributeFilters.bestBefore ?? undefined,
+    vendorIds: attributeFilters.value.vendorIds,
+    gradeIds: attributeFilters.value.gradeIds,
+    expiry: attributeFilters.value.expiry ?? undefined,
+    manufacturing: attributeFilters.value.manufacturing ?? undefined,
+    bestBefore: attributeFilters.value.bestBefore ?? undefined,
   }
 })
 
@@ -170,11 +172,22 @@ const {
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<ReportRow>(rows, { perPage: 25, filterFn: (row, s) => matchesSearch(row, s) })
 
+// Restore the table as the user left it, then keep the store in step. The page comes
+// back a tick later: restoring search / per-page makes useTableState reset it to 1 first.
+{
+  const saved = { ...reportState.batch.table }
+  search.value = saved.search
+  sortKey.value = saved.sortKey
+  sortDir.value = saved.sortDir
+  perPage.value = saved.perPage
+  void nextTick(() => { currentPage.value = saved.page })
+}
+watch([search, sortKey, sortDir, currentPage, perPage], ([s, key, dir, page, size]) => {
+  Object.assign(reportState.batch.table, { search: s, sortKey: key, sortDir: dir, page, perPage: size })
+})
+
 function resetFilters() {
-  productNames.value = []
-  batchNos.value = []
-  warehouseNames.value = []
-  Object.assign(attributeFilters, emptyBatchAttributeFilters())
+  resetBatchSearch()
   search.value = ''
 }
 
@@ -214,9 +227,12 @@ function isNa(row: ReportRow, column: string): boolean {
 
 const asRow = (row: unknown) => row as ReportRow
 
+/** Opens the batch's traceability detail; a warehouse line highlights that warehouse there. */
 function openBatch(row: ReportRow) {
-  // Phase 3 replaces this with the Batch traceability detail page.
-  router.push(`/product-list/${row.source.sku}/batches/${encodeURIComponent(row.batchNo)}`)
+  router.push({
+    path: `/inventory-report/batch-traceability/${row.source.sku}/${encodeURIComponent(row.batchNo)}`,
+    query: row.source.warehouseId ? { warehouse: row.source.warehouseId } : {},
+  })
 }
 
 // ─── Loading (first paint) ─────────────────────────────────────────────────────

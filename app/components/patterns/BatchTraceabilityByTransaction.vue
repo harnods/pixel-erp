@@ -15,8 +15,9 @@
  * when a filter or the search changes. So the checkbox is drawn in the first cell and
  * the select-all in that column's header slot (rule/table-checkbox-first-cell).
  *
- * Mounted only while By transaction is active, so switching modes unmounts it and every
- * filter and the selection start clean (PRD story 6).
+ * Filters, search, sort, page and the selection live in useBatchTraceabilityReportState,
+ * so a batch's detail page can send the user back here exactly as they left it
+ * (story 7); switching modes resets that state (story 6).
  *
  * Deliberate departures from docs/design/RULES.md:
  * - No row [...] actions and no row hover on either table (a report line has nothing to
@@ -29,7 +30,7 @@
  * - Transaction numbers are plain text for now: the seeded report transactions aren't
  *   records in the Sales/Purchase/Inventory modules, so a link would open "not found".
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue'
 import { MpButton, MpButtonGroup, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
@@ -37,7 +38,7 @@ import DateConditionField from '~/components/patterns/DateConditionField.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import BatchTransactionFiltersDrawer, {
-  emptyTransactionDrawerFilters, countTransactionDrawerFilters, type TransactionDrawerFiltersValue,
+  countTransactionDrawerFilters, type TransactionDrawerFiltersValue,
 } from '~/components/patterns/BatchTransactionFiltersDrawer.vue'
 import {
   TRACE_TX_TYPES, searchTransactions, batchesInTransactions,
@@ -49,6 +50,7 @@ import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
+import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 
 const props = defineProps<{
   access: TraceabilityAccess
@@ -69,13 +71,14 @@ function warehouseName(id: string | null): string {
 // Transaction type sits in the bar as translated labels; mapped back to the type key.
 const typeByLabel = computed(() => new Map(TRACE_TX_TYPES.map((type) => [t(type), type])))
 const typeOptions = computed(() => [...typeByLabel.value.keys()])
-const typeLabels = ref<string[]>([])
-const dateCondition = ref<DateCondition | null>(null)
-const drawerFilters = reactive<TransactionDrawerFiltersValue>(emptyTransactionDrawerFilters())
+const { state: reportState, resetTransactionSearch } = useBatchTraceabilityReportState()
+const typeLabels = toRef(reportState.transaction, 'typeLabels')
+const dateCondition = toRef(reportState.transaction, 'dateCondition')
+const drawerFilters = toRef(reportState.transaction, 'drawerFilters')
 const filtersOpen = ref(false)
-const drawerFilterCount = computed(() => countTransactionDrawerFilters(drawerFilters))
+const drawerFilterCount = computed(() => countTransactionDrawerFilters(drawerFilters.value))
 
-function applyDrawerFilters(v: TransactionDrawerFiltersValue) { Object.assign(drawerFilters, v) }
+function applyDrawerFilters(v: TransactionDrawerFiltersValue) { drawerFilters.value = v }
 
 /** None ticked = no constraint; every active warehouse ticked = All warehouse. */
 function warehouseQuery(ids: string[]): 'all' | string[] | undefined {
@@ -85,12 +88,12 @@ function warehouseQuery(ids: string[]): 'all' | string[] | undefined {
 
 const query = computed<TransactionSearchFilter>(() => ({
   types: typeLabels.value.map((label) => typeByLabel.value.get(label)).filter((type): type is TraceTxType => !!type),
-  numbers: drawerFilters.numbers,
-  customerIds: drawerFilters.customerIds,
-  vendorIds: drawerFilters.vendorIds,
+  numbers: drawerFilters.value.numbers,
+  customerIds: drawerFilters.value.customerIds,
+  vendorIds: drawerFilters.value.vendorIds,
   date: dateCondition.value ?? undefined,
-  originWarehouseIds: warehouseQuery(drawerFilters.originWarehouseIds),
-  destinationWarehouseIds: warehouseQuery(drawerFilters.destinationWarehouseIds),
+  originWarehouseIds: warehouseQuery(drawerFilters.value.originWarehouseIds),
+  destinationWarehouseIds: warehouseQuery(drawerFilters.value.destinationWarehouseIds),
 }))
 
 // ─── Transactions table ─────────────────────────────────────────────────────────
@@ -126,6 +129,20 @@ const {
   toggleSort: toggleTxSort, setSort: setTxSort,
 } = useTableState<TxRow>(txRows, { perPage: 25, filterFn: (row, s) => matchesSearch(row, s) })
 
+// Restore the transactions table as the user left it, then keep the store in step. The
+// page comes back a tick later: restoring search / per-page resets it to 1 first.
+{
+  const saved = { ...reportState.transaction.table }
+  search.value = saved.search
+  txSortKey.value = saved.sortKey
+  txSortDir.value = saved.sortDir
+  txPerPage.value = saved.perPage
+  void nextTick(() => { txPage.value = saved.page })
+}
+watch([search, txSortKey, txSortDir, txPage, txPerPage], ([s, key, dir, page, size]) => {
+  Object.assign(reportState.transaction.table, { search: s, sortKey: key, sortDir: dir, page, perPage: size })
+})
+
 const txColumns = computed<TableColumn[]>(() => [
   // The label is the select-all checkbox's own label (header slot), so no plain header.
   { key: 'date', label: t('Transaction date'), kind: 'date', sortable: true, sortType: 'date', noHeader: true },
@@ -138,14 +155,12 @@ const txColumns = computed<TableColumn[]>(() => [
 const hasFilter = computed(() => typeLabels.value.length > 0 || dateCondition.value !== null || drawerFilterCount.value > 0)
 
 function resetFilters() {
-  typeLabels.value = []
-  dateCondition.value = null
-  Object.assign(drawerFilters, emptyTransactionDrawerFilters())
+  resetTransactionSearch()
   search.value = ''
 }
 
 // ─── Selection ──────────────────────────────────────────────────────────────────
-const selected = ref(new Set<string>())
+const selected = ref(new Set<string>(reportState.transaction.selected))
 
 /** Every transaction the filters + search match — what "select all" picks. */
 const matchingNumbers = computed(() => {
@@ -166,8 +181,10 @@ function toggleOne(number: string) {
 }
 function clearSelection() { selected.value = new Set() }
 
-// Changing a filter or the search resets the selection; paging and sorting don't.
+// Changing a filter or the search resets the selection; paging and sorting don't. The
+// selection is mirrored into the report state so it survives a trip to a batch's page.
 watch([query, search], clearSelection)
+watch(selected, (s) => { reportState.transaction.selected = [...s] })
 
 const selectedLabel = computed(() => {
   const n = selected.value.size
@@ -252,9 +269,12 @@ function secondaryMutationText(line: BatchLine): string {
   return mutationText(line.source.direction, cell.value, line.source.secondaryUnit)
 }
 
+/** Opens the batch's traceability detail with this transaction highlighted in its journey. */
 function openBatch(line: BatchLine) {
-  // Phase 3 replaces this with the Batch traceability detail page.
-  router.push(`/product-list/${line.source.sku}/batches/${encodeURIComponent(line.batchNo)}`)
+  router.push({
+    path: `/inventory-report/batch-traceability/${line.source.sku}/${encodeURIComponent(line.batchNo)}`,
+    query: { transaction: line.transactionNumber },
+  })
 }
 
 const asTx = (row: unknown) => row as TxRow

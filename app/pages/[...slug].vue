@@ -416,6 +416,7 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const BatchTraceabilityReportPage = asyncPage(() => import('~/components/pages/BatchTraceabilityReportPage.vue'))
+const BatchTraceabilityDetailPage = asyncPage(() => import('~/components/pages/BatchTraceabilityDetailPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
@@ -593,6 +594,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /inventory-report/batch-traceability → Batch Traceability Report (Reports → Inventory).
   if (segs.length === 2 && segs[0] === 'inventory-report' && segs[1] === 'batch-traceability') {
     return { component: BatchTraceabilityReportPage, id: segs[1]! }
+  }
+  // /inventory-report/batch-traceability/:sku/:batchNo → Batch traceability detail. The
+  // batch number is URI-encoded ("Batch #001" carries a # fragment) — decode it here.
+  if (segs.length === 4 && segs[0] === 'inventory-report' && segs[1] === 'batch-traceability') {
+    return { component: BatchTraceabilityDetailPage, id: `${segs[2]}::${decodeURIComponent(segs[3]!)}` }
   }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through

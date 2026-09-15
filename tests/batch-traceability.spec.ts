@@ -324,3 +324,24 @@ describe('batch detail', () => {
     expect(api.relatedBatches('1004', 'Batch #001')).toEqual({ sources: [], results: [] })
   })
 })
+
+describe('storage locations', () => {
+  it("splits a batch's warehouse stock across that warehouse's bins, summing back", () => {
+    for (const { sku, batch } of stockedBatches().slice(0, 12)) {
+      const position = api.batchStockPosition(sku, batch.batchNo)!
+      for (const w of position.warehouses) {
+        const locations = api.batchStorageLocations(sku, batch.batchNo, w.warehouseId)
+        expect(locations.length, `${sku} ${batch.batchNo} ${w.warehouseId}`).toBeGreaterThan(0)
+        expect(locations.every((l) => l.onHand > 0)).toBe(true)
+        expect(locations.reduce((sum, l) => sum + l.onHand, 0)).toBe(w.onHandBase)
+      }
+    }
+  })
+
+  it('is empty for a warehouse the batch holds no stock in', () => {
+    const { sku, batch } = stockedBatches()[0]!
+    const held = new Set(api.batchStockPosition(sku, batch.batchNo)!.warehouses.map((w) => w.warehouseId))
+    const other = api.activeWarehouses().find((w) => !held.has(w.id))!
+    expect(api.batchStorageLocations(sku, batch.batchNo, other.id)).toEqual([])
+  })
+})
