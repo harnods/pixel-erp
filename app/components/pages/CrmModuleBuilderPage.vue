@@ -1166,16 +1166,26 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       </template>
     </div>
 
-    <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Publish/Unpublish
-         + Save changes — Publish/Unpublish is an action, not a page-title
-         affordance, so it lives here (same bottom-bar placement as creation's
-         Save as draft/Publish), not next to the H1. -->
+    <!-- Sticky action footer (rule/btn-responsive-footer) — same order as the
+         creation footer (Cancel · Save as draft · Publish): ghost Cancel, then
+         the save action, then the rightmost primary CTA. Publish/Unpublish is
+         an action, not a page-title affordance, so it lives here, not next to
+         the H1.
+           - Draft custom module: Cancel · Save as draft (secondary) · Publish (primary) — identical to creation.
+           - Published custom module: Cancel · Unpublish (secondary) · Save changes (primary).
+           - System module (Deals, no draft/publish lifecycle): Cancel · Save changes (primary). -->
     <footer v-if="mod && !isCreating" class="builder-footer">
       <MpButtonGroup class="erp-action-footer">
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <MpButton v-if="!mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-        <MpButton v-if="!mod.system && mod.status === 'published'" variant="secondary" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+        <template v-if="!mod.system && mod.status !== 'published'">
+          <MpButton variant="secondary" is-rounded @click="saveChanges">{{ t('Save as draft') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
+        </template>
+        <template v-else-if="!mod.system && mod.status === 'published'">
+          <MpButton variant="secondary" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+        </template>
+        <MpButton v-else variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
       </MpButtonGroup>
     </footer>
     <!-- Creation footer: module isn't persisted until Save as draft/Publish here. -->
