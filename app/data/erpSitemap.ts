@@ -297,7 +297,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Financials', { to: 'Financial report' }),
       leaf('Sales', { to: 'Sales report' }),
       leaf('Purchases', { to: 'Purchase report' }),
-      leaf('Inventory', { to: 'Inventory report', note: 'Reports › Inventory index (report cards); Dual Unit Inventory Report via /inventory-report/dual-unit.' }),
+      leaf('Inventory', { to: 'Inventory report', note: 'Reports › Inventory index (report cards); Dual Unit Inventory Report via /inventory-report/dual-unit; Batch Traceability Report via /inventory-report/batch-traceability.' }),
       leaf('WMS', { to: 'WMS report', note: 'Reports › WMS index (four report cards); detail tables via /wms-report/:slug.' }),
       leaf('Tax', { to: 'Tax report' }),
       leaf('Cash & bank', { to: 'Cash & bank report' }),

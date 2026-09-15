@@ -415,6 +415,7 @@ const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/Unclas
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
+const BatchTraceabilityReportPage = asyncPage(() => import('~/components/pages/BatchTraceabilityReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
@@ -588,6 +589,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // Inventory reports index rather than rendering the wrong report.
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
+  }
+  // /inventory-report/batch-traceability → Batch Traceability Report (Reports → Inventory).
+  if (segs.length === 2 && segs[0] === 'inventory-report' && segs[1] === 'batch-traceability') {
+    return { component: BatchTraceabilityReportPage, id: segs[1]! }
   }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through

@@ -6,7 +6,8 @@ import { MpButton } from '@mekari/pixel3'
 // grid, the last row is padded with fillers so every column is present top and bottom,
 // and the outer right + bottom borders are clipped.
 //
-// Only "Dual Unit Inventory" is built (PRD Dual Unit Inventory, Story 14). The rest are
+// Built: "Dual Unit Inventory" (PRD Dual Unit Inventory, Story 14) and "Batch
+// traceability" (PRD Batch Traceability Report). The rest are
 // listed so the section reads complete; they carry a caption instead of a disabled
 // button — DESIGN.md forbids disabled buttons for state.
 const { t } = useLocale()
@@ -24,6 +25,12 @@ const reports: ReportCard[] = [
     slug: 'dual-unit',
     title: 'Dual Unit Inventory',
     description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
+    built: true,
+  },
+  {
+    slug: 'batch-traceability',
+    title: 'Batch traceability',
+    description: 'Find batches by their attributes or by the transactions they moved through, and trace where each batch came from and went.',
     built: true,
   },
   {
@@ -111,8 +118,8 @@ function viewReport(slug: string) {
   flex-direction: column;
   gap: var(--mp-spacing-3, 12px);
   padding: var(--mp-spacing-5, 20px);
-  border-right: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .report-card--filler { padding: 0; }
 

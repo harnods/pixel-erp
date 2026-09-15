@@ -27,7 +27,7 @@ Decisions:
 | Phase | Scope | Status |
 |-------|-------|--------|
 | **0 — Data** | `app/data/batchTraceability.ts` + `tests/batch-traceability.spec.ts` | **Done** (see §3) |
-| 1 — Report, by batch | card, route, mode switch, filters + drawer, table, empty/loading states | — |
+| 1 — Report, by batch | card, route, mode switch, filters + drawer, table, empty/loading states | **Done** (see §3b) |
 | 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | — |
 | 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | — |
 | 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | — |
@@ -78,6 +78,30 @@ Receipt quantities are solved backwards so no warehouse goes negative.
 - By transaction: unique + newest first, Customer→sales only, Vendor→purchase only, types OR, origin/destination type limits, date
 - batches in transactions: empty with no selection, Work order +/−, same batch in 2 transactions = 2 lines, snapshot attributes
 - detail: changed-attribute flag, creating transaction, secondary balances, related batches both ways, same-product twins, none for unroasted
+
+## 3b. Phase 1 — as built
+
+**Entry:** Reports › Inventory gets a **Batch traceability** card → `/inventory-report/batch-traceability` (`[...slug].vue` detailMatch, exact 2-segment match so Phase 3's detail route can't collide).
+
+**Page** `BatchTraceabilityReportPage.vue` — full-bleed title bar (Reports breadcrumb) + stage, same shell as the Dual Unit report.
+- **Mode switch:** pill `MpSegmentedControl` *By batch | By transaction*; switching resets every filter (story 6). *By transaction* shows a "Coming soon" state until Phase 2.
+- **Filter bar** (`ErpTablePage` `#filters`): Product · Batch number · Warehouse (`MultiSelectDropdown`; Warehouse has an "All warehouse" select-all — none or all ticked = All warehouse) · **All filters (N)** | Column settings · Export · search pill (product name, SKU, batch number).
+- **All filters drawer** `BatchTraceabilityFiltersDrawer.vue` (custom Teleport shell): Vendor, Grade (multi-select), Expiry / Manufacturing / Best before (`DateConditionField`). Draft → Apply; Reset filter / Cancel / Apply footer.
+- **`DateConditionField.vue`** (new pattern): comparator *Is between / Is before / Is after* + the sanctioned pickers — `AdvancedDateRangePicker` for between, `MpDatePicker` for one date. Switching comparator clears the value.
+- **Table:** Product (`ProductCell`, SKU caption) · Batch number (link) · Expiry · Manufacturing · Best before · Vendor · Grade · Warehouse · On hand · On hand (secondary unit). Semantic `kind`s only; every column sortable; attribute cells render NA / blank / value; NA in secondary text colour.
+- **States:** first-load skeleton · populated · filtered/search-empty (ErpTablePage built-in, Clear all filters resets bar + drawer + search) · no-data empty ("No batches" + View products).
+- **Scenario FAB:** Default · Empty state · *Without Batch Attribute add-on* (Vendor/Grade/Mfg/Best before cells NA, those drawer fields greyed with a caption, their filters ignored and not counted) · *Without Dual Unit Inventory* (secondary unit NA).
+- **Export:** `ExportModal` → CSV of the filtered rows (or current page) with the chosen columns. The applied-filter file header is Phase 4.
+
+**Deviations (recorded in the page header):**
+- No row `[…]` actions column and no row hover — a report line has nothing to act on; the batch number is the link (`rule/table-actions-column`, `rule/table-no-hover-no-actions`).
+- Default order = Product A–Z, Batch A–Z per PRD (data-layer order until a column is sorted).
+- Greyed, non-selectable attribute filters for a missing add-on — an entitlement, not validation (`rule/btn-no-disabled-validation` doesn't apply).
+- Until Phase 3, the batch number opens the product's existing Batch details page.
+
+**Lint notes left as-is:** the search `<input>` is the sanctioned `rule/filter-bar-search-pill` markup; `DateConditionField`'s comparator trigger is a select field (same metrics as `MultiSelectDropdown`), not a pill button.
+
+**Verified on dev (4321):** layout at 1440px, vendor filter via drawer → "All filters (1)" and a single matching row, no-add-on scenario (NA cells, greyed drawer fields, filter ignored), mode switch → Coming soon. New files pass `pixel:fix:check`; pixel-police spec failures are the 5 pre-existing CRM/toast ones.
 
 ## 4. Open questions for PM
 
