@@ -5,7 +5,8 @@
  *
  * One report, two searches. The pill switch picks the mode — By batch or By transaction
  * — and switching resets every filter, because the two searches can't be combined
- * (PRD story 6). Phase 1 builds By batch; By transaction arrives in Phase 2.
+ * (PRD story 6). By transaction lives in BatchTraceabilityByTransaction, mounted only
+ * while that mode is active, so its filters and selection also start clean.
  *
  * By batch (stories 2, 3): Product, Batch number and Warehouse sit in the filter bar; the
  * attribute filters (Vendor, Grade, the three dates) live behind All filters. Rows come
@@ -36,20 +37,19 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchTraceabilityFiltersDrawer, {
   emptyBatchAttributeFilters, countBatchAttributeFilters, type BatchAttributeFiltersValue,
 } from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
+import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
 import {
   searchBatches, traceProductOptions, traceBatchNumberOptions,
-  type AttributeCell, type BatchSearchFilter, type BatchSearchRow, type TraceabilityAccess,
+  type BatchSearchFilter, type BatchSearchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
-import { formatExpiry, expiryEffectiveDate, type BatchAttributeKey } from '~/data/batchAttributes'
+import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
-import { vendors } from '~/data/vendors'
-import { gradeById } from '~/data/grades'
-import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
+const { attributeSortValue, attributeText, qtyCellText } = useTraceabilityCells()
 
 // ─── Scenario (demo) ────────────────────────────────────────────────────────────
 // The two entitlement scenarios preview what a Jurnal company sees (PRD story 1).
@@ -116,15 +116,6 @@ const query = computed<BatchSearchFilter>(() => {
 const hasBarFilter = computed(() => productNames.value.length > 0 || batchNos.value.length > 0 || warehouseNames.value.length > 0)
 
 // ─── Rows ───────────────────────────────────────────────────────────────────────
-/** Attribute columns, in the PRD's order. */
-const ATTRIBUTE_COLUMNS: { column: string; key: BatchAttributeKey; label: string }[] = [
-  { column: 'expiryDate', key: 'expiry_date', label: 'Expiry date' },
-  { column: 'manufacturingDate', key: 'manufacturing_date', label: 'Manufacturing date' },
-  { column: 'bestBeforeDate', key: 'best_before_date', label: 'Best before date' },
-  { column: 'vendor', key: 'supplier', label: 'Vendor' },
-  { column: 'grade', key: 'grade', label: 'Grade' },
-]
-
 /** A flat row: sortable plain values per column, with the source line kept for cells. */
 interface ReportRow extends Record<string, unknown> {
   key: string
@@ -144,18 +135,6 @@ interface ReportRow extends Record<string, unknown> {
 
 const imageBySku = computed(() => new Map(productIndexRows().map((r) => [r.sku, r.img])))
 
-function vendorName(id: string): string { return vendors.find((v) => v.id === id)?.name ?? id }
-function gradeName(id: string): string { return gradeById(id)?.name ?? id }
-
-/** What a date / name column sorts on — ISO for dates, the display name otherwise. */
-function sortValue(cell: AttributeCell, key: BatchAttributeKey): string {
-  if (cell.state !== 'value') return ''
-  if (key === 'expiry_date') return expiryEffectiveDate(cell.value)
-  if (key === 'supplier') return vendorName(cell.value)
-  if (key === 'grade') return gradeName(cell.value)
-  return cell.value
-}
-
 const rows = computed<ReportRow[]>(() => {
   if (scenario.value === 'empty') return []
   return searchBatches(query.value, access.value).map((r) => {
@@ -174,7 +153,7 @@ const rows = computed<ReportRow[]>(() => {
       onHand: r.onHandBase.state === 'value' ? r.onHandBase.value : 0,
       onHandSecondary: r.onHandSecondary.state === 'value' ? r.onHandSecondary.value : null,
     }
-    for (const a of ATTRIBUTE_COLUMNS) row[a.column] = sortValue(r.attributes[a.key], a.key)
+    for (const a of TRACE_ATTRIBUTE_COLUMNS) row[a.column] = attributeSortValue(r.attributes[a.key], a.key)
     return row
   })
 })
@@ -217,44 +196,18 @@ const columnItems = computed(() => allColumns.value.map((c, i) => ({ key: c.key,
 const visibleColumns = computed(() => allColumns.value.filter((c) => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
-// ─── Cells ──────────────────────────────────────────────────────────────────────
-const qtyFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
-
-/** An attribute cell as shown: "NA" when not used / no access, blank when used but
- *  empty, otherwise the formatted value (PRD story 3). */
-function attributeText(cell: AttributeCell, key: BatchAttributeKey): string {
-  if (cell.state === 'na') return t('NA')
-  if (cell.state === 'empty') return ''
-  switch (key) {
-    case 'expiry_date': return formatExpiry(cell.value, 'table')
-    case 'manufacturing_date':
-    case 'best_before_date': return formatDate(cell.value)
-    case 'supplier': return vendorName(cell.value)
-    case 'grade': return gradeName(cell.value)
-  }
-}
-
-function onHandText(row: ReportRow): string {
-  const cell = row.source.onHandBase
-  return cell.state === 'value' ? `${qtyFormat.format(cell.value)} ${row.source.unit}` : ''
-}
-function secondaryText(row: ReportRow): string {
-  const cell = row.source.onHandSecondary
-  if (cell.state === 'na') return t('NA')
-  return cell.state === 'value' ? `${qtyFormat.format(cell.value)} ${row.source.secondaryUnit ?? ''}` : ''
-}
-
+// ─── Cells (formatting shared with By transaction — useTraceabilityCells) ────────
 /** Plain text per column — what the table shows and what the export writes. */
 function cellText(row: ReportRow, column: string): string {
-  const attribute = ATTRIBUTE_COLUMNS.find((a) => a.column === column)
+  const attribute = TRACE_ATTRIBUTE_COLUMNS.find((a) => a.column === column)
   if (attribute) return attributeText(row.source.attributes[attribute.key], attribute.key)
-  if (column === 'onHand') return onHandText(row)
-  if (column === 'onHandSecondary') return secondaryText(row)
+  if (column === 'onHand') return qtyCellText(row.source.onHandBase, row.source.unit)
+  if (column === 'onHandSecondary') return qtyCellText(row.source.onHandSecondary, row.source.secondaryUnit)
   return String(row[column] ?? '')
 }
 
 function isNa(row: ReportRow, column: string): boolean {
-  const attribute = ATTRIBUTE_COLUMNS.find((a) => a.column === column)
+  const attribute = TRACE_ATTRIBUTE_COLUMNS.find((a) => a.column === column)
   if (attribute) return row.source.attributes[attribute.key].state === 'na'
   return column === 'onHandSecondary' && row.source.onHandSecondary.state === 'na'
 }
@@ -389,7 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           >{{ asRow(row).batchNo }}</span>
         </template>
 
-        <template v-for="a in ATTRIBUTE_COLUMNS" :key="a.column" #[`cell-${a.column}`]="{ row }">
+        <template v-for="a in TRACE_ATTRIBUTE_COLUMNS" :key="a.column" #[`cell-${a.column}`]="{ row }">
           <span :class="{ 'bt-na': isNa(asRow(row), a.column) }">{{ cellText(asRow(row), a.column) }}</span>
         </template>
 
@@ -412,12 +365,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </template>
       </ErpTablePage>
 
-      <!-- ── By transaction — Phase 2 ── -->
-      <div v-else class="empty-full bt-coming-soon">
-        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-        <p class="empty-full-title">{{ t('Search by transaction') }}</p>
-        <p class="empty-full-desc">{{ t('Coming soon') }}</p>
-      </div>
+      <!-- ── By transaction (stories 4, 5) ── -->
+      <BatchTraceabilityByTransaction v-else :access="access" :empty="scenario === 'empty'" />
     </div>
 
     <BatchTraceabilityFiltersDrawer
@@ -516,7 +465,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* ── Empty states ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }
-.bt-coming-soon { padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
 .empty-full-title {
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);

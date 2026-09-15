@@ -28,7 +28,7 @@ Decisions:
 |-------|-------|--------|
 | **0 — Data** | `app/data/batchTraceability.ts` + `tests/batch-traceability.spec.ts` | **Done** (see §3) |
 | 1 — Report, by batch | card, route, mode switch, filters + drawer, table, empty/loading states | **Done** (see §3b) |
-| 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | — |
+| 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | **Done** (see §3c) |
 | 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | — |
 | 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | — |
 | Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | — |
@@ -103,6 +103,22 @@ Receipt quantities are solved backwards so no warehouse goes negative.
 
 **Verified on dev (4321):** layout at 1440px, vendor filter via drawer → "All filters (1)" and a single matching row, no-add-on scenario (NA cells, greyed drawer fields, filter ignored), mode switch → Coming soon. New files pass `pixel:fix:check`; pixel-police spec failures are the 5 pre-existing CRM/toast ones.
 
+## 3c. Phase 2 — as built
+
+**`BatchTraceabilityByTransaction.vue`** — mounted by the report page only while *By transaction* is active, so switching modes unmounts it and its filters + selection start clean (story 6).
+- **Filter bar:** Transaction type (multi-select, OR) · Transaction date (`DateConditionField`: between / before / after) · **All filters (N)** | Export · search pill (transaction number).
+- **All filters drawer** `BatchTransactionFiltersDrawer.vue`: Transaction number · Customer · Vendor · Warehouse origin · Warehouse destination (both with "All warehouse" select-all). Each carries a caption naming the types it applies to (Customer → sales only, Vendor → purchase only, origin/destination → the types that have one), so the PRD rule doesn't read as rows silently vanishing.
+- **Transactions table:** Transaction date (checkbox as its label) · Transaction number · Transaction type · Warehouse origin · Warehouse destination. Newest first.
+- **Selection (story 5):** kept by the view as a set of transaction numbers, not by `ErpTablePage` (whose selection is row positions on the current page and clears on every row change). Checkbox in the first cell, select-all in that column's `#header-date` slot (`rule/table-checkbox-first-cell`). Select-all picks every transaction matching the filters + search, not just the page; paging and sorting keep the selection; any filter or search change clears it. The second table's header shows "N transactions selected · Clear selection".
+- **Batches in selected transactions:** Transaction date · Transaction number · Product · Batch number (link) · the five attributes **as recorded on the transaction** · Mutation · Mutation (secondary unit). Signed per the sign rule (+ in, − out, bare qty neutral). Product A–Z, Batch A–Z. Sortable by header click (no sort menu, so no un-undoable "Hide column" on a table without a filter bar). Empty: "No transaction selected / Select a transaction to see its batches."
+- **Export:** transactions CSV via `ExportModal`. The batches sheet and filter header are Phase 4.
+
+**`useTraceabilityCells.ts`** (new composable): NA / blank / value attribute text, attribute sort values, quantity and signed-mutation text — shared by both searches so a cell reads identically in each. The Phase 1 page now uses it too. Pinned by `tests/batch-traceability-cells.spec.ts`.
+
+**Selection rules are pinned by a component test** (`tests/batch-traceability-by-transaction.spec.ts`, happy-dom mount): first page of all matching transactions · nothing selected on load (batches table on its hint) · select-all picks every matching transaction, not just the page · selection survives paging · a filter change resets it · a Work order shows its output as + and raw materials as −.
+
+**Deviations (in the component header):** no row actions / hover on either table; batches table keeps the PRD order (its date column is `transactionDate` so `useTableState` doesn't re-sort newest-first); empty states without a CTA (nothing to create — the selection hint is the next action); **transaction numbers are plain text** — the seeded report transactions aren't records in the Sales/Purchase/Inventory modules, so a link would open "not found" (see open question 9).
+
 ## 4. Open questions for PM
 
 Interim behaviour in brackets.
@@ -115,6 +131,7 @@ Interim behaviour in brackets.
 6. **Warehouse switcher on the journey** (PRD TBD). [Not in v1.]
 7. **Invoice + delivery double count** — both are "+". [Invoices not seeded.]
 8. **Link from the product's batch page** to the traceability detail? [Not yet.]
+9. **Transaction number links** — the PRD links each number to its transaction detail page. The prototype's seeded report transactions aren't records in the Sales / Purchase / Inventory modules. [Plain text; confirm whether the demo should seed matching records or keep links out.]
 
 ## 5. Verification (each phase)
 
