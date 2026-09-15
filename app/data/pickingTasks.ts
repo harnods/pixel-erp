@@ -732,6 +732,20 @@ export function lockedOutboundQtyForSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** SKUs on this order that a picking task already exists for — INCLUDING a task still
+ *  "open", where nothing has been picked yet. Once a picking list holds a line, that
+ *  line's PRODUCT is settled: swapping the SKU would send the picker to a bin for
+ *  goods the order no longer asks for. Quantity is a separate, softer rule (see
+ *  lockedOutboundQtyForSku). A canceled task releases its claim, so its SKUs unlock. */
+export function skusWithPickingTask(orderId: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    for (const l of pickingLinesOf(t)) if (l.orderId === orderId) out.add(l.sku);
+  }
+  return out;
+}
+
 /** One order+SKU's qty on each PENDING (open) picking task — the tasks a D7 reduction
  *  can drain from, per task (D7 allocation step). Started tasks are excluded (locked). */
 export function pendingPickingLinesForSku(orderId: string, sku: string): { taskId: string; taskNo: string; qty: number }[] {
@@ -919,6 +933,20 @@ function sumPicked(picked: Record<string, number>): number {
 }
 
 /** Operator clicks "Start picking" → in progress + start timestamp. */
+/** Hand this task to someone else — the escape hatch for a task still held by
+ *  someone who has lost access to the company. Only while the task is Open or
+ *  In Progress: past that the assignee is a record of who did the work, not who
+ *  owes it. Access is gated in the UI (useLineManagerAccess); this only refuses
+ *  states where a handover would be meaningless. */
+export function reassignPickingTask(taskId: string, assignee: string): boolean {
+  const t = getPickingTask(taskId);
+  if (!t || (t.status !== "open" && t.status !== "in progress")) return false;
+  if (!assignee.trim() || assignee === t.assignee) return false;
+  t.assignee = assignee;
+  persistPicking();
+  return true;
+}
+
 export function startPicking(taskId: string): void {
   const t = getPickingTask(taskId);
   if (!t || t.status !== "open") return;

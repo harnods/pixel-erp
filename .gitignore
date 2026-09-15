@@ -23,8 +23,13 @@ logs
 .env.*
 !.env.example
 
-# Claude local config
-.claude/
+# Claude config — share the team-wide bits, keep personal/local out
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/scripts/
+.claude/settings.local.json
+.claude/worktrees/
 package-lock.json
 
 # Codex local config
@@ -34,3 +39,6 @@ package-lock.json
 *.pdf
 .vercel
 .env*
+
+# Playwright test artifacts
+test-results/

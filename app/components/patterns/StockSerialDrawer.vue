@@ -211,7 +211,7 @@ const receiptNumber = computed(() =>
 
 <template>
   <Transition name="ssd">
-  <div v-if="open && product" class="ssd-overlay" @click.self="close">
+  <div v-if="open && product" class="ssd-overlay">
     <div class="ssd-panel" role="dialog" :aria-label="title">
 
       <header class="ssd-header">
@@ -484,7 +484,7 @@ const receiptNumber = computed(() =>
   background: var(--mp-background-neutral); color: var(--mp-text-secondary);
   width: 260px;
 }
-.ssd-search:focus-within { box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.ssd-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .ssd-search-input {
   flex: 1; border: none; background: transparent;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);

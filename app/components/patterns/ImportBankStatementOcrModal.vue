@@ -4,7 +4,8 @@
  * management account detail page. Dummy only: file selection/removal is real,
  * but "Upload" doesn't actually scan anything — it just toasts and closes.
  */
-import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay, MpDropzone, MpUploadList, MpTextlink, MpIcon } from '@mekari/pixel3'
+import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
+import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import { startBankStatementReview } from '~/data'
 
 const props = defineProps<{ open: boolean; initialFiles?: File[] }>()
@@ -28,14 +29,6 @@ function onDropzoneFileChange(list: FileList | null) {
 function removeFile(name: string) {
   files.value = files.value.filter((f) => f.name !== name)
 }
-function fileIconName(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (ext === 'pdf') return 'pdf-document'
-  if (ext === 'doc' || ext === 'docx') return 'word-document'
-  if (['jpg', 'jpeg', 'png'].includes(ext)) return 'image-document'
-  if (ext === 'zip') return 'zip'
-  return 'doc'
-}
 function handleClose() {
   emit('close')
 }
@@ -49,9 +42,8 @@ function doUpload() {
 </script>
 
 <template>
-  <MpModal
-    id="cmd-import-ocr-modal" :is-open="open" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="handleClose"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="cmd-import-ocr-modal" :is-open="open" size="md" :is-keep-alive="false" @close="handleClose"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Import with OCR') }}<MpModalCloseButton /></MpModalHeader>
@@ -61,34 +53,12 @@ function doUpload() {
             {{ t('Drop bank statement files here. We will scan and create separate statements for each file automatically.') }}
           </p>
 
-          <MpDropzone
+          <ErpDropzone
             id="cmd-ocr-dropzone"
-            class="ocr-dropzone"
-            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip"
-            is-multiple is-enable-input-file :is-show-preview="false"
+            :files="files"
             @change="onDropzoneFileChange"
-          >
-            <template #idle="{ handleClickInput }">
-              <MpIcon name="upload" variant="outline" color="icon.brand" class="ocr-dropzone-icon" />
-              <p class="ocr-dropzone-cta">
-                {{ t('Drop your file(s) here or') }}
-                <MpTextlink id="cmd-ocr-browse" as="a" @click.stop.prevent="handleClickInput">{{ t('select files') }}</MpTextlink>
-              </p>
-              <p class="ocr-dropzone-hint">{{ t('File can be PDF, JPG, PNG, DOC, ZIP with max size 10mb') }}</p>
-            </template>
-          </MpDropzone>
-
-          <div v-if="files.length" class="ocr-files">
-            <p class="ocr-files__title">{{ t('Files') }} ({{ files.length }})</p>
-            <MpUploadList
-              v-for="f in files" :key="f.name"
-              :id="`cmd-ocr-file-${f.name}`"
-              :title="f.name" status="success" :subtitle="t('Uploaded')"
-              :icon-name="fileIconName(f.name)"
-              is-show-remove-button
-              @remove="removeFile(f.name)"
-            />
-          </div>
+            @remove="removeFile"
+          />
         </div>
       </MpModalBody>
       <MpModalFooter v-if="files.length">
@@ -112,51 +82,6 @@ function doUpload() {
   margin: 0;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default);
-}
-
-/* MpDropzone draws its own border/background on the inner wrapper — style that
-   instead of the root, so there's only one dashed outline and no default white
-   fill. Same convention as NewExpensePage.vue's receipt dropzone. */
-.ocr-dropzone { cursor: pointer; }
-.ocr-dropzone :deep(.mp-dropzone__wrapper) {
-  border: 1px dashed var(--mp-border-default, #e3e7e9);
-  border-radius: var(--mp-radii-md, 6px);
-  background: transparent;
-  padding: var(--mp-sizes-10, 40px);
-  gap: var(--mp-spacing-3);
-  transition: border-color 0.1s, background 0.1s;
-}
-/* --mp-border-selected is the Enterprise-theme green used for this hover/focus
-   affordance elsewhere in the app; --mp-colors-border-focused is its counterpart
-   on form fields — both resolve to the same green (#41C6A0/#029861) here. */
-.ocr-dropzone :deep(.mp-dropzone__wrapper:hover),
-.ocr-dropzone :deep(.mp-dropzone__wrapper:focus),
-.ocr-dropzone :deep(.mp-dropzone__wrapper:focus-within) {
-  border-color: var(--mp-border-selected, #029861);
-  background: var(--mp-background-neutral-hovered, #f8f9f9);
-  outline: none;
-}
-.ocr-dropzone-icon { width: 32px; height: 32px; }
-.ocr-dropzone-cta {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  text-align: center;
-}
-.ocr-dropzone-hint {
-  margin: 0;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
-  text-align: center;
-}
-
-.ocr-files { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.ocr-files__title {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 

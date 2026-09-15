@@ -48,7 +48,7 @@ function complete() { emit('complete'); close() }
 
 <template>
   <Transition name="cwo">
-    <div v-if="isOpen" class="cwo-overlay" @click.self="close">
+    <div v-if="isOpen" class="cwo-overlay">
       <div class="cwo-panel" role="alertdialog" aria-modal="true" aria-label="Complete work order">
         <header class="cwo-header">
           <h2 class="cwo-title">Complete work order</h2>

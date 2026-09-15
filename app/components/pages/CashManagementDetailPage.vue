@@ -11,7 +11,7 @@
  */
 import { useRouter, useRoute } from 'vue-router'
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpCheckbox, MpTooltip,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpBadge, MpCheckbox, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
   MpModalCloseButton, toast, css,
@@ -23,9 +23,11 @@ import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePick
 import CashTxFiltersDrawer, {
   type CashTxFiltersValue, emptyCashTxFilters, matchCashTxFilters, cashTxFilterCount,
 } from '~/components/patterns/CashTxFiltersDrawer.vue'
-import ImportBankStatementOcrModal from '~/components/patterns/ImportBankStatementOcrModal.vue'
+import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
+import BillsReviewFilesPage from '~/components/pages/BillsReviewFilesPage.vue'
 import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
-import { cashAccounts } from '~/data'
+import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
+import { cashAccounts, bankStatementDropboxFiles } from '~/data'
 import { internalTransfers } from '~/data/internalTransfers'
 import type { CashAccountCurrency } from '~/data'
 import { formatMoney } from '~/utils/currency'
@@ -102,16 +104,32 @@ function deleteTransaction(_row: AccountTransactionLine) {
   toast.notify({ variant: 'success', title: t('Transaction deleted'), maxWidth: 'max-content' })
 }
 
-// ── Import bank statement dropdown → "Import with OCR" modal ─────────────────
+// ── "Upload bank statement" modal → header upload monitor → Dropbox tab ──────
 const ocrModalOpen = ref(false)
 const ocrInitialFiles = ref<File[]>([])
-function openOcrModal() { ocrInitialFiles.value = []; ocrModalOpen.value = true }
+// Defer the open one macrotask so the popover-close click doesn't collide with
+// MpModal's open transition (same fix as the Expenses/PI upload modal).
+function openOcrModal() {
+  ocrInitialFiles.value = []
+  setTimeout(() => { ocrModalOpen.value = true }, 0)
+}
 
 // Dragging a file anywhere onto this page opens the same modal, pre-loaded
-// with what was dropped — same destination as the "Import with OCR" menu item.
+// with what was dropped — same destination as the "Upload bank statement" item.
 function onGlobalFileDrop(fileList: FileList) {
   ocrInitialFiles.value = Array.from(fileList)
   ocrModalOpen.value = true
+}
+
+// On Upload: files go through the header upload monitor (startUpload) and land in
+// this account's Dropbox tab as file-name-only rows; the AI agent OCRs them in the
+// background — identical behaviour to Expenses / Purchase invoices.
+function onStatementUpload(files: File[]) {
+  if (!files.length) return
+  startUpload(files, 'bank-statement', 'Upload bank statement')
+  uploadCenterOpen.value = true
+  const idx = TAB_NAMES.indexOf('dropbox')
+  if (idx >= 0) activeTabIndex.value = idx
 }
 // ── Header (dummy "last updated" — no real bank feed) ──────────────────────
 const lastUpdatedLabel = ref('Last updated a few minutes ago')
@@ -322,7 +340,7 @@ const transactionColumns = computed<TableColumn[]>(() =>
 function hideTxColumn(key: string) { txColumnVisibility[key] = false }
 
 // ── Tabs — persisted via ?tab=transactions|statement so back/forward restores it ──
-const TAB_NAMES = ['transactions', 'statement']
+const TAB_NAMES = ['transactions', 'statement', 'dropbox']
 const activeTabIndex = computed({
   get(): number {
     const tab = route.query.tab as string | undefined
@@ -334,6 +352,10 @@ const activeTabIndex = computed({
   },
 })
 const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transactions')
+
+// Dropbox tab badge = uploaded bank statements not yet reviewed (reviewed+saved
+// files are spliced out of the queue, so the count drops as they're processed).
+const dropboxCount = computed(() => bankStatementDropboxFiles.length)
 </script>
 
 <template>
@@ -381,7 +403,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
       <div class="detail-bar-right">
         <!-- Primary button is tab-dependent: New transaction on Account transactions,
              Import bank statement on Bank statement. -->
-        <MpPopover v-if="activeTabName === 'statement'" id="cmd-import-stmt" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopover v-if="activeTabName === 'statement' || activeTabName === 'dropbox'" id="cmd-import-stmt" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Import bank statement') }}
@@ -393,7 +415,9 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
           <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Import from spreadsheet') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="openOcrModal">{{ t('Import with OCR') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="openOcrModal">
+                <span class="cmd-ocr-item">{{ t('Upload bank statement') }}<MpIcon name="airene-brand" size="xs" class="cmd-ocr-ai-icon" /></span>
+              </MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -514,6 +538,10 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
         <MpTabList>
           <MpTab id="cmd-tab-transactions" value="transactions">{{ t('Account transactions') }}</MpTab>
           <MpTab id="cmd-tab-statement" value="statement">{{ t('Bank statement') }}</MpTab>
+          <MpTab id="cmd-tab-dropbox" value="dropbox">
+            {{ t('Dropbox') }}
+            <MpBadge v-if="dropboxCount" class="page-tab-count cmd-tab-badge" for="additionalInformation" type="warning" size="sm">{{ dropboxCount }}</MpBadge>
+          </MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -530,7 +558,6 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
               :search="txSearch"
               :loading="loading"
               has-checkbox
-              actions-width="52px"
               filter-empty-label="transaction"
               @page-change="txSetPage"
               @per-page-change="txSetPerPage"
@@ -646,7 +673,6 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
               :search="stmtSearch"
               :loading="loading"
               has-checkbox
-              actions-width="52px"
               filter-empty-label="transaction"
               @page-change="stmtSetPage"
               @per-page-change="stmtSetPerPage"
@@ -746,15 +772,24 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
             </ErpTablePage>
           </MpTabPanel>
 
+          <!-- ── Dropbox tab — uploaded bank statements (same behaviour as
+               Expenses / Purchase invoices: file-name-only rows → background OCR) ── -->
+          <MpTabPanel value="dropbox">
+            <BillsReviewFilesPage surface="bank-statement" />
+          </MpTabPanel>
+
         </MpTabPanels>
       </MpTabs>
     </div>
 
-    <!-- v-if (not just :open) — MpModal's internal isOpen state only reacts to the
-         prop turning true, never false, so closing must unmount the component. -->
-    <ImportBankStatementOcrModal
-      v-if="ocrModalOpen" :open="true" :initial-files="ocrInitialFiles"
+    <!-- Shared OCR upload modal → header upload monitor → Dropbox tab. -->
+    <ImportVendorInvoicesModal
+      :open="ocrModalOpen"
+      :initial-files="ocrInitialFiles"
+      title="Upload bank statement"
+      description="Drop your bank statement files here. We'll upload them to Dropbox and scan each one."
       @close="ocrModalOpen = false"
+      @upload="onStatementUpload"
     />
     <GlobalFileDropOverlay v-if="TAB_NAMES[activeTabIndex] === 'statement'" @drop="onGlobalFileDrop" />
 
@@ -775,7 +810,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
     />
 
     <!-- ── Archive confirmation ── -->
-    <MpModal id="cmd-archive-modal" :is-open="archiveModalOpen" size="sm" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="archiveModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmd-archive-modal" :is-open="archiveModalOpen" size="sm" :is-keep-alive="false" @close="archiveModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Archive account?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t("Archived accounts will be hidden from the list and can't be used in any transactions.") }}</MpModalBody>
@@ -790,7 +825,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
     </MpModal>
 
     <!-- ── Delete confirmation ── -->
-    <MpModal id="cmd-delete-modal" :is-open="deleteModalOpen" size="sm" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmd-delete-modal" :is-open="deleteModalOpen" size="sm" :is-keep-alive="false" @close="deleteModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Delete account?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t('Deleted accounts cannot be restored.') }}</MpModalBody>
@@ -807,6 +842,16 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
 </template>
 
 <style scoped>
+/* "Upload bank statement" menu item — label + AI (Airene) icon. MpIcon's size
+   prop leaves airene-brand at its natural (oversized) dimensions, so pin it. */
+.cmd-ocr-item { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.cmd-tab-badge { margin-left: var(--mp-spacing-2); }
+.cmd-ocr-ai-icon {
+  width: var(--mp-sizes-3\.5, 14px) !important;
+  height: var(--mp-sizes-3\.5, 14px) !important;
+  flex-shrink: 0;
+  color: var(--mp-airene-default);
+}
 /* ── Import bank statement dropdown ── */
 .cmd-import-menu {
   display: flex;
@@ -942,7 +987,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; padding-bottom: var(--mp-spacing-2); }

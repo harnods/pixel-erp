@@ -582,9 +582,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     />
 
     <!-- ── Direct-to-packing modal — marketplace orders only ── -->
-    <MpModal
-      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md" :is-keep-alive="false" @close="closeDirectPacking"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>
@@ -616,7 +615,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </MpModal>
 
     <!-- ── Cancel order confirmation ── -->
-    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -662,7 +661,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

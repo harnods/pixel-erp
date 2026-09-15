@@ -531,9 +531,8 @@ function confirmDelete() {
     </div>
 
     <!-- ── Cancel confirmation modal ── -->
-    <MpModal
-      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal"
     >
       <MpModalContent>
         <MpModalHeader>{{ isPartialClose ? t('Close receipt?') : t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -552,9 +551,8 @@ function confirmDelete() {
     </MpModal>
 
     <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
-    <MpModal
-      id="rcd-delete-modal" :is-open="deleteModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="rcd-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="closeDeleteModal"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -620,7 +618,7 @@ function confirmDelete() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

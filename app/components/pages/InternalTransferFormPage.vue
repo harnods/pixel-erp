@@ -341,7 +341,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -373,7 +373,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* ── Transfer from + Total row ─────────────────────────────────────────────── */
 .ex-row-1 {
   display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
-  padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default);
+  padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 .ex-field-flex { width: 316px; flex-shrink: 0; min-width: 0; }
 .it-total-inline { margin-left: auto; display: flex; align-items: flex-end; padding-bottom: 8px; white-space: nowrap; }
@@ -395,7 +395,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
    table. Do not diverge; see docs/patterns/form-table.md. The 40px row height is
    load-bearing: it makes the input fill the cell so its own border never shows —
    the focus indicator is the cell's inset ring. ─────────────────────────────── */
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-account { width: 240px; }
@@ -405,35 +405,41 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  /* A taller Dimensions cell must not pull the row's other cells to its
+     vertical center — everything pins to the top instead. */
+  vertical-align: top;
 }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']), .ex-td--error :deep([class*='input']) { background: transparent; }
 
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
-.ex-lineitems-table .ex-td--amount { padding: 0; }
+.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.ex-lineitems-table .ex-td--amount { padding: 0; position: relative; }
 
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch then lets .ex-amount-prefix (auto cross-size)
+   grow to match, while the input keeps its own fixed height and simply docks
+   to the top (a flex item with a definite cross size doesn't stretch). */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }

@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import {
-  MpToggle, MpIcon, MpInput, MpSelect, MpRadio, MpBadge, MpSpinner, toast,
+  MpToggle, MpIcon, MpInput, MpRadio, MpBadge, MpSpinner, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody,
   MpModalFooter, MpModalOverlay,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
-import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
+
+/**
+ * `embedded` = rendered inside the CRM Settings shell (not the ERP Settings page).
+ * In that mode we hide every Edit button and drop the Advanced settings section —
+ * the CRM surface is read-only for these fields. Default (ERP) keeps everything.
+ */
+const props = defineProps<{ embedded?: boolean }>()
 
 const { t } = useLocale()
 const { amountDisplay: amountDisplaySetting, setAmountDisplay } = useCurrencySettings()
@@ -99,6 +107,9 @@ const AMOUNT_DISPLAY_OPTIONS = [
   { value: 'abbreviated', label: t('Abbreviated'), example: 'Rp2 jt' },
 ]
 const CURRENCY_OPTIONS = [{ value: 'idr', label: t('Indonesian Rupiah (Rp)') }]
+const baseCurrencyLabel = computed(
+  () => CURRENCY_OPTIONS.find((c) => c.value === draftAdvanced.baseCurrency)?.label ?? '—',
+)
 const amountDisplayLabel = computed(
   () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === advanced.amountDisplay)?.label ?? '—',
 )
@@ -328,74 +339,47 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ t('Company info') }}</h2>
-          <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
+          v-if="!props.embedded"
+          class="btn-enterprise btn-enterprise--secondary"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
         >
           {{ t('Edit') }}
-          <img :src="shortcutIcon" class="cp-shortcut-icon" alt="" />
         </button>
       </div>
 
-      <div class="cp-grid">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company name') }}</span>
-          <span class="cp-value">PT Central Perk Indonesia</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company address') }}</span>
-          <span class="cp-value">
-            MidPlaza 2 Lantai 4<br>
-            Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
-            Jakarta Pusat, DKI Jakarta 10220
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Email') }}</span>
-          <span class="cp-value">rizal.candra@centralperk.co.id</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Phone') }}</span>
-          <span class="cp-value">+628129209988</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Account owner') }}</span>
-          <span class="cp-value">
-            Rizal Candra<br>
-            <span class="cp-value-subtle">rizal.candra@centralperk.co.id</span>
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company ID') }}</span>
-          <span class="cp-value">676424</span>
-        </div>
-      </div>
-
-      <div class="cp-field cp-field--logo">
-        <span class="cp-label">{{ t('Company logo') }}</span>
+      <ContentList :label="t('Company logo')" class="cp-cl--logo">
         <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
+      </ContentList>
+
+      <div class="cp-grid">
+        <ContentList :label="t('Company name')" value="PT Central Perk Indonesia" />
+        <ContentList :label="t('Company address')">
+          <span class="content-list__line">MidPlaza 2 Lantai 4</span>
+          <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
+          <span class="content-list__line">Jakarta Pusat, DKI Jakarta 10220</span>
+        </ContentList>
+        <ContentList :label="t('Email')" value="rizal.candra@centralperk.co.id" />
+        <ContentList :label="t('Phone')" value="+628129209988" />
+        <ContentList :label="t('Account owner')">
+          <span class="content-list__line">Rizal Candra</span>
+          <span class="content-list__line cp-value-subtle">rizal.candra@centralperk.co.id</span>
+        </ContentList>
+        <ContentList :label="t('Company ID')" value="676424" />
       </div>
 
-      <div class="cp-grid cp-grid--spaced">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Shipping address') }}</span>
-          <span class="cp-value">
-            MidPlaza 2 Lantai 4<br>
-            Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
-            Jakarta Pusat, DKI Jakarta 10220
-          </span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Fax') }}</span>
-          <span class="cp-value">+62215559999</span>
-        </div>
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Website') }}</span>
+      <div class="cp-grid">
+        <ContentList :label="t('Shipping address')">
+          <span class="content-list__line">MidPlaza 2 Lantai 4</span>
+          <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
+          <span class="content-list__line">Jakarta Pusat, DKI Jakarta 10220</span>
+        </ContentList>
+        <ContentList :label="t('Fax')" value="+62215559999" />
+        <ContentList :label="t('Website')">
           <a href="https://centralperk.co.id" class="cp-link" target="_blank" rel="noopener">https://centralperk.co.id</a>
-        </div>
+        </ContentList>
       </div>
     </section>
 
@@ -406,58 +390,40 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'tax' ? t('Edit tax info') : t('Tax info') }}</h2>
-          <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
-          v-if="editing !== 'tax'"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          v-if="editing !== 'tax' && !props.embedded"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('tax')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
 
       <!-- Read mode -->
       <template v-if="editing !== 'tax'">
-        <div class="cp-field">
-          <span class="cp-label">{{ t('Company type') }}</span>
-          <span class="cp-value">{{ tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)') }}</span>
-        </div>
-        <div class="cp-subhead cp-subhead--spaced">
-          <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-          <MpBadge for="tableStatus" :type="tax.npwpValidated ? 'completed' : 'announcement'" size="sm">
-            {{ tax.npwpValidated ? t('Validated') : t('Not validated') }}
-          </MpBadge>
-        </div>
-        <p class="cp-subhead-desc">{{ t('NPWP details') }}</p>
+        <ContentList :label="t('Company type')" :value="tax.companyType === 'pkp' ? t('PKP (VAT-registered)') : t('Non-PKP (Not VAT-registered)')" />
         <div class="cp-grid">
-          <div class="cp-field">
-            <span class="cp-label">NPWP</span>
-            <span class="cp-value">{{ tax.npwp || '—' }}</span>
-          </div>
-          <div class="cp-field">
-            <span class="cp-label">NITKU</span>
-            <span class="cp-value">{{ tax.nitku || '—' }}</span>
-          </div>
+          <ContentList label="NPWP" :value="tax.npwp || '—'" />
+          <ContentList label="NITKU" :value="tax.nitku || '—'" />
         </div>
         <!-- Coretax info only exists once the company is validated & registered in Klikpajak,
-             and only for PKP businesses — Non-PKP companies don't issue e-Faktur. -->
-        <template v-if="tax.npwpValidated">
+             and only for PKP businesses — Non-PKP companies don't issue e-Faktur.
+             Excluded from the CRM (embedded) surface per the CRM Settings PRD §5.2.2. -->
+        <template v-if="tax.npwpValidated && !props.embedded">
           <template v-if="tax.companyType === 'pkp'">
             <div class="cp-subhead cp-subhead--spaced">
               <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
             </div>
-            <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
             <div class="cp-grid">
-              <div class="cp-field">
-                <span class="cp-label">{{ t('NPWP signee') }}</span>
-                <span class="cp-value">{{ tax.signeeNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.signee || '—' }}</span></span>
-              </div>
-              <div class="cp-field">
-                <span class="cp-label">{{ t('NPWP PIC') }}</span>
-                <span class="cp-value">{{ tax.picNpwp || '—' }}<br><span class="cp-value-subtle">{{ tax.pic || '—' }}</span></span>
-              </div>
+              <ContentList :label="t('NPWP signee')">
+                <span class="content-list__line">{{ tax.signeeNpwp || '—' }}</span>
+                <span class="content-list__line cp-value-subtle">{{ tax.signee || '—' }}</span>
+              </ContentList>
+              <ContentList :label="t('NPWP PIC')">
+                <span class="content-list__line">{{ tax.picNpwp || '—' }}</span>
+                <span class="content-list__line cp-value-subtle">{{ tax.pic || '—' }}</span>
+              </ContentList>
             </div>
           </template>
           <p v-else class="cp-subhead-desc cp-subhead--spaced">{{ t("Coretax info isn't required for Non-PKP businesses.") }}</p>
@@ -487,7 +453,7 @@ const ADVANCED_TOGGLES = [
 
           <div class="cp-subhead cp-subhead--spaced">
             <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
-            <MpBadge for="tableStatus" :type="draftTax.npwpValidated ? 'completed' : 'announcement'" size="sm">
+            <MpBadge for="additionalInformation" :type="draftTax.npwpValidated ? 'completed' : 'announcement'">
               {{ draftTax.npwpValidated ? t('Validated') : t('Not validated') }}
             </MpBadge>
           </div>
@@ -618,26 +584,24 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'payment' ? t('Edit payment info') : t('Payment info') }}</h2>
-          <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
-          v-if="editing !== 'payment'"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          v-if="editing !== 'payment' && !props.embedded"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('payment')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
 
       <!-- Read mode -->
       <div v-if="editing !== 'payment'" class="cp-grid">
-        <div class="cp-field"><span class="cp-label">{{ t('Bank name') }}</span><span class="cp-value">{{ payment.bankName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Branch') }}</span><span class="cp-value">{{ payment.branch || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Branch address') }}</span><span class="cp-value">{{ payment.branchAddress || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Account no.') }}</span><span class="cp-value">{{ payment.accountNo || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('Account name') }}</span><span class="cp-value">{{ payment.accountName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">{{ t('SWIFT code') }}</span><span class="cp-value">{{ payment.swift || '—' }}</span></div>
+        <ContentList :label="t('Bank name')" :value="payment.bankName || '—'" />
+        <ContentList :label="t('Branch')" :value="payment.branch || '—'" />
+        <ContentList :label="t('Branch address')" :value="payment.branchAddress || '—'" />
+        <ContentList :label="t('Account no.')" :value="payment.accountNo || '—'" />
+        <ContentList :label="t('Account name')" :value="payment.accountName || '—'" />
+        <ContentList :label="t('SWIFT code')" :value="payment.swift || '—'" />
       </div>
 
       <!-- Edit mode -->
@@ -680,21 +644,19 @@ const ADVANCED_TOGGLES = [
       </div>
     </section>
 
-    <div class="cp-divider" />
+    <div v-if="!props.embedded" class="cp-divider" />
 
-    <!-- ── Advanced settings ────────────────────────────────────────────────── -->
-    <section class="cp-section">
+    <!-- ── Advanced settings (hidden in the CRM-embedded surface) ───────────── -->
+    <section v-if="!props.embedded" class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
-          <p class="cp-section-desc">{{ t('System-wide settings for transactions, approvals, and currencies.') }}</p>
         </div>
         <button
           v-if="editing !== 'advanced'"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('advanced')"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
         </button>
       </div>
@@ -736,16 +698,20 @@ const ADVANCED_TOGGLES = [
       <div v-else class="cp-form cp-form--currency">
         <MpFormControl id="cp-base-currency" class="cp-form-field--half">
           <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
-          <MpSelect id="cp-base-currency-select" :model-value="draftAdvanced.baseCurrency" :is-disabled="true">
-            <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-          </MpSelect>
+          <MpInput id="cp-base-currency-input" :model-value="baseCurrencyLabel" is-full-width is-disabled />
           <span class="cp-help">{{ t('Base currency cannot be changed after it is used in transactions') }}</span>
         </MpFormControl>
         <MpFormControl id="cp-amount-display" class="cp-form-field--half">
           <MpFormLabel>{{ t('Amount display') }}</MpFormLabel>
-          <MpSelect id="cp-amount-display-select" :model-value="draftAdvanced.amountDisplay" @change="(_e: Event, v: string) => (draftAdvanced.amountDisplay = v)">
-            <option v-for="o in AMOUNT_DISPLAY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </MpSelect>
+          <ErpFilterSelect
+            id="cp-amount-display-select"
+            :model-value="draftAdvanced.amountDisplay"
+            :placeholder="t('Amount display')"
+            :options="AMOUNT_DISPLAY_OPTIONS"
+            :is-clearable="false"
+            width="288px"
+            @update:model-value="(v: string) => (draftAdvanced.amountDisplay = v)"
+          />
           <span class="cp-help">{{ t('e.g.') }} {{ draftAmountDisplayExample }}</span>
         </MpFormControl>
         <div class="cp-action-bar">
@@ -756,7 +722,7 @@ const ADVANCED_TOGGLES = [
     </section>
 
     <!-- ── Activate Multi-currency modal ────────────────────────────────────── -->
-    <MpModal id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Activate Multi-currency?') }}
@@ -765,9 +731,15 @@ const ADVANCED_TOGGLES = [
         <MpModalBody>
           <MpFormControl id="cp-mc-base-currency" is-required class="cp-mc-currency">
             <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
-            <MpSelect id="cp-mc-base-currency-select" :model-value="mcBaseCurrency" @change="(_e: Event, v: string) => (mcBaseCurrency = v)">
-              <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-            </MpSelect>
+            <ErpFilterSelect
+              id="cp-mc-base-currency-select"
+              :model-value="mcBaseCurrency"
+              :placeholder="t('Base currency')"
+              :options="CURRENCY_OPTIONS"
+              :is-clearable="false"
+              width="288px"
+              @update:model-value="(v: string) => (mcBaseCurrency = v)"
+            />
           </MpFormControl>
           <h3 class="cp-mc-terms-title">{{ t('Activation terms') }}</h3>
           <ol class="cp-mc-terms">
@@ -795,7 +767,7 @@ const ADVANCED_TOGGLES = [
     </MpModal>
 
     <!-- ── Validate & create Klikpajak account modal ───────────────────────────── -->
-    <MpModal id="cp-validate-klikpajak-modal" :is-open="klikpajakConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateNpwpConfirm">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-validate-klikpajak-modal" :is-open="klikpajakConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateNpwpConfirm">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Validate & create Klikpajak account?') }}
@@ -815,7 +787,7 @@ const ADVANCED_TOGGLES = [
     </MpModal>
 
     <!-- ── Validate coretax info (signee/PIC) modal — requires a Coretax passphrase ── -->
-    <MpModal id="cp-validate-coretax-modal" :is-open="coretaxConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateCoretax">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-validate-coretax-modal" :is-open="coretaxConfirmOpen" is-centered :is-keep-alive="false" @close="cancelValidateCoretax">
       <MpModalContent>
         <MpModalHeader>
           {{ t('Validate coretax info') }}
@@ -857,7 +829,7 @@ const ADVANCED_TOGGLES = [
 
     <!-- ── Demo scenario FAB — switch whether this company's SSO ID is already
          registered in Klikpajak, to preview both Tax info onboarding states ──── -->
-    <MpPopover id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
+    <MpPopover v-if="!props.embedded" id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
         <button class="demo-fab" :aria-label="t('Change scenario state')">
           <MpIcon name="sliders" size="md" color="icon.inverse" />
@@ -917,7 +889,7 @@ const ADVANCED_TOGGLES = [
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   align-items: start;
-  margin-bottom: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-3);
 }
 .cp-section-meta { grid-column: 1 / 7; display: flex; flex-direction: column; }
 /* Edit button sits in the 7th grid column, left-aligned (like settings/warehouse) */
@@ -927,18 +899,13 @@ const ADVANCED_TOGGLES = [
 .cp-section > :not(.cp-section-header) { grid-column: 1 / 7; }
 
 .cp-section-title {
-  margin: 0 0 var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-lg);
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.cp-section-desc {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
-}
 
-.cp-divider { grid-column: 1 / -1; height: 1px; background: var(--mp-border-default); }
+.cp-divider { grid-column: 1 / -1; height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 /* ─── Sub-headings (Tax identity / Coretax info) ───────────────────────────── */
 .cp-subhead { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -960,9 +927,13 @@ const ADVANCED_TOGGLES = [
 .cp-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--mp-spacing-5) var(--mp-spacing-8);
+  /* Row rhythm is owned by ContentList's own 8px top/bottom padding; only the
+     column gap is set here. */
+  column-gap: var(--mp-spacing-8);
 }
-.cp-grid--spaced { margin-top: var(--mp-spacing-5); }
+
+/* Company logo ContentList — first block in the section; 12px down to the grid. */
+.cp-cl--logo { margin-bottom: var(--mp-spacing-3); }
 
 .cp-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 .cp-field--logo { margin-top: var(--mp-spacing-5); }
@@ -988,7 +959,6 @@ const ADVANCED_TOGGLES = [
 .cp-logo-img { display: block; height: var(--mp-sizes-6); width: auto; margin-top: var(--mp-spacing-1); }
 
 /* Shortcut arrow (↗) on the Company info Edit button — same asset as the sidebar */
-.cp-shortcut-icon { width: var(--mp-sizes-4); height: var(--mp-sizes-4); }
 
 /* ─── Forms ─────────────────────────────────────────────────────────────────── */
 .cp-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }

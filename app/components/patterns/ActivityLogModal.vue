@@ -5,7 +5,8 @@
  * record title, then a DATE · USER · ACTIVITY · DETAILS table.
  *
  * - DETAILS lists the changed/created fields (label + value; edits use "old → new").
- *   Only the first 2 fields show; "Show more" reveals the rest per entry.
+ *   A single event can carry MANY fields — only the first 3 show; "Show more (n)"
+ *   reveals the rest of that event (and "Show less" collapses back).
  * - Many log rows use the standard progressive loading (10 at a time on scroll)
  *   with a "Showing X of Y" count.
  *
@@ -28,7 +29,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const DETAIL_LIMIT = 2
+const DETAIL_LIMIT = 3
 
 const rows = computed<ActivityEntry[]>(() =>
   props.entries?.length
@@ -94,11 +95,10 @@ function formatWhen(iso: string) {
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="activity-log-modal"
     :is-open="isOpen"
     size="xl"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"
   >

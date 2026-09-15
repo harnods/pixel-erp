@@ -15,11 +15,19 @@ import { bills, addBill, updateBill } from '~/data/bills'
 import type { Bill } from '~/data/types'
 import { scrollToFirstError } from '~/utils/form'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const props = defineProps<{ orderId?: string }>()
 const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('expenses').length > 0)
 
 // Edit mode — /expenses/:id/edit reuses this form. 'new' (or no id) = create.
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
@@ -118,12 +126,30 @@ interface LineRow {
   // even if the account is later cleared via the autocomplete's X icon — only a
   // fresh, never-touched row hides them.
   revealed: boolean
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
+  /** dimensionId -> whether that mandatory dimension is missing (set by validateLineItems). */
+  dimensionErrors: Record<string, boolean>
 }
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, accountId: '', description: '', taxId: '', amount: '', accountError: false, amountError: false, revealed: false }
+  return { id: rowSeq++, accountId: '', description: '', taxId: '', amount: '', accountError: false, amountError: false, revealed: false, dimensions: {}, dimensionErrors: {} }
 }
 const rows = ref<LineRow[]>([makeRow()])
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every line's dimensions (a dimension left blank in the
+// popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  rows.value.forEach((row) => {
+    row.dimensions = { ...row.dimensions, ...patch }
+    for (const dimId of Object.keys(patch)) { if (patch[dimId]) row.dimensionErrors[dimId] = false }
+  })
+}
+function onRowDimensionsUpdate(row: LineRow, v: Record<string, string>) {
+  row.dimensions = v
+  for (const dimId of Object.keys(v)) { if (v[dimId]) row.dimensionErrors[dimId] = false }
+}
 
 // Every row except the trailing "add new" row must have an account + a
 // positive amount before saving (description and tax stay optional). When
@@ -135,10 +161,22 @@ function validateLineItems(): boolean {
   rowsToCheck.forEach((row) => {
     if (!row.accountId) { row.accountError = true; valid = false }
     if (!(Number(row.amount) > 0)) { row.amountError = true; valid = false }
+    if (showDimensionsColumn.value) {
+      applicableDimensions('expenses').forEach((dim) => {
+        if (dim.mandatory && !row.dimensions[dim.id]) { row.dimensionErrors[dim.id] = true; valid = false }
+      })
+    }
   })
   return valid
 }
-const lineItemsHaveError = computed(() => rows.value.some((r) => r.accountError || r.amountError))
+const lineItemsHaveError = computed(() => rows.value.some((r) => r.accountError || r.amountError || Object.values(r.dimensionErrors).some(Boolean)))
+
+// Payment details' Dimensions cell mirrors the first line item above EXACTLY
+// (same ErpLineDimensionsCell, same rows for every applicable dimension
+// whether filled or not — not a hand-rolled "only show filled ones" view,
+// which drifted from the real column and looked inconsistent) — just
+// isDisabled so it's read-only, informational, not a second place to edit it.
+const paymentDimensions = computed(() => rows.value[0]?.dimensions ?? {})
 
 function onAccountSelect(row: LineRow) {
   if (row.accountId) { row.revealed = true; row.accountError = false }
@@ -446,6 +484,7 @@ function handleSave(mode: 'close' | 'new') {
     description: r.description,
     tax: TAX_OPTIONS.find((tax) => tax.id === r.taxId)?.name ?? '—',
     amount: Number(r.amount) || 0,
+    ...(Object.keys(r.dimensions).length ? { dimensions: r.dimensions } : {}),
   }))
 
   // Withholding is persisted (the Bill model carries a single deduction) so it
@@ -532,6 +571,7 @@ function prefillFromBill(b: Bill, opts: { includePayment?: boolean } = {}) {
         id: rowSeq++, accountId, description: li.description,
         taxId: /ppn/i.test(li.tax) ? 'ppn10' : 'none', amount: String(li.amount),
         accountError: false, amountError: false, revealed: true,
+        dimensions: li.dimensions ?? {}, dimensionErrors: {},
       }
     })
     rows.value.push(makeRow()) // trailing "add new" row
@@ -649,16 +689,16 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
           is-enable-input-file
           :is-loading="processingFile"
           :is-invalid="!!dropzoneError"
-          :placeholder="t('Drag and drop or')"
-          :description="t('Upload a bill or receipt and Mekari Airene will fill in the fields below.')"
+          :placeholder="t('Drop your file here or')"
+          :description="t('Supported formats: PDF, PNG and JPG. Maximum file size 10 MB.')"
           :button-text="t('Replace your file here')"
           @change="onDropzoneFileChange"
           @clear="clearUploadedFile"
         >
           <template #loading>
             <div class="ex-dropzone-loading">
-              <div class="ex-dropzone-loader"><MpSpinner /></div>
-              <h2 class="ex-dropzone-loading-title">{{ t('Processing autofill...') }}</h2>
+              <ErpDropzoneIcon loading />
+              <h2 class="ex-dropzone-loading-title">{{ t('Processing') }}</h2>
             </div>
           </template>
         </MpDropzone>
@@ -759,6 +799,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
           <MpFormControl id="ex-tags">
             <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
             <MpInputTag id="ex-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="ex-dim-upsell" />
           </MpFormControl>
         </div>
 
@@ -776,12 +817,13 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
         </MpBanner>
         <div class="ex-table-section">
           <div class="ex-table-scroll">
-            <table class="ex-table ex-lineitems-table">
+            <table class="ex-table ex-lineitems-table" :class="{ 'ex-lineitems-table--with-dimensions': showDimensionsColumn }">
               <colgroup>
                 <col class="ex-col-drag" />
                 <col class="ex-col-account" />
                 <col class="ex-col-desc" />
                 <col class="ex-col-tax" />
+                <col v-if="showDimensionsColumn" class="ex-col-dimensions" />
                 <col class="ex-col-amount" />
                 <col class="ex-col-del" />
               </colgroup>
@@ -791,6 +833,13 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                   <th class="ex-th">{{ t('Account') }}</th>
                   <th class="ex-th">{{ t('Description') }}</th>
                   <th class="ex-th">{{ t('Tax') }}</th>
+                  <th v-if="showDimensionsColumn" class="ex-th ex-th--dimensions">
+                    <span class="ex-th-dim-label">
+                      {{ t('Dimensions') }}
+                      <ErpDimensionsInfoPopover id="ex-dim-info" />
+                    </span>
+                    <ErpBulkDimensionsPopover id="ex-dim-bulk" transaction-type="expenses" @apply="onBulkDimensions" />
+                  </th>
                   <th class="ex-th">{{ t('Amount') }}</th>
                   <th class="ex-th ex-th--del" />
                 </tr>
@@ -802,7 +851,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                   draggable="true"
                   @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)" @drop="onDrop($event, idx)" @dragend="onDragEnd"
                 >
-                  <td class="ex-td ex-td--drag ex-td--border"><MpIcon name="drag" size="sm" /></td>
+                  <td class="ex-td ex-td--drag ex-td--border"><div class="ex-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                   <td class="ex-td ex-td--input ex-td--border" :class="{ 'ex-td--error': row.accountError }">
                     <MpTooltip
                       v-if="row.accountError"
@@ -838,6 +887,13 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                         :placeholder="t('Select tax')"
                       />
                     </td>
+                    <td v-if="showDimensionsColumn" class="ex-td ex-td--border ex-td--dimensions">
+                      <ErpLineDimensionsCell
+                        :model-value="row.dimensions" transaction-type="expenses" :id="`ex-dim-${row.id}`"
+                        :errors="row.dimensionErrors"
+                        @update:model-value="(v) => onRowDimensionsUpdate(row, v)"
+                      />
+                    </td>
                     <td class="ex-td ex-td--input ex-td--border ex-td--amount" :class="{ 'ex-td--error': row.amountError }">
                       <MpTooltip
                         v-if="row.amountError"
@@ -864,9 +920,11 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                       </div>
                     </td>
                     <td class="ex-td ex-td--del">
-                      <MpButton class="ex-del-btn" @click="removeRow(row.id)">
-                        <MpIcon name="minus-circular" size="sm" />
-                      </MpButton>
+                      <div class="ex-cell-center">
+                        <MpButton class="ex-del-btn" @click="removeRow(row.id)">
+                          <MpIcon name="minus-circular" size="sm" />
+                        </MpButton>
+                      </div>
                     </td>
                   </template>
                 </tr>
@@ -1022,6 +1080,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                         <col />
                         <col />
                         <col />
+                        <col v-if="showDimensionsColumn" class="ex-col-dimensions" />
                         <col />
                       </colgroup>
                       <thead>
@@ -1029,6 +1088,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                           <th class="ex-th">{{ t('Payment account') }}</th>
                           <th class="ex-th">{{ t('Amount paid') }}</th>
                           <th class="ex-th">{{ t('Payment date') }}</th>
+                          <th v-if="showDimensionsColumn" class="ex-th">{{ t('Dimensions') }}</th>
                           <th class="ex-th">{{ t('Reference') }}</th>
                         </tr>
                       </thead>
@@ -1090,6 +1150,12 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
                               <MpDatePicker id="ex-pay-date-dp" v-model="paymentDate" format="DD/MM/YYYY" value-type="format" use-portal />
                             </div>
                           </td>
+                          <td v-if="showDimensionsColumn" class="ex-td ex-td--border ex-td--dimensions ex-td--dimensions-readonly">
+                            <ErpLineDimensionsCell
+                              :model-value="paymentDimensions" transaction-type="expenses" id="ex-pay-dim" is-disabled
+                              @update:model-value="() => {}"
+                            />
+                          </td>
                           <td class="ex-td ex-td--input">
                             <MpInput id="ex-pay-ref-input" v-model="paymentReference" is-full-width />
                           </td>
@@ -1133,7 +1199,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -1192,7 +1258,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   border: none !important; background: none !important; border-radius: var(--mp-radii-md, 6px) !important;
   cursor: pointer;
 }
-.ex-docked-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+.ex-docked-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 .ex-dock-fade-enter-active, .ex-dock-fade-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
 .ex-dock-fade-enter-from, .ex-dock-fade-leave-to { opacity: 0; transform: translateX(-4px); }
@@ -1202,7 +1268,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   flex-shrink: 0; width: var(--mp-spacing-3); cursor: col-resize; z-index: 10;
   display: flex; align-items: center; justify-content: center;
 }
-.ex-divider::after { content: ''; display: block; width: 2px; height: var(--mp-spacing-10, 40px); background: var(--mp-border-default); border-radius: var(--mp-radii-full); }
+.ex-divider::after { content: ''; display: block; width: 2px; height: var(--mp-spacing-10, 40px); background: var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full); }
 .ex-divider:hover::after { background: var(--mp-border-bold, #758195); }
 .ex-icon-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -1210,9 +1276,9 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.ex-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-default); }
+.ex-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-default); }
 .ex-icon-btn--active,
-.ex-icon-btn--active:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-link, #2563eb); }
+.ex-icon-btn--active:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-link, #2563eb); }
 .ex-file-controls { display: flex; align-items: center; gap: 8px; }
 
 /* Uploaded-state header: file-type icon + filename/size stack (mirrors OCR Figma header) */
@@ -1275,14 +1341,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   gap: var(--mp-spacing-3);
   transition: border-color 0.1s, background 0.1s;
 }
-/* Focus state (Figma merges hover + click/keyboard focus into one): pale hovered
-   fill + green selected border, matching the primary-action emerald. Our static
-   border above wins over Pixel's own state rules (scoped-attribute specificity),
-   so restate hover/focus here. */
+/* Focus/hover state (Figma merges hover + click/keyboard focus into one): pale hovered
+   fill + neutral slate border (rule/form-focus-border-bold — never the brand-green Pixel
+   ships). Our static border above wins over Pixel's own state rules (scoped-attribute
+   specificity), so restate hover/focus here. */
 .ex-dropzone :deep(.mp-dropzone__wrapper:hover),
 .ex-dropzone :deep(.mp-dropzone__wrapper:focus),
 .ex-dropzone :deep(.mp-dropzone__wrapper:focus-within) {
-  border-color: var(--mp-border-selected, #029861);
+  border-color: var(--mp-colors-border-bold, #8c9596);
   background: var(--mp-background-neutral-hovered, #f8f9f9);
   outline: none;
 }
@@ -1294,7 +1360,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 }
 /* Center the idle description (MpDropzone left-aligns it by default). */
 .ex-dropzone :deep(.mp-dropzone__wrapper p.mp-text--weight_regular) { text-align: center; }
+.ex-dropzone :deep(.mp-dropzone__wrapper) { align-items: center; justify-content: center; }
 .ex-dropzone-thumb-img { width: 125px; height: auto; }
+
+/* Standard dropzone idle copy (shared look with ErpDropzone). */
+.ex-dropzone-cta { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: center; }
+.ex-dropzone-choose { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.ex-dropzone-hints { display: flex; flex-direction: column; gap: 2px; }
+.ex-dropzone-hint { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
 
 /* Uploading state — loader wrapped in a neutral-subtle circle, 24px above the title. */
 .ex-dropzone-loading { display: flex; flex-direction: column; align-items: center; gap: 24px; }
@@ -1391,7 +1464,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   display: grid; grid-template-columns: repeat(auto-fill, var(--ex-field-width));
   justify-content: flex-start; gap: 16px 24px; padding: 20px 0;
 }
-.ex-section-divider { border-bottom: 1px dashed var(--mp-border-default); }
+.ex-section-divider { border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
 .ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .ex-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .ex-datepicker { width: 100%; }
@@ -1401,13 +1474,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 
 /* ── Line items table ─────────────────────────────────────────────────────── */
 .ex-lineitems-error-banner { margin-bottom: var(--mp-spacing-5, 20px); }
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-drag { width: 44px; }
 .ex-col-account { width: 240px; }
-.ex-col-desc { width: auto; }
+.ex-col-desc { width: 200px; }
 .ex-col-tax { width: 140px; }
+.ex-col-dimensions { width: 220px; }
 .ex-col-amount { width: 280px; }
 .ex-col-del { width: 44px; }
 
@@ -1415,31 +1489,44 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .ex-th--drag, .ex-th--del { padding: 0; }
+.ex-th--dimensions { display: table-cell; }
+.ex-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
 .ex-tr--dragging { opacity: 0.4; }
 .ex-tr--dragover > .ex-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
-.ex-td--drag { padding: 0; text-align: center; vertical-align: middle; color: var(--mp-text-placeholder); cursor: grab; }
+.ex-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .ex-tr--dragging .ex-td--drag { cursor: grabbing; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--input { padding: 0; position: relative; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']), .ex-td--input :deep([class*='datepicker']) { border-radius: 0; border-color: transparent; }
 .ex-td--input .ex-datepicker { width: 100%; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+/* A pseudo-element pinned to the top 40px (not a box-shadow on the whole <td>)
+   — the Dimensions column can make this row taller than the input itself, and
+   a td-wide ring left a tall empty box below the actual (correctly top-docked)
+   control instead of hugging it. */
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10, 40px);
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
+}
+.ex-td--del { padding: 0; text-align: center; }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+/* The Dimensions column can make a row taller than the standard row height —
+   every other cell (drag handle, del button) must pin to the TOP of that
+   taller row instead of centering into the extra space. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 
 /* Line-item validation — same red convention as CreateReceiptPage's cr-td--prod-error/cr-td--qty-error. */
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
@@ -1449,20 +1536,49 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .ex-error-tooltip-wrap :deep([class*='tooltip__trigger']) { display: block; width: 100%; }
 
 /* Line items table: left-aligned container, right-side-only column dividers
-   instead of row-separator borders. */
-.ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
+   instead of row-separator borders. min-width is the literal sum of every
+   .ex-col-* width below — table-layout:fixed + width:100% never overflows on
+   its own (it just squeezes the columns to fit 100% of the container, which
+   silently crushed Description to near-zero once Dimensions added 220px of
+   columns); min-width forces a real floor so a narrow container triggers
+   .ex-table-scroll's horizontal scrollbar instead of squeezing content. */
+.ex-lineitems-table { min-width: 948px; margin-right: auto; }
+.ex-lineitems-table--with-dimensions { min-width: 1168px; }
+.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-lineitems-table .ex-td--amount { padding: 0; }
+.ex-td--dimensions { padding: 0; height: auto; }
+/* Payment details' Dimensions cell mirrors the line item's ErpLineDimensionsCell
+   verbatim (padding:0, same as .ex-td--dimensions) — is-disabled on the
+   component itself is what makes it read-only; the muted background here is
+   just the visual "disabled" cue. */
+.ex-td--dimensions-readonly { padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* Not scoped to .ex-lineitems-table — the Payment table also renders
+   .ex-amount-cell inside .ex-td--amount and needs the same containing block. */
+.ex-td--amount { position: relative; }
 
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch so the "Rp" prefix's gray background fills
+   the WHOLE tall cell (not just its own text line — a stray bare-white gap
+   below it read as "cropped"), while the prefix's own internal
+   align-items:flex-start keeps the "Rp" glyph pinned to the top of that now-
+   tall box. The input is the one exception: align-self:flex-start + a fixed
+   height keep IT from also stretching, since a stretched MpInput centers its
+   typed value vertically instead of docking it top next to "Rp". */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }
-.ex-amount-input { flex: 1; min-width: 0; }
+/* The class on MpInput lands on its INNER .mp-input__control (the <input>
+   itself), not the OUTER .mp-input__root — which is the actual flex child of
+   .ex-amount-cell. Sizing only .ex-amount-input left .mp-input__root at its
+   inherited align-items:stretch, so it (and the value inside it, centered by
+   the root's own internal layout) stretched into the tall row anyway. The
+   flex/align-self/height that matter have to target the root via :deep(). */
+.ex-amount-cell :deep(.mp-input__root) { flex: 1; min-width: 0; align-self: flex-start; height: var(--mp-sizes-10, 40px); }
 
 .ex-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -1470,7 +1586,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.ex-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Memo/Attachment + Totals — inline when the panel is wide enough, stacked otherwise.
    Widths are spec'd at a 1440px screen (Memo 432px, Attachment matches the Beneficiary
@@ -1502,7 +1618,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .ex-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .ex-total-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .ex-total-label--strong, .ex-total-amt--strong { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ex-total-rule { border-top: 1px solid var(--mp-border-default); }
+.ex-total-rule { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 
 .ex-withholding-check { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
@@ -1511,7 +1627,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 .ex-withholding-toprow { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .ex-wh-account-row { display: flex; align-items: center; gap: 4px; }
 .ex-wh-account { min-width: 0; }
-.ex-wh-unit-addon :deep(.mp-input-addon__root) { padding: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md); }
+.ex-wh-unit-addon :deep(.mp-input-addon__root) { padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-md); }
 .ex-wh-unit-trigger {
   display: flex !important; align-items: center; gap: 4px;
   padding: var(--mp-spacing-1\.5, 6px) !important;
@@ -1524,7 +1640,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md) !important;
 }
-.ex-wh-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.ex-wh-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .ex-wh-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Memo / Attachment ────────────────────────────────────────────────────── */

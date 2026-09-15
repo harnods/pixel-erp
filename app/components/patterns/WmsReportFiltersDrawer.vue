@@ -88,7 +88,7 @@ function clearAll() {
 
 <template>
   <Transition name="wrf-filters">
-    <div v-if="isOpen" class="wrf-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="wrf-filters-overlay">
       <div class="wrf-filters-panel" role="dialog" :aria-label="t('All filters')">
         <header class="wrf-filters-header">
           <span class="wrf-filters-title">{{ t('All filters') }}</span>

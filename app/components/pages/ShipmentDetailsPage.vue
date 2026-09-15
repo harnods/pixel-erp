@@ -5,7 +5,9 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { MpIcon, toast } from '@mekari/pixel3'
-import { getShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
+import { getShipment, acknowledgeCanceledShipment, reassignShipment } from '~/data/deliveryTasks'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
@@ -15,6 +17,16 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const shipment = computed(() => getShipment(props.orderId))
+
+// Change assignee — manager-only escape hatch. A shipment doc is only ever open or
+// completed, so "Open or In Progress" means open here.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(shipment.value?.status))
+function applyReassign(assignee: string) {
+  if (!reassignShipment(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `Assignee changed to ${assignee}`, maxWidth: 'max-content' })
+}
 
 interface Row {
   id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string
@@ -210,6 +222,9 @@ function openComplete() {
     </div>
 
     <footer class="detail-footer">
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), open shipments only. -->
+      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">Change assignee</button>
       <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
       <button v-if="shipment.status === 'open'" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</button>
     </footer>
@@ -228,6 +243,14 @@ function openComplete() {
     <p>Shipment not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to Shipping document</button>
   </div>
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="shipment?.shipmentNo ?? ''"
+      :current-assignee="shipment?.assignee ?? ''"
+      :warehouse-id="shipment?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>

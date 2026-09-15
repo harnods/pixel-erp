@@ -19,14 +19,14 @@ import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
-  MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+  MpButton, MpIcon, MpTooltip, MpToggle, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpBanner, MpBannerIcon, MpBannerTitle, css,
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CreditMemoFiltersDrawer, { type CmDrawerValue } from '~/components/patterns/CreditMemoFiltersDrawer.vue'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
-import { infoToast } from '~/utils/toasts'
+import { infoToast, successToast } from '~/utils/toasts'
 import {
   creditMemoReport, historyRows, remainingOf, statusOf, cmCustomerNames,
   creditMemoViews, addCmView, updateCmView, deleteCmView, emptyCmReportFilters,
@@ -114,7 +114,7 @@ function commitAddView() {
   if (!name) return
   const v = addCmView({ name, filters: { keyword: filters.keyword, keywordColumn: filters.keywordColumn, customerComparator: filters.customerComparator, customers: [...filters.customers], txnTypes: [...filters.txnTypes], showZero: filters.showZero } })
   activeViewId.value = v.id
-  toast.notify({ variant: 'success', title: 'View saved' })
+  successToast('View saved')
 }
 function cancelAddView() { addingView.value = false }
 
@@ -130,7 +130,7 @@ function commitEditView() {
   const name = editViewName.value.trim()
   const id = editingViewId.value
   editingViewId.value = ''
-  if (name) { updateCmView(id, { name }); toast.notify({ variant: 'success', title: 'View renamed' }) }
+  if (name) { updateCmView(id, { name }); successToast('View renamed') }
 }
 function cancelEditView() { editingViewId.value = '' }
 
@@ -143,7 +143,7 @@ function confirmDeleteView() {
   deleteCmView(v.id)
   if (activeViewId.value === v.id) activeViewId.value = 'default'
   delViewTarget.value = null
-  toast.notify({ variant: 'success', title: 'View deleted' })
+  successToast('View deleted')
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ const exporting = ref(false)
 function exportExcel() {
   if (exporting.value) return
   exporting.value = true
-  toast.notify({ variant: 'information', title: 'Your file is being prepared. You’ll be notified when it’s ready to download.' })
+  infoToast('Your file is being prepared. You’ll be notified when it’s ready to download.')
   // Simulate the async job → in-app notification → download link.
   window.setTimeout(() => {
     exporting.value = false
@@ -237,7 +237,7 @@ function exportExcel() {
     }
     const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'credit-memo-report.csv'; a.click(); URL.revokeObjectURL(a.href)
-    toast.notify({ variant: 'success', title: 'File ready to download', description: 'Saved to Export history for 7 days.' })
+    successToast('File ready to download')
   }, 1600)
 }
 
@@ -265,17 +265,16 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <label class="cmr-date-label">As of date</label>
             <AdvancedDateRangePicker id="cmr-date" :model-value="pendingRange" is-full-width hide-label period-mode placeholder="Select date" @update:model-value="onPendingChange" />
           </div>
-          <button class="cmr-apply" type="button" @click="applyReport">Apply</button>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before cmr-allfilters" type="button" @click="drawerOpen = true">
-            <MpIcon name="filter" size="sm" /> All filters
-            <span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
-          </button>
+          <MpButton variant="primary" is-rounded @click="applyReport">Apply</MpButton>
+          <MpButton variant="secondary" is-rounded left-icon="filter" class="cmr-allfilters" @click="drawerOpen = true">
+            All filters<span v-if="activeFilterCount" class="cmr-allfilters-count">{{ activeFilterCount }}</span>
+          </MpButton>
         </div>
         <div class="cmr-controls-right">
           <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
             <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
           </MpTooltip>
-          <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="exportExcel">Export to Excel</button>
+          <MpButton variant="secondary" is-rounded @click="exportExcel">Export to Excel</MpButton>
         </div>
       </div>
 
@@ -358,7 +357,10 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <span class="cmr-report-range">{{ rangeCaption }}</span>
             <span class="cmr-report-updated">{{ lastUpdated }}</span>
           </div>
-          <p v-if="futureCapped" class="cmr-info-banner"><MpIcon name="info" size="sm" /> Showing data up to today.</p>
+          <MpBanner v-if="futureCapped" id="cmr-cap" variant="info" class="cmr-info-banner">
+            <MpBannerIcon id="cmr-cap-icon" />
+            <MpBannerTitle id="cmr-cap-title">Showing data up to today.</MpBannerTitle>
+          </MpBanner>
 
           <!-- Loading skeleton (3 solid rows, ErpTablePage convention) -->
           <div v-if="reportState === 'loading'" class="cmr-table-wrap">
@@ -509,7 +511,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 <style scoped>
 .cmr { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-.cmr-titlebar { flex-shrink: 0; min-height: 72px; background: var(--mp-background-neutral-subtle); display: flex; align-items: center; padding: 0 var(--mp-spacing-6); }
+.cmr-titlebar { flex-shrink: 0; min-height: 72px; background: var(--mp-background-neutral-subtle, #f8f9f9); display: flex; align-items: center; padding: 0 var(--mp-spacing-6); }
 .cmr-titlebar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; }
 .cmr-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-link); font-family: inherit; }
 .cmr-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -525,11 +527,9 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-btn-group { display: flex; align-items: center; }
 .cmr-datefield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: 220px; }
 .cmr-date-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
-.cmr-apply { height: 36px; padding: 0 var(--mp-spacing-4); border: none; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: pointer; }
-.cmr-apply:hover { background: var(--mp-background-brand-bold-hovered, #095c41); }
 .cmr-allfilters-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 999px; background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
 .cmr-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
-.cmr-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.cmr-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .cmr-icon-btn--airene { color: var(--mp-airene-default, #7c3aed); }
 
 /* Presets + toggle */
@@ -545,7 +545,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-reset { border: none; background: none; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); text-decoration: underline; text-underline-offset: 2px; }
 
 /* View tabs */
-.cmr-viewbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--mp-border-default); }
+.cmr-viewbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cmr-views { display: flex; align-items: center; gap: var(--mp-spacing-5); }
 .cmr-viewtab { position: relative; border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); padding: var(--mp-spacing-3) 0; }
 .cmr-viewtab:not(.is-active):hover { color: var(--mp-text-default); }
@@ -562,14 +562,14 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-view-kebab { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-sm, 4px); visibility: hidden; }
 .cmr-viewtab-wrap:hover .cmr-view-kebab,
 .cmr-viewtab-wrap:focus-within .cmr-view-kebab { visibility: visible; }
-.cmr-view-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+.cmr-view-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 /* Inline view-name field (Add view / rename) */
 .cmr-viewtab--editing { display: inline-flex; align-items: center; padding: var(--mp-spacing-2) 0; }
 .cmr-viewtab-input { width: 140px; height: 28px; padding: 0 8px; border: 1px solid var(--mp-border-brand, #0a6e4e); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; font-family: inherit; }
 .cmr-viewbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cmr-collapse-all { border: none; background: none; cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .cmr-fs-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, #536062); }
-.cmr-fs-btn:hover { background: var(--mp-background-neutral-subtle); }
+.cmr-fs-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Report */
 .cmr-report { display: flex; flex-direction: column; }
@@ -578,16 +578,17 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-report-head { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-2) 0; }
 .cmr-report-range { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .cmr-report-updated { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.cmr-info-banner { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 var(--mp-spacing-2); padding: 6px 12px; border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-information, #165082); font-size: var(--mp-font-sizes-sm); }
+/* look comes from MpBanner (variant info); only the placement is local */
+.cmr-info-banner { margin: 0 0 var(--mp-spacing-2); }
 
 .cmr-table-wrap { overflow-x: auto; }
 .cmr-table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
 .cmr-col-date { width: 14%; } .cmr-col-number { width: 28%; } .cmr-col-desc { width: 15%; }
 .cmr-col-status { width: 11%; } .cmr-col-movement { width: 15%; } .cmr-col-balance { width: 17%; }
 
-.cmr-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; letter-spacing: 0.3px; color: var(--mp-text-secondary); text-align: left; white-space: nowrap; }
+.cmr-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); border-top: 1px solid var(--mp-border-default, #e3e7e9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; letter-spacing: 0.3px; color: var(--mp-text-secondary); text-align: left; white-space: nowrap; }
 .cmr-th--right { text-align: right; }
-.cmr-td { height: 40px; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmr-td { height: 40px; padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmr-td--right { text-align: right; font-variant-numeric: tabular-nums; }
 .cmr-strong { font-weight: var(--mp-font-weights-semi-bold, 600); }
 .cmr-muted { color: var(--mp-text-secondary); }
@@ -612,7 +613,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-txn-link { color: var(--mp-text-link); cursor: pointer; vertical-align: middle; }
 .cmr-txn-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.cmr-row--end .cmr-td { border-top: 1px solid var(--mp-border-default); }
+.cmr-row--end .cmr-td { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Align "End balance" with the credit-memo accordion icon in the Date column
    (matches the memo row's lead indent: td padding + lead--l2 padding). */
 .cmr-end-label { padding-left: calc(var(--mp-spacing-3, 12px) + var(--mp-spacing-4, 16px)); }
@@ -630,11 +631,11 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 /* Empty state */
 .cmr-empty { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .cmr-empty--idle { padding: 72px 0 64px; }
-.cmr-skel { display: inline-block; background-color: var(--mp-border-default) !important; background-image: none !important; animation: none !important; }
+.cmr-skel { display: inline-block; background-color: var(--mp-border-default, #e3e7e9) !important; background-image: none !important; animation: none !important; }
 .cmr-empty-img { width: 240px; height: 200px; object-fit: contain; }
 .cmr-empty-title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cmr-empty-desc { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.cmr-empty-cta { margin-top: var(--mp-spacing-3); height: 36px; padding: 0 var(--mp-spacing-4); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.cmr-empty-cta { margin-top: var(--mp-spacing-3); height: 36px; padding: 0 var(--mp-spacing-4); border: 1px solid var(--mp-border-bold, #8c9596); background: var(--mp-background-neutral, #ffffff); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 
 /* Save-view / all-views drawers */
 .cmr-vd-enter-active, .cmr-vd-leave-active { transition: background-color 200ms ease; }
@@ -643,22 +644,22 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 .cmr-vd-enter-from .cmr-vd-panel, .cmr-vd-leave-to .cmr-vd-panel { transform: translateX(calc(100% + 12px)); }
 .cmr-vd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .cmr-vd-panel { margin: var(--mp-spacing-3); width: min(400px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.cmr-vd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
+.cmr-vd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cmr-vd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cmr-vd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.cmr-vd-close:hover { background: var(--mp-background-neutral-hovered); }
+.cmr-vd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .cmr-vd-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cmr-vd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cmr-vd-input { height: 36px; padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cmr-vd-input { height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
 .cmr-vd-input:focus { border-color: var(--mp-border-brand, #0a6e4e); }
 .cmr-vd-hint { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cmr-vd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.cmr-vd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .cmr-vd-btn { height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); cursor: pointer; border: 1px solid transparent; }
 .cmr-vd-btn--ghost { background: transparent; color: var(--mp-text-default); }
-.cmr-vd-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
+.cmr-vd-btn--ghost:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .cmr-vd-btn--primary { background: var(--mp-background-brand-bold, #0a6e4e); color: #fff; }
 .cmr-view-item { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); flex: 1; }
-.cmr-view-item:hover { background: var(--mp-background-neutral-subtle); }
+.cmr-view-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cmr-view-item.is-active { background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); font-weight: var(--mp-font-weights-medium, 500); }
 .cmr-view-item-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cmr-view-del { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-subtle, #97a0af); }

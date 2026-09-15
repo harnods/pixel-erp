@@ -36,9 +36,15 @@ const props = withDefaults(defineProps<{
    *  month / Per year / Custom instead of the day-based presets. Used by the
    *  Credit Memo report and other period reports. */
   periodMode?: boolean
+  /** Names the label prefix after the granularity in play — "Month: December
+   *  2026", "Year: 2026" — instead of the fixed "Date range:". Opt-in, so every
+   *  existing caller keeps its current label. Used by the Multidimensional
+   *  report (Figma 4836-56598). */
+  labelPrefixMode?: boolean
 }>(), {
   direction: 'past',
   periodMode: false,
+  labelPrefixMode: false,
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
@@ -130,6 +136,19 @@ const labelText = computed(() => {
     case 'thisQuarter': return 'This quarter'
     case 'thisYear': return 'This year'
     default: return fieldText.value
+  }
+})
+
+// With `labelPrefixMode`, the prefix names the granularity the label describes
+// ("Month: December 2026") — anything else stays the generic "Date range:".
+const labelPrefix = computed(() => {
+  if (!props.labelPrefixMode) return 'Date range:'
+  switch (mode.value) {
+    case 'month': return 'Month:'
+    case 'year': return 'Year:'
+    case 'day': return 'Date:'
+    case 'week': return 'Week:'
+    default: return 'Date range:'
   }
 })
 
@@ -239,7 +258,7 @@ function onYearClick(y: number) {
 <template>
   <div class="adr-wrap" :class="{ 'adr-wrap--full': isFullWidth }">
     <label v-if="hasValue && !hideLabel" class="adr-label">
-      <span class="adr-label-prefix">Date range:</span>
+      <span class="adr-label-prefix">{{ labelPrefix }}</span>
       <span class="adr-label-value">{{ labelText }}</span>
     </label>
 
@@ -378,16 +397,16 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral, #ffffff) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
-.adr-field:hover { background: var(--mp-background-neutral-hovered); }
+.adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 /* ── Popover: sidebar + calendar ── */
 .adr-popover { display: flex; }
 
-.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
+.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default, #e3e7e9); display: flex; flex-direction: column; }
 .adr-sidebar-title {
   padding: var(--mp-spacing-1) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -405,7 +424,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
+.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
   display: flex;
@@ -421,7 +440,7 @@ function onYearClick(y: number) {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-text-default);
 }
-.adr-sidebar-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-2) 0; }
+.adr-sidebar-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) 0; }
 
 .adr-calendar { width: 280px; padding: var(--mp-spacing-3); }
 
@@ -440,7 +459,7 @@ function onYearClick(y: number) {
   border: none !important; background: transparent !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered) !important; }
+.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 .adr-cal-weekdays {
   display: grid;
@@ -461,7 +480,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-cal-day:hover { background: var(--mp-background-neutral-hovered); }
+.adr-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-cal-day--outside { color: var(--mp-text-placeholder); }
 .adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
 .adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
@@ -480,12 +499,12 @@ function onYearClick(y: number) {
 .adr-grid-cell {
   padding: var(--mp-spacing-2);
   border: none;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered); }
+.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-grid-cell--current { background: var(--mp-background-warning, #fcefc2); font-weight: var(--mp-font-weights-semi-bold); }
 </style>

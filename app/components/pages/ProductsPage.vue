@@ -260,8 +260,11 @@ const exportColumnGroups: { key: string; label: string }[][] = [
     { key: 'defaultPurchaseTax', label: 'Default purchase tax' },
     { key: 'lastPurchaseCost', label: 'Last purchase cost' },
     { key: 'averageCost', label: 'Average cost' },
+    // DJP code is the only tax column in the export/import template. DJP unit is
+    // deliberately absent: it's always derived from the product's base unit, so
+    // exporting it would invite users to maintain the same thing twice and to
+    // re-import a unit that contradicts the base unit already on record.
     { key: 'djpCode', label: 'DJP code' },
-    { key: 'djpUnit', label: 'DJP unit' },
   ],
 ]
 const exportColumnKeys = exportColumnGroups.flat().map(c => c.key)
@@ -559,12 +562,10 @@ function closeExportModal() { exportModalOpen.value = false }
   />
 
   <!-- ── Export modal (Figma node 8557-162044) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="prod-export-modal"
     :is-open="exportModalOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeExportModal"
   >

@@ -12,7 +12,7 @@
  * the Upload action.
  */
 import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
-import { MpButton, MpIcon, MpInput, MpSpinner, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpIcon, MpInput, MpSpinner, MpBadge, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import {
   coworkKb, childrenOf, breadcrumbOf, getFolder, getNode, addFolder, renameNode, moveNode, deleteNode,
@@ -558,84 +558,80 @@ const deleteMessage = computed(() => {
   </Teleport>
 
   <!-- New folder / rename -->
-  <Teleport to="body">
-    <Transition name="cm">
-      <div v-if="nameModal.open" class="cm-overlay" @click.self="nameModal.open = false">
-        <div class="cm-panel" role="dialog" aria-modal="true">
-          <p class="cm-title">{{ nameModal.mode === 'new' ? (nameModal.parentId ? 'New sub-folder' : 'New folder') : 'Rename' }}</p>
-          <div class="cm-field">
-            <MpInput id="kbp-name" v-model="nameModal.value" placeholder="Folder name" autofocus @keydown.enter="submitName" />
-          </div>
-          <div class="cm-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="nameModal.open = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submitName">{{ nameModal.mode === 'new' ? 'Create' : 'Save changes' }}</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-name-modal" :is-open="nameModal.open" size="md" :is-keep-alive="false" @close="nameModal.open = false">
+    <MpModalContent>
+      <MpModalHeader>{{ nameModal.mode === 'new' ? (nameModal.parentId ? 'New sub-folder' : 'New folder') : 'Rename' }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <MpInput id="kbp-name" v-model="nameModal.value" placeholder="Folder name" autofocus @keydown.enter="submitName" />
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="nameModal.open = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="submitName">{{ nameModal.mode === 'new' ? 'Create' : 'Save changes' }}</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- Move -->
-  <Teleport to="body">
-    <Transition name="cm">
-      <div v-if="moveModal.open" class="cm-overlay" @click.self="moveModal.open = false">
-        <div class="cm-panel" role="dialog" aria-modal="true">
-          <p class="cm-title">Move to</p>
-          <div class="cm-field">
-            <select v-model="moveModal.target" class="kbp-select">
-              <option v-for="o in moveTargets" :key="o.id" :value="o.id">{{ o.label }}</option>
-            </select>
-          </div>
-          <div class="cm-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="moveModal.open = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submitMove">Move</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-move-modal" :is-open="moveModal.open" size="md" :is-keep-alive="false" @close="moveModal.open = false">
+    <MpModalContent>
+      <MpModalHeader>Move to<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <select v-model="moveModal.target" class="kbp-select">
+          <option v-for="o in moveTargets" :key="o.id" :value="o.id">{{ o.label }}</option>
+        </select>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="moveModal.open = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="submitMove">Move</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- Choose folder to upload into (shown when uploading from the root) -->
-  <Teleport to="body">
-    <Transition name="cm">
-      <div v-if="uploadPicker" class="cm-overlay" @click.self="uploadPicker = false">
-        <div class="cm-panel" role="dialog" aria-modal="true">
-          <p class="cm-title">Upload to which folder?</p>
-          <div class="cm-field">
-            <select v-model="uploadPickTarget" class="kbp-select">
-              <option value="" disabled>Choose a folder…</option>
-              <option v-for="o in folderOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
-            </select>
-          </div>
-          <div class="cm-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="uploadPicker = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmUploadPick">Continue</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-upload-picker" :is-open="uploadPicker" size="md" :is-keep-alive="false" @close="uploadPicker = false">
+    <MpModalContent>
+      <MpModalHeader>Upload to which folder?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <select v-model="uploadPickTarget" class="kbp-select">
+          <option value="" disabled>Choose a folder…</option>
+          <option v-for="o in folderOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+        </select>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="uploadPicker = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmUploadPick">Continue</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- Bulk move -->
-  <Teleport to="body">
-    <Transition name="cm">
-      <div v-if="bulkMoveOpen" class="cm-overlay" @click.self="bulkMoveOpen = false">
-        <div class="cm-panel" role="dialog" aria-modal="true">
-          <p class="cm-title">Move {{ bulkRows.length }} item{{ bulkRows.length > 1 ? 's' : '' }} to</p>
-          <div class="cm-field">
-            <select v-model="bulkMoveTarget" class="kbp-select">
-              <option value="">Top level (Collections)</option>
-              <option v-for="o in folderOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
-            </select>
-          </div>
-          <div class="cm-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="bulkMoveOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submitBulkMove">Move</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="kbp-bulk-move" :is-open="bulkMoveOpen" size="md" :is-keep-alive="false" @close="bulkMoveOpen = false">
+    <MpModalContent>
+      <MpModalHeader>Move {{ bulkRows.length }} item{{ bulkRows.length > 1 ? 's' : '' }} to<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <select v-model="bulkMoveTarget" class="kbp-select">
+          <option value="">Top level (Collections)</option>
+          <option v-for="o in folderOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+        </select>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="bulkMoveOpen = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="submitBulkMove">Move</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- Bulk delete -->
   <ConfirmModal v-model:is-open="bulkDeleteOpen" title="Delete selected" :description="bulkDeleteMessage" confirm-label="Delete" @confirm="confirmBulkDelete" />
@@ -684,7 +680,6 @@ const deleteMessage = computed(() => {
 .kbp-filter-left { flex: 1; }
 .kbp-filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
-.filter-search:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
 .filter-search svg { flex: 0 0 auto; }
 .filter-search-input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-family: inherit; font-size: 14px; color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-subtle); }
@@ -753,15 +748,5 @@ const deleteMessage = computed(() => {
 .kbp-uploads__x { background: var(--mp-background-critical-bold, #d1293d); color: #fff; }
 .kbp-uploads__x :deep(svg) { color: #fff; }
 
-/* Modals (Teleport overlay — MpModal has no structural CSS in this build) */
-.cm-enter-active, .cm-leave-active { transition: opacity 200ms ease; }
-.cm-enter-from, .cm-leave-to { opacity: 0; }
-.cm-enter-active .cm-panel, .cm-leave-active .cm-panel { transition: transform 200ms ease, opacity 200ms ease; }
-.cm-enter-from .cm-panel, .cm-leave-to .cm-panel { transform: scale(0.96); opacity: 0; }
-.cm-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(8, 13, 14, 0.45); display: flex; align-items: flex-start; justify-content: center; }
-.cm-panel { width: min(420px, calc(100% - 32px)); margin-top: 80px; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); padding: var(--mp-spacing-5) var(--mp-spacing-5) var(--mp-spacing-4); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); }
-.cm-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cm-field { margin: var(--mp-spacing-3) 0 var(--mp-spacing-5); }
-.cm-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 .kbp-select { width: 100%; height: 40px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--mp-border-default, #dcdfe4); border-radius: 8px; background: var(--mp-background-default, #fff); font-family: inherit; font-size: 14px; color: var(--mp-text-default); }
 </style>

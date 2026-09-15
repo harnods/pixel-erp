@@ -240,7 +240,7 @@ function close() { emit('update:open', false) }
 
 <template>
   <Transition name="vsd">
-  <div v-if="open" class="vsd-overlay" @click.self="close">
+  <div v-if="open" class="vsd-overlay">
     <div class="vsd-panel" role="dialog" :aria-label="t('View serial numbers')">
 
       <header class="vsd-header">
@@ -476,7 +476,7 @@ function close() { emit('update:open', false) }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral, #fff); outline: none;
 }
-.vsd-filter-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.vsd-filter-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .vsd-filter-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

@@ -13,12 +13,10 @@ const emit = defineEmits<{ leave: []; draft: []; cancel: [] }>()
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="unsaved-changes-dialog"
     :is-open="isOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     @close="emit('cancel')"
   >
     <MpModalContent>

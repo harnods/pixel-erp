@@ -246,15 +246,18 @@ function onDayClick(cell: Cell) {
 
 <style scoped>
 /* Trigger — matches the plain select-style trigger used across index filter bars */
+/* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
+   38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
+   aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
 .adf-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  min-width: 160px; height: var(--mp-sizes-9, 36px);
+  min-width: 160px; height: var(--mp-sizes-9\.5, 38px);
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); color: var(--mp-text-default);
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md);
+  background: var(--mp-colors-background-neutral, #fff); color: var(--mp-colors-text-default, #080d0e);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
 }
-.adf-trigger:hover { border-color: var(--mp-border-bold); }
+.adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .adf-trigger svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
 .adf-trigger--placeholder { color: var(--mp-text-placeholder); }
 .adf-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -280,15 +283,15 @@ function onDayClick(cell: Cell) {
   border: none; background: none; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
-.adf-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
+.adf-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adf-sidebar-item--active { background: var(--mp-background-brand-selected, #e4e7fb); }
 .adf-sidebar-item--active:hover { background: var(--mp-background-brand-selected, #e4e7fb); }
-.adf-divider { height: 1px; margin: var(--mp-spacing-2) var(--mp-spacing-1); background: var(--mp-border-default); }
+.adf-divider { height: 1px; margin: var(--mp-spacing-2) var(--mp-spacing-1); background: var(--mp-border-default, #e3e7e9); }
 
 /* Right: calendar */
 .adf-calendar {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-4); border-left: 1px solid var(--mp-border-default);
+  padding: var(--mp-spacing-4); border-left: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .adf-cal-header { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
 .adf-nav-btn {
@@ -296,7 +299,7 @@ function onDayClick(cell: Cell) {
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
 }
-.adf-nav-btn:hover { background: var(--mp-background-neutral-hovered); }
+.adf-nav-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adf-cal-title {
   flex: 1; text-align: center; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -311,7 +314,7 @@ function onDayClick(cell: Cell) {
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.adf-day:hover { background: var(--mp-background-neutral-hovered); }
+.adf-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adf-day--muted { color: var(--mp-text-disabled, rgba(29,31,36,0.32)); }
 .adf-day--today { background: var(--mp-background-warning-bold, #f5cd47); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 .adf-day--selected { background: var(--mp-background-brand-bold, #029861); color: var(--mp-text-inverse, #fff); }

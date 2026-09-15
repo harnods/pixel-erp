@@ -10,7 +10,7 @@
  */
 import { h, ref, computed, onMounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpIcon, toast } from '@mekari/pixel3'
+import { MpIcon, MpButton, toast } from '@mekari/pixel3'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import HomeWidgetV2 from '~/components/pages/HomeWidgetV2.vue'
 import WhatsNewModal from '~/components/WhatsNewModal.vue'
@@ -201,8 +201,8 @@ onMounted(() => {
             </div>
             <p class="anomaly__body">{{ a.body }}</p>
             <div class="anomaly__actions">
-              <button class="btn btn--ghost" type="button" @click="soon('Ignore')">Ignore</button>
-              <button class="btn btn--secondary" type="button" @click="soon('Review')">Review</button>
+              <MpButton variant="ghost" is-rounded @click="soon('Ignore')">Ignore</MpButton>
+              <MpButton variant="secondary" is-rounded @click="soon('Review')">Review</MpButton>
             </div>
           </div>
           <div v-if="anomalies.length > 1 && !anomalyExpanded" class="anomaly-peek" aria-hidden="true" />
@@ -337,11 +337,6 @@ onMounted(() => {
 .anomaly__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .anomaly__body { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
 .anomaly__actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; white-space: nowrap; border: 1px solid transparent; transition: background 100ms; }
-.btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default, #080d0e); }
-.btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-.btn--ghost { background: transparent; color: var(--mp-text-default, #080d0e); }
-.btn--ghost:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Get started strip */
 /* Constrained to the same 880px content width as everything below, so the four

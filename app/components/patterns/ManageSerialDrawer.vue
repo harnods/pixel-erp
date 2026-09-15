@@ -665,7 +665,7 @@ async function handleSave() {
 
 <template>
   <Transition name="msn">
-  <div v-if="open" class="msn-overlay" @click.self="handleCancel">
+  <div v-if="open" class="msn-overlay">
     <div class="msn-panel" role="dialog" aria-label="Manage serial number">
 
       <header class="msn-header">

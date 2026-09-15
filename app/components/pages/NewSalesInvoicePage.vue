@@ -17,9 +17,9 @@
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
+  MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
-  MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
+  MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTextlink, toast, css,
@@ -40,9 +40,17 @@ import {
   buildTaxSnapshot, detectTaxChanges, resolveTaxAction,
   type DetectedTaxChange, type SalesInvoiceTaxSnapshot, type TaxAction,
 } from '~/data/taxDocumentChanges'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
+import { applicableDimensions } from '~/data/dimensions'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 
 const router = useRouter()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('sales').length > 0)
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 // `orderId` is the shared detail-route prop name — [...slug].vue binds it for
@@ -132,9 +140,27 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
+  /** dimensionId -> whether that mandatory dimension is missing (set by validate()). */
+  dimensionErrors: Record<string, boolean>
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every line's dimensions (a dimension left blank in the
+// popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  items.value.forEach((item) => {
+    item.dimensions = { ...item.dimensions, ...patch }
+    for (const dimId of Object.keys(patch)) { if (patch[dimId]) item.dimensionErrors[dimId] = false }
+  })
+}
+function onItemDimensionsUpdate(item: LineItem, v: Record<string, string>) {
+  item.dimensions = v
+  for (const dimId of Object.keys(v)) { if (v[dimId]) item.dimensionErrors[dimId] = false }
+}
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
@@ -160,6 +186,7 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 }
 
 const newRowSearch = ref('')
+function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
 function selectNewProduct(p: typeof products[number]) {
   items.value.push({
     _key: ++_seq,
@@ -173,6 +200,8 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    dimensions: {},
+    dimensionErrors: {},
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -208,7 +237,8 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
-const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError || Object.values(it.dimensionErrors).some(Boolean)))
+const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
 
 // ── Totals ────────────────────────────────────────────────────────────────────
 const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
@@ -339,11 +369,17 @@ prefillFromInvoice()
 function validate(): boolean {
   let ok = true
   if (!customerId.value) { customerError.value = true; ok = false }
+  noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    if (showDimensionsColumn.value) {
+      applicableDimensions('sales').forEach((dim) => {
+        if (dim.mandatory && !it.dimensions[dim.id]) { it.dimensionErrors[dim.id] = true; ok = false }
+      })
+    }
   })
 
   if (lessWithholding.value) {
@@ -526,14 +562,10 @@ function saveEdit() {
 }
 
 function onSave() {
-  if (!validate()) {
-    toast.notify({
-      variant: 'error',
-      title: items.value.length ? t('Check the highlighted fields') : t('Add at least one product'),
-      rootProps: { class: 'toast-enterprise' },
-    })
-    return
-  }
+  // Validation errors surface INLINE (per-field + the banner below), never as a toast.
+  if (!validate()) return
+  // An edit has to answer to the faktur already issued, so it goes through the
+  // tax impact review rather than straight to a save.
   if (isEdit.value) { saveEdit(); return }
 
   const customer = customers.find(c => c.id === customerId.value)!
@@ -633,19 +665,17 @@ function onSave() {
         <div class="si-header2-col">
           <MpFormControl id="f-tx-date" class="si-field">
             <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-due-date" class="si-field">
             <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
-            <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-payment" class="si-field">
             <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-            <MpSelect id="f-payment-inp" v-model="paymentTerms" :placeholder="t('Select payment terms')" is-full-width>
-              <option v-for="opt in PAYMENT_TERMS" :key="opt" :value="opt">{{ opt }}</option>
-            </MpSelect>
+            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
 
@@ -653,7 +683,7 @@ function onSave() {
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
             <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
-            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
           <MpFormControl id="f-ship-via" class="si-field">
@@ -688,9 +718,7 @@ function onSave() {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpSelect id="f-warehouse-inp" v-model="warehouse" :placeholder="t('Select warehouse')" is-full-width>
-              <option v-for="opt in WAREHOUSES" :key="opt" :value="opt">{{ opt }}</option>
-            </MpSelect>
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
 
@@ -699,6 +727,7 @@ function onSave() {
           <MpFormControl id="f-tags" class="si-field">
             <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
         </div>
       </section>
@@ -709,10 +738,10 @@ function onSave() {
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
 
-        <MpBanner v-if="hasLineItemErrors" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
+        <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -726,6 +755,7 @@ function onSave() {
               <col class="si-col-price" />
               <col class="si-col-discount" />
               <col class="si-col-tax" />
+              <col v-if="showDimensionsColumn" class="si-col-dimensions" />
               <col class="si-col-amount" />
               <col class="si-col-del" />
             </colgroup>
@@ -739,6 +769,13 @@ function onSave() {
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
                 <th class="si-th">{{ t('Tax') }}</th>
+                <th v-if="showDimensionsColumn" class="si-th si-th--dimensions">
+                  <span class="si-th-dim-label">
+                    {{ t('Dimensions') }}
+                    <ErpDimensionsInfoPopover id="si-dim-info" />
+                  </span>
+                  <ErpBulkDimensionsPopover id="si-dim-bulk" transaction-type="sales" @apply="onBulkDimensions" />
+                </th>
                 <th class="si-th">{{ t('Amount') }}</th>
                 <th class="si-th si-th--del" />
               </tr>
@@ -751,7 +788,7 @@ function onSave() {
                 @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)"
                 @drop="onDrop($event, idx)" @dragend="onDragEnd"
               >
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
 
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.productError }">
                   <MpTooltip
@@ -776,9 +813,11 @@ function onSave() {
                     <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in productMatches(item.product)" :key="p.id" @click="selectProduct(item, p)">
-                          {{ p.name }}
+                          <ProductCell :name="p.name" :desc="p.code" />
                         </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(item.product).length" is-disabled>{{ t('No results') }}</MpPopoverListItem>
+                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(item.product)">
+                          {{ item.product ? `${t('Add')} "${item.product}" ${t('as a new product')}` : t('Add new product') }}
+                        </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -803,9 +842,7 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpSelect v-model="item.unit" is-full-width>
-                    <option v-for="opt in unitOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
+                  <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
                 </td>
 
                 <!-- Prefix box is a plain span, not MpInputLeftAddon — see
@@ -827,14 +864,20 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpSelect v-model="item.taxLabel" is-full-width>
-                    <option v-for="opt in taxOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
+                  <MpAutocomplete v-model="item.taxLabel" :data="taxOptions" use-portal is-full-width />
+                </td>
+
+                <td v-if="showDimensionsColumn" class="si-td si-td--border si-td--dimensions">
+                  <ErpLineDimensionsCell
+                    :model-value="item.dimensions" transaction-type="sales" :id="`si-dim-${item._key}`"
+                    :errors="item.dimensionErrors"
+                    @update:model-value="(v) => onItemDimensionsUpdate(item, v)"
+                  />
                 </td>
 
                 <!-- Amount is derived (qty × price − discount), so it reads as a
                      value with the same prefix chrome rather than an input. -->
-                <td class="si-td si-td--border si-td--affix">
+                <td class="si-td si-td--border si-td--affix si-td--calc">
                   <div class="si-affix-cell">
                     <span class="si-affix">Rp</span>
                     <span class="si-affix-value">{{ fmtPlain(lineAmount(item)) }}</span>
@@ -842,15 +885,17 @@ function onSave() {
                 </td>
 
                 <td class="si-td si-td--del">
-                  <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </MpButton>
+                  <div class="si-cell-center">
+                    <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </div>
                 </td>
               </tr>
 
               <!-- Trailing "Select product" row — picking here appends a new line -->
               <tr class="si-tr">
-                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                <td class="si-td si-td--drag si-td--border"><div class="si-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
@@ -867,9 +912,11 @@ function onSave() {
                     <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in productMatches(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
-                          {{ p.name }}
+                          <ProductCell :name="p.name" :desc="p.code" />
                         </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(newRowSearch).length" is-disabled>{{ t('No results') }}</MpPopoverListItem>
+                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(newRowSearch)">
+                          {{ newRowSearch ? `${t('Add')} "${newRowSearch}" ${t('as a new product')}` : t('Add new product') }}
+                        </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -888,14 +935,14 @@ function onSave() {
         <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
         <div class="si-notes-col">
           <MpFormControl id="f-message" class="si-note-field">
-            <MpFormLabel>{{ t('Message') }}</MpFormLabel>
-            <MpTextarea id="f-message-inp" v-model="message" is-full-width />
+            <div class="si-lbl-row"><MpFormLabel>{{ t('Message') }}</MpFormLabel><span class="si-counter">{{ message.length }}/250</span></div>
+            <MpTextarea id="f-message-inp" v-model="message" :maxlength="250" is-full-width />
             <span class="si-field-caption">{{ t('Visible to customer') }}</span>
           </MpFormControl>
 
           <MpFormControl id="f-memo" class="si-note-field">
-            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-            <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
+            <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
+            <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
             <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
           </MpFormControl>
 
@@ -988,9 +1035,9 @@ function onSave() {
             <div v-for="wh in withholdingRows" :key="wh.id" class="si-wh-row">
               <div class="si-wh-toprow">
                 <MpFormControl :id="`f-wh-name-${wh.id}`" is-required :is-invalid="wh.nameError">
-                  <MpFormLabel>{{ t('Name') }}</MpFormLabel>
+                  <div class="si-lbl-row"><MpFormLabel>{{ t('Name') }}</MpFormLabel><span class="si-counter">{{ wh.name.length }}/60</span></div>
                   <MpInput
-                    :id="`f-wh-name-inp-${wh.id}`" v-model="wh.name" is-full-width
+                    :id="`f-wh-name-inp-${wh.id}`" v-model="wh.name" :maxlength="60" is-full-width
                     :is-invalid="wh.nameError" @update:model-value="wh.nameError = false"
                   />
                   <MpFormErrorMessage>{{ t('You must fill in name') }}</MpFormErrorMessage>
@@ -1035,15 +1082,12 @@ function onSave() {
               </MpFormControl>
 
               <div v-if="withholdingRows.length > 1" class="si-wh-remove">
-                <MpButton variant="textLink" size="sm" @click="removeWithholdingRow(wh.id)">{{ t('Remove') }}</MpButton>
+                <MpButton variant="textLink" @click="removeWithholdingRow(wh.id)">{{ t('Remove') }}</MpButton>
               </div>
             </div>
 
             <div class="si-wh-add">
-              <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="addWithholdingRow">
-                <MpIcon name="add" size="sm" />
-                {{ t('Add withholding') }}
-              </button>
+              <MpButton variant="secondary" left-icon="add" is-rounded @click="addWithholdingRow">{{ t('Add withholding') }}</MpButton>
             </div>
           </div>
 
@@ -1085,51 +1129,36 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Footer ── -->
-      <footer class="si-form-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">{{ t('Cancel') }}</button>
+      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <MpButtonGroup class="erp-action-footer si-form-footer">
+        <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
 
         <!-- Edit mode is a single decisive action: "Save changes" runs the tax
-             impact review, so the create form's draft/share variants (which
-             would each need their own review branch) stay out of the way. -->
-        <button v-if="isEdit" class="btn-enterprise btn-enterprise--primary" @click="onSave">
-          {{ t('Save changes') }}
-        </button>
-
-        <template v-else>
-        <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">{{ t('Save & close') }}</button>
-
-        <MpPopover id="si-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Save & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+             impact review, so the create form's draft/share variants (which would
+             each need their own review branch) stay out of the way. -->
+        <template v-if="!isEdit">
 
         <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" :aria-label="t('More actions')">
-              <MpIcon name="menu-kebab" size="sm" />
-            </button>
+            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
+              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
         </template>
-      </footer>
+
+        <MpButton variant="primary" is-rounded @click="onSave">
+          {{ isEdit ? t('Save changes') : t('Save') }}
+        </MpButton>
+      </MpButtonGroup>
 
     </div><!-- /si-form-stage -->
 
@@ -1171,7 +1200,7 @@ function onSave() {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   align-items: center;
@@ -1208,7 +1237,7 @@ function onSave() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -1219,7 +1248,7 @@ function onSave() {
 
 .si-dashed-divider {
   padding-bottom: var(--mp-spacing-5);
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
 
 /* ── Header section 1 ── */
@@ -1282,6 +1311,7 @@ function onSave() {
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
 .si-col-tax      { width: 128px; }
+.si-col-dimensions { width: 220px; }
 .si-col-amount   { width: 164px; }
 .si-col-del      { width: 52px; }
 
@@ -1292,35 +1322,43 @@ function onSave() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .si-th--drag, .si-th--del { padding: 0; }
+.si-th--dimensions { display: table-cell; }
+.si-th--dimensions > .si-th-dim-label { display: inline-flex; align-items: center; }
+.si-th-dim-label { gap: var(--mp-spacing-1); }
 
 /* Rows carry BOTH a bottom border (row separator) and right borders (column
    dividers) — the Figma's Row has border-b and each cell border-r. */
 .si-td {
-  height: var(--mp-sizes-13, 52px);
+  height: var(--mp-sizes-10, 40px);
   padding: 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  vertical-align: top;
 }
-.si-td--border { border-right: 1px solid var(--mp-border-default); }
+.si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
+.si-td--dimensions { padding: 0; }
+/* The Dimensions column can make a row taller than the standard 40px — every
+   other cell (drag handle, inputs, affix boxes) must pin to the TOP of that
+   taller row instead of stretching or centering into the extra space. */
+.si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
 .si-td--input :deep(.mp-input__root),
-.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-13, 52px); background: transparent; }
+.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
 .si-td--input :deep(.mp-input__control),
 .si-td--input :deep(.mp-select__control) {
-  height: var(--mp-sizes-13, 52px);
+  height: var(--mp-sizes-10, 40px);
   /* MpInput's control carries a hard min-width (88px). In the narrow Qty and
      Discount columns that overflows the cell and paints over the td's right
      border — and pushes the Discount "%" suffix out of view. */
@@ -1330,6 +1368,7 @@ function onSave() {
 }
 .si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
+.si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 
 /* Line-item validation — cell tint + inset red underline + tooltip, the same
    convention as NewExpensePage's .ex-td--error. */
@@ -1340,12 +1379,21 @@ function onSave() {
 
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
-.si-td--affix { padding: 0; }
-.si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-13, 52px); }
+/* position:relative so .si-affix-cell (position:absolute;inset:0 below) sizes
+   against THIS cell — a <td> is one of the few elements a percentage/inset
+   height reliably resolves against, unlike a plain block ancestor. */
+.si-td--affix { padding: 0; position: relative; }
+/* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
+.si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
+/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
+   row height. align-items:stretch then lets .si-affix (auto cross-size) grow
+   to match, while the input/value keep their own fixed height and simply
+   dock to the top (a flex item with a definite cross size doesn't stretch). */
+.si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
@@ -1354,7 +1402,7 @@ function onSave() {
    the Discount "%"). Target the rendered root, not just the class on MpInput. */
 .si-affix-input { flex: 1 1 0; min-width: 0; }
 .si-affix-cell :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; }
-.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
+.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: flex-end; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); white-space: nowrap; }
 
 .si-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -1362,7 +1410,7 @@ function onSave() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.si-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+.si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Notes + Attachment + Totals ── */
 .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
@@ -1371,6 +1419,9 @@ function onSave() {
 .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
 .si-note-field { display: flex; flex-direction: column; }
 .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+/* char-counter on the label row (rule/input-char-counter) */
+.si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
+.si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }
 
 /* Attachment: label→field gap is 4px, matching every MpFormLabel above it */
 .si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); width: var(--si-field-wide); }
@@ -1413,7 +1464,7 @@ function onSave() {
   padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
-.si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.si-discount-swap:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* Standalone (non-table) prefixed fields use MpInputGroup + MpInputLeftAddon,
@@ -1422,7 +1473,7 @@ function onSave() {
 .si-unit-field { width: 180px; flex-shrink: 0; }
 .si-unit-addon :deep(.mp-input-addon__root) {
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
 }
 .si-unit-trigger {
@@ -1437,7 +1488,7 @@ function onSave() {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md) !important;
 }
-.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.si-unit-trigger:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .si-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Less: Withholding / Deposit ── */

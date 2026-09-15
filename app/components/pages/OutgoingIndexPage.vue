@@ -679,9 +679,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal
-    id="out-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="out-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
@@ -699,9 +698,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Bulk cancel confirmation modal ── -->
-  <MpModal
-    id="out-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="out-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md" :is-keep-alive="false" @close="bulkCancelOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>Cancel {{ bulkCancelCount }} order{{ bulkCancelCount > 1 ? 's' : '' }}?<MpModalCloseButton /></MpModalHeader>
@@ -721,9 +719,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Direct-to-packing modal — marketplace orders only (Picking disabled for
        this order's warehouse; non-marketplace orders go to the full create page
        instead, since they can be packed partially). ── -->
-  <MpModal
-    id="out-direct-pack-modal" :is-open="directPackModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="out-direct-pack-modal" :is-open="directPackModalOpen" size="md" :is-keep-alive="false" @close="closeDirectPacking"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>

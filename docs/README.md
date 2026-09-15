@@ -2,8 +2,13 @@
 
 Start here. This is the home for ERP UI/UX documentation.
 
-> [`DESIGN.md`](../DESIGN.md) is the single source of truth for design rules.
-> The pages below are component- and page-level specs that build on it.
+> **Start here for any UI work:** invoke the **`pixel-erp-design`** skill (the
+> mandatory entry point — it routes you to the right rules per surface), and read
+> [`design/RULES.md`](design/RULES.md) — the canonical registry of accepted
+> decisions as stable `rule/<id>`s, plus the authority hierarchy.
+> [`design/reachable-states.md`](design/reachable-states.md) is the completeness
+> checklist. [`DESIGN.md`](../DESIGN.md) is the long-form rationale; the pages below
+> are component- and page-level specs.
 
 ---
 

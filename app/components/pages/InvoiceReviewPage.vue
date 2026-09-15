@@ -499,8 +499,20 @@ function handleSave() {
   next()
 }
 
+// For a real user-uploaded file, override the header fields with its own OCR
+// data instead of the scenario dummy values. Seed rows (no uploadedAt) keep
+// their scenario data. Amount is derived from line items here, so it's left alone.
+function applyRealData() {
+  const rf = reviewFile.value
+  if (!rf?.uploadedAt) return
+  if (rf.beneficiary?.name) vendor.value = rf.beneficiary.name
+  if (rf.date) transactionDate.value = toDisplayDate(rf.date)
+  if (rf.number) transactionNo.value = rf.number
+}
+
 applyScenario(scenario.value)
-watch(() => props.orderId, () => applyScenario(scenario.value))
+applyRealData()
+watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData() })
 </script>
 
 <template>
@@ -524,7 +536,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
           <ErpStatusBadge :status="invoiceStatus" badge-for="additionalInformation" />
         </div>
         <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
-          {{ moreInfoOpen ? t('Less info') : t('Add more info') }}
+          {{ moreInfoOpen ? t('Show less') : t('Show more') }}
         </button>
       </div>
 
@@ -816,7 +828,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
             </thead>
             <tbody>
               <tr v-for="row in rows" :key="row.id" class="ex-tr">
-                <td class="ex-td ex-td--drag"><MpIcon name="drag" size="sm" /></td>
+                <td class="ex-td ex-td--drag"><div class="ex-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                 <td class="ex-td ex-td--input ex-td--border" :class="{ 'ex-td--error': row.productError }">
                   <MpAutocomplete
                     :id="`iv-row-product-${row.id}`" v-model="row.productId" :data="PRODUCT_OPTIONS"
@@ -844,9 +856,11 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                   </div>
                 </td>
                 <td class="ex-td ex-td--del">
-                  <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </MpButton>
+                  <div class="ex-cell-center">
+                    <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </MpButton>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -854,87 +868,88 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
         </div>
       </div>
 
-      <!-- Totals -->
-      <div class="br-totals">
-        <div class="ex-total-row">
-          <span class="ex-total-label">{{ t('Subtotal') }}</span>
-          <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
-        </div>
-        <div v-if="hasTax" class="ex-total-row">
-          <span class="ex-total-label">{{ taxLabel }}</span>
-          <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
-        </div>
-        <div class="ex-total-row">
-          <span class="ex-total-label">{{ t('Shipping fee') }}</span>
-          <div class="iv-shipping-fee">
-            <span class="ex-amount-prefix">Rp</span>
-            <MpInput id="iv-shipping-fee-input" v-model="shippingFee" class="ex-amount-input" is-full-width />
-          </div>
-        </div>
-        <div class="ex-total-rule" />
-        <div class="ex-total-row">
-          <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
-          <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
-        </div>
-      </div>
     </div>
 
-    <!-- ══ Section: Additional info ══ -->
+    <!-- ══ Bottom: Additional info notes (left) + Totals (right) ══ -->
     <div class="br-section">
-      <div class="br-section-header">
-        <div class="br-section-titlerow">
-          <h2 class="br-section-title">{{ t('Additional info') }}</h2>
+      <div class="rv-bottom">
+        <div class="rv-notes">
+          <!-- Message — unlike Memo, this one goes out to the vendor -->
+          <div class="ex-section">
+            <MpFormControl id="iv-message">
+              <MpFormLabel>{{ t('Message') }}</MpFormLabel>
+              <MpTextarea id="iv-message-textarea" v-model="message" is-full-width :rows="6" />
+            </MpFormControl>
+            <p class="ex-helper-text">{{ t('Visible to vendor') }}</p>
+          </div>
+
+          <div class="ex-section">
+            <MpFormControl id="iv-memo">
+              <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+              <MpTextarea id="iv-memo-textarea" v-model="memo" is-full-width :rows="4" />
+            </MpFormControl>
+            <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
+          </div>
+
+          <div class="ex-section ex-attachment-section">
+            <div class="ex-section-label">{{ t('Attachment') }}</div>
+            <div class="ex-attachment">
+              <MpUpload
+                id="iv-attachment-upload"
+                class="ex-attachment-upload"
+                :class="{ 'ex-attachment-upload--dragover': formDragOver }"
+                accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
+                is-multiple is-full-width
+                :placeholder="t('or drag and drop here')"
+                :button-text="t('Choose file')"
+                @change="onFormFileChange"
+                @dragover.prevent="formDragOver = true"
+                @dragleave.prevent="formDragOver = false"
+                @drop.prevent="onFormFileDrop"
+              />
+              <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+              <MpUploadList
+                v-if="reviewFile"
+                id="iv-source-file"
+                :title="reviewFile.file" status="success" subtitle="128 KB"
+                :icon-name="fileIconName(reviewFile.file)"
+              />
+              <MpUploadList
+                v-for="f in formAttachedFiles" :key="f.name"
+                :id="`iv-attachment-file-${f.name}`"
+                :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
+                :icon-name="fileIconName(f.name)"
+                is-show-remove-button
+                @remove="removeFormFile(f.name)"
+              />
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- Message — unlike Memo, this one goes out to the vendor -->
-      <div class="ex-section">
-        <MpFormControl id="iv-message">
-          <MpFormLabel>{{ t('Message') }}</MpFormLabel>
-          <MpTextarea id="iv-message-textarea" v-model="message" is-full-width :rows="6" />
-        </MpFormControl>
-        <p class="ex-helper-text">{{ t('Visible to vendor') }}</p>
-      </div>
-
-      <div class="ex-section">
-        <MpFormControl id="iv-memo">
-          <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-          <MpTextarea id="iv-memo-textarea" v-model="memo" is-full-width :rows="4" />
-        </MpFormControl>
-        <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
-      </div>
-
-      <div class="ex-section ex-attachment-section">
-        <div class="ex-section-label">{{ t('Attachment') }}</div>
-        <div class="ex-attachment">
-          <MpUpload
-            id="iv-attachment-upload"
-            class="ex-attachment-upload"
-            :class="{ 'ex-attachment-upload--dragover': formDragOver }"
-            accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
-            is-multiple is-full-width
-            :placeholder="t('or drag and drop here')"
-            :button-text="t('Choose file')"
-            @change="onFormFileChange"
-            @dragover.prevent="formDragOver = true"
-            @dragleave.prevent="formDragOver = false"
-            @drop.prevent="onFormFileDrop"
-          />
-          <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-          <MpUploadList
-            v-if="reviewFile"
-            id="iv-source-file"
-            :title="reviewFile.file" status="success" subtitle="128 KB"
-            :icon-name="fileIconName(reviewFile.file)"
-          />
-          <MpUploadList
-            v-for="f in formAttachedFiles" :key="f.name"
-            :id="`iv-attachment-file-${f.name}`"
-            :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
-            :icon-name="fileIconName(f.name)"
-            is-show-remove-button
-            @remove="removeFormFile(f.name)"
-          />
+        <!-- Totals -->
+        <div class="rv-totals">
+          <div class="br-totals">
+            <div class="ex-total-row">
+              <span class="ex-total-label">{{ t('Subtotal') }}</span>
+              <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
+            </div>
+            <div v-if="hasTax" class="ex-total-row">
+              <span class="ex-total-label">{{ taxLabel }}</span>
+              <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
+            </div>
+            <div class="ex-total-row">
+              <span class="ex-total-label">{{ t('Shipping fee') }}</span>
+              <div class="iv-shipping-fee">
+                <span class="ex-amount-prefix">Rp</span>
+                <MpInput id="iv-shipping-fee-input" v-model="shippingFee" class="ex-amount-input" is-full-width />
+              </div>
+            </div>
+            <div class="ex-total-rule" />
+            <div class="ex-total-row">
+              <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
+              <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -990,7 +1005,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.br-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-default); }
+.br-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-default); }
 
 /* ── Airene hints ─────────────────────────────────────────────────────────── */
 .br-ai-field { display: flex; flex-direction: column; }
@@ -1027,7 +1042,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
    side. .br-section's 12px flex gap is cancelled so it doesn't stack onto the
    grid's own 20px padding-top and push the rule off-centre. */
 .ex-section-divider {
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-5, 20px);
   margin-bottom: calc(-1 * var(--mp-spacing-3));
 }
@@ -1085,13 +1100,13 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
 }
 .br-match-card {
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .br-match-head {
   display: flex; align-items: stretch; min-height: 60px;
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-head-col { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 1 1 0; min-width: 0; }
 .br-match-head-col--src { padding: var(--mp-spacing-2) var(--mp-spacing-3); }
@@ -1140,7 +1155,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   flex: 1 1 0; min-width: 0;
   display: flex; flex-direction: column;
   padding: var(--mp-spacing-4) 38px var(--mp-spacing-4) var(--mp-spacing-6);
-  border-right: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-body-title {
   margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
@@ -1179,7 +1194,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 }
 
 /* ── Line-items table ─────────────────────────────────────────────────────── */
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-drag { width: 44px; }
@@ -1192,34 +1207,44 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .ex-th--drag, .ex-th--del { padding: 0; }
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  /* A taller cell (wrapped text, error tooltip, etc.) must not pull the row's
+     other cells to its vertical center — everything pins to the top instead. */
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
-.ex-td--drag { padding: 0; text-align: center; vertical-align: middle; color: var(--mp-text-placeholder); cursor: grab; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--del { padding: 0; text-align: center; }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']), .ex-td--error :deep([class*='input']) { background: transparent; }
 .iv-lineitems-table { min-width: 820px; margin-right: auto; }
-.iv-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
-.iv-lineitems-table .ex-td--amount { padding: 0; }
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+.iv-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.iv-lineitems-table .ex-td--amount { padding: 0; position: relative; }
+/* Pins the drag/delete control to the first row's height instead of drifting
+   to the vertical center of a taller row. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly taller — row height.
+   align-items:stretch then lets .ex-amount-prefix (auto cross-size) grow to
+   match, while the input keeps its own fixed height and simply docks to the
+   top (a flex item with a definite cross size doesn't stretch). */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }
@@ -1230,7 +1255,12 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
+.ex-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger); }
+
+/* ── Bottom: notes (left) + totals (right) ────────────────────────────────── */
+.rv-bottom { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); flex-wrap: wrap; }
+.rv-notes  { display: flex; flex-direction: column; gap: 20px; flex: 1 1 380px; min-width: 320px; }
+.rv-totals { flex: 0 0 428px; max-width: 100%; display: flex; flex-direction: column; }
 
 /* ── Totals ───────────────────────────────────────────────────────────────── */
 .br-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-4); }
@@ -1240,7 +1270,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-total-label--strong, .ex-total-amt--strong {
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.ex-total-rule { border-top: 1px solid var(--mp-border-default); }
+.ex-total-rule { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Shipping fee is the one editable total (Figma 4712:75451) */
 .iv-shipping-fee {
   display: flex; align-items: stretch; width: 180px; height: var(--mp-sizes-9, 36px);

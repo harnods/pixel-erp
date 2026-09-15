@@ -3,6 +3,27 @@
 Guidance for Claude (and any AI assistant) contributing to the Mekari ERP/WMS
 prototype. See `README.md` for the full project overview.
 
+## ⛔ Before ANY UI work — read this first
+
+Building or editing **anything a user sees** (a `.vue` page/component, form, modal,
+table, drawer, filter, button, copy)? **Do not work from your training prior.**
+
+1. **Invoke the `pixel-erp-design` skill.** It routes you to the exact rules +
+   pattern docs for the surface you're touching, and carries the authority
+   hierarchy. It is the mandatory entry point.
+2. **`docs/design/RULES.md`** is the canonical rule registry — every accepted
+   decision as a stable `rule/<id>` with Do/Don't + Why + Source. When a mockup or
+   your instinct conflicts with a rule, **the rule wins** (see the hierarchy in the
+   skill / RULES.md). Cite rule IDs in commits and PRs.
+3. **`docs/design/reachable-states.md`** — a surface isn't done until every state
+   it can reach is designed (empty / filtered-empty / loading / error / permission /
+   destructive), not just the populated success case.
+4. `pixel-police` (a PostToolUse hook) flags the grep-able rules automatically and
+   cites the `rule/*` ID; resolve or justify each note.
+
+The sections below are the long-form rationale for specific rules — RULES.md is the
+index; this file and `docs/patterns/*` are the detail.
+
 ## Two-port workflow: dev (4321) + preview (4322)
 
 Always run **two** servers, and keep them in these roles:
@@ -28,6 +49,68 @@ start the built server directly with `node .output/server/index.mjs`, it does
 route silently falls back (`source: "fallback"`, no real model). When starting
 that way, load the env first:
 `set -a; . ./.env; set +a; PORT=4322 node .output/server/index.mjs`.
+
+## Pixel 3 DT 2.4 Enterprise overrides — source of truth
+
+Where Pixel's default DT 2.4 Enterprise rendering is wrong for this ERP, we
+override it (mostly in `app/assets/css/erp.css`). The recurring "always wrong"
+cases — secondary button (black text not gray, semibold), ghost button (regular
+weight), primary-button icons (always white), select/search focus (neutral
+slate ring, never green), **dropdowns/filters use `<ErpFilterSelect>` (an
+MpPopover menu, clearable) — NEVER a native `<select>` or Pixel `MpSelect`, which
+render the OS dropdown (off-system, clips in scroll containers)**, search always a
+rounded form pill, 14px/regular default type (12px only for captions), ContentList
+for key/value on detail pages — are all listed in
+`docs/patterns/pixel-enterprise-overrides.md`. Prefer the ERP wrapper
+classes/components (`btn-enterprise--*`, `.filter-search`, `ContentList`) over raw
+Pixel variants. When you find a NEW recurring Pixel-default-is-wrong case, add it
+there and to `erp.css`.
+
+## Form & modal actions — always present, never disabled
+
+The footer/action buttons of a form or modal (**Cancel** + the primary action,
+e.g. Save / Import / Create) are **always rendered** — never hidden or disabled
+based on whether preconditions are met. If the user clicks the primary action
+before its preconditions are satisfied (nothing fetched, a required field empty,
+nothing selected), **show an inline error message below the form** explaining
+what to do — don't grey out or hide the button. This pairs with the no-disabled-
+buttons and errors-inline-not-toast rules. Secondary buttons inside these forms
+use `btn-enterprise--secondary` (black text, dark border), not a raw Pixel
+`MpButton variant="secondary"`.
+
+## Drawers — custom Teleport overlay panel (NOT Pixel `MpDrawer`)
+
+**Pixel `MpDrawer` has NO structural CSS in this Pixel3 build** — its header and
+footer detach to the viewport edges and the body renders as a bare floating card.
+So ERP/Cowork drawers do **not** use `MpDrawer`. ~30 of the 38 `*Drawer.vue` (every
+filters drawer, `SelectAccessDrawer`, `CrmCustomerViewDrawer`, …) use the same
+hand-rolled shell — copy it from **`BillsFiltersDrawer.vue`** ("All filters"):
+
+```
+<Teleport to="body"><Transition name="xxx">
+  <div v-if="open" class="xxx-overlay">          <!-- fixed inset 0; flex justify-end; overlay bg -->
+    <div class="xxx-panel" role="dialog">        <!-- margin 12px; height calc(100%-24px); radius 12px; flex column; overflow hidden -->
+      <header class="xxx-header">…title + MpButton close (MpIcon name="close")…</header>
+      <div class="xxx-body">…scrollable content…</div>
+      <footer class="xxx-footer">…ghost Cancel + primary…</footer>
+```
+
+Panel width `min(<w>px, calc(100% - 24px))`; slide-in via
+`transform: translateX(calc(100% + 12px))` on enter/leave. **Every** drawer (and
+every modal) closes **only** via its × button — the overlay ignores clicks and
+there is no Esc-to-close listener (`rule/modal-drawer-close-explicit-only`), so
+in-progress input or context is never lost to a stray click or keypress. Buttons
+use the `btn-enterprise--{ghost,primary,secondary}` classes,
+not raw `MpButton` variants. (Modal vs drawer: drawer when the underlying page
+context helps; modal for a short blocking decision.)
+
+## List bullets — `<li>` always shows its marker
+
+The global CSS reset strips `list-style`, so rendered/markdown lists lose their
+bullets. **Every `<li>` must show a marker**: set `list-style: disc outside` on
+`ul` (`decimal` on `ol`) **and** `display: list-item` on `li`. Applies to any
+`v-html`/markdown output (chat, KB docs, skill preview) and hand-written content
+lists — never leave a bulleted list rendering as flush, marker-less lines.
 
 ## Table column widths — MANDATORY standard (no exceptions)
 

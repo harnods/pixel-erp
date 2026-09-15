@@ -133,13 +133,12 @@ function saveBudget() {
   </ErpTablePage>
 
   <!-- ── New budget drawer ── -->
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="xpm-budget-drawer"
     :is-open="showBudgetDrawer"
     placement="right"
     size="lg"
     variant="floating"
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBudget"
   >
@@ -245,9 +244,9 @@ function saveBudget() {
   flex-direction: column;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
 }
 .xpm-stat__caption {
   font-size: var(--mp-font-sizes-sm);
@@ -265,19 +264,19 @@ function saveBudget() {
 /* ── Filter bar (canonical ERP markup) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.filter-select-wrap { position: relative; display: inline-flex; align-items: center; width: 160px; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
+.filter-select-wrap { position: relative; display: inline-flex; align-items: center; width: 160px; height: var(--mp-sizes-9\.5, 38px); background: var(--mp-colors-background-neutral, #fff); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); }
 .filter-select { appearance: none; background: transparent; border: none; outline: none; width: 100%; padding: var(--mp-spacing-2) var(--mp-spacing-10) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: pointer; }
 .filter-select-chevron { position: absolute; right: var(--mp-spacing-2); pointer-events: none; color: var(--mp-text-default); width: 20px; height: 20px; }
-.filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .filter-btn-group { display: flex; align-items: center; }
 .filter-icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: var(--mp-spacing-2); border: none; background: transparent; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default); }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
-.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
 .filter-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0; }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: var(--mp-radii-full, 999px); }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── New budget drawer (floating card) ── */
 .bd-card { display: flex; flex-direction: column; height: 100%; }
@@ -285,7 +284,7 @@ function saveBudget() {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .bd-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bd-form { display: flex; flex-direction: column; gap: var(--mp-spacing-6); flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
@@ -295,8 +294,8 @@ function saveBudget() {
 .bd-pills { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .bd-pill {
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral); color: var(--mp-text-default);
+  border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); cursor: pointer;
 }
 .bd-pill--active { border-color: var(--mp-border-selected, #0f6d4d); background: var(--mp-background-nav-stack-hovered, #d6f4e9); font-weight: var(--mp-font-weights-semi-bold); }
@@ -305,6 +304,6 @@ function saveBudget() {
 .bd-footer {
   display: flex; justify-content: flex-end;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 </style>

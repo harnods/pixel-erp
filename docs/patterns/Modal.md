@@ -23,8 +23,20 @@
 - Open state controlled by `v-model` (boolean).
 - `MpModalHeader` holds the title + `MpModalCloseButton`.
 - `MpModalBody` holds the content.
-- `MpModalFooter` holds actions: **secondary Cancel + primary confirm**, in an
-  `MpButtonGroup`.
+- `MpModalFooter` holds actions: **ghost Cancel + primary confirm**
+  (`rule/btn-cancel-ghost`), in an `MpButtonGroup`.
+
+---
+
+## Closing — × only (`rule/modal-drawer-close-explicit-only`)
+
+The library defaults `isCloseOnEsc`/`isCloseOnOverlayClick` to `true`. Override
+**both**, on every `MpModal`, so the only way out is the `MpModalCloseButton` ×
+(or an explicit Cancel/confirm action):
+
+```vue
+<MpModal :is-open="isOpen" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="isOpen = false">
+```
 
 ---
 
@@ -52,7 +64,7 @@ const isOpen = ref(false)
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup>
-          <MpButton variant="secondary" @click="isOpen = false">Cancel</MpButton>
+          <MpButton variant="ghost" @click="isOpen = false">Cancel</MpButton>
           <MpButton variant="primary">Confirm</MpButton>
         </MpButtonGroup>
       </MpModalFooter>

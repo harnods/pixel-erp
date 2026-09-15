@@ -56,8 +56,8 @@ const dueDate = computed(() => {
         </div>
       </div>
       <div class="detail-bar-right">
-        <button class="crm-btn crm-btn--secondary" type="button" @click="soon('Edit order')">Edit</button>
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('Record payment')">Record payment</button>
+        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit order')">Edit</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('Record payment')">Record payment</button>
       </div>
     </header>
 
@@ -114,10 +114,6 @@ const dueDate = computed(() => {
 .detail-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default); }
 .detail-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
-.crm-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; white-space: nowrap; border: 1px solid transparent; }
-.crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default); }
-.crm-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse, #fff); }
-.crm-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); }
 
 .detail-page { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-6); }

@@ -7,6 +7,7 @@ import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
@@ -25,6 +26,8 @@ import {
 } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
 import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -40,8 +43,20 @@ const hasApproval = true
 
 const router = useRouter()
 const invoice = computed(() => getSalesInvoiceDetail(props.orderId))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('sales').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([name, value]) => ({ name, value }))
+}
 
 const activityOpen = ref(false)
+// Destructive delete → confirm modal (rule/btn-danger-confirm)
+const deleteOpen = ref(false)
+function confirmDelete() {
+  toast.notify({ variant: 'success', title: t('Sales invoice deleted'), rootProps: { class: 'toast-enterprise' } })
+  router.push('/sales-invoices')
+}
 const taxDocDrawerOpen = ref(false)
 const cannotCreateTaxDocDrawerOpen = ref(false)
 const taxDocuments = computed(() => getTaxDocumentsForInvoice(invoice.value.id))
@@ -372,7 +387,7 @@ function onSalesReturnConfirm() {
 </script>
 
 <template>
-  <div class="detail-page">
+  <div v-if="invoice" class="detail-page">
 
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
@@ -386,9 +401,7 @@ function onSalesReturnConfirm() {
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <MpButton class="detail-jump-chevron" :aria-label="t('Switch transaction')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <MpIcon name="chevrons-down" size="sm" />
               </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
@@ -401,9 +414,7 @@ function onSalesReturnConfirm() {
                     :placeholder="t('Search...')"
                   />
                   <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" :aria-label="t('Clear search')" @click="jumpSearch = ''">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                    </svg>
+                    <MpIcon name="close" size="sm" />
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
@@ -444,10 +455,7 @@ function onSalesReturnConfirm() {
 
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && invoice.banner" class="detail-banner">
-        <svg class="detail-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
+        <MpIcon name="information" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ invoice.banner.message }}</span>
         <a class="detail-banner-link" @click.prevent>{{ invoice.banner.linkLabel }}</a>
       </div>
@@ -519,6 +527,7 @@ function onSalesReturnConfirm() {
               <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
               <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
               <th class="detail-th">{{ t('Tax') }}</th>
+              <th v-if="showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
               <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
@@ -538,6 +547,9 @@ function onSalesReturnConfirm() {
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
               <td class="detail-td">{{ it.taxLabel }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(it.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>
@@ -758,11 +770,7 @@ function onSalesReturnConfirm() {
                     <MpPopover :id="`taxdoc-row-actions-${doc.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <MpButton class="row-kebab" :aria-label="t('More actions')">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="12" cy="5" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="12" cy="19" r="2" />
-                          </svg>
+                          <MpIcon name="menu-kebab" size="sm" />
                         </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: taxDocMenuWidth, whiteSpace: 'nowrap' })">
@@ -803,9 +811,7 @@ function onSalesReturnConfirm() {
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Print & share') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -827,9 +833,7 @@ function onSalesReturnConfirm() {
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -843,7 +847,7 @@ function onSalesReturnConfirm() {
             <MpPopoverList>
               <MpPopoverListItem @click="editInvoice">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -858,9 +862,7 @@ function onSalesReturnConfirm() {
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <MpIcon name="chevrons-down" size="sm" />
               </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -933,10 +935,31 @@ function onSalesReturnConfirm() {
       :source-document="approvedTaxDoc"
       @confirm="onSalesReturnConfirm"
     />
+
+    <ConfirmModal
+      v-model:is-open="deleteOpen"
+      :title="t('Delete sales invoice?')"
+      :description="`${t('Sales Invoice')} #${invoice.number} ${t('will be permanently deleted. This cannot be undone.')}`"
+      :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
+      @confirm="confirmDelete"
+    />
+  </div>
+
+  <!-- Not-found reachable state: the id didn't resolve to an invoice -->
+  <div v-else class="detail-notfound">
+    <p class="detail-notfound-title">{{ t('Sales invoice not found') }}</p>
+    <p class="detail-notfound-desc">{{ t('This sales invoice may have been deleted or the link is invalid.') }}</p>
+    <MpButton variant="secondary" is-rounded @click="router.push('/sales-invoices')">{{ t('Back to sales invoices') }}</MpButton>
   </div>
 </template>
 
 <style scoped>
+.detail-notfound {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4);
+}
+.detail-notfound-title { font-size: var(--mp-font-sizes-lg, 1rem); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-notfound-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin-bottom: var(--mp-spacing-2); }
 .detail-page {
   height: 100%;
   display: flex;
@@ -950,7 +973,7 @@ function onSalesReturnConfirm() {
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -1006,7 +1029,7 @@ function onSalesReturnConfirm() {
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -1015,14 +1038,15 @@ function onSalesReturnConfirm() {
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+/* search/select focus = neutral slate ring, never brand-green (rule/select-active-neutral) */
+.detail-jump-search:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); outline: none; }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -1031,7 +1055,7 @@ function onSalesReturnConfirm() {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -1046,7 +1070,7 @@ function onSalesReturnConfirm() {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -1073,7 +1097,7 @@ function onSalesReturnConfirm() {
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -1081,7 +1105,7 @@ function onSalesReturnConfirm() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -1161,7 +1185,7 @@ function onSalesReturnConfirm() {
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -1184,12 +1208,12 @@ function onSalesReturnConfirm() {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -1205,7 +1229,7 @@ function onSalesReturnConfirm() {
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -1267,7 +1291,7 @@ function onSalesReturnConfirm() {
   color: var(--mp-text-subtle);
 }
 .row-kebab:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
   color: var(--mp-text-default);
 }
 
@@ -1296,7 +1320,7 @@ function onSalesReturnConfirm() {
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;

@@ -82,6 +82,7 @@ export const BUILT_KEYS = new Set<string>([
   'Bill of materials',
   'Company profile',
   'Warehouse settings',
+  'Users and roles', // tabComponents (User list / Custom role) + /users-and-roles/invite
   'Mekari pay',
   'Wms report',
   'Inventory report',
@@ -182,6 +183,23 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('Delete', 'missing'), a('Duplicate', 'partial'), a('Import', 'partial'), a('Export', 'built'),
     a('Print barcode', 'built'),
   ],
+  // ── Contacts ──
+  // One index + form + detail set serves all three role lists (Customers,
+  // Vendors, Other contacts) — the route slug picks the role it filters by.
+  'Customers': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Validate NPWP/NITKU', 'built', 'mock DJP lookup'),
+    a('Create transaction', 'partial', 'menu routes to the module index, not a prefilled form'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Vendors': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Other contacts': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
   // ── Production ──
   'Production request': [
     a('Details', 'partial', 'preview drawer, no /:id'), a('Create work order', 'built'),
@@ -236,6 +254,13 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Stock inout': [a('Index', 'built'), a('Create', 'built')],
   // ── Reports ──
   'WMS': [a('Index', 'built'), a('Details', 'built'), a('Export', 'built')],
+  // ── Settings ──
+  'Users & roles': [
+    a('Invite user', 'built'), a('Edit access', 'built'), a('Deactivate / Activate', 'built'),
+    a('Delete user', 'built'), a('Resend invitation', 'partial', 'toast only, no mail'),
+    a('New custom role', 'built'), a('Edit custom role', 'built'), a('Duplicate custom role', 'built'),
+    a('Delete custom role', 'built'), a('Export', 'missing'),
+  ],
 }
 
 /** Build a leaf node, resolving its route, key, and built-status in one place. */

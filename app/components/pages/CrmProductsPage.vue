@@ -7,12 +7,13 @@
  * no other prices or stock quantities.
  */
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { productIndexRows, type ProductIndexRow } from '~/data/productsIndex'
@@ -26,7 +27,6 @@ function viewDetails(sku: string) { router.push(`/crm/products/${sku}`) }
 const rows = computed<ProductIndexRow[]>(() => productIndexRows())
 
 const categoryOptions = computed(() => [...new Set(rows.value.map((r) => r.category))].sort().map((c) => ({ value: c, label: c })))
-const categoryLabel = computed(() => categoryOptions.value.find((o) => o.value === statusFilter.value)?.label ?? '')
 
 const columns: TableColumn[] = [
   { key: 'name',              label: t('Name'),       kind: 'name', sortable: true, sortType: 'text'   },
@@ -67,7 +67,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <h1 class="crm-title">Products</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('New product')">
+        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New product')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
           New product
         </button>
@@ -97,18 +97,14 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       >
         <template #filters>
           <div class="filter-left">
-            <MpPopover id="crm-prod-cat-filter" is-close-on-select>
-              <MpPopoverTrigger>
-                <MpSelect id="crm-prod-cat-select" :placeholder="t('Category')" :model-value="statusFilter" is-clearable :class="css({ width: '180px' })" @mousedown.prevent @clear="statusFilter = ''">
-                  <option v-if="statusFilter" :value="statusFilter">{{ categoryLabel }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="opt in categoryOptions" :key="opt.value" :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <ErpFilterSelect
+              id="crm-prod-cat-select"
+              :model-value="statusFilter"
+              :placeholder="t('Category')"
+              :options="categoryOptions"
+              width="180px"
+              @update:model-value="(v: string) => (statusFilter = v)"
+            />
             <button class="filter-all-btn" @click="soon('All filters')">
               <MpIcon name="filter" size="sm" />
               {{ t('All filters') }}

@@ -98,6 +98,8 @@ export interface BillLineItem {
   description: string
   tax: string
   amount: number
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions?: Record<string, string>
 }
 
 /** Recorded when a bill is created already marked "I have paid this bill" —
@@ -161,6 +163,13 @@ export interface ReviewFile {
    *  other column is blank (no number/vendor/confidence/etc). Absent/true = the
    *  row's fields have been extracted. */
   scanned?: boolean
+  /** true while the AI agent is actively OCR-ing this file (shows a spinner next
+   *  to the filename). Cleared when scanning finishes (scanned → true). */
+  scanning?: boolean
+  /** When the file was uploaded (ISO) and by whom — surfaced in the Dropbox
+   *  "Last updated" column. Absent on seed rows (fall back to lastUpdatedFor). */
+  uploadedAt?: string
+  uploadedBy?: string
 }
 
 /** A single stored sales invoice line: FKs to the invoice and to the product
@@ -185,7 +194,7 @@ export interface SalesOrderItem {
 }
 
 /** A sales invoice line item, hydrated (joined against the product master) for display. */
-export type SILineItem = SalesOrderItem & { taxLabel: string }
+export type SILineItem = SalesOrderItem & { taxLabel: string; dimensions?: Record<string, string> }
 
 export interface SalesOrder {
   id: string
@@ -267,6 +276,33 @@ export interface SalesDelivery {
   id: string
   number: number                          // rendered as "Sales Delivery #20001"
   customer: Pick<Customer, 'id' | 'name'>
+  date: string                            // delivery date, ISO
+  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
+  billingStatus: BillingStatus            // unbilled | invoiced
+  total: number                           // delivery total IDR
+  tags?: string[]
+}
+
+// Purchase Quote — the buy-side mirror of SalesQuote (vendor-keyed). Lightweight
+// index record; the detail page synthesises coherent line items (purchaseQuoteDetails.ts).
+export type PurchaseQuoteStatus = 'open' | 'closed' | 'declined'
+
+export interface PurchaseQuote {
+  id: string
+  number: number                          // rendered as "Purchase Quote #30090"
+  vendor: Pick<Vendor, 'id' | 'name'>
+  date: string                            // quote date, ISO
+  expirationDate: string                  // ISO
+  status: PurchaseQuoteStatus
+  total: number                           // quote total IDR
+  tags?: string[]
+}
+
+// Purchase Delivery — the buy-side mirror of SalesDelivery (vendor-keyed).
+export interface PurchaseDelivery {
+  id: string
+  number: number                          // rendered as "Purchase Delivery #30001"
+  vendor: Pick<Vendor, 'id' | 'name'>
   date: string                            // delivery date, ISO
   fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
   billingStatus: BillingStatus            // unbilled | invoiced

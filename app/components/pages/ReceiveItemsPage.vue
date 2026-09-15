@@ -680,11 +680,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   </div>
 
   <!-- ── Finish receiving confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="ri-confirm"
     :is-open="showConfirm"
     :size="draftOutstanding > 0 ? 'lg' : 'md'"
-    is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
   >
@@ -825,8 +824,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px;
 }
 .ri-search-wrap:focus-within {
-  border-color: var(--mp-border-bold);
-  box-shadow: 0 0 0 1px var(--mp-border-bold);
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596);
 }
 .ri-search {
   flex: 1; border: none; background: transparent; outline: none;

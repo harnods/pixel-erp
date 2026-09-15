@@ -636,7 +636,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-tool-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-tool-btn--airene { color: var(--mp-airene-default, #651fff); }
 .wh-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 220px; }
-.wh-search:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.wh-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .wh-search-input { flex: 1; border: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); outline: none; }
 .wh-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {

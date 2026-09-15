@@ -484,12 +484,10 @@ const emptyDesc = computed(() =>
   </ErpTablePage>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-delete-modal"
     :is-open="deleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeDeleteModal"
   >
@@ -512,12 +510,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Archive confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-archive-modal"
     :is-open="archiveModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeArchiveModal"
   >
@@ -550,12 +546,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Bulk archive confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-bulk-archive-modal"
     :is-open="bulkArchiveModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkArchiveModal"
   >
@@ -578,12 +572,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Export modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-export-modal"
     :is-open="exportModalOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeExportModal"
   >
@@ -698,12 +690,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Bulk delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkDeleteModal"
   >

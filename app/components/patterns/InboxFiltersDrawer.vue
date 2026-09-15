@@ -101,7 +101,7 @@ function toggleReason(value: string) {
 
 <template>
   <Transition name="ibf-filters">
-    <div v-if="isOpen" class="ibf-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="ibf-filters-overlay">
       <div class="ibf-filters-panel" role="dialog" aria-label="All filters">
         <header class="ibf-filters-header">
           <span class="ibf-filters-title">All filters</span>

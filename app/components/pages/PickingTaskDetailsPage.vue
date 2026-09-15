@@ -7,6 +7,8 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
@@ -22,6 +24,7 @@ import {
   pendingCanceledOrderIds, acknowledgeCanceledPickingOrders,
   clearPickingRearrangement,
   type PickingTask,
+  reassignPickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
@@ -89,6 +92,15 @@ const orderGroups = computed<PickOrderGroup[]>(() => {
 
 // ── Local state mirror (mock data isn't deeply reactive) ─────────────────────
 const localStatus = ref<TaskStatus>('open')
+
+// Change assignee — manager-only escape hatch, Open / In Progress only.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(localStatus.value))
+function applyReassign(assignee: string) {
+  if (!reassignPickingTask(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `${t('Assignee changed to')} ${assignee}`, maxWidth: 'max-content' })
+}
 const localEndDate = ref<string | null>(null)
 const localPicked = ref<Record<string, number>>({})
 
@@ -1015,6 +1027,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), and only while the
+           task is still Open / In Progress. -->
+      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">{{ t('Print picking list') }}</button>
       <button class="detail-btn detail-btn--secondary" @click="printShippingLabels(linkedOrders)">{{ t('Print shipping label') }}</button>
       <!-- Cancel task lives in the primary action's split-button dropdown, never as a
@@ -1067,8 +1083,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </footer>
 
     <!-- ── Cancel confirmation ── -->
-    <MpModal id="pkd-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel') }} {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1085,8 +1100,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </MpModal>
 
     <!-- ── Acknowledge cancelled order before continuing picking ── -->
-    <MpModal id="pkd-ack-cancel" :is-open="ackModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-ack-cancel" :is-open="ackModalOpen" size="md" :is-keep-alive="false" @close="ackModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Acknowledge cancelled order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1106,8 +1120,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </MpModal>
 
     <!-- ── Warehouse Manager clears the D7 re-arrangement freeze (AC#9) ── -->
-    <MpModal id="pkd-clear-rearrange" :is-open="clearRearrangeModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="clearRearrangeModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-clear-rearrange" :is-open="clearRearrangeModalOpen" size="md" :is-keep-alive="false" @close="clearRearrangeModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Clear re-arrangement?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -1179,7 +1192,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   />
 
   <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->
-  <MpModal id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="cantPackModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" :is-keep-alive="false" @close="cantPackModalOpen = false">
     <MpModalContent>
       <MpModalHeader>
         {{ t('Nothing can be packed yet') }}
@@ -1196,6 +1209,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="task?.taskNo ?? ''"
+      :current-assignee="task?.assignee ?? ''"
+      :warehouse-id="task?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>
@@ -1237,7 +1258,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;

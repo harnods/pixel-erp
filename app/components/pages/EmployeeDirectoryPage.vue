@@ -204,7 +204,6 @@ function initials(name: string): string {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     filter-empty-label="employee"
     :search="search"
     :has-active-filter="hasActiveFilter"
@@ -371,7 +370,7 @@ function initials(name: string): string {
     @apply="applyDrawerFilters"
   />
 
-  <MpModal id="emp-resign-modal" :is-open="resignModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="resignModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="emp-resign-modal" :is-open="resignModalOpen" size="md" :is-keep-alive="false" @close="resignModalOpen = false">
     <MpModalContent>
       <MpModalHeader>Resign {{ resignTarget?.fullName }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>{{ resignTarget?.fullName }} will be marked as resigned with today as the resignation date. You can undo this by editing the employee.</MpModalBody>
@@ -385,7 +384,7 @@ function initials(name: string): string {
     <MpModalOverlay />
   </MpModal>
 
-  <MpModal id="emp-delete-modal" :is-open="deleteModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="emp-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="deleteModalOpen = false">
     <MpModalContent>
       <MpModalHeader>Delete {{ deleteTarget?.fullName }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>Deleted employees cannot be restored.</MpModalBody>
@@ -448,8 +447,8 @@ function initials(name: string): string {
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
   color: var(--mp-text-selected, var(--mp-text-information)) !important;
 }
 .filter-btn-group { display: flex; align-items: center; }

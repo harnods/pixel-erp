@@ -17,10 +17,12 @@
  */
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MpAvatar, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpToggle, css, toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import { useAireneChat, MODULE_CHAT } from '~/composables/useAireneChat'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { coworkAgents, coworkConnections, getTask, getAgent, addTask, APP_MODULES, type CoworkAgent, type CoworkModule, type CoworkCadence } from '~/data/cowork'
+import { getWorkspace } from '~/data/coworkWorkspaces'
 import { useCoworkGoalChat } from '~/composables/useCoworkGoalChat'
 import CoworkGoalCard from '~/components/patterns/CoworkGoalCard.vue'
 import { addGoal, type GoalDraft } from '~/data/coworkGoals'
@@ -252,7 +254,7 @@ async function copyAnswer(i: number) {
 function rate(i: number, v: 'up' | 'down') {
   const cur = feedback.value[i]
   feedback.value = { ...feedback.value, [i]: cur === v ? undefined : v }
-  if (feedback.value[i]) toast.notify({ variant: 'info', title: v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving" })
+  if (feedback.value[i]) infoToast(v === 'up' ? 'Thanks for the feedback' : "Thanks — we'll keep improving")
 }
 function speak(i: number) {
   const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
@@ -354,6 +356,7 @@ function newChat() {
   historyOpen.value = false
   kebabOpen.value = false
   inputText.value = ''
+  workspaceCtx.value = null
 }
 function openRoom(session: CoworkChatSession) {
   chat.loadSession(session)
@@ -397,6 +400,29 @@ function onOutsideClick(e: MouseEvent) {
   if (!kebabWrapperEl.value?.contains(e.target as Node)) kebabOpen.value = false
 }
 
+// ── Workspace context (Module 07) — a chat opened from a workspace thread ─────
+// The workspace detail routes here with ?workspace=<id>&agent=<agentId>[&thread=…]
+// to start a thread with a workspace agent. We show a context chip and pre-pick
+// the agent; the query is cleared so a refresh doesn't re-fire.
+const workspaceCtx = ref<{ id: string; name: string; thread?: string } | null>(null)
+function applyWorkspaceQuery() {
+  const wsId = typeof route.query.workspace === 'string' ? route.query.workspace : ''
+  if (!wsId) return
+  const w = getWorkspace(wsId)
+  if (!w) { router.replace({ path: '/cowork-chats', query: {} }); return }
+  const agentId = typeof route.query.agent === 'string' ? route.query.agent : ''
+  const threadTitle = typeof route.query.thread === 'string' ? route.query.thread : ''
+  chat.startNewChat()
+  goals.resetGoalMode()
+  const a = agentId ? getAgent(agentId) : undefined
+  if (a) chat.pickAgent(a)
+  workspaceCtx.value = { id: w.id, name: w.name, thread: threadTitle || undefined }
+  inputText.value = ''
+  router.replace({ path: '/cowork-chats', query: {} })
+}
+// Leaving the workspace context (e.g. New chat) clears the chip.
+watch(() => route.query.workspace, () => applyWorkspaceQuery())
+
 onMounted(() => {
   document.addEventListener('click', onOutsideClick)
   document.addEventListener('mousemove', onMouseMoveMascot)
@@ -411,6 +437,7 @@ onMounted(() => {
     const s = chat.sessions.value.find((x) => x.id === id)
     if (s) chat.loadSession(s)
   }
+  applyWorkspaceQuery()
   nextTick(scrollToBottom)
 })
 onBeforeUnmount(() => {
@@ -426,6 +453,10 @@ onBeforeUnmount(() => {
   <header class="cwc-bar">
     <div class="cwc-bar__left">
       <h1 class="cwc-title">Chats</h1>
+      <button v-if="workspaceCtx" class="cwc-ws-chip" type="button" @click="router.push(`/cowork-workspaces/${workspaceCtx.id}`)">
+        <MpIcon name="folder-close" size="sm" />
+        <span>{{ workspaceCtx.name }}<template v-if="workspaceCtx.thread"> · {{ workspaceCtx.thread }}</template></span>
+      </button>
     </div>
     <div class="cwc-actions">
       <!-- Only offer "New chat" while a conversation is open; the empty state IS a new chat. -->
@@ -816,8 +847,12 @@ onBeforeUnmount(() => {
 <style scoped>
 /* ── Title bar ─────────────────────────────────────────────────────────────── */
 .cwc-bar { flex-shrink: 0; min-height: 72px; box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
-.cwc-bar__left { display: flex; flex-direction: column; min-width: 0; }
+.cwc-bar__left { display: flex; flex-direction: column; min-width: 0; gap: 4px; }
 .cwc-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: -0.2px; color: var(--mp-text-default); }
+.cwc-ws-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 520px; padding: 3px 10px; border: 1px solid var(--mp-colors-border-default, #dcdfe4); border-radius: 999px; background: var(--mp-colors-background-neutral-subtle, #f7f8f8); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #536062); cursor: pointer; }
+.cwc-ws-chip:hover { border-color: var(--mp-colors-border-bold, #8c9596); color: var(--mp-colors-text-default, #1d1f24); }
+.cwc-ws-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cwc-ws-chip :deep(svg) { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .cwc-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 
 /* ── Stage · chat list (left) + content pane (right) ───────────────────────── */
@@ -826,7 +861,7 @@ onBeforeUnmount(() => {
 /* Left panel — searchable list of saved chats. */
 .cwc-list { flex-shrink: 0; width: 280px; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--mp-border-default, #e3e7e9); padding: var(--mp-spacing-4) var(--mp-spacing-3); }
 .cwc-list__search { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); }
-.cwc-list__search:focus-within { border-color: var(--mp-border-bold, #8c9596); }
+.cwc-list__search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .cwc-list__search-icon { color: var(--mp-icon-default, #536062); flex: 0 0 auto; }
 .cwc-list__search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); padding: 0; }
 .cwc-list__search-input::placeholder { color: var(--mp-text-placeholder, #6e7a7c); }
@@ -935,6 +970,10 @@ onBeforeUnmount(() => {
 .chat-user-av :deep(> *) { width: 36px !important; height: 36px !important; }
 /* AI answer — no avatar, no bubble: plain text spanning the column. */
 .chat-bubble--assistant { background: transparent; color: var(--mp-text-default); border-radius: 0; padding: 0; max-width: 100%; }
+/* The answer eases in (fade + rise + de-blur) instead of snapping — like Claude/ChatGPT. */
+.chat-bubble--assistant:not(.chat-typing) { animation: cwcAnswerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes cwcAnswerIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@media (prefers-reduced-motion: reduce) { .chat-bubble--assistant:not(.chat-typing) { animation: none; } }
 /* …but the typing loader keeps a subtle pill so the dots have a surface. */
 .chat-typing.chat-bubble--assistant { background: var(--mp-background-neutral-subtle, #f1f3f4); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-lg, 12px); width: fit-content; }
 
@@ -961,8 +1000,9 @@ onBeforeUnmount(() => {
 
 /* Suggestion chips under an agent message */
 .cwc-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
-.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
-.cwc-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
+/* Follow-up suggestion = secondary button: dark-gray border (--mp-border-bold), black text. */
+.cwc-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-default); }
+.cwc-suggest-chip:hover { background: var(--mp-background-neutral-hovered, #ebf0f1); }
 
 /* Collapsible "Done ›" reasoning above an AI answer. */
 .cwc-reason { margin-bottom: var(--mp-spacing-2); }

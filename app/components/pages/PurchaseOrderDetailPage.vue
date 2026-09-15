@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
-  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+  MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   MpFormControl, MpFormLabel, MpFormHelpText, MpTextarea,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
@@ -10,7 +10,11 @@ import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -29,6 +33,12 @@ const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('reject
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([name, value]) => ({ name, value }))
+}
 
 // Awaiting-approval variant: Approve button in the header, secondary Actions
 // footer button, and a Reject item in the Actions menu.
@@ -54,6 +64,27 @@ function onConfirmReject() {
 function onCancelReject() {
   showRejectModal.value = false
   rejectReason.value = ''
+}
+
+// ── Activity log (rule/detail-activity-log-always) ─────────────────────────────
+const activityOpen = ref(false)
+const activityEntries = computed(() => [{
+  date: order.value.lastUpdatedAt,
+  user: order.value.lastUpdatedBy,
+  activity: 'Created',
+  details: [
+    { label: 'Transaction no.', value: `Purchase Order #${order.value.number}` },
+    { label: 'Transaction date', value: formatDateLong(order.value.date) },
+    { label: 'Vendor', value: order.value.vendor.name },
+    { label: 'Warehouse', value: order.value.warehouse },
+  ],
+}])
+
+// ── Destructive delete → confirm modal (rule/btn-danger-confirm) ───────────────
+const deleteOpen = ref(false)
+function confirmDelete() {
+  toast.notify({ variant: 'success', title: 'Purchase order deleted', rootProps: { class: 'toast-enterprise' } })
+  closePurchaseOrder?.()
 }
 
 // ── Approval-log popover (title-bar [task] icon) ───────────────────────────────
@@ -213,7 +244,7 @@ function goBack() { closePurchaseOrder?.() }
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <MpButton class="detail-breadcrumb" @click="goBack">Purchase orders</MpButton>
+        <MpTextlink id="detail-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">Purchase orders</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">Purchase Order #{{ order.number }}</h1>
           <ErpStatusBadge :status="order.status" badge-for="additionalInformation" size="md" />
@@ -222,9 +253,7 @@ function goBack() { closePurchaseOrder?.() }
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <MpButton class="detail-jump-chevron" aria-label="Switch transaction">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <MpIcon name="chevrons-down" size="sm" />
               </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
@@ -268,9 +297,9 @@ function goBack() { closePurchaseOrder?.() }
             <div v-if="approvalLogOpen" class="applog" @click.stop>
               <header class="applog-header">
                 <span class="applog-heading">Approval log</span>
-                <button class="applog-close" aria-label="Close" @click="approvalLogOpen = false">
+                <MpButton class="applog-close" aria-label="Close" @click="approvalLogOpen = false">
                   <MpIcon name="close" size="md" />
-                </button>
+                </MpButton>
               </header>
 
               <div class="applog-body">
@@ -286,14 +315,14 @@ function goBack() { closePurchaseOrder?.() }
                 >
                   <span class="applog-rail">
                     <span v-if="row.kind === 'actor'" class="applog-branch" aria-hidden="true" />
-                    <button
+                    <MpButton
                       v-if="row.kind === 'stage'"
                       class="applog-mark applog-mark--toggle"
                       :aria-label="row.expanded ? 'Collapse' : 'Expand'"
                       @click.stop="toggleStage(row.stageIndex!)"
                     >
                       <MpIcon :name="row.icon" size="md" />
-                    </button>
+                    </MpButton>
                     <span v-else class="applog-mark">
                       <MpIcon :name="row.icon" size="md" :color="row.color" />
                     </span>
@@ -313,12 +342,12 @@ function goBack() { closePurchaseOrder?.() }
           </div>
 
           <MpTooltip id="detail-tt-comments" label="Comments" placement="bottom" use-portal>
-            <button class="detail-icon-btn" aria-label="Comments">
+            <MpButton class="detail-icon-btn" aria-label="Comments">
               <MpIcon name="comment" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
           <!-- Approve — only while awaiting approval -->
-          <MpButton v-if="isAwaitingApproval" variant="primary" size="md" @click="onApprove">Approve</MpButton>
+          <MpButton v-if="isAwaitingApproval" variant="primary" @click="onApprove">Approve</MpButton>
       </div>
     </header>
 
@@ -337,10 +366,7 @@ function goBack() { closePurchaseOrder?.() }
 
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && order.banner" class="detail-banner">
-        <svg class="detail-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
+        <MpIcon class="detail-banner-icon" name="info" size="md" />
         <span class="detail-banner-text">{{ order.banner.message }}</span>
         <a class="detail-banner-link" @click.prevent>{{ order.banner.linkLabel }}</a>
       </div>
@@ -413,6 +439,7 @@ function goBack() { closePurchaseOrder?.() }
               <th class="detail-th detail-th--num">Unit price</th>
               <th class="detail-th detail-th--num">Discount</th>
               <th class="detail-th">Tax</th>
+              <th v-if="showDimensionsColumn" class="detail-th">Dimensions</th>
               <th class="detail-th detail-th--num">Amount</th>
             </tr>
           </thead>
@@ -424,13 +451,10 @@ function goBack() { closePurchaseOrder?.() }
                     <span class="detail-item-name">{{ it.product }}</span>
                     <span class="detail-item-sku">SKU: {{ it.sku }}</span>
                   </span>
-                  <button class="row-hover-btn" @click.stop>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+                  <MpButton class="row-hover-btn" @click.stop>
+                    <MpIcon name="newtab" size="sm" />
                     <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
+                  </MpButton>
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
@@ -439,6 +463,9 @@ function goBack() { closePurchaseOrder?.() }
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
               <td class="detail-td">{{ it.taxLabel }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(it.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>
@@ -539,18 +566,16 @@ function goBack() { closePurchaseOrder?.() }
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent>Last updated by {{ order.lastUpdatedBy }} on {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ order.lastUpdatedBy }} on {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
         <!-- Print & share (secondary dropdown) — not eligible once rejected -->
         <MpPopover v-if="!isRejected" id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <button class="btn-enterprise btn-enterprise--secondary">
               Print &amp; share
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -570,11 +595,9 @@ function goBack() { closePurchaseOrder?.() }
         <!-- Actions (secondary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <button class="btn-enterprise btn-enterprise--primary">
               Actions
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -590,7 +613,7 @@ function goBack() { closePurchaseOrder?.() }
               <MpPopoverListItem @click="duplicatePurchaseOrder?.(props.orderId, rejectionBanner)">Duplicate</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected">Void</MpPopoverListItem>
               <MpPopoverListItem v-if="isAwaitingApproval" @click="onReject">Reject</MpPopoverListItem>
-              <MpPopoverListItem>Delete</MpPopoverListItem>
+              <MpPopoverListItem @click="deleteOpen = true">Delete</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -601,13 +624,11 @@ function goBack() { closePurchaseOrder?.() }
   </div>
 
   <!-- ── Reject confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="reject-transaction-modal"
     :is-open="showRejectModal"
     size="md"
     is-centered
-    is-close-on-esc
-    is-close-on-overlay-click
     @close="onCancelReject"
   >
     <MpModalContent>
@@ -637,6 +658,23 @@ function goBack() { closePurchaseOrder?.() }
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <ActivityLogModal
+    :is-open="activityOpen"
+    :subject="`Purchase Order #${order.number}`"
+    :updated-by="order.lastUpdatedBy"
+    :updated-at="order.lastUpdatedAt"
+    :entries="activityEntries"
+    @close="activityOpen = false"
+  />
+
+  <ConfirmModal
+    v-model:is-open="deleteOpen"
+    title="Delete purchase order?"
+    :description="`Purchase Order #${order.number} will be permanently deleted. This cannot be undone.`"
+    confirm-label="Delete purchase order"
+    @confirm="confirmDelete"
+  />
 </template>
 
 <style scoped>
@@ -727,7 +765,7 @@ function goBack() { closePurchaseOrder?.() }
   color: var(--mp-text-default);
   outline: none;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); outline: none; }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -771,7 +809,7 @@ function goBack() { closePurchaseOrder?.() }
   color: var(--mp-icon-default);
 }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
-.detail-icon-btn--active { background: var(--mp-background-neutral-hovered); color: var(--mp-icon-brand, #029861); }
+.detail-icon-btn--active { background: var(--mp-background-neutral-hovered); color: var(--mp-icon-brand); }
 
 /* ── Approval-log popover ─────────────────────────────────────────────────── */
 .applog-anchor { position: relative; display: inline-flex; }
@@ -871,7 +909,7 @@ function goBack() { closePurchaseOrder?.() }
   color: var(--mp-text-inverse, #fff);
   flex-shrink: 0;
 }
-.applog-node--dot { width: 12px; height: 12px; margin: 4px; background: var(--mp-icon-brand, #029861); }
+.applog-node--dot { width: 12px; height: 12px; margin: 4px; background: var(--mp-icon-brand); }
 .applog-node--approved { background: var(--mp-icon-success, #1fb088); }
 .applog-node--rejected { background: var(--mp-icon-critical, #e5484d); }
 .applog-node--awaiting { background: var(--mp-icon-warning, #e46910); }
@@ -1093,10 +1131,12 @@ function goBack() { closePurchaseOrder?.() }
   display: none;
   align-items: center;
   gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
+  min-width: 0 !important;
+  height: auto !important;
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-sm) !important;
   cursor: pointer;
 }
 .row-hover-btn__label {
@@ -1206,8 +1246,8 @@ function goBack() { closePurchaseOrder?.() }
   color: var(--mp-text-selected) !important;
 }
 .detail-tabs :deep(.mp-tab-selected-border) {
-  /* border/selected token (#029861); not exposed as a CSS var in this build → fallback */
-  background-color: var(--mp-border-selected, #029861) !important;
+  /* border/selected semantic token */
+  background-color: var(--mp-border-selected) !important;
 }
 /* MpTabList ships a 24px bottom margin → tighten the tabs→heading gap to 20px */
 .detail-tabs :deep([data-pixel-component="MpTabList"]) {
@@ -1228,33 +1268,8 @@ function goBack() { closePurchaseOrder?.() }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
-.detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.detail-btn--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
-}
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
-.detail-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.detail-btn--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+/* Footer buttons use the shared btn-enterprise--{secondary,primary} classes
+   (erp.css) — no page-local button styling / hardcoded brand colors. */
 
 /* ── Reject modal ── */
 /* Every modal sits 80px below the top of the page. The library's "is-centered"

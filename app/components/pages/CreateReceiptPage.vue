@@ -12,7 +12,7 @@ import { couriers } from '~/data/couriers'
 import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
 import { editInboundReceipt, proposeReceivingReduction } from '~/data/inboundSync'
 import { lineItemsForReceipt } from '~/data/receiptLineItems'
-import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask } from '~/data/receivingTasks'
+import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask, skusWithReceivingTask } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
 import NewProductModal from '~/components/patterns/NewProductModal.vue'
@@ -113,11 +113,20 @@ interface LineRow {
   /** Edit mode — qty already physically received for this SKU: can't remove
    *  this row or set qty below it (PRD C2 AC#4). 0 = freely editable. */
   lockedQty: number
+  /** A receiving task already exists for this SKU (even an Open one) — the product
+   *  is settled, so the combobox is locked. */
+  productLocked: boolean
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0, productLocked: false }
+}
+
+/** Tooltip text for the product cell — why it can't be edited, or what's wrong with it. */
+function productMsg(row: LineRow): string {
+  if (row.productLocked) return t('This SKU is already on a receiving task and can\'t be changed')
+  return t('You must select product')
 }
 
 /** Tooltip/error text for a qty cell locked by receiving state (edit mode). */
@@ -163,7 +172,16 @@ function onProductCreated(product: Product) {
   onProductSelect(row, product.id)
 }
 
+// WMS doesn't author product copy — a line's description is the product's own, read
+// from product details and shown as text. Only the ERP package, where a document
+// line can carry its own wording for the customer/vendor, keeps it editable.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function onProductSelect(row: LineRow, id: string) {
+  // The combobox is disabled for a locked row; belt-and-braces so a stray event
+  // can't rewrite a line a receiving task is already pointing at.
+  if (row.productLocked) return
   row.productError = false
   productFilter.value = ''
   const p = [...customProducts, ...CATALOG].find((c) => c.id === id)
@@ -171,7 +189,9 @@ function onProductSelect(row: LineRow, id: string) {
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
-  if (!row.description) row.description = p.desc
+  // WMS mirrors the product, always. ERP only fills a blank, so a line the user
+  // has worded themselves survives a product change.
+  if (isWms.value || !row.description) row.description = p.desc
   row.unit = p.unit
   const last = rows.value[rows.value.length - 1]
   if (last && last.id === row.id) rows.value.push(makeRow())
@@ -198,6 +218,10 @@ function prefillFromReceipt() {
   estimatedArrival.value = r.estimatedArrival ? toDisplayDate(r.estimatedArrival) : todayDisplay
   trackingNo.value = r.trackingNos[0] ?? ''
   memo.value = r.memo ?? ''
+  // A line the warehouse already holds a receiving task for keeps its product,
+  // whatever that task's status — an Open task is already a promise to receive
+  // THAT SKU.
+  const taskedSkus = skusWithReceivingTask(r.id)
   const lines = lineItemsForReceipt(r).map((l) => ({
     id: rowSeq++,
     productId: l.productId,
@@ -209,6 +233,7 @@ function prefillFromReceipt() {
     unit: l.unit,
     qtyError: false, productError: false, qtyLocked: false,
     lockedQty: lockedReceivingQtyForSku(r.id, l.sku),
+    productLocked: taskedSkus.has(l.sku),
   } as LineRow))
   rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
@@ -641,9 +666,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Product -->
                   <td class="cr-td cr-td--input" :class="{ 'cr-td--prod-error': row.productError }">
                     <MpTooltip
-                      v-if="row.productError"
+                      v-if="row.productError || row.productLocked"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      :label="t('You must select product')"
+                      :label="productMsg(row)"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -656,6 +681,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         value-prop="id"
                         is-searchable is-clearable use-portal is-full-width is-manual-filter
                         is-show-button-action
+                        :is-disabled="row.productLocked"
                         @update:model-value="(v: string) => onProductSelect(row, v)"
                         @input="onProductSearch"
                         @button-action="openNewProduct(row)"
@@ -686,6 +712,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width is-manual-filter
                       is-show-button-action
+                      :is-disabled="row.productLocked"
                       @update:model-value="(v: string) => onProductSelect(row, v)"
                       @input="onProductSearch"
                       @button-action="openNewProduct(row)"
@@ -711,8 +738,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Row has product: SKU + all input cols -->
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
+                    <!-- Description: the product's own in WMS — disabled rather than
+                         removed, so the column keeps its width and the cell still
+                         reads as the field it is. Editable in ERP, where a document
+                         line legitimately carries its own wording. -->
                     <td class="cr-td cr-td--input">
-                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                      <MpInput
+                        :id="`cr-desc-${row.id}`"
+                        v-model="row.description"
+                        :is-disabled="isWms"
+                        is-full-width
+                      />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError || row.qtyLocked }">
                       <MpTooltip

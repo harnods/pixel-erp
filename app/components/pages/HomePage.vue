@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, onMounted } from 'vue'
 import {
-  MpIcon, toast,
+  MpIcon, MpButton, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import HomePageV2 from '~/components/pages/HomePageV2.vue'
@@ -274,8 +274,8 @@ const learn: LearnCard[] = [
               </div>
               <p class="anomaly__body">{{ a.body }}</p>
               <div class="anomaly__actions">
-                <button class="btn btn--ghost" type="button" @click="soon(t('Ignore'))">{{ t('Ignore') }}</button>
-                <button class="btn btn--secondary" type="button" @click="soon(t('Review'))">{{ t('Review') }}</button>
+                <MpButton variant="ghost" is-rounded @click="soon(t('Ignore'))">{{ t('Ignore') }}</MpButton>
+                <MpButton variant="secondary" is-rounded @click="soon(t('Review'))">{{ t('Review') }}</MpButton>
               </div>
             </div>
 
@@ -320,7 +320,7 @@ const learn: LearnCard[] = [
                 <p class="appr__amount-main">{{ a.amount }}</p>
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
-              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">{{ t('Approve') }}</button>
+              <MpButton variant="secondary" is-rounded @click.stop="approve(a)">{{ t('Approve') }}</MpButton>
               <button class="appr__kebab" type="button" @click.stop>
                 <MpIcon name="menu-kebab" size="md" />
               </button>
@@ -346,7 +346,7 @@ const learn: LearnCard[] = [
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
                 <button class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</button>
-                <button class="btn btn--secondary btn--sm" type="button" @click="soon(t('Try feature'))">{{ t('Try feature') }}</button>
+                <MpButton variant="secondary" is-rounded @click="soon(t('Try feature'))">{{ t('Try feature') }}</MpButton>
               </div>
             </article>
           </div>
@@ -400,7 +400,7 @@ const learn: LearnCard[] = [
               <h4 class="setup__heading">{{ currentSetup.heading }}</h4>
               <p class="setup__sub">{{ currentSetup.sub }}</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="setupNow">{{ currentSetup.cta }}</button>
+                <MpButton variant="primary" is-rounded @click="setupNow">{{ currentSetup.cta }}</MpButton>
                 <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
                   <MpIcon name="play-video" size="md" />
                   {{ t('Watch video') }}
@@ -421,7 +421,7 @@ const learn: LearnCard[] = [
             <h4 class="learn-card__title">{{ l.title }}</h4>
             <p class="learn-card__desc">{{ l.desc }}</p>
             <div class="learn-card__foot">
-              <button class="btn btn--secondary btn--sm" type="button" @click="soon(l.cta)">{{ l.cta }}</button>
+              <MpButton variant="secondary" is-rounded @click="soon(l.cta)">{{ l.cta }}</MpButton>
             </div>
           </article>
         </div>
