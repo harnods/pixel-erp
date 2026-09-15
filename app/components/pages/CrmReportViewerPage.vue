@@ -583,7 +583,7 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
 .rv-header { flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .rv-tabs :deep(.mp-tab--isSelected_true), .rv-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .rv-tabs :deep(.mp-tab-selected-border--isSelected_true) { background-color: var(--mp-border-selected, #029861) !important; }
-.rv-tabs :deep([data-pixel-component="MpTabList"]) { margin: 0 var(--mp-spacing-6) !important; margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; }
+.rv-tabs :deep([data-pixel-component="MpTabList"]) { margin: 0 var(--mp-spacing-6) !important; margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; } /* pixel-police-allow-shadow: removes Pixel's default shadow, doesn't add one */
 
 /* Report details tab — a horizontal ContentList grid. */
 .rv-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 960px; }

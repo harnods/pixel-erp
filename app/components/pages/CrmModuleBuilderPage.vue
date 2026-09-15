@@ -729,14 +729,14 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
         <div class="detail-titlerow-left">
           <h1 v-if="isCreating || !mod || isDeals" class="detail-title">{{ isCreating ? t('New module') : mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <!-- Status badge + Publish/Unpublish — about draft/published lifecycle,
-               not about which builder UI the module uses, so it's keyed off
-               `!mod.system` (every module except the true Deals system module) —
-               NOT `!isDeals`, which is true for every deal-like module now. Hidden
-               while creating: the footer's Save as draft/Publish carry that action. -->
+          <!-- Status badge — about draft/published lifecycle, not about which
+               builder UI the module uses, so it's keyed off `!mod.system` (every
+               module except the true Deals system module) — NOT `!isDeals`,
+               which is true for every deal-like module now. Hidden while
+               creating. Publish/Unpublish itself is an action, not a page-title
+               affordance — it lives in the bottom footer, same as creation's
+               Save as draft/Publish. -->
           <ErpStatusBadge v-if="!isCreating && mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
-          <MpButton v-if="!isCreating && mod && !mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-          <MpButton v-if="!isCreating && mod && !mod.system && mod.status === 'published'" variant="ghost" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
         </div>
       </div>
     </header>
@@ -1166,10 +1166,15 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       </template>
     </div>
 
-    <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Save changes -->
+    <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Publish/Unpublish
+         + Save changes — Publish/Unpublish is an action, not a page-title
+         affordance, so it lives here (same bottom-bar placement as creation's
+         Save as draft/Publish), not next to the H1. -->
     <footer v-if="mod && !isCreating" class="builder-footer">
       <MpButtonGroup class="erp-action-footer">
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton v-if="!mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
+        <MpButton v-if="!mod.system && mod.status === 'published'" variant="secondary" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
         <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
       </MpButtonGroup>
     </footer>
