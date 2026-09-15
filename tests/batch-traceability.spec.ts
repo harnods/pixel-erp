@@ -432,3 +432,17 @@ describe('visual journey graph', () => {
     expect(graph.incoming.map((g) => g.type)).toContain('Purchase delivery')
   })
 })
+
+describe('link from the product batch page (decision Q8)', () => {
+  it('resolves product batches, but not a warehouse-scoped lot', async () => {
+    const { getWarehouseDetail } = await import('~/data/warehouseDetails')
+    const batch = api.getProductBatches('1001')[0]!
+    expect(api.getBatchTrace('1001', batch.batchNo)?.batchNo).toBe(batch.batchNo)
+
+    const productBatchNos = new Set(api.getProductBatches('1001').map((b) => b.batchNo))
+    const lot = api.activeWarehouses()
+      .flatMap((w) => getWarehouseDetail(w.id)?.stock.find((s) => s.sku === '1001')?.batches ?? [])
+      .find((b) => !productBatchNos.has(b.batchNo))
+    if (lot) expect(api.getBatchTrace('1001', lot.batchNo)).toBeUndefined()
+  })
+})

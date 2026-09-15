@@ -28,6 +28,7 @@ import {
   type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getBatchTrace } from '~/data/batchTraceability'
 import { batchAttributeDef, formatExpiry, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
 import { batchActivityFor } from '~/data/batchStore'
 import { gradeById } from '~/data/grades'
@@ -118,6 +119,16 @@ const attributeRows = computed(() => {
 /** Product batches only: warehouse lots are seed data outside the product's batch
  *  list, and the Unassigned batch can't be edited (PM answer A5). */
 const canEdit = computed(() => !!batch.value && !batch.value.isUnassigned && !batch.value.id.includes('::lot::'))
+
+// ── Traceability (Batch Traceability plan decision Q8) ──────────────────────────
+/** The report traces product batches; warehouse-scoped lots and the Unassigned batch
+ *  aren't in its ledger, so they don't get the link. */
+const canTrace = computed(() =>
+  !warehouseId.value && !!batch.value && !batch.value.isUnassigned && !!getBatchTrace(sku.value, batchNo.value),
+)
+function openTraceability() {
+  router.push(`/inventory-report/batch-traceability/${sku.value}/${encodeURIComponent(batchNo.value)}`)
+}
 const editOpen = ref(false)
 function onBatchSaved(saved: ProductBatchSummary) {
   // A rename changes the batch number in the URL — follow it so the page still resolves.
@@ -251,6 +262,7 @@ const pagedWarehouseStock = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
+            <MpPopoverListItem v-if="canTrace" @click="openTraceability">View traceability</MpPopoverListItem>
             <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
             <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>

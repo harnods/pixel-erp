@@ -4,6 +4,7 @@
 **Related plan:** [batch-attribute-plan.md](batch-attribute-plan.md) (this report reads the batch attributes built there)
 **Branch:** `feat/batch-traceability-report`, stacked on `feat/batch-attribute` — open its PR against `feat/batch-attribute`, then retarget to `main` once that merges.
 **Scope:** the Mekari ERP prototype (this repo), ERP brand, web UI.
+**Decisions:** the recommended interim answers to the PM questions were adopted on 15 Sep 2026 (§4) — they're what the prototype does until the PM confirms or changes them.
 
 ---
 
@@ -202,19 +203,21 @@ The PRD left it open whether this ships in v1 and recommended the table first. T
 
 **Not built:** transaction nodes don't link to transaction detail pages (open question 9) · no zoom/pan — grouping by type keeps the diagram bounded instead.
 
-## 4. Open questions for PM
+## 4. Decisions — recommended answers adopted (15 Sep 2026)
 
-Interim behaviour in brackets.
+The PRD left these open. The recommended answer was adopted for each, so the prototype no longer runs on "interim" behaviour — but every one is **pending PM confirmation**, and this table is where a change lands if the PM decides otherwise.
 
-1. **Total Received / Total Issued formulas** — PRD says "xxx". [Received = in-direction movements, Issued = out-direction; transfers and stock counts in neither.]
-2. **First transaction table columns** — "Transaction date" listed twice. [Second slot = Transaction type.]
-3. **Default sorts vs `rule/table-default-newest-first`** — batches-in-transactions is Product A–Z and the journey is oldest-first per PRD. [Follow the PRD, record as exceptions.]
-4. **By batch, selected warehouses** — "queries where the batch currently holds stock" vs "never transacted → empty". [One line per selected warehouse the batch moved through, on-hand may be 0.] Also: Storage location column or detail-drawer only?
-5. **Before any filter is set** — show all on-hand batches, or prompt to filter? [Show all.]
-6. **Warehouse switcher on the journey** (PRD TBD). [Not in v1.]
-7. **Invoice + delivery double count** — both are "+". [Invoices not seeded.]
-8. **Link from the product's batch page** to the traceability detail? [Not yet.]
-9. **Transaction number links** — the PRD links each number to its transaction detail page. The prototype's seeded report transactions aren't records in the Sales / Purchase / Inventory modules. [Plain text; confirm whether the demo should seed matching records or keep links out.]
+| # | Question | Adopted decision | Where it lives | Change it by… |
+|---|----------|------------------|----------------|---------------|
+| Q1 | Total Received / Total Issued formulas (PRD "xxx") | **Received** = every in-direction movement (Purchase delivery / invoice, Sales return, Work order output, Stock in, positive Reversal); **Issued** = every out-direction movement. Warehouse transfer and Stock count count in neither. | `reconcile()` in `batchTraceability.ts` | changing `mutationDirection` / `reconcile` |
+| Q2 | First transaction table lists "Transaction date" twice | The second slot is **Transaction type**. | `BatchTraceabilityByTransaction.vue` columns | editing `txColumns` |
+| Q3 | PRD sorts vs `rule/table-default-newest-first` | **Follow the PRD**: batches-in-transactions is Product A–Z, Batch A–Z; the journey is oldest first (with a newest-first toggle). Recorded as exceptions in each component header. | the two components' headers | the default sort in each table |
+| Q4 | By batch with selected warehouses; Storage location column? | **One line per selected warehouse the batch has moved through** (on hand may be 0); warehouses it never touched get no line. **No Storage location column** — locations are in the detail page's *View locations* drawer. | `searchBatches()`, `BatchStorageLocationsDrawer.vue` | the `touched` rule in `searchBatches` |
+| Q5 | Before any filter is set | **Show every stocked batch** straight away (no "set a filter first" prompt). | `BatchTraceabilityReportPage.vue` | an empty-query guard in the page |
+| Q6 | Warehouse switcher on the journey | **Not in v1** — the running balance is across all warehouses; the Stock position table gives the per-warehouse split. | — | a new control on the journey |
+| Q7 | Purchase invoice + delivery both "+" (double count) | **Invoices aren't seeded** as batch movements; the sign rule still covers them if they're added. Recommendation to PM: count stock on the delivery only. | ledger seed in `buildLedger()` | seeding invoice movements |
+| Q8 | Link from the product's batch page to the traceability detail | **Yes** — Batch details › Actions › *View traceability* (product batches only; not the Unassigned batch or a warehouse-scoped lot). | `BatchDetailsPage.vue` | removing the menu item |
+| Q9 | Transaction number links (PRD) | **Plain text** — the seeded report transactions aren't records in the Sales / Purchase / Inventory modules, and seeding matching records would change those modules' demo data. Links are a follow-up once transactions share one source. | all three report views, the diagram | rendering numbers as `cell-link`s to the module routes |
 
 ## 5. Verification (each phase)
 
