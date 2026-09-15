@@ -304,7 +304,7 @@ async function exportBatches({ columns }: { columns: string[] }) {
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([picked.map((c) => c.label), ...rows]), 'Batches')
   XLSX.writeFile(book, `${product.value!.sku}-batches.xlsx`)
-  successToast('Export ready — check your downloads')
+  successToast('Batches exported')
 }
 
 type PrintBarcodeTarget =
@@ -808,8 +808,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <!-- Search-not-matched differs from first-run (docs/design/reachable-states.md). -->
               <template v-if="batchSearch.trim()">
-                <p class="empty-full-title">No batches found</p>
-                <p class="empty-full-desc">No batch matches your search. Try a different keyword.</p>
+                <p class="empty-full-title">"{{ batchSearch.trim() }}" not found</p>
+                <p class="empty-full-desc">Recheck the keywords you have typed and try searching again.</p>
               </template>
               <template v-else>
                 <p class="empty-full-title">No batches</p>
