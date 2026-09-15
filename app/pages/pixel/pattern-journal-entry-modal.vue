@@ -24,6 +24,15 @@ for (let i = 0; i < 10; i++) {
   longRows.push({ account: `2-10${300 + i} Accounts Payable - Vendor ${i + 1}`, credit: amount })
 }
 const openLong = ref(false)
+
+// Extended structure: a trailing Dimension (cost center/project) column.
+// The extra column needs more horizontal room, so this variant uses size 'xl'.
+const dimensionRows: JournalEntryRow[] = [
+  { account: '5-10100 Office Supplies', debit: 2_400_000, dimension: 'Marketing' },
+  { account: '5-10200 Travel & Transport', debit: 3_150_000, dimension: 'Sales' },
+  { account: '1-10100 Cash - Bank BCA', credit: 5_550_000, dimension: 'General' },
+]
+const openDimension = ref(false)
 </script>
 
 <template>
@@ -67,8 +76,20 @@ for (let i = 0; i < 10; i++) {
       <a class="je-link" @click.prevent="openLong = true">Open a 20-line posting →</a>
     </DemoSection>
 
+    <DemoSection title="Extended: trailing Dimension column (xl)"
+      desc="When a posting is tagged with a cost center or project, add a trailing Dimension column after Account/Debit/Credit. It only renders when at least one row has a dimension. The extra column needs more room, so this variant uses size 'xl' instead of the default 'lg'."
+      :rules="['rule/journal-entry-structure']"
+      code="const dimensionRows: JournalEntryRow[] = [
+  { account: '5-10100 Office Supplies',    debit: 2_400_000, dimension: 'Marketing' },
+  { account: '5-10200 Travel & Transport', debit: 3_150_000, dimension: 'Sales' },
+  { account: '1-10100 Cash - Bank BCA',    credit: 5_550_000, dimension: 'General' },
+]">
+      <a class="je-link" @click.prevent="openDimension = true">Open with Dimension column →</a>
+    </DemoSection>
+
     <JournalEntryDrawer v-model:is-open="open" heading="Expense #00042" :rows="rows" />
     <JournalEntryDrawer v-model:is-open="openLong" heading="Purchase Invoice #00118" :rows="longRows" />
+    <JournalEntryDrawer v-model:is-open="openDimension" heading="Expense #00051" :rows="dimensionRows" size="xl" />
   </div>
 </template>
 

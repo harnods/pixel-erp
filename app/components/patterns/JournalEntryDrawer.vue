@@ -12,13 +12,22 @@ export interface JournalEntryRow {
   account: string
   debit?: number
   credit?: number
+  /** Optional cost-center/project tag, shown in a trailing Dimension column when any row has one. */
+  dimension?: string
 }
 
-const props = defineProps<{ isOpen: boolean; heading: string; rows: JournalEntryRow[] }>()
+const props = withDefaults(defineProps<{
+  isOpen: boolean
+  heading: string
+  rows: JournalEntryRow[]
+  /** MpModal size; bump to 'xl' when the Dimension column is shown so the extra column has room. */
+  size?: 'md' | 'lg' | 'xl'
+}>(), { size: 'lg' })
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void }>()
 
 const totalDebit = computed(() => props.rows.reduce((s, r) => s + (r.debit ?? 0), 0))
 const totalCredit = computed(() => props.rows.reduce((s, r) => s + (r.credit ?? 0), 0))
+const hasDimension = computed(() => props.rows.some(r => r.dimension))
 
 function close() { emit('update:isOpen', false) }
 </script>
@@ -27,7 +36,7 @@ function close() { emit('update:isOpen', false) }
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="journal-entry-modal"
     :is-open="isOpen"
-    size="lg"
+    :size="size"
     :is-keep-alive="false"
     @close="close"
   >
@@ -44,12 +53,14 @@ function close() { emit('update:isOpen', false) }
               <col />
               <col class="jed-col-num" />
               <col class="jed-col-num" />
+              <col v-if="hasDimension" class="jed-col-dimension" />
             </colgroup>
             <thead>
               <tr>
                 <th class="jed-th">Account</th>
                 <th class="jed-th jed-th--num">Debit</th>
                 <th class="jed-th jed-th--num">Credit</th>
+                <th v-if="hasDimension" class="jed-th">Dimension</th>
               </tr>
             </thead>
             <tbody>
@@ -57,6 +68,7 @@ function close() { emit('update:isOpen', false) }
                 <td class="jed-td">{{ row.account }}</td>
                 <td class="jed-td jed-td--num">{{ row.debit ? formatIDR(row.debit) : '' }}</td>
                 <td class="jed-td jed-td--num">{{ row.credit ? formatIDR(row.credit) : '' }}</td>
+                <td v-if="hasDimension" class="jed-td">{{ row.dimension }}</td>
               </tr>
             </tbody>
             <tfoot>
@@ -64,6 +76,7 @@ function close() { emit('update:isOpen', false) }
                 <td class="jed-td jed-td--total-label">Total</td>
                 <td class="jed-td jed-td--num">{{ formatIDR(totalDebit) }}</td>
                 <td class="jed-td jed-td--num">{{ formatIDR(totalCredit) }}</td>
+                <td v-if="hasDimension" class="jed-td"></td>
               </tr>
             </tfoot>
           </table>
@@ -83,6 +96,7 @@ function close() { emit('update:isOpen', false) }
 .jed-scroll { max-height: 420px; overflow-y: auto; }
 .jed-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .jed-col-num { width: 180px; }
+.jed-col-dimension { width: 160px; }
 .jed-th { height: 28px; text-align: left; position: sticky; top: 0; z-index: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-surface, #f1f5f9);
