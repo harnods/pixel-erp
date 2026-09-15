@@ -133,3 +133,37 @@ describe('Batch traceability detail — export', () => {
     expect(buildSections(['information', 'journey']).map((s) => s.name)).toEqual(['Batch information', 'Batch journey'])
   })
 })
+
+describe('Batch traceability detail — attribute change trail', () => {
+  it('shows the regrade as a marker line between transactions, hidden by the toggle', async () => {
+    const w = await mountPage('1001::Batch #001')
+    const markers = w.findAll('.btd-change-row')
+    expect(markers).toHaveLength(1)
+    expect(markers[0]!.text()).toContain('Attribute change')
+    expect(markers[0]!.text()).toContain('Grade:')
+    expect(markers[0]!.text()).toContain('Web')
+    // Movements are untouched: every journey line still renders.
+    expect(w.findAll('.btd-journey-row')).toHaveLength(batchJourney('1001', 'Batch #001').length)
+
+    const toggle = w.findAllComponents({ name: 'MpCheckbox' }).find((c) => (c.vm.$props as { id?: string }).id === 'btd-show-changes')!
+    toggle.vm.$emit('change')
+    await flushPromises()
+    expect(w.findAll('.btd-change-row')).toHaveLength(0)
+    expect(w.findAll('.btd-journey-row')).toHaveLength(batchJourney('1001', 'Batch #001').length)
+    expect(vueErrors).toEqual([])
+  })
+
+  it('has no marker or toggle for a batch whose attributes never changed', async () => {
+    const w = await mountPage('1004::Batch #001')
+    expect(w.findAll('.btd-change-row')).toHaveLength(0)
+    expect(w.find('#btd-show-changes').exists()).toBe(false)
+  })
+
+  it('exports the change trail with the journey', async () => {
+    const w = await mountPage('1001::Batch #001')
+    const buildSections = (w.vm as unknown as { buildSections: (keys: string[]) => { name: string; rows: (string | number)[][] }[] }).buildSections
+    const trail = buildSections(['information', 'journey']).find((s) => s.name === 'Attribute changes')!
+    expect(trail.rows).toHaveLength(1)
+    expect(trail.rows[0]).toEqual(expect.arrayContaining(['Web', 'Grade']))
+  })
+})

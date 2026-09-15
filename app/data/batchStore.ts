@@ -74,6 +74,9 @@ export interface BatchActivity {
   user: string
   action: 'created' | 'updated'
   changes: BatchActivityChange[]
+  /** Where the change was made (Batch Traceability story 9). Absent on entries recorded
+   *  before it was tracked — read as web. */
+  channel?: 'web' | 'import' | 'api'
 }
 
 const ACTIVITY_KEY = 'batch-activity-v1'

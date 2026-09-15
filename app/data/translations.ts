@@ -4170,4 +4170,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Selected transactions": "Transaksi yang dipilih",
   "Search keyword": "Kata kunci pencarian",
   "Relation": "Relasi",
+  // Attribute change trail (story 9)
+  "Attribute changes": "Perubahan atribut",
+  "Show attribute changes": "Tampilkan perubahan atribut",
+  "Changed by": "Diubah oleh",
+  "Channel": "Saluran",
+  "Web": "Web",
+  "API": "API",
+  "Attribute change": "Perubahan atribut",
 }

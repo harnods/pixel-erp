@@ -39,10 +39,11 @@ import { productIndexRows } from './productsIndex'
 import { getProductBatches, isProductBatchTracked, type ProductBatchSummary } from './productDetails'
 import { DUI_PRODUCTS } from './dualUnitInventory'
 import {
-  BATCH_ATTRIBUTE_KEYS, SEED_GRADE_IDS, expiryEffectiveDate, getBatchAttributeConfig,
+  BATCH_ATTRIBUTE_KEYS, SEED_GRADE_IDS, expiryEffectiveDate, getBatchAttributeConfig, isBatchAttributeKey,
   type BatchAttributeKey, type BatchAttributeValues,
 } from './batchAttributes'
-import { TODAY_ISO, shiftDays } from './master'
+import { batchActivityFor } from './batchStore'
+import { STAFF, TODAY_ISO, shiftDays } from './master'
 
 // ── Transaction types & the sign rule ───────────────────────────────────────────
 export type TraceTxType =
@@ -256,6 +257,8 @@ interface WorkOrderLink {
 interface Ledger {
   movements: TraceMovement[]
   links: WorkOrderLink[]
+  /** Seeded attribute changes per batch id — the regrade behind a graded receipt snapshot. */
+  changes: Map<string, AttributeChangeMarker[]>
 }
 
 /** Every batch of every batch-tracked product, as the product pages list it. */
@@ -317,6 +320,7 @@ function buildLedger(): Ledger {
 
   // Pass 2 — every stocked batch's own history, solved to end at its on-hand.
   const movements: TraceMovement[] = []
+  const changes = new Map<string, AttributeChangeMarker[]>()
   for (const r of stocked) {
     const id = r.batch.id
     const h = hash(id)
@@ -350,7 +354,17 @@ function buildLedger(): Ledger {
 
     // Graded on arrival as a different grade than the batch holds now.
     const receiptAttributes: BatchAttributeValues = { ...current }
-    if (current.grade) receiptAttributes.grade = current.grade === SEED_GRADE_IDS.A ? SEED_GRADE_IDS.B : SEED_GRADE_IDS.A
+    if (current.grade) {
+      receiptAttributes.grade = current.grade === SEED_GRADE_IDS.A ? SEED_GRADE_IDS.B : SEED_GRADE_IDS.A
+      // …and the regrade that explains it, the day after receipt (PRD story 9).
+      changes.set(id, [{
+        id: `${id}::regrade`,
+        date: day(1),
+        user: STAFF[h % STAFF.length]!,
+        channel: 'web',
+        changes: [{ key: 'grade', from: receiptAttributes.grade, to: current.grade }],
+      }])
+    }
 
     if (outputLink) {
       outputLink.outputQty = receiptQty
@@ -382,7 +396,7 @@ function buildLedger(): Ledger {
     })
   }
 
-  return { movements, links }
+  return { movements, links, changes }
 }
 
 /** Move a batch's per-warehouse balances by one movement. */
@@ -912,4 +926,71 @@ export function batchStorageLocations(sku: string, batchNo: string, warehouseId:
   return list
     .map((location, i) => ({ location, onHand: parts[i]! }))
     .filter((l) => l.onHand > 0)
+}
+
+// ── Attribute change trail (PRD story 9) ────────────────────────────────────────
+/** Where a batch attribute was changed from. */
+export type ChangeChannel = 'web' | 'import' | 'api'
+
+/** One save that changed a batch's attributes — a marker line in the journey. */
+export interface AttributeChangeMarker {
+  id: string
+  /** ISO date (seeded) or date-time (recorded edit). */
+  date: string
+  user: string
+  channel: ChangeChannel
+  changes: { key: BatchAttributeKey; from: string | null; to: string | null }[]
+}
+
+/**
+ * Every change to the batch's attributes, oldest first: the seeded regrade that
+ * explains a graded receipt snapshot, plus the edits people saved (batchActivityFor —
+ * the batch form or the Update batches import). Batch number and description edits
+ * aren't attribute changes, so they stay in the Activity log only.
+ */
+export function batchAttributeChanges(sku: string, batchNo: string): AttributeChangeMarker[] {
+  const ref = findBatch(sku, batchNo)
+  if (!ref) return []
+  const seeded = ledger().changes.get(ref.batch.id) ?? []
+  // batchActivityFor is newest first — flip it so same-instant edits keep their order.
+  const recorded = [...batchActivityFor(ref.batch.id)].reverse().flatMap((e, i): AttributeChangeMarker[] => {
+    if (e.action !== 'updated') return []
+    const attributeChanges = e.changes
+      .filter((c) => isBatchAttributeKey(c.field))
+      .map((c) => ({ key: c.field as BatchAttributeKey, from: c.from, to: c.to }))
+    if (!attributeChanges.length) return []
+    return [{ id: `${ref.batch.id}::activity-${i}`, date: e.date, user: e.user, channel: e.channel ?? 'web', changes: attributeChanges }]
+  })
+  return [...seeded, ...recorded].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export type JourneyEntry =
+  | { kind: 'movement'; row: JourneyRow }
+  | { kind: 'change'; change: AttributeChangeMarker; balanceBase: number; balanceSecondary: number | null }
+
+/**
+ * The journey with attribute-change markers placed by date (story 9). A marker moves no
+ * stock, so it carries the balance of the line before it and never affects the running
+ * balance. On the same day, markers follow that day's movements.
+ */
+export function batchJourneyTimeline(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): JourneyEntry[] {
+  const rows = batchJourney(sku, batchNo, access)
+  const markers = batchAttributeChanges(sku, batchNo)
+  const out: JourneyEntry[] = []
+  let next = 0
+  let balanceBase = 0
+  let balanceSecondary: number | null = null
+  const flushBefore = (date: string | null) => {
+    while (next < markers.length && (date === null || markers[next]!.date.slice(0, 10) < date)) {
+      out.push({ kind: 'change', change: markers[next++]!, balanceBase, balanceSecondary })
+    }
+  }
+  for (const row of rows) {
+    flushBefore(row.date)
+    out.push({ kind: 'movement', row })
+    balanceBase = row.balanceBase
+    balanceSecondary = row.balanceSecondary
+  }
+  flushBefore(null)
+  return out
 }

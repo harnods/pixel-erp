@@ -565,6 +565,8 @@ export function updateBatch(
   id: string,
   patch: { batchNo?: string; description?: string; attributes?: BatchAttributeInput },
   by = CURRENT_USER,
+  /** Where the edit comes from — recorded for the Batch Traceability change trail. */
+  channel: 'web' | 'import' | 'api' = 'web',
 ): DataResult<ProductBatchSummary, BatchError> {
   const batch = getProductBatchById(sku, id)
   if (!batch) return { ok: false, errors: [{ code: 'batch-not-found' }] }
@@ -601,7 +603,7 @@ export function updateBatch(
     attributes,
     updatedAt: at,
     updatedBy: by,
-  }, { date: at, user: by, action: 'updated', changes })
+  }, { date: at, user: by, action: 'updated', changes, channel })
   if (renamed) moveBatchBarcode(sku, batch.batchNo, nextBatchNo)
   return { ok: true, value: getProductBatchById(sku, id)! }
 }

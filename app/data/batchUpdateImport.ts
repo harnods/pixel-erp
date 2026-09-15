@@ -234,7 +234,7 @@ export function applyBatchUpdateImport(rows: readonly BatchUpdateRow[], by?: str
       continue
     }
     const before = getProductBatchById(patch.sku, patch.batchId)
-    const applied = updateBatch(patch.sku, patch.batchId, { description: patch.description, attributes: patch.attributes }, by)
+    const applied = updateBatch(patch.sku, patch.batchId, { description: patch.description, attributes: patch.attributes }, by, 'import')
     if (!applied.ok) {
       // Validation mirrors updateBatch, so this is a safety net rather than a path.
       failed.push({ ...result, errors: ['Row could not be updated'] })

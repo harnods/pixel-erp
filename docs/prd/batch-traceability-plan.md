@@ -31,7 +31,7 @@ Decisions:
 | 2 — Report, by transaction | transaction filters, selectable table, batches table, selection rules | **Done** (see §3c) |
 | 3 — Detail | 4 sections, entry-point highlight, return breadcrumb, related-batch drill-through | **Done** (see §3d) |
 | 4 — Export | `ExportModal` at the 3 entry points, applied filter in the file header | **Done** (see §3e) |
-| Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | — |
+| Later (SHOULD HAVE) | attribute change trail in the journey (story 9, via `batchActivityFor`) · visual journey (story 11) | Story 9 **done** (see §3f) · story 11 — |
 
 ## 3. Phase 0 — as built
 
@@ -166,6 +166,25 @@ The detail page's **Export** is a secondary button top-right of its title bar: i
 **Tests:** `tests/traceability-export.spec.ts` (header block, no-filters row, csv stacking + titles + escaping, xlsx sheet names, date filter text) · detail spec: the section builder produces the four picked sections with matching journey rows, stock totals and relation labels, and only the picked ones.
 
 **Not built:** BPOM / halal register format (PRD TBD) · a combined export of both searches (out of scope — the searches can't be combined).
+
+## 3f. Story 9 — attribute change trail, as built
+
+The PRD made this story conditional on Batch Attribute keeping a change log. It does (`batchActivityFor` in `batchStore.ts`: date, user, field, from → to), so the story is built rather than dropped.
+
+**Data** (`batchTraceability.ts`):
+- `batchAttributeChanges(sku, batchNo)` — every save that changed the batch's **attributes**, oldest first: recorded edits from the batch activity log (batch form, Update batches import) plus the **seeded regrade** that explains a graded receipt snapshot (1001 Batch #001/#002 arrive with the other grade; the regrade is dated the day after receipt, so the snapshots before and after it agree). Batch number / description edits aren't attribute changes — they stay in the Activity log only.
+- `batchJourneyTimeline(sku, batchNo, access)` — the journey with markers placed by date. A marker carries the balance of the line before it and never moves the running balance; same-day markers follow that day's movements.
+- **Channel** (Web / Import / API): `updateBatch` takes an optional `channel` (default `web`), recorded on the activity entry; the Update batches import passes `import`. Entries recorded before this read as web. There is no API surface in the prototype, so `api` is typed but never produced.
+
+**Detail page:**
+- Marker rows in the Batch journey — full-width, quieter than a movement (no mutation / balance cells): *Attribute change · Grade: B → A* then *Changed by {user} · {date} · {channel}*.
+- **Show attribute changes (N)** checkbox above the journey hides them, so the user can read movements only. Hidden when the batch has no changes.
+- The **Activity log** now lists the seeded regrade and shows *Channel* on import edits, so it tells the same story as the journey.
+- **Export:** when the journey is picked, an *Attribute changes* section follows it (Date · Changed by · Channel · Attribute · From · To, one row per changed attribute).
+
+**Tests:** data spec (regrade sits between receipt and the next movement with matching from/to; markers don't move the balance and don't drop movements; recorded web + import edits with user and from/to; number/description edits excluded) · detail spec (marker line renders between transactions, toggle hides it and keeps every movement, no marker/toggle for an unchanged batch, trail exported with the journey).
+
+**Not built:** the seeded regrade doesn't appear on the product-side Batch details page's Activity log (that page reads only the persisted batch activity).
 
 ## 4. Open questions for PM
 

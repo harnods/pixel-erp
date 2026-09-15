@@ -345,3 +345,50 @@ describe('storage locations', () => {
     expect(api.batchStorageLocations(sku, batch.batchNo, other.id)).toEqual([])
   })
 })
+
+describe('attribute change trail', () => {
+  it('explains a graded receipt snapshot with a regrade right after receipt', () => {
+    const journey = api.batchJourney('1001', 'Batch #001')
+    const changes = api.batchAttributeChanges('1001', 'Batch #001')
+    expect(changes).toHaveLength(1)
+    const regrade = changes[0]!
+    expect(regrade.channel).toBe('web')
+    expect(regrade.changes).toEqual([{
+      key: 'grade',
+      from: journey[0]!.attributes.grade,
+      to: api.getProductBatches('1001')[0]!.attributes.grade,
+    }])
+    expect(regrade.date > journey[0]!.date).toBe(true)
+    expect(regrade.date < journey[1]!.date).toBe(true)
+  })
+
+  it('places markers in the journey without moving the balance', () => {
+    const timeline = api.batchJourneyTimeline('1001', 'Batch #001')
+    const at = timeline.findIndex((e) => e.kind === 'change')
+    const before = timeline[at - 1]!
+    const marker = timeline[at]!
+    expect(before.kind).toBe('movement')
+    expect(marker.kind).toBe('change')
+    if (before.kind === 'movement' && marker.kind === 'change') {
+      expect(marker.balanceBase).toBe(before.row.balanceBase)
+    }
+    expect(timeline.filter((e) => e.kind === 'movement')).toHaveLength(api.batchJourney('1001', 'Batch #001').length)
+  })
+
+  it('adds the edits people save, with where they came from', () => {
+    const batch = api.getProductBatches('1101')[0]!
+    expect(api.batchAttributeChanges('1101', batch.batchNo)).toEqual([])
+    expect(api.updateBatch('1101', batch.id, { attributes: { manufacturing_date: '2026-05-01' } }).ok).toBe(true)
+    expect(api.updateBatch('1101', batch.id, { attributes: { best_before_date: '2026-12-01' } }, 'Dewi Rahayu', 'import').ok).toBe(true)
+    const changes = api.batchAttributeChanges('1101', batch.batchNo)
+    expect(changes.map((c) => [c.changes[0]!.key, c.channel])).toEqual([['manufacturing_date', 'web'], ['best_before_date', 'import']])
+    expect(changes[1]!.user).toBe('Dewi Rahayu')
+    expect(changes[1]!.changes[0]).toEqual({ key: 'best_before_date', from: null, to: '2026-12-01' })
+  })
+
+  it('leaves batch number and description edits out of the trail', () => {
+    const batch = api.getProductBatches('1101')[0]!
+    expect(api.updateBatch('1101', batch.id, { description: 'Roasted for the Jakarta café' }).ok).toBe(true)
+    expect(api.batchAttributeChanges('1101', batch.batchNo)).toEqual([])
+  })
+})

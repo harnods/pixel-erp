@@ -33,7 +33,7 @@
  * - Transaction numbers are plain text (plan open question 9).
  */
 import { computed, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
@@ -42,8 +42,8 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import { buildExportDocument, downloadExport, type ExportFormat, type ExportSection } from '~/utils/traceabilityExport'
 import { successToast } from '~/utils/toasts'
 import {
-  getBatchTrace, batchStockPosition, batchJourney, relatedBatches, attributeCell,
-  type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
+  getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchAttributeChanges, relatedBatches, attributeCell,
+  type AttributeChangeMarker, type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { getBatchDetail } from '~/data/productDetails'
@@ -147,11 +147,25 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     date: e.date,
     user: e.user,
     activity: e.action === 'created' ? 'Created' : 'Updated',
-    details: e.changes.map((c) => ({
-      label: label(c.field),
-      value: e.action === 'created' ? String(c.to ?? '—') : `${c.from ?? '—'} → ${c.to ?? '—'}`,
-    })),
+    details: [
+      ...e.changes.map((c) => ({
+        label: label(c.field),
+        value: e.action === 'created' ? String(c.to ?? '—') : `${c.from ?? '—'} → ${c.to ?? '—'}`,
+      })),
+      // Import / API edits say where they came from (story 9); web is the default.
+      ...(e.channel && e.channel !== 'web' ? [{ label: t('Channel'), value: t(CHANNEL_LABELS[e.channel]) }] : []),
+    ],
   }))
+  // The seeded regrade behind a graded receipt snapshot belongs in the trail too, so the
+  // journey marker and the Activity log tell the same story.
+  for (const marker of batchAttributeChanges(sku.value, batchNo.value).filter((m) => m.id.endsWith('::regrade'))) {
+    entries.push({
+      date: marker.date,
+      user: marker.user,
+      activity: 'Updated',
+      details: marker.changes.map((c) => ({ label: label(c.key), value: `${rawAttributeText(c.key, c.from)} → ${rawAttributeText(c.key, c.to)}` })),
+    })
+  }
   if (!recorded.some((e) => e.action === 'created')) {
     entries.push({
       date: b.createdAt ?? b.updatedAt,
@@ -192,6 +206,15 @@ function openLocations(warehouseId: string) {
 
 // ─── Batch journey ──────────────────────────────────────────────────────────────
 const newestFirst = ref(false)
+// Attribute-change markers sit in the journey by date (story 9); the toggle hides them
+// so the user can read movements only.
+const showChanges = ref(true)
+const timeline = computed(() => batchJourneyTimeline(sku.value, batchNo.value, access.value))
+const changeCount = computed(() => timeline.value.filter((e) => e.kind === 'change').length)
+const journeyEntries = computed(() => {
+  const list = showChanges.value ? timeline.value : timeline.value.filter((e) => e.kind === 'movement')
+  return newestFirst.value ? [...list].reverse() : list
+})
 const journeyRows = computed(() => (newestFirst.value ? [...journey.value].reverse() : journey.value))
 const expanded = ref(new Set<string>())
 function toggleRow(id: string) {
@@ -218,6 +241,25 @@ function snapshotText(row: JourneyRow, key: BatchAttributeKey): string {
 }
 function isChanged(row: JourneyRow, key: BatchAttributeKey): boolean {
   return row.changedAttributes.includes(key) && attributeCell(sku.value, row.attributes, key, access.value).state !== 'na'
+}
+
+// ─── Attribute change markers ───────────────────────────────────────────────────
+const CHANNEL_LABELS: Record<AttributeChangeMarker['channel'], string> = { web: 'Web', import: 'Import', api: 'API' }
+
+/** A stored attribute value (vendor id, grade id, ISO date) as people read it. */
+function rawAttributeText(key: BatchAttributeKey, value: string | null): string {
+  return value ? attributeText({ state: 'value', value }, key) : '—'
+}
+/** "Grade: B → A" — every attribute that one save changed. */
+function changeSummary(change: AttributeChangeMarker): string {
+  return change.changes
+    .map((c) => `${t(batchAttributeDef(c.key).label)}: ${rawAttributeText(c.key, c.from)} → ${rawAttributeText(c.key, c.to)}`)
+    .join(' · ')
+}
+/** "Budi Santoso · 12/04/2026 · Web" — who, when, and where from. */
+function changeMeta(change: AttributeChangeMarker): string {
+  const when = change.date.length > 10 ? formatDateTime(change.date) : formatDate(change.date)
+  return `${change.user} · ${when} · ${t(CHANNEL_LABELS[change.channel])}`
 }
 
 const JOURNEY_COLUMNS = 11
@@ -276,6 +318,22 @@ function buildSections(keys: string[]): ExportSection[] {
         ...TRACE_ATTRIBUTE_COLUMNS.map((a) => snapshotText(row, a.key)),
       ]),
     })
+    // The change trail travels with the journey (story 9) — one row per changed attribute.
+    const markers = batchAttributeChanges(sku.value, batchNo.value)
+    if (markers.length) {
+      sections.push({
+        name: t('Attribute changes'),
+        columns: [t('Date'), t('Changed by'), t('Channel'), t('Attribute'), t('From'), t('To')],
+        rows: markers.flatMap((m) => m.changes.map((c) => [
+          m.date.length > 10 ? formatDateTime(m.date) : formatDate(m.date),
+          m.user,
+          t(CHANNEL_LABELS[m.channel]),
+          t(batchAttributeDef(c.key).label),
+          rawAttributeText(c.key, c.from),
+          rawAttributeText(c.key, c.to),
+        ])),
+      })
+    }
   }
   if (keys.includes('related')) {
     const rows = (group: 'sources' | 'results', label: string) =>
@@ -411,6 +469,13 @@ defineExpose({ buildSections })
       <!-- 3. Batch journey -->
       <section class="btd-section">
         <h2 class="btd-section-title">{{ t('Batch journey') }}</h2>
+        <!-- Wrapped: MpCheckbox puts id/class on its hidden input, so layout lives on this div. -->
+        <div v-if="changeCount" class="btd-changes-toggle">
+          <MpCheckbox
+            id="btd-show-changes"
+            :is-checked="showChanges" @change="showChanges = !showChanges"
+          >{{ t('Show attribute changes') }} ({{ changeCount }})</MpCheckbox>
+        </div>
         <div class="btd-table-scroll">
           <table class="btd-table btd-table--journey">
             <thead>
@@ -437,7 +502,19 @@ defineExpose({ buildSections })
               </tr>
             </thead>
             <tbody v-if="journeyRows.length">
-              <template v-for="row in journeyRows" :key="row.id">
+              <template v-for="entry in journeyEntries" :key="entry.kind === 'movement' ? entry.row.id : entry.change.id">
+                <!-- Attribute change marker (story 9): no stock moves, so no mutation or balance cells. -->
+                <tr v-if="entry.kind === 'change'" class="btd-change-row">
+                  <td class="btd-td btd-change" :colspan="JOURNEY_COLUMNS">
+                    <span class="btd-change-line">
+                      <MpIcon name="edit" size="sm" class="btd-change-icon" />
+                      <span class="btd-change-summary">{{ t('Attribute change') }} · {{ changeSummary(entry.change) }}</span>
+                      <span class="btd-change-meta">{{ t('Changed by') }} {{ changeMeta(entry.change) }}</span>
+                    </span>
+                  </td>
+                </tr>
+                <template v-else>
+                <template v-for="row in [entry.row]" :key="row.id">
                 <!-- The whole row toggles its snapshot (rule/table-accordion-row-click). -->
                 <tr
                   class="btd-journey-row"
@@ -489,6 +566,8 @@ defineExpose({ buildSections })
                     </div>
                   </td>
                 </tr>
+                </template>
+                </template>
               </template>
             </tbody>
           </table>
@@ -690,6 +769,14 @@ defineExpose({ buildSections })
 .btd-snapshot-caption { display: block; margin-bottom: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .btd-snapshot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--mp-spacing-2) var(--mp-spacing-6); }
 .btd-snapshot-value { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* ── Attribute change markers (story 9) — quieter than a movement: no stock moved ── */
+.btd-changes-toggle { align-self: flex-start; }
+.btd-change { white-space: normal; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.btd-change-line { display: flex; align-items: center; gap: var(--mp-spacing-2) var(--mp-spacing-3); flex-wrap: wrap; }
+.btd-change-icon { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
+.btd-change-summary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.btd-change-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Related batch ── */
 .btd-related { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
