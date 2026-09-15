@@ -2041,6 +2041,23 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Set one and the lead time comes from their actual deliveries.':
     'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
   'Set preferred vendor': 'Tentukan vendor utama',
+  'Category defaults': 'Standar kategori',
+  'Lead time by category': 'Waktu tunggu per kategori',
+  'Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.':
+    'Dipakai untuk produk yang vendornya belum punya pesanan diterima, atau yang belum punya vendor utama.',
+  'The last resort, when the category above has no value either.':
+    'Pilihan terakhir, saat kategori di atas juga tidak punya nilai.',
+  'Receipts to average': 'Penerimaan yang dirata-rata',
+  'How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.':
+    'Berapa pesanan terakhir yang dirata-rata untuk mengukur waktu tunggu, dan paling sedikit berapa sebelum memakai nilai cadangan.',
+  'Average the last': 'Rata-rata dari',
+  'Minimum to trust': 'Minimum agar dipercaya',
+  'Ignore gaps over': 'Abaikan jeda lebih dari',
+  'ignoring gaps over': 'mengabaikan jeda lebih dari',
+  'at least': 'minimal',
+  'receipts': 'penerimaan',
+  "Lead time is measured from each vendor's delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor's own average, then the category below, then the company fallback.":
+    'Waktu tunggu diukur dari pesanan pembelian tiap vendor yang sudah diterima. Pengaturan ini hanya berlaku saat riwayatnya belum cukup untuk diukur, dengan urutan: rata-rata vendor itu sendiri, lalu kategori di bawah, lalu nilai cadangan perusahaan.',
   'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
   'has no delivered purchase orders yet. It sharpens once they do.':
     'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',
@@ -2086,6 +2103,23 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Set one and the lead time comes from their actual deliveries.':
     'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
   'Set preferred vendor': 'Tentukan vendor utama',
+  'Category defaults': 'Standar kategori',
+  'Lead time by category': 'Waktu tunggu per kategori',
+  'Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.':
+    'Dipakai untuk produk yang vendornya belum punya pesanan diterima, atau yang belum punya vendor utama.',
+  'The last resort, when the category above has no value either.':
+    'Pilihan terakhir, saat kategori di atas juga tidak punya nilai.',
+  'Receipts to average': 'Penerimaan yang dirata-rata',
+  'How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.':
+    'Berapa pesanan terakhir yang dirata-rata untuk mengukur waktu tunggu, dan paling sedikit berapa sebelum memakai nilai cadangan.',
+  'Average the last': 'Rata-rata dari',
+  'Minimum to trust': 'Minimum agar dipercaya',
+  'Ignore gaps over': 'Abaikan jeda lebih dari',
+  'ignoring gaps over': 'mengabaikan jeda lebih dari',
+  'at least': 'minimal',
+  'receipts': 'penerimaan',
+  "Lead time is measured from each vendor's delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor's own average, then the category below, then the company fallback.":
+    'Waktu tunggu diukur dari pesanan pembelian tiap vendor yang sudah diterima. Pengaturan ini hanya berlaku saat riwayatnya belum cukup untuk diukur, dengan urutan: rata-rata vendor itu sendiri, lalu kategori di bawah, lalu nilai cadangan perusahaan.',
   'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
   'has no delivered purchase orders yet. It sharpens once they do.':
     'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',

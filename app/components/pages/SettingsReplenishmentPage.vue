@@ -68,6 +68,8 @@ function save() {
   for (const [label, value] of [
     [t('Safety days'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
+    [t('Fallback lead time'), draft.fallbackLeadTimeDays],
+    [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
     [t('Hysteresis band'), draft.fsnHysteresisPct],
@@ -98,6 +100,14 @@ function save() {
     fsnDwellCycles: Number(draft.fsnDwellCycles),
     volatileCvThreshold: Number(draft.volatileCvThreshold),
     fallbackLeadTimeDays: Number(draft.fallbackLeadTimeDays),
+    leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
+    leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
+    leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
+    leadTimeByCategory: Object.fromEntries(
+      Object.entries(draft.leadTimeByCategory)
+        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
+        .map(([k, v]) => [k, Number(v)]),
+    ),
   }
 
   saveReplenishmentConfig(next)
@@ -342,10 +352,43 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
+      <!-- ── Lead time (US-001) ── -->
+      <h3 id="lead-time" class="rs-sub rs-sub--spaced">{{ t('Lead time') }}</h3>
+      <p class="rs-hint">
+        {{ t('Lead time is measured from each vendor\'s delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor\'s own average, then the category below, then the company fallback.') }}
+      </p>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Lead time by category') }}</span>
+          <span class="rs-label-desc">{{ t('Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.') }}</span>
+        </div>
+        <div class="rs-control">
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
+              <span class="rs-cat-name">{{ cat }}</span>
+              <MpInputGroup :id="`rs-lead-cat-${cat}`">
+                <MpInput
+                  :id="`rs-lead-cat-input-${cat}`"
+                  v-model="draft.leadTimeByCategory[cat]"
+                  type="number"
+                  :placeholder="String(draft.fallbackLeadTimeDays)"
+                  :class="css({ width: '84px' })"
+                />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ categories.map(c => `${c} ${committed.leadTimeByCategory[c] ?? committed.fallbackLeadTimeDays}d`).join('   ') }}
+          </span>
+        </div>
+      </div>
+
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Fallback lead time') }}</span>
-          <span class="rs-label-desc">{{ t('Used when a product has no vendor lead time recorded.') }}</span>
+          <span class="rs-label-desc">{{ t('The last resort, when the category above has no value either.') }}</span>
         </div>
         <div class="rs-control">
           <MpInputGroup v-if="isEditing" id="rs-fallback-lead">
@@ -353,6 +396,43 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.fallbackLeadTimeDays }} {{ t('days') }}</span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Receipts to average') }}</span>
+          <span class="rs-label-desc">{{ t('How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.') }}</span>
+        </div>
+        <div class="rs-control">
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div class="rs-cat-row">
+              <span class="rs-cat-name">{{ t('Average the last') }}</span>
+              <MpInputGroup id="rs-lead-samples">
+                <MpInput id="rs-lead-samples-input" v-model="draft.leadTimeSampleCount" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row">
+              <span class="rs-cat-name">{{ t('Minimum to trust') }}</span>
+              <MpInputGroup id="rs-lead-min">
+                <MpInput id="rs-lead-min-input" v-model="draft.leadTimeMinSamples" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row">
+              <span class="rs-cat-name">{{ t('Ignore gaps over') }}</span>
+              <MpInputGroup id="rs-lead-cap">
+                <MpInput id="rs-lead-cap-input" v-model="draft.leadTimeOutlierCapDays" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ t('Average the last') }} {{ committed.leadTimeSampleCount }},
+            {{ t('at least') }} {{ committed.leadTimeMinSamples }},
+            {{ t('ignoring gaps over') }} {{ committed.leadTimeOutlierCapDays }} {{ t('days') }}
+          </span>
         </div>
       </div>
 

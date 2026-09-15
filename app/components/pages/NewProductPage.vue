@@ -127,6 +127,11 @@ const minStockIsOverridden = computed(() =>
   minStock.value !== '' && Number(minStock.value) !== recommendation.value?.value,
 )
 
+/** Where the category and fallback lead times actually live. */
+function openLeadTimeSettings() {
+  router.push({ path: '/replenishment-settings', hash: '#lead-time' })
+}
+
 /** The Vendors tab is where a preferred vendor is set — go there, don't explain it. */
 function openVendors() {
   router.push(`/product-list/${props.orderId}?section=vendors`)
@@ -697,12 +702,17 @@ onUnmounted(() => { footerObserver?.disconnect() })
                       {{ recommendation.leadTimeDays }} {{ t('days') }}.
                       {{ t('Set one and the lead time comes from their actual deliveries.') }}
                       <a v-if="isEdit" class="np-field-link" @click="openVendors">{{ t('Set preferred vendor') }}</a>
+                      <!-- The default is a real setting, so link to it rather than
+                           naming a number the user cannot find or change. -->
+                      <span v-if="isEdit" class="np-field-sep">·</span>
+                      <a class="np-field-link" @click="openLeadTimeSettings">{{ t('Category defaults') }}</a>
                     </template>
                     <template v-else-if="recommendation.leadTimeEstimated">
                       {{ t('Lead time is an estimate') }}
                       ({{ leadTimeTierLabel(recommendation.leadTimeTier) }}) —
                       {{ recommendation.preferredVendorName }}
                       {{ t('has no delivered purchase orders yet. It sharpens once they do.') }}
+                      <a class="np-field-link" @click="openLeadTimeSettings">{{ t('Category defaults') }}</a>
                     </template>
                     <template v-else>
                       {{ t('Lead time measured from') }} {{ recommendation.preferredVendorName }} —
@@ -997,6 +1007,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
   cursor: pointer;
 }
 .np-field-link:hover { text-decoration: underline; }
+.np-field-sep { margin-left: 6px; color: var(--mp-text-subdued, #6b7280); }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
 
