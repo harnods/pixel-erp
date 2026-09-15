@@ -3593,4 +3593,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "This report will be restored to the active list.": "Laporan ini akan dipulihkan ke daftar aktif.",
   "Restore report": "Pulihkan laporan",
   "Report info": "Info laporan",
+  "Report details": "Detail laporan",
 }

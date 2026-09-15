@@ -27,7 +27,7 @@ Start here. This is the home for ERP UI/UX documentation.
 | Page title bar | [page-title-bar.md](patterns/page-title-bar.md) | The 72px title bar shared by every page — dimensions, index/detail/form variants, title-bar badge rule |
 | Index page format | [index-page-format.md](patterns/index-page-format.md) | Wireframe + spec for list/index pages (filter bar → table → pagination) |
 | Detail page format | [details-page-format.md](patterns/details-page-format.md) | Wireframe + spec for transaction detail pages (header summary 2–5 col → line items → totals → tabs → footer actions) |
-| Page recipes | [page-recipes.md](patterns/page-recipes.md) | Standard scaffolds for index, form, and detail pages |
+| Page recipes | [page-recipes.md](patterns/page-recipes.md) | Routing only — sends you to index-page-format.md / Form.md / details-page-format.md per page type; no scaffolds live here anymore |
 | Tabs | [tabs.md](patterns/tabs.md) | Status tabs (outside stage, via `pageTabs`) vs in-page detail tabs (`MpTabs`); correct active color |
 
 ## Flows / Scenarios

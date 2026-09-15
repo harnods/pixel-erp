@@ -872,8 +872,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               :per-page="propPerPage"
               :sort-key="propSortKey"
               :sort-dir="propSortDir"
-              has-checkbox
-              bulk-label="property"
               filter-empty-label="property"
               :search="propSearch"
               :has-active-filter="propHasFilter"

@@ -11,6 +11,7 @@ import {
   MpButton, MpIcon, MpTextlink, MpInput, MpButtonGroup, MpTooltip, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -288,150 +289,168 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
     <MpButton variant="secondary" is-rounded @click="router.push('/crm/reports')">{{ t('Back to Reports') }}</MpButton>
   </div>
   <div v-else class="crm">
-    <header class="crm-titlebar">
-      <div class="crm-titlebar__left">
-        <MpTextlink id="rv-breadcrumb" as="a" class="rv-breadcrumb" @click.prevent="router.push('/crm/reports')">{{ t('Reports') }}</MpTextlink>
-        <div class="rv-title-row">
-          <h1 class="crm-title">{{ report.name }}</h1>
-          <ErpStatusBadge
-            v-if="report.status !== 'active'"
-            :status="report.status"
-            type="announcement"
-            :label="t('Archived')"
-            badge-for="additionalInformation"
-            size="md"
-          />
-        </div>
-      </div>
-      <div class="crm-titlebar__right">
-        <!-- Single primary "Actions ▾" dropdown (details-page-format.md §C) — Edit,
-             Duplicate, Pin, Archive/Restore all live here (Export moved to the
-             table's own filter bar, matching every other index page). -->
-        <MpPopover id="rv-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem v-if="report.status === 'active'" @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="report.status === 'active' && eligibleMeasures.length" @click="openPin">{{ t('Pin as module metric') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem v-if="report.status !== 'archived'" @click="doArchive">{{ t('Archive') }}</MpPopoverListItem>
-              <MpPopoverListItem v-else @click="doRestore">{{ t('Restore') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </div>
-    </header>
-
-    <div class="cc-stage">
-      <p class="rv-description">{{ report.description || t('No description') }}</p>
-      <h2 class="rv-section-title">{{ t('Report info') }}</h2>
-      <div class="rv-info-grid">
-        <ContentList :label="t('Module')" :value="getCrmModule(report.primaryModuleId)?.name ?? report.primaryModuleId" />
-        <ContentList :label="t('Owner')" :value="report.ownerId" />
-        <ContentList :label="t('Visibility')" :value="visibilityLabel(report.visibility)" />
-      </div>
-      <a class="rv-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
-
-      <!-- ── Results ──
-           This is a dynamic pivot grid — columns, grouping and measures are all
-           user-defined per report definition, which doesn't map onto ErpTablePage's
-           fixed-`kind` column model, so it's a lighter hand-rolled read-only
-           `<table>` matching the ErpTablePage header/row spec instead (28px
-           UPPERCASE header, 8px cell padding, middle-aligned single-line rows,
-           no bold body text). This table IS the page's primary content — an
-           index-style result grid the user browses/filters/exports, not a
-           secondary line-items list embedded in a bigger record — so per
-           rule/table-pagination-model it uses ERP's regular pagination
-           (rows-per-page + page nav via ErpPagination), not the
-           progressive/infinite-scroll model reserved for embedded detail
-           tables. Borderless per rule/table-no-outer-border. -->
-      <div v-if="result">
-        <!-- Filter bar — left: "All filters" (the quick-filter criteria builder,
-             rule/filter-bar-all-filters-drawer); right: search. -->
-        <div class="rv-table-filterbar">
-          <div class="filter-left">
-            <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="filtersOpen = true">
-              <MpIcon name="filter" size="sm" />
-              {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
-            </button>
-          </div>
-          <div class="filter-right">
-            <MpButtonGroup class="filter-btn-group">
-              <ColumnSettingsMenu id="rv-columns" :items="columnItems" :visibility="columnVisibility" />
-              <MpTooltip :label="t('Export')" placement="bottom">
-                <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
-              </MpTooltip>
-            </MpButtonGroup>
-            <div class="filter-search">
-              <MpIcon name="search" size="sm" />
-              <input v-model="tableSearch" class="filter-search-input" type="text" :placeholder="t('Search results…')">
-              <button v-if="tableSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="tableSearch = ''"><MpIcon name="close" size="sm" /></button>
+    <MpTabs id="rv-tabs" :default-value="0" variant-color="green" class="rv-tabs">
+      <div class="rv-header">
+        <header class="crm-titlebar">
+          <div class="crm-titlebar__left">
+            <MpTextlink id="rv-breadcrumb" as="a" class="rv-breadcrumb" @click.prevent="router.push('/crm/reports')">{{ t('Reports') }}</MpTextlink>
+            <div class="rv-title-row">
+              <h1 class="crm-title">{{ report.name }}</h1>
+              <ErpStatusBadge
+                v-if="report.status !== 'active'"
+                :status="report.status"
+                type="announcement"
+                :label="t('Archived')"
+                badge-for="additionalInformation"
+                size="md"
+              />
             </div>
           </div>
-        </div>
+          <div class="crm-titlebar__right">
+            <!-- Single primary "Actions ▾" dropdown (details-page-format.md §C) — Edit,
+                 Duplicate, Pin, Archive/Restore all live here (Export moved to the
+                 table's own filter bar, matching every other index page). -->
+            <MpPopover id="rv-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
+              </MpPopoverTrigger>
+              <MpPopoverContent class="erp-dropdown-menu">
+                <MpPopoverList>
+                  <MpPopoverListItem v-if="report.status === 'active'" @click="edit">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="report.status === 'active' && eligibleMeasures.length" @click="openPin">{{ t('Pin as module metric') }}</MpPopoverListItem>
+                </MpPopoverList>
+                <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+                <MpPopoverList>
+                  <MpPopoverListItem v-if="report.status !== 'archived'" @click="doArchive">{{ t('Archive') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-else @click="doRestore">{{ t('Restore') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+        </header>
 
-        <div class="rv-scroll">
-          <table class="rv-table">
-            <thead>
-              <tr>
-                <th v-for="col in visibleColumns" :key="col" class="rv-th">
-                  <span class="th-inner">
-                    <span class="th-label">{{ colLabel(col) }}</span>
-                    <MpPopover :id="`rv-sort-${col}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-                      <MpPopoverTrigger>
-                        <MpButton class="rv-sort-btn" is-rounded :class="{ 'rv-sort-btn--active': sortKey === col }" :aria-label="t('Sort column')" @click.stop>
-                          <MpIcon name="sort-default" size="16px" />
-                        </MpButton>
-                      </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem @click="setSort(col, 'asc')">{{ sortOptionLabels(col)[0] }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="setSort(col, 'desc')">{{ sortOptionLabels(col)[1] }}</MpPopoverListItem>
-                        </MpPopoverList>
-                      </MpPopoverContent>
-                    </MpPopover>
-                  </span>
-                </th>
-                <th v-for="m in displayMeasures" :key="measureKey(m)" class="rv-th rv-num">{{ measureLabel(m) }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="(dr, i) in visibleFlatRows" :key="i">
-                <tr v-if="dr.kind === 'group'" class="rv-group-row">
-                  <td :colspan="visibleColumns.length" class="rv-td rv-group-label">{{ dr.group.label }}</td>
-                  <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">{{ measureText(m, dr.group.totals[measureKey(m)]) }}</td>
-                </tr>
-                <tr v-else>
-                  <td v-for="col in visibleColumns" :key="col" class="rv-td">{{ cellText(col, dr.row.cells[col]) }}</td>
-                  <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">—</td>
-                </tr>
-              </template>
-              <tr v-if="!flatRows.length">
-                <td :colspan="visibleColumns.length + displayMeasures.length" class="rv-td rv-empty-cell">
-                  {{ tableSearch.trim() ? t('No rows match your search.') : t('This report has no permitted records right now.') }}
-                </td>
-              </tr>
-              <tr v-else-if="displayMeasures.length" class="rv-grand-row">
-                <td :colspan="visibleColumns.length" class="rv-td rv-group-label">{{ result.groups ? t('Grand total') : t('Total') }}</td>
-                <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">{{ measureText(m, result.grandTotals[measureKey(m)]) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <ErpPagination
-          :total="totalRows"
-          :current-page="currentPage"
-          :per-page="perPage"
-          @page-change="setPage"
-          @per-page-change="setPerPage"
-        />
+        <!-- Tabs live in the gray header band, outside the white stage. -->
+        <MpTabList>
+          <MpTab>{{ t('Reports') }}</MpTab>
+          <MpTab>{{ t('Report details') }}</MpTab>
+        </MpTabList>
       </div>
-    </div>
+
+      <div class="cc-stage">
+        <MpTabPanels>
+
+          <!-- ── Reports tab — quick filters (filter bar), results table, pagination ── -->
+          <MpTabPanel>
+            <!-- This is a dynamic pivot grid — columns, grouping and measures are all
+                 user-defined per report definition, which doesn't map onto ErpTablePage's
+                 fixed-`kind` column model, so it's a lighter hand-rolled read-only
+                 `<table>` matching the ErpTablePage header/row spec instead (28px
+                 UPPERCASE header, 8px cell padding, middle-aligned single-line rows,
+                 no bold body text). This table IS the page's primary content — an
+                 index-style result grid the user browses/filters/exports, not a
+                 secondary line-items list embedded in a bigger record — so per
+                 rule/table-pagination-model it uses ERP's regular pagination
+                 (rows-per-page + page nav via ErpPagination), not the
+                 progressive/infinite-scroll model reserved for embedded detail
+                 tables. Borderless per rule/table-no-outer-border. -->
+            <div v-if="result">
+              <!-- Filter bar — left: "All filters" (the quick-filter criteria builder,
+                   rule/filter-bar-all-filters-drawer); right: search. -->
+              <div class="rv-table-filterbar">
+                <div class="filter-left">
+                  <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="filtersOpen = true">
+                    <MpIcon name="filter" size="sm" />
+                    {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
+                  </button>
+                </div>
+                <div class="filter-right">
+                  <MpButtonGroup class="filter-btn-group">
+                    <ColumnSettingsMenu id="rv-columns" :items="columnItems" :visibility="columnVisibility" />
+                    <MpTooltip :label="t('Export')" placement="bottom">
+                      <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+                    </MpTooltip>
+                  </MpButtonGroup>
+                  <div class="filter-search">
+                    <MpIcon name="search" size="sm" />
+                    <input v-model="tableSearch" class="filter-search-input" type="text" :placeholder="t('Search results…')">
+                    <button v-if="tableSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="tableSearch = ''"><MpIcon name="close" size="sm" /></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rv-scroll">
+                <table class="rv-table">
+                  <thead>
+                    <tr>
+                      <th v-for="col in visibleColumns" :key="col" class="rv-th">
+                        <span class="th-inner">
+                          <span class="th-label">{{ colLabel(col) }}</span>
+                          <MpPopover :id="`rv-sort-${col}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                            <MpPopoverTrigger>
+                              <MpButton class="rv-sort-btn" is-rounded :class="{ 'rv-sort-btn--active': sortKey === col }" :aria-label="t('Sort column')" @click.stop>
+                                <MpIcon name="sort-default" size="16px" />
+                              </MpButton>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
+                              <MpPopoverList>
+                                <MpPopoverListItem @click="setSort(col, 'asc')">{{ sortOptionLabels(col)[0] }}</MpPopoverListItem>
+                                <MpPopoverListItem @click="setSort(col, 'desc')">{{ sortOptionLabels(col)[1] }}</MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                        </span>
+                      </th>
+                      <th v-for="m in displayMeasures" :key="measureKey(m)" class="rv-th rv-num">{{ measureLabel(m) }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="(dr, i) in visibleFlatRows" :key="i">
+                      <tr v-if="dr.kind === 'group'" class="rv-group-row">
+                        <td :colspan="visibleColumns.length" class="rv-td rv-group-label">{{ dr.group.label }}</td>
+                        <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">{{ measureText(m, dr.group.totals[measureKey(m)]) }}</td>
+                      </tr>
+                      <tr v-else>
+                        <td v-for="col in visibleColumns" :key="col" class="rv-td">{{ cellText(col, dr.row.cells[col]) }}</td>
+                        <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">—</td>
+                      </tr>
+                    </template>
+                    <tr v-if="!flatRows.length">
+                      <td :colspan="visibleColumns.length + displayMeasures.length" class="rv-td rv-empty-cell">
+                        {{ tableSearch.trim() ? t('No rows match your search.') : t('This report has no permitted records right now.') }}
+                      </td>
+                    </tr>
+                    <tr v-else-if="displayMeasures.length" class="rv-grand-row">
+                      <td :colspan="visibleColumns.length" class="rv-td rv-group-label">{{ result.groups ? t('Grand total') : t('Total') }}</td>
+                      <td v-for="m in displayMeasures" :key="measureKey(m)" class="rv-td rv-num">{{ measureText(m, result.grandTotals[measureKey(m)]) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <ErpPagination
+                :total="totalRows"
+                :current-page="currentPage"
+                :per-page="perPage"
+                @page-change="setPage"
+                @per-page-change="setPerPage"
+              />
+            </div>
+          </MpTabPanel>
+
+          <!-- ── Report details tab — a horizontal ContentList grid ── -->
+          <MpTabPanel>
+            <div class="rv-info-grid">
+              <ContentList :label="t('Description')" :value="report.description || t('No description')" />
+              <ContentList :label="t('Module')" :value="getCrmModule(report.primaryModuleId)?.name ?? report.primaryModuleId" />
+              <ContentList :label="t('Owner')" :value="report.ownerId" />
+              <ContentList :label="t('Visibility')" :value="visibilityLabel(report.visibility)" />
+            </div>
+            <a class="rv-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
+          </MpTabPanel>
+
+        </MpTabPanels>
+      </div>
+    </MpTabs>
 
     <!-- ── All filters drawer (rule/drawer-custom-shell, rule/filter-drawer-fields)
          — one always-visible field per report column, each using the same
@@ -558,10 +577,16 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
 
 .cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
-.rv-description { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-/* rule/detail-contentlist — Report info uses an H2 + ContentList grid, not hand-rolled spans. */
-.rv-section-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.rv-info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 720px; }
+/* Tabs live in the gray header band, outside the white stage (mirrors
+   CrmCompanyRecordPage.vue's header-fused tabs). */
+.rv-tabs { display: flex; flex-direction: column; height: 100%; min-height: 0; margin-top: 0; }
+.rv-header { flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.rv-tabs :deep(.mp-tab--isSelected_true), .rv-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.rv-tabs :deep(.mp-tab-selected-border--isSelected_true) { background-color: var(--mp-border-selected, #029861) !important; }
+.rv-tabs :deep([data-pixel-component="MpTabList"]) { margin: 0 var(--mp-spacing-6) !important; margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; }
+
+/* Report details tab — a horizontal ContentList grid. */
+.rv-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 960px; }
 /* rule/activity-log-trigger — opens ActivityLogModal, the only affordance for it. */
 .rv-updated { display: inline-block; margin-top: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
 .rv-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
