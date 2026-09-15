@@ -65,7 +65,12 @@ loading / error / permission / destructive). If you skip a state, say which and 
 
 - **implement** — build to the rules above.
 - **review** — check a diff/page against every applicable `rule/*`; report by ID,
-  most-severe first; separate confirmed violations from judgment calls.
+  most-severe first; separate confirmed violations from judgment calls. For a
+  judgment call above the hard `rule/*` set (flow, IA, microcopy quality), the
+  CHOICE/UX-law lenses in `.agents/skills/pixel-guardian/references/{design-principles,ux-laws}.md`
+  still apply; use `finding-schema.md` in that folder if a structured
+  evidence/fix/decisionQuestion format is warranted. Those lenses never override
+  a `rule/*` — they only fill gaps hard rules don't cover.
 - **copy** — apply `rule/copy-*` + uxw-mekari; strings go through `t()`.
 
 ## When a rule is missing or wrong
