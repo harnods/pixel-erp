@@ -384,9 +384,9 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
                     <span class="th-label">{{ colLabel(col) }}</span>
                     <MpPopover :id="`rv-sort-${col}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                       <MpPopoverTrigger>
-                        <button class="rv-sort-btn" :class="{ 'rv-sort-btn--active': sortKey === col }" :aria-label="t('Sort column')" @click.stop>
+                        <MpButton class="rv-sort-btn" is-rounded :class="{ 'rv-sort-btn--active': sortKey === col }" :aria-label="t('Sort column')" @click.stop>
                           <MpIcon name="sort-default" size="16px" />
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
                         <MpPopoverList>
@@ -583,7 +583,7 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
 }
 /* rule/form-focus-border-bold — hand-rolled input focus is a neutral bold
    border + 1px neutral ring, never Pixel's default brand-emerald ring. */
-.filter-search:focus-within { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); }
+.filter-search:focus-within { border-color: var(--mp-colors-border-bold, #8c9596); outline: 1px solid var(--mp-colors-border-bold, #8c9596); outline-offset: -1px; }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-full, 999px); }
@@ -605,9 +605,9 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
 .th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
 .th-label { overflow: hidden; text-overflow: ellipsis; }
 .rv-sort-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; flex-shrink: 0;
-  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-4, 16px) !important; height: var(--mp-sizes-4, 16px) !important; min-width: 0 !important; flex-shrink: 0;
+  border: none !important; background: none !important; cursor: pointer; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-icon-default, var(--mp-text-secondary));
   visibility: hidden;
 }
