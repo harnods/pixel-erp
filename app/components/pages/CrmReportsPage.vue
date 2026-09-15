@@ -12,6 +12,7 @@ import {
   MpIcon, MpButton, MpButtonGroup, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -36,7 +37,14 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
 // ─── Library view tabs ──────────────────────────────────────────────────────
 type LibraryView = 'all' | 'mine' | 'shared' | 'archived'
+const VIEW_ORDER: LibraryView[] = ['all', 'mine', 'shared', 'archived']
 const activeView = ref<LibraryView>(props.orderId === 'archived' ? 'archived' : 'all')
+// MpTabs' v-model is a numeric index, not the MpTab `value` string — bridge it
+// to the string-keyed activeView the rest of this page's filtering uses.
+const activeTabIndex = computed({
+  get: () => VIEW_ORDER.indexOf(activeView.value),
+  set: (idx: number) => { activeView.value = VIEW_ORDER[idx] ?? 'all' },
+})
 
 const visibleByView = computed<CrmReport[]>(() => {
   switch (activeView.value) {
@@ -149,7 +157,6 @@ const emptyCopy = computed(() => {
     <header class="crm-titlebar">
       <div class="crm-titlebar__left">
         <h1 class="crm-title">{{ t('Reports') }}</h1>
-        <span class="crm-subtitle">{{ t('Build, run, and share operational reports over your CRM data.') }}</span>
       </div>
       <div class="crm-titlebar__right">
         <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/crm/reports/new')">
@@ -158,12 +165,14 @@ const emptyCopy = computed(() => {
       </div>
     </header>
 
-    <nav class="cc-viewtabs">
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'all' }" type="button" @click="activeView = 'all'">{{ t('All accessible reports') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'mine' }" type="button" @click="activeView = 'mine'">{{ t('My reports') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'shared' }" type="button" @click="activeView = 'shared'">{{ t('Shared with me') }}</button>
-      <button class="page-tab" :class="{ 'page-tab--active': activeView === 'archived' }" type="button" @click="activeView = 'archived'">{{ t('Archived') }}</button>
-    </nav>
+    <MpTabs id="rpt-view-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="rpt-tabs">
+      <MpTabList>
+        <MpTab id="rpt-tab-all" value="all">{{ t('All accessible reports') }}</MpTab>
+        <MpTab id="rpt-tab-mine" value="mine">{{ t('My reports') }}</MpTab>
+        <MpTab id="rpt-tab-shared" value="shared">{{ t('Shared with me') }}</MpTab>
+        <MpTab id="rpt-tab-archived" value="archived">{{ t('Archived') }}</MpTab>
+      </MpTabList>
+    </MpTabs>
 
     <div class="cc-stage">
       <ErpTablePage
@@ -298,18 +307,13 @@ const emptyCopy = computed(() => {
 }
 .crm-titlebar__left { display: flex; flex-direction: column; gap: 2px; }
 .crm-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default, #272b32); }
-.crm-subtitle { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #656f80); }
 
-.cc-viewtabs {
-  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: 0 var(--mp-spacing-6); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
-  background: var(--mp-background-neutral, #fff);
-}
-.page-tab {
-  border: none; background: none; cursor: pointer; padding: var(--mp-spacing-3) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); border-bottom: 2px solid transparent;
-}
-.page-tab--active { color: var(--mp-text-link, #165082); font-weight: var(--mp-font-weights-semi-bold); border-bottom-color: var(--mp-border-brand-bold, #029861); }
+/* Real Pixel tabs (not a hand-rolled nav) — variant-color="green" is the ERP's
+   established active-tab color (see BatchDetailsPage.vue and the tab_section_header
+   convention), so this matches every other tabbed page instead of inventing its
+   own active-state color. Sits below the title bar and above .cc-stage — outside
+   the scrollable main/stage area, not inside it. */
+.rpt-tabs { flex-shrink: 0; padding: 0 var(--mp-spacing-6); background: var(--mp-background-neutral, #fff); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 
 .cc-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); padding: var(--mp-spacing-5, 20px) var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px); }
 
@@ -322,6 +326,12 @@ const emptyCopy = computed(() => {
   background: var(--mp-background-neutral, #ffffff);
   border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+/* rule/form-focus-border-bold — every hand-rolled input's focus/active state is a
+   neutral bold border + 1px neutral ring, never Pixel's default brand-emerald ring. */
+.filter-search:focus-within {
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
 }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
