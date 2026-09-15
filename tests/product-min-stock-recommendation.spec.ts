@@ -16,7 +16,8 @@ import { describe, it, expect } from 'vitest'
 import { recommendedMinStock, replenishmentWarehouses, velocityFor } from '~/data/replenishment'
 import { getReplenishmentConfig } from '~/data/replenishmentConfig'
 import { effectiveSettings } from '~/data/replenishmentSettings'
-import { warehouseProducts } from '~/data/inventory'
+import { warehouseProducts, PRODUCTS } from '~/data/inventory'
+import { preferredVendorItem } from '~/data/vendorItems'
 import { REPL_COLD_START_SKUS } from '~/data/demandHistory'
 
 const cfg = getReplenishmentConfig()
@@ -106,5 +107,49 @@ describe('grain — a SKU-level default warehouses inherit (US-024 AC-03)', () =
   it('is deterministic — the same product recommends the same floor twice', () => {
     const sku = movingSku()
     expect(recommendedMinStock(sku, 9, cfg).value).toBe(recommendedMinStock(sku, 9, cfg).value)
+  })
+})
+
+describe('lead-time confidence is reported, not hidden', () => {
+  it('a product with no preferred vendor still gets a number, tagged as inherited', () => {
+    // The ladder exists so a recommendation survives thin data (US-001 VR-04).
+    // Withholding the figure would be worse than labelling it.
+    const vendorless = PRODUCTS.filter((p) => !preferredVendorItem(p.sku))
+    expect(vendorless.length).toBeGreaterThan(0)
+
+    const withValue = vendorless
+      .map((p) => recommendedMinStock(p.sku, undefined, cfg))
+      .filter((r) => r.value !== null)
+    expect(withValue.length).toBeGreaterThan(0)
+
+    for (const r of withValue) {
+      expect(r.preferredVendorId).toBeNull()
+      expect(r.preferredVendorName).toBe('')
+      // Never claims to be measured when no vendor exists to measure.
+      expect(r.leadTimeEstimated).toBe(true)
+      expect(r.leadTimeTier).not.toBe('computed')
+      expect(r.leadTimeSampleSize).toBe(0)
+    }
+  })
+
+  it('a measured lead time names its vendor and its sample size', () => {
+    const measured = PRODUCTS
+      .map((p) => recommendedMinStock(p.sku, undefined, cfg))
+      .filter((r) => r.value !== null && r.leadTimeTier === 'computed')
+
+    for (const r of measured) {
+      expect(r.leadTimeEstimated).toBe(false)
+      expect(r.preferredVendorId).toBeTruthy()
+      expect(r.preferredVendorName).toBeTruthy()
+      expect(r.leadTimeSampleSize).toBeGreaterThanOrEqual(cfg.leadTimeMinSamples)
+    }
+  })
+
+  it('estimated and measured are never conflated', () => {
+    for (const p of PRODUCTS) {
+      const r = recommendedMinStock(p.sku, undefined, cfg)
+      // The flag and the tier can never disagree — the UI branches on both.
+      expect(r.leadTimeEstimated).toBe(r.leadTimeTier !== 'computed' && r.leadTimeTier !== 'manual')
+    }
   })
 })

@@ -2036,8 +2036,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
-  'Calculated from sales history once this product starts moving. Set a figure now if you already know it.':
-    'Dihitung dari riwayat penjualan setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
+  'No preferred vendor yet, so this uses your': 'Belum ada vendor utama, jadi ini memakai',
+  'default of': 'standar',
+  'Set one and the lead time comes from their actual deliveries.':
+    'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
+  'Set preferred vendor': 'Tentukan vendor utama',
+  'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
+  'has no delivered purchase orders yet. It sharpens once they do.':
+    'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',
+  'Lead time measured from': 'Waktu tunggu diukur dari',
+  'Calculated from sales history and your vendor lead time once this product starts moving. Set a figure now if you already know it.':
+    'Dihitung dari riwayat penjualan dan waktu tunggu vendor setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
   'at PO': 'saat PO',
   'Pack of': 'Kelipatan',
   'Order up to max level': 'Pesan sampai level maksimum',
@@ -2072,8 +2081,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
-  'Calculated from sales history once this product starts moving. Set a figure now if you already know it.':
-    'Dihitung dari riwayat penjualan setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
+  'No preferred vendor yet, so this uses your': 'Belum ada vendor utama, jadi ini memakai',
+  'default of': 'standar',
+  'Set one and the lead time comes from their actual deliveries.':
+    'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
+  'Set preferred vendor': 'Tentukan vendor utama',
+  'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
+  'has no delivered purchase orders yet. It sharpens once they do.':
+    'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',
+  'Lead time measured from': 'Waktu tunggu diukur dari',
+  'Calculated from sales history and your vendor lead time once this product starts moving. Set a figure now if you already know it.':
+    'Dihitung dari riwayat penjualan dan waktu tunggu vendor setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
   'at PO': 'saat PO',
   'Pack of': 'Kelipatan',
   'Order up to max level': 'Pesan sampai level maksimum',

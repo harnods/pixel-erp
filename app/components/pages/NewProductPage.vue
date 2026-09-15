@@ -127,6 +127,11 @@ const minStockIsOverridden = computed(() =>
   minStock.value !== '' && Number(minStock.value) !== recommendation.value?.value,
 )
 
+/** The Vendors tab is where a preferred vendor is set — go there, don't explain it. */
+function openVendors() {
+  router.push(`/product-list/${props.orderId}?section=vendors`)
+}
+
 function useRecommendedMinStock() {
   const v = recommendation.value?.value
   if (v !== null && v !== undefined) minStock.value = String(v)
@@ -676,7 +681,33 @@ onUnmounted(() => { footerObserver?.disconnect() })
                     </a>
                   </span>
                   <span v-else class="np-field-hint">
-                    {{ t('Calculated from sales history once this product starts moving. Set a figure now if you already know it.') }}
+                    {{ t('Calculated from sales history and your vendor lead time once this product starts moving. Set a figure now if you already know it.') }}
+                  </span>
+
+                  <!--
+                    Where the LEAD TIME came from. A category default and an average
+                    of five real receipts look identical once multiplied out, so the
+                    figure has to say which it is (US-001 AC-03/AC-04) — otherwise a
+                    guess reads with the same authority as a measurement.
+                  -->
+                  <span v-if="recommendation && recommendation.value !== null" class="np-field-hint">
+                    <template v-if="!recommendation.preferredVendorId">
+                      {{ t('No preferred vendor yet, so this uses your') }}
+                      {{ category || t('category') }} {{ t('default of') }}
+                      {{ recommendation.leadTimeDays }} {{ t('days') }}.
+                      {{ t('Set one and the lead time comes from their actual deliveries.') }}
+                      <a v-if="isEdit" class="np-field-link" @click="openVendors">{{ t('Set preferred vendor') }}</a>
+                    </template>
+                    <template v-else-if="recommendation.leadTimeEstimated">
+                      {{ t('Lead time is an estimate') }}
+                      ({{ leadTimeTierLabel(recommendation.leadTimeTier) }}) —
+                      {{ recommendation.preferredVendorName }}
+                      {{ t('has no delivered purchase orders yet. It sharpens once they do.') }}
+                    </template>
+                    <template v-else>
+                      {{ t('Lead time measured from') }} {{ recommendation.preferredVendorName }} —
+                      {{ leadTimeTierLabel(recommendation.leadTimeTier, recommendation.leadTimeSampleSize) }}.
+                    </template>
                   </span>
                 </MpFormControl>
                 <MpFormControl id="np-track-by" class="np-field-270" is-required>

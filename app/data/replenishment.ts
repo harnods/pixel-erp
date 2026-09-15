@@ -895,6 +895,17 @@ export interface MinStockRecommendation {
   avgDailySales: number
   leadTimeDays: number
   leadTimeTier: LeadTimeTier
+  /**
+   * Whether the lead time is MEASURED or inherited. A category default and an
+   * average of five real receipts produce numbers that look identical on screen,
+   * so any surface quoting one must be able to say which it is (US-001 AC-03/04).
+   */
+  leadTimeEstimated: boolean
+  /** PO-backed receipts averaged, when the tier is `computed`; 0 otherwise. */
+  leadTimeSampleSize: number
+  /** null when no preferred vendor is set — the lead time is then not theirs. */
+  preferredVendorId: string | null
+  preferredVendorName: string
   safetyDays: number
   /** The warehouse this figure came from — the one that would run out first. */
   warehouseId: string
@@ -944,6 +955,7 @@ export function recommendedMinStock(
     const velocity = velocityFor(sku, wh.id, cfg, asOf)
     const safetyDays = safetyDaysOverride ?? settings.safetyDays
     const leadTimeDays = settings.manualLeadTimeDays ?? derived.days ?? cfg.fallbackLeadTimeDays
+    const tier: LeadTimeTier = settings.manualLeadTimeDays !== null ? 'manual' : derived.tier
 
     // No demand basis means no reorder point — the same rule the worklist uses,
     // so the form cannot show a number the engine would refuse to stand behind.
@@ -955,7 +967,11 @@ export function recommendedMinStock(
         value,
         avgDailySales: velocity.avgDailySales,
         leadTimeDays,
-        leadTimeTier: settings.manualLeadTimeDays !== null ? 'manual' : derived.tier,
+        leadTimeTier: tier,
+        leadTimeEstimated: isEstimatedTier(tier),
+        leadTimeSampleSize: derived.sampleSize,
+        preferredVendorId: vendorItem?.vendorId ?? null,
+        preferredVendorName: vendorItem ? vendorNameFor(vendorItem.vendorId) : '',
         safetyDays,
         warehouseId: wh.id,
         warehouseName: wh.name,
@@ -973,6 +989,10 @@ export function recommendedMinStock(
     avgDailySales: 0,
     leadTimeDays: derived.days ?? cfg.fallbackLeadTimeDays,
     leadTimeTier: derived.tier,
+    leadTimeEstimated: isEstimatedTier(derived.tier),
+    leadTimeSampleSize: derived.sampleSize,
+    preferredVendorId: vendorItem?.vendorId ?? null,
+    preferredVendorName: vendorItem ? vendorNameFor(vendorItem.vendorId) : '',
     safetyDays: safetyDaysOverride ?? cfg.safetyDaysGlobal,
     warehouseId: '',
     warehouseName: '',
