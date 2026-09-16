@@ -34,6 +34,7 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
+import { formatDateTimeLong } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
 import { useGradeModal } from '~/composables/useGradeModal'
 import {
@@ -243,6 +244,11 @@ function confirmDelete() {
 }
 
 // ─── Activity log (whole list) ─────────────────────────────────────────────────
+/** The most recent change across the list — the provenance line that opens the log
+ *  (rule/activity-log-trigger: the line IS the affordance, click the thing it says). */
+const lastUpdated = computed(() =>
+  grades().reduce<Grade | null>((latest, g) => (!latest || g.updatedAt > latest.updatedAt ? g : latest), null),
+)
 // The Last updated column is gone, so the list's own log opens from the link above
 // the table and carries every grade's entries together, newest first.
 const listActivityOpen = ref(false)
@@ -312,11 +318,13 @@ const asGrade = (row: unknown) => row as Grade
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- The list's activity log. Deviation from rule/activity-log-trigger, which
-             puts the trigger on a "Last updated" line: that column is gone, and an
-             index page has no detail summary to carry the line. -->
-        <MpTextlink id="grade-activity-log" as="a" class="grade-activity-link" @click.prevent="listActivityOpen = true">
-          {{ t('Activity log') }}
+        <!-- rule/activity-log-trigger: the "Last updated by … " provenance line IS the
+             trigger. An index page has no detail summary, so it sits above the table. -->
+        <MpTextlink
+          v-if="lastUpdated" id="grade-activity-log" as="a" class="grade-updated"
+          @click.prevent="listActivityOpen = true"
+        >
+          {{ t('Last updated by') }} {{ lastUpdated.updatedBy }} {{ t('on') }} {{ formatDateTimeLong(lastUpdated.updatedAt) }}
         </MpTextlink>
       </div>
       <div class="filter-right">
@@ -537,7 +545,7 @@ const asGrade = (row: unknown) => row as Grade
 
 /* ── Cells ── */
 .grade-wrap { white-space: normal; }
-.grade-activity-link { font-size: var(--mp-font-sizes-md); }
+.grade-updated { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 
 .row-kebab {
   display: inline-flex !important; align-items: center; justify-content: center;
