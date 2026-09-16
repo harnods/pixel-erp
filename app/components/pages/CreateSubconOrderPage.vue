@@ -40,8 +40,10 @@ const method = ref<SubconMethod>('resupply')
 const vendorId = ref(DEFAULT_SUBCON_VENDOR.id)
 const qty = ref(String(SUBCON_BATCH_QTY))
 const promisedDate = ref('')
-// Where components leave from, and where the vendor's output comes back to. The
-// transfer's DESTINATION is the vendor's own location, derived from the vendor.
+// Where the vendor's output comes back to. There is deliberately no source
+// warehouse field: a transfer draws from whatever warehouse each BOM component
+// is assigned on the work order, so asking here would only create a second,
+// conflicting answer. SOURCE_WAREHOUSE is the fallback the order records.
 const sourceWarehouseId = ref(SOURCE_WAREHOUSE.id)
 const receivingWarehouseId = ref(PRODUCTION_WAREHOUSE.id)
 
@@ -201,24 +203,6 @@ function handleSave() {
               </MpFormErrorMessage>
             </MpFormControl>
 
-            <!-- Source warehouse exists only for Resupply — it is the warehouse
-                 the transfer draws from. Basic uses the vendor's own stock and
-                 Dropship ships from a third party, so neither has one. -->
-            <MpFormControl v-if="needsSourceWarehouse" id="sc-source-warehouse" is-required>
-              <MpFormLabel>{{ t('Transfer components from') }}</MpFormLabel>
-              <ErpFilterSelect
-                id="sc-source-warehouse-select"
-                v-model="sourceWarehouseId"
-                :placeholder="t('Select warehouse')"
-                :options="warehouseOptions"
-                :is-clearable="false"
-                width="100%"
-              />
-              <p class="sc-field-hint">
-                {{ t('Destination') }}: {{ vendor.name }} — {{ t('in transit at vendor') }}
-              </p>
-            </MpFormControl>
-
             <MpFormControl id="sc-warehouse" is-required>
               <MpFormLabel>{{ t('Receive output into') }}</MpFormLabel>
               <ErpFilterSelect
@@ -331,7 +315,7 @@ function handleSave() {
 
           <p v-if="method === 'resupply'" class="sc-footnote">
             <MpIcon name="info" size="sm" />
-            {{ t('Components leave') }} {{ warehouseName(sourceWarehouseId) }}
+            {{ t('Components leave the warehouse each one is assigned on the work order') }}
             {{ t('but stay on your books until the vendor consumes them — track the balance on the custody dashboard.') }}
           </p>
         </section>

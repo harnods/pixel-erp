@@ -140,13 +140,6 @@ const subconDestination = computed(() => {
 })
 
 /** Which warehouse the components leave from, given the supply method. */
-const subconSourceLabel = computed(() => {
-  const c = subcon.value
-  if (!c) return ''
-  return c.method === 'resupply' ? (c.sourceWarehouseName ?? t('Warehouse not set'))
-    : c.method === 'dropship' ? t('3rd-party vendor, shipped direct (CID)')
-    : t('Sourced by the subcon vendor')
-})
 
 
 function goList() { router.push('/work-orders') }
@@ -271,10 +264,42 @@ const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
+  // The warehouse the line is actually drawn from, as chosen on the work order
+  // form. EXECUTION_WAREHOUSE is only the fallback for records saved before that
+  // was persisted.
+  const wh = wo.value?.componentWarehouses?.[r.productId]
+  return {
+    productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—',
+    purchaseCost: r.purchaseCost, warehouse: wh?.name ?? EXECUTION_WAREHOUSE,
+    warehouseId: wh?.id, needed: r.needed, unit: r.unit,
+  }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+/**
+ * Where a subcon transfer draws FROM — the warehouse the components themselves
+ * name. The subcon setup no longer asks for it separately: the component lines
+ * already say where each material comes from, and two sources of truth would
+ * only disagree.
+ */
+const subconOrigin = computed(() => {
+  const first = rawMaterials.value.find(r => r.warehouseId)
+  return first?.warehouseId ? { id: first.warehouseId, name: first.warehouse } : undefined
+})
+
+const subconSourceLabel = computed(() => {
+  const c = subcon.value
+  if (!c) return ''
+  if (c.method !== 'resupply') {
+    return c.method === 'dropship'
+      ? t('3rd-party vendor, shipped direct (CID)')
+      : t('Sourced by the subcon vendor')
+  }
+  // Read off the components themselves; the stored value is only the fallback
+  // for records saved while the setup still asked for a source warehouse.
+  return subconOrigin.value?.name ?? c.sourceWarehouseName ?? t('Warehouse not set')
+})
 
 // ── Complete work order — blocked by unconsumed raw material qty ────────────
 // Clicking "Complete work order" while any raw material still has qty left to
@@ -448,8 +473,8 @@ function createDocument(kind: SubconDocKind) {
     bomNumber: bom.value?.number ?? '',
     vendorName: c.vendorName,
     requiredDate: c.promisedDate,
-    originWarehouseId: c.sourceWarehouseId,
-    originWarehouseName: c.sourceWarehouseName,
+    originWarehouseId: subconOrigin.value?.id ?? c.sourceWarehouseId,
+    originWarehouseName: subconOrigin.value?.name ?? c.sourceWarehouseName,
     receivingWarehouseId: c.receivingWarehouseId,
     receivingWarehouseName: c.receivingWarehouseName,
     destinationWarehouseId: subconDestination.value?.id,

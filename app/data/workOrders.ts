@@ -53,6 +53,12 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Warehouse each component is drawn from, keyed by productId — set per line on
+   * the work order form. A subcon transfer takes its ORIGIN from here rather than
+   * asking again: the components already say where they come from.
+   */
+  componentWarehouses?: Record<string, { id: string; name: string }>
   /** Present only on a `Subcontracting` work order — the vendor setup that decides
    *  which purchase requests, transfers and receipts the work order raises. */
   subcon?: WorkOrderSubconSetup

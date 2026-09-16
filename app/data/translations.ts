@@ -3654,6 +3654,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Discrepancy": "Selisih",
   "Overdue return": "Terlambat dikembalikan",
   "Subcon cost": "Biaya subkon",
+  "Components leave the warehouse each one is assigned on the work order": "Komponen keluar dari gudang yang ditetapkan untuk masing-masing di perintah kerja",
   "Transfer qty cannot exceed what the work order still needs": "Jumlah transfer tidak boleh melebihi kebutuhan perintah kerja yang tersisa",
   "outstanding": "tersisa",
   "Every component this work order needs has already been transferred. Add products below only if you are sending extra.": "Semua komponen yang dibutuhkan perintah kerja ini sudah ditransfer. Tambahkan produk di bawah hanya jika Anda mengirim tambahan.",

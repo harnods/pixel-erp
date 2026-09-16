@@ -25,7 +25,7 @@ import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconPlanPreview from '~/components/patterns/SubconPlanPreview.vue'
 import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
-  SOURCE_WAREHOUSE, PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
+  PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
   SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
   type SubconScope, type SubconSplit, type SubconMethod,
@@ -144,7 +144,6 @@ const subconPromisedDate = ref('')
 // Where components leave from, and where the vendor's output comes back to.
 // The DESTINATION of the transfer is the vendor's own location, not a company
 // warehouse, so it is derived from the chosen vendor rather than picked.
-const subconSourceWarehouseId = ref(SOURCE_WAREHOUSE.id)
 const subconWarehouseId = ref(DEFAULT_SUBCON_VENDOR.warehouseId ?? '')
 const subconReceivingWarehouseId = ref(PRODUCTION_WAREHOUSE.id)
 const subconDateError = ref(false)
@@ -181,6 +180,7 @@ const subconMethodHint = computed(() => t(SUBCON_METHOD_DESCRIPTION[subconScope.
 
 /** Only `resupply` moves stock out of a company warehouse. */
 const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
+
 
 // The vendor's own locations. Changing vendor re-points the destination unless
 // the user has deliberately chosen a different one.
@@ -267,6 +267,15 @@ interface RawRow {
 let rawSeq = 0
 const makeRaw = (): RawRow => ({ id: rawSeq++, productId: '', purchaseCost: 0, warehouseId: '', needed: '', unit: '', requiredDate: '', batchSelection: [], serialSelection: [] })
 const rawRows = ref<RawRow[]>([makeRaw()])
+
+/**
+ * Where a subcon transfer draws FROM. Not a field: each component line already
+ * names its warehouse, so asking again would invite the two to disagree. Takes
+ * the first component that has one — the transfer form lets the operator change
+ * it if components span warehouses.
+ */
+const subconSourceWarehouseId = computed(() =>
+  rawRows.value.find(r => r.productId && r.warehouseId)?.warehouseId ?? '')
 const bulkSetWarehouse = ref(false)
 function onRawProduct(row: RawRow, id: string) {
   const p = CATALOG.find(c => c.id === id)
@@ -346,8 +355,21 @@ const subconCostRows = ref<SubconCostRow[]>([makeSubconCost()])
 /** The service the vendor performs, which depends on how much is subcontracted. */
 const scopeServiceId = computed(() => (subconScope.value === 'finished-good' ? 'svc-roast-pack' : 'svc-roast'))
 
-/** The default two lines for the current scope — the vendor's fee plus freight. */
+/**
+ * The lines to start from. A Subcontracting BOM defines its own services — those
+ * ARE this order's subcon cost, so they win. The scope-derived pair below is only
+ * the fallback for a BOM that predates the Subcon cost section.
+ */
 function defaultSubconCostRows(): SubconCostRow[] {
+  const fromBom = findBom(bomId.value)?.subconCost ?? []
+  if (fromBom.length) {
+    return [
+      ...fromBom.map(l => makeSubconCost({
+        productId: l.productId, costDriver: l.costDriver, amount: String(l.amount),
+      })),
+      makeSubconCost(),
+    ]
+  }
   const service = subconServiceProduct(scopeServiceId.value)!
   const freight = subconServiceProduct('svc-handling')!
   return [
@@ -371,7 +393,7 @@ function subconCostUntouched(): boolean {
 
 // Seed on entering Subcontracting, and re-seed when the scope changes which
 // service applies — but never overwrite figures the user has edited.
-watch([isSubcon, subconScope], ([on]) => {
+watch([isSubcon, subconScope, bomId], ([on]) => {
   if (!on) return
   const empty = subconCostRows.value.every(r => !r.productId)
   if (empty || subconCostUntouched()) subconCostRows.value = defaultSubconCostRows()
@@ -535,6 +557,17 @@ function parseDateRange(v: Date[]): { start: string; end: string } {
   return { start, end: v[1] ? toLocalIso(v[1]) : start }
 }
 
+/** Warehouse per component line, so the detail page and any subcon transfer can
+ *  read where each material actually comes from. */
+function buildComponentWarehouses(): Record<string, { id: string; name: string }> | undefined {
+  const out: Record<string, { id: string; name: string }> = {}
+  for (const row of rawRows.value) {
+    if (!row.productId || !row.warehouseId) continue
+    out[row.productId] = { id: row.warehouseId, name: warehouseName(row.warehouseId) }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 // Reservation attached to the saved WorkOrder — only tracked rows with an
 // actual pick contribute an entry.
 function buildMaterialReservations(): Record<string, WorkOrderMaterialReservation> | undefined {
@@ -568,6 +601,7 @@ function saveWorkOrder() {
     planEndDate: end,
     sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
     materialReservations: buildMaterialReservations(),
+    componentWarehouses: buildComponentWarehouses(),
     subcon: isSubcon.value
       ? {
           scope: subconScope.value,
@@ -819,18 +853,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
               />
               <!-- One caption instead of three description cards. -->
               <p class="wo-subcon-hint">{{ subconMethodHint }}</p>
-            </MpFormControl>
-
-            <!-- Source warehouse exists only for Resupply — it is the warehouse
-                 the transfer draws from. Basic uses the vendor's own stock and
-                 Dropship ships from a third party, so neither has one. -->
-            <MpFormControl v-if="subconNeedsSource" id="wo-subcon-source-wh" is-required>
-              <MpFormLabel>{{ t('Transfer components from') }}</MpFormLabel>
-              <MpAutocomplete
-                id="wo-subcon-source-wh-ac" v-model="subconSourceWarehouseId" :data="warehouseOptions"
-                label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
-                is-searchable use-portal is-full-width
-              />
             </MpFormControl>
 
             <!-- The vendor's own location. Stock sent here is in their custody
