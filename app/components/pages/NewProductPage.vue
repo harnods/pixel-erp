@@ -13,10 +13,7 @@ import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.v
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
-import { recommendedMinStock, productActionRollup } from '~/data/replenishment'
-import { effectiveSettings, getSkuOverride, saveSkuOverride } from '~/data/replenishmentSettings'
-import { getReplenishmentConfig } from '~/data/replenishmentConfig'
-import { leadTimeTierLabel } from '~/data/leadTimeHistory'
+import { productActionRollup } from '~/data/replenishment'
 
 const { t } = useLocale()
 
@@ -49,21 +46,7 @@ const photoDataUrl = ref('')
 // (quantity, batch or serial number), never whether, so the opt-out checkbox
 // isn't rendered there and this stays true.
 const trackStock = ref(true)
-/**
- * The two product-level CASCADE DEFAULTS (D14 / D15, US-024 VR-05).
- *
- * Neither is a value in its own right — each is the figure a warehouse inherits
- * when it has set nothing itself. That is what lets a business run "product
- * level only" (set these, override nothing) or mix (default for the long tail,
- * overrides for A-items), which is D15's whole argument for not needing a
- * company-wide product-vs-warehouse toggle.
- *
- * Deliberately NOT the same thing as the bulk editor on Stock by warehouses: a
- * bulk write stamps explicit values onto the rows it touches and is frozen there,
- * while these are live and reach warehouses that do not exist yet.
- */
-const minStock = ref('')
-const safetyDays = ref('')
+
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
 
@@ -99,13 +82,6 @@ onMounted(() => {
   photoDataUrl.value = p.img
   purchaseCost.value = p.buyPrice ? String(p.buyPrice) : ''
   salesPrice.value = p.sellPrice ? String(p.sellPrice) : ''
-
-  // Only a SKU-level OVERRIDE prefills. Leaving the box empty is what makes the
-  // value inherited rather than pinned, so an inherited figure must show as the
-  // placeholder, never as text in the field.
-  const override = getSkuOverride(p.sku)
-  if (override.reorderPoint !== undefined) minStock.value = String(override.reorderPoint)
-  if (override.safetyDays !== undefined) safetyDays.value = String(override.safetyDays)
 })
 
 /**
@@ -128,19 +104,9 @@ const rollup = computed(() => {
 })
 
 /** What a warehouse inherits when this product sets no default of its own. */
-const inheritedSafetyDays = computed(() => {
-  const cfg = getReplenishmentConfig()
-  return category.value
-    ? (cfg.safetyDaysByCategory[category.value] ?? cfg.safetyDaysGlobal)
-    : cfg.safetyDaysGlobal
-})
 
 /** Only used to decide whether a typed Default min. stock differs from the
  *  calculation. */
-const recommendation = computed(() => {
-  const s = sku.value.trim()
-  return s ? recommendedMinStock(s) : null
-})
 
 const unitOptions = computed(() =>
   [...new Set(['Pcs', ...PRODUCTS.map(p => p.unit)])].sort().map(u => ({ label: u, value: u })),
@@ -264,7 +230,6 @@ function setDemoState(s: DemoState) {
     unit.value = 'Pcs'
     description.value = ''
     photoDataUrl.value = ''
-    minStock.value = ''
     trackStock.value = true
     trackStockBy.value = 'Quantity'
     inventoryAccount.value = '1-10200 Inventory'
@@ -289,7 +254,6 @@ function setDemoState(s: DemoState) {
     category.value = categoryOptions.value[0]?.value ?? ''
     unit.value = 'Pcs'
     description.value = 'Single-origin arabica coffee beans from Gayo highlands, medium roast, 250g pack.'
-    minStock.value = '10'
     trackStock.value = true
     trackStockBy.value = 'Quantity'
     inventoryAccount.value = '1-10200 Inventory'
@@ -370,8 +334,6 @@ function resetForm() {
   unit.value = 'Pcs'
   description.value = ''
   photoDataUrl.value = ''
-  minStock.value = ''
-  safetyDays.value = ''
   trackStock.value = true
   trackStockBy.value = 'Quantity'
   doesBuy.value = true
@@ -394,20 +356,6 @@ function resetForm() {
  * recommendation; accepting the suggested figure leaves it calculated, so it
  * keeps tracking demand instead of freezing at today's number.
  */
-function saveReplenishmentInputs(savedSku: string) {
-  const min = minStock.value.trim()
-  const safety = safetyDays.value.trim()
-  const recommended = recommendation.value?.value ?? null
-
-  // Empty means INHERIT for both, so an empty box clears the default rather than
-  // pinning a zero — the same rule every tier of the cascade follows.
-  saveSkuOverride(savedSku, {
-    reorderPoint: min === '' || Number(min) === recommended
-      ? undefined
-      : Math.max(0, Number(min)),
-    safetyDays: safety === '' ? undefined : Math.max(0, Number(safety)),
-  })
-}
 
 async function save() {
   if (!validate()) return
@@ -419,20 +367,17 @@ async function save() {
 
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
-    saveReplenishmentInputs(payload.sku)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
     // Seed (CATALOG) product — its master fields are read-only, but replenishment
     // settings are the tenant's own policy and DO persist, for seed products too.
-    saveReplenishmentInputs(props.orderId!)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
     // New product → whatever's in the field (free-typed or generated via the
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
-    saveReplenishmentInputs(created.sku)
     toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
@@ -670,9 +615,9 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   <span v-if="rollup && rollup.dueCount" class="np-field-hint">
                     {{ rollup.totalSuggestedQty.toLocaleString('id-ID') }}
                     {{ rollup.unit || unit }} {{ t('suggested in total') }}
-                    <a class="np-field-link" @click="minStockDetailsOpen = !minStockDetailsOpen">
-                      {{ minStockDetailsOpen ? t('Hide') : t('Which warehouses?') }}
-                      <MpIcon :name="minStockDetailsOpen ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                    <a class="np-field-link" @click="dueDetailsOpen = !dueDetailsOpen">
+                      {{ dueDetailsOpen ? t('Hide') : t('Which warehouses?') }}
+                      <MpIcon :name="dueDetailsOpen ? 'chevrons-up' : 'chevrons-down'" size="sm" />
                     </a>
                   </span>
                   <span v-else-if="rollup && rollup.warehouseCount" class="np-field-hint">
@@ -682,7 +627,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
                     {{ t('Appears once this product is stocked in a warehouse.') }}
                   </span>
 
-                  <div v-if="minStockDetailsOpen && rollup?.dueCount" class="np-field-details">
+                  <div v-if="dueDetailsOpen && rollup?.dueCount" class="np-field-details">
                     <p v-for="w in rollup.dueWarehouses" :key="w.warehouseId" class="np-field-details-row">
                       {{ w.warehouseName }}: {{ w.qty.toLocaleString('id-ID') }} {{ rollup.unit || unit }}
                     </p>
@@ -705,57 +650,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   product-level "Min. stock" push values down into warehouses that
                   had their own answer.
                 -->
-                <MpFormControl id="np-default-safety-days" class="np-field-270">
-                  <MpFormLabel>
-                    <span class="np-label-with-info">
-                      {{ t('Default safety days') }}
-                      <MpTooltip
-                        id="np-default-safety-days-tip"
-                        :label="t('Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.')"
-                        placement="top" use-portal
-                      >
-                        <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
-                      </MpTooltip>
-                    </span>
-                  </MpFormLabel>
-                  <div class="np-suffix-wrap">
-                    <input
-                      id="np-safety-days-input" v-model="safetyDays" class="np-suffix-input"
-                      type="text" inputmode="numeric" :placeholder="String(inheritedSafetyDays)"
-                    />
-                    <span class="np-suffix-chip">{{ t('days') }}</span>
-                  </div>
-                  <span class="np-field-hint">
-                    {{ t('Leave empty to inherit') }} {{ inheritedSafetyDays }} {{ t('days') }}
-                    {{ t('from the category or company default.') }}
-                  </span>
-                </MpFormControl>
 
-                <MpFormControl id="np-default-min-stock" class="np-field-270">
-                  <MpFormLabel>
-                    <span class="np-label-with-info">
-                      {{ t('Default min. stock') }}
-                      <MpTooltip
-                        id="np-default-min-stock-tip"
-                        :label="t('A starting figure for warehouses that have no minimum stock of their own yet. A warehouse that sets its own always wins. This is not part of the total above.')"
-                        placement="top" use-portal
-                      >
-                        <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
-                      </MpTooltip>
-                    </span>
-                  </MpFormLabel>
-                  <div class="np-suffix-wrap">
-                    <input
-                      id="np-min-stock-input" v-model="minStock" class="np-suffix-input"
-                      type="text" inputmode="numeric"
-                      :placeholder="t('Calculated per warehouse')"
-                    />
-                    <span class="np-suffix-chip">{{ unit || 'Pcs' }}</span>
-                  </div>
-                  <span class="np-field-hint">
-                    {{ t('Leave empty and each warehouse calculates its own from its sales.') }}
-                  </span>
-                </MpFormControl>
                 <MpFormControl id="np-track-by" class="np-field-270" is-required>
                   <MpFormLabel>{{ t('Track stock by') }}</MpFormLabel>
                   <MpAutocomplete
