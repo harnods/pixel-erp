@@ -284,6 +284,54 @@ const whReplenishment = computed(() => {
   return out
 })
 
+/**
+ * The little grey line under each figure, in read AND edit mode.
+ *
+ * It used to disappear the moment Edit was clicked, which is exactly backwards:
+ * "7" and "39" mean nothing on their own, and the moment you most need to know
+ * whether a number is inherited or calculated is while you are deciding whether
+ * to overwrite it. The full arithmetic stays on the cell's hover title; these are
+ * the short forms that fit a 130px column.
+ */
+function whSafetySub(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (whEditing.value) {
+    // While editing, the useful fact is what an empty box falls back TO.
+    return r.safetyDaysSource === 'sku-warehouse'
+      ? `set here · empty = ${r.safetyDays}`
+      : `inherited ${r.safetyDays}`
+  }
+  return r.safetyDaysSource === 'sku-warehouse' ? 'set for this warehouse' : 'inherited'
+}
+
+function whMinStockSub(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (whEditing.value) {
+    return r.recommended === null
+      ? 'no sales here — not calculated'
+      : `calculated ${r.recommended}`
+  }
+  if (r.recommended === null && r.source === 'none') return 'not calculated — no sales here'
+  return r.source === 'calculated' ? 'calculated' : 'set by you'
+}
+
+/** Hover explanation for the safety-days cell — where the value comes from. */
+function whSafetyTitle(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  const where = {
+    'sku-warehouse': 'Set for this warehouse.',
+    sku: 'Inherited from this product.',
+    warehouse: 'Inherited from this warehouse.',
+    category: 'Inherited from the category default.',
+    global: 'Inherited from the company default.',
+  }[r.safetyDaysSource] ?? 'Inherited.'
+  return `${r.safetyDays} days of extra cover on top of the ${r.leadTimeDays}-day lead time. `
+    + `${where} Leave the box empty to keep inheriting it.`
+}
+
 /** Per-row explanation for the min-stock cell, shown on hover. */
 function whMinStockTitle(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
@@ -1156,7 +1204,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
                     <!-- Safety days — the decision. Placeholder shows what this
                          warehouse inherits, so an untouched box means inherit. -->
-                    <td class="pd-td pd-td--num">
+                    <td class="pd-td pd-td--num" :title="whSafetyTitle(s.warehouseId)">
                       <MpInput
                         v-if="whEditing"
                         :id="`pd-wh-safety-${s.warehouseId}`"
@@ -1166,13 +1214,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         :aria-label="`Safety days for ${s.warehouseName}`"
                         :class="css({ width: '88px' })"
                       />
-                      <template v-else>
-                        {{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}
-                        <span
-                          v-if="whReplenishment[s.warehouseId] && whReplenishment[s.warehouseId]!.safetyDaysSource !== 'sku-warehouse'"
-                          class="pd-cell-sub"
-                        >inherited</span>
-                      </template>
+                      <template v-else>{{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}</template>
+                      <span v-if="whSafetySub(s.warehouseId)" class="pd-cell-sub">
+                        {{ whSafetySub(s.warehouseId) }}
+                      </span>
                     </td>
 
                     <!-- Min. stock — what safety days works out to, per the PRD's
@@ -1184,7 +1229,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         :id="`pd-wh-min-stock-${s.warehouseId}`"
                         v-model="whMinDraft[s.warehouseId]"
                         type="number"
-                        :placeholder="whReplenishment[s.warehouseId]?.recommended !== null ? String(whReplenishment[s.warehouseId]?.recommended ?? '') : '—'"
+                        :placeholder="whReplenishment[s.warehouseId]?.recommended !== null ? String(whReplenishment[s.warehouseId]?.recommended ?? '') : String(s.minStock)"
                         :aria-label="`Min. stock for ${s.warehouseName}`"
                         :class="css({ width: '88px' })"
                       />
@@ -1198,14 +1243,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       -->
                       <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
                         {{ s.minStock.toLocaleString('id-ID') }}
-                        <span class="pd-cell-sub">not calculated — no sales here</span>
                       </template>
                       <template v-else>
                         {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
-                        <span class="pd-cell-sub">
-                          {{ whReplenishment[s.warehouseId]?.source === 'calculated' ? 'calculated' : 'set by you' }}
-                        </span>
                       </template>
+                      <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">
+                        {{ whMinStockSub(s.warehouseId) }}
+                      </span>
                     </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
