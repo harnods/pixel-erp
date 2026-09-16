@@ -112,6 +112,9 @@ export interface RaisedSubconDocument {
   number: string
   /** Route prefix the detail page lives under. */
   route: string
+  /** ISO date the document was raised. Absent on records created before the
+   *  Documents tab started listing dates — rendered as "—" in that case. */
+  raisedAt?: string
 }
 
 export interface WorkOrderMaterialReservation {
@@ -255,7 +258,7 @@ export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocum
   if (!wo?.subcon) return
   const existing = wo.subcon.raisedDocuments ?? []
   if (existing.some(d => d.id === doc.id)) return
-  wo.subcon.raisedDocuments = [...existing, doc]
+  wo.subcon.raisedDocuments = [...existing, { raisedAt: new Date().toISOString().slice(0, 10), ...doc }]
   persistWorkOrders()
 }
 

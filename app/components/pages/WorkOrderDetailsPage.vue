@@ -149,6 +149,27 @@ const subconPlan = computed(() => {
   return rows
 })
 
+/**
+ * Every transaction in this work order's run, one row each — the Transactions
+ * tab's list. Flat rather than grouped by thread: the tab has the room to read
+ * the run document by document, and a step still to come sits in chain order
+ * among the raised ones so what is left is obvious.
+ */
+const subconTransactions = computed(() =>
+  subconPlan.value.flatMap(row =>
+    row.entries.map((entry, i) => ({
+      key: `${row.key}-${entry.kind}-${entry.doc?.id ?? `planned-${i}`}`,
+      tag: entry.tag,
+      title: entry.title,
+      module: row.module,
+      doc: entry.doc,
+    })),
+  ),
+)
+
+/** Everything that can be raised right now, across both threads. */
+const subconCreateActions = computed(() => subconPlan.value.flatMap(row => row.actions))
+
 /** Where the work order sits on the five-stage subcon chain. */
 const subconStage = computed<1 | 2 | 3 | 4 | 5>(() => {
   const w = wo.value
@@ -232,10 +253,20 @@ const flowOptions: { value: Flow; label: string }[] = [
 const fromProductionRequest = computed(() => flow.value === 'production-request')
 
 // ── Bottom tabs ──────────────────────────────────────────────────────────────
-const bottomTabs = computed(() =>
-  fromProductionRequest.value ? ['Partial production', 'Linked transactions'] : ['Partial production'],
-)
+/**
+ * A subcon work order produces nothing in-house — the vendor's deliveries are
+ * what produce it — so "Partial production" never has anything to show. Its slot
+ * is given to Transactions, which is where the whole document run is listed and
+ * raised from.
+ */
+const bottomTabs = computed(() => {
+  const first = subcon.value ? 'Transactions' : 'Partial production'
+  return fromProductionRequest.value ? [first, 'Linked transactions'] : [first]
+})
 const activeBottomTab = ref('Partial production')
+watch(bottomTabs, (tabs) => {
+  if (!tabs.includes(activeBottomTab.value)) activeBottomTab.value = tabs[0]!
+}, { immediate: true })
 
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
 // A subcon work order has no in-house consumption to record: the materials go to
@@ -1014,77 +1045,11 @@ function suppressFabClick(e: MouseEvent) {
           <SubconStageChain :stage="subconStage" :method="subcon.method" />
           <span class="wod-subcon-progress__text">
             {{ subconStarted
-              ? t('Work order started — the supply documents below can be raised against it.')
+              ? t('Work order started — raise its documents from the Transactions tab below.')
               : t('Still a draft. Start the work order before any supply document can be raised.') }}
           </span>
         </div>
 
-        <!-- The document chain: planned until the work order starts, raised after -->
-        <h3 class="wod-subcon-subtitle">{{ t('Documents') }}</h3>
-        <table class="wod-subcon-table">
-          <thead>
-            <tr>
-              <th class="wod-subcon-th">{{ t('Document') }}</th>
-              <th class="wod-subcon-th">{{ t('Transaction no.') }}</th>
-              <th class="wod-subcon-th">{{ t('Status') }}</th>
-              <th class="wod-subcon-th wod-subcon-th--action" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in subconPlan" :key="row.key" class="wod-subcon-tr">
-              <td class="wod-subcon-td">
-                <span class="wod-subcon-td__title">{{ row.label }}</span>
-                <span class="wod-subcon-td__module">{{ row.module }}</span>
-              </td>
-
-              <!-- Each document in the thread, tagged and titled, so dropping the
-                   "What it does" column costs no meaning. A raised one links to
-                   its detail page; a planned one shows what it will be. -->
-              <td class="wod-subcon-td">
-                <span class="wod-subcon-docs">
-                  <span v-for="(entry, i) in row.entries" :key="`${entry.kind}-${i}`" class="wod-subcon-doc">
-                    <span class="wod-subcon-doc__tag" :class="`wod-subcon-doc__tag--${entry.tag.toLowerCase()}`">{{ t(entry.tag) }}</span>
-                    <a
-                      v-if="entry.doc"
-                      class="cell-link"
-                      @click.prevent="openRaisedDocument(entry.doc)"
-                    >{{ entry.doc.number }}</a>
-                    <span v-else class="wod-subcon-muted">{{ t(entry.title) }} — {{ t('not raised yet') }}</span>
-                  </span>
-                </span>
-              </td>
-
-              <td class="wod-subcon-td">
-                <span
-                  class="wod-subcon-status"
-                  :class="row.entries.some(e => e.doc) ? 'wod-subcon-status--done'
-                    : subconStarted ? 'wod-subcon-status--ready'
-                    : 'wod-subcon-status--blocked'"
-                >
-                  {{ row.entries.some(e => e.doc) ? t('Raised')
-                    : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
-                </span>
-              </td>
-
-              <!-- Whatever the thread is ready for next — the request, then the
-                   order raised from it, then the deliveries and the invoice
-                   raised from that order. -->
-              <td class="wod-subcon-td wod-subcon-td--action">
-                <span v-if="subconStarted" class="wod-subcon-actions">
-                  <MpButton
-                    v-for="action in row.actions"
-                    :key="action.kind"
-                    variant="secondary"
-                    is-rounded
-                    @click="createDocument(action.kind)"
-                  >
-                    {{ action.label }}
-                  </MpButton>
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </section>
 
       <!-- ── Raw materials ── -->
@@ -1389,6 +1354,75 @@ function suppressFabClick(e: MouseEvent) {
             </table>
           </div>
         </div>
+        <!-- Subcon: the whole document run, listed and raised from one place. -->
+        <template v-else-if="activeBottomTab === 'Transactions'">
+          <div class="wod-tx-head">
+            <p class="wod-tx-caption">
+              {{ subconStarted
+                ? t('Every document raised for this work order, and what is still to come.')
+                : t('Start the work order to raise its documents.') }}
+            </p>
+            <!-- Always rendered once started, never disabled: when nothing is
+                 ready the menu says so rather than the button going grey
+                 (rule/btn-no-disabled-validation). -->
+            <MpPopover v-if="subconStarted" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton variant="primary" is-rounded>{{ t('Create transaction') }}</MpButton>
+              </MpPopoverTrigger>
+              <MpPopoverContent>
+                <MpPopoverList>
+                  <MpPopoverListItem
+                    v-for="action in subconCreateActions"
+                    :key="action.kind"
+                    @click="createDocument(action.kind)"
+                  >{{ action.label }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="!subconCreateActions.length" class="wod-tx-menu-empty">
+                    {{ t('Nothing left to raise') }}
+                  </MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+
+          <div class="wod-table-scroll">
+            <table class="wod-table">
+              <thead>
+                <tr>
+                  <th class="wod-th wod-th--tx-type">{{ t('Type') }}</th>
+                  <th class="wod-th">{{ t('Transaction no.') }}</th>
+                  <th class="wod-th">{{ t('Module') }}</th>
+                  <th class="wod-th">{{ t('Date') }}</th>
+                  <th class="wod-th">{{ t('Status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tx in subconTransactions" :key="tx.key" class="wod-tr">
+                  <td class="wod-td">
+                    <span class="wod-subcon-doc__tag" :class="`wod-subcon-doc__tag--${tx.tag.toLowerCase()}`">{{ t(tx.tag) }}</span>
+                  </td>
+                  <td class="wod-td">
+                    <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
+                    <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
+                  </td>
+                  <td class="wod-td">{{ tx.module }}</td>
+                  <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
+                  <td class="wod-td">
+                    <span
+                      class="wod-subcon-status"
+                      :class="tx.doc ? 'wod-subcon-status--done'
+                        : subconStarted ? 'wod-subcon-status--ready'
+                        : 'wod-subcon-status--blocked'"
+                    >
+                      {{ tx.doc ? t('Raised')
+                        : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
         <div v-else class="wod-empty">
           <p class="wod-empty-title">{{ t('No partial production') }}</p>
           <p class="wod-empty-desc">{{ t('Partial production records will appear here.') }}</p>
@@ -1640,6 +1674,27 @@ function suppressFabClick(e: MouseEvent) {
 /* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
    1400) — without this it'd render behind that modal instead of on top of it. */
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
+
+/* ── Transactions tab (subcon) ────────────────────────────────────────────── */
+.wod-tx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-4);
+}
+.wod-tx-caption {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+}
+/* A menu line that reports state rather than offering an action. */
+.wod-tx-menu-empty {
+  color: var(--mp-text-secondary);
+  pointer-events: none;
+}
+/* The tag column only ever holds a 2-3 letter chip. */
+.wod-th--tx-type { width: var(--mp-sizes-20, 80px); }
 
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
