@@ -170,16 +170,24 @@ const CATEGORY_DJP: Record<string, { code: string; unit: string }> = {
   'Grinder':            { code: djpCodeFor('850900'), unit: 'Unit' },     // electro-mechanical domestic appliance
   Equipment:            { code: djpCodeFor('841900'), unit: 'Unit' },     // machinery for treatment by heating/roasting
   Accessory:            { code: djpCodeFor('850900'), unit: 'Piece' },
+  // Apparel line — the subcontracting scenario.
+  Fabric:               { code: djpCodeFor('520800'), unit: 'Meter'    }, // woven cotton fabric
+  'Sewing Supplies':    { code: djpCodeFor('540000'), unit: 'Kilogram' }, // man-made filament thread
+  Apparel:              { code: djpCodeFor('620500'), unit: 'Piece'    }, // men's shirts
 }
 /** SKU -> DJP code/unit, for the roughly-half of products that ship pre-classified.
  *  This is only the SEED backfill — anything the user saves on the product form
  *  overrides it. Read tax info through `getProductTaxInfo()`, never off this map,
  *  or you'll miss every edit the user has made. */
 const DJP_SKUS = new Map(
-  PRODUCTS.filter((_, i) => i % 2 === 1).map((p) => {
-    const entry = CATEGORY_DJP[p.category]
-    return [p.sku, { djpCode: entry.code, djpUnit: entry.unit }]
-  }),
+  PRODUCTS.filter((_, i) => i % 2 === 1)
+    .flatMap((p) => {
+      const entry = CATEGORY_DJP[p.category]
+      // No mapping for this category → ship it unclassified rather than throwing.
+      // This map is built at import time, so a miss here used to crash app start.
+      if (!entry) return []
+      return [[p.sku, { djpCode: entry.code, djpUnit: entry.unit }] as const]
+    }),
 )
 
 /** Count of products awaiting approval — badges the sidebar/tab. */

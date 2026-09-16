@@ -16,6 +16,12 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
+import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
+import {
+  buildDocumentPlan, SUBCON_SCOPE_LABEL,
+  SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
+} from '~/data/subcon'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
@@ -31,10 +37,48 @@ import { warehouses } from '~/data/warehouses'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
+
 const router = useRouter()
 const route = useRoute()
 
 const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === props.orderId))
+// ── Subcontracting ───────────────────────────────────────────────────────────
+// Present only on a Subcontracting work order. The documents it raises are the
+// substance of the arrangement, so they get their own section rather than being
+// buried in the Linked transactions tab.
+const subcon = computed(() => wo.value?.subcon)
+
+/**
+ * A subcon work order can only raise its supply documents once it has actually
+ * started — a not-started work order is still a draft arrangement. The plan is
+ * therefore shown as "planned" until then, and as raised documents afterwards.
+ */
+const subconStarted = computed(() => !!wo.value && wo.value.status !== 'not started' && wo.value.status !== 'canceled')
+
+const subconPlan = computed(() => {
+  const c = subcon.value
+  return c ? buildDocumentPlan(c.scope, c.split, c.method) : []
+})
+
+/** Where the work order sits on the five-stage subcon chain. */
+const subconStage = computed<1 | 2 | 3 | 4 | 5>(() => {
+  const w = wo.value
+  if (!w || !w.subcon) return 1
+  if (w.status === 'completed') return 5
+  if (w.producedQty > 0) return 4
+  if (!subconStarted.value) return 1
+  return w.subcon.method === 'basic' ? 3 : 2
+})
+
+/** Which warehouse the components leave from, given the supply method. */
+const subconSourceLabel = computed(() => {
+  const c = subcon.value
+  if (!c) return ''
+  return c.method === 'resupply' ? (c.sourceWarehouseName ?? t('Warehouse not set'))
+    : c.method === 'dropship' ? t('3rd-party vendor, shipped direct (CID)')
+    : t('Sourced by the subcon vendor')
+})
+
 const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 
 function goList() { router.push('/work-orders') }
@@ -99,7 +143,7 @@ const attachments = [
 
 // ── Collapsible sections ──────────────────────────────────────────────────────
 const collapsed = reactive<Record<string, boolean>>({
-  raw: false, cost: false, routing: false, finished: false,
+  raw: false, cost: false, routing: false, subconCost: false, finished: false,
 })
 
 // ── Line-item status derivation (from the work order status) ─────────────────────
@@ -311,7 +355,38 @@ const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
   planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
 })))
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
-const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
+/**
+ * Subcon cost — the vendor's charges, which stand in for Production cost and
+ * Routing on a Subcontracting work order (the work is not performed in-house, so
+ * there is no labour, overhead or routing to report). Derived from the order's
+ * scope and quantity, the same figures the create form quoted.
+ */
+const subconCostLines = computed(() => {
+  const c = subcon.value
+  const w = wo.value
+  if (!c || !w) return []
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  return [
+    {
+      account: t(SUBCON_SERVICE_FEE[c.scope].name),
+      driver: t('Unit'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_SERVICE_FEE[c.scope].amount * factor,
+    },
+    {
+      account: t(SUBCON_HANDLING_FEE.name),
+      driver: t('Amount'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_HANDLING_FEE.amount * factor,
+    },
+  ]
+})
+const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+// On a subcon work order the vendor's fee replaces production + routing cost.
+const totalProductionCost = computed(() => (subcon.value
+  ? rawSubtotal.value + subconCostSubtotal.value
+  : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
 const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
   const p = catalogProduct(o.productId)
@@ -429,7 +504,7 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -492,6 +567,68 @@ function suppressFabClick(e: MouseEvent) {
         </div>
       </section>
 
+      <!-- ── Subcontracting — only on a Subcontracting work order ── -->
+      <section v-if="subcon" class="wod-section">
+        <div class="wod-section-head-static">
+          <h2 class="wod-section-title">{{ t('Subcontracting') }}</h2>
+          <SubconMethodChip :method="subcon.method" badge-for="additionalInformation" />
+        </div>
+
+        <div class="wod-info-grid">
+          <div class="content-list-col">
+            <ContentList :label="t('Subcon vendor')" :value="subcon.vendorName" />
+            <ContentList :label="t('Scope')" :value="t(SUBCON_SCOPE_LABEL[subcon.scope])" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
+            <ContentList :label="t('Components supplied from')" :value="subconSourceLabel" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Promised return date')" :value="subcon.promisedDate ? formatDate(subcon.promisedDate) : '—'" />
+            <ContentList :label="t('Receive output into')" :value="subcon.receivingWarehouseName" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Subcon order')" :value="subcon.subconOrderNumber ?? '—'" />
+          </div>
+        </div>
+
+        <!-- Where this work order sits on the subcon chain -->
+        <div class="wod-subcon-progress">
+          <SubconStageChain :stage="subconStage" :method="subcon.method" />
+          <span class="wod-subcon-progress__text">
+            {{ subconStarted
+              ? t('Work order started — the supply documents below can be raised against it.')
+              : t('Still a draft. Start the work order before any supply document can be raised.') }}
+          </span>
+        </div>
+
+        <!-- The document chain: planned until the work order starts, raised after -->
+        <h3 class="wod-subcon-subtitle">{{ t('Documents') }}</h3>
+        <table class="wod-subcon-table">
+          <thead>
+            <tr>
+              <th class="wod-subcon-th">{{ t('Document') }}</th>
+              <th class="wod-subcon-th">{{ t('What it does') }}</th>
+              <th class="wod-subcon-th">{{ t('Status') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="step in subconPlan" :key="step.kind" class="wod-subcon-tr">
+              <td class="wod-subcon-td">
+                <span class="wod-subcon-td__title">{{ t(step.title) }}</span>
+                <span class="wod-subcon-td__module">{{ t(step.module) }}</span>
+              </td>
+              <td class="wod-subcon-td wod-subcon-td--wrap">{{ t(step.detail) }}</td>
+              <td class="wod-subcon-td">
+                <span class="wod-subcon-status" :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'">
+                  {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
       <!-- ── Raw materials ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
@@ -532,7 +669,8 @@ function suppressFabClick(e: MouseEvent) {
       </section>
 
       <!-- ── Production cost ── -->
-      <section class="wod-section">
+      <!-- In-house cost structure — replaced by Subcon cost on a subcon WO. -->
+      <section v-if="!subcon" class="wod-section">
         <button class="wod-section-head" @click="collapsed.cost = !collapsed.cost">
           <h2 class="wod-section-title">{{ t('Production cost') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -565,7 +703,7 @@ function suppressFabClick(e: MouseEvent) {
       </section>
 
       <!-- ── Routing ── -->
-      <section class="wod-section">
+      <section v-if="!subcon" class="wod-section">
         <button class="wod-section-head" @click="collapsed.routing = !collapsed.routing">
           <h2 class="wod-section-title">{{ t('Routing') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -601,12 +739,50 @@ function suppressFabClick(e: MouseEvent) {
           </div>
           <div class="wod-subtotal-row"><span>{{ t('Routing cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(routingSubtotal) }}</span></div>
         </template>
+      </section>
 
-        <!-- Cost summary -->
+      <!-- ── Subcon cost — the vendor's charges, in place of production + routing ── -->
+      <section v-if="subcon" class="wod-section">
+        <button class="wod-section-head btn-enterprise" @click="collapsed.subconCost = !collapsed.subconCost">
+          <h2 class="wod-section-title">{{ t('Subcon cost') }}</h2>
+          <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.subconCost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <template v-if="!collapsed.subconCost">
+          <div class="wod-table-scroll">
+            <table class="wod-table">
+              <thead>
+                <tr>
+                  <th class="wod-th">{{ t('Cost component') }}</th>
+                  <th class="wod-th">{{ t('Charged by') }}</th>
+                  <th class="wod-th">{{ t('Cost driver') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
+                  <td class="wod-td">{{ l.account }}</td>
+                  <td class="wod-td">{{ l.chargedBy }}</td>
+                  <td class="wod-td">{{ l.driver }}</td>
+                  <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="wod-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
+        </template>
+      </section>
+
+      <!-- ── Cost summary — rows follow whichever cost structure applies ── -->
+      <section class="wod-section">
         <div class="wod-summary">
           <div class="wod-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <template v-if="subcon">
+            <div class="wod-summary-row"><span>{{ t('Subcon cost subtotal') }}</span><span>{{ formatIDR(subconCostSubtotal) }}</span></div>
+          </template>
+          <template v-else>
+            <div class="wod-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="wod-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          </template>
           <div class="wod-summary-row wod-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
@@ -989,7 +1165,7 @@ function suppressFabClick(e: MouseEvent) {
   width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle, #75808f);
 }
 .filter-search-input {
   flex: 1; border: none; outline: none; background: transparent;
@@ -1081,6 +1257,45 @@ function suppressFabClick(e: MouseEvent) {
   background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary);
   margin-bottom: var(--mp-spacing-5);
 }
+/* ── Subcontracting ──────────────────────────────────────────────────────── */
+.wod-subcon-progress {
+  display: flex; align-items: center; gap: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-4);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-default, #fff);
+}
+.wod-subcon-progress__text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+.wod-subcon-subtitle {
+  margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.wod-subcon-table { width: 100%; border-collapse: collapse; }
+.wod-subcon-th {
+  background: var(--mp-background-neutral-subtle);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  text-align: left; white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wod-subcon-td {
+  padding: var(--mp-spacing-3);
+  border-bottom: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  vertical-align: top; white-space: nowrap;
+}
+.wod-subcon-td--wrap { white-space: normal; }
+.wod-subcon-tr:last-child .wod-subcon-td { border-bottom: none; }
+.wod-subcon-td__title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
+.wod-subcon-td__module { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-subcon-status { font-size: var(--mp-font-sizes-md); }
+.wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
+.wod-subcon-status--blocked { color: var(--mp-text-secondary); }
+
 .wod-section-title {
   margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);

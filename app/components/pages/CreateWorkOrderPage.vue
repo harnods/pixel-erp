@@ -13,12 +13,23 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
-  MpCheckbox, MpRadio, toast,
+  MpCheckbox, MpRadio, MpTooltip, MpBadge, toast,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
-import { CATALOG } from '~/data/catalog'
+import { FULL_CATALOG as CATALOG } from '~/data/catalog'
 import { warehouses } from '~/data/warehouses'
 import { workOrderLinks } from '~/data/workOrderLinks'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
+import SubconPlanPreview from '~/components/patterns/SubconPlanPreview.vue'
+import {
+  SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
+  SOURCE_WAREHOUSE, PRODUCTION_WAREHOUSE,
+  SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
+  type SubconScope, type SubconSplit, type SubconMethod,
+} from '~/data/subcon'
 import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
@@ -45,6 +56,9 @@ const fromProductionRequest = computed(() => flow.value === 'production-request'
 const CATEGORY_OPTIONS = [
   { id: 'Standard', name: 'Standard' },
   { id: 'Order', name: 'Order' },
+  // Subcontracting turns on the vendor setup below — the work itself is performed
+  // outside, so the work order also has to raise the documents that get it there.
+  { id: 'Subcontracting', name: 'Subcontracting' },
 ]
 const WO_TYPE_OPTIONS = [
   { id: 'Assembly', name: 'Assembly' },
@@ -87,6 +101,13 @@ const PROCESS_OPTIONS = [
   { id: 'finishing', name: 'Finishing & packing' },
   { id: 'qc', name: 'Quality control' },
 ]
+// A subcon work order buys a service instead of running its own processes, so its
+// cost lines are NON-TRACK service products (the same list the BOM costs against),
+// not in-house labour/overhead/routing accounts.
+const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
+  id: p.id, name: `${p.name} · ${p.sku}`,
+}))
+const SUBCON_COST_DRIVER_OPTIONS = SUBCON_COST_DRIVERS.map(d => ({ id: d, name: d }))
 const ACCOUNT_MAPPING_OPTIONS = [
   { id: 'wip', name: 'Work in process' },
   { id: 'routing-cost', name: 'Routing cost' },
@@ -109,6 +130,64 @@ const planDates = ref<Date[]>([])
 const planDatesError = ref(false)
 const producedQty = ref('')
 const createAsSubAssembly = ref(false)
+
+// ── Subcontracting ───────────────────────────────────────────────────────────
+// Only meaningful when Category = Subcontracting. The three choices below decide
+// which purchase requests / transfers / receipts this work order raises; the plan
+// is previewed live so that consequence is visible before saving.
+const isSubcon = computed(() => category.value === 'Subcontracting')
+const subconScope = ref<SubconScope>('finished-good')
+const subconSplit = ref<SubconSplit>('full')
+const subconMethod = ref<SubconMethod>('resupply')
+const subconVendorId = ref(DEFAULT_SUBCON_VENDOR.id)
+const subconPromisedDate = ref('')
+// Where components leave from, and where the vendor's output comes back to.
+// The DESTINATION of the transfer is the vendor's own location, not a company
+// warehouse, so it is derived from the chosen vendor rather than picked.
+const subconSourceWarehouseId = ref(SOURCE_WAREHOUSE.id)
+const subconReceivingWarehouseId = ref(PRODUCTION_WAREHOUSE.id)
+const subconDateError = ref(false)
+
+const SUBCON_VENDOR_OPTIONS = SUBCON_VENDORS
+  .filter(v => v.role === 'subcon')
+  .map(v => ({ id: v.id, name: v.name }))
+
+const subconVendor = computed(() =>
+  SUBCON_VENDORS.find(v => v.id === subconVendorId.value) ?? DEFAULT_SUBCON_VENDOR)
+
+const SUBCON_SCOPE_OPTIONS = (Object.keys(SUBCON_SCOPE_LABEL) as SubconScope[])
+  .map(k => ({ id: k, name: t(SUBCON_SCOPE_LABEL[k]) }))
+
+const SUBCON_SPLIT_OPTIONS = [
+  { id: 'full', name: t('Full quantity') },
+  { id: 'partial', name: t('Partial (split)') },
+]
+
+// Each method's label says WHO supplies the components — the distinction that
+// decides the document chain. The chosen one's detail shows as a caption.
+const SUBCON_METHOD_OPTIONS = (Object.keys(SUBCON_METHOD_LABEL) as SubconMethod[]).map(m => ({
+  id: m,
+  name: `${m === 'basic' ? t('By the subcon vendor')
+    : m === 'resupply' ? t('By the company itself')
+    : t('By a 3rd-party vendor')} · ${t(SUBCON_METHOD_LABEL[m])}`,
+}))
+
+const subconMethodLabel = computed(() => (subconScope.value === 'finished-good'
+  ? t('How are components procured?')
+  : t('How does the raw material reach the vendor?')))
+
+const subconMethodHint = computed(() => t(SUBCON_METHOD_DESCRIPTION[subconScope.value][subconMethod.value]))
+
+/** Only `resupply` moves stock out of a company warehouse. */
+const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
+
+function warehouseName(id: string) {
+  return warehouseOptions.find(w => w.id === id)?.name ?? ''
+}
+
+/** A subcon work order cannot raise its supply documents while it is still a draft. */
+const subconGateText = t('Saving this work order creates it as a draft. Start the work order before the subcon purchase request and warehouse transfer can be raised — no supply documents exist until then.')
+
 
 const bomNo = computed(() => BOM_OPTIONS.value.find(b => b.id === bomId.value)?.no ?? '')
 const bomAllowsAdjustment = computed(() => findBom(bomId.value)?.allowBomAdjustment ?? false)
@@ -232,8 +311,73 @@ const routeRows = ref<RouteRow[]>([makeRoute()])
 function onRouteProcess(row: RouteRow, _id: string) { appendIfLast(routeRows, row.id, makeRoute) }
 const routingSubtotal = computed(() => routeRows.value.reduce((s, r) => s + num(r.amount), 0))
 
+// ── Subcon cost ──────────────────────────────────────────────────────────────
+// Replaces Production cost + Routing on a Subcontracting work order: the work is
+// performed outside, so there is no in-house labour, overhead or routing to cost —
+// what the order carries is the vendor's fee. Pre-filled from the BOM's subcon
+// process so the common case needs no typing.
+interface SubconCostRow {
+  id: number
+  /** Non-track service product id (SUBCON_SERVICE_PRODUCTS). */
+  productId: string
+  costDriver: string
+  amount: string
+}
+let subconCostSeq = 0
+function makeSubconCost(partial: Partial<SubconCostRow> = {}): SubconCostRow {
+  return { id: subconCostSeq++, productId: '', costDriver: '', amount: '', ...partial }
+}
+const subconCostRows = ref<SubconCostRow[]>([makeSubconCost()])
+
+/** The service the vendor performs, which depends on how much is subcontracted. */
+const scopeServiceId = computed(() => (subconScope.value === 'finished-good' ? 'svc-roast-pack' : 'svc-roast'))
+
+/** The default two lines for the current scope — the vendor's fee plus freight. */
+function defaultSubconCostRows(): SubconCostRow[] {
+  const service = subconServiceProduct(scopeServiceId.value)!
+  const freight = subconServiceProduct('svc-handling')!
+  return [
+    makeSubconCost({ productId: service.id, costDriver: service.defaultCostDriver, amount: String(service.defaultPrice) }),
+    makeSubconCost({ productId: freight.id, costDriver: freight.defaultCostDriver, amount: String(freight.defaultPrice) }),
+    makeSubconCost(),
+  ]
+}
+
+/** True while the table still holds exactly what we pre-filled — i.e. untouched. */
+function subconCostUntouched(): boolean {
+  const rows = subconCostRows.value.filter(r => r.productId)
+  if (rows.length !== 2) return false
+  const serviceIds = ['svc-roast-pack', 'svc-roast']
+  const service = subconServiceProduct(rows[0]!.productId)
+  return serviceIds.includes(rows[0]!.productId)
+    && rows[0]!.amount === String(service?.defaultPrice)
+    && rows[1]!.productId === 'svc-handling'
+    && rows[1]!.amount === String(subconServiceProduct('svc-handling')?.defaultPrice)
+}
+
+// Seed on entering Subcontracting, and re-seed when the scope changes which
+// service applies — but never overwrite figures the user has edited.
+watch([isSubcon, subconScope], ([on]) => {
+  if (!on) return
+  const empty = subconCostRows.value.every(r => !r.productId)
+  if (empty || subconCostUntouched()) subconCostRows.value = defaultSubconCostRows()
+}, { immediate: true })
+
+/** Picking a service fills its usual driver and price — both still editable. */
+function onSubconCostProduct(row: SubconCostRow, id: string) {
+  const p = subconServiceProduct(id)
+  if (!p) return
+  row.costDriver = p.defaultCostDriver
+  if (!row.amount) row.amount = String(p.defaultPrice)
+  appendIfLast(subconCostRows, row.id, makeSubconCost)
+}
+const subconCostSubtotal = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
+
 // ── Cost summary ─────────────────────────────────────────────────────────────
-const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
+// On a subcon work order the vendor's fee stands in for production + routing.
+const totalProductionCost = computed(() => (isSubcon.value
+  ? rawSubtotal.value + subconCostSubtotal.value
+  : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
 // ── Finished goods: main output / other outputs ──────────────────────────────
 interface OutputRow { id: number; productId: string; sku: string; producedQty: string; unit: string; percentage: string; estCost: string }
@@ -360,6 +504,9 @@ function validate() {
   if (!bomId.value) { bomError.value = true; ok = false }
   if (!workOrderType.value) { workOrderTypeError.value = true; ok = false }
   if (!planDates.value.length) { planDatesError.value = true; ok = false }
+  // A subcon work order needs the date the vendor has committed to — everything
+  // downstream (overdue tracking, the custody dashboard) is measured against it.
+  if (isSubcon.value && !subconPromisedDate.value) { subconDateError.value = true; ok = false }
   return ok
 }
 // [startDate, endDate] → ISO start/end (planDates is validated non-empty before this runs).
@@ -397,7 +544,7 @@ function saveWorkOrder() {
   return addWorkOrder({
     bomId: bomId.value,
     bomName: bom.name,
-    category: category.value as 'Standard' | 'Order',
+    category: category.value as 'Standard' | 'Order' | 'Subcontracting',
     type: workOrderType.value as 'Assembly' | 'Disassembly',
     trackRouting: trackRouting.value === 'yes',
     status: 'not started' as WorkOrderStatus,
@@ -407,6 +554,20 @@ function saveWorkOrder() {
     planEndDate: end,
     sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
     materialReservations: buildMaterialReservations(),
+    subcon: isSubcon.value
+      ? {
+          scope: subconScope.value,
+          split: subconSplit.value,
+          method: subconMethod.value,
+          vendorId: subconVendor.value.id,
+          vendorName: subconVendor.value.name,
+          promisedDate: subconPromisedDate.value,
+          sourceWarehouseId: subconNeedsSource.value ? subconSourceWarehouseId.value : undefined,
+          sourceWarehouseName: subconNeedsSource.value ? warehouseName(subconSourceWarehouseId.value) : undefined,
+          receivingWarehouseId: subconReceivingWarehouseId.value,
+          receivingWarehouseName: warehouseName(subconReceivingWarehouseId.value),
+        }
+      : undefined,
   })
 }
 function handleSave() {
@@ -582,6 +743,112 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </label>
         </section>
 
+        <!-- ══ Subcontracting ═══════════════════════════════════════════════
+             Appears only for Category = Subcontracting. Five compact fields on
+             the same grid as Work order info — the choices are consequential but
+             they are still just fields, and stacking them as description cards
+             pushed the rest of the form off-screen. The consequence they carry is
+             shown once, as the document chain underneath. ═══════════════════ -->
+        <section v-if="isSubcon" class="wo-section">
+          <h2 class="wo-section-title">{{ t('Subcontracting') }}</h2>
+          <p class="wo-section-desc">
+            {{ t('This work is performed by an outside vendor. The setup below decides which documents the work order raises.') }}
+          </p>
+
+          <div class="wo-grid">
+            <MpFormControl id="wo-subcon-vendor" is-required>
+              <MpFormLabel>{{ t('Subcon vendor') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-vendor-ac" v-model="subconVendorId" :data="SUBCON_VENDOR_OPTIONS"
+                label-prop="name" value-prop="id" :placeholder="t('Select vendor')"
+                is-searchable use-portal is-full-width
+              />
+            </MpFormControl>
+
+            <MpFormControl id="wo-subcon-promised" is-required :is-invalid="subconDateError">
+              <MpFormLabel>{{ t('Promised return date') }}</MpFormLabel>
+              <MpInput
+                id="wo-subcon-promised-input" v-model="subconPromisedDate" type="date" is-full-width
+                :is-invalid="subconDateError" @update:model-value="subconDateError = false"
+              />
+              <MpFormErrorMessage v-if="subconDateError">
+                {{ t('Pick the date the vendor has promised the goods back.') }}
+              </MpFormErrorMessage>
+            </MpFormControl>
+
+            <MpFormControl id="wo-subcon-scope" is-required>
+              <MpFormLabel>{{ t('What is subcontracted') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-scope-ac" v-model="subconScope" :data="SUBCON_SCOPE_OPTIONS"
+                label-prop="name" value-prop="id" :placeholder="t('Select scope')"
+                use-portal is-full-width
+              />
+            </MpFormControl>
+
+            <MpFormControl id="wo-subcon-split" is-required>
+              <MpFormLabel>{{ t('Quantity subcontracted') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-split-ac" v-model="subconSplit" :data="SUBCON_SPLIT_OPTIONS"
+                label-prop="name" value-prop="id" :placeholder="t('Select quantity')"
+                use-portal is-full-width
+              />
+            </MpFormControl>
+
+            <MpFormControl id="wo-subcon-method" is-required>
+              <MpFormLabel>{{ subconMethodLabel }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-method-ac" v-model="subconMethod" :data="SUBCON_METHOD_OPTIONS"
+                label-prop="name" value-prop="id" :placeholder="t('Select supply method')"
+                use-portal is-full-width
+              />
+              <!-- One caption instead of three description cards. -->
+              <p class="wo-subcon-hint">{{ subconMethodHint }}</p>
+            </MpFormControl>
+
+            <!-- Source warehouse exists only for Resupply — it is the warehouse
+                 the transfer draws from. Basic uses the vendor's own stock and
+                 Dropship ships from a third party, so neither has one. -->
+            <MpFormControl v-if="subconNeedsSource" id="wo-subcon-source-wh" is-required>
+              <MpFormLabel>{{ t('Transfer components from') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-source-wh-ac" v-model="subconSourceWarehouseId" :data="warehouseOptions"
+                label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
+                is-searchable use-portal is-full-width
+              />
+              <p class="wo-subcon-hint">
+                {{ t('Destination') }}: {{ subconVendor.name }} — {{ t('in transit at vendor') }}
+              </p>
+            </MpFormControl>
+
+            <MpFormControl id="wo-subcon-receiving-wh" is-required>
+              <MpFormLabel>{{ t('Receive output into') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-receiving-wh-ac" v-model="subconReceivingWarehouseId" :data="warehouseOptions"
+                label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
+                is-searchable use-portal is-full-width
+              />
+            </MpFormControl>
+          </div>
+
+          <!-- The consequence of the three choices, stated once and inline. -->
+          <div class="wo-subcon-plan">
+            <span class="wo-subcon-plan__label">{{ t('Documents this work order will raise') }}</span>
+            <SubconPlanPreview
+              compact
+              :scope="subconScope"
+              :split="subconSplit"
+              :method="subconMethod"
+              :qty="num(producedQty) || 500"
+            />
+          </div>
+
+          <!-- The draft gate: nothing can be procured until the WO is started. -->
+          <p class="wo-subcon-gate">
+            <MpIcon name="info" size="sm" />
+            {{ subconGateText }}
+          </p>
+        </section>
+
         <!-- ══ Raw materials ════════════════════════════════════════════════ -->
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
@@ -647,8 +914,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
         </section>
 
-        <!-- ══ Production cost ══════════════════════════════════════════════ -->
-        <section v-if="hasBom" class="wo-section">
+        <!-- ══ Production cost ══════════════════════════════════════════════
+             In-house cost structure — a subcon work order has none, so this and
+             Routing are replaced by the Subcon cost section below. ═══════════ -->
+        <section v-if="hasBom && !isSubcon" class="wo-section">
           <h2 class="wo-section-title">{{ t('Production cost') }}</h2>
           <div class="wo-table-scroll">
             <table class="wo-table">
@@ -693,7 +962,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </section>
 
         <!-- ══ Routing ══════════════════════════════════════════════════════ -->
-        <section v-if="hasBom" class="wo-section">
+        <section v-if="hasBom && !isSubcon" class="wo-section">
           <h2 class="wo-section-title">{{ t('Routing') }}</h2>
           <div class="wo-table-scroll">
             <table class="wo-table">
@@ -734,12 +1003,104 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <span>{{ t('Routing cost subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(routingSubtotal) }}</span>
           </div>
+        </section>
 
-          <!-- Cost summary -->
+        <!-- ══ Subcon cost ══════════════════════════════════════════════════
+             Replaces Production cost + Routing on a Subcontracting work order.
+             The work happens at the vendor, so what the order carries is their
+             fee, not in-house labour, overhead or routing. ═══════════════ -->
+        <section v-if="hasBom && isSubcon" class="wo-section">
+          <h2 class="wo-section-title">{{ t('Subcon cost') }}</h2>
+          <p class="wo-section-desc">
+            {{ t('What the vendor charges for this work. Pre-filled from the BOM’s subcon process — adjust it to the quote you agreed.') }}
+          </p>
+          <div class="wo-table-scroll">
+            <table class="wo-table">
+              <colgroup>
+                <!-- All fixed: the vendor name must not wrap, so the table
+                     scrolls on a narrow stage rather than squeezing columns. -->
+                <col class="wo-col-svc" /><col class="wo-col-type" /><col class="wo-col-by" />
+                <col class="wo-col-driver" /><col class="wo-col-amt" /><col class="wo-col-del" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="wo-th">{{ t('Service product') }}</th>
+                  <th class="wo-th">{{ t('Type') }}</th>
+                  <th class="wo-th">{{ t('Charged by') }}</th>
+                  <th class="wo-th">{{ t('Cost driver') }}</th>
+                  <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
+                  <th class="wo-th wo-th--del" />
+                </tr>
+              </thead>
+              <tbody v-if="bomLoading">
+                <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
+                  <td v-for="c in 5" :key="c" class="wo-td"><span class="wo-skel" /></td>
+                  <td class="wo-td wo-td--del" />
+                </tr>
+              </tbody>
+              <tbody v-else>
+                <tr v-for="row in subconCostRows" :key="row.id" class="wo-tr">
+                  <td class="wo-td wo-td--input">
+                    <MpAutocomplete
+                      :id="`subcon-cost-prod-${row.id}`"
+                      v-model="row.productId"
+                      :data="SUBCON_PRODUCT_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select non-track product')"
+                      is-searchable is-clearable use-portal is-full-width
+                      @update:model-value="(v: string) => onSubconCostProduct(row, v)"
+                    />
+                  </td>
+                  <!-- Stated on every row: the reason these lines never touch stock. -->
+                  <td class="wo-td">
+                    <MpBadge v-if="row.productId" for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge>
+                  </td>
+                  <!-- Always the subcon vendor: these are their charges, by definition. -->
+                  <td class="wo-td">
+                    <span v-if="row.productId">{{ subconVendor.name }}</span>
+                  </td>
+                  <td class="wo-td wo-td--input">
+                    <MpAutocomplete
+                      v-if="row.productId"
+                      :id="`subcon-cost-drv-${row.id}`"
+                      v-model="row.costDriver"
+                      :data="SUBCON_COST_DRIVER_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select cost driver')"
+                      is-searchable is-clearable use-portal is-full-width
+                    />
+                  </td>
+                  <td class="wo-td wo-td--input wo-td--num-input">
+                    <MpInput v-if="row.productId" :id="`subcon-cost-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
+                  </td>
+                  <td class="wo-td wo-td--del">
+                    <MpTooltip v-if="row.productId" :label="t('Remove')" placement="top" use-portal>
+                      <button class="wo-del-btn btn-enterprise" type="button" :aria-label="t('Remove')" @click="removeRow(subconCostRows, row.id)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="wo-subtotal-row">
+            <span>{{ t('Subcon cost subtotal') }}</span>
+            <span class="wo-subtotal-amount">{{ formatIDR(subconCostSubtotal) }}</span>
+          </div>
+        </section>
+
+        <!-- ══ Cost summary — rows follow whichever cost structure applies ═══ -->
+        <section v-if="hasBom" class="wo-section">
           <div class="wo-summary">
             <div class="wo-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            <template v-if="isSubcon">
+              <div class="wo-summary-row"><span>{{ t('Subcon cost subtotal') }}</span><span>{{ formatIDR(subconCostSubtotal) }}</span></div>
+            </template>
+            <template v-else>
+              <div class="wo-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+              <div class="wo-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            </template>
             <div class="wo-summary-row wo-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
@@ -1020,6 +1381,36 @@ onUnmounted(() => { stageObserver?.disconnect() })
   margin: -12px 0 var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
 }
+/* Subcon cost column widths — token scale, so the table reads like every other. */
+.wo-col-svc    { width: var(--mp-sizes-75, 300px); }
+.wo-col-type   { width: var(--mp-sizes-28, 112px); }
+.wo-col-by     { width: var(--mp-sizes-56, 224px); }
+.wo-col-driver { width: var(--mp-sizes-38, 152px); }
+.wo-col-amt    { width: var(--mp-sizes-42, 168px); }
+.wo-col-del    { width: var(--mp-sizes-11, 44px);  }
+
+/* ── Subcontracting ──────────────────────────────────────────────────────── */
+.wo-subcon-hint {
+  margin: var(--mp-spacing-1) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
+}
+.wo-subcon-plan { margin-top: var(--mp-spacing-6); }
+.wo-subcon-plan__label {
+  display: block;
+  margin-bottom: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.wo-subcon-gate {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  margin: var(--mp-spacing-4) 0 0; max-width: 860px;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+
 .wo-subsection-title {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
@@ -1055,7 +1446,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 .wo-file-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wo-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.wo-file-remove:hover { color: var(--mp-text-critical); }
+.wo-file-remove:hover { color: var(--mp-text-critical, var(--mp-text-danger, #a8352d)); }
 
 .wo-checkbox-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-6); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .wo-checkbox-row--tight { margin-top: 0; margin-bottom: var(--mp-spacing-4); }
@@ -1130,7 +1521,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
 }
-.wo-del-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.wo-del-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical, var(--mp-text-danger, #a8352d)); }
 
 /* Loading skeleton bar (shown in each cell while the selected BOM's data loads) */
 .wo-skel {

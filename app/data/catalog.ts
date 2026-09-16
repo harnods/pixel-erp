@@ -12,6 +12,12 @@
  *   20xx = Espresso Machine ·  21xx = Grinder        ·  22xx = Equipment
  *   30xx = Accessory
  * The trailing 2 digits are the running number within that category (01, 02, …).
+ *
+ * EXCEPTION — the apparel line (Fabric / Sewing Supplies / Apparel) carries
+ * mnemonic alphanumeric SKUs (FAB-KTN-01, THR-JHT-02, …) instead of the numeric
+ * scheme. It exists to exercise the subcontracting flow with the garment scenario
+ * the design was drawn against, and its SKUs are reproduced from that design so
+ * the screens match it exactly. Nothing parses a SKU, so the two schemes coexist.
  */
 export interface CatalogItem {
   readonly id: string
@@ -248,4 +254,54 @@ export const CATALOG: readonly CatalogItem[] = [
     sku: '3007', hue: 238,
     img: 'https://cdn.shopify.com/s/files/1/2425/8607/products/Lucca-Stainless-Steel-Espresso-Tamper-05.jpg',
   },
+
 ] as const
+
+
+/**
+ * Apparel line — products for the **subcontracting scenario** (cut-make-trim).
+ *
+ * Deliberately NOT part of {@link CATALOG}. Every deterministic seed generator in
+ * the app indexes the catalog modulo its length — `CATALOG[(i * 5 + j * 7) %
+ * CATALOG.length]` and friends in purchaseRequests, receiptLineItems,
+ * salesInvoiceLineItems, … — so adding items to CATALOG reshuffles which SKU each
+ * outbound order, receiving task and pick demands, away from the stock levels
+ * those seeds were tuned against (18 orders started demanding more than their
+ * warehouse held). Keeping this line separate leaves all of that byte-identical.
+ *
+ * Use {@link FULL_CATALOG} where a product PICKER should offer everything; keep
+ * using `CATALOG` for anything that generates stock or transactions.
+ */
+export const SUBCON_CATALOG: readonly CatalogItem[] = [
+  {
+    id: 'p31', category: 'Fabric', unit: 'm', price: 10_000, stock: 12_400,
+    name: 'Kain katun premium',
+    desc: 'Cotton twill 140 gsm, 150 cm width, pre-shrunk',
+    sku: 'FAB-KTN-01', hue: 210,
+    img: '',
+  },
+  {
+    id: 'p32', category: 'Sewing Supplies', unit: 'kg', price: 160_000, stock: 640,
+    name: 'Benang jahit',
+    desc: 'Polyester core-spun thread, Tex 40, cone 5.000 m',
+    sku: 'THR-JHT-02', hue: 45,
+    img: '',
+  },
+  {
+    id: 'p33', category: 'Sewing Supplies', unit: 'pcs', price: 750, stock: 84_000,
+    name: 'Kancing baju',
+    desc: '4-hole polyester shirt button, 11 mm, matte white',
+    sku: 'BTN-STD-04', hue: 190,
+    img: '',
+  },
+  {
+    id: 'p34', category: 'Apparel', unit: 'Pcs', price: 150_000, stock: 0,
+    name: 'Kemeja Formal Pria',
+    desc: 'Formal cotton shirt — assembly outsourced to a subcon vendor',
+    sku: 'FG-KMJ-001', hue: 220,
+    img: '',
+  },
+]
+
+/** Every product a picker may offer — the stocked catalog plus the apparel line. */
+export const FULL_CATALOG: readonly CatalogItem[] = [...CATALOG, ...SUBCON_CATALOG]

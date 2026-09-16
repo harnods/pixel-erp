@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials } from './billOfMaterials'
+import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -17,8 +18,9 @@ export interface WorkOrder {
   bomId: string
   /** bill of materials name — denormalized for display/sort, mirrors billOfMaterials.find(bomId).name */
   bomName: string
-  /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) */
-  category: 'Standard' | 'Order'
+  /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) ·
+   *  Subcontracting = the work itself is performed by an outside vendor */
+  category: 'Standard' | 'Order' | 'Subcontracting'
   /** Assembly = build the output · Disassembly = break the output into components */
   type: 'Assembly' | 'Disassembly'
   /** whether the WO follows a defined routing (sequence of operations) */
@@ -51,6 +53,32 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /** Present only on a `Subcontracting` work order — the vendor setup that decides
+   *  which purchase requests, transfers and receipts the work order raises. */
+  subcon?: WorkOrderSubconSetup
+}
+
+/** The subcon configuration carried on a Subcontracting work order. */
+export interface WorkOrderSubconSetup {
+  scope: SubconScope
+  split: SubconSplit
+  method: SubconMethod
+  vendorId: string
+  vendorName: string
+  /** ISO date the vendor promised the goods back. */
+  promisedDate: string
+  /**
+   * Warehouse the components are transferred OUT of. Only meaningful for
+   * `resupply` — on `basic` the vendor uses its own stock and on `dropship` a
+   * third party ships direct, so no company warehouse is involved either way.
+   */
+  sourceWarehouseId?: string
+  sourceWarehouseName?: string
+  /** Warehouse the vendor's output is received back INTO. Always required. */
+  receivingWarehouseId: string
+  receivingWarehouseName: string
+  /** Subcon order this work order is tied to, once it has been raised. */
+  subconOrderNumber?: string
 }
 
 export interface WorkOrderMaterialReservation {
@@ -121,6 +149,35 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 0, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
   { bomIndex: 1, category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
   { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
+
+  // ── Subcontracting ───────────────────────────────────────────────────────
+  // Two rows so the Subcontracting section is demonstrable in both its states:
+  // a draft (supply documents still blocked) and a started order (raisable).
+  {
+    bomIndex: 0, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'not started', producedQty: 0, plannedQty: 500,
+    planStartDate: isoOffset(1), planEndDate: isoOffset(14),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'resupply',
+      vendorId: 'sv-01', vendorName: 'PT Roastery Nusantara Mandiri',
+      promisedDate: isoOffset(20),
+      sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+    },
+  },
+  {
+    bomIndex: 2, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'in progress', producedQty: 180, plannedQty: 300,
+    planStartDate: isoOffset(-6), planEndDate: isoOffset(4), startDate: isoOffset(-6),
+    subcon: {
+      scope: 'component', split: 'partial', method: 'dropship',
+      vendorId: 'sv-03', vendorName: 'PT Java Roasting Works',
+      promisedDate: isoOffset(6),
+      // Dropship — a third party ships direct, so there is no source warehouse.
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+      subconOrderNumber: 'SC-2026-0004',
+    },
+  },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -134,12 +191,12 @@ function buildSeed(): WorkOrder[] {
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
-const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
+const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
 export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
-  saveSnapshot('workOrders', workOrders)
+  saveSnapshot('workOrders-v2', workOrders)
 }
 
 let woAddSeq = workOrders.length
