@@ -15,7 +15,7 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
-import { decodeSubconPrefill } from '~/data/subcon'
+import { decodeSubconPrefill, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
@@ -47,7 +47,19 @@ const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 const warehouseOptions = computed(() =>
   warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })),
 )
-function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
+/**
+ * Destinations additionally include subcon vendor locations. Stock sent to a
+ * vendor is in their custody but still on the company's books, so it is a real
+ * destination — but never an ORIGIN, which is why the two pickers no longer
+ * share one list.
+ */
+const destinationOptions = computed(() => [
+  ...warehouseOptions.value,
+  ...SUBCON_VENDOR_WAREHOUSES.map(w => ({ id: w.id, name: w.name })),
+])
+function warehouseName(id: string) {
+  return destinationOptions.value.find(w => w.id === id)?.name ?? ''
+}
 
 // ── Form state ───────────────────────────────────────────────────────────────────
 const transactionDate = ref(todayDisplay)
@@ -366,6 +378,8 @@ function prefillFromSubcon(): boolean {
   if (!p) return false
 
   if (p.originWarehouseId) originId.value = p.originWarehouseId
+  // The vendor's own location — an addressable destination, not a company warehouse.
+  if (p.destinationWarehouseId) destId.value = p.destinationWarehouseId
   memo.value = p.memo
 
   rows.value = p.lines.map(l => {
@@ -550,7 +564,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="wtf-dest" class="wtf-f-dest" is-required :is-invalid="destError">
             <MpFormLabel>{{ t('Destination warehouse') }}</MpFormLabel>
             <MpAutocomplete
-              id="wtf-dest-ac" v-model="destId" :data="warehouseOptions" label-prop="name" value-prop="id"
+              id="wtf-dest-ac" v-model="destId" :data="destinationOptions" label-prop="name" value-prop="id"
               :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="destError"
               @update:model-value="destError = false"

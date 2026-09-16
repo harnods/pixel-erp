@@ -22,7 +22,8 @@ import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrde
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
-  encodeSubconPrefill, type SubconDocKind, type SubconPrefillLine,
+  encodeSubconPrefill, subconVendorWarehouse,
+  type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -100,6 +101,19 @@ const subconCostLines = computed(() => {
   ]
 })
 const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+/**
+ * The vendor location a transfer is addressed to. Falls back to the vendor's own
+ * warehouse when the setup predates the field, so an order saved before it
+ * existed still resolves rather than opening a transfer with no destination.
+ */
+const subconDestination = computed(() => {
+  const c = subcon.value
+  if (!c) return undefined
+  if (c.subconWarehouseId) return { id: c.subconWarehouseId, name: c.subconWarehouseName ?? '' }
+  const v = subconVendorWarehouse(c.vendorId)
+  return v?.warehouseId ? { id: v.warehouseId, name: v.warehouseName ?? '' } : undefined
+})
 
 /** Which warehouse the components leave from, given the supply method. */
 const subconSourceLabel = computed(() => {
@@ -366,6 +380,8 @@ function createDocument(kind: SubconDocKind) {
     originWarehouseName: c.sourceWarehouseName,
     receivingWarehouseId: c.receivingWarehouseId,
     receivingWarehouseName: c.receivingWarehouseName,
+    destinationWarehouseId: subconDestination.value?.id,
+    destinationWarehouseName: subconDestination.value?.name,
     lines: prefillLines(kind),
     memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
   })
@@ -696,6 +712,11 @@ function suppressFabClick(e: MouseEvent) {
           <div class="content-list-col">
             <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
             <ContentList :label="t('Components supplied from')" :value="subconSourceLabel" />
+            <ContentList
+              v-if="subconDestination"
+              :label="t('Transfer components to')"
+              :value="subconDestination.name"
+            />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Promised return date')" :value="subcon.promisedDate ? formatDate(subcon.promisedDate) : '—'" />

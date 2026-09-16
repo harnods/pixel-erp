@@ -222,6 +222,9 @@ export interface SubconDocPrefill {
   originWarehouseName?: string
   receivingWarehouseId: string
   receivingWarehouseName: string
+  /** Where a transfer is addressed — the subcon vendor's own location. */
+  destinationWarehouseId?: string
+  destinationWarehouseName?: string
   lines: SubconPrefillLine[]
   memo: string
 }
@@ -275,19 +278,50 @@ export interface SubconVendor {
   address: string
   /** `subcon` takes the process work; `supplier` only sells components. */
   role: 'subcon' | 'supplier'
+  /**
+   * The vendor's own location, as a warehouse the transfer can be addressed to.
+   * Stock sent here is in the vendor's custody but still on the company's books —
+   * it is NOT one of the company's own warehouses, which is why these live here
+   * and not in `warehouses.ts`: every seeded transfer, task and stock figure
+   * picks from that array modulo its length, so adding to it would reshuffle
+   * data those seeds were tuned against.
+   */
+  warehouseId?: string
+  warehouseName?: string
 }
 
 export const SUBCON_VENDORS: readonly SubconVendor[] = [
-  { id: 'sv-01', name: 'PT Roastery Nusantara Mandiri', address: 'Jl. Industri Raya No. 8, Bandung',      role: 'subcon'   },
-  { id: 'sv-02', name: 'CV Kopi Sangrai Sejahtera',     address: 'Jl. Kaligawe Km 5, Semarang',           role: 'subcon'   },
-  { id: 'sv-03', name: 'PT Java Roasting Works',        address: 'Jl. Rungkut Industri III/22, Surabaya', role: 'subcon'   },
-  { id: 'sv-04', name: 'UD Karya Sangrai Utama',        address: 'Jl. Raya Bogor Km 32, Bogor',           role: 'subcon'   },
+  { id: 'sv-01', name: 'PT Roastery Nusantara Mandiri', address: 'Jl. Industri Raya No. 8, Bandung',      role: 'subcon',
+    warehouseId: 'wh-sub-01', warehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri' },
+  { id: 'sv-02', name: 'CV Kopi Sangrai Sejahtera',     address: 'Jl. Kaligawe Km 5, Semarang',           role: 'subcon',
+    warehouseId: 'wh-sub-02', warehouseName: 'WH Subcon · CV Kopi Sangrai Sejahtera' },
+  { id: 'sv-03', name: 'PT Java Roasting Works',        address: 'Jl. Rungkut Industri III/22, Surabaya', role: 'subcon',
+    warehouseId: 'wh-sub-03', warehouseName: 'WH Subcon · PT Java Roasting Works' },
+  { id: 'sv-04', name: 'UD Karya Sangrai Utama',        address: 'Jl. Raya Bogor Km 32, Bogor',           role: 'subcon',
+    warehouseId: 'wh-sub-04', warehouseName: 'WH Subcon · UD Karya Sangrai Utama' },
   { id: 'sv-05', name: 'CV Sumber Biji Nusantara',      address: 'Jl. Soekarno Hatta No. 114, Medan',     role: 'supplier' },
   // ── Apparel line — konveksi partners for the garment scenario ──
-  { id: 'sv-06', name: 'PT Mitra Jaya Konveksi',       address: 'Jl. Industri Raya No. 8, Bandung',       role: 'subcon'   },
-  { id: 'sv-07', name: 'CV Garmen Sejahtera',          address: 'Jl. Cibaduyut Raya No. 45, Bandung',     role: 'subcon'   },
+  { id: 'sv-06', name: 'PT Mitra Jaya Konveksi',       address: 'Jl. Industri Raya No. 8, Bandung',       role: 'subcon',
+    warehouseId: 'wh-sub-06', warehouseName: 'WH Subcon · PT Mitra Jaya Konveksi' },
+  { id: 'sv-07', name: 'CV Garmen Sejahtera',          address: 'Jl. Cibaduyut Raya No. 45, Bandung',     role: 'subcon',
+    warehouseId: 'wh-sub-07', warehouseName: 'WH Subcon · CV Garmen Sejahtera' },
   { id: 'sv-08', name: 'CV Sumber Kain Tekstil',       address: 'Jl. Otista No. 210, Bandung',            role: 'supplier' },
 ]
+
+/** Vendor locations a transfer can be addressed to, for a destination picker. */
+export const SUBCON_VENDOR_WAREHOUSES: readonly { id: string; name: string; vendorId: string }[] =
+  SUBCON_VENDORS
+    .filter(v => !!v.warehouseId)
+    .map(v => ({ id: v.warehouseId!, name: v.warehouseName!, vendorId: v.id }))
+
+export function subconVendorWarehouse(vendorId: string) {
+  return SUBCON_VENDORS.find(v => v.id === vendorId)
+}
+
+/** Resolve a warehouse name for an id that may be a company OR a vendor warehouse. */
+export function subconWarehouseName(id: string): string {
+  return SUBCON_VENDOR_WAREHOUSES.find(w => w.id === id)?.name ?? ''
+}
 
 export const DEFAULT_SUBCON_VENDOR = SUBCON_VENDORS[0]!
 /** The 3rd-party component supplier used by the dropship model. */
@@ -472,6 +506,9 @@ export interface SubconOrder {
   /** Warehouse components are transferred OUT of — `resupply` only. */
   sourceWarehouseId?: string
   sourceWarehouseName?: string
+  /** The vendor's own location the transfer is addressed to — `resupply` only. */
+  subconWarehouseId?: string
+  subconWarehouseName?: string
   /** Warehouse the vendor's output is received back INTO. */
   receivingWarehouseId: string
   receivingWarehouseName: string
@@ -509,6 +546,7 @@ const SEED_ORDERS: SubconOrder[] = [
     receivedQty: 500, disposition: { accepted: 480, rework: 12, scrap: 8 },
     promisedDate: '2026-06-25', lateDays: 0,
     sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+    subconWarehouseId: 'wh-sub-01', subconWarehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri',
     receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
     status: 'pending approval', needsAttention: false,
     documents: ['PR-SUB-2026-0142', 'WT-2026-0031', 'GR-2026-0064'],
@@ -549,6 +587,7 @@ const SEED_ORDERS: SubconOrder[] = [
     receivedQty: 0,
     promisedDate: '2026-06-17', lateDays: 9,
     sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+    subconWarehouseId: 'wh-sub-04', subconWarehouseName: 'WH Subcon · UD Karya Sangrai Utama',
     receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
     status: 'overdue', needsAttention: false,
     documents: ['PR-SUB-2026-0146', 'WT-2026-0032'],

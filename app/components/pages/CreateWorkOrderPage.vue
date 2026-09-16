@@ -25,7 +25,7 @@ import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconPlanPreview from '~/components/patterns/SubconPlanPreview.vue'
 import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
-  SOURCE_WAREHOUSE, PRODUCTION_WAREHOUSE,
+  SOURCE_WAREHOUSE, PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
   SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
   type SubconScope, type SubconSplit, type SubconMethod,
@@ -145,6 +145,7 @@ const subconPromisedDate = ref('')
 // The DESTINATION of the transfer is the vendor's own location, not a company
 // warehouse, so it is derived from the chosen vendor rather than picked.
 const subconSourceWarehouseId = ref(SOURCE_WAREHOUSE.id)
+const subconWarehouseId = ref(DEFAULT_SUBCON_VENDOR.warehouseId ?? '')
 const subconReceivingWarehouseId = ref(PRODUCTION_WAREHOUSE.id)
 const subconDateError = ref(false)
 
@@ -180,6 +181,19 @@ const subconMethodHint = computed(() => t(SUBCON_METHOD_DESCRIPTION[subconScope.
 
 /** Only `resupply` moves stock out of a company warehouse. */
 const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
+
+// The vendor's own locations. Changing vendor re-points the destination unless
+// the user has deliberately chosen a different one.
+const SUBCON_WAREHOUSE_OPTIONS = SUBCON_VENDOR_WAREHOUSES.map(w => ({ id: w.id, name: w.name }))
+watch(subconVendorId, (id) => {
+  const own = SUBCON_VENDORS.find(v => v.id === id)?.warehouseId
+  const belongsToAnotherVendor = SUBCON_VENDOR_WAREHOUSES
+    .some(w => w.id === subconWarehouseId.value && w.vendorId !== id)
+  if (own && (!subconWarehouseId.value || belongsToAnotherVendor)) subconWarehouseId.value = own
+})
+function subconWarehouseNameOf(id: string) {
+  return SUBCON_WAREHOUSE_OPTIONS.find(w => w.id === id)?.name ?? ''
+}
 
 function warehouseName(id: string) {
   return warehouseOptions.find(w => w.id === id)?.name ?? ''
@@ -564,6 +578,8 @@ function saveWorkOrder() {
           promisedDate: subconPromisedDate.value,
           sourceWarehouseId: subconNeedsSource.value ? subconSourceWarehouseId.value : undefined,
           sourceWarehouseName: subconNeedsSource.value ? warehouseName(subconSourceWarehouseId.value) : undefined,
+          subconWarehouseId: subconNeedsSource.value ? subconWarehouseId.value : undefined,
+          subconWarehouseName: subconNeedsSource.value ? subconWarehouseNameOf(subconWarehouseId.value) : undefined,
           receivingWarehouseId: subconReceivingWarehouseId.value,
           receivingWarehouseName: warehouseName(subconReceivingWarehouseId.value),
         }
@@ -815,9 +831,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
                 is-searchable use-portal is-full-width
               />
-              <p class="wo-subcon-hint">
-                {{ t('Destination') }}: {{ subconVendor.name }} — {{ t('in transit at vendor') }}
-              </p>
+            </MpFormControl>
+
+            <!-- The vendor's own location. Stock sent here is in their custody
+                 but still on the company's books, which is what the custody
+                 dashboard reconciles — so it is a real, addressable destination,
+                 not a company warehouse. -->
+            <MpFormControl v-if="subconNeedsSource" id="wo-subcon-dest-wh" is-required>
+              <MpFormLabel>{{ t('Transfer components to') }}</MpFormLabel>
+              <MpAutocomplete
+                id="wo-subcon-dest-wh-ac" v-model="subconWarehouseId" :data="SUBCON_WAREHOUSE_OPTIONS"
+                label-prop="name" value-prop="id" :placeholder="t('Select subcon warehouse')"
+                is-searchable use-portal is-full-width
+              />
+              <p class="wo-subcon-hint">{{ t('In the vendor\'s custody — still on your books until consumed.') }}</p>
             </MpFormControl>
 
             <MpFormControl id="wo-subcon-receiving-wh" is-required>

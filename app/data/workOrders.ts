@@ -74,6 +74,9 @@ export interface WorkOrderSubconSetup {
    */
   sourceWarehouseId?: string
   sourceWarehouseName?: string
+  /** The vendor's own location the transfer is addressed to — resupply only. */
+  subconWarehouseId?: string
+  subconWarehouseName?: string
   /** Warehouse the vendor's output is received back INTO. Always required. */
   receivingWarehouseId: string
   receivingWarehouseName: string
@@ -162,6 +165,7 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
       vendorId: 'sv-01', vendorName: 'PT Roastery Nusantara Mandiri',
       promisedDate: isoOffset(20),
       sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+      subconWarehouseId: 'wh-sub-01', subconWarehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri',
       receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
     },
   },
