@@ -59,9 +59,14 @@ export interface VendorItem {
 const CATEGORY_VENDORS: Record<string, string[]> = {
   'Green Beans': ['V001', 'V003', 'V004', 'V005', 'V002'],
   'Roasted Beans': ['V001', 'V002', 'V004'],
+  // A brewing machine has one specialist importer and realistically no second
+  // source, so these stay single-vendor on purpose — "change vendor" should be
+  // unavailable where a business genuinely has no alternative.
   'Espresso Machine': ['V007'],
   Grinder: ['V007'],
-  Equipment: ['V007'],
+  // General equipment (scales, tampers, kit) is plausibly stocked by the
+  // packaging-and-supplies wholesaler as well as the machinery importer.
+  Equipment: ['V007', 'V006'],
   Accessory: ['V006', 'V007'],
 }
 
@@ -122,6 +127,55 @@ export const VENDORLESS_SKUS: string[] = CATALOG
 /** SKU whose only vendor link is inactive — exercises the deactivated-vendor path. */
 const INACTIVE_ONLY_SKU = CATALOG[11]?.sku ?? ''
 
+/**
+ * `hashStr` avalanched before any modulus.
+ *
+ * Plain `hashStr` is `h * 31 + charCode`, which clusters badly for keys that
+ * differ only in a trailing character: every Roasted Beans SKU (1101, 1102,
+ * 1103 …) landed in the same residue class and so drew the SAME vendor count,
+ * giving one whole category three vendors each and another exactly one. Same
+ * defect, same fix as `demandHistory.ts` — spread the bits first.
+ */
+function spread(key: string, n: number): number {
+  let x = hashStr(key) >>> 0
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d) >>> 0
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b) >>> 0
+  x ^= x >>> 16
+  return n > 0 ? (x >>> 0) % n : 0
+}
+
+/**
+ * The SKUs that carry an alternative supplier — chosen, not sampled.
+ *
+ * A probabilistic threshold cannot hit a target on a 30-product catalogue: the
+ * variance swamps it, and one unlucky draw left the whole Accessory category
+ * single-sourced. Ranking the eligible SKUs by a stable hash and taking the top
+ * half gives the same determinism with none of the sampling noise, and the
+ * proportion stays correct if the catalogue grows.
+ *
+ * Only SKUs whose category HAS a second supplier are eligible: espresso machines
+ * and grinders come from one specialist importer, and inventing a second source
+ * for them would make "change vendor" offer a choice the business does not have.
+ * That floor means the eligible pool (20) is larger than the target (15), so the
+ * catalogue lands on half exactly.
+ */
+const MULTI_VENDOR_SKUS: Set<string> = (() => {
+  const eligible = CATALOG.filter(
+    (c) => !VENDORLESS_SKUS.includes(c.sku)
+      // Its links exist but are all inactive, so it shows no vendors at all —
+      // designating it would spend one of the fifteen slots on an invisible row.
+      && c.sku !== INACTIVE_ONLY_SKU
+      && (CATEGORY_VENDORS[c.category]?.length ?? 0) >= 2,
+  )
+  const target = Math.min(eligible.length, Math.round(CATALOG.length / 2))
+  const ranked = [...eligible].sort(
+    (a, b) => spread(`${a.sku}:multi`, 1_000_000) - spread(`${b.sku}:multi`, 1_000_000),
+  )
+  return new Set(ranked.slice(0, target).map((c) => c.sku))
+})()
+
 function buildVendorItems(): VendorItem[] {
   const out: VendorItem[] = []
 
@@ -132,9 +186,15 @@ function buildVendorItems(): VendorItem[] {
     const terms = CATEGORY_TERMS[item.category]
     if (!pool.length || !terms) return
 
-    // 1–3 vendors per SKU, deterministic; index 0 is the preferred one.
-    const wanted = Math.min(pool.length, 1 + (hashStr(item.sku + 'vendorcount') % 3))
-    const start = hashStr(item.sku + 'vendorstart') % pool.length
+    // 1–3 vendors per SKU, deterministic; index 0 is the preferred one. Weighted
+    // so roughly half the catalogue carries an alternative, which is what makes
+    // "change vendor" — and the lead-time comparison behind it — worth having.
+    // Chosen, not sampled — see MULTI_VENDOR_SKUS. A third vendor goes to the
+    // deepest pools so the comparison has something to compare.
+    const wanted = MULTI_VENDOR_SKUS.has(item.sku)
+      ? Math.min(pool.length, spread(`${item.sku}:third`, 100) < 30 ? 3 : 2)
+      : 1
+    const start = spread(`${item.sku}:vendorstart`, pool.length)
     const chosen: string[] = []
     for (let k = 0; k < wanted; k++) chosen.push(pool[(start + k) % pool.length]!)
 
@@ -217,15 +277,15 @@ function applyOverlay(seed: VendorItem[]): VendorItem[] {
       id,
       vendorId: patch.vendorId,
       sku: patch.sku,
-      isPreferred: clean.isPreferred ?? false,
-      leadTimeDays: clean.leadTimeDays ?? 14,
+      isPreferred: patch.isPreferred ?? false,
+      leadTimeDays: patch.leadTimeDays ?? 14,
       purchaseUnit: patch.purchaseUnit ?? 'Unit',
       unitsPerPurchaseUnit: patch.unitsPerPurchaseUnit ?? 1,
-      moq: clean.moq ?? 1,
-      packSize: clean.packSize ?? 1,
-      unitCost: clean.unitCost ?? 0,
-      vendorSku: clean.vendorSku ?? id,
-      active: clean.active ?? true,
+      moq: patch.moq ?? 1,
+      packSize: patch.packSize ?? 1,
+      unitCost: patch.unitCost ?? 0,
+      vendorSku: patch.vendorSku ?? id,
+      active: patch.active ?? true,
     })
   }
   return merged

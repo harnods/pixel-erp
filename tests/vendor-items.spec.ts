@@ -14,6 +14,7 @@
  * mutation tests restore what they change.
  */
 import { describe, it, expect } from 'vitest'
+import { vendorById } from '~/data/vendors'
 import {
   vendorItems, vendorItemsForSku, preferredVendorItem, vendorItemFor, vendorItemsForVendor,
   skusWithoutVendor, leadTimeFor, upsertVendorItem, setPreferredVendor, deactivateVendorItem,
@@ -315,5 +316,51 @@ describe('unit conversions', () => {
     const options = unitOptionsForSku('2001')
     expect(options).toHaveLength(1)
     expect(options[0]!.isBase).toBe(true)
+  })
+})
+
+describe('alternate suppliers — the multi-vendor mix', () => {
+  it('about half the catalogue carries an alternative', () => {
+    // "Change vendor", the lead-time comparison behind it, and US-022's recompute
+    // are all dead UI on a catalogue where every product has one supplier. Held
+    // at half deliberately, and asserted so a seed tweak cannot quietly drain it.
+    const multi = PRODUCTS.filter((p) => vendorItemsForSku(p.sku).length > 1)
+    const pct = (multi.length / PRODUCTS.length) * 100
+    expect(pct).toBeGreaterThanOrEqual(45)
+    expect(pct).toBeLessThanOrEqual(55)
+  })
+
+  it('spreads them across categories rather than clustering in one', () => {
+    // The seed hash once put every SKU of a category in the same residue class,
+    // so one category got three vendors each and another exactly one. At least
+    // three distinct categories must contain an alternative.
+    const cats = new Set(
+      PRODUCTS.filter((p) => vendorItemsForSku(p.sku).length > 1).map((p) => p.category),
+    )
+    expect(cats.size).toBeGreaterThanOrEqual(3)
+  })
+
+  it('never invents a second source where the category has only one', () => {
+    // A brewing machine has one specialist importer. Offering a choice the
+    // business does not have would be worse than offering none.
+    for (const p of PRODUCTS) {
+      if (p.category !== 'Espresso Machine' && p.category !== 'Grinder') continue
+      expect(vendorItemsForSku(p.sku).length).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('every alternate is a real, active vendor link for that SKU', () => {
+    for (const p of PRODUCTS) {
+      const items = vendorItemsForSku(p.sku)
+      if (items.length < 2) continue
+      expect(new Set(items.map((v) => v.vendorId)).size).toBe(items.length)
+      for (const v of items) {
+        expect(v.sku).toBe(p.sku)
+        expect(v.active).toBe(true)
+        expect(vendorById(v.vendorId)).toBeTruthy()
+      }
+      // Exactly one preferred, so the PR flow always has a suggestion to carry.
+      expect(items.filter((v) => v.isPreferred).length).toBe(1)
+    }
   })
 })
