@@ -25,7 +25,8 @@ import {
 } from '~/data/productDetails'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import {
-  buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, warehouseMinStockRollup,
+  buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
+  warehouseMinStockRollup,
 } from '~/data/replenishment'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
@@ -245,6 +246,20 @@ const pagedWarehouseStock = computed(() => {
  * defines them as one quantity: "Reorder Point = MINIMUM STOCK THRESHOLD =
  * avg daily demand × (lead time + safety days)".
  */
+/** Where this product is short right now — the action rollup (D13a), shown in
+ *  Product info in place of a company-wide minimum that never existed. */
+const actionRollup = computed(() => {
+  const sku = product.value?.sku
+  void replenishmentRevision.value
+  return sku ? productActionRollup(sku) : null
+})
+
+/** Jump to the tab where a floor is actually set. The tab is driven by the
+ *  `section` query param, so navigate rather than poke component state. */
+function goToWarehouseStock(): void {
+  router.replace({ query: { ...route.query, section: 'warehouses' } })
+}
+
 const whReplenishment = computed(() => {
   // The engine reads its settings from localStorage, which Vue cannot track, so
   // without this the table would keep showing the pre-save values after an edit —
@@ -497,8 +512,14 @@ function applyBulk(): void {
   whSelected.value = new Set()
 }
 
-/** Hand the selected warehouses back to the cascade — the explicit counterpart
- *  to filling a box, so "make these inherit again" is one deliberate action. */
+/**
+ * Hand the selected warehouses back to the cascade — the explicit counterpart to
+ * filling a box, so "make these inherit again" is one deliberate action.
+ *
+ * What they return TO depends on the warehouse: a calculated floor where there
+ * are sales to compute from, the category default where there are none. There is
+ * no product-level default to fall back to any more.
+ */
 function clearBulk(): void {
   for (const id of whSelected.value) {
     whSafetyDraft[id] = ''
@@ -759,7 +780,28 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <ContentList label="On hand" :value="formatQty(product.onHand, product.unit)" />
             <ContentList label="Reserved" :value="formatQty(product.reserved, product.unit)" />
             <ContentList label="Available" :value="formatQty(product.available, product.unit)" />
-            <ContentList label="Min. stock" :value="formatQty(product.minStock, product.unit)" />
+            <!--
+              NOT a company-wide min. stock. That row used to read
+              `product.minStock`, which is a seed figure keyed on the product's
+              position in the catalogue — settable nowhere, equal to no
+              warehouse's floor, and a company-wide threshold of exactly the kind
+              D13/D15 reject ("stock in one warehouse cannot cover a shortage in
+              another"). It is kept as DATA because the Products index and Cowork
+              still derive their low-stock status from it, but showing it here
+              invited a number nobody could act on or change.
+
+              What replaces it is the same action rollup the product form shows:
+              where this product is actually short, and how much to ask for.
+            -->
+            <ContentList label="Replenishment">
+              <template v-if="actionRollup && actionRollup.warehouseCount">
+                <span>
+                  Due in {{ actionRollup.dueCount }} of {{ actionRollup.warehouseCount }} warehouses
+                </span>
+                <a class="pd-link pd-link--inline" @click="goToWarehouseStock">Min. stock per warehouse</a>
+              </template>
+              <span v-else>—</span>
+            </ContentList>
           </div>
         </div>
       </section>
@@ -1358,7 +1400,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   @click="clearBulk"
                 >Clear</button>
                 <span class="pd-bulk-hint">
-                  Fill either box. Clear hands them back to the product default.
+                  Fill either box. Clear returns them to calculated, or the category default.
                 </span>
               </template>
               <span v-else class="pd-bulk-hint">
@@ -1790,6 +1832,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   background: var(--mp-surface-subdued, #f9fafb);
 }
 .pd-bulk-count { font-size: 13px; font-weight: 500; color: var(--mp-text-default, #111827); }
+/* Pixel's MpInput root is full-width by default, so inside a flex row each one
+   claims the whole line and the fields stack. Shrink the wrapper, not just the
+   control it contains. */
+.pd-bulk-bar :deep(.mp-input__root) { width: auto; flex: 0 0 auto; }
 .pd-bulk-hint { font-size: 12px; color: var(--mp-text-subdued, #6b7280); }
 
 .pd-table-scroll { overflow-x: auto; }
