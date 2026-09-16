@@ -601,7 +601,7 @@ function commitSave() {
                   <MpInput v-model="item.description" is-full-width />
                 </td>
 
-                <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
+                <td class="si-td si-td--input si-td--border si-td--qty" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
                     :label="t('Qty must be more than 0')" placement="top" use-portal
@@ -1037,8 +1037,14 @@ function commitSave() {
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
+/* A row can be taller than one control (the qty cell stacks Manage batch under its
+   input), so controls fill the row rather than floating at the top — the affix cells
+   already stretch that way. The qty cell itself keeps the plain control height. */
+.si-td--input :deep(.mp-autocomplete__root),
+.si-td--input :deep(.mp-input-group__root),
 .si-td--input :deep(.mp-input__root),
-.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
+.si-td--input :deep(.mp-select__root) { height: 100%; min-height: var(--mp-sizes-10, 40px); background: transparent; }
+.si-td--qty :deep(.mp-input__root) { height: var(--mp-sizes-10, 40px); }
 .si-td--input :deep(.mp-input__control),
 .si-td--input :deep(.mp-select__control) {
   height: var(--mp-sizes-10, 40px);
