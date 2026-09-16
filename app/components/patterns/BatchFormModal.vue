@@ -118,13 +118,13 @@ function setExpiryMode(mode: string) {
 
 const vendorOptions = vendors.map(v => ({ label: v.name, value: v.id }))
 const gradeOptions = computed(() => {
-  const options = activeGrades().map(g => ({ label: `${g.name} · ${t('Rank')} ${g.rank}`, value: g.id }))
+  const options = activeGrades().map(g => ({ label: `${g.name} (${t('Rank')} ${g.rank})`, value: g.id }))
   // A grade deactivated after this batch stored it stays shown on the batch — it can
   // be kept, just not newly picked (story 3).
   const stored = editing.value?.attributes.grade
   const grade = stored ? gradeById(stored) : undefined
   if (grade && grade.status !== 'active' && !grade.deleted) {
-    options.push({ label: `${grade.name} · ${t('Rank')} ${grade.rank} (${t('Inactive')})`, value: grade.id })
+    options.push({ label: `${grade.name} (${t('Rank')} ${grade.rank}) · ${t('Inactive')}`, value: grade.id })
   }
   return options
 })

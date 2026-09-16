@@ -21,10 +21,12 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
 import type jsPDF from 'jspdf'
 import {
   getBatchDetail, getWarehouseBatchDetail, getBatchTransactions, getBatchWarehouseStock,
+  setBatchArchived,
   type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -33,11 +35,13 @@ import { batchActivityFor } from '~/data/batchStore'
 import { gradeById } from '~/data/grades'
 import { vendors } from '~/data/vendors'
 import { formatDateLong, formatDateTimeLong } from '~/utils/date'
+import { successToast } from '~/utils/toasts'
 
 // orderId is "sku::batchNo" from the Products path, OR "warehouseId::sku::batchNo" when
 // opened from Warehouse Details — the batch page stays under /warehouses in that case,
 // same page format, just warehouse-scoped data + breadcrumb.
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -124,6 +128,19 @@ function onBatchSaved(saved: ProductBatchSummary) {
   if (!warehouseId.value && saved.batchNo !== batchNo.value) {
     router.replace({ path: `/product-list/${sku.value}/batches/${encodeURIComponent(saved.batchNo)}`, query: route.query })
   }
+}
+
+// ── Archive ────────────────────────────────────────────────────────────────────
+// Archiving is reversible and leaves stock and history alone, so it confirms
+// without the danger styling (the Grades deactivate confirm sets the precedent).
+const archiveOpen = ref(false)
+function archiveBatch() {
+  const b = batch.value
+  if (!b) return
+  const result = setBatchArchived(sku.value, b.id, true)
+  if (!result.ok) return
+  successToast(t('Batch archived'))
+  router.push({ path: `/product-list/${sku.value}`, query: { section: 'batches' } })
 }
 
 // ── Activity log ───────────────────────────────────────────────────────────────
@@ -253,7 +270,7 @@ const pagedWarehouseStock = computed(() => {
             <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
             <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
             <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="archiveOpen = true">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -278,7 +295,9 @@ const pagedWarehouseStock = computed(() => {
             <ContentList label="On hand qty" :value="formatQty(batch.onHand, batch.unit)" />
             <ContentList label="Reserved qty" :value="formatQty(batch.reserved, batch.unit)" />
             <ContentList label="Available qty" :value="formatQty(batch.available, batch.unit)" />
-            <ContentList label="Min. stock" :value="formatQty(batch.minStock, batch.unit)" />
+            <!-- The threshold is the product's, across all its batches — labelled as
+                 such so it doesn't read as a minimum this one batch is under. -->
+            <ContentList label="Product min. stock" :value="formatQty(batch.minStock, batch.unit)" />
           </div>
         </div>
       </section>
@@ -486,6 +505,15 @@ const pagedWarehouseStock = computed(() => {
       :batch-id="batch.id"
       @close="editOpen = false"
       @saved="onBatchSaved"
+    />
+
+    <ConfirmModal
+      v-model:is-open="archiveOpen"
+      :title="t('Archive batch?')"
+      :description="t('Archived batches are hidden from the product\'s batch list and can\'t be used in new transactions. Stock and history are kept.')"
+      :confirm-label="t('Archive batch')"
+      :is-danger="false"
+      @confirm="archiveBatch"
     />
   </div>
 

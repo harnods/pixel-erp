@@ -234,7 +234,7 @@ const deliveryConfig = computed(() => (isDelivery.value ? getBatchAttributeConfi
 const deliveryAttrKeys = computed(() => deliveryConfig.value.map(a => a.key).filter(k => k !== 'expiry_date'))
 const deliveryUsesVendor = computed(() => isDelivery.value && productUsesVendor(props.sku))
 const vendorOptions = vendors.map(v => ({ label: v.name, value: v.id }))
-const gradeOptions = computed(() => activeGrades().map(g => ({ label: `${g.name} · Rank ${g.rank}`, value: g.id })))
+const gradeOptions = computed(() => activeGrades().map(g => ({ label: `${g.name} (Rank ${g.rank})`, value: g.id })))
 const vendorName = (id: string | undefined) => (id ? vendors.find(v => v.id === id)?.name ?? id : '')
 function attrLabel(key: BatchAttributeKey) { return batchAttributeDef(key).label }
 function attrText(row: WorkRow, key: BatchAttributeKey) {

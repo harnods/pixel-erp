@@ -370,7 +370,7 @@ function toBatchSummary(sku: string, base: BatchBase, rec?: BatchRecord): Produc
     reserved: b.reserved,
     available: Math.max(0, b.onHand - b.reserved),
     unit: b.unit,
-    archived: false,
+    archived: !!rec?.archived,
     barcode: b.isUnassigned ? '' : ensureBatchBarcode(sku, b.batchNo),
     attributes: b.attributes,
     isUnassigned: !!b.isUnassigned,
@@ -603,6 +603,31 @@ export function updateBatch(
     updatedBy: by,
   }, { date: at, user: by, action: 'updated', changes })
   if (renamed) moveBatchBarcode(sku, batch.batchNo, nextBatchNo)
+  return { ok: true, value: getProductBatchById(sku, id)! }
+}
+
+/** Archive or restore a batch (master data only — stock and history are untouched).
+ *  Archived batches leave the product's batch list unless "Show archived batches"
+ *  is on, and can't be picked for new transactions. */
+export function setBatchArchived(
+  sku: string,
+  id: string,
+  archived: boolean,
+  by = CURRENT_USER,
+): DataResult<ProductBatchSummary, BatchError> {
+  const batch = getProductBatchById(sku, id)
+  if (!batch) return { ok: false, errors: [{ code: 'batch-not-found' }] }
+  // The Unassigned batch is the product's own fallback bucket, not a real lot.
+  if (batch.isUnassigned) return { ok: false, errors: [{ code: 'unassigned-locked' }] }
+  if (batch.archived === archived) return { ok: true, value: batch }
+
+  const at = new Date().toISOString()
+  saveBatchRecord({
+    ...(findBatchRecord(id) ?? { id, sku, created: false }),
+    archived,
+    updatedAt: at,
+    updatedBy: by,
+  }, { date: at, user: by, action: archived ? 'archived' : 'unarchived', changes: [] })
   return { ok: true, value: getProductBatchById(sku, id)! }
 }
 

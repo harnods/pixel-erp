@@ -33,6 +33,9 @@ export interface BatchRecord {
   createdAt?: string
   updatedAt?: string
   updatedBy?: string
+  /** Archived batches drop out of the product's batch list unless "Show archived
+   *  batches" is on. Master data only — stock and history are untouched. */
+  archived?: boolean
 }
 
 // Seed edits so the demo has graded, vendor-attributed stock from the start (and a
@@ -72,7 +75,7 @@ export interface BatchActivity {
   sku: string
   date: string
   user: string
-  action: 'created' | 'updated'
+  action: 'created' | 'updated' | 'archived' | 'unarchived'
   changes: BatchActivityChange[]
 }
 
