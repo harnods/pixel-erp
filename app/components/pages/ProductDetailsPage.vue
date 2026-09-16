@@ -302,10 +302,34 @@ const whReplenishment = computed(() => {
  * the caption above; only a row that DEPARTS from it earns a word of its own.
  * The full arithmetic stays on each cell's hover title either way.
  */
+function whSafetyIsCustom(warehouseId: string): boolean {
+  return whReplenishment.value[warehouseId]?.safetyDaysSource === 'sku-warehouse'
+}
+
+function whMinStockIsCustom(warehouseId: string): boolean {
+  const src = whReplenishment.value[warehouseId]?.source
+  return src === 'sku-warehouse' || src === 'sku'
+}
+
+/**
+ * What the formula WOULD give for this warehouse, whether or not it is in use.
+ *
+ * Shown beside an overridden figure so the two are legible at once: telling a
+ * user their number is "custom" answers which is which, but not the question
+ * they actually have — is my override still sensible? Demand moves, so a floor
+ * typed three months ago can quietly drift far from what the product now needs,
+ * and the only way to notice is to see both numbers together.
+ */
+function whCalculatedHint(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r || r.recommended === null) return ''
+  return `calculated ${r.recommended}`
+}
+
 function whSafetySub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  return r.safetyDaysSource === 'sku-warehouse' ? 'custom' : ''
+  return whSafetyIsCustom(warehouseId) ? `custom · inherits ${r.safetyDays}` : ''
 }
 
 function whMinStockSub(warehouseId: string): string {
@@ -313,7 +337,10 @@ function whMinStockSub(warehouseId: string): string {
   if (!r) return ''
   // Two genuine departures: a floor somebody typed, and one that could not be
   // calculated at all. Everything else is the documented default.
-  if (r.source === 'sku-warehouse' || r.source === 'sku') return 'custom'
+  if (whMinStockIsCustom(warehouseId)) {
+    const calc = whCalculatedHint(warehouseId)
+    return calc ? `custom · ${calc}` : 'custom'
+  }
   if (r.recommended === null) return 'not calculated'
   return ''
 }
@@ -1150,7 +1177,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel value="warehouses">
             <p v-if="pagedWarehouseStock.length" class="pd-table-caption">
               Min. stock is calculated as daily sales × (lead time + safety days), per warehouse.
-              Leave a field empty to inherit the product default; type to set this warehouse's own.
+              Figures with no note are calculated or inherited; a figure you set is marked
+              <span class="pd-caption-mark">custom</span> and shows what the calculation would give.
             </p>
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
@@ -1222,6 +1250,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <template v-else>{{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}</template>
                       <span v-if="whSafetySub(s.warehouseId)" class="pd-cell-sub">
                         {{ whSafetySub(s.warehouseId) }}
+                        <!-- Clearing the box IS the revert, so name it instead of
+                             leaving the user to guess that empty means inherit. -->
+                        <a
+                          v-if="whEditing"
+                          class="pd-cell-link"
+                          @click="whSafetyDraft[s.warehouseId] = ''"
+                        >Use inherited</a>
                       </span>
                     </td>
 
@@ -1254,6 +1289,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       </template>
                       <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">
                         {{ whMinStockSub(s.warehouseId) }}
+                        <a
+                          v-if="whEditing && whMinStockIsCustom(s.warehouseId) && whCalculatedHint(s.warehouseId)"
+                          class="pd-cell-link"
+                          @click="whMinDraft[s.warehouseId] = ''"
+                        >Use calculated</a>
                       </span>
                     </td>
                     <td class="pd-td">{{ s.unit }}</td>
@@ -1440,6 +1480,16 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   line-height: 1.5;
   color: var(--mp-text-subdued, #6b7280);
 }
+
+/* Echoes the in-table marker so the caption's word is recognisably the same. */
+.pd-caption-mark { color: var(--mp-text-default, #374151); font-weight: 500; }
+
+.pd-cell-link {
+  margin-left: 6px;
+  color: var(--mp-text-brand, #029861);
+  cursor: pointer;
+}
+.pd-cell-link:hover { text-decoration: underline; }
 
 .pd-cell-sub {
   display: block;
