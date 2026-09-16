@@ -3549,7 +3549,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Change vendor?": "Ubah vendor?",
   "New batches on this delivery will use the new vendor. Existing batches keep their own vendor.": "Batch baru di pengiriman ini akan menggunakan vendor baru. Batch yang ada tetap menggunakan vendornya sendiri.",
   "Change vendor": "Ubah vendor",
-  "Use batches from another vendor?": "Gunakan batch dari vendor lain?",
+  "Save with batches from another vendor?": "Simpan dengan batch dari vendor lain?",
   "Grade Name not found": "Nama Grade tidak ditemukan",
   "This product does not use Attribute {attribute}": "Produk ini tidak menggunakan atribut {attribute}",
   "Attribute {attribute} must be filled": "Atribut {attribute} harus diisi",
@@ -3724,7 +3724,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "File contains more than 1.000 rows. Split into smaller files and import separately": "File berisi lebih dari 1.000 baris. Bagi menjadi beberapa file dan impor secara terpisah",
   "Grades exported": "Grade berhasil diekspor",
   "No vendor yet. It gets this delivery’s vendor when you save": "Belum ada vendor. Vendor pengiriman ini akan digunakan saat Anda menyimpan",
-  "Use batches": "Gunakan batch",
   "Products": "Produk",
   "Qty": "Qty",
 }

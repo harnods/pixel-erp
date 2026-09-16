@@ -871,7 +871,7 @@ function commitSave() {
     />
 
     <ConfirmModal
-      :is-open="mismatchOpen" :title="t('Use batches from another vendor?')" :description="mismatchText"
+      :is-open="mismatchOpen" :title="t('Save with batches from another vendor?')" :description="mismatchText"
       :items="mismatchItems"
       :confirm-label="t('Save delivery')" :is-danger="false"
       @update:is-open="(v) => { mismatchOpen = v }" @confirm="commitSave"
