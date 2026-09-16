@@ -1436,8 +1436,30 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th pd-th--num">Available qty</th>
                     <th class="pd-th pd-th--num">In transit qty</th>
                     <!-- The input comes before the number it produces. -->
-                    <th class="pd-th pd-th--num">Safety days</th>
-                    <th class="pd-th pd-th--num">Min. stock</th>
+                    <th class="pd-th pd-th--num">
+                      <span class="pd-th-info">
+                        Safety days
+                        <MpTooltip
+                          id="pd-th-safety-tip"
+                          label="Extra cover on top of the vendor's lead time. Leave a warehouse blank to use the category default from Settings › Replenishment, or the company default where the category sets none."
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
+                    <th class="pd-th pd-th--num">
+                      <span class="pd-th-info">
+                        Min. stock
+                        <MpTooltip
+                          id="pd-th-minstock-tip"
+                          label="Calculated from this warehouse's own sales: daily average × (lead time + safety days). Where a warehouse has no sales history to average, it uses the category minimum from Settings › Replenishment instead."
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
                     <th class="pd-th">Unit</th>
                   </tr>
                 </thead>
@@ -1831,6 +1853,16 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   border-radius: 8px;
   background: var(--mp-surface-subdued, #f9fafb);
 }
+/* Header label plus its info affordance. Inline-flex so the icon rides the text
+   baseline instead of forcing the numeric column's right alignment open. */
+.pd-th-info { display: inline-flex; align-items: center; gap: 4px; }
+.pd-th-icon {
+  display: inline-flex;
+  color: var(--mp-icon-subdued, #9ca3af);
+  cursor: help;
+}
+.pd-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
+
 .pd-bulk-count { font-size: 13px; font-weight: 500; color: var(--mp-text-default, #111827); }
 /* Pixel's MpInput root is full-width by default, so inside a flex row each one
    claims the whole line and the fields stack. Shrink the wrapper, not just the
