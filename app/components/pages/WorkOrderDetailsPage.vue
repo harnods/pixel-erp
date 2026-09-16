@@ -73,6 +73,34 @@ const subconStage = computed<1 | 2 | 3 | 4 | 5>(() => {
   return w.subcon.method === 'basic' ? 3 : 2
 })
 
+/**
+ * Subcon cost — the vendor's charges, which stand in for Production cost and
+ * Routing on a Subcontracting work order (the work is not performed in-house, so
+ * there is no labour, overhead or routing to report). Derived from the order's
+ * scope and quantity, the same figures the create form quoted.
+ */
+const subconCostLines = computed(() => {
+  const c = subcon.value
+  const w = wo.value
+  if (!c || !w) return []
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  return [
+    {
+      account: t(SUBCON_SERVICE_FEE[c.scope].name),
+      driver: t('Unit'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_SERVICE_FEE[c.scope].amount * factor,
+    },
+    {
+      account: t(SUBCON_HANDLING_FEE.name),
+      driver: t('Amount'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_HANDLING_FEE.amount * factor,
+    },
+  ]
+})
+const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
 /** Which warehouse the components leave from, given the supply method. */
 const subconSourceLabel = computed(() => {
   const c = subcon.value
@@ -307,25 +335,25 @@ function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
     }))
   }
 
-  // Subcon / process PR — the vendor's charges plus the output being bought back.
-  const service = SUBCON_SERVICE_FEE[c.scope]
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-  const output = catalogProduct(bom.value?.finishedGoodId ?? '')
-  return [
-    { name: service.name, sku: 'SVC', qty: 1, unit: 'Service', unitCost: Math.round(service.amount * factor), nonTrack: true },
-    { name: SUBCON_HANDLING_FEE.name, sku: 'SVC', qty: 1, unit: 'Service', unitCost: Math.round(SUBCON_HANDLING_FEE.amount * factor), nonTrack: true },
-    ...(output
-      ? [{ name: output.name, sku: output.sku, qty: Math.round(w.plannedQty * (c.split === 'partial' ? 0.5 : 1)), unit: output.unit, unitCost: 0 }]
-      : []),
-  ]
+  // Subcon / process PR — exactly the Subcon cost lines shown on this page, and
+  // nothing else. What you read in the Subcon cost section is what lands on the
+  // purchase request; the output is not a line here, it arrives on the goods
+  // receipt.
+  return subconCostLines.value.map(l => ({
+    name: l.account,
+    sku: 'SVC',
+    qty: 1,
+    unit: 'Service',
+    unitCost: Math.round(l.amount),
+    nonTrack: true,
+  }))
 }
 
-function startAndCreate(kind: SubconDocKind) {
+/** Open a document's form, prefilled from this work order. */
+function createDocument(kind: SubconDocKind) {
   const w = wo.value
   const c = subcon.value
   if (!w || !c) return
-  showStartModal.value = false
-  startWorkOrder()
 
   const prefill = encodeSubconPrefill({
     kind,
@@ -342,6 +370,13 @@ function startAndCreate(kind: SubconDocKind) {
     memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
   })
   router.push({ path: DOC_ROUTE[kind], query: { subcon: prefill } })
+}
+
+/** Modal path: start the order first, then open the chosen document. */
+function startAndCreate(kind: SubconDocKind) {
+  showStartModal.value = false
+  startWorkOrder()
+  createDocument(kind)
 }
 
 function startOnly() {
@@ -461,33 +496,6 @@ const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
   planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
 })))
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
-/**
- * Subcon cost — the vendor's charges, which stand in for Production cost and
- * Routing on a Subcontracting work order (the work is not performed in-house, so
- * there is no labour, overhead or routing to report). Derived from the order's
- * scope and quantity, the same figures the create form quoted.
- */
-const subconCostLines = computed(() => {
-  const c = subcon.value
-  const w = wo.value
-  if (!c || !w) return []
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-  return [
-    {
-      account: t(SUBCON_SERVICE_FEE[c.scope].name),
-      driver: t('Unit'),
-      chargedBy: c.vendorName,
-      amount: SUBCON_SERVICE_FEE[c.scope].amount * factor,
-    },
-    {
-      account: t(SUBCON_HANDLING_FEE.name),
-      driver: t('Amount'),
-      chargedBy: c.vendorName,
-      amount: SUBCON_HANDLING_FEE.amount * factor,
-    },
-  ]
-})
-const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
 
 // On a subcon work order the vendor's fee replaces production + routing cost.
 const totalProductionCost = computed(() => (subcon.value
@@ -716,6 +724,7 @@ function suppressFabClick(e: MouseEvent) {
               <th class="wod-subcon-th">{{ t('Document') }}</th>
               <th class="wod-subcon-th">{{ t('What it does') }}</th>
               <th class="wod-subcon-th">{{ t('Status') }}</th>
+              <th class="wod-subcon-th wod-subcon-th--action" />
             </tr>
           </thead>
           <tbody>
@@ -726,9 +735,25 @@ function suppressFabClick(e: MouseEvent) {
               </td>
               <td class="wod-subcon-td wod-subcon-td--wrap">{{ t(step.detail) }}</td>
               <td class="wod-subcon-td">
-                <span class="wod-subcon-status" :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'">
-                  {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                <!-- The receipt is never "ready to raise" here: it is raised when
+                     the vendor returns the goods, which is why its row has no button. -->
+                <span class="wod-subcon-status" :class="subconStarted && step.kind !== 'receipt' ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'">
+                  {{ step.kind === 'receipt' ? t('On vendor return')
+                    : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
                 </span>
+              </td>
+              <!-- Raise this document straight from its row. Hidden until the work
+                   order has started — the Status column already says why — and the
+                   receipt is raised on the order, not here. -->
+              <td class="wod-subcon-td wod-subcon-td--action">
+                <MpButton
+                  v-if="subconStarted && step.kind !== 'receipt'"
+                  variant="secondary"
+                  is-rounded
+                  @click="createDocument(step.kind)"
+                >
+                  {{ step.tag === 'Transfer' ? t('Create transfer') : t('Create purchase request') }}
+                </MpButton>
               </td>
             </tr>
           </tbody>
@@ -1421,6 +1446,8 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-tr:last-child .wod-subcon-td { border-bottom: none; }
 .wod-subcon-td__title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
 .wod-subcon-td__module { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-subcon-th--action { width: var(--mp-sizes-60, 240px); }
+.wod-subcon-td--action { text-align: right; }
 .wod-subcon-status { font-size: var(--mp-font-sizes-md); }
 .wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
 .wod-subcon-status--blocked { color: var(--mp-text-secondary); }
