@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, MpButtonGroup, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -679,12 +679,46 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
           <!-- Stock by batches (batch-tracked products) -->
           <MpTabPanel v-if="product.trackStockBy === 'Batch'" value="batches">
-            <div class="pd-filter-bar pd-filter-bar--end">
+            <!-- rule/filter-bar-anatomy: left group | right group. Deviation, asked for by
+                 design: Print all barcode sits to the RIGHT of the search pill rather than
+                 search being last, and the archived filter sits with the tools. -->
+            <div class="pd-filter-bar">
+              <div class="pd-filter-left">
+                <!-- rule/filter-bar-action-tertiary: the create action is the black tertiary
+                     button. It leads the left group so it lines up with the table below. -->
+                <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewBatch">New batch</MpButton>
+              </div>
               <div class="pd-filter-right">
                 <MpCheckbox
                   id="pd-show-archived-batches" :is-checked="showArchivedBatches"
                   @change="showArchivedBatches = !showArchivedBatches"
                 >Show archived batches</MpCheckbox>
+                <!-- rule/filter-bar-icon-group: ghost icon tools in one group, directly left
+                     of the search pill. Export = download, Import = upload
+                     (names checked against the Pixel library, rule/icon-pixel-library). -->
+                <MpButtonGroup>
+                  <MpTooltip id="tt-pd-batch-export" label="Export" placement="bottom" use-portal>
+                    <MpButton
+                      variant="ghost" is-rounded left-icon="download"
+                      aria-label="Export" @click="batchExportOpen = true"
+                    />
+                  </MpTooltip>
+                  <!-- rule/btn-dropdown-mppopover: Import opens a menu of import types. No
+                       MpTooltip here — a tooltip wrapper breaks a popover trigger
+                       (rule/btn-icon-tooltip's kebab exception); the aria-label names it. -->
+                  <MpPopover id="pd-batch-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton variant="ghost" is-rounded left-icon="upload" aria-label="Import" />
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem
+                          @click="router.push({ path: '/product-list/import-batches', query: { sku: product.sku } })"
+                        >Update batches from spreadsheet</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </MpButtonGroup>
                 <div class="pd-search">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -704,28 +738,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 >
                   Print all barcode
                 </button>
-                <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="batchExportOpen = true">
-                  Export
-                </button>
-                <!-- rule/btn-dropdown-mppopover: Import opens a menu of import types. -->
-                <MpPopover id="pd-batch-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <button class="btn-enterprise btn-enterprise--secondary" type="button">
-                      Import
-                      <MpIcon name="chevrons-down" size="sm" />
-                    </button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem
-                        @click="router.push({ path: '/product-list/import-batches', query: { sku: product.sku } })"
-                      >Update batches from spreadsheet</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
-                <!-- rule/filter-bar-action-tertiary: a create action beside the search is
-                     the black tertiary button, not a second primary. -->
-                <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewBatch">New batch</MpButton>
               </div>
             </div>
 
