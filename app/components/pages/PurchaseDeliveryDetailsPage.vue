@@ -9,7 +9,9 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
+import ViewBatchDrawer, { type PickedBatchRow } from '~/components/patterns/ViewBatchDrawer.vue'
+import { getPurchaseDeliveryDetail, type PDLineItem } from '~/data/purchaseDeliveryDetails'
+import { getProductBatches } from '~/data/productDetails'
 import { purchaseDeliveries } from '~/data'
 
 const props = defineProps<{ orderId: string }>()
@@ -27,6 +29,29 @@ const router = useRouter()
 const delivery = computed(() => getPurchaseDeliveryDetail(props.orderId))
 
 const activityOpen = ref(false)
+
+// ── View batch drawer (Batch Attribute story 10) ──────────────────────────────
+// The batches that received a line are read-only here, so this is the shared
+// ViewBatchDrawer in its per-line "packing" mode — the same drawer the WMS
+// detail pages open from their own View batch link (rule/drawer-open-via-manage
+// covers the editable twin on the form).
+const viewBatchItem = ref<PDLineItem | null>(null)
+const viewBatchRows = computed<PickedBatchRow[]>(() => {
+  const item = viewBatchItem.value
+  if (!item) return []
+  const records = getProductBatches(item.sku)
+  return (item.batches ?? []).map((b) => {
+    const record = records.find((r) => r.batchNo === b.batchNo)
+    return {
+      batchNo: b.batchNo,
+      expiryDate: record?.expiryDate ?? '',
+      desc: record?.description ?? '',
+      qty: b.qty,
+      unit: item.unit,
+    }
+  })
+})
+
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
@@ -286,20 +311,20 @@ function goBack() { router.push('/purchase-deliveries') }
                   <span class="detail-item-primary">
                     <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
                     <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
-                    <!-- Batches that received this line (Batch Attribute story 10). -->
-                    <span v-for="b in it.batches ?? []" :key="b.batchId" class="detail-item-sku">
-                      {{ t('Batch') }}:
-                      <a
-                        class="cell-link"
-                        @click.stop="router.push(`/product-list/${it.sku}/batches/${encodeURIComponent(b.batchNo)}`)"
-                      >{{ b.batchNo }}</a>
-                      · {{ b.qty }} {{ it.unit }}
-                    </span>
                   </span>
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- Batch-tracked lines open the batches in the shared read-only drawer,
+                   from a link under the qty it splits (Batch Attribute story 10) —
+                   the same shape the WMS detail pages use. -->
+              <td v-if="(it.batches ?? []).length" class="detail-td detail-td--qty-batch">
+                <div class="detail-qty-value">{{ it.qty }}</div>
+                <div class="detail-qty-action">
+                  <MpTextlink :id="`pdd-view-batch-${i}`" as="a" class="detail-view-link" @click.prevent="viewBatchItem = it">{{ t('View batch') }}</MpTextlink>
+                </div>
+              </td>
+              <td v-else class="detail-td detail-td--num">{{ it.qty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
@@ -482,6 +507,20 @@ function goBack() { router.push('/purchase-deliveries') }
       :description="`${t('Purchase Delivery')} #${delivery.number} ${t('will be permanently deleted. This cannot be undone.')}`"
       :confirm-label="`${t('Delete')} ${t('purchase delivery')}`"
       @confirm="confirmDelete"
+    />
+
+    <ViewBatchDrawer
+      v-if="viewBatchItem"
+      :open="true"
+      :sku="viewBatchItem.sku"
+      :warehouse-id="''"
+      kind="packing"
+      :picked-batches="viewBatchRows"
+      :qty-label="t('Received qty')"
+      hide-location
+      :product-name="viewBatchItem.product"
+      :product-img="''"
+      @update:open="viewBatchItem = null"
     />
   </div>
 </template>
@@ -762,6 +801,15 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 /* line-items rows carry a 2-line product cell → that whole row top-aligns */
 .detail-items tbody .detail-td { vertical-align: top; }
+/* Batch-tracked line: qty keeps the numeric column's alignment and the View batch
+   link sits under it, the same stack the WMS detail tables use. */
+.detail-td--qty-batch {
+  white-space: nowrap;
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4);
+}
+.detail-qty-value { text-align: right; }
+.detail-qty-action { margin-top: var(--mp-spacing-1); text-align: right; }
+.detail-view-link { font-size: var(--mp-font-sizes-sm); white-space: nowrap; }
 .detail-td--muted { color: var(--mp-text-secondary); }
 .detail-item-primary { display: block; }
 .detail-item-name { display: block; color: var(--mp-text-default); }

@@ -93,6 +93,10 @@ const props = defineProps<{
    *  be able to see the system's on-hand record before the count reaches Awaiting
    *  approval, where the reviewing manager needs it. Other kinds never pass this. */
   hideOnHand?: boolean
+  /** Packing mode — hides the Storage location column for a stage that has no bin
+   *  to show (a purchase delivery records which batches arrived, not where they
+   *  were put). WMS callers leave it off and keep the column. */
+  hideLocation?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -362,10 +366,10 @@ function close() { emit('update:open', false) }
               <col v-if="!isPacking && !hideOnHand" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
-                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify && !hideLocation" class="vbd-col-loc" />
               </template>
               <template v-else>
-                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify && !hideLocation" class="vbd-col-loc" />
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
@@ -380,10 +384,10 @@ function close() { emit('update:open', false) }
                 <th v-if="!isPacking && !hideOnHand" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
-                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
+                  <th v-if="isPacking && !isVerify && !hideLocation" class="vbd-th">{{ t('Storage location') }}</th>
                 </template>
                 <template v-else>
-                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
+                  <th v-if="isPacking && !isVerify && !hideLocation" class="vbd-th">{{ t('Storage location') }}</th>
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
                 </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ t(hasPlanned ? qtyLabel : tableQtyLabel) }}</th>
@@ -403,10 +407,10 @@ function close() { emit('update:open', false) }
                 <td v-if="!isPacking && !hideOnHand" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
-                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify && !hideLocation" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify && !hideLocation" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
@@ -460,8 +464,8 @@ function close() { emit('update:open', false) }
 .vbd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .vbd-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .vbd-close {
@@ -470,7 +474,7 @@ function close() { emit('update:open', false) }
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.vbd-close:hover { background: var(--mp-background-neutral-hovered); }
+.vbd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .vbd-content {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -481,18 +485,18 @@ function close() { emit('update:open', false) }
 .vbd-info-bar {
   display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
 }
 .vbd-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 1; min-width: 0; }
 .vbd-info-thumb {
   width: 40px; height: 40px; border-radius: var(--mp-radii-md);
   object-fit: cover; flex-shrink: 0;
-  border: 1px solid var(--mp-border-subtle);
-  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-subtle, #e5e7e7);
+  background: var(--mp-background-neutral, #ffffff);
 }
-.vbd-info-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.vbd-info-thumb--empty { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .vbd-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -505,7 +509,7 @@ function close() { emit('update:open', false) }
 
 .vbd-scan { margin-bottom: var(--mp-spacing-3); }
 .vbd-table-wrap {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
   overflow-x: auto;
@@ -521,17 +525,17 @@ function close() { emit('update:open', false) }
 .vbd-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .vbd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 
 .vbd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
@@ -549,7 +553,7 @@ function close() { emit('update:open', false) }
    than the header and its own last rendered cell isn't reliably the table's
    true right edge. */
 .vbd-table--split .vbd-th,
-.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default); }
+.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .vbd-table--split .vbd-th--unit,
 .vbd-table--split .vbd-td--unit { border-right: none; }
 
