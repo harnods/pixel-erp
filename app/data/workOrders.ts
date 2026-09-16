@@ -93,6 +93,13 @@ export interface WorkOrderSubconSetup {
    * link straight to each one instead of only offering to create it again.
    */
   raisedDocuments?: RaisedSubconDocument[]
+  /**
+   * A deliberate reduction of the finished-good quantity, so a work order the
+   * vendor under-delivered can still be closed. Recorded rather than applied
+   * silently — the gap between what was ordered and what was accepted is the
+   * whole point of keeping it.
+   */
+  qtyAdjustment?: { from: number; to: number; reason: string; date: string }
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -275,6 +282,24 @@ export function recordSubconProduction(workOrderId: string, qty: number): void {
   if (wo.status === 'not started' || wo.status === 'in progress' || wo.status === 'partially produced') {
     wo.status = wo.producedQty >= wo.plannedQty ? 'partially completed' : 'partially produced'
   }
+  persistWorkOrders()
+}
+
+/**
+ * Reduce a work order's finished-good quantity to what was actually produced, so
+ * a short delivery can be completed without pretending the rest arrived. The
+ * original figure is kept alongside the reason.
+ */
+export function adjustSubconWorkOrderQty(workOrderId: string, newQty: number, reason: string): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon || newQty <= 0 || newQty > wo.plannedQty) return
+  wo.subcon.qtyAdjustment = {
+    from: wo.plannedQty,
+    to: newQty,
+    reason,
+    date: new Date().toISOString().slice(0, 10),
+  }
+  wo.plannedQty = newQty
   persistWorkOrders()
 }
 

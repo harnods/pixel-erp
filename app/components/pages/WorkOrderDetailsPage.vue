@@ -19,6 +19,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
 import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrderModal.vue'
+import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
@@ -32,7 +33,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
@@ -436,6 +437,31 @@ function onAutoConsumeAndComplete() {
 // prefilled — otherwise the user is left hunting for the right form in another
 // module and retyping what the work order already knows.
 const showStartModal = ref(false)
+const showShortfallModal = ref(false)
+
+/** How much the vendor still owes against what the work order needs. */
+const subconShortfall = computed(() => {
+  const w = wo.value
+  return w && subcon.value ? Math.max(0, w.plannedQty - w.producedQty) : 0
+})
+
+/** Close the order short: reduce what it needs to what actually arrived. */
+function adjustAndComplete(reason: string) {
+  const w = wo.value
+  if (!w) return
+  showShortfallModal.value = false
+  adjustSubconWorkOrderQty(w.id, w.producedQty, reason.trim() || t('Closed short — vendor under-delivered'))
+  completeWorkOrder()
+}
+
+/** Raise another delivery for the balance instead of closing short. */
+function deliverBalance() {
+  showShortfallModal.value = false
+  const po = (subcon.value?.raisedDocuments ?? []).find(d => d.kind === 'purchaseOrder')
+  router.push(po
+    ? { path: '/purchase-deliveries/new', query: { fromPo: po.id } }
+    : { path: '/purchase-deliveries/new' })
+}
 
 function startWorkOrder() {
   const w = wo.value
@@ -558,9 +584,16 @@ function handlePrimaryAction() {
     return
   }
   if (primaryAction.value !== 'Complete work order') return
-  // The unconsumed-material guard is about in-house consumption; a subcon order
-  // has none, so it completes without it.
-  if (!subcon.value && remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  // A subcon order is finished when the vendor's deliveries add up to what it
+  // needs. Short of that, ask: deliver the balance, or close it short on the
+  // record. (The unconsumed-material guard below is about in-house consumption,
+  // which a subcon order does not have.)
+  if (subcon.value) {
+    if (subconShortfall.value > 0) { showShortfallModal.value = true; return }
+    completeWorkOrder()
+    return
+  }
+  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
   completeWorkOrder()
 }
 
@@ -686,7 +719,9 @@ const mainOutput = computed(() => {
   return {
     product: fg?.name ?? wo.value?.bomName ?? '—',
     sku: fg?.sku ?? '—',
-    qty: wo.value?.producedQty || bom.value?.finishedGoodQty || 0,
+    qty: wo.value?.producedQty ?? 0,
+    /** What the work order needs — the denominator a subcon order reports against. */
+    needed: wo.value?.plannedQty ?? bom.value?.finishedGoodQty ?? 0,
     unit: bom.value?.finishedGoodUnit ?? 'Pcs',
     percentage: bom.value?.finishedGoodPercentage ?? 100,
     estCost,
@@ -867,6 +902,12 @@ function suppressFabClick(e: MouseEvent) {
               :label="t('Transfer components to')"
               :value="subconDestination.name"
             />
+            <!-- Closed short: the original quantity and the reason stay visible,
+                 otherwise the adjustment would erase the very thing it records. -->
+            <ContentList v-if="subcon.qtyAdjustment" :label="t('Quantity adjusted')">
+              {{ subcon.qtyAdjustment.from.toLocaleString('id-ID') }} →
+              {{ subcon.qtyAdjustment.to.toLocaleString('id-ID') }} · {{ subcon.qtyAdjustment.reason }}
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Promised return date')" :value="subcon.promisedDate ? formatDate(subcon.promisedDate) : '—'" />
@@ -1141,7 +1182,13 @@ function suppressFabClick(e: MouseEvent) {
                 <tr class="wod-tr">
                   <td class="wod-td">{{ mainOutput.product }}</td>
                   <td class="wod-td">{{ mainOutput.sku }}</td>
-                  <td class="wod-td wod-td--num">{{ num(mainOutput.qty) }}</td>
+                  <!-- Subcon reports produced/needed: the numerator is the total
+                       across the vendor's deliveries, so the gap is the balance
+                       still to be delivered. -->
+                  <td class="wod-td wod-td--num">
+                    <template v-if="subcon">{{ num(mainOutput.qty) }}/{{ num(mainOutput.needed) }}</template>
+                    <template v-else>{{ num(mainOutput.qty) }}</template>
+                  </td>
                   <td class="wod-td">{{ mainOutput.unit }}</td>
                   <td class="wod-td wod-td--num">{{ mainOutput.percentage }}%</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(mainOutput.estCost) }}</td>
@@ -1399,6 +1446,16 @@ function suppressFabClick(e: MouseEvent) {
     </MpPopover>
 
     <!-- Start work order — subcon orders pick which document to raise first. -->
+
+    <SubconShortfallModal
+      v-if="subcon && wo"
+      v-model:is-open="showShortfallModal"
+      :produced="wo.producedQty"
+      :planned="wo.plannedQty"
+      :unit="mainOutput.unit"
+      @adjust="adjustAndComplete"
+      @deliver="deliverBalance"
+    />
 
     <StartSubconWorkOrderModal
 
