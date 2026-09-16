@@ -368,7 +368,9 @@ function whMinStockSub(warehouseId: string): string {
   // "no sales here" rather than "not calculated": the old wording described what
   // the SYSTEM did not do, when the fact worth having is WHY — and the number
   // shown is still the floor in force, which "not calculated" made sound inert.
-  if (r.recommended === null) return 'no sales here'
+  // A warehouse with no sales now falls to the category floor rather than the
+  // legacy stored figure, so say which of the two it landed on.
+  if (r.recommended === null) return r.source === 'category' ? 'category default' : 'no sales here'
   return 'calculated'
 }
 
@@ -422,8 +424,11 @@ function whMinStockTitle(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
   if (r.recommended === null) {
-    return 'No sales in this warehouse yet, so there is nothing to calculate a floor from. '
-      + 'The stored min. stock still applies to low-stock alerts — type a figure to set it deliberately.'
+    return r.source === 'category'
+      ? 'No sales in this warehouse yet, so it uses the category minimum from '
+        + 'Settings › Replenishment. It switches to a calculated figure once this product starts moving here.'
+      : 'No sales in this warehouse yet and no category minimum set, so the stored figure applies. '
+        + 'Type one here, or set a category minimum in Settings › Replenishment.'
   }
   const lead = r.leadTimeEstimated ? `${r.leadTimeDays} days lead time (estimated)` : `${r.leadTimeDays} days lead time`
   const sum = `${r.velocity.toFixed(2)}/day × (${lead} + ${r.safetyDays} safety) = ${r.recommended}`
@@ -451,6 +456,7 @@ const whSafetyDraft = reactive<Record<string, string>>({})
  */
 const whSelected = ref<Set<string>>(new Set())
 const whBulkSafety = ref('')
+const whBulkMinStock = ref('')
 
 const whAllSelected = computed(() =>
   warehouseStock.value.length > 0 && whSelected.value.size === warehouseStock.value.length,
@@ -468,12 +474,36 @@ function toggleWhSelectAll(): void {
     : new Set(warehouseStock.value.map((s) => s.warehouseId))
 }
 
-/** Empty clears the override on every selected warehouse — the same "empty means
- *  inherit" rule the per-row box follows, applied in bulk. */
-function applyBulkSafety(): void {
-  const raw = whBulkSafety.value.trim().replace(/\D/g, '')
-  for (const id of whSelected.value) whSafetyDraft[id] = raw
+/**
+ * Apply whichever bulk boxes were filled to every selected warehouse.
+ *
+ * A bulk write is a one-off that stamps EXPLICIT values on the rows it touches —
+ * different in kind from the product-level defaults, which are live and inherited
+ * (D15). Use this for a set of warehouses that genuinely differ; use the product
+ * default for "most of them behave the same".
+ *
+ * An empty box is left alone rather than treated as a clear, because clearing
+ * nine warehouses by accident is the more expensive mistake. `Clear` is explicit.
+ */
+function applyBulk(): void {
+  const safety = whBulkSafety.value.trim().replace(/\D/g, '')
+  const min = whBulkMinStock.value.trim().replace(/\D/g, '')
+  for (const id of whSelected.value) {
+    if (safety !== '') whSafetyDraft[id] = safety
+    if (min !== '') whMinDraft[id] = min
+  }
   whBulkSafety.value = ''
+  whBulkMinStock.value = ''
+  whSelected.value = new Set()
+}
+
+/** Hand the selected warehouses back to the cascade — the explicit counterpart
+ *  to filling a box, so "make these inherit again" is one deliberate action. */
+function clearBulk(): void {
+  for (const id of whSelected.value) {
+    whSafetyDraft[id] = ''
+    whMinDraft[id] = ''
+  }
   whSelected.value = new Set()
 }
 
@@ -1308,16 +1338,32 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   v-model="whBulkSafety"
                   type="number"
                   placeholder="Safety days"
-                  :class="css({ width: '120px' })"
+                  :class="css({ width: '116px' })"
+                />
+                <MpInput
+                  id="pd-wh-bulk-min-stock"
+                  v-model="whBulkMinStock"
+                  type="number"
+                  placeholder="Min. stock"
+                  :class="css({ width: '116px' })"
                 />
                 <button
                   class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                   type="button"
-                  @click="applyBulkSafety"
+                  @click="applyBulk"
                 >Apply to selected</button>
-                <span class="pd-bulk-hint">Leave the box empty to make them inherit again.</span>
+                <button
+                  class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+                  type="button"
+                  @click="clearBulk"
+                >Clear</button>
+                <span class="pd-bulk-hint">
+                  Fill either box. Clear hands them back to the product default.
+                </span>
               </template>
-              <span v-else class="pd-bulk-hint">Tick warehouses to set their safety days together.</span>
+              <span v-else class="pd-bulk-hint">
+                Tick warehouses to set their safety days or min. stock together.
+              </span>
             </div>
 
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">

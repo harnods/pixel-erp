@@ -22,7 +22,9 @@ import {
 import {
   saveSkuWarehouseOverride, saveSkuOverride, resetReplenishmentSettings,
 } from '~/data/replenishmentSettings'
-import { getReplenishmentConfig } from '~/data/replenishmentConfig'
+import { getReplenishmentConfig, REPL_DEFAULTS, minStockForCategory } from '~/data/replenishmentConfig'
+import { effectiveSettings } from '~/data/replenishmentSettings'
+import { productBySku } from '~/data/inventory'
 import { warehouseProducts } from '~/data/inventory'
 import { getProductWarehouseStock } from '~/data/productDetails'
 
@@ -261,7 +263,7 @@ describe('every warehouse always resolves to an effective value (D15)', () => {
     for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
       expect(typeof w.value).toBe('number')
       expect(Number.isFinite(w.value)).toBe(true)
-      expect(['sku-warehouse', 'sku', 'calculated', 'stored']).toContain(w.source)
+      expect(['sku-warehouse', 'sku', 'calculated', 'category', 'stored']).toContain(w.source)
     }
   })
 
@@ -270,5 +272,71 @@ describe('every warehouse always resolves to an effective value (D15)', () => {
     // mixing them.
     const cfgSrc = readFileSync(join(process.cwd(), 'app/data/replenishmentConfig.ts'), 'utf8')
     expect(cfgSrc).not.toMatch(/minStockLevel|minStockMode|productVsWarehouse/i)
+  })
+})
+
+describe('a warehouse with no sales falls to the category floor (US-024 AC-03)', () => {
+  it('resolves category → global rather than leaving no floor', () => {
+    const sku = multiWarehouseSku()
+    const category = productBySku(sku)?.category ?? ''
+    const expected = minStockForCategory(category, cfg)
+    expect(expected).not.toBeNull()
+
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      if (w.calculated !== null) continue
+      expect(w.source).toBe('category')
+      expect(w.value).toBe(expected)
+    }
+  })
+
+  it('the category floor sits AFTER the calculation, never before it', () => {
+    // A category figure that outranked real demand would switch the engine off
+    // for every product in that category — the failure this ordering prevents.
+    const sku = multiWarehouseSku()
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      if (w.calculated === null) continue
+      expect(w.source).not.toBe('category')
+      // Where demand exists, the demand-derived figure wins.
+      expect(w.value).toBe(w.calculated)
+    }
+  })
+
+  it('an explicit override still beats the category floor', () => {
+    const sku = multiWarehouseSku()
+    const noSales = warehouseMinStockRollup(sku, cfg).perWarehouse.find((w) => w.calculated === null)
+    expect(noSales).toBeTruthy()
+
+    saveSkuWarehouseOverride(sku, noSales!.warehouseId, { reorderPoint: 3 })
+    invalidateReplenishmentCaches()
+
+    const after = warehouseMinStockRollup(sku, cfg).perWarehouse
+      .find((w) => w.warehouseId === noSales!.warehouseId)!
+    expect(after.value).toBe(3)
+    expect(after.source).toBe('sku-warehouse')
+  })
+
+  it('no category and no global figure means no floor, not a fabricated zero', () => {
+    const bare = { ...REPL_DEFAULTS, minStockByCategory: {}, minStockGlobal: 0 }
+    const sku = multiWarehouseSku()
+    for (const w of warehouseMinStockRollup(sku, bare).perWarehouse) {
+      if (w.calculated !== null) continue
+      // Falls through to the stored legacy floor, and is labelled as such.
+      expect(w.source).toBe('stored')
+    }
+  })
+
+  it('every warehouse still resolves to something (D15 read-model)', () => {
+    const sku = multiWarehouseSku()
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      expect(['sku-warehouse', 'sku', 'calculated', 'category', 'stored']).toContain(w.source)
+      expect(Number.isFinite(w.value)).toBe(true)
+    }
+  })
+
+  it('effectiveSettings exposes the category floor for the engine to use', () => {
+    const sku = multiWarehouseSku()
+    const wh = warehouseMinStockRollup(sku, cfg).perWarehouse[0]!
+    const settings = effectiveSettings(sku, wh.warehouseId, cfg)
+    expect(settings.categoryMinStock).toBe(minStockForCategory(productBySku(sku)?.category ?? '', cfg))
   })
 })

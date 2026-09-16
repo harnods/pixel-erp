@@ -218,8 +218,18 @@ describe('resolveReorderPoint', () => {
     expect(r.source).toBe('sku-warehouse')
   })
 
-  it('has no reorder point at zero velocity — no demand to protect', () => {
-    const r = resolveReorderPoint(settings(), 0, 14)
+  it('falls to the category floor at zero velocity (US-024 AC-03)', () => {
+    // There is no demand to calculate from, but a warehouse still needs SOME
+    // resolved value — D15 keeps the warehouse level as the single read-model.
+    const r = resolveReorderPoint({ ...settings(), categoryMinStock: 12 }, 0, 14)
+    expect(r.source).toBe('category')
+    expect(r.value).toBe(12)
+  })
+
+  it('has no reorder point at zero velocity when no category floor is set', () => {
+    // Still the honest answer where nothing is configured: no demand and no
+    // policy means no floor, rather than an invented one.
+    const r = resolveReorderPoint({ ...settings(), categoryMinStock: null }, 0, 14)
     expect(r.source).toBe('none')
     expect(r.value).toBe(0)
   })

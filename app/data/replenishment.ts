@@ -437,7 +437,7 @@ export function isSuppressed(
 
 export interface ReorderPointResult {
   value: number
-  source: 'sku-warehouse' | 'sku' | 'calculated' | 'none'
+  source: 'sku-warehouse' | 'sku' | 'calculated' | 'category' | 'none'
 }
 
 /**
@@ -465,7 +465,15 @@ export function resolveReorderPoint(
       source: settings.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse' : 'sku',
     }
   }
-  if (velocity <= 0) return { value: 0, source: 'none' }
+  // No demand to calculate from — fall to the category/company floor (US-024
+  // AC-03). This tier sits AFTER the calculation, never before it: a category
+  // figure that outranked real demand would switch the engine off for every
+  // product in that category.
+  if (velocity <= 0) {
+    return settings.categoryMinStock !== null
+      ? { value: settings.categoryMinStock, source: 'category' }
+      : { value: 0, source: 'none' }
+  }
   return { value: Math.ceil(velocity * (leadDays + settings.safetyDays)), source: 'calculated' }
 }
 
@@ -895,7 +903,7 @@ export interface WarehouseMinStock {
   warehouseName: string
   /** The floor actually in force here — what the warehouse table shows. */
   value: number
-  source: 'sku-warehouse' | 'sku' | 'calculated' | 'stored'
+  source: 'sku-warehouse' | 'sku' | 'calculated' | 'category' | 'stored'
   /** What the formula gives; null when the warehouse has no demand to compute from. */
   calculated: number | null
   velocity: number
@@ -1017,6 +1025,7 @@ export function warehouseMinStockRollup(
       row.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse'
       : row.reorderPointSource === 'sku' ? 'sku'
       : calculated !== null ? 'calculated'
+      : row.reorderPointSource === 'category' ? 'category'
       : 'stored'
     const value = source === 'stored' ? stock.minStock : row.reorderPoint
 

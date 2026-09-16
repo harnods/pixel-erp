@@ -2054,6 +2054,14 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'no sales here': 'belum ada penjualan di sini',
   'set for this warehouse': 'diatur untuk gudang ini',
   'Default min. stock': 'Stok minimum standar',
+  'Default safety days': 'Hari cadangan standar',
+  'Min. stock by category': 'Stok minimum per kategori',
+  'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
+    'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
+  'category default': 'standar kategori',
+  'from the category or company default.': 'dari standar kategori atau perusahaan.',
+  'Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.':
+    'Cadangan tambahan di luar waktu tunggu vendor, untuk gudang yang belum mengatur sendiri. Tiap gudang bisa menimpanya di tab Stok per gudang.',
   'Calculated per warehouse': 'Dihitung per gudang',
   'Leave empty and each warehouse calculates its own from its sales.':
     'Kosongkan dan tiap gudang menghitung sendiri dari penjualannya.',
@@ -2147,6 +2155,14 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'no sales here': 'belum ada penjualan di sini',
   'set for this warehouse': 'diatur untuk gudang ini',
   'Default min. stock': 'Stok minimum standar',
+  'Default safety days': 'Hari cadangan standar',
+  'Min. stock by category': 'Stok minimum per kategori',
+  'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
+    'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
+  'category default': 'standar kategori',
+  'from the category or company default.': 'dari standar kategori atau perusahaan.',
+  'Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.':
+    'Cadangan tambahan di luar waktu tunggu vendor, untuk gudang yang belum mengatur sendiri. Tiap gudang bisa menimpanya di tab Stok per gudang.',
   'Calculated per warehouse': 'Dihitung per gudang',
   'Leave empty and each warehouse calculates its own from its sales.':
     'Kosongkan dan tiap gudang menghitung sendiri dari penjualannya.',

@@ -103,6 +103,12 @@ function save() {
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
     leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
     leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
+    minStockGlobal: Number(draft.minStockGlobal),
+    minStockByCategory: Object.fromEntries(
+      Object.entries(draft.minStockByCategory)
+        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
+        .map(([k, v]) => [k, Math.max(0, Number(v))]),
+    ),
     leadTimeByCategory: Object.fromEntries(
       Object.entries(draft.leadTimeByCategory)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
@@ -331,6 +337,32 @@ const BOUNDARY_OPTIONS = [
           </div>
           <span v-else class="rs-value">
             {{ categories.map(c => `${c} ${committed.safetyDaysByCategory[c] ?? committed.safetyDaysGlobal}d`).join('   ') }}
+          </span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Min. stock by category') }}</span>
+          <span class="rs-label-desc">{{ t('Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.') }}</span>
+        </div>
+        <div class="rs-control">
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
+              <span class="rs-cat-name">{{ cat }}</span>
+              <MpInputGroup :id="`rs-minstock-cat-${cat}`">
+                <MpInput
+                  :id="`rs-minstock-cat-input-${cat}`"
+                  v-model="draft.minStockByCategory[cat]"
+                  type="number"
+                  :placeholder="String(draft.minStockGlobal)"
+                  :class="css({ width: '84px' })"
+                />
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ categories.map(c => `${c} ${committed.minStockByCategory[c] ?? committed.minStockGlobal}`).join('   ') }}
           </span>
         </div>
       </div>

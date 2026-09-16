@@ -49,7 +49,21 @@ const photoDataUrl = ref('')
 // (quantity, batch or serial number), never whether, so the opt-out checkbox
 // isn't rendered there and this stays true.
 const trackStock = ref(true)
+/**
+ * The two product-level CASCADE DEFAULTS (D14 / D15, US-024 VR-05).
+ *
+ * Neither is a value in its own right — each is the figure a warehouse inherits
+ * when it has set nothing itself. That is what lets a business run "product
+ * level only" (set these, override nothing) or mix (default for the long tail,
+ * overrides for A-items), which is D15's whole argument for not needing a
+ * company-wide product-vs-warehouse toggle.
+ *
+ * Deliberately NOT the same thing as the bulk editor on Stock by warehouses: a
+ * bulk write stamps explicit values onto the rows it touches and is frozen there,
+ * while these are live and reach warehouses that do not exist yet.
+ */
 const minStock = ref('')
+const safetyDays = ref('')
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
 
@@ -91,6 +105,7 @@ onMounted(() => {
   // placeholder, never as text in the field.
   const override = getSkuOverride(p.sku)
   if (override.reorderPoint !== undefined) minStock.value = String(override.reorderPoint)
+  if (override.safetyDays !== undefined) safetyDays.value = String(override.safetyDays)
 })
 
 /**
@@ -112,8 +127,16 @@ const rollup = computed(() => {
   return s ? productActionRollup(s) : null
 })
 
+/** What a warehouse inherits when this product sets no default of its own. */
+const inheritedSafetyDays = computed(() => {
+  const cfg = getReplenishmentConfig()
+  return category.value
+    ? (cfg.safetyDaysByCategory[category.value] ?? cfg.safetyDaysGlobal)
+    : cfg.safetyDaysGlobal
+})
+
 /** Only used to decide whether a typed Default min. stock differs from the
- *  calculation; safety days now comes from the cascade, not from this form. */
+ *  calculation. */
 const recommendation = computed(() => {
   const s = sku.value.trim()
   return s ? recommendedMinStock(s) : null
@@ -348,6 +371,7 @@ function resetForm() {
   description.value = ''
   photoDataUrl.value = ''
   minStock.value = ''
+  safetyDays.value = ''
   trackStock.value = true
   trackStockBy.value = 'Quantity'
   doesBuy.value = true
@@ -372,17 +396,16 @@ function resetForm() {
  */
 function saveReplenishmentInputs(savedSku: string) {
   const min = minStock.value.trim()
+  const safety = safetyDays.value.trim()
   const recommended = recommendation.value?.value ?? null
 
-  // Safety days is NOT set here. It already has category and company defaults in
-  // Settings › Replenishment, and a per-warehouse value (settable in bulk) on the
-  // product's Stock by warehouses tab — a third place to type the same number
-  // only invites the three to disagree. The SKU tier stays in the cascade; it
-  // simply has no editor on this form.
+  // Empty means INHERIT for both, so an empty box clears the default rather than
+  // pinning a zero — the same rule every tier of the cascade follows.
   saveSkuOverride(savedSku, {
     reorderPoint: min === '' || Number(min) === recommended
       ? undefined
       : Math.max(0, Number(min)),
+    safetyDays: safety === '' ? undefined : Math.max(0, Number(safety)),
   })
 }
 
@@ -682,6 +705,32 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   product-level "Min. stock" push values down into warehouses that
                   had their own answer.
                 -->
+                <MpFormControl id="np-default-safety-days" class="np-field-270">
+                  <MpFormLabel>
+                    <span class="np-label-with-info">
+                      {{ t('Default safety days') }}
+                      <MpTooltip
+                        id="np-default-safety-days-tip"
+                        :label="t('Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.')"
+                        placement="top" use-portal
+                      >
+                        <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
+                      </MpTooltip>
+                    </span>
+                  </MpFormLabel>
+                  <div class="np-suffix-wrap">
+                    <input
+                      id="np-safety-days-input" v-model="safetyDays" class="np-suffix-input"
+                      type="text" inputmode="numeric" :placeholder="String(inheritedSafetyDays)"
+                    />
+                    <span class="np-suffix-chip">{{ t('days') }}</span>
+                  </div>
+                  <span class="np-field-hint">
+                    {{ t('Leave empty to inherit') }} {{ inheritedSafetyDays }} {{ t('days') }}
+                    {{ t('from the category or company default.') }}
+                  </span>
+                </MpFormControl>
+
                 <MpFormControl id="np-default-min-stock" class="np-field-270">
                   <MpFormLabel>
                     <span class="np-label-with-info">

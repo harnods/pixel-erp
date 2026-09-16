@@ -8,6 +8,7 @@
  *
  * Precedence:
  *   reorderPoint      SKU-warehouse → SKU → (engine: velocity × (lead + safety))
+ *                     → category min stock → global min stock  (US-024 AC-03)
  *   safetyDays        SKU-warehouse → SKU → warehouse → category → global
  *   coverageDays      SKU-warehouse → SKU → category → global
  *   lookbackDays      SKU-warehouse → SKU → category → global
@@ -24,6 +25,7 @@ import {
   coverageDaysForCategory,
   getReplenishmentConfig,
   lookbackDaysForCategory,
+  minStockForCategory,
   safetyDaysForCategory,
   type ReplenishmentConfig,
 } from './replenishmentConfig'
@@ -71,6 +73,12 @@ export interface EffectiveReplenishmentSettings {
   lookbackDaysSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'category' | 'global'>
   maxLevel: number | null
   maxLevelSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
+  /**
+   * Floor for a warehouse with nothing to calculate from (US-024 AC-03).
+   * null when neither the category nor the company sets one, which correctly
+   * leaves such a warehouse with no floor rather than an invented zero.
+   */
+  categoryMinStock: number | null
   manualLeadTimeDays: number | null
   manualLeadTimeSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
   tracked: boolean
@@ -169,6 +177,8 @@ export function effectiveSettings(
     : skuLevel.lookbackDays !== undefined ? 'sku' as const
     : catLookback !== undefined ? 'category' as const : 'global' as const
 
+  const categoryMinStock = minStockForCategory(category, cfg)
+
   const maxLevel = pair.maxLevel ?? skuLevel.maxLevel ?? null
   const maxLevelSource = pair.maxLevel !== undefined
     ? 'sku-warehouse' as const
@@ -202,6 +212,7 @@ export function effectiveSettings(
     lookbackDaysSource,
     maxLevel,
     maxLevelSource,
+    categoryMinStock,
     manualLeadTimeDays,
     manualLeadTimeSource,
     tracked,

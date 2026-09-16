@@ -127,15 +127,17 @@ describe('min. stock per warehouse', () => {
     expect(after.reorderPointSource).toBe('calculated')
   })
 
-  it('a warehouse with no sales has no floor to calculate, and says none', () => {
-    // The engine refuses a floor without a demand basis; the table must show "—"
-    // rather than 0, which would read as "never reorder this".
+  it('a warehouse with no sales takes the category floor, never a calculated one', () => {
+    // The engine still refuses to CALCULATE without a demand basis, but US-024
+    // AC-03 gives such a warehouse the category/global floor so it always has a
+    // resolved value — never a figure derived from demand it does not have.
     for (const wh of replenishmentWarehouses()) {
       for (const p of warehouseProducts(wh.id).slice(0, 8)) {
         const row = buildRow(p.sku, wh.id, cfg)
         if (row.velocity.avgDailySales > 0) continue
-        expect(row.reorderPointSource).toBe('none')
-        expect(row.reorderPoint).toBe(0)
+        expect(row.reorderPointSource).not.toBe('calculated')
+        expect(['category', 'none']).toContain(row.reorderPointSource)
+        if (row.reorderPointSource === 'none') expect(row.reorderPoint).toBe(0)
       }
     }
   })
