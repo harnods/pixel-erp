@@ -61,7 +61,15 @@ const subconStarted = computed(() => !!wo.value && wo.value.status !== 'not star
 
 const subconPlan = computed(() => {
   const c = subcon.value
-  return c ? buildDocumentPlan(c.scope, c.split, c.method) : []
+  if (!c) return []
+  const raised = c.raisedDocuments ?? []
+  return buildDocumentPlan(c.scope, c.split, c.method).map(step => ({
+    ...step,
+    // Every document actually raised against this step. A step can legitimately
+    // have more than one — a re-issued PR, a second partial receipt — so this is
+    // a list, not a single record.
+    raised: raised.filter(d => d.kind === step.kind),
+  }))
 })
 
 /** Where the work order sits on the five-stage subcon chain. */
@@ -361,6 +369,11 @@ function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
     unitCost: Math.round(l.amount),
     nonTrack: true,
   }))
+}
+
+/** Open a raised document's detail page. */
+function openRaisedDocument(doc: { route: string; id: string }) {
+  router.push(`${doc.route}/${doc.id}`)
 }
 
 /** Open a document's form, prefilled from this work order. */
@@ -743,6 +756,7 @@ function suppressFabClick(e: MouseEvent) {
           <thead>
             <tr>
               <th class="wod-subcon-th">{{ t('Document') }}</th>
+              <th class="wod-subcon-th">{{ t('Transaction no.') }}</th>
               <th class="wod-subcon-th">{{ t('What it does') }}</th>
               <th class="wod-subcon-th">{{ t('Status') }}</th>
               <th class="wod-subcon-th wod-subcon-th--action" />
@@ -754,12 +768,31 @@ function suppressFabClick(e: MouseEvent) {
                 <span class="wod-subcon-td__title">{{ t(step.title) }}</span>
                 <span class="wod-subcon-td__module">{{ t(step.module) }}</span>
               </td>
+              <!-- Raised documents, each opening its own detail page. Em dash
+                   while none exists — the Create button beside it is the way in. -->
+              <td class="wod-subcon-td">
+                <span v-if="!step.raised.length" class="wod-subcon-muted">—</span>
+                <span v-else class="wod-subcon-docs">
+                  <a
+                    v-for="doc in step.raised"
+                    :key="doc.id"
+                    class="cell-link"
+                    @click.prevent="openRaisedDocument(doc)"
+                  >{{ doc.number }}</a>
+                </span>
+              </td>
               <td class="wod-subcon-td wod-subcon-td--wrap">{{ t(step.detail) }}</td>
               <td class="wod-subcon-td">
                 <!-- The receipt is never "ready to raise" here: it is raised when
                      the vendor returns the goods, which is why its row has no button. -->
-                <span class="wod-subcon-status" :class="subconStarted && step.kind !== 'receipt' ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'">
-                  {{ step.kind === 'receipt' ? t('On vendor return')
+                <span
+                  class="wod-subcon-status"
+                  :class="step.raised.length ? 'wod-subcon-status--done'
+                    : subconStarted && step.kind !== 'receipt' ? 'wod-subcon-status--ready'
+                    : 'wod-subcon-status--blocked'"
+                >
+                  {{ step.raised.length ? t('Raised')
+                    : step.kind === 'receipt' ? t('On vendor return')
                     : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
                 </span>
               </td>
@@ -1471,6 +1504,9 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-td--action { text-align: right; }
 .wod-subcon-status { font-size: var(--mp-font-sizes-md); }
 .wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
+.wod-subcon-status--done { color: var(--mp-text-link); }
+.wod-subcon-muted { color: var(--mp-text-secondary); }
+.wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .wod-subcon-status--blocked { color: var(--mp-text-secondary); }
 
 .wod-section-title {

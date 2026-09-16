@@ -82,6 +82,23 @@ export interface WorkOrderSubconSetup {
   receivingWarehouseName: string
   /** Subcon order this work order is tied to, once it has been raised. */
   subconOrderNumber?: string
+  /**
+   * Documents actually raised from this work order, so its Documents table can
+   * link straight to each one instead of only offering to create it again.
+   */
+  raisedDocuments?: RaisedSubconDocument[]
+}
+
+/** A document created from a subcon work order, and where its detail page lives. */
+export interface RaisedSubconDocument {
+  /** Matches SubconDocKind — which planned step this satisfied. */
+  kind: string
+  /** Record id, for the detail route. */
+  id: string
+  /** Display number, e.g. "Purchase Request #90042". */
+  number: string
+  /** Route prefix the detail page lives under. */
+  route: string
 }
 
 export interface WorkOrderMaterialReservation {
@@ -212,6 +229,21 @@ function nextWorkOrderNumber(): string {
     if (m) max = Math.max(max, parseInt(m[1]!, 10))
   }
   return `WO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+/**
+ * Record a document raised from a subcon work order. Called by the purchase
+ * request and warehouse transfer forms once the record actually exists, so the
+ * work order can link to it. Re-raising the same step appends rather than
+ * replaces — a chain can legitimately have two receipts, or a re-issued PR.
+ */
+export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocument): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  const existing = wo.subcon.raisedDocuments ?? []
+  if (existing.some(d => d.id === doc.id)) return
+  wo.subcon.raisedDocuments = [...existing, doc]
+  persistWorkOrders()
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM. */

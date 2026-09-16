@@ -16,6 +16,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { decodeSubconPrefill, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
+import { recordSubconDocument } from '~/data/workOrders'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
@@ -373,9 +374,12 @@ function prefillFromMisplaced() {
  * apparel components live outside the stocked catalog (see catalog.ts), so
  * `productBySku` comes back empty for exactly the rows this flow creates.
  */
+const subconSource = ref<ReturnType<typeof decodeSubconPrefill>>(null)
+
 function prefillFromSubcon(): boolean {
   const p = decodeSubconPrefill(route.query.subcon)
   if (!p) return false
+  subconSource.value = p
 
   if (p.originWarehouseId) originId.value = p.originWarehouseId
   // The vendor's own location — an addressable destination, not a company warehouse.
@@ -471,7 +475,13 @@ async function handleSave() {
     toast.notify({ variant: 'success', title: t('Warehouse transfer updated') , maxWidth: 'max-content'})
     router.push(`/warehouse-transfers/${props.orderId}`)
   } else {
-    addTransfer(input)
+    const created = addTransfer(input)
+    // Raised from a subcon work order → link it back (see the PR form).
+    if (subconSource.value?.workOrderId) {
+      recordSubconDocument(subconSource.value.workOrderId, {
+        kind: subconSource.value.kind, id: created.id, number: created.number, route: '/warehouse-transfers',
+      })
+    }
     toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
     // Came from a misplaced-serial note (Cycle count review) — resolve it off
     // that record now that the transfer moving it actually exists, and land

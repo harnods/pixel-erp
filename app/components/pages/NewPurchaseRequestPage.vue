@@ -13,12 +13,14 @@ import {
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import {
-  products, purchaseRequests,
+  products,
   WAREHOUSES, UNIT_OPTIONS,
 } from '~/data'
-import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
+import { addPurchaseRequest } from '~/data/purchaseRequests'
+import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { decodeSubconPrefill } from '~/data/subcon'
+import { recordSubconDocument } from '~/data/workOrders'
 
 const router = useRouter()
 const route = useRoute()
@@ -149,16 +151,6 @@ function validate(): boolean {
   return ok
 }
 
-function nextRequestNumber(): number {
-  return purchaseRequests.reduce((max, r) => Math.max(max, r.number), 90009) + 1
-}
-function nextRequestId(): string {
-  const n = purchaseRequests.reduce((max, r) => {
-    const num = parseInt(r.id.replace(/\D/g, ''), 10)
-    return Number.isNaN(num) ? max : Math.max(max, num)
-  }, 0) + 1
-  return `PR${String(n).padStart(3, '0')}`
-}
 
 function onCancel() { router.push('/purchase-requests') }
 
@@ -175,10 +167,11 @@ function onSave() {
     unitCost: it.unitCost,
     taxLabel: 'PPN 11%',
   }))
-  const id = nextRequestId()
-  const request: PurchaseRequest = {
-    id,
-    number: nextRequestNumber(),
+  // addPurchaseRequest() rather than a raw push: it is the store's own creator and
+  // it PERSISTS. The raw push did not, so a request created here vanished on the
+  // next refresh — and any link to it (see the subcon work order's Documents
+  // table) dead-ended on the detail page's index-0 fallback.
+  const request = addPurchaseRequest({
     date: dmyToIso(requestDate.value),
     procurementStaff: procurementStaff.value.trim(),
     requiredDate: dmyToIso(requiredDate.value || requestDate.value),
@@ -186,8 +179,20 @@ function onSave() {
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
     lines,
+  })
+  const id = request.id
+  // Raised from a subcon work order → link it back, so that work order's
+  // Documents table can open this request instead of only offering to create one.
+  if (subconPrefill?.workOrderId) {
+    recordSubconDocument(subconPrefill.workOrderId, {
+      kind: subconPrefill.kind,
+      id,
+      // Same label the PR detail page and index use, so the link reads the same
+      // wherever it appears.
+      number: `${t('Purchase Request')} #${request.number}`,
+      route: '/purchase-requests',
+    })
   }
-  purchaseRequests.push(request)
   toast.notify({ variant: 'success', title: t('Purchase request created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/purchase-requests/${id}`)
 }

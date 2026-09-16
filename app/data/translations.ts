@@ -3654,6 +3654,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Discrepancy": "Selisih",
   "Overdue return": "Terlambat dikembalikan",
   "Subcon cost": "Biaya subkon",
+  "Raised": "Sudah dibuat",
   "Transfer components to": "Transfer komponen ke",
   "Select subcon warehouse": "Pilih gudang subkon",
   "In the vendor's custody — still on your books until consumed.": "Dalam titipan vendor — tetap tercatat di pembukuan Anda sampai terpakai.",
