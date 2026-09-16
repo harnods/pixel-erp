@@ -25,13 +25,11 @@ import {
   MpButton, MpButtonGroup, MpIcon, MpText, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, css,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpTextlink, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
@@ -39,7 +37,7 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import { successToast } from '~/utils/toasts'
 import { useGradeModal } from '~/composables/useGradeModal'
 import {
-  grades, activeGrades, gradeById, gradeActivityFor,
+  grades, activeGrades, gradeById, gradeActivity,
   createGrade, updateGrade, setGradeStatus, deleteGrade, reorderGrades,
   GRADE_NAME_MAX, GRADE_DESCRIPTION_MAX, MIN_ACTIVE_GRADES,
   type Grade, type GradeError,
@@ -55,11 +53,10 @@ const scenario = ref('data')
 // Name first: the identity column is the one pinned on horizontal scroll
 // (rule/table-sticky-first-col). Rank is numeric, so it right-aligns.
 const allColumns: TableColumn[] = [
-  { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'rank', label: t('Rank'), align: 'right', sortable: true, sortType: 'number' },
+  { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'description', label: t('Description'), kind: 'address' },
   { key: 'status', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'updatedAt', label: t('Last updated'), kind: 'date', sortable: true, sortType: 'date' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allColumns.map(c => [c.key, true])))
 const columnItems = allColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
@@ -70,14 +67,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 const rows = computed<Grade[]>(() => (scenario.value === 'empty' ? [] : grades()))
 
 const {
-  search, statusFilter, currentPage, paginated, total, perPage,
+  search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Grade>(rows, {
   perPage: 25,
   defaultSort: { key: 'rank', dir: 'asc' },
-  filterFn: (row, s, status) =>
-    (!s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s))
-    && (!status || row.status === status),
+  filterFn: (row, s) =>
+    !s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s),
 })
 
 // ── Reorder (drag) ─────────────────────────────────────────────────────────────
@@ -86,7 +82,7 @@ const {
 // position mean something different from where the row lands.
 const canReorder = computed(() =>
   sortKey.value === 'rank' && sortDir.value === 'asc'
-  && !search.value.trim() && !statusFilter.value && total.value <= perPage.value,
+  && !search.value.trim() && total.value <= perPage.value,
 )
 function onReorder(from: number, to: number) {
   const ids = paginated.value.map((g) => g.id)
@@ -96,13 +92,8 @@ function onReorder(from: number, to: number) {
   reorderGrades(ids)
 }
 
-const statusOptions = [
-  { value: 'active', label: t('Active') },
-  { value: 'inactive', label: t('Inactive') },
-]
 function clearFilters() {
   search.value = ''
-  statusFilter.value = ''
 }
 
 // ─── Loading (first paint) ─────────────────────────────────────────────────────
@@ -251,29 +242,30 @@ function confirmDelete() {
   blocked.value = { title: t('Grade cannot be deleted'), body: errorText(result.errors[0]!) }
 }
 
-// ─── Activity log (per grade) ──────────────────────────────────────────────────
-const activityGrade = ref<Grade | null>(null)
-const activityEntries = computed<ActivityEntry[]>(() => {
-  const g = activityGrade.value
-  if (!g) return []
-  const recorded = gradeActivityFor(g.id)
-  const entries: ActivityEntry[] = recorded.map(e => ({
+// ─── Activity log (whole list) ─────────────────────────────────────────────────
+// The Last updated column is gone, so the list's own log opens from the link above
+// the table and carries every grade's entries together, newest first.
+const listActivityOpen = ref(false)
+const listActivityEntries = computed<ActivityEntry[]>(() => {
+  const recorded = gradeActivity().map(e => ({
     date: e.date,
     user: e.user,
     activity: t(e.activity),
     details: e.details.map(d => ({ label: t(d.label), value: d.value })),
   }))
   // Seed grades were created before anything was recorded — derive that first entry
-  // from the record itself so the trail still starts at creation (rule/activity-log-entries).
-  if (!recorded.some(e => e.activity === 'Created grade')) {
-    entries.push({
+  // from the record itself so the trail still starts at creation
+  // (rule/activity-log-entries).
+  const created = new Set(gradeActivity().filter(e => e.activity === 'Created grade').map(e => e.gradeId))
+  const seeded = grades()
+    .filter(g => !created.has(g.id))
+    .map(g => ({
       date: g.createdAt,
       user: 'System',
       activity: t('Created grade'),
       details: [{ label: t('Name'), value: g.name }, { label: t('Rank'), value: String(g.rank) }],
-    })
-  }
-  return entries
+    }))
+  return [...recorded, ...seeded].sort((a, b) => b.date.localeCompare(a.date))
 })
 
 // ─── Export ─────────────────────────────────────────────────────────────────────
@@ -306,7 +298,6 @@ const asGrade = (row: unknown) => row as Grade
     :loading="loading"
     :search="search"
     :has-active-search="!!search.trim()"
-    :has-active-filter="!!statusFilter"
     filter-empty-label="grade"
     :sortable-rows="canReorder"
     bulk-label="grade"
@@ -321,7 +312,12 @@ const asGrade = (row: unknown) => row as Grade
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <ErpFilterSelect id="grade-status-filter" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
+        <!-- The list's activity log. Deviation from rule/activity-log-trigger, which
+             puts the trigger on a "Last updated" line: that column is gone, and an
+             index page has no detail summary to carry the line. -->
+        <MpTextlink id="grade-activity-log" as="a" class="grade-activity-link" @click.prevent="listActivityOpen = true">
+          {{ t('Activity log') }}
+        </MpTextlink>
       </div>
       <div class="filter-right">
         <!-- rule/filter-bar-icon-group: ghost icon tools in one group, each tooltipped. -->
@@ -360,15 +356,6 @@ const asGrade = (row: unknown) => row as Grade
 
     <template #cell-status="{ value }">
       <ErpStatusBadge :status="String(value)" :label="value === 'active' ? t('Active') : t('Inactive')" />
-    </template>
-
-    <template #cell-updatedAt="{ row }">
-      <span
-        class="grade-lu-link" role="button" tabindex="0" :aria-label="t('Activity log')"
-        @click.stop="activityGrade = asGrade(row)" @keydown.enter="activityGrade = asGrade(row)"
-      >
-        <LastUpdatedCell :at="asGrade(row).updatedAt" :by="asGrade(row).updatedBy" />
-      </span>
     </template>
 
     <!-- ── Row actions (no tooltip on the kebab — rule/table-actions-no-tooltip) ── -->
@@ -507,12 +494,10 @@ const asGrade = (row: unknown) => row as Grade
   </MpModal>
 
   <ActivityLogModal
-    :is-open="!!activityGrade"
-    :subject="activityGrade?.name ?? ''"
-    :updated-by="activityGrade?.updatedBy"
-    :updated-at="activityGrade?.updatedAt"
-    :entries="activityEntries"
-    @close="activityGrade = null"
+    :is-open="listActivityOpen"
+    :subject="t('Grades')"
+    :entries="listActivityEntries"
+    @close="listActivityOpen = false"
   />
 
   <ExportModal
@@ -552,9 +537,7 @@ const asGrade = (row: unknown) => row as Grade
 
 /* ── Cells ── */
 .grade-wrap { white-space: normal; }
-.grade-lu-link { display: inline-block; cursor: pointer; }
-.grade-lu-link :deep(.lu-date) { color: var(--mp-colors-text-link, #165082); }
-.grade-lu-link:hover :deep(.lu-date) { text-decoration: underline; text-underline-offset: 2px; }
+.grade-activity-link { font-size: var(--mp-font-sizes-md); }
 
 .row-kebab {
   display: inline-flex !important; align-items: center; justify-content: center;

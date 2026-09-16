@@ -915,8 +915,7 @@ const bulkCountLabel = computed(() => {
   background: var(--mp-background-primary, #fff);
   pointer-events: none;
   transform: rotate(-1.5deg) scale(1.02);
-  /* pixel-police-allow-shadow: the transient lift is a sanctioned exception */
-  box-shadow: 0 10px 20px -8px rgba(8, 13, 14, 0.25);
+  box-shadow: 0 10px 20px -8px rgba(8, 13, 14, 0.25); /* pixel-police-allow-shadow: rule/dnd-live-sortable sanctions the lifted ghost's shadow */
 }
 .erp-drag-ghost td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); }
 /* ─── Layout ──────────────────────────────────────────────────────────────── */
