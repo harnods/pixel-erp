@@ -100,8 +100,10 @@ export type SubconDocKind =
 
 export interface SubconDocStep {
   kind: SubconDocKind
-  /** Short document-type tag — PR · Transfer · Receipt. */
-  tag: 'PR' | 'Transfer' | 'Receipt'
+  /** Short document-type tag. With the "What it does" column gone from the work
+   *  order's Documents table, this is what tells the three purchase documents
+   *  apart at a glance. */
+  tag: 'PR' | 'PO' | 'PD' | 'Transfer' | 'Receipt'
   title: string
   /** One line explaining what this document does in the chain. */
   detail: string
@@ -146,12 +148,12 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
     detail: 'In-house portion of the split → your own warehouse',
   },
   purchaseOrder: {
-    tag: 'PR', module: 'Purchases',
+    tag: 'PO', module: 'Purchases',
     title: 'Purchase order',
     detail: 'Raised from the subcon purchase request — the order placed with the vendor',
   },
   purchaseDelivery: {
-    tag: 'Receipt', module: 'Purchases',
+    tag: 'PD', module: 'Purchases',
     title: 'Purchase delivery',
     detail: "The vendor's delivery back — each one produces finished goods against the work order",
   },
@@ -191,9 +193,9 @@ export function buildDocumentPlan(
     kinds.push('processPr')
   }
   // The service PR does not end the chain: it is ordered, and the vendor delivers
-  // against that order. Each delivery produces finished goods on the work order.
+  // against that order. Each delivery produces finished goods on the work order —
+  // which is also the goods coming back, so there is no separate receipt step.
   kinds.push('purchaseOrder', 'purchaseDelivery')
-  kinds.push('receipt')
 
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
 }
@@ -279,7 +281,7 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
  * purchase request, and the delivery from that order. The work order lists them
  * but never offers a Create button for them.
  */
-export const RAISED_ELSEWHERE: SubconDocKind[] = ['receipt', 'purchaseOrder', 'purchaseDelivery']
+export const RAISED_ELSEWHERE: SubconDocKind[] = ['purchaseOrder', 'purchaseDelivery']
 
 /** Which documents a work order can raise the moment it starts. The goods
  *  receipt is deliberately excluded — it is raised when the vendor returns the

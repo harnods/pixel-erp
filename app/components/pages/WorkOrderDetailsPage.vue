@@ -61,17 +61,68 @@ const subcon = computed(() => wo.value?.subcon)
  */
 const subconStarted = computed(() => !!wo.value && wo.value.status !== 'not started' && wo.value.status !== 'canceled')
 
+/**
+ * The Documents table, grouped the way the chain actually behaves.
+ *
+ * Every Purchases-module document — request, order, delivery — is ONE row: they
+ * are a single commercial thread (the request is ordered, the order is
+ * delivered), and splitting them made the table read like three unrelated jobs.
+ * Each raised document still appears under it with its own type tag and title,
+ * so nothing is lost by dropping the "What it does" column.
+ *
+ * The warehouse transfer stays its own row: it moves company stock, which is a
+ * different act from buying the vendor's service.
+ */
 const subconPlan = computed(() => {
   const c = subcon.value
   if (!c) return []
   const raised = c.raisedDocuments ?? []
-  return buildDocumentPlan(c.scope, c.split, c.method).map(step => ({
-    ...step,
-    // Every document actually raised against this step. A step can legitimately
-    // have more than one — a re-issued PR, a second partial receipt — so this is
-    // a list, not a single record.
-    raised: raised.filter(d => d.kind === step.kind),
-  }))
+  const plan = buildDocumentPlan(c.scope, c.split, c.method)
+
+  const entriesFor = (steps: typeof plan) => steps.flatMap(step => {
+    const docs = raised.filter(d => d.kind === step.kind)
+    // Planned but not yet raised → one placeholder entry naming what it will be.
+    return docs.length
+      ? docs.map(d => ({ kind: step.kind, title: step.title, tag: step.tag, doc: d }))
+      : [{ kind: step.kind, title: step.title, tag: step.tag, doc: undefined }]
+  })
+
+  const purchaseSteps = plan.filter(p => p.module === 'Purchases')
+  const transferSteps = plan.filter(p => p.module === 'Warehouse')
+
+  const rows: {
+    key: string
+    label: string
+    module: string
+    entries: ReturnType<typeof entriesFor>
+    /** The kind the row's Create button raises, if it has one. */
+    createKind?: SubconDocKind
+    createLabel?: string
+  }[] = []
+
+  if (purchaseSteps.length) {
+    rows.push({
+      key: 'purchase',
+      label: t('Purchase transaction'),
+      module: t('Purchases'),
+      entries: entriesFor(purchaseSteps),
+      // The request is the only one raised from here; the order follows the
+      // request and the delivery follows the order.
+      createKind: purchaseSteps.find(p => !RAISED_ELSEWHERE.includes(p.kind))?.kind,
+      createLabel: t('Create purchase request'),
+    })
+  }
+  if (transferSteps.length) {
+    rows.push({
+      key: 'transfer',
+      label: t('Warehouse transfer'),
+      module: t('Warehouse'),
+      entries: entriesFor(transferSteps),
+      createKind: transferSteps[0]!.kind,
+      createLabel: t('Create transfer'),
+    })
+  }
+  return rows
 })
 
 /** Where the work order sits on the five-stage subcon chain. */
@@ -843,58 +894,56 @@ function suppressFabClick(e: MouseEvent) {
             <tr>
               <th class="wod-subcon-th">{{ t('Document') }}</th>
               <th class="wod-subcon-th">{{ t('Transaction no.') }}</th>
-              <th class="wod-subcon-th">{{ t('What it does') }}</th>
               <th class="wod-subcon-th">{{ t('Status') }}</th>
               <th class="wod-subcon-th wod-subcon-th--action" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="step in subconPlan" :key="step.kind" class="wod-subcon-tr">
+            <tr v-for="row in subconPlan" :key="row.key" class="wod-subcon-tr">
               <td class="wod-subcon-td">
-                <span class="wod-subcon-td__title">{{ t(step.title) }}</span>
-                <span class="wod-subcon-td__module">{{ t(step.module) }}</span>
+                <span class="wod-subcon-td__title">{{ row.label }}</span>
+                <span class="wod-subcon-td__module">{{ row.module }}</span>
               </td>
-              <!-- Raised documents, each opening its own detail page. Em dash
-                   while none exists — the Create button beside it is the way in. -->
+
+              <!-- Each document in the thread, tagged and titled, so dropping the
+                   "What it does" column costs no meaning. A raised one links to
+                   its detail page; a planned one shows what it will be. -->
               <td class="wod-subcon-td">
-                <span v-if="!step.raised.length" class="wod-subcon-muted">—</span>
-                <span v-else class="wod-subcon-docs">
-                  <a
-                    v-for="doc in step.raised"
-                    :key="doc.id"
-                    class="cell-link"
-                    @click.prevent="openRaisedDocument(doc)"
-                  >{{ doc.number }}</a>
+                <span class="wod-subcon-docs">
+                  <span v-for="(entry, i) in row.entries" :key="`${entry.kind}-${i}`" class="wod-subcon-doc">
+                    <span class="wod-subcon-doc__tag" :class="`wod-subcon-doc__tag--${entry.tag.toLowerCase()}`">{{ t(entry.tag) }}</span>
+                    <a
+                      v-if="entry.doc"
+                      class="cell-link"
+                      @click.prevent="openRaisedDocument(entry.doc)"
+                    >{{ entry.doc.number }}</a>
+                    <span v-else class="wod-subcon-muted">{{ t(entry.title) }} — {{ t('not raised yet') }}</span>
+                  </span>
                 </span>
               </td>
-              <td class="wod-subcon-td wod-subcon-td--wrap">{{ t(step.detail) }}</td>
+
               <td class="wod-subcon-td">
-                <!-- The receipt is never "ready to raise" here: it is raised when
-                     the vendor returns the goods, which is why its row has no button. -->
                 <span
                   class="wod-subcon-status"
-                  :class="step.raised.length ? 'wod-subcon-status--done'
-                    : subconStarted && step.kind !== 'receipt' ? 'wod-subcon-status--ready'
+                  :class="row.entries.some(e => e.doc) ? 'wod-subcon-status--done'
+                    : subconStarted ? 'wod-subcon-status--ready'
                     : 'wod-subcon-status--blocked'"
                 >
-                  {{ step.raised.length ? t('Raised')
-                    : step.kind === 'receipt' ? t('On vendor return')
-                    : step.kind === 'purchaseOrder' ? t('From the purchase request')
-                    : step.kind === 'purchaseDelivery' ? t('On vendor delivery')
+                  {{ row.entries.some(e => e.doc) ? t('Raised')
                     : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
                 </span>
               </td>
-              <!-- Raise this document straight from its row. Hidden until the work
-                   order has started — the Status column already says why — and the
-                   receipt is raised on the order, not here. -->
+
+              <!-- Only the first document in a thread is raised from here; the
+                   rest follow their own parent document. -->
               <td class="wod-subcon-td wod-subcon-td--action">
                 <MpButton
-                  v-if="subconStarted && !RAISED_ELSEWHERE.includes(step.kind)"
+                  v-if="subconStarted && row.createKind"
                   variant="secondary"
                   is-rounded
-                  @click="createDocument(step.kind)"
+                  @click="createDocument(row.createKind)"
                 >
-                  {{ step.tag === 'Transfer' ? t('Create transfer') : t('Create purchase request') }}
+                  {{ row.createLabel }}
                 </MpButton>
               </td>
             </tr>
@@ -1601,7 +1650,18 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-status--done { color: var(--mp-text-link); }
 .wod-subcon-muted,
 .wod-muted { color: var(--mp-text-secondary); }
-.wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.wod-subcon-doc { display: flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; }
+.wod-subcon-doc__tag {
+  flex: none;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  border-radius: var(--mp-radii-sm); padding: 0 var(--mp-spacing-1\.5);
+}
+.wod-subcon-doc__tag--pr { background: var(--mp-background-information, #eef0fc); color: var(--mp-text-link); }
+.wod-subcon-doc__tag--transfer { background: var(--mp-background-warning-subtle, #fffaea); color: var(--mp-text-warning, #b54708); }
+.wod-subcon-doc__tag--receipt,
+.wod-subcon-doc__tag--pd { background: var(--mp-background-success-subtle, #e8f4ef); color: var(--mp-text-success, #18794e); }
+.wod-subcon-doc__tag--po { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 .wod-subcon-status--blocked { color: var(--mp-text-secondary); }
 
 .wod-section-title {

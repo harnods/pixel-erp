@@ -391,7 +391,6 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem @click="router.push(`/subcon-orders/${order.id}/receipt`)">{{ t('Receive goods') }}</MpPopoverListItem>
             <MpPopoverListItem @click="router.push('/subcon-custody')">{{ t('Open custody dashboard') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
