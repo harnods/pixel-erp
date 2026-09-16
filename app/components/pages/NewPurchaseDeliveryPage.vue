@@ -619,10 +619,7 @@ function commitSave() {
                   <template v-if="isBatchLine(item)">
                     <span v-if="item.batchError" class="si-tracked-hint si-tracked-hint--error">{{ t('Check the batches for this line') }}</span>
                     <span v-else-if="item.batches.length" class="si-tracked-hint">{{ batchSummary(item) }}</span>
-                    <MpTextlink
-                      :id="`si-batch-${item._key}`" as="a" class="si-tracking"
-                      @click.prevent="batchDrawerKey = item._key"
-                    >{{ t('Manage batch') }}</MpTextlink>
+                    <a :id="`si-batch-${item._key}`" class="si-tracking" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</a>
                   </template>
                 </td>
 
@@ -990,11 +987,13 @@ function commitSave() {
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
-/* Wide enough for the Manage batch link stacked under the qty. */
+/* Wide enough for the Manage batch link stacked under the qty. Hint + link align to
+   the input's own text inset (12px), same cell as CreateWorkOrderPage's raw materials. */
 .si-col-qty      { width: 132px; }
-.si-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.si-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .si-tracked-hint--error { color: var(--mp-text-danger); }
-.si-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); }
+.si-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.si-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
