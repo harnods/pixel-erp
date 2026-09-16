@@ -809,7 +809,9 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 .detail-qty-value { text-align: right; }
 .detail-qty-action { margin-top: var(--mp-spacing-1); text-align: right; }
-.detail-view-link { font-size: var(--mp-font-sizes-sm); white-space: nowrap; }
+/* Size and colour come from MpTextlink itself — matching the Stock adjustment
+   detail table, the other place a View batch link sits under its qty. */
+.detail-view-link { white-space: nowrap; }
 .detail-td--muted { color: var(--mp-text-secondary); }
 .detail-item-primary { display: block; }
 .detail-item-name { display: block; color: var(--mp-text-default); }
