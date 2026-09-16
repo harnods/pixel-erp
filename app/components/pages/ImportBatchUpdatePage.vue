@@ -172,6 +172,15 @@ function importAgain() {
 
 const importedCount = computed(() => (result.value ? result.value.total - result.value.failed.length : 0))
 
+/** Arriving from one product's batches tab, every row names that same product — so the
+ *  column is noise. It stays as soon as a row names something else, because then the
+ *  name IS the error ("Product name not found") and the user needs to see what they typed. */
+const showProductName = computed(() => {
+  if (!result.value) return false
+  if (!product.value) return true
+  return result.value.failed.some((f) => f.productName !== product.value!.name)
+})
+
 /** Row errors are PRD story 9 copy. The two attribute messages carry the attribute's
  *  label, so they translate through a template rather than a fixed key. */
 function importErrorText(e: string): string {
@@ -259,7 +268,7 @@ watch(scenario, (s) => {
             <thead>
               <tr>
                 <th class="ibu-col-row">{{ t('ROW') }}</th>
-                <th>{{ t('PRODUCT NAME') }}</th>
+                <th v-if="showProductName">{{ t('PRODUCT NAME') }}</th>
                 <th>{{ t('BATCH NUMBER') }}</th>
                 <th>{{ t('ERRORS') }}</th>
               </tr>
@@ -267,7 +276,7 @@ watch(scenario, (s) => {
             <tbody>
               <tr v-for="f in result.failed" :key="f.rowNumber">
                 <td class="ibu-col-row">{{ f.rowNumber }}</td>
-                <td>{{ f.productName || '-' }}</td>
+                <td v-if="showProductName">{{ f.productName || '-' }}</td>
                 <td>{{ f.batchNumber || '-' }}</td>
                 <td>
                   <ul class="ibu-error-list">
@@ -280,7 +289,9 @@ watch(scenario, (s) => {
         </div>
 
         <div class="ibu-actions">
-          <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Close') }}</MpButton>
+          <!-- Not "Cancel": the import already ran, and cancelling would read as undoing
+               the rows that landed. Naming the destination says what leaving actually does. -->
+          <MpButton variant="ghost" is-rounded @click="goBack">{{ product ? t('Back to batches') : t('Back to products') }}</MpButton>
           <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="downloadErrorFile">{{ t('Download error file') }}</button>
           <MpButton variant="primary" is-rounded @click="importAgain">{{ t('Import again') }}</MpButton>
         </div>

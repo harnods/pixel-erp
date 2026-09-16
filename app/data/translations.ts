@@ -3522,6 +3522,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Errors": "Error",
   "Download error file": "Download file error",
   "Import again": "Impor ulang",
+  "Back to batches": "Kembali ke batch",
+  "Back to products": "Kembali ke produk",
   "Product name not found": "Nama produk tidak ditemukan",
   "Product is not tracked by batch": "Produk tidak menggunakan batch",
   "Batch number not found": "Nomor batch tidak ditemukan",
