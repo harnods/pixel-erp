@@ -1,5 +1,5 @@
 import { purchaseOrders } from './purchaseOrders'
-import type { PurchaseOrder } from './types'
+import type { PurchaseOrder, PurchaseOrderLine } from './types'
 
 /**
  * Presentational detail for the Purchase Order *details* page. The grand total
@@ -11,21 +11,10 @@ import type { PurchaseOrder } from './types'
 
 const TAX_LABEL = 'PPN 11%'
 
-export interface POLineItem {
-  product: string
-  sku: string
-  description: string
-  qty: number
-  unit: string
-  unitPrice: number
-  discountPct: number
-  taxLabel: string
-  amount: number
-  /** Demo-only dimension name -> value pairs (Settings > Dimensions line
-   *  tagging) — this store is generated, not connected to real Dimension
-   *  records, so it's name-keyed rather than id-keyed. */
-  dimensions?: Record<string, string>
-}
+/** Demo-only `dimensions` are dimension name -> value pairs (Settings >
+ *  Dimensions line tagging) — this store is generated, not connected to real
+ *  Dimension records, so it's name-keyed rather than id-keyed. */
+export type POLineItem = PurchaseOrderLine
 
 export interface POAttachment { name: string; sizeKB: number }
 
@@ -186,6 +175,24 @@ function buildLineItems(total: number, count: number, seed: number): { items: PO
   return { items, totals }
 }
 
+/** Totals for an order whose real lines we already have — the tax line absorbs
+ *  any rounding drift so the detail total matches the stored order exactly. */
+function totalsFromLines(lines: PurchaseOrderLine[], total: number): { items: POLineItem[]; totals: POTotals } {
+  const subtotal = lines.reduce((sum, l) => sum + l.amount, 0)
+  return {
+    items: lines,
+    totals: {
+      subtotal,
+      discountPerLine: 0,
+      globalDiscount: 0,
+      taxLabel: TAX_LABEL,
+      taxAmount: total - subtotal,
+      shippingFee: 0,
+      total,
+    },
+  }
+}
+
 /**
  * Linked transactions:
  *  - duplicatedFromId set → the source order it was duplicated from (any status,
@@ -282,7 +289,11 @@ export function getPurchaseOrderDetail(id: string): PurchaseOrderDetail {
   const idx = Math.max(0, purchaseOrders.findIndex(o => o.id === id))
   const order = purchaseOrders[idx] ?? purchaseOrders[0]!
 
-  const { items, totals } = buildLineItems(order.total, order.itemCount, idx + 1)
+  // An order created through the form carries its own lines; only seeded orders
+  // fall back to the generator.
+  const { items, totals } = order.lineItems?.length
+    ? totalsFromLines(order.lineItems, order.total)
+    : buildLineItems(order.total, order.itemCount, idx + 1)
 
   const attachments: POAttachment[] = order.hasAttachment
     ? [

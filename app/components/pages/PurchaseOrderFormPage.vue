@@ -11,9 +11,10 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import { MpAutocomplete } from '@mekari/pixel3'
-import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors } from '~/data'
+import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors, addPurchaseOrder } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
 import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
+import { SUBCON_VENDORS } from '~/data/subcon'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -54,10 +55,29 @@ function toTagData(values: string[]): DataInterface[] {
   return values.map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false }))
 }
 
-const vendor       = ref(source.value?.vendor.name ?? '')
+/**
+ * When this order is being raised from a subcon work order's purchase request,
+ * the vendor is already decided — it is the subcontractor named in the work
+ * order's subcon setup. Prefill it rather than making the user re-pick a vendor
+ * the system already knows.
+ */
+const subconWorkOrder = computed(() => {
+  for (const prId of props.purchaseRequestIds ?? []) {
+    const wo = workOrderForDocument(prId)
+    if (wo?.subcon) return wo
+  }
+  return null
+})
+
+const vendor       = ref(source.value?.vendor.name ?? subconWorkOrder.value?.subcon?.vendorName ?? '')
 // Vendor is a searchable select over the vendor master with quick-add — same
 // behaviour as New sales invoice's Customer / New expense's Beneficiary picker.
-const vendorOptions = ref(vendors.map(v => ({ id: v.name, name: v.name })))
+// Subcontractors live in their own master (they are not trade vendors), so they
+// are merged in here — otherwise a subcon order's own vendor is unselectable.
+const vendorOptions = ref([
+  ...vendors.map(v => ({ id: v.name, name: v.name })),
+  ...SUBCON_VENDORS.filter(v => v.role === 'subcon').map(v => ({ id: v.name, name: v.name })),
+])
 function onVendorAdd(_suggestions: unknown, currentSearch: string) {
   const name = currentSearch.trim()
   if (!name) return
@@ -275,9 +295,17 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t => String(t.value)),
     duplicatedFromId: props.duplicateOrderId,
+    // Persist the real lines — the detail page only synthesizes lines for seeded
+    // orders that have none (see getPurchaseOrderDetail).
+    lineItems: allLines.value.map(l => ({
+      product: l.product, sku: l.sku, description: l.description,
+      qty: l.qty, unit: l.unit, unitPrice: l.unitCost,
+      discountPct: l.discountPct, taxLabel: l.taxLabel, amount: lineAmount(l),
+      dimensions: { ...l.dimensions },
+    })),
     ...overrides,
   }
-  purchaseOrders.push(newOrder)
+  addPurchaseOrder(newOrder)
 
   // Raised from purchase requests that belong to a subcon work order → link the
   // order back, so that work order's Documents table can follow the chain past

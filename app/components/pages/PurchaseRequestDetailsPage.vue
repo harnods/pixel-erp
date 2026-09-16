@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import {
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
+  // The footer's Print & share / Actions menus use these. Without the imports Vue
+  // renders <MpPopover> as an unknown element, so both menus spilled their items
+  // into the footer as inline text instead of opening as dropdowns.
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'

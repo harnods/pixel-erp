@@ -11,6 +11,10 @@ import {
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
   MpDatePicker, MpAutocomplete, MpTooltip,
   MpIcon, MpTextlink, toast, css,
+  // The line-items product picker is an MpPopover menu. Without these imports Vue
+  // renders <MpPopover> as an unknown element, so the match list spills inline into
+  // the row instead of opening as a dropdown and no product can be selected.
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import {
   products,

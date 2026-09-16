@@ -330,4 +330,26 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  /**
+   * The order's real line items, set when the order was actually created through
+   * the form (raised from purchase requests, or duplicated). Seeded orders leave
+   * this undefined and the detail page synthesizes plausible lines from the
+   * total instead — see `getPurchaseOrderDetail`. Without this a subcon order
+   * raised from a service PR came back showing generic stock parts.
+   */
+  lineItems?: PurchaseOrderLine[]
+}
+
+/** One line of a purchase order. Mirrors the detail page's `POLineItem`. */
+export interface PurchaseOrderLine {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  taxLabel: string
+  amount: number
+  dimensions?: Record<string, string>
 }

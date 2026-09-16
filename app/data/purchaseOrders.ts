@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { loadSnapshot, saveSnapshot } from './persist'
 import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
@@ -64,4 +65,23 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
-export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
+/**
+ * Orders raised through the form (from purchase requests, or a duplicate) have to
+ * outlive a page reload: a subcon work order links to its order by id, and a
+ * purchase delivery is raised against it. Without a snapshot the order vanished
+ * on reload and the link fell back to the first seeded order — the same
+ * dead-end already fixed for purchase requests and deliveries.
+ */
+const SNAPSHOT_KEY = 'purchase-orders-v1'
+export const purchaseOrders: PurchaseOrder[] = reactive(
+  loadSnapshot<PurchaseOrder>(SNAPSHOT_KEY) ?? buildPurchaseOrders(),
+)
+
+function persist() { saveSnapshot(SNAPSHOT_KEY, purchaseOrders) }
+
+/** Add an order to the store, newest first — same shape as `addPurchaseRequest`. */
+export function addPurchaseOrder(order: PurchaseOrder): PurchaseOrder {
+  purchaseOrders.unshift(order)
+  persist()
+  return order
+}
