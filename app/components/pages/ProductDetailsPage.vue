@@ -440,9 +440,9 @@ function whMinStockTitle(warehouseId: string): string {
   if (!r) return ''
   if (r.recommended === null) {
     return r.source === 'category'
-      ? 'No sales in this warehouse yet, so it uses the category minimum from '
-        + 'Settings › Replenishment. It switches to a calculated figure once this product starts moving here.'
-      : 'No sales in this warehouse yet and no category minimum set, so the stored figure applies. '
+      ? 'Not enough sales history in this warehouse yet, so it uses the category minimum from '
+        + 'Settings › Replenishment. It switches to a calculated figure once this product has been moving here long enough.'
+      : 'Not enough sales history here and no category minimum set, so the stored figure applies. '
         + 'Type one here, or set a category minimum in Settings › Replenishment.'
   }
   const lead = r.leadTimeEstimated ? `${r.leadTimeDays} days lead time (estimated)` : `${r.leadTimeDays} days lead time`
@@ -1567,7 +1567,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <p v-else class="pd-why-row">
                           Nothing sold from {{ s.warehouseName }} in the last
                           {{ whReplenishment[s.warehouseId]?.lookbackDays }} days, so there is no
-                          demand to calculate a floor from. The {{ s.minStock.toLocaleString('id-ID') }}
+                          demand to calculate a minimum from. The {{ s.minStock.toLocaleString('id-ID') }}
                           {{ s.unit }} shown still applies to low-stock alerts.
                         </p>
 

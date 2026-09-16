@@ -323,14 +323,14 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock') }}</span>
-          <span class="rs-label-desc">{{ t('Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. 0 means no floor at all.') }}</span>
+          <span class="rs-label-desc">{{ t('Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. Set 0 and those warehouses get no minimum at all — they are not flagged for reorder until they have enough sales history.') }}</span>
         </div>
         <div class="rs-control">
           <MpInputGroup v-if="isEditing" id="rs-minstock-global">
             <MpInput id="rs-minstock-global-input" v-model="draft.minStockGlobal" type="number" :class="css({ width: '96px' })" />
           </MpInputGroup>
           <span v-else class="rs-value">
-            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('No floor') }}
+            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('Not set') }}
           </span>
         </div>
       </div>
@@ -338,7 +338,7 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock by category') }}</span>
-          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a floor from. 0 means no floor.') }}</span>
+          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Set 0 and those warehouses get none.') }}</span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">
@@ -357,7 +357,7 @@ const BOUNDARY_OPTIONS = [
           </div>
           <span v-else class="rs-value">
             {{ categories.map(c => `${c} ${committed.minStockByCategory[c] ?? committed.minStockGlobal}`).join('   ') }}
-            <template v-if="!committed.minStockGlobal"> · {{ t('blank = no floor') }}</template>
+            <template v-if="!committed.minStockGlobal"> · {{ t('blank = no minimum') }}</template>
           </span>
         </div>
       </div>
