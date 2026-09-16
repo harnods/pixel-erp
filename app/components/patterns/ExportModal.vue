@@ -23,13 +23,14 @@ const props = withDefaults(defineProps<{
   customFields?: string[]
   total: number                    // count for "All"
   selectedCount?: number           // for "Selected N" (default 0)
-  /** Hide the "Search column" box — for a short column list where searching adds
-   *  no value (e.g. Contacts' 7 columns). Defaults to true (shown). */
+  /** Show the "Search column" box. Off by default: every export in the ERP today
+   *  offers 4–9 columns, all visible at once, so a search field is pure chrome.
+   *  Opt in only for a genuinely long list. */
   showColumnSearch?: boolean
 }>(), {
   customFields: () => [],
   selectedCount: 0,
-  showColumnSearch: true,
+  showColumnSearch: false,
 })
 
 const emit = defineEmits<{
