@@ -63,7 +63,15 @@ export function useReplenishmentWarehouse() {
   /** True when the current scope spans more than one warehouse. */
   const isAllWarehouses = computed(() => warehouseId.value === ALL_WAREHOUSES)
 
+  /**
+   * Ignores an empty id rather than storing it.
+   *
+   * `warehouseId` would self-correct anyway, but silently: the stored value and
+   * the value on screen would then disagree, and a control that reports a scope
+   * the table is not using is worse than one that refuses the input.
+   */
   function setWarehouse(id: string) {
+    if (!id) return
     selectedId.value = id
   }
 

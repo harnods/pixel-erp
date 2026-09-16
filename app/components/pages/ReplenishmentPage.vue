@@ -463,12 +463,17 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Warehouse: a scope selector. "All warehouses" still lists rows per
-             SKU-warehouse and never blends them into a total (US-025 AC-02). -->
+        <!-- Warehouse: a scope SELECTOR, not a filter. It always holds exactly one
+             value and is never clearable, so it carries no placeholder — an empty
+             "Warehouse" option would offer a state the worklist cannot be in, and
+             picking it left the control reading "Warehouse" while the table went
+             on showing every warehouse. The FSN control below is a filter and
+             keeps its placeholder, because "no FSN filter" is a real state.
+             "All warehouses" still lists rows per SKU-warehouse and never blends
+             them into a total (US-025 AC-02). -->
         <MpSelect
           id="rp-warehouse-select"
           :model-value="warehouseId"
-          :placeholder="t('Warehouse')"
           :class="css({ width: '220px' })"
           @update:model-value="(v: string) => setWarehouse(v)"
         >
