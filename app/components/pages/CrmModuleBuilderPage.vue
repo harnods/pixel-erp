@@ -850,9 +850,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                           <span class="setup-user-name">{{ tm.name }}</span>
                         </span>
                         <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
-                          <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
+                          <MpButton class="setup-user-remove" is-rounded :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
                             <MpIcon name="minus-circular" size="md" />
-                          </button>
+                          </MpButton>
                         </MpTooltip>
                       </li>
                     </ul>
@@ -1612,7 +1612,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0; padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-user-remove {
+  display: inline-flex !important; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: transparent !important; cursor: pointer;
+  border-radius: var(--mp-radii-sm) !important; color: var(--mp-colors-text-secondary, #3a4749);
+}
 .setup-user-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .setup-access-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
 .pipe-side-section { display: flex; flex-direction: column; }
