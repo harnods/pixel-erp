@@ -50,14 +50,6 @@ const photoDataUrl = ref('')
 // isn't rendered there and this stays true.
 const trackStock = ref(true)
 const minStock = ref('')
-/**
- * Safety days is the number a person actually DECIDES (PRD §2.1): how much extra
- * cover to carry beyond the vendor's lead time. Min. stock below is what that
- * decision works out to — the PRD defines them as one quantity, "Reorder Point =
- * MINIMUM STOCK THRESHOLD = avg daily demand × (lead time + safety days)" — so
- * it is recommended rather than invented, and only overwritten deliberately.
- */
-const safetyDays = ref('')
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
 
@@ -98,7 +90,6 @@ onMounted(() => {
   // value inherited rather than pinned, so an inherited figure must show as the
   // placeholder, never as text in the field.
   const override = getSkuOverride(p.sku)
-  if (override.safetyDays !== undefined) safetyDays.value = String(override.safetyDays)
   if (override.reorderPoint !== undefined) minStock.value = String(override.reorderPoint)
 })
 
@@ -121,60 +112,13 @@ const rollup = computed(() => {
   return s ? productActionRollup(s) : null
 })
 
+/** Only used to decide whether a typed Default min. stock differs from the
+ *  calculation; safety days now comes from the cascade, not from this form. */
 const recommendation = computed(() => {
   const s = sku.value.trim()
-  if (!s) return null
-  const days = safetyDays.value === '' ? undefined : Number(safetyDays.value)
-  return recommendedMinStock(s, Number.isFinite(days!) ? days : undefined)
+  return s ? recommendedMinStock(s) : null
 })
 
-/** The safety days in force if the user sets none — category or company default. */
-const inheritedSafetyDays = computed(() => {
-  const s = sku.value.trim()
-  const cfg = getReplenishmentConfig()
-  if (!s) return cfg.safetyDaysGlobal
-  const wh = recommendation.value?.warehouseId
-  return wh ? effectiveSettings(s, wh, cfg).safetyDays : cfg.safetyDaysGlobal
-})
-
-
-/**
- * The min-stock explanation is collapsed by default.
- *
- * The recommended NUMBER is already visible — it is the field's placeholder and
- * the one-line summary — so what is hidden is the reasoning behind it, which
- * matters the first few times and becomes noise after that. It opens on click
- * rather than hover because it contains links, and a hover panel you have to
- * chase with the cursor is a panel whose links never get used.
- */
-const minStockDetailsOpen = ref(false)
-
-/** Plain string — MpTooltip takes a label, not markup. */
-const safetyDaysTooltip = computed(() =>
-  `${t('Extra cover beyond the vendor lead time, on top of however long delivery takes.')} `
-  + `${t('Leave empty to inherit')} ${inheritedSafetyDays.value} ${t('days')}.`,
-)
-
-/** The warehouse table is where a floor is actually set now (D13). */
-function openWarehouseStock() {
-  router.push(`/product-list/${props.orderId}?section=stock-by-warehouses`)
-}
-
-/** Where the category and fallback lead times actually live. */
-function openLeadTimeSettings() {
-  router.push({ path: '/replenishment-settings', hash: '#lead-time' })
-}
-
-/** The Vendors tab is where a preferred vendor is set — go there, don't explain it. */
-function openVendors() {
-  router.push(`/product-list/${props.orderId}?section=vendors`)
-}
-
-
-// ── Options ────────────────────────────────────────────────────────────────────
-const categoryOptions = computed(() =>
-  [...new Set(PRODUCTS.map(p => p.category))].sort().map(c => ({ label: c, value: c })),
-)
 const unitOptions = computed(() =>
   [...new Set(['Pcs', ...PRODUCTS.map(p => p.unit)])].sort().map(u => ({ label: u, value: u })),
 )
@@ -404,7 +348,6 @@ function resetForm() {
   description.value = ''
   photoDataUrl.value = ''
   minStock.value = ''
-  safetyDays.value = ''
   trackStock.value = true
   trackStockBy.value = 'Quantity'
   doesBuy.value = true
@@ -428,12 +371,15 @@ function resetForm() {
  * keeps tracking demand instead of freezing at today's number.
  */
 function saveReplenishmentInputs(savedSku: string) {
-  const safety = safetyDays.value.trim()
   const min = minStock.value.trim()
   const recommended = recommendation.value?.value ?? null
 
+  // Safety days is NOT set here. It already has category and company defaults in
+  // Settings › Replenishment, and a per-warehouse value (settable in bulk) on the
+  // product's Stock by warehouses tab — a third place to type the same number
+  // only invites the three to disagree. The SKU tier stays in the cascade; it
+  // simply has no editor on this form.
   saveSkuOverride(savedSku, {
-    safetyDays: safety === '' ? undefined : Math.max(0, Number(safety)),
     reorderPoint: min === '' || Number(min) === recommended
       ? undefined
       : Math.max(0, Number(min)),
@@ -671,28 +617,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
                 <span>{{ t('I track stock for this product') }}</span>
               </label>
               <div v-if="isWms || trackStock" class="nw-row np-toggle-fields">
-                <!-- Safety days is the decision; min. stock is what it works out
-                     to. Ordering matters — the input comes before its result. -->
-                <MpFormControl id="np-safety-days" class="np-field-270">
-                  <MpFormLabel>
-                    <span class="np-label-with-info">
-                      {{ t('Safety days') }}
-                      <MpTooltip
-                        id="np-safety-days-tip" :label="safetyDaysTooltip"
-                        placement="top" use-portal
-                      >
-                        <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
-                      </MpTooltip>
-                    </span>
-                  </MpFormLabel>
-                  <div class="np-suffix-wrap">
-                    <input
-                      id="np-safety-days-input" v-model="safetyDays" class="np-suffix-input"
-                      type="text" inputmode="numeric" :placeholder="String(inheritedSafetyDays)"
-                    />
-                    <span class="np-suffix-chip">{{ t('days') }}</span>
-                  </div>
-                </MpFormControl>
+
 
                 <!-- The product level rolls up the ACTION, never a summed
                      threshold (D13a). Each warehouse's due/not-due is still

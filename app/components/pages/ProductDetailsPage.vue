@@ -441,7 +441,45 @@ const whEditing = ref(false)
 const whMinDraft = reactive<Record<string, string>>({})
 const whSafetyDraft = reactive<Record<string, string>>({})
 
+/**
+ * Bulk safety-days edit.
+ *
+ * Safety days is the same policy decision for most warehouses most of the time —
+ * typing 14 into nine boxes is the kind of work software should do. Applying
+ * fills the DRAFTS rather than saving, so a bulk change is reviewed in the table
+ * alongside everything else and committed by the same Save.
+ */
+const whSelected = ref<Set<string>>(new Set())
+const whBulkSafety = ref('')
+
+const whAllSelected = computed(() =>
+  warehouseStock.value.length > 0 && whSelected.value.size === warehouseStock.value.length,
+)
+
+function toggleWhSelected(warehouseId: string): void {
+  const next = new Set(whSelected.value)
+  next.has(warehouseId) ? next.delete(warehouseId) : next.add(warehouseId)
+  whSelected.value = next
+}
+
+function toggleWhSelectAll(): void {
+  whSelected.value = whAllSelected.value
+    ? new Set()
+    : new Set(warehouseStock.value.map((s) => s.warehouseId))
+}
+
+/** Empty clears the override on every selected warehouse — the same "empty means
+ *  inherit" rule the per-row box follows, applied in bulk. */
+function applyBulkSafety(): void {
+  const raw = whBulkSafety.value.trim().replace(/\D/g, '')
+  for (const id of whSelected.value) whSafetyDraft[id] = raw
+  whBulkSafety.value = ''
+  whSelected.value = new Set()
+}
+
 function startEditMinStock() {
+  whSelected.value = new Set()
+  whBulkSafety.value = ''
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
   for (const id of Object.keys(whSafetyDraft)) delete whSafetyDraft[id]
   const sku = product.value?.sku
@@ -1257,9 +1295,35 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 @click="startEditMinStock"
               >Edit</button>
             </div>
+            <!-- Bulk safety days — the one setting that is usually the same
+                 everywhere, so it should not be typed nine times. -->
+            <div v-if="whEditing && pagedWarehouseStock.length" class="pd-bulk-bar">
+              <span class="pd-bulk-count">
+                {{ whSelected.size }}
+                {{ whSelected.size === 1 ? 'warehouse selected' : 'warehouses selected' }}
+              </span>
+              <template v-if="whSelected.size">
+                <MpInput
+                  id="pd-wh-bulk-safety"
+                  v-model="whBulkSafety"
+                  type="number"
+                  placeholder="Safety days"
+                  :class="css({ width: '120px' })"
+                />
+                <button
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  type="button"
+                  @click="applyBulkSafety"
+                >Apply to selected</button>
+                <span class="pd-bulk-hint">Leave the box empty to make them inherit again.</span>
+              </template>
+              <span v-else class="pd-bulk-hint">Tick warehouses to set their safety days together.</span>
+            </div>
+
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
+                  <col v-if="whEditing" style="width: 44px" />
                   <col style="width: 240px" />
                   <col style="width: 110px" />
                   <col style="width: 110px" />
@@ -1271,6 +1335,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 </colgroup>
                 <thead>
                   <tr>
+                    <th v-if="whEditing" class="pd-th">
+                      <MpCheckbox
+                        id="pd-wh-select-all"
+                        :is-checked="whAllSelected"
+                        @change="toggleWhSelectAll"
+                      />
+                    </th>
                     <th class="pd-th">Warehouse</th>
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
@@ -1285,6 +1356,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <tbody>
                   <template v-for="s in pagedWarehouseStock" :key="s.warehouseId">
                   <tr class="pd-tr">
+                    <td v-if="whEditing" class="pd-td">
+                      <MpCheckbox
+                        :id="`pd-wh-select-${s.warehouseId}`"
+                        :is-checked="whSelected.has(s.warehouseId)"
+                        @change="toggleWhSelected(s.warehouseId)"
+                      />
+                    </td>
                     <td class="pd-td">
                       <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
                     </td>
@@ -1368,7 +1446,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <!-- Working shown on request — same three facts, same wording as
                        the product form's "Why this number?". -->
                   <tr v-if="expandedWh.has(s.warehouseId)" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
-                    <td class="pd-td pd-td--details" colspan="8">
+                    <td class="pd-td pd-td--details" :colspan="whEditing ? 9 : 8">
                       <div class="pd-why">
                         <p v-if="whReplenishment[s.warehouseId]?.recommended !== null" class="pd-why-row">
                           {{ whReplenishment[s.warehouseId]?.velocity.toFixed(2) }}/day ×
@@ -1655,6 +1733,19 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   font-weight: 400;
   color: var(--mp-text-subdued, #9ca3af);
 }
+.pd-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--mp-surface-subdued, #f9fafb);
+}
+.pd-bulk-count { font-size: 13px; font-weight: 500; color: var(--mp-text-default, #111827); }
+.pd-bulk-hint { font-size: 12px; color: var(--mp-text-subdued, #6b7280); }
+
 .pd-table-scroll { overflow-x: auto; }
 .pd-table { width: 100%; min-width: max-content; border-collapse: collapse; }
 .pd-th {
