@@ -4,9 +4,16 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
   MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpDatePicker, css,
+  MpDatePicker, MpAutocomplete, MpInputGroup, MpInputLeftAddon, MpText, css,
 } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
+// Purchase-delivery kind only — batches there are the product's own records, not
+// warehouse stock, and they carry the Batch Attribute set (PRD story 10).
+import { getProductBatches } from '~/data/productDetails'
+import { batchAttributeDef, expiryPrecision, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
+import { vendors } from '~/data/vendors'
+import { activeGrades } from '~/data/grades'
+import { VENDOR_MISMATCH_COPY, checkDeliveryBatches, productUsesVendor } from '~/data/purchaseDeliveryBatches'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
@@ -32,6 +39,10 @@ export interface CommittedBatch {
   reservedQty?: number
   originLocations?: BatchLocEntry[]
   destLocations?: BatchLocEntry[]
+  /** Purchase delivery only — the batch record this row refers to (absent on a row
+   *  the delivery will create) and the attribute values to save with it. */
+  batchId?: string
+  attributes?: Partial<Record<BatchAttributeKey, string>>
 }
 
 const props = defineProps<{
@@ -40,7 +51,10 @@ const props = defineProps<{
   warehouseId: string
   modelValue: CommittedBatch[]
   /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received batches to bins; 'picking' = pick from existing batches for an outbound order */
-  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away' | 'picking'
+  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away' | 'picking' | 'purchase-delivery'
+  /** Purchase delivery only — the transaction's vendor. New batches start with it
+   *  and vendor-less existing batches inherit it on save (story 10). */
+  vendorId?: string
   /**
    * When counting inside a storage location, pass the bin-level on-hand.
    * 0 means the SKU has no stock at this bin → start empty instead of
@@ -94,7 +108,9 @@ interface LocRow { id: number; locationId: string; qty: string }
 
 interface WorkRow extends CommittedBatch {
   isNew: boolean
-  expiryDisplay: string  // DD/MM/YYYY for the date picker
+  expiryDisplay: string  // DD/MM/YYYY — or MM/YYYY when expiryMode is 'month'
+  /** Purchase delivery only — expiry is day or month precision per batch (A2). */
+  expiryMode?: 'date' | 'month'
   originLocRows: LocRow[]
   destLocRows: LocRow[]
 }
@@ -141,9 +157,12 @@ function seedRows(): void {
   if (props.modelValue.length > 0) {
     rows.value = props.modelValue.map((b, i) => ({
       ...b,
-      desc: b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
+      desc: b.desc || (props.kind === 'purchase-delivery' ? '' : DEMO_DESCS[i % DEMO_DESCS.length]!),
       isNew: false,
-      expiryDisplay: isoToDisplay(b.expiryDate),
+      expiryDisplay: b.expiryDate && expiryPrecision(b.expiryDate) === 'month'
+        ? `${b.expiryDate.split('-')[1]}/${b.expiryDate.split('-')[0]}`
+        : isoToDisplay(b.expiryDate),
+      expiryMode: b.expiryDate && expiryPrecision(b.expiryDate) === 'month' ? 'month' : 'date',
       originLocRows: initLocRows(b.originLocations),
       destLocRows: initLocRows(b.destLocations),
     }))
@@ -200,12 +219,43 @@ const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
 
 const isInOut = computed(() =>
-  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
+  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking'
+  || props.kind === 'purchase-delivery',
 )
 const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
+const isDelivery = computed(() => props.kind === 'purchase-delivery')
+
+// ── Purchase delivery: the product's attribute set drives extra columns ──────────
+const deliveryConfig = computed(() => (isDelivery.value ? getBatchAttributeConfig(props.sku) : []))
+/** Expiry already has its own column, so only the other attributes add columns. */
+const deliveryAttrKeys = computed(() => deliveryConfig.value.map(a => a.key).filter(k => k !== 'expiry_date'))
+const deliveryUsesVendor = computed(() => isDelivery.value && productUsesVendor(props.sku))
+const vendorOptions = vendors.map(v => ({ label: v.name, value: v.id }))
+const gradeOptions = computed(() => activeGrades().map(g => ({ label: `${g.name} · Rank ${g.rank}`, value: g.id })))
+const vendorName = (id: string | undefined) => (id ? vendors.find(v => v.id === id)?.name ?? id : '')
+function attrLabel(key: BatchAttributeKey) { return batchAttributeDef(key).label }
+function attrText(row: WorkRow, key: BatchAttributeKey) {
+  const v = row.attributes?.[key]
+  if (!v) return '—'
+  if (key === 'supplier') return vendorName(v)
+  if (key === 'grade') return gradeOptions.value.find(g => g.value === v)?.label ?? v
+  return v
+}
+/** Story 10 rules 2 + 3, shown against an existing batch the delivery reuses. */
+function deliveryVendorNote(row: WorkRow): string {
+  if (!deliveryUsesVendor.value || row.isNew) return ''
+  const supplier = row.attributes?.supplier
+  if (!supplier) return 'No vendor yet. It gets this delivery’s vendor when you save'
+  if (props.vendorId && supplier !== props.vendorId) {
+    return VENDOR_MISMATCH_COPY
+      .replace('{batchVendor}', vendorName(supplier))
+      .replace('{deliveryVendor}', vendorName(props.vendorId))
+  }
+  return ''
+}
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
 // already only ever +1s an existing row, so it needs no changes). This typing-
@@ -222,17 +272,17 @@ const scanRequiredForLine = computed(() =>
 // approval. Folded into the same flag receiving/put-away already use to hide
 // on-hand stats/columns that don't apply to them, for a different reason
 // (no on-hand concept at all there vs. deliberately hidden here).
-const hideStockStats = computed(() => isReceiving.value || isPutAway.value || isCountKind.value)
+const hideStockStats = computed(() => isReceiving.value || isPutAway.value || isCountKind.value || isDelivery.value)
 // Picking shows Available qty (like transfer) but has no "new on hand" concept —
 // stock only actually leaves once the pick is fulfilled, not at drawer-save time.
 const showAfterStats = computed(() => !hideStockStats.value && !isPicking.value)
 // Picking still computes/uses available qty internally (cap, reservations, etc.)
 // — this only hides the redundant per-row table column; the info-bar stat above
 // the table still shows it.
-const showOnHandColumn = computed(() => !hideStockStats.value && !isPicking.value)
+const showOnHandColumn = computed(() => !hideStockStats.value && !isPicking.value && !isDelivery.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
-  if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  if (props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'purchase-delivery') return 'Received qty'
   if (props.kind === 'picking') return 'Reserved qty'
   return 'Stock in/out qty'
 })
@@ -323,6 +373,13 @@ const displayRows = computed(() => {
 // ── Select batch popover ─────────────────────────────────────────────────────────
 // Available batches = warehouse batches not yet in the table
 const availableBatches = computed(() => {
+  if (isDelivery.value) {
+    const inTable = new Set(rows.value.filter(r => !r.isNew).map(r => r.batchNo))
+    // The Unassigned batch never carries attributes (A5), so it isn't offered here.
+    return getProductBatches(props.sku)
+      .filter(b => !b.isUnassigned && !inTable.has(b.batchNo))
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.attributes.expiry_date ?? '' }))
+  }
   const wh = getWarehouseDetail(props.warehouseId)
   const si = wh?.stock.find(s => s.sku === props.sku)
   const all = si?.batches ?? []
@@ -334,6 +391,7 @@ const availableBatches = computed(() => {
 })
 
 function addWarehouseBatch(batchNo: string) {
+  if (isDelivery.value) { addProductBatch(batchNo); return }
   const wh = getWarehouseDetail(props.warehouseId)
   const si = wh?.stock.find(s => s.sku === props.sku)
   const b = si?.batches?.find(x => x.batchNo === batchNo)
@@ -356,6 +414,31 @@ function addWarehouseBatch(batchNo: string) {
   })
 }
 
+/** Purchase delivery — reuse an existing batch of this product; its stored attributes
+ *  ride along so the table can show them and the vendor rules can read them. */
+function addProductBatch(batchNo: string) {
+  const b = getProductBatches(props.sku).find(x => x.batchNo === batchNo)
+  if (!b) return
+  rows.value.push({
+    key: b.id,
+    batchId: b.id,
+    batchNo: b.batchNo,
+    expiryDate: b.attributes.expiry_date ?? '',
+    expiryDisplay: expiryPrecision(b.attributes.expiry_date) === 'month'
+      ? `${(b.attributes.expiry_date ?? '').split('-')[1]}/${(b.attributes.expiry_date ?? '').split('-')[0]}`
+      : isoToDisplay(b.attributes.expiry_date ?? ''),
+    expiryMode: expiryPrecision(b.attributes.expiry_date) === 'month' ? 'month' : 'date',
+    desc: b.description,
+    attributes: { ...b.attributes },
+    onHand: 0,
+    counted: null,
+    unit: b.unit,
+    isNew: false,
+    originLocRows: [makeLocRow()],
+    destLocRows: [makeLocRow()],
+  })
+}
+
 let newCounter = 0
 function addNewBatch() {
   newCounter++
@@ -370,9 +453,52 @@ function addNewBatch() {
     counted: null,
     unit,
     isNew: true,
+    expiryMode: 'date',
+    ...(isDelivery.value && deliveryUsesVendor.value && props.vendorId
+      ? { attributes: { supplier: props.vendorId } as Partial<Record<BatchAttributeKey, string>> }
+      : isDelivery.value ? { attributes: {} as Partial<Record<BatchAttributeKey, string>> } : {}),
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   })
+}
+
+/** Delivery rows are checked by the same rules the delivery form applies on save
+ *  (app/data/purchaseDeliveryBatches.ts), so the drawer and the form never disagree. */
+function setRowAttr(row: WorkRow, key: BatchAttributeKey, value: string) {
+  row.attributes = { ...(row.attributes ?? {}), [key]: value }
+  deliveryError.value = ''
+}
+
+const deliveryError = ref('')
+function checkDeliveryRows(): boolean {
+  const check = checkDeliveryBatches({
+    sku: props.sku,
+    productName: productBySku(props.sku)?.name ?? props.sku,
+    qty: props.targetCount ?? 0,
+    batches: rows.value.map(r => ({
+      key: r.key,
+      ...(r.batchId ? { batchId: r.batchId } : {}),
+      batchNo: r.batchNo.trim(),
+      qty: r.counted ?? 0,
+      attributes: r.isNew ? { ...r.attributes, ...(r.expiryDate ? { expiry_date: r.expiryDate } : {}) } : {},
+    })),
+  })
+  if (check.qtyMismatch) {
+    deliveryError.value = `Batch qty must add up to ${props.targetCount ?? 0} ${productBySku(props.sku)?.unit ?? ''}`.trim()
+    return false
+  }
+  if (check.qtyInvalid.length) { deliveryError.value = 'Every batch needs a qty above 0'; return false }
+  if (check.duplicateBatch.length) { deliveryError.value = 'The same batch is on this line twice'; return false }
+  const firstRow = Object.values(check.rowErrors)[0]
+  if (firstRow?.length) {
+    const e = firstRow[0]!
+    deliveryError.value = e.field === 'batchNo'
+      ? (e.code === 'taken' ? 'Batch number already taken' : 'You must fill in batch number')
+      : `You must select ${attrLabel(e.field as BatchAttributeKey).toLowerCase()}`
+    return false
+  }
+  deliveryError.value = ''
+  return true
 }
 
 const lastScannedKey = ref<string | null>(null)
@@ -609,7 +735,28 @@ function setCounted(row: WorkRow, val: string) {
 
 function setExpiryDisplay(row: WorkRow, val: string) {
   row.expiryDisplay = val
-  row.expiryDate = displayToIso(val)
+  // Month precision stores YYYY-MM; a day stores YYYY-MM-DD.
+  const parts = val.split('/')
+  row.expiryDate = row.expiryMode === 'month'
+    ? (parts.length === 2 ? `${parts[1]}-${parts[0]}` : '')
+    : displayToIso(val)
+  deliveryError.value = ''
+}
+
+function setRowExpiryMode(row: WorkRow, mode: 'date' | 'month') {
+  if ((row.expiryMode ?? 'date') === mode) return
+  row.expiryMode = mode
+  // A day can't be derived from a month (or back) without guessing — start over.
+  row.expiryDisplay = ''
+  row.expiryDate = ''
+  deliveryError.value = ''
+}
+
+/** Stored expiry as text — month values render MM/YYYY, days DD/MM/YYYY. */
+function expiryText(row: WorkRow): string {
+  if (!row.expiryDate) return '—'
+  const [y, m, d] = row.expiryDate.split('-')
+  return d ? `${d}/${m}/${y}` : `${m}/${y}`
 }
 
 // ── Per-batch storage location ────────────────────────────────────────────────────
@@ -778,7 +925,7 @@ async function saveBatchLocDrawer() {
 
 // Trailing-row colspan = every data column except the leading "select batch" cell:
 // expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
-const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
+const trailingColspan = computed(() => 5 + deliveryAttrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
@@ -795,6 +942,7 @@ async function handleSave() {
     return
   }
   showPaLocErrors.value = false
+  if (isDelivery.value && !checkDeliveryRows()) return
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
@@ -811,6 +959,10 @@ async function handleSave() {
       ...(r.location !== undefined ? { location: r.location } : {}),
       ...(filledOrigin.length ? { originLocations: filledOrigin.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
       ...(filledDest.length ? { destLocations: filledDest.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
+      ...(r.batchId ? { batchId: r.batchId } : {}),
+      ...(isDelivery.value
+        ? { attributes: r.isNew ? { ...r.attributes, ...(r.expiryDate ? { expiry_date: r.expiryDate } : {}) } : { ...r.attributes } }
+        : {}),
     }
   })
   emit('save', committed)
@@ -896,6 +1048,10 @@ function fmtNum(n: number | null): string {
                 <span class="mbd-stat-label">{{ executionMode ? 'Picked qty' : 'Qty to pick' }}</span>
                 <span class="mbd-stat-value">{{ totalPickCount.toLocaleString('id-ID') }}</span>
               </div>
+              <div v-if="isDelivery" class="mbd-stat">
+                <span class="mbd-stat-label">Line qty</span>
+                <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
+              </div>
               <div
                 v-if="!isPicking"
                 class="mbd-stat"
@@ -911,7 +1067,7 @@ function fmtNum(n: number | null): string {
                   <template v-else>{{ totalCounted.toLocaleString('id-ID') }}</template>
                 </span>
               </div>
-              <div v-if="isReceiving" class="mbd-stat">
+              <div v-if="isReceiving || isDelivery" class="mbd-stat">
                 <span class="mbd-stat-label">Remaining qty to receive</span>
                 <span class="mbd-stat-value">{{ Math.max(0, (props.targetCount ?? 0) - (totalCounted ?? 0)).toLocaleString('id-ID') }}</span>
               </div>
@@ -1135,11 +1291,15 @@ function fmtNum(n: number | null): string {
 
           <!-- ── Other modes: existing table ── -->
           <template v-else>
-          <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit }">
+          <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery }">
             <colgroup>
               <col class="mbd-col-batch" />
+              <!-- A delivery reads Description then Expiry date; the WMS kinds keep their
+                   own order (date first). -->
+              <col v-if="isDelivery" class="mbd-col-desc" />
               <col class="mbd-col-expiry" />
-              <col class="mbd-col-desc" />
+              <col v-if="!isDelivery" class="mbd-col-desc" />
+              <col v-for="k in deliveryAttrKeys" :key="k" class="mbd-col-attr" />
               <col v-if="isPicking" class="mbd-col-location" />
               <col v-if="showOnHandColumn" class="mbd-col-num" />
               <col v-if="showPlannedQty" class="mbd-col-num" />
@@ -1151,8 +1311,10 @@ function fmtNum(n: number | null): string {
             <thead>
               <tr>
                 <th class="mbd-th">Batch</th>
+                <th v-if="isDelivery" class="mbd-th">Description</th>
                 <th class="mbd-th">Expiry date</th>
-                <th class="mbd-th">Description</th>
+                <th v-if="!isDelivery" class="mbd-th">Description</th>
+                <th v-for="k in deliveryAttrKeys" :key="k" class="mbd-th">{{ attrLabel(k) }}</th>
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="showOnHandColumn" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
@@ -1177,30 +1339,97 @@ function fmtNum(n: number | null): string {
                 </td>
                 <td v-else class="mbd-td mbd-td--muted">{{ row.batchNo }}</td>
 
-                <!-- EXPIRY DATE -->
-                <td v-if="row.isNew" class="mbd-td mbd-td--input mbd-td--datepicker">
-                  <MpDatePicker
-                    use-portal
-                    format="DD/MM/YYYY"
-                    value-type="format"
-                    :model-value="row.expiryDisplay"
-                    :class="css({ width: '100%' })"
-                    @update:model-value="setExpiryDisplay(row, $event as string)"
-                  />
-                </td>
-                <td v-else class="mbd-td mbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
+                <!-- DESCRIPTION + EXPIRY DATE — a delivery reads description first and
+                     its expiry carries the Date/Month precision switch (A2). -->
+                <template v-if="isDelivery">
+                  <td v-if="row.isNew" class="mbd-td mbd-td--input">
+                    <input
+                      class="mbd-cell-input"
+                      type="text"
+                      placeholder="Description"
+                      :value="row.desc"
+                      @input="row.desc = ($event.target as HTMLInputElement).value"
+                    />
+                  </td>
+                  <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
+                  <td v-if="row.isNew" class="mbd-td mbd-td--input mbd-td--datepicker">
+                    <!-- Pixel's input-with-prefix: the addon switches this batch's expiry
+                         precision (A2), the same control the batch form uses. -->
+                    <MpInputGroup :id="`mbd-exp-${row.key}`" size="md" class="mbd-expiry-group">
+                      <MpInputLeftAddon has-background>
+                        <MpPopover
+                          :id="`mbd-exp-mode-${row.key}`" is-close-on-select use-portal
+                          :is-keep-alive="false" placement="bottom-start"
+                        >
+                          <MpPopoverTrigger>
+                            <MpButton class="mbd-expiry-mode" type="button">
+                              <MpText weight="semiBold">{{ row.expiryMode === 'month' ? 'Month' : 'Date' }}</MpText>
+                              <MpIcon name="chevrons-down" size="sm" />
+                            </MpButton>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ minWidth: '120px', width: 'max-content' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem :is-active="row.expiryMode !== 'month'" @click="setRowExpiryMode(row, 'date')">Date</MpPopoverListItem>
+                              <MpPopoverListItem :is-active="row.expiryMode === 'month'" @click="setRowExpiryMode(row, 'month')">Month</MpPopoverListItem>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </MpInputLeftAddon>
+                      <MpDatePicker
+                        :key="row.expiryMode" use-portal
+                        :type="row.expiryMode === 'month' ? 'month' : 'date'"
+                        :format="row.expiryMode === 'month' ? 'MM/YYYY' : 'DD/MM/YYYY'"
+                        value-type="format"
+                        :model-value="row.expiryDisplay"
+                        :class="css({ width: '100%' })"
+                        @update:model-value="setExpiryDisplay(row, $event as string)"
+                      />
+                    </MpInputGroup>
+                  </td>
+                  <td v-else class="mbd-td mbd-td--muted">{{ expiryText(row) }}</td>
+                </template>
+                <template v-else>
+                  <td v-if="row.isNew" class="mbd-td mbd-td--input mbd-td--datepicker">
+                    <MpDatePicker
+                      use-portal
+                      format="DD/MM/YYYY"
+                      value-type="format"
+                      :model-value="row.expiryDisplay"
+                      :class="css({ width: '100%' })"
+                      @update:model-value="setExpiryDisplay(row, $event as string)"
+                    />
+                  </td>
+                  <td v-else class="mbd-td mbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
+                  <td v-if="row.isNew" class="mbd-td mbd-td--input">
+                    <input
+                      class="mbd-cell-input"
+                      type="text"
+                      placeholder="Description"
+                      :value="row.desc"
+                      @input="row.desc = ($event.target as HTMLInputElement).value"
+                    />
+                  </td>
+                  <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
+                </template>
 
-                <!-- DESCRIPTION -->
-                <td v-if="row.isNew" class="mbd-td mbd-td--input">
-                  <input
-                    class="mbd-cell-input"
-                    type="text"
-                    placeholder="Description"
-                    :value="row.desc"
-                    @input="row.desc = ($event.target as HTMLInputElement).value"
+                <!-- BATCH ATTRIBUTES (purchase delivery only). A new batch picks its
+                     values here; an existing one shows what it already carries, plus the
+                     vendor note for story 10 rules 2 and 3. -->
+                <td v-for="k in deliveryAttrKeys" :key="k" class="mbd-td" :class="row.isNew ? 'mbd-td--input mbd-td--attr' : 'mbd-td--muted'">
+                  <MpAutocomplete
+                    v-if="row.isNew"
+                    :model-value="row.attributes?.[k] ?? ''"
+                    :data="k === 'supplier' ? vendorOptions : gradeOptions"
+                    label-prop="label" value-prop="value" :is-searchable="k === 'supplier'"
+                    :placeholder="`Select ${attrLabel(k).toLowerCase()}`"
+                    use-portal is-full-width
+                    @update:model-value="setRowAttr(row, k, String($event ?? ''))"
                   />
+                  <template v-else>
+                    <span>{{ attrText(row, k) }}</span>
+                    <span v-if="k === 'supplier' && deliveryVendorNote(row)" class="mbd-attr-note">{{ deliveryVendorNote(row) }}</span>
+                  </template>
                 </td>
-                <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
 
                 <!-- LOCATION (picking only) — read-only, the batch's fixed bin -->
                 <td v-if="isPicking" class="mbd-td mbd-td--muted">{{ row.location || '—' }}</td>
@@ -1340,6 +1569,8 @@ function fmtNum(n: number | null): string {
         </template>
 
       </div>
+
+      <p v-if="deliveryError" class="mbd-delivery-error" role="alert">{{ deliveryError }}</p>
 
       <!-- Footer -->
       <footer class="mbd-footer">
@@ -1935,6 +2166,27 @@ function fmtNum(n: number | null): string {
 .mbd-loc-del-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Footer */
+.mbd-col-attr { width: var(--mp-sizes-44, 176px); }
+.mbd-attr-note { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
+.mbd-delivery-error { flex-shrink: 0; margin: 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+/* Purchase delivery adds Vendor + Grade columns — widen so they scroll rather than
+   squeeze the text columns into each other (rule/table-form-cell-no-border keeps the
+   controls borderless; the cell draws the border). */
+.mbd-table--delivery { min-width: 1460px; }
+/* The prefix chip eats ~88px of the field, so this kind's expiry column needs room
+   for the chip AND the whole date; the WMS kinds keep the narrower 172px. */
+.mbd-table--delivery .mbd-col-expiry { width: 264px; }
+.mbd-td--attr :deep(.mp-input__root),
+.mbd-td--attr :deep(.mp-input__control) { border: none !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important; }
+/* Fixed, not min-: Pixel measures the addon once, so a wider label ("Month") would
+   otherwise overrun the padding and sit tight against the value. */
+.mbd-expiry-group :deep(.mp-input-addon__root[data-placement='left']) { width: var(--mp-sizes-22, 88px); padding: 0; }
+/* border-box, or the chip's padding is added ON TOP of the 100% width and the field
+   overhangs the cell — hiding the cell's right border. */
+.mbd-expiry-group { width: 100%; max-width: 100%; }
+.mbd-expiry-group :deep(.mp-datepicker__root) { width: 100%; max-width: 100%; }
+.mbd-expiry-group :deep(.mp-input__control) { box-sizing: border-box; max-width: 100%; padding-left: calc(var(--mp-input-offset--left, 0px) + var(--mp-spacing-2)); }
+.mbd-expiry-mode { display: flex !important; align-items: center; gap: var(--mp-spacing-1, 4px); min-width: 0 !important; height: 100% !important; padding: 0 var(--mp-spacing-2) !important; background: none !important; border: none !important; color: var(--mp-text-default) !important; white-space: nowrap; }
 .mbd-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

@@ -27,7 +27,7 @@ import type { PurchaseDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import DeliveryBatchDrawer from '~/components/patterns/DeliveryBatchDrawer.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import { isProductBatchTracked } from '~/data/productDetails'
 import {
   VENDOR_MISMATCH_COPY, checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
@@ -148,10 +148,36 @@ function otherNewBatchNos(item: LineItem): string[] {
     .filter(o => o._key !== item._key && o.sku === item.sku)
     .flatMap(o => o.batches.filter(b => !b.batchId).map(b => b.batchNo))
 }
-function onBatchesSaved(batches: DeliveryBatchAllocation[]) {
+/** The shared drawer speaks CommittedBatch; the delivery rules speak
+ *  DeliveryBatchAllocation. Map between the two here. */
+const batchDrawerModel = computed<CommittedBatch[]>(() => {
+  const item = batchDrawerItem.value
+  if (!item) return []
+  return item.batches.map(b => ({
+    key: b.key,
+    ...(b.batchId ? { batchId: b.batchId } : {}),
+    batchNo: b.batchNo,
+    expiryDate: b.attributes?.expiry_date ?? '',
+    desc: '',
+    onHand: 0,
+    counted: b.qty,
+    unit: item.unit,
+    attributes: { ...b.attributes },
+  }))
+})
+
+function onBatchesSaved(batches: CommittedBatch[]) {
   const item = batchDrawerItem.value
   if (!item) return
-  item.batches = batches
+  item.batches = batches.map(b => ({
+    key: b.key,
+    ...(b.batchId ? { batchId: b.batchId } : {}),
+    batchNo: b.batchNo.trim(),
+    qty: b.counted ?? 0,
+    attributes: { ...b.attributes },
+    // A vendor the user moved off the delivery's stops following it (story 10, rule 1).
+    vendorEdited: !b.batchId && !!b.attributes?.supplier && b.attributes.supplier !== vendorId.value,
+  }))
   item.batchError = false
 }
 function batchSummary(item: LineItem): string {
@@ -507,7 +533,6 @@ function commitSave() {
               <col class="si-col-product" />
               <col class="si-col-desc" />
               <col class="si-col-qty" />
-              <col class="si-col-batch" />
               <col class="si-col-unit" />
               <col class="si-col-price" />
               <col class="si-col-discount" />
@@ -521,7 +546,6 @@ function commitSave() {
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
-                <th class="si-th">{{ t('Batch') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
@@ -589,22 +613,17 @@ function commitSave() {
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
-                </td>
-
-                <!-- Batch-tracked products split the qty across batches in a drawer
-                     (rule/drawer-open-via-manage). -->
-                <td class="si-td si-td--border si-td--batch" :class="{ 'si-td--error': item.batchError }">
+                  <!-- Batch-tracked products split the qty across batches in a drawer
+                       (rule/drawer-open-via-manage) — the link sits under the qty it
+                       splits, as on the work order's raw materials table. -->
                   <template v-if="isBatchLine(item)">
-                    <MpTooltip
-                      v-if="item.batchError" :id="`si-batch-tt-${item._key}`"
-                      :label="t('Check the batches for this line')" placement="top" use-portal
-                    >
-                      <MpTextlink :id="`si-batch-${item._key}`" as="a" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</MpTextlink>
-                    </MpTooltip>
-                    <MpTextlink v-else :id="`si-batch-${item._key}`" as="a" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</MpTextlink>
-                    <span v-if="item.batches.length" class="si-batch-count">{{ batchSummary(item) }}</span>
+                    <span v-if="item.batchError" class="si-tracked-hint si-tracked-hint--error">{{ t('Check the batches for this line') }}</span>
+                    <span v-else-if="item.batches.length" class="si-tracked-hint">{{ batchSummary(item) }}</span>
+                    <MpTextlink
+                      :id="`si-batch-${item._key}`" as="a" class="si-tracking"
+                      @click.prevent="batchDrawerKey = item._key"
+                    >{{ t('Manage batch') }}</MpTextlink>
                   </template>
-                  <span v-else class="si-batch-na">-</span>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -681,7 +700,7 @@ function commitSave() {
                 </td>
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
-                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--del" />
+                <td class="si-td si-td--border" /><td class="si-td si-td--del" />
               </tr>
             </tbody>
           </table>
@@ -821,12 +840,16 @@ function commitSave() {
       @save="onNoFormatSave"
     />
 
-    <DeliveryBatchDrawer
+    <!-- The shared WMS batch drawer, in its purchase-delivery kind. -->
+    <ManageBatchDrawer
       v-if="batchDrawerItem"
       :open="batchDrawerKey !== null"
-      :sku="batchDrawerItem.sku" :product-name="batchDrawerItem.product" :unit="batchDrawerItem.unit"
-      :qty="batchDrawerItem.qty" :vendor-id="vendorId"
-      :model-value="batchDrawerItem.batches" :other-new-batch-nos="otherNewBatchNos(batchDrawerItem)"
+      :sku="batchDrawerItem.sku"
+      warehouse-id=""
+      kind="purchase-delivery"
+      :vendor-id="vendorId"
+      :target-count="batchDrawerItem.qty"
+      :model-value="batchDrawerModel"
       @update:open="(v) => { if (!v) batchDrawerKey = null }"
       @save="onBatchesSaved"
     />
@@ -961,18 +984,17 @@ function commitSave() {
 .si-items-scroll { overflow-x: auto; }
 
 .si-items-table {
-  width: 100%; min-width: 1508px;
+  width: 100%; min-width: 1404px;
   table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
-.si-col-qty      { width: 64px; }
-.si-col-batch    { width: 168px; }
-/* Cells pin to the top (tall Dimensions cell), so the link sits where the other cells' text does. */
-.si-td.si-td--batch { white-space: nowrap; padding-top: var(--mp-sizes-2\.5, 10px); }
-.si-batch-count { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.si-batch-na { color: var(--mp-text-placeholder); }
+/* Wide enough for the Manage batch link stacked under the qty. */
+.si-col-qty      { width: 132px; }
+.si-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.si-tracked-hint--error { color: var(--mp-text-danger); }
+.si-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
