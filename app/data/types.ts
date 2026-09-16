@@ -84,6 +84,12 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  /** Source purchase order number, when the invoice was billed against one. */
+  referenceNo?: string
+  /** Real lines, set when the invoice was created through the form. Seeded
+   *  invoices leave this undefined and the detail page synthesizes lines from the
+   *  amount instead — same arrangement as `PurchaseOrder.lineItems`. */
+  lineItems?: PurchaseOrderLine[]
 }
 
 export interface BillAttachment {

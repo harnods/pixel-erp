@@ -24,7 +24,7 @@ import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/compo
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
-  encodeSubconPrefill, subconVendorWarehouse, RAISED_ELSEWHERE,
+  encodeSubconPrefill, subconVendorWarehouse,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -97,21 +97,44 @@ const subconPlan = computed(() => {
     label: string
     module: string
     entries: ReturnType<typeof entriesFor>
-    /** The kind the row's Create button raises, if it has one. */
-    createKind?: SubconDocKind
-    createLabel?: string
+    /** What can be raised from this row right now, in chain order. */
+    actions: { kind: SubconDocKind; label: string }[]
   }[] = []
 
   if (purchaseSteps.length) {
+    /**
+     * The purchase thread is a chain — request, order, delivery, invoice — and
+     * each document is raised against the one before it. So rather than a fixed
+     * "Create purchase request" button, the row offers whatever the chain is
+     * actually ready for, which is how the work order stays the one place the
+     * run is driven from instead of sending the user off to find each form.
+     */
+    const isRaised = (kind: SubconDocKind) => raised.some(d => d.kind === kind)
+    const requestSteps = purchaseSteps.filter(p => p.tag === 'PR')
+    const pendingRequest = requestSteps.find(p => !isRaised(p.kind))
+    const anyRequestRaised = requestSteps.some(p => isRaised(p.kind))
+
+    const actions: { kind: SubconDocKind; label: string }[] = []
+    if (pendingRequest) actions.push({ kind: pendingRequest.kind, label: t('Create purchase request') })
+    if (anyRequestRaised && !isRaised('purchaseOrder')) {
+      actions.push({ kind: 'purchaseOrder', label: t('Create purchase order') })
+    }
+    if (isRaised('purchaseOrder')) {
+      // Deliveries repeat — several of them close one work order out — so this
+      // one stays on offer. The invoice only follows once the vendor has actually
+      // delivered against the order, and is raised once.
+      actions.push({ kind: 'purchaseDelivery', label: t('Create purchase delivery') })
+      if (isRaised('purchaseDelivery') && !isRaised('purchaseInvoice')) {
+        actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
+      }
+    }
+
     rows.push({
       key: 'purchase',
       label: t('Purchase transaction'),
       module: t('Purchases'),
       entries: entriesFor(purchaseSteps),
-      // The request is the only one raised from here; the order follows the
-      // request and the delivery follows the order.
-      createKind: purchaseSteps.find(p => !RAISED_ELSEWHERE.includes(p.kind))?.kind,
-      createLabel: t('Create purchase request'),
+      actions,
     })
   }
   if (transferSteps.length) {
@@ -120,8 +143,7 @@ const subconPlan = computed(() => {
       label: t('Warehouse transfer'),
       module: t('Warehouse'),
       entries: entriesFor(transferSteps),
-      createKind: transferSteps[0]!.kind,
-      createLabel: t('Create transfer'),
+      actions: [{ kind: transferSteps[0]!.kind, label: t('Create transfer') }],
     })
   }
   return rows
@@ -511,7 +533,12 @@ function startWorkOrder() {
 }
 
 /** Where each document's form lives. */
-const DOC_ROUTE: Record<SubconDocKind, string> = {
+/**
+ * The form each document opens in. Only the documents the work order raises
+ * itself are listed — the order, delivery and invoice are raised against their
+ * parent instead (see `createDocument`), so they have no entry here.
+ */
+const DOC_ROUTE: Partial<Record<SubconDocKind, string>> = {
   componentPr: '/purchase-requests/new',
   subconPr: '/purchase-requests/new',
   processPr: '/purchase-requests/new',
@@ -582,6 +609,27 @@ function createDocument(kind: SubconDocKind) {
   const c = subcon.value
   if (!w || !c) return
 
+  /**
+   * Documents downstream of the request are raised AGAINST their parent, not from
+   * the work order's own prefill: the order is built from the request, and the
+   * delivery and the invoice are both built from the order. Routing them through
+   * the same entry points the Purchases module uses means they arrive with the
+   * parent's real lines and money, and the link back is recorded there too.
+   */
+  const raised = c.raisedDocuments ?? []
+  if (kind === 'purchaseOrder') {
+    const request = raised.find(d => d.route === '/purchase-requests')
+    if (request) { router.push({ path: '/purchase-orders', query: { fromPr: request.id } }); return }
+  }
+  if (kind === 'purchaseDelivery' || kind === 'purchaseInvoice') {
+    const order = raised.find(d => d.kind === 'purchaseOrder')
+    if (order) {
+      const path = kind === 'purchaseDelivery' ? '/purchase-deliveries/new' : '/purchase-invoices/new'
+      router.push({ path, query: { fromPo: order.id } })
+      return
+    }
+  }
+
   const prefill = encodeSubconPrefill({
     kind,
     workOrderId: w.id,
@@ -598,7 +646,9 @@ function createDocument(kind: SubconDocKind) {
     lines: prefillLines(kind),
     memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
   })
-  router.push({ path: DOC_ROUTE[kind], query: { subcon: prefill } })
+  const path = DOC_ROUTE[kind]
+  if (!path) return
+  router.push({ path, query: { subcon: prefill } })
 }
 
 /** Modal path: start the order first, then open the chosen document. */
@@ -1016,17 +1066,21 @@ function suppressFabClick(e: MouseEvent) {
                 </span>
               </td>
 
-              <!-- Only the first document in a thread is raised from here; the
-                   rest follow their own parent document. -->
+              <!-- Whatever the thread is ready for next — the request, then the
+                   order raised from it, then the deliveries and the invoice
+                   raised from that order. -->
               <td class="wod-subcon-td wod-subcon-td--action">
-                <MpButton
-                  v-if="subconStarted && row.createKind"
-                  variant="secondary"
-                  is-rounded
-                  @click="createDocument(row.createKind)"
-                >
-                  {{ row.createLabel }}
-                </MpButton>
+                <span v-if="subconStarted" class="wod-subcon-actions">
+                  <MpButton
+                    v-for="action in row.actions"
+                    :key="action.kind"
+                    variant="secondary"
+                    is-rounded
+                    @click="createDocument(action.kind)"
+                  >
+                    {{ action.label }}
+                  </MpButton>
+                </span>
               </td>
             </tr>
           </tbody>
@@ -1754,6 +1808,14 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-td__module { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .wod-subcon-th--action { width: var(--mp-sizes-60, 240px); }
 .wod-subcon-td--action { text-align: right; }
+/* Several documents can be ready at once (a repeatable delivery alongside the
+   invoice), so the buttons wrap toward the right rather than widening the cell. */
+.wod-subcon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--mp-spacing-2);
+}
 .wod-subcon-status { font-size: var(--mp-font-sizes-md); }
 .wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
 .wod-subcon-status--done { color: var(--mp-text-link); }

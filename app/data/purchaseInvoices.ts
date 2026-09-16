@@ -1,4 +1,6 @@
+import { reactive } from 'vue'
 import type { PurchaseInvoice } from './types'
+import { loadSnapshot, saveSnapshot } from './persist'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
@@ -48,7 +50,35 @@ function buildPurchaseInvoices(): PurchaseInvoice[] {
   return out.reverse() // newest first
 }
 
-export const purchaseInvoices: PurchaseInvoice[] = buildPurchaseInvoices()
+/**
+ * Invoices raised through the form have to outlive a reload — a subcon work order
+ * links to its invoice by id, so without a snapshot the link fell back to the
+ * first seeded invoice. Same arrangement as purchase orders/requests/deliveries.
+ */
+const SNAPSHOT_KEY = 'purchase-invoices-v1'
+export const purchaseInvoices: PurchaseInvoice[] = reactive(
+  loadSnapshot<PurchaseInvoice>(SNAPSHOT_KEY) ?? buildPurchaseInvoices(),
+)
+
+function persist() { saveSnapshot(SNAPSHOT_KEY, purchaseInvoices) }
+
+/** Create an invoice — ids/numbers continue past whatever already exists. */
+export function addPurchaseInvoice(
+  data: Omit<PurchaseInvoice, 'id' | 'number'>,
+): PurchaseInvoice {
+  const nextNum = purchaseInvoices.reduce((max, inv) => {
+    const n = parseInt(String(inv.id).replace(/\D/g, ''), 10)
+    return Number.isNaN(n) ? max : Math.max(max, n)
+  }, 0) + 1
+  const invoice: PurchaseInvoice = {
+    ...data,
+    id: `PI${String(nextNum).padStart(3, '0')}`,
+    number: `PINV-2026-${String(nextNum).padStart(3, '0')}`,
+  }
+  purchaseInvoices.unshift(invoice)
+  persist()
+  return invoice
+}
 
 /**
  * Awaiting-approval subset — a realistic handful of the newest invoices pending

@@ -410,6 +410,7 @@ const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuo
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
 const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
+const NewPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewPurchaseInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -822,6 +823,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/new → create form (the :id match below already guards 'new')
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices' && segs[1] === 'new') {
+    return { component: NewPurchaseInvoicePage, id: 'new' }
   }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'

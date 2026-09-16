@@ -79,6 +79,17 @@ export const purchaseOrders: PurchaseOrder[] = reactive(
 
 function persist() { saveSnapshot(SNAPSHOT_KEY, purchaseOrders) }
 
+/**
+ * Move an order along its lifecycle and persist the change — a delivery against
+ * it means the goods are in and the bill is pending; an invoice closes it.
+ */
+export function setPurchaseOrderStatus(id: string, status: PurchaseOrder['status']): void {
+  const order = purchaseOrders.find(o => o.id === id)
+  if (!order) return
+  order.status = status
+  persist()
+}
+
 /** Add an order to the store, newest first — same shape as `addPurchaseRequest`. */
 export function addPurchaseOrder(order: PurchaseOrder): PurchaseOrder {
   purchaseOrders.unshift(order)

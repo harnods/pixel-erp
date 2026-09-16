@@ -96,6 +96,7 @@ export type SubconDocKind =
   | 'purchasePr'    // the in-house half of a split, bought normally into your warehouse
   | 'purchaseOrder' // the PR, approved and ordered from the vendor
   | 'purchaseDelivery' // the vendor's delivery back — each one produces FG
+  | 'purchaseInvoice'  // the vendor's bill for the subcon work, raised against the PO
   | 'receipt'       // goods receipt back from the vendor
 
 export interface SubconDocStep {
@@ -103,7 +104,7 @@ export interface SubconDocStep {
   /** Short document-type tag. With the "What it does" column gone from the work
    *  order's Documents table, this is what tells the three purchase documents
    *  apart at a glance. */
-  tag: 'PR' | 'PO' | 'PD' | 'Transfer' | 'Receipt'
+  tag: 'PR' | 'PO' | 'PD' | 'PI' | 'Transfer' | 'Receipt'
   title: string
   /** One line explaining what this document does in the chain. */
   detail: string
@@ -157,6 +158,11 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
     title: 'Purchase delivery',
     detail: "The vendor's delivery back — each one produces finished goods against the work order",
   },
+  purchaseInvoice: {
+    tag: 'PI', module: 'Purchases',
+    title: 'Purchase invoice',
+    detail: "The vendor's bill for the subcon work, raised once the order is closed",
+  },
   receipt: {
     tag: 'Receipt', module: 'Warehouse',
     title: 'Goods receipt',
@@ -192,10 +198,11 @@ export function buildDocumentPlan(
     if (method === 'resupply') kinds.push('rawTransfer')
     kinds.push('processPr')
   }
-  // The service PR does not end the chain: it is ordered, and the vendor delivers
-  // against that order. Each delivery produces finished goods on the work order —
-  // which is also the goods coming back, so there is no separate receipt step.
-  kinds.push('purchaseOrder', 'purchaseDelivery')
+  // The service PR does not end the chain: it is ordered, the vendor delivers
+  // against that order, and finally bills for it. Each delivery produces finished
+  // goods on the work order — which is also the goods coming back, so there is no
+  // separate receipt step.
+  kinds.push('purchaseOrder', 'purchaseDelivery', 'purchaseInvoice')
 
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
 }
@@ -281,7 +288,7 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
  * purchase request, and the delivery from that order. The work order lists them
  * but never offers a Create button for them.
  */
-export const RAISED_ELSEWHERE: SubconDocKind[] = ['purchaseOrder', 'purchaseDelivery']
+export const RAISED_ELSEWHERE: SubconDocKind[] = ['purchaseOrder', 'purchaseDelivery', 'purchaseInvoice']
 
 /** Which documents a work order can raise the moment it starts. The goods
  *  receipt is deliberately excluded — it is raised when the vendor returns the

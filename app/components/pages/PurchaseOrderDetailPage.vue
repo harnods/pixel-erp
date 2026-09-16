@@ -88,6 +88,10 @@ const router = useRouter()
 function createPurchaseDelivery() {
   router.push({ path: '/purchase-deliveries/new', query: { fromPo: props.orderId } })
 }
+/** Open the invoice form against this order — the vendor's bill for it. */
+function createPurchaseInvoice() {
+  router.push({ path: '/purchase-invoices/new', query: { fromPo: props.orderId } })
+}
 function confirmDelete() {
   toast.notify({ variant: 'success', title: 'Purchase order deleted', rootProps: { class: 'toast-enterprise' } })
   closePurchaseOrder?.()
@@ -617,6 +621,7 @@ function goBack() { closePurchaseOrder?.() }
               <!-- The vendor delivers against this order; each delivery produces
                    finished goods on the work order it came from. -->
               <MpPopoverListItem v-if="!isRejected" @click="createPurchaseDelivery">Create purchase delivery</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isRejected" @click="createPurchaseInvoice">Create purchase invoice</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected">Edit</MpPopoverListItem>
               <MpPopoverListItem v-if="!isAwaitingApproval && !isRejected">Set as recurring</MpPopoverListItem>
               <MpPopoverListItem @click="duplicatePurchaseOrder?.(props.orderId, rejectionBanner)">Duplicate</MpPopoverListItem>

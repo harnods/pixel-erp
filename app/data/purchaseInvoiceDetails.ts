@@ -126,7 +126,9 @@ function buildLinked(invoice: PurchaseInvoice, idx: number): PILinkedTxn[] {
 }
 
 function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail {
-  const lineItems = buildItems(base, idx)
+  // An invoice created through the form carries its own lines; only seeded
+  // invoices fall back to the generator.
+  const lineItems: SILineItem[] = base.lineItems?.length ? base.lineItems : buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
   const totals: SalesOrderTotals = {
     subtotal,
@@ -144,7 +146,7 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
     billingAddress: pick(BILLING_ADDRESSES, idx),
     shipTo: pick(SHIP_TO, idx),
     paymentTerms: pick(PAYMENT_TERMS, idx),
-    referenceNo: `PO #${10090 + idx}`,
+    referenceNo: base.referenceNo ?? `PO #${10090 + idx}`,
     warehouse: pick(WAREHOUSES, idx),
     lineItems,
     message: 'Please deliver against the referenced purchase order. Confirm receipt on arrival.',
