@@ -112,6 +112,20 @@ export interface SubconDocStep {
   module: 'Purchases' | 'Warehouse'
 }
 
+/**
+ * The document type spelled out. The short tag is the chip in a cramped cell;
+ * this is what a Type column says, where there is room to name the transaction
+ * rather than make the reader expand an abbreviation.
+ */
+export const SUBCON_DOC_TYPE_LABEL: Record<SubconDocStep['tag'], string> = {
+  PR: 'Purchase Request',
+  PO: 'Purchase Order',
+  PD: 'Purchase Delivery',
+  PI: 'Purchase Invoice',
+  Transfer: 'Warehouse Transfer',
+  Receipt: 'Goods Receipt',
+}
+
 const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
   componentPr: {
     tag: 'PR', module: 'Purchases',

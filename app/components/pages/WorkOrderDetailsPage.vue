@@ -24,9 +24,13 @@ import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/compo
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
-  encodeSubconPrefill, subconVendorWarehouse,
+  encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
+import { purchaseRequests } from '~/data/purchaseRequests'
+import { purchaseOrders } from '~/data/purchaseOrders'
+import { purchaseDeliveries } from '~/data/purchaseDeliveries'
+import { purchaseInvoices } from '~/data/purchaseInvoices'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
@@ -150,6 +154,31 @@ const subconPlan = computed(() => {
 })
 
 /**
+ * A raised document's OWN status, read from the store it lives in, so the list
+ * reports where each transaction actually stands (an order awaiting its invoice,
+ * a delivery still in transit) rather than just restating that it was raised.
+ * Undefined when the record cannot be found — the row falls back to "Raised".
+ */
+function documentStatus(doc: { kind: string; id: string }): string | undefined {
+  switch (doc.kind) {
+    case 'purchaseOrder':
+      return purchaseOrders.find(o => o.id === doc.id)?.status
+    case 'purchaseDelivery':
+      // Fulfillment is the delivery's own progress; billing is the invoice's job.
+      return purchaseDeliveries.find(d => d.id === doc.id)?.fulfillmentStatus
+    case 'purchaseInvoice':
+      return purchaseInvoices.find(i => i.id === doc.id)?.status
+    case 'transfer':
+    case 'rawTransfer':
+    case 'receipt':
+      return warehouseTransfers.find(tr => tr.id === doc.id)?.status
+    default:
+      // Every remaining kind is one of the purchase-request variants.
+      return purchaseRequests.find(r => r.id === doc.id)?.status
+  }
+}
+
+/**
  * Every transaction in this work order's run, one row each — the Transactions
  * tab's list. Flat rather than grouped by thread: the tab has the room to read
  * the run document by document, and a step still to come sits in chain order
@@ -160,9 +189,11 @@ const subconTransactions = computed(() =>
     row.entries.map((entry, i) => ({
       key: `${row.key}-${entry.kind}-${entry.doc?.id ?? `planned-${i}`}`,
       tag: entry.tag,
+      type: SUBCON_DOC_TYPE_LABEL[entry.tag],
       title: entry.title,
       module: row.module,
       doc: entry.doc,
+      status: entry.doc ? documentStatus(entry.doc) : undefined,
     })),
   ),
 )
@@ -1388,7 +1419,7 @@ function suppressFabClick(e: MouseEvent) {
             <table class="wod-table">
               <thead>
                 <tr>
-                  <th class="wod-th wod-th--tx-type">{{ t('Type') }}</th>
+                  <th class="wod-th">{{ t('Type') }}</th>
                   <th class="wod-th">{{ t('Transaction no.') }}</th>
                   <th class="wod-th">{{ t('Module') }}</th>
                   <th class="wod-th">{{ t('Date') }}</th>
@@ -1397,24 +1428,26 @@ function suppressFabClick(e: MouseEvent) {
               </thead>
               <tbody>
                 <tr v-for="tx in subconTransactions" :key="tx.key" class="wod-tr">
-                  <td class="wod-td">
-                    <span class="wod-subcon-doc__tag" :class="`wod-subcon-doc__tag--${tx.tag.toLowerCase()}`">{{ t(tx.tag) }}</span>
-                  </td>
+                  <td class="wod-td">{{ t(tx.type) }}</td>
                   <td class="wod-td">
                     <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
                     <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
                   </td>
                   <td class="wod-td">{{ tx.module }}</td>
                   <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
+                  <!-- A raised transaction shows its own status, badged the same
+                       way its index and detail pages badge it. A step not raised
+                       yet has no record to have a status, so it says where the
+                       chain stands instead. -->
                   <td class="wod-td">
+                    <ErpStatusBadge v-if="tx.status" :status="tx.status" />
+                    <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
                     <span
+                      v-else
                       class="wod-subcon-status"
-                      :class="tx.doc ? 'wod-subcon-status--done'
-                        : subconStarted ? 'wod-subcon-status--ready'
-                        : 'wod-subcon-status--blocked'"
+                      :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
                     >
-                      {{ tx.doc ? t('Raised')
-                        : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                      {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
                     </span>
                   </td>
                 </tr>
@@ -1693,8 +1726,6 @@ function suppressFabClick(e: MouseEvent) {
   color: var(--mp-text-secondary);
   pointer-events: none;
 }
-/* The tag column only ever holds a 2-3 letter chip. */
-.wod-th--tx-type { width: var(--mp-sizes-20, 80px); }
 
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
