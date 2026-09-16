@@ -293,28 +293,29 @@ const whReplenishment = computed(() => {
  * to overwrite it. The full arithmetic stays on the cell's hover title; these are
  * the short forms that fit a 130px column.
  */
+/**
+ * Annotate the EXCEPTION, not the rule.
+ *
+ * Labelling every cell "inherited" / "calculated" put the same two words under
+ * all nine rows and doubled the table's height to state something true of almost
+ * every row — noise, not information. In a table the default is carried once, in
+ * the caption above; only a row that DEPARTS from it earns a word of its own.
+ * The full arithmetic stays on each cell's hover title either way.
+ */
 function whSafetySub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  if (whEditing.value) {
-    // While editing, the useful fact is what an empty box falls back TO.
-    return r.safetyDaysSource === 'sku-warehouse'
-      ? `set here · empty = ${r.safetyDays}`
-      : `inherited ${r.safetyDays}`
-  }
-  return r.safetyDaysSource === 'sku-warehouse' ? 'set for this warehouse' : 'inherited'
+  return r.safetyDaysSource === 'sku-warehouse' ? 'custom' : ''
 }
 
 function whMinStockSub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  if (whEditing.value) {
-    return r.recommended === null
-      ? 'no sales here — not calculated'
-      : `calculated ${r.recommended}`
-  }
-  if (r.recommended === null && r.source === 'none') return 'not calculated — no sales here'
-  return r.source === 'calculated' ? 'calculated' : 'set by you'
+  // Two genuine departures: a floor somebody typed, and one that could not be
+  // calculated at all. Everything else is the documented default.
+  if (r.source === 'sku-warehouse' || r.source === 'sku') return 'custom'
+  if (r.recommended === null) return 'not calculated'
+  return ''
 }
 
 /** Hover explanation for the safety-days cell — where the value comes from. */
@@ -1147,6 +1148,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <!-- Stock by warehouses — shown for every product, alongside the batch /
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
+            <p v-if="pagedWarehouseStock.length" class="pd-table-caption">
+              Min. stock is calculated as daily sales × (lead time + safety days), per warehouse.
+              Leave a field empty to inherit the product default; type to set this warehouse's own.
+            </p>
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
                 <button
@@ -1428,6 +1433,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors WarehouseDetailsPage's tab tables) ── */
 /* Where a number came from, under the number itself — muted so the figure still
    reads first and the provenance is there when questioned. */
+.pd-table-caption {
+  margin: 0 0 8px;
+  max-width: 72ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mp-text-subdued, #6b7280);
+}
+
 .pd-cell-sub {
   display: block;
   font-size: 11px;
