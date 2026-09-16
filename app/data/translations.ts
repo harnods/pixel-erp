@@ -2058,10 +2058,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Min. stock by category': 'Stok minimum per kategori',
   'No floor': 'Tanpa batas',
   'blank = no floor': 'kosong = tanpa batas',
-  'Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.':
-    'Dipakai saat gudang belum punya penjualan untuk dihitung dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
-  'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
-    'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
+  'Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. 0 means no floor at all.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, atau tidak ada penjualan dalam periode ke belakang, dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
+  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a floor from. 0 means no floor.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung batas. 0 berarti tanpa batas.',
   'category default': 'standar kategori',
   'from the category or company default.': 'dari standar kategori atau perusahaan.',
   'Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.':
@@ -2163,10 +2163,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Min. stock by category': 'Stok minimum per kategori',
   'No floor': 'Tanpa batas',
   'blank = no floor': 'kosong = tanpa batas',
-  'Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.':
-    'Dipakai saat gudang belum punya penjualan untuk dihitung dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
-  'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
-    'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
+  'Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. 0 means no floor at all.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, atau tidak ada penjualan dalam periode ke belakang, dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
+  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a floor from. 0 means no floor.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung batas. 0 berarti tanpa batas.',
   'category default': 'standar kategori',
   'from the category or company default.': 'dari standar kategori atau perusahaan.',
   'Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.':

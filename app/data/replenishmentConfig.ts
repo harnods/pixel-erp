@@ -16,9 +16,6 @@ import { clearStore, readStore, writeStore } from './replenishmentStore'
 
 const STORAGE_KEY = 'erp-db:replenishment-config'
 
-/** Which documents count as demand. Only 'shipped-outbound' is wired in MVP. */
-export type ReplDemandBasis = 'shipped-outbound' | 'shipped-plus-open' | 'manual-only'
-
 /** Whether a SKU sitting EXACTLY at its reorder point is due (PRD US-010 AC-02). */
 export type ReplBoundaryMode = 'inclusive' | 'exclusive'
 
@@ -52,7 +49,6 @@ export interface ReplWindowWeight {
 }
 
 export interface ReplenishmentConfig {
-  demandBasis: ReplDemandBasis
   /** Flat lookback average (spec §2.2) vs US-004's weighted windows. */
   demandMode: ReplDemandMode
   /**
@@ -130,7 +126,6 @@ export interface ReplenishmentConfig {
 }
 
 export const REPL_DEFAULTS: ReplenishmentConfig = {
-  demandBasis: 'shipped-outbound',
   demandMode: 'lookback',
   lookbackDays: 60,
   lookbackDaysByCategory: {},

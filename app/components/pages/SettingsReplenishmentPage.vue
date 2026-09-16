@@ -139,11 +139,6 @@ function resetToDefaults() {
   error.value = ''
 }
 
-const BASIS_OPTIONS = [
-  { id: 'shipped-outbound', name: 'Shipped outbound orders' },
-  { id: 'shipped-plus-open', name: 'Shipped and open orders' },
-  { id: 'manual-only', name: 'Manual demand only' },
-]
 const DEMAND_MODE_OPTIONS = [
   // The spec's own rule (§2.2) leads; US-004's weighting stays available for a
   // business whose demand shifted recently and should be read that way.
@@ -184,26 +179,6 @@ const BOUNDARY_OPTIONS = [
       <p v-if="!canEdit" class="rs-hint">{{ t('Only an admin can change replenishment settings.') }}</p>
 
       <h3 class="rs-sub">{{ t('Demand') }}</h3>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Demand basis') }}</span>
-          <span class="rs-label-desc">{{ t('Which documents count as demand when velocity is calculated.') }}</span>
-        </div>
-        <div class="rs-control">
-          <MpSelect
-            v-if="isEditing"
-            id="rs-basis"
-            v-model="draft.demandBasis"
-            :class="css({ width: '280px' })"
-          >
-            <option v-for="o in BASIS_OPTIONS" :key="o.id" :value="o.id">{{ t(o.name) }}</option>
-          </MpSelect>
-          <span v-else class="rs-value">
-            {{ t(BASIS_OPTIONS.find(o => o.id === committed.demandBasis)?.name ?? committed.demandBasis) }}
-          </span>
-        </div>
-      </div>
 
       <div class="rs-field">
         <div class="rs-label">
@@ -348,7 +323,7 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock') }}</span>
-          <span class="rs-label-desc">{{ t('Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.') }}</span>
+          <span class="rs-label-desc">{{ t('Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. 0 means no floor at all.') }}</span>
         </div>
         <div class="rs-control">
           <MpInputGroup v-if="isEditing" id="rs-minstock-global">
@@ -363,7 +338,7 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock by category') }}</span>
-          <span class="rs-label-desc">{{ t('Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.') }}</span>
+          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a floor from. 0 means no floor.') }}</span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">

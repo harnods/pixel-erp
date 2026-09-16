@@ -28,6 +28,8 @@
  * agree and a refresh never changes a number.
  */
 import { outgoingOrders } from './outgoing'
+import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
+import { stockAdjustments, adjustmentLineItems } from './stockAdjustments'
 import { orderSkuLines, productBySku, warehouseOrderPool, warehouseProducts } from './inventory'
 import { warehouses } from './warehouses'
 import { shiftDays } from './master'
@@ -39,13 +41,21 @@ export const REPL_HISTORY_DAYS = 120
 
 export type DemandDaySource = 'document' | 'modelled'
 
+/** Which kind of movement issued the stock — demand counts all of them. */
+export type DemandDocKind = 'outbound' | 'transfer' | 'adjustment'
+
 export interface DemandDoc {
-  /** outgoingOrders.id */
+  /** Source record id. */
   id: string
-  /** real dispatch number, e.g. OUT-2026-0007 */
+  /** Real document number, e.g. OUT-2026-0007 or Warehouse Transfer #0090. */
   number: string
-  /** real source reference, e.g. "Sales Order #10123" or "#SO060" */
-  salesNo: string
+  /**
+   * Sales reference, e.g. "Sales Order #10123". Outbound dispatches only — a
+   * transfer or a write-off has no customer behind it, and inventing one would
+   * make the trust drawer cite a document that does not exist.
+   */
+  salesNo?: string
+  kind: DemandDocKind
   date: string
   qty: number
 }
@@ -173,10 +183,22 @@ function documentIndex(asOf: string): Map<string, Map<string, DemandDoc[]>> {
   const index = new Map<string, Map<string, DemandDoc[]>>()
   const earliest = shiftDays(asOf, -(REPL_HISTORY_DAYS - 1))
 
+  /** File one issue against a SKU-warehouse-day. */
+  const record = (sku: string, warehouseId: string, date: string, doc: DemandDoc) => {
+    const pairKey = `${sku}::${warehouseId}`
+    const byDate = index.get(pairKey) ?? new Map<string, DemandDoc[]>()
+    const list = byDate.get(date) ?? []
+    list.push(doc)
+    byDate.set(date, list)
+    index.set(pairKey, byDate)
+  }
+  const inWindow = (date?: string): date is string =>
+    !!date && date >= earliest && date <= asOf
+
   for (const order of outgoingOrders) {
     if (order.status !== 'completed' && order.status !== 'partially shipped') continue
     const date = order.shippedDate
-    if (!date || date < earliest || date > asOf) continue
+    if (!inWindow(date)) continue
 
     for (const line of orderSkuLines(order)) {
       // A partially-shipped order must never cite more units than actually left the
@@ -185,12 +207,43 @@ function documentIndex(asOf: string): Map<string, Map<string, DemandDoc[]>> {
       const qty = shippedForSku !== undefined ? Math.min(line.qty, shippedForSku) : line.qty
       if (qty <= 0) continue
 
-      const pairKey = `${line.sku}::${order.warehouseId}`
-      const byDate = index.get(pairKey) ?? new Map<string, DemandDoc[]>()
-      const list = byDate.get(date) ?? []
-      list.push({ id: order.id, number: order.number, salesNo: order.salesNo, date, qty })
-      byDate.set(date, list)
-      index.set(pairKey, byDate)
+      record(line.sku, order.warehouseId, date, {
+        id: order.id, number: order.number, salesNo: order.salesNo, kind: 'outbound', date, qty,
+      })
+    }
+  }
+
+  // ── Everything else that leaves a warehouse ────────────────────────────────
+  // Demand is what a location ISSUED, not what a particular document type says.
+  // A transfer out and a write-off both remove stock that has to be replaced, so
+  // counting only outbound orders understates how fast a warehouse drains — and
+  // understated demand means a reorder point set too low, which is the failure
+  // this feature exists to prevent.
+
+  // A transfer is demand at its ORIGIN: those units left and the origin has to
+  // replace them. It is not counted at the destination, where it is supply.
+  for (const t of warehouseTransfers) {
+    if (t.status !== 'completed' && t.status !== 'in transit') continue
+    if (!inWindow(t.date)) continue
+    for (const line of transferLineItems(t)) {
+      if (line.qty <= 0) continue
+      record(line.sku, t.originId, t.date, {
+        id: t.id, number: t.number, kind: 'transfer', date: t.date, qty: line.qty,
+      })
+    }
+  }
+
+  // Only adjustments that REDUCED stock. A positive correction is a find, not a
+  // sale, and counting it would make demand negative for that day.
+  for (const a of stockAdjustments) {
+    if (a.status !== 'completed' && a.status !== 'closed') continue
+    if (!inWindow(a.date)) continue
+    for (const line of adjustmentLineItems(a)) {
+      const out = -line.difference
+      if (out <= 0) continue
+      record(line.sku, a.warehouseId, a.date, {
+        id: a.id, number: a.number, kind: 'adjustment', date: a.date, qty: out,
+      })
     }
   }
 

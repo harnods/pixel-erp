@@ -24,6 +24,8 @@ import {
 } from '~/data/demandHistory'
 import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import { outgoingOrders } from '~/data/outgoing'
+import { warehouseTransfers } from '~/data/warehouseTransfers'
+import { stockAdjustments, adjustmentLineItems } from '~/data/stockAdjustments'
 import { orderSkuLines, warehouseOrderPool, warehouseProducts } from '~/data/inventory'
 import { warehouses } from '~/data/warehouses'
 
@@ -80,30 +82,74 @@ describe('demandHistory — series shape', () => {
 })
 
 describe('demandHistory — cited documents are real', () => {
-  const byId = new Map(outgoingOrders.map((o) => [o.id, o]))
+  const orderById = new Map(outgoingOrders.map((o) => [o.id, o]))
+  const transferById = new Map(warehouseTransfers.map((t) => [t.id, t]))
+  const adjustmentById = new Map(stockAdjustments.map((a) => [a.id, a]))
 
-  it('every citation resolves to a real dispatch in the same warehouse, for that SKU', () => {
+  it('every citation resolves to a real document in the same warehouse, for that SKU', () => {
+    // Demand is everything that ISSUED stock, so a citation may be a dispatch, a
+    // transfer out, or a write-off. Each is checked against its own source —
+    // whichever kind it claims to be must actually exist and say what it says.
     let citations = 0
+    const seenKinds = new Set<string>()
+
     for (const { sku, warehouseId } of allPairs()) {
       for (const doc of realDocsFor(sku, warehouseId, REPL_HISTORY_DAYS)) {
         citations++
-        const order = byId.get(doc.id)
-        expect(order, `cited ${doc.number} does not exist`).toBeTruthy()
-        expect(order!.warehouseId).toBe(warehouseId)
-        expect(order!.number).toBe(doc.number)
-        expect(order!.salesNo).toBe(doc.salesNo)
-        expect(order!.shippedDate).toBe(doc.date)
-        // The SKU really is on this order's lines...
-        const line = orderSkuLines(order!).find((l) => l.sku === sku)
-        expect(line, `${doc.number} has no line for SKU ${sku}`).toBeTruthy()
-        // ...and we never claim more units than the document moved.
+        seenKinds.add(doc.kind)
         expect(doc.qty).toBeGreaterThan(0)
-        expect(doc.qty).toBeLessThanOrEqual(line!.qty)
+
+        if (doc.kind === 'outbound') {
+          const order = orderById.get(doc.id)
+          expect(order, `cited ${doc.number} does not exist`).toBeTruthy()
+          expect(order!.warehouseId).toBe(warehouseId)
+          expect(order!.number).toBe(doc.number)
+          expect(order!.salesNo).toBe(doc.salesNo)
+          expect(order!.shippedDate).toBe(doc.date)
+          const line = orderSkuLines(order!).find((l) => l.sku === sku)
+          expect(line, `${doc.number} has no line for SKU ${sku}`).toBeTruthy()
+          // Never claim more units than the document moved.
+          expect(doc.qty).toBeLessThanOrEqual(line!.qty)
+        } else if (doc.kind === 'transfer') {
+          const t = transferById.get(doc.id)
+          expect(t, `cited ${doc.number} does not exist`).toBeTruthy()
+          // Counted at the ORIGIN — those units left there.
+          expect(t!.originId).toBe(warehouseId)
+          expect(t!.number).toBe(doc.number)
+          expect(t!.date).toBe(doc.date)
+          // A transfer has no customer behind it, so no sales reference.
+          expect(doc.salesNo).toBeUndefined()
+        } else {
+          const a = adjustmentById.get(doc.id)
+          expect(a, `cited ${doc.number} does not exist`).toBeTruthy()
+          expect(a!.warehouseId).toBe(warehouseId)
+          expect(a!.number).toBe(doc.number)
+          expect(a!.date).toBe(doc.date)
+          expect(doc.salesNo).toBeUndefined()
+        }
       }
     }
+
     // The whole point of Layer A is that it exists — if this is 0, the ledger is
     // pure fiction and the trust drawer has nothing real to show.
     expect(citations).toBeGreaterThan(0)
+    // And more than one kind reaches it, or "demand is every issue" is aspiration.
+    expect(seenKinds.size).toBeGreaterThan(1)
+  })
+
+  it('a positive stock correction is never counted as demand', () => {
+    // Finding stock is not selling it. Counting a positive adjustment would make
+    // demand rise on a day nothing left the warehouse.
+    for (const { sku, warehouseId } of allPairs()) {
+      for (const doc of realDocsFor(sku, warehouseId, REPL_HISTORY_DAYS)) {
+        if (doc.kind !== 'adjustment') continue
+        const a = adjustmentById.get(doc.id)!
+        const line = adjustmentLineItems(a).find((l) => l.sku === sku)
+        expect(line).toBeTruthy()
+        expect(line!.difference).toBeLessThan(0)
+        expect(doc.qty).toBe(-line!.difference)
+      }
+    }
   })
 
   it('a document day carries docs; a modelled day never does', () => {

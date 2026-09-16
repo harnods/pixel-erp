@@ -268,7 +268,11 @@ const longestWindow = computed(() =>
                 <tr v-for="doc in documents" :key="`${doc.id}-${doc.date}`">
                   <td class="rp-bd-td">{{ formatDate(doc.date) }}</td>
                   <td class="rp-bd-td">{{ doc.number }}</td>
-                  <td class="rp-bd-td rp-bd-td--sub">{{ doc.salesNo }}</td>
+                  <!-- Only a dispatch has a sales reference; a transfer or a
+                       write-off says what it was instead of showing a blank. -->
+                  <td class="rp-bd-td rp-bd-td--sub">
+                    {{ doc.salesNo ?? (doc.kind === 'transfer' ? t('Warehouse transfer') : t('Stock adjustment')) }}
+                  </td>
                   <td class="rp-bd-td rp-bd-td--num">{{ num(doc.qty) }} {{ row.unit }}</td>
                 </tr>
               </tbody>
