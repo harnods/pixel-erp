@@ -6,11 +6,11 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, MpButtonGroup, MpText, toast,
+  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, MpButtonGroup, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
@@ -947,33 +947,20 @@ onUnmounted(() => { footerObserver?.disconnect() })
     </MpPopover>
 
     <!-- ── Batch attribute change warning (edit mode, Batch Attribute PRD story 6) ──
-         A confirmation, not destructive: primary Save changes + ghost Cancel. -->
-    <MpModal
-      id="np-attribute-confirm" :is-open="attributeConfirmOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="attributeConfirmOpen = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>{{ t('Save batch attribute changes?') }}</MpModalHeader>
-        <MpModalBody>
-          <MpText>{{ t('Existing batches will need to be manually updated to have the new attribute information.') }}</MpText>
-          <MpText
-            v-if="existingBatchCount > 0"
-            :class="css({ marginTop: '2', color: 'var(--mp-colors-text-secondary, #626b79)' })"
-          >
-            {{ existingBatchCount === 1
-              ? t('This product has 1 batch.')
-              : t('This product has {count} batches.').replace('{count}', String(existingBatchCount)) }}
-          </MpText>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButtonGroup>
-            <MpButton variant="ghost" is-rounded @click="attributeConfirmOpen = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmAttributeChange">{{ t('Save changes') }}</MpButton>
-          </MpButtonGroup>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
+         A confirmation, not destructive: primary Save changes + ghost Cancel. The
+         shared ConfirmModal also gets the close behaviour right by construction
+         (rule/modal-drawer-close-explicit-only). -->
+    <ConfirmModal
+      v-model:is-open="attributeConfirmOpen"
+      :title="t('Save batch attribute changes?')"
+      :description="t('Existing batches will need to be manually updated to have the new attribute information.')"
+      :note="existingBatchCount === 0 ? '' : existingBatchCount === 1
+        ? t('This product has 1 batch.')
+        : t('This product has {count} batches.').replace('{count}', String(existingBatchCount))"
+      :confirm-label="t('Save changes')"
+      :is-danger="false"
+      @confirm="confirmAttributeChange"
+    />
   </div>
 </template>
 

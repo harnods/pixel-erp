@@ -20,12 +20,16 @@ withDefaults(defineProps<{
    *  so a confirmation about several things stays scannable instead of running
    *  the same sentence together N times. */
   items?: string[]
+  /** A secondary line under the description — scope or context for the decision
+   *  ("This product has 4 batches."), not part of the main sentence. */
+  note?: string
   confirmLabel?: string
   cancelLabel?: string
   isDanger?: boolean
 }>(), {
   description: '',
   items: () => [],
+  note: '',
   confirmLabel: 'Delete',
   cancelLabel: 'Cancel',
   isDanger: true,
@@ -58,6 +62,7 @@ function confirm() { emit('confirm'); close() }
         <ul v-if="items.length" class="cm-items">
           <li v-for="item in items" :key="item">{{ item }}</li>
         </ul>
+        <MpText v-if="note" class="cm-note">{{ note }}</MpText>
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup>
@@ -81,4 +86,5 @@ function confirm() { emit('confirm'); close() }
 }
 .cm-items li { display: list-item; }
 .cm-items li + li { margin-top: var(--mp-spacing-1); }
+.cm-note { display: block; margin-top: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 </style>
