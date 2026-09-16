@@ -162,6 +162,14 @@
 - **Activity log:** on save, append a product activity entry with the selected attributes and required flags (6a).
 - **Product detail (`ProductDetailsPage.vue`):** add a read-only **Batch attributes** content-list row in the inventory section, e.g. "Expiry date (required), Vendor, Grade" (`rule/detail-contentlist`).
 
+**Block revised 16 Sep 2026** (design feedback on the built form):
+- Each row's select carries its own label — **Attribute 1 / 2 / 3** — instead of an unlabelled field.
+- The select is **one column wide (270px)**, matching Min. stock / Track stock by in the row above, rather than stretching the full form width.
+- "Up to 3 attributes recorded on every batch" now sits **under the Batch attributes heading as its description**; the inline error stays below the rows (`rule/form-errors-inline`) instead of replacing that caption.
+- Required + remove sit in one trailing box the height of the control, so they stay on the select's line now the field has a label.
+- **Batch attributes** is an `<h3>` (14px semibold, like the other form sub-sections), not a plain paragraph.
+- Spacing follows the tokens in `docs/patterns/Form.md`: **24px** above the heading (the sub-section gap, on top of the toggle block's 12px), 4px heading → description, 12px before the first field, **20px** (`--mp-spacing-5`) between stacked rows and before *Add attribute*, 8px for the inline error, 24px (`--mp-spacing-6`) from a field to its trailing controls.
+
 ### Phase 3 — Batch create / edit / view (story 7, 8)
 
 **Stock by batches tab (`ProductDetailsPage.vue:583`)**
@@ -179,13 +187,16 @@
   - Once the batch has stock movements, the field is read-only with a secondary caption: "Batch number can't be changed after the batch is used in a transaction." / "Nomor batch tidak dapat diubah setelah batch digunakan dalam transaksi." Run the copy through uxw-mekari.
 - Description: optional.
 - One field per product attribute, in config order. Required ones get `is-required`; optional ones may be empty.
-  - `expiry_date` (A2): a pill segmented control **Date | Month** (`rule/segmented-control-pill`) above one `MpDatePicker`.
+  - `expiry_date` (A2): **revised 16 Sep 2026** — the precision switch moved *inside* the field, built on Pixel's **input with prefix** pattern (`MpInputGroup` + `MpInputLeftAddon has-background`, docs.mekari.design/patterns/input), with the addon carrying a Date / Month dropdown instead of static text — the same composition as the global-discount unit field in `PurchaseOrderFormPage.vue`. It replaces the pill segmented control that sat beside the label.
+    - `MpDatePicker` renders its own root inside the group, so two scoped overrides do what Pixel applies to a plain `MpInput`: the control consumes Pixel's own `--mp-input-offset--left`, and the left addon gets a `min-width` so the chip measures the same for "Date" and "Month" (Pixel reads that offset once, on mount).
+    - The overrides target the **left** addon only — the picker's own right addon (the calendar icon) keeps its default transparent look.
     - Date → `type="date"`, `format="DD/MM/YYYY"`. Month → `type="month"`, `format="MM/YYYY"`. `value-type="format"` in both, per `rule/date-picker-variants`.
     - Switching precision clears the value rather than guessing a day.
     - In edit, the segment starts from the stored value's precision.
   - `manufacturing_date` / `best_before_date`: `MpDatePicker` (`rule/date-picker-variants`).
   - `supplier` → label **Vendor**: vendor autocomplete showing vendor names (`rule/select-quick-add` is not needed; creating vendors is out of scope).
   - `grade`: autocomplete over **active** grades, shown as "A · Rank 1".
+  - **Field width revised 16 Sep 2026:** every field fills the modal body, selects included. Deviation from `rule/form-select-half` (a select is normally half width), asked for by design; authority: explicit user goal (`pixel-erp-design` Step 0).
 - No qty / price / warehouse / location fields (story 8: master data only). A one-line caption notes stock comes in via stock adjustment.
 - **Edit mode (story 7):**
   - Only attributes in the *current* config are shown. Values for removed attributes are hidden and purged on save.
@@ -238,6 +249,9 @@
     - Any invalid → a result view on the page: summary, failed-row table, Download error file, Import again.
   - The failed-row list is a small hand-rolled table, not `ErpTablePage`. It is an unpaginated result list, not an index.
   - Export writes the same columns as the template, so an export can be edited and imported back.
+  - **Filter bar revised 16 Sep 2026** (design feedback). Left group: **New batch** alone, flush with the table's left edge. Right group, in order: **Show archived batches** · **Export** + **Import** as ghost icon buttons (`download` / `upload`) in one `MpButtonGroup` (`rule/filter-bar-icon-group`) · **search** · **Print all barcode**.
+    - **Deviation from `rule/filter-bar-anatomy`** (search is normally the rightmost element, filters sit in the left group): asked for by design — Print all barcode trails the search pill and the archived filter sits beside the tools. Authority: explicit user goal over the rule (`pixel-erp-design` Step 0).
+    - The Import icon carries an `aria-label` but no tooltip — a tooltip wrapper breaks a popover trigger (`rule/btn-icon-tooltip`'s kebab exception).
 
 ### Phase 5 — Vendor attribute in Purchase transactions (story 10)
 
@@ -250,7 +264,10 @@ Prerequisite: a batch drawer on `NewPurchaseDeliveryPage.vue` (and the purchase-
 Originally planned as a separate branch after Phases 0–4; built on `feat/batch-attribute` instead.
 
 **As built (Phase 5, 14 Sep 2026):** user chose the Purchase delivery form (not WMS receiving) and batches on delivery details. Built on `feat/batch-attribute`.
-- **Form:** `NewPurchaseDeliveryPage.vue` gets a **Batch** column. A batch-tracked line shows **Manage batch** (`rule/drawer-open-via-manage`), which opens `DeliveryBatchDrawer.vue` (`rule/drawer-custom-shell`).
+- **Form:** on `NewPurchaseDeliveryPage.vue`, a batch-tracked line shows **Manage batch** (`rule/drawer-open-via-manage`) **stacked under its Qty**, with the batch count above it — the same cell pattern as the work order's raw-materials table. It opens the shared **`ManageBatchDrawer.vue`**. (A separate Batch column was tried first and dropped, 16 Sep 2026.)
+  - **Revised 16 Sep 2026:** this first shipped as a purpose-built `DeliveryBatchDrawer.vue`; that component is deleted and the flow now runs as a new **`kind="purchase-delivery"`** inside the shared WMS drawer, so batches are managed in one place across WMS and Purchases.
+  - The kind sources its rows from the **product's batch records** (not warehouse stock, and never the Unassigned batch), adds a column per attribute the product uses (Vendor, Grade), prefills a new row's Vendor from the delivery, shows the story-10 vendor notes against an existing batch, and reuses the drawer's own target-qty stats (Line qty / Received qty / Remaining). Every other kind is untouched.
+  - Saving validates through the same `checkDeliveryBatches` the form uses, so the drawer and the form never disagree. `CommittedBatch` gained optional `batchId` + `attributes` for this.
   - In the drawer: pick existing batches or add new ones (batch number + the product's attributes) and split the line qty. Batch qty must add up to the line qty.
 - **Rules** live in `app/data/purchaseDeliveryBatches.ts` (`tests/purchase-delivery-batches.spec.ts`):
   - A new batch's Vendor follows the delivery vendor unless the user changed it.
@@ -261,7 +278,9 @@ Originally planned as a separate branch after Phases 0–4; built on `feat/batch
 - **Saved data:** `PurchaseDelivery.lines` keeps the entered lines with their batches. Delivery details shows each line's batches, linking to the batch page.
 - **Not built:**
   - Stock qty doesn't move into batches (a delivery is "in transit"; no inventory transaction is modelled).
-  - The expiry Date/Month switch isn't in the drawer (day precision only there).
+  - **Expiry precision (A2) is per row in the drawer too:** the expiry cell of a new batch row is Pixel's input-with-prefix group, the addon switching Date / Month, matching the batch form. Switching clears the value; a month stores `YYYY-MM`.
+  - **Column order for this kind:** Batch · Description · Expiry date · *(attribute columns)* · Received qty · Unit. The WMS kinds keep their own order (Expiry before Description) — the swap is scoped to `purchase-delivery`.
+  - The attribute selects follow `rule/table-form-cell-no-border` (no border of their own; the cell draws it), and the table widens so the extra columns scroll rather than colliding.
   - Purchase invoice create flow doesn't exist.
   - WMS receiving is unchanged.
 
