@@ -904,11 +904,76 @@ export interface WarehouseMinStock {
 }
 
 export interface MinStockRollup {
-  /** Σ of every warehouse's effective reorder point (D13). Display only. */
+  /**
+   * Σ of every warehouse's effective reorder point.
+   *
+   * Deliberately NOT surfaced as a product headline (decision D13a): it is exact
+   * arithmetic that nobody acts on, and read as a pooled requirement it is
+   * biased high — risk-pooling says central stock scales with √N, not N. Kept
+   * only so a caller that genuinely needs a visibility total can label it
+   * "aggregate of independent triggers". Never a trigger.
+   */
   total: number
   perWarehouse: WarehouseMinStock[]
   /** Warehouses whose figure is a stored floor rather than a calculated one. */
   notCalculatedCount: number
+}
+
+/** What a product/network view rolls up instead of a threshold (D13a). */
+export interface ProductActionRollup {
+  /** Warehouses where this SKU is due today. */
+  dueCount: number
+  /** Warehouses this SKU is stocked in. */
+  warehouseCount: number
+  /** Σ suggested order qty across the due warehouses, in stock units. */
+  totalSuggestedQty: number
+  unit: string
+  /** Due rows, so the caller can hand them straight to a Purchase Request. */
+  dueWarehouses: { warehouseId: string; warehouseName: string; qty: number }[]
+}
+
+/**
+ * The product-level rollup that is worth surfacing: the ACTION, not the threshold.
+ *
+ * Decision D13a. A summed min stock is a number no one can act on — you cannot
+ * order against it, and it misleads if read as a pooled requirement. What a buyer
+ * looking at one product across nine warehouses actually wants to know is where
+ * it is short and how much to ask for, which leads straight into raising a
+ * Purchase Request.
+ *
+ * Each warehouse's due/not-due is still decided entirely on its own reorder
+ * point; this only counts those decisions, never blends them.
+ */
+export function productActionRollup(
+  sku: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+  asOf: string = REPL_ASOF_ISO,
+): ProductActionRollup {
+  const dueWarehouses: ProductActionRollup['dueWarehouses'] = []
+  let warehouseCount = 0
+  let unit = ''
+
+  for (const wh of replenishmentWarehouses()) {
+    if (!warehouseProducts(wh.id).some((p) => p.sku === sku)) continue
+    warehouseCount++
+    const row = buildRow(sku, wh.id, cfg, asOf)
+    unit ||= row.unit
+    if (!row.flags.dueForReorder) continue
+    dueWarehouses.push({
+      warehouseId: wh.id,
+      warehouseName: wh.name,
+      // The need in stock units — the same figure the worklist and the PR carry.
+      qty: row.suggestion.rawQty,
+    })
+  }
+
+  return {
+    dueCount: dueWarehouses.length,
+    warehouseCount,
+    totalSuggestedQty: dueWarehouses.reduce((s, w) => s + w.qty, 0),
+    unit,
+    dueWarehouses,
+  }
 }
 
 /**

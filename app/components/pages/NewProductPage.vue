@@ -13,7 +13,7 @@ import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.v
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
-import { recommendedMinStock, warehouseMinStockRollup } from '~/data/replenishment'
+import { recommendedMinStock, productActionRollup } from '~/data/replenishment'
 import { effectiveSettings, getSkuOverride, saveSkuOverride } from '~/data/replenishmentSettings'
 import { getReplenishmentConfig } from '~/data/replenishmentConfig'
 import { leadTimeTierLabel } from '~/data/leadTimeHistory'
@@ -108,17 +108,17 @@ onMounted(() => {
  * product has none, and a fabricated floor is exactly what US-003 forbids.
  */
 /**
- * The product-level minimum stock: Σ of every warehouse's effective floor (D13).
+ * What the product level rolls up: the ACTION, not a threshold (decision D13a).
  *
- * Display only, and deliberately not an input. The warehouse level is the source
- * of truth and the only trigger; this aggregates bottom-up and never pushes back
- * down. Editing it would invert the direction the PRD fixes — and a company-wide
- * total is not a threshold anyone can act on, because stock is not fungible
- * across locations (US-025, no pooling).
+ * An earlier version showed Σ warehouse min stock here. It was exact and
+ * useless: nobody orders against a summed threshold, and read as a pooled
+ * requirement it is biased high — risk-pooling says central stock scales with
+ * √N, not N. What a buyer looking at one product across nine warehouses wants is
+ * where it is short and how much to ask for, which leads into raising a request.
  */
 const rollup = computed(() => {
   const s = sku.value.trim()
-  return s ? warehouseMinStockRollup(s) : null
+  return s ? productActionRollup(s) : null
 })
 
 const recommendation = computed(() => {
@@ -694,15 +694,16 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   </div>
                 </MpFormControl>
 
-                <!-- Product level is a DERIVED rollup (D13): Σ effective warehouse
-                     floors, display-only, never a trigger. -->
-                <MpFormControl id="np-min-stock" class="np-field-270">
+                <!-- The product level rolls up the ACTION, never a summed
+                     threshold (D13a). Each warehouse's due/not-due is still
+                     decided on its own reorder point; this only counts them. -->
+                <MpFormControl id="np-replenishment-status" class="np-field-270">
                   <MpFormLabel>
                     <span class="np-label-with-info">
-                      {{ t('Min. stock') }}
+                      {{ t('Replenishment') }}
                       <MpTooltip
-                        id="np-min-stock-tip"
-                        :label="t('Total of every warehouse\'s minimum stock. Set the figure on each warehouse — this total follows them, and is never used to trigger a reorder on its own.')"
+                        id="np-replenishment-tip"
+                        :label="t('Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum — stock in one warehouse cannot cover a shortage in another.')"
                         placement="top" use-portal
                       >
                         <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
@@ -711,36 +712,39 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   </MpFormLabel>
 
                   <p class="np-readonly-value">
-                    <template v-if="rollup && rollup.perWarehouse.length">
-                      {{ rollup.total.toLocaleString('id-ID') }} {{ unit || 'Pcs' }}
+                    <template v-if="rollup && rollup.warehouseCount">
+                      {{ t('Due in') }} {{ rollup.dueCount }} {{ t('of') }}
+                      {{ rollup.warehouseCount }} {{ t('warehouses') }}
                     </template>
                     <template v-else>—</template>
                   </p>
 
-                  <span v-if="rollup && rollup.perWarehouse.length" class="np-field-hint">
-                    {{ t('Across') }} {{ rollup.perWarehouse.length }} {{ t('warehouses') }}
+                  <span v-if="rollup && rollup.dueCount" class="np-field-hint">
+                    {{ rollup.totalSuggestedQty.toLocaleString('id-ID') }}
+                    {{ rollup.unit || unit }} {{ t('suggested in total') }}
                     <a class="np-field-link" @click="minStockDetailsOpen = !minStockDetailsOpen">
-                      {{ minStockDetailsOpen ? t('Hide breakdown') : t('Breakdown') }}
+                      {{ minStockDetailsOpen ? t('Hide') : t('Which warehouses?') }}
                       <MpIcon :name="minStockDetailsOpen ? 'chevrons-up' : 'chevrons-down'" size="sm" />
                     </a>
+                  </span>
+                  <span v-else-if="rollup && rollup.warehouseCount" class="np-field-hint">
+                    {{ t('Nothing to reorder right now.') }}
                   </span>
                   <span v-else class="np-field-hint">
                     {{ t('Appears once this product is stocked in a warehouse.') }}
                   </span>
 
-                  <div v-if="minStockDetailsOpen && rollup" class="np-field-details">
-                    <p v-for="w in rollup.perWarehouse" :key="w.warehouseId" class="np-field-details-row">
-                      {{ w.warehouseName }}: {{ w.value.toLocaleString('id-ID') }}
-                      <template v-if="w.source === 'calculated'">
-                        — {{ w.velocity.toFixed(2) }}/{{ t('day') }} ×
-                        ({{ w.leadTimeDays }} + {{ w.safetyDays }})
-                      </template>
-                      <template v-else-if="w.source === 'stored'">— {{ t('no sales here') }}</template>
-                      <template v-else>— {{ t('set for this warehouse') }}</template>
+                  <div v-if="minStockDetailsOpen && rollup?.dueCount" class="np-field-details">
+                    <p v-for="w in rollup.dueWarehouses" :key="w.warehouseId" class="np-field-details-row">
+                      {{ w.warehouseName }}: {{ w.qty.toLocaleString('id-ID') }} {{ rollup.unit || unit }}
                     </p>
                     <p class="np-field-details-row">
+                      <a class="np-field-link" @click="router.push('/replenishment')">
+                        {{ t('Open replenishment') }}
+                      </a>
+                      <span v-if="isEdit" class="np-field-sep">·</span>
                       <a v-if="isEdit" class="np-field-link" @click="openWarehouseStock">
-                        {{ t('Edit per warehouse') }}
+                        {{ t('Min. stock per warehouse') }}
                       </a>
                     </p>
                   </div>

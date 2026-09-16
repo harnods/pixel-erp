@@ -1,17 +1,23 @@
 /**
- * Product-level min. stock is a DERIVED rollup (PRD decision D13, US-024 AC-04).
+ * Product-level rollup semantics (PRD D13 / D13a / D14 / D15, US-024).
  *
- * D13 fixes the direction of travel, and these assert both halves of it:
- * aggregation runs bottom-up (warehouse → product) and inheritance runs
- * top-down, and the two must never be the same field. The product number is a
- * sum, display-only, and never a trigger — because stock is not fungible across
- * locations, so being above the company-wide total says nothing about whether
- * one warehouse is about to run out (US-025, no pooling).
+ * D13 fixed the direction of travel — the warehouse is the source of truth and
+ * the only trigger. D13a then dropped the summed product min stock as a surfaced
+ * figure: it is exact arithmetic nobody acts on, and read as a pooled
+ * requirement it is biased high (risk-pooling — central stock scales with √N,
+ * not N). What the product level surfaces instead is the ACTION: due in N of M
+ * warehouses, and the total qty to request.
+ *
+ * The sum still exists as a function, because a labelled visibility total is
+ * allowed; what is asserted here is that no surface uses it as a headline or a
+ * trigger.
  */
 import { describe, it, expect, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
-  warehouseMinStockRollup, isManualFloorTooLow, buildRow, replenishmentWorklist,
-  invalidateReplenishmentCaches, replenishmentWarehouses,
+  warehouseMinStockRollup, productActionRollup, isManualFloorTooLow, buildRow,
+  replenishmentWorklist, invalidateReplenishmentCaches, replenishmentWarehouses,
 } from '~/data/replenishment'
 import {
   saveSkuWarehouseOverride, saveSkuOverride, resetReplenishmentSettings,
@@ -163,5 +169,106 @@ describe('a manual floor well under the calculated one is flagged (VR-03)', () =
         expect(isManualFloorTooLow(w)).toBe(false)
       }
     }
+  })
+})
+
+describe('the product level rolls up the ACTION, not a threshold (D13a)', () => {
+  it('counts due warehouses and totals the qty to request', () => {
+    const sku = multiWarehouseSku()
+    const a = productActionRollup(sku, cfg)
+
+    expect(a.warehouseCount).toBeGreaterThan(1)
+    expect(a.dueCount).toBe(a.dueWarehouses.length)
+    expect(a.dueCount).toBeLessThanOrEqual(a.warehouseCount)
+    expect(a.totalSuggestedQty).toBe(a.dueWarehouses.reduce((s, w) => s + w.qty, 0))
+  })
+
+  it('each due warehouse was decided on its OWN reorder point, never the sum', () => {
+    const sku = multiWarehouseSku()
+    const a = productActionRollup(sku, cfg)
+    for (const w of a.dueWarehouses) {
+      const row = buildRow(sku, w.warehouseId, cfg)
+      expect(row.flags.dueForReorder).toBe(true)
+      expect(row.atp.available + row.atp.onOrder).toBeLessThanOrEqual(row.reorderPoint)
+      expect(w.qty).toBe(row.suggestion.rawQty)
+    }
+  })
+
+  it('the qty carried is the request need, matching what a PR would take', () => {
+    const sku = multiWarehouseSku()
+    for (const w of productActionRollup(sku, cfg).dueWarehouses) {
+      const row = buildRow(sku, w.warehouseId, cfg)
+      // rawQty, not the MOQ/pack-rounded purchase qty (decision D12).
+      expect(w.qty).toBe(row.suggestion.rawQty)
+    }
+  })
+
+  it('no product surface headlines the summed min stock (D13a VR-03)', () => {
+    // The sum remains available as a labelled visibility total, but the product
+    // form must not present it as the product's minimum stock.
+    const form = readFileSync(join(process.cwd(), 'app/components/pages/NewProductPage.vue'), 'utf8')
+    expect(form).not.toMatch(/warehouseMinStockRollup/)
+    expect(form).toMatch(/productActionRollup/)
+  })
+})
+
+describe('safety days cascades, it does not sum (D14)', () => {
+  it('a product default reaches every warehouse that has no override', () => {
+    const sku = multiWarehouseSku()
+    saveSkuOverride(sku, { safetyDays: 11 })
+    invalidateReplenishmentCaches()
+
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      expect(buildRow(sku, w.warehouseId, cfg).safetyDays).toBe(11)
+    }
+  })
+
+  it('a warehouse override beats the product default, and only there', () => {
+    const sku = multiWarehouseSku()
+    const all = warehouseMinStockRollup(sku, cfg).perWarehouse
+    const one = all[0]!
+
+    saveSkuOverride(sku, { safetyDays: 11 })
+    saveSkuWarehouseOverride(sku, one.warehouseId, { safetyDays: 30 })
+    invalidateReplenishmentCaches()
+
+    expect(buildRow(sku, one.warehouseId, cfg).safetyDays).toBe(30)
+    for (const w of all.slice(1)) {
+      expect(buildRow(sku, w.warehouseId, cfg).safetyDays).toBe(11)
+    }
+  })
+
+  it('safety days is never summed across warehouses', () => {
+    // The opposite of the reorder-point quantity: it is a time parameter, so no
+    // warehouse ever carries the total of the others.
+    const sku = multiWarehouseSku()
+    saveSkuOverride(sku, { safetyDays: 5 })
+    invalidateReplenishmentCaches()
+    const perWarehouse = warehouseMinStockRollup(sku, cfg).perWarehouse
+    const summed = perWarehouse.length * 5
+    for (const w of perWarehouse) {
+      expect(buildRow(sku, w.warehouseId, cfg).safetyDays).toBe(5)
+      expect(buildRow(sku, w.warehouseId, cfg).safetyDays).not.toBe(summed)
+    }
+  })
+})
+
+describe('every warehouse always resolves to an effective value (D15)', () => {
+  it('own override → product default → computed, with no gaps', () => {
+    // D15 keeps the warehouse-level effective value as the single read-model WMS
+    // reads, so there must never be a warehouse without one.
+    const sku = multiWarehouseSku()
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      expect(typeof w.value).toBe('number')
+      expect(Number.isFinite(w.value)).toBe(true)
+      expect(['sku-warehouse', 'sku', 'calculated', 'stored']).toContain(w.source)
+    }
+  })
+
+  it('there is no company-level product-vs-warehouse mode switch', () => {
+    // D15 VR-04 — the cascade serves both, so no toggle should exist to forbid
+    // mixing them.
+    const cfgSrc = readFileSync(join(process.cwd(), 'app/data/replenishmentConfig.ts'), 'utf8')
+    expect(cfgSrc).not.toMatch(/minStockLevel|minStockMode|productVsWarehouse/i)
   })
 })

@@ -2035,6 +2035,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
   // D13 — product level is a derived rollup; the setup default is a separate field.
+  'Due in': 'Perlu dipesan di',
+  'of': 'dari',
+  'suggested in total': 'disarankan secara total',
+  'Which warehouses?': 'Gudang mana?',
+  'Hide': 'Sembunyikan',
+  'Nothing to reorder right now.': 'Tidak ada yang perlu dipesan saat ini.',
+  'Open replenishment': 'Buka replenishment',
+  'Min. stock per warehouse': 'Stok minimum per gudang',
+  'Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum — stock in one warehouse cannot cover a shortage in another.':
+    'Tiap gudang punya stok minimum sendiri dan menentukan sendiri perlu memesan atau tidak. Tidak ada stok minimum tingkat perusahaan — stok di satu gudang tidak bisa menutup kekurangan di gudang lain.',
   'Across': 'Di',
   'warehouses': 'gudang',
   'Breakdown': 'Rincian',
@@ -2118,6 +2128,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
   // D13 — product level is a derived rollup; the setup default is a separate field.
+  'Due in': 'Perlu dipesan di',
+  'of': 'dari',
+  'suggested in total': 'disarankan secara total',
+  'Which warehouses?': 'Gudang mana?',
+  'Hide': 'Sembunyikan',
+  'Nothing to reorder right now.': 'Tidak ada yang perlu dipesan saat ini.',
+  'Open replenishment': 'Buka replenishment',
+  'Min. stock per warehouse': 'Stok minimum per gudang',
+  'Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum — stock in one warehouse cannot cover a shortage in another.':
+    'Tiap gudang punya stok minimum sendiri dan menentukan sendiri perlu memesan atau tidak. Tidak ada stok minimum tingkat perusahaan — stok di satu gudang tidak bisa menutup kekurangan di gudang lain.',
   'Across': 'Di',
   'warehouses': 'gudang',
   'Breakdown': 'Rincian',
