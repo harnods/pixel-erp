@@ -1184,8 +1184,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel value="warehouses">
             <p v-if="pagedWarehouseStock.length" class="pd-table-caption">
               Min. stock is calculated per warehouse as daily sales × (lead time + safety days).
-              Leave a field empty to keep it calculated or inherited; type to set this
-              warehouse's own, and it will be marked <span class="pd-caption-mark">custom</span>.
+              A figure you type is marked&nbsp;<span class="pd-caption-mark">custom</span> and
+              replaces the calculation; an empty field keeps it calculated or inherited.
             </p>
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
@@ -1489,7 +1489,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 
 /* Echoes the in-table marker so the caption's word is recognisably the same. */
-.pd-caption-mark { color: var(--mp-text-default, #374151); font-weight: 500; }
+.pd-caption-mark {
+  color: var(--mp-text-default, #374151);
+  font-weight: 500;
+  white-space: nowrap;
+}
 
 .pd-cell-link {
   margin-left: 6px;
