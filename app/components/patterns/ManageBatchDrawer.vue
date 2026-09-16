@@ -2177,7 +2177,7 @@ function fmtNum(n: number | null): string {
    for the chip AND the whole date; the WMS kinds keep the narrower 172px. */
 .mbd-table--delivery .mbd-col-expiry { width: 264px; }
 .mbd-td--attr :deep(.mp-input__root),
-.mbd-td--attr :deep(.mp-input__control) { border: none !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important; }
+.mbd-td--attr :deep(.mp-input__control) { border: none !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important; } /* pixel-police-allow-shadow: this REMOVES the control's shadow, the cell draws the border */
 /* Fixed, not min-: Pixel measures the addon once, so a wider label ("Month") would
    otherwise overrun the padding and sit tight against the value. */
 .mbd-expiry-group :deep(.mp-input-addon__root[data-placement='left']) { width: var(--mp-sizes-22, 88px); padding: 0; }
