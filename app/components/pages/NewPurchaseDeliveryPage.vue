@@ -1031,9 +1031,8 @@ function commitSave() {
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
-/* Pins the drag/delete control to the first row's height instead of drifting
-   to the vertical center of a Dimensions-stretched row. */
-.si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
+/* Drag/delete sit on the row's middle line, like every other cell's content. */
+.si-cell-center { display: flex; align-items: center; justify-content: center; height: 100%; min-height: var(--mp-sizes-10, 40px); }
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
@@ -1041,13 +1040,16 @@ function commitSave() {
    input), so controls fill the row rather than floating at the top — the affix cells
    already stretch that way. The qty cell itself keeps the plain control height. */
 .si-td--input :deep(.mp-autocomplete__root),
+.si-td--input :deep(.mp-autocomplete__root > div),
 .si-td--input :deep(.mp-input-group__root),
 .si-td--input :deep(.mp-input__root),
 .si-td--input :deep(.mp-select__root) { height: 100%; min-height: var(--mp-sizes-10, 40px); background: transparent; }
 .si-td--qty :deep(.mp-input__root) { height: var(--mp-sizes-10, 40px); }
 .si-td--input :deep(.mp-input__control),
 .si-td--input :deep(.mp-select__control) {
-  height: var(--mp-sizes-10, 40px);
+  /* Fill the (possibly taller) cell so the control's own flex centring puts the
+     value on the row's middle line instead of pinning it to the top 40px. */
+  height: 100%; min-height: var(--mp-sizes-10, 40px);
   /* MpInput's control carries a hard min-width (88px). In the narrow Qty and
      Discount columns that overflows the cell and paints over the td's right
      border — and pushes the Discount "%" suffix out of view. */
@@ -1065,20 +1067,24 @@ function commitSave() {
 .si-td--error :deep([class*='input']) { background: transparent; }
 .si-error-tooltip-wrap { display: block; width: 100%; }
 .si-error-tooltip-wrap :deep([class*='tooltip__trigger']) { display: block; width: 100%; }
+/* The wrapper has to pass the cell height through, or the control it wraps
+   centres inside a 40px box at the top of a taller row. The qty cell is the
+   exception: its control shares the cell with the Manage batch link. */
+.si-td:not(.si-td--qty) > .si-error-tooltip-wrap,
+.si-td:not(.si-td--qty) > .si-error-tooltip-wrap :deep([class*='tooltip__trigger']) { height: 100%; }
 
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
 .si-td--affix { padding: 0; position: relative; }
 /* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
 .si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
-/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
-   row height. align-items:stretch then lets .si-affix (auto cross-size) grow
-   to match, while the input/value keep their own fixed height and simply
-   dock to the top (a flex item with a definite cross size doesn't stretch). */
+/* inset:0 (not height:100%) fills the full — possibly taller — row height, and
+   align-items:stretch lets the affix box and the control grow with it; their own
+   content then centres on the row's middle line. */
 .si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
-  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
-  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -1088,7 +1094,7 @@ function commitSave() {
    the Discount "%"). Target the rendered root, not just the class on MpInput. */
 .si-affix-input { flex: 1 1 0; min-width: 0; }
 .si-affix-cell :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; }
-.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: flex-end; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); white-space: nowrap; }
+.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 
 .si-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
