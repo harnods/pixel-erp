@@ -19,7 +19,8 @@ import { computed, ref, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpAutocomplete, MpDatePicker,
-  MpSegmentedControl, MpButton, MpButtonGroup,
+  MpButton, MpButtonGroup, MpIcon, MpText, MpInputGroup, MpInputLeftAddon,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import { successToast } from '~/utils/toasts'
 import {
@@ -100,11 +101,14 @@ watch(() => props.open, (open) => {
 }, { immediate: true })
 
 // ── Options ──────────────────────────────────────────────────────────────────────
-const expiryModeOptions = [
-  { id: 'bf-expiry-mode-date', label: t('Date'), value: 'date' },
-  { id: 'bf-expiry-mode-month', label: t('Month'), value: 'month' },
-]
+// Expiry precision is per batch (PM answer A2). The switch lives inside the field as a
+// prefix dropdown — the same shape as a unit/period prefix elsewhere in the ERP.
+const EXPIRY_MODES = ['date', 'month'] as const
+const expiryModeOpen = ref(false)
+const expiryModeLabel = computed(() => (expiryMode.value === 'month' ? t('Month') : t('Date')))
+function expiryModeText(mode: string) { return mode === 'month' ? t('Month') : t('Date') }
 function setExpiryMode(mode: string) {
+  expiryModeOpen.value = false
   if (mode === expiryMode.value) return
   expiryMode.value = mode === 'month' ? 'month' : 'date'
   // A day can't be derived from a month (or back) without guessing — start over.
@@ -213,22 +217,41 @@ async function save() {
               v-if="a.key === 'expiry_date'" id="bf-expiry-date"
               :is-required="a.required" :is-invalid="!!errors.expiry_date"
             >
-              <div class="bf-label-row">
-                <MpFormLabel>{{ t('Expiry date') }}</MpFormLabel>
-                <MpSegmentedControl
-                  id="bf-expiry-mode" name="bf-expiry-mode"
-                  :model-value="expiryMode" :data="expiryModeOptions"
-                  @update:model-value="setExpiryMode"
+              <MpFormLabel>{{ t('Expiry date') }}</MpFormLabel>
+              <!-- Pixel's "input with prefix" group (docs.mekari.design/patterns/input):
+                   MpInputGroup + MpInputLeftAddon, the addon carrying the precision
+                   dropdown instead of static text. -->
+              <MpInputGroup id="bf-expiry-group" class="bf-expiry-group" size="md">
+                <MpInputLeftAddon id="bf-expiry-mode-addon" has-background>
+                  <MpPopover
+                    id="bf-expiry-mode" is-manual :is-open="expiryModeOpen" use-portal :is-keep-alive="false"
+                    placement="bottom-start" @open="expiryModeOpen = true" @close="expiryModeOpen = false"
+                  >
+                    <MpPopoverTrigger>
+                      <MpButton class="bf-expiry-mode" type="button" @click.stop="expiryModeOpen = !expiryModeOpen">
+                        <MpText weight="semiBold">{{ expiryModeLabel }}</MpText>
+                        <MpIcon name="chevrons-down" size="sm" />
+                      </MpButton>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content' })" @blur="expiryModeOpen = false" @escape="expiryModeOpen = false">
+                      <MpPopoverList>
+                        <MpPopoverListItem
+                          v-for="m in EXPIRY_MODES" :key="m"
+                          :is-active="m === expiryMode" @click="setExpiryMode(m)"
+                        >{{ expiryModeText(m) }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </MpInputLeftAddon>
+                <!-- Keyed on the mode so the calendar remounts as a day or month picker. -->
+                <MpDatePicker
+                  :key="expiryMode" v-model="values.expiry_date" :type="expiryMode"
+                  :format="expiryMode === 'month' ? 'MM/YYYY' : 'DD/MM/YYYY'" value-type="format"
+                  :placeholder="expiryMode === 'month' ? t('Select month') : t('Select date')"
+                  use-portal is-full-width :is-invalid="!!errors.expiry_date"
+                  @update:model-value="errors.expiry_date = ''"
                 />
-              </div>
-              <!-- Keyed on the mode so the calendar remounts as a day or month picker. -->
-              <MpDatePicker
-                :key="expiryMode" v-model="values.expiry_date" :type="expiryMode"
-                :format="expiryMode === 'month' ? 'MM/YYYY' : 'DD/MM/YYYY'" value-type="format"
-                :placeholder="expiryMode === 'month' ? t('Select month') : t('Select date')"
-                use-portal is-full-width :is-invalid="!!errors.expiry_date"
-                @update:model-value="errors.expiry_date = ''"
-              />
+              </MpInputGroup>
               <MpFormErrorMessage>{{ errors.expiry_date }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -245,9 +268,10 @@ async function save() {
               <MpFormErrorMessage>{{ errors[a.key] }}</MpFormErrorMessage>
             </MpFormControl>
 
-            <!-- Vendor / Grade — a select is half the form width (rule/form-select-half). -->
+            <!-- Vendor / Grade. Deviation from rule/form-select-half, asked for by design:
+                 every field in this modal fills the container, selects included. -->
             <MpFormControl
-              v-else :id="`bf-${a.key}`" class="bf-half"
+              v-else :id="`bf-${a.key}`"
               :is-required="a.required" :is-invalid="!!errors[a.key]"
             >
               <MpFormLabel>{{ t(batchAttributeDef(a.key).label) }}</MpFormLabel>
@@ -278,11 +302,25 @@ async function save() {
 
 <style scoped>
 .bf-form { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.bf-label-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2);
-}
+/* Expiry date = Pixel's input-with-prefix group. The group lays out an MpInput on its
+   own; MpDatePicker renders its own root inside, so it needs the sizing and the flat
+   seam Pixel would have applied to a plain input. Addon treatment matches the discount
+   unit field in PurchaseOrderFormPage.vue. */
+.bf-expiry-group { display: flex; align-items: stretch; width: 100%; }
+/* Left addon only — the picker's own right addon (the calendar icon) keeps its
+   default look. */
+/* Pixel measures the addon once, on mount, so the chip needs a width that doesn't
+   change with the label — otherwise "Month" grows past the offset and the value
+   slides under it. */
+.bf-expiry-group :deep(.mp-input-addon__root[data-placement='left']) { flex-shrink: 0; width: var(--mp-sizes-24, 96px); padding: 0; }
+.bf-expiry-group :deep(.mp-datepicker__root) { flex: 1; min-width: 0; }
+/* Pixel measures the addon and publishes its width as --mp-input-offset--left; a plain
+   MpInput consumes it, the picker's nested input doesn't, so pass it through here. */
+.bf-expiry-group :deep(.mp-input__control) { padding-left: calc(var(--mp-input-offset--left, 0px) + var(--mp-spacing-3)); }
+/* The addon draws the grey chip, so the trigger is just its label + chevron. */
+.bf-expiry-mode { display: flex !important; align-items: center; gap: var(--mp-spacing-1, 4px); min-width: 0 !important; height: 100% !important; padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2) !important; background: none !important; border: none !important; border-radius: var(--mp-radii-md) 0 0 var(--mp-radii-md) !important; color: var(--mp-text-default) !important; cursor: pointer; white-space: nowrap; }
+.bf-expiry-mode:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
+.bf-expiry-mode :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 .bf-caption { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #626b79); }
 .bf-form-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-critical, #d93b3b); }
-.bf-half { width: 50%; }
 </style>
