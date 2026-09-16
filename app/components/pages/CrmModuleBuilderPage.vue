@@ -1607,7 +1607,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
 .setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
-.setup-teams-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.setup-teams-title { margin: 0 0 4px; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
 .setup-user-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-4); row-gap: 0; }
 .setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0; padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
