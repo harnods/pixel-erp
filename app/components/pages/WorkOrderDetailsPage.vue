@@ -20,6 +20,7 @@ import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
 import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrderModal.vue'
 import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
+import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
@@ -33,8 +34,8 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
-import { warehouseTransfers } from '~/data/warehouseTransfers'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
@@ -340,18 +341,6 @@ const subconOrigin = computed(() => {
   return first?.warehouseId ? { id: first.warehouseId, name: first.warehouse } : undefined
 })
 
-const subconSourceLabel = computed(() => {
-  const c = subcon.value
-  if (!c) return ''
-  if (c.method !== 'resupply') {
-    return c.method === 'dropship'
-      ? t('3rd-party vendor, shipped direct (CID)')
-      : t('Sourced by the subcon vendor')
-  }
-  // Read off the components themselves; the stored value is only the fallback
-  // for records saved while the setup still asked for a source warehouse.
-  return subconOrigin.value?.name ?? c.sourceWarehouseName ?? t('Warehouse not set')
-})
 
 // ── Complete work order — blocked by unconsumed raw material qty ────────────
 // Clicking "Complete work order" while any raw material still has qty left to
@@ -438,6 +427,56 @@ function onAutoConsumeAndComplete() {
 // module and retyping what the work order already knows.
 const showStartModal = ref(false)
 const showShortfallModal = ref(false)
+const showCompleteSubconModal = ref(false)
+
+/**
+ * What was sent to the vendor, per component, so completing can reconcile it.
+ * Empty for `basic`/`dropship` — neither puts company stock at the vendor.
+ */
+const subconComponentUsage = computed<SubconComponentUsage[]>(() =>
+  rawMaterials.value
+    .map(r => ({
+      sku: r.sku,
+      product: r.product,
+      unit: r.unit,
+      sent: sentToVendorBySku.value[r.sku] ?? 0,
+      originWarehouseId: r.warehouseId,
+      originWarehouseName: r.warehouse,
+    }))
+    .filter(c => c.sent > 0),
+)
+
+/**
+ * Complete, returning whatever the vendor did not use. The return is a real
+ * warehouse transfer FROM the vendor location back to each component's origin —
+ * the same document that sent the stock out, run in reverse — so the custody
+ * balance closes instead of being written off silently.
+ */
+function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return
+  showCompleteSubconModal.value = false
+
+  if (unused.length) {
+    const origin = subconDestination.value                       // the vendor location
+    const destination = subconOrigin.value                       // where components came from
+    const transfer = addTransfer({
+      date: new Date().toISOString().slice(0, 10),
+      originId: origin?.id ?? '',
+      originName: origin?.name ?? '',
+      destinationId: destination?.id ?? '',
+      destinationName: destination?.name ?? '',
+      tags: [],
+      memo: `${t('Unused components returned from')} ${w.number}`,
+      lines: unused,
+    })
+    recordSubconDocument(w.id, {
+      kind: 'transfer', id: transfer.id, number: transfer.number, route: '/warehouse-transfers',
+    })
+  }
+  completeWorkOrder()
+}
 
 /** How much the vendor still owes against what the work order needs. */
 const subconShortfall = computed(() => {
@@ -590,7 +629,10 @@ function handlePrimaryAction() {
   // which a subcon order does not have.)
   if (subcon.value) {
     if (subconShortfall.value > 0) { showShortfallModal.value = true; return }
-    completeWorkOrder()
+    // Delivered in full — but the components sent to the vendor are still on the
+    // company's books until they are accounted for, so completing asks how much
+    // was used and returns the rest.
+    showCompleteSubconModal.value = true
     return
   }
   if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
@@ -896,7 +938,6 @@ function suppressFabClick(e: MouseEvent) {
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
-            <ContentList :label="t('Components supplied from')" :value="subconSourceLabel" />
             <ContentList
               v-if="subconDestination"
               :label="t('Transfer components to')"
@@ -1446,6 +1487,17 @@ function suppressFabClick(e: MouseEvent) {
     </MpPopover>
 
     <!-- Start work order — subcon orders pick which document to raise first. -->
+
+    <CompleteSubconWorkOrderModal
+      v-if="subcon && wo"
+      v-model:is-open="showCompleteSubconModal"
+      :produced-qty="wo.producedQty"
+      :produced-unit="mainOutput.unit"
+      :product-name="mainOutput.product"
+      :components="subconComponentUsage"
+      :subcon-warehouse-name="subconDestination?.name"
+      @complete="completeSubconWorkOrder"
+    />
 
     <SubconShortfallModal
       v-if="subcon && wo"
