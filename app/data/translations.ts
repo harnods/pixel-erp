@@ -2056,6 +2056,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Default min. stock': 'Stok minimum standar',
   'Default safety days': 'Hari cadangan standar',
   'Min. stock by category': 'Stok minimum per kategori',
+  'No floor': 'Tanpa batas',
+  'blank = no floor': 'kosong = tanpa batas',
+  'Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.':
+    'Dipakai saat gudang belum punya penjualan untuk dihitung dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
   'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
     'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
   'category default': 'standar kategori',
@@ -2157,6 +2161,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Default min. stock': 'Stok minimum standar',
   'Default safety days': 'Hari cadangan standar',
   'Min. stock by category': 'Stok minimum per kategori',
+  'No floor': 'Tanpa batas',
+  'blank = no floor': 'kosong = tanpa batas',
+  'Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.':
+    'Dipakai saat gudang belum punya penjualan untuk dihitung dan kategorinya tidak punya angka sendiri. 0 berarti tanpa batas sama sekali.',
   'Used only where a warehouse has no sales to calculate from, so there is no demand-derived floor. 0 means no floor.':
     'Dipakai hanya jika gudang belum punya penjualan untuk dihitung, sehingga tidak ada batas dari permintaan. 0 berarti tanpa batas.',
   'category default': 'standar kategori',

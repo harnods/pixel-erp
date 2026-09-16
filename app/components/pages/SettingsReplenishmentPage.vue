@@ -69,6 +69,7 @@ function save() {
     [t('Safety days'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
     [t('Fallback lead time'), draft.fallbackLeadTimeDays],
+    [t('Min. stock'), draft.minStockGlobal],
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
@@ -341,6 +342,24 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
+      <!-- The company floor sits BEFORE its by-category overrides, mirroring how
+           Safety days is laid out — and because the category field's placeholder
+           quotes this value, it has to be visible to make sense of. -->
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Min. stock') }}</span>
+          <span class="rs-label-desc">{{ t('Used when a warehouse has no sales to calculate from and its category sets no figure of its own. 0 means no floor at all.') }}</span>
+        </div>
+        <div class="rs-control">
+          <MpInputGroup v-if="isEditing" id="rs-minstock-global">
+            <MpInput id="rs-minstock-global-input" v-model="draft.minStockGlobal" type="number" :class="css({ width: '96px' })" />
+          </MpInputGroup>
+          <span v-else class="rs-value">
+            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('No floor') }}
+          </span>
+        </div>
+      </div>
+
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock by category') }}</span>
@@ -363,6 +382,7 @@ const BOUNDARY_OPTIONS = [
           </div>
           <span v-else class="rs-value">
             {{ categories.map(c => `${c} ${committed.minStockByCategory[c] ?? committed.minStockGlobal}`).join('   ') }}
+            <template v-if="!committed.minStockGlobal"> · {{ t('blank = no floor') }}</template>
           </span>
         </div>
       </div>
