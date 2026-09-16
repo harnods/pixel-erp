@@ -15,6 +15,7 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
+import { decodeSubconPrefill } from '~/data/subcon'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
@@ -349,9 +350,43 @@ function prefillFromMisplaced() {
     return row
   })
 }
+/**
+ * Prefill from a subcontracting work order ("Start work order" → Warehouse
+ * transfer). The origin is the warehouse the work order nominated; the
+ * DESTINATION is deliberately left for the operator, because the goods go to the
+ * vendor's own location, which is not one of the company's warehouses — the memo
+ * names the vendor so it is clear where this is headed.
+ *
+ * Lines carry their own name/unit from the query rather than a SKU lookup: the
+ * apparel components live outside the stocked catalog (see catalog.ts), so
+ * `productBySku` comes back empty for exactly the rows this flow creates.
+ */
+function prefillFromSubcon(): boolean {
+  const p = decodeSubconPrefill(route.query.subcon)
+  if (!p) return false
+
+  if (p.originWarehouseId) originId.value = p.originWarehouseId
+  memo.value = p.memo
+
+  rows.value = p.lines.map(l => {
+    const known = productBySku(l.sku)
+    return {
+      id: rowSeq++,
+      sku: l.sku,
+      productName: known?.name ?? l.name,
+      desc: known?.desc ?? '',
+      img: known?.img ?? '',
+      unit: known?.unit ?? l.unit,
+      qty: String(l.qty),
+      qtyError: false,
+    }
+  })
+  return true
+}
+
 onMounted(() => {
   if (isEdit.value) prefill()
-  else prefillFromMisplaced()
+  else if (!prefillFromSubcon()) prefillFromMisplaced()
 })
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────

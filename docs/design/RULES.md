@@ -258,8 +258,22 @@ is the point: they *feel* normal, which is exactly why they slip through.
   create-form primary = **"Save"**. **Why:** verb matches the operation. **Lint:**
   review.
 - **`rule/modal-use-mpmodal`** — *Do:* every modal uses Pixel **`MpModal`** (size
-  `md`, ghost Cancel + pill confirm). "MpModal has no CSS" is a **myth** — it works.
-  **Why:** one modal system. **Lint:** review.
+  `md`, ghost Cancel + pill confirm) **where it renders**; otherwise use the
+  hand-rolled Teleport overlay shell (copy **`CompleteWorkOrderModal.vue`**) with
+  the same chrome — header + × , body, footer with ghost Cancel + pill confirm.
+  **Why:** one modal system, and one *visible* one.
+  **⚠️ Amended — the "MpModal has no CSS is a myth" claim does not hold in the
+  currently-pulled Pixel build.** Measured on an open modal: `.mp-modal__rootChild`
+  stays `position: static` (no fixed/inset/z-index layer) and
+  `.mp-modal__contentChild` never leaves its enter animation — still
+  `opacity: 0`, `transform: scale(0.95)` seconds after opening, laid out inline
+  below the fold. Reproduced on the **shipped `ConfirmModal`** (Bill of materials ▸
+  row ▸ Archive), so **every `MpModal` in the app is currently invisible**, not
+  just new ones. `erp.css` already remediates the backdrop
+  (`.mp-modal__rootChild` background) but not the positioning or the transition.
+  Re-test on the next Pixel bump and revert to plain `MpModal` once an open
+  `ConfirmModal` measures `position: fixed` and `opacity: 1`. Same root cause as
+  the `MpDrawer` note in CLAUDE.md › Drawers. **Lint:** review.
 - **`rule/modal-alert-top-align`** — *Do:* alert/confirm modals align to the **top**
   (`is-centered=false`; use `ConfirmModal.vue`). **Why:** house convention. **Lint:**
   review.

@@ -183,6 +183,83 @@ export function buildDocumentPlan(
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
 }
 
+// ── Document prefill ──────────────────────────────────────────────────────────
+
+/**
+ * What the subcon flow hands a create form so it opens already filled in.
+ *
+ * Starting a subcon work order means raising documents in OTHER modules — a
+ * purchase request, a warehouse transfer. Those forms are shared with the rest of
+ * the ERP, so rather than special-casing them, the work order passes everything
+ * they need as one `?subcon=` query param and each form decodes this shape.
+ *
+ * Lines carry their own name/unit/cost rather than a bare SKU on purpose: not
+ * every line resolves through the stocked product list — a subcon fee is a
+ * non-track service, and the apparel components live outside `CATALOG` (see
+ * catalog.ts) — so a SKU lookup would come back empty for exactly the lines this
+ * flow cares about.
+ */
+export interface SubconPrefillLine {
+  name: string
+  sku: string
+  qty: number
+  unit: string
+  unitCost: number
+  /** A service line — carries cost, never stock. */
+  nonTrack?: boolean
+}
+
+export interface SubconDocPrefill {
+  kind: SubconDocKind
+  workOrderId: string
+  workOrderNumber: string
+  bomNumber: string
+  vendorName: string
+  /** ISO date the vendor promised the goods back. */
+  requiredDate: string
+  /** Warehouse the transfer draws from — resupply only. */
+  originWarehouseId?: string
+  originWarehouseName?: string
+  receivingWarehouseId: string
+  receivingWarehouseName: string
+  lines: SubconPrefillLine[]
+  memo: string
+}
+
+/** Encode a prefill for a router `query` — one param, so links stay readable.
+ *  No manual URI-encoding: vue-router encodes query values itself, and doing it
+ *  here too produced double-escaped (`%257B`) URLs. */
+export function encodeSubconPrefill(p: SubconDocPrefill): string {
+  return JSON.stringify(p)
+}
+
+/** Decode a `?subcon=` param. Returns null for anything malformed — a bad link
+ *  should open an empty form, never crash it. */
+export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
+  if (typeof raw !== 'string' || !raw) return null
+  const attempt = (text: string): SubconDocPrefill | null => {
+    try {
+      const parsed = JSON.parse(text) as SubconDocPrefill
+      return parsed && Array.isArray(parsed.lines) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  // Tolerate a still-encoded value, so older links keep working.
+  return attempt(raw) ?? attempt(decodeURIComponent(raw))
+}
+
+/** Which documents a work order can raise the moment it starts. The goods
+ *  receipt is deliberately excluded — it is raised when the vendor returns the
+ *  goods, not when the order begins. */
+export function raisableDocuments(
+  scope: SubconScope,
+  split: SubconSplit,
+  method: SubconMethod,
+): SubconDocStep[] {
+  return buildDocumentPlan(scope, split, method).filter(d => d.kind !== 'receipt')
+}
+
 // ── Subcon vendors ────────────────────────────────────────────────────────────
 
 /**

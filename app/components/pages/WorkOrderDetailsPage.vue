@@ -18,9 +18,11 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
+import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrderModal.vue'
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
+  encodeSubconPrefill, type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -28,6 +30,7 @@ import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
+import { successToast } from '~/utils/toasts'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
@@ -251,7 +254,110 @@ function onAutoConsumeAndComplete() {
   })
   completeWorkOrder()
 }
+// ── Start work order ─────────────────────────────────────────────────────────
+// A plain work order just starts. A SUBCON one also unlocks the documents that
+// get materials to the vendor, so it asks which to raise and opens that form
+// prefilled — otherwise the user is left hunting for the right form in another
+// module and retyping what the work order already knows.
+const showStartModal = ref(false)
+
+function startWorkOrder() {
+  const w = wo.value
+  if (!w) return
+  w.status = 'in progress'
+  w.startDate = new Date().toISOString().slice(0, 10)
+  persistWorkOrders()
+}
+
+/** Where each document's form lives. */
+const DOC_ROUTE: Record<SubconDocKind, string> = {
+  componentPr: '/purchase-requests/new',
+  subconPr: '/purchase-requests/new',
+  processPr: '/purchase-requests/new',
+  rawPr: '/purchase-requests/new',
+  purchasePr: '/purchase-requests/new',
+  transfer: '/warehouse-transfers/new',
+  rawTransfer: '/warehouse-transfers/new',
+  receipt: '/warehouse-transfers/new',
+}
+
+/**
+ * The lines the chosen document opens with.
+ *  • A transfer moves the BOM's components out of the source warehouse.
+ *  • A PR buys the vendor's service, and carries the output as a tracked line so
+ *    the goods receipt has something to receive against.
+ */
+function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return []
+
+  if (kind === 'transfer' || kind === 'rawTransfer') {
+    const components = kind === 'rawTransfer' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    return components.map(r => ({
+      name: r.product, sku: r.sku, qty: r.needed, unit: r.unit, unitCost: r.purchaseCost,
+    }))
+  }
+
+  // A component PR / raw PR buys the components from a third party instead.
+  if (kind === 'componentPr' || kind === 'rawPr' || kind === 'purchasePr') {
+    const components = kind === 'rawPr' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    return components.map(r => ({
+      name: r.product, sku: r.sku, qty: r.needed, unit: r.unit, unitCost: r.purchaseCost,
+    }))
+  }
+
+  // Subcon / process PR — the vendor's charges plus the output being bought back.
+  const service = SUBCON_SERVICE_FEE[c.scope]
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  const output = catalogProduct(bom.value?.finishedGoodId ?? '')
+  return [
+    { name: service.name, sku: 'SVC', qty: 1, unit: 'Service', unitCost: Math.round(service.amount * factor), nonTrack: true },
+    { name: SUBCON_HANDLING_FEE.name, sku: 'SVC', qty: 1, unit: 'Service', unitCost: Math.round(SUBCON_HANDLING_FEE.amount * factor), nonTrack: true },
+    ...(output
+      ? [{ name: output.name, sku: output.sku, qty: Math.round(w.plannedQty * (c.split === 'partial' ? 0.5 : 1)), unit: output.unit, unitCost: 0 }]
+      : []),
+  ]
+}
+
+function startAndCreate(kind: SubconDocKind) {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return
+  showStartModal.value = false
+  startWorkOrder()
+
+  const prefill = encodeSubconPrefill({
+    kind,
+    workOrderId: w.id,
+    workOrderNumber: w.number,
+    bomNumber: bom.value?.number ?? '',
+    vendorName: c.vendorName,
+    requiredDate: c.promisedDate,
+    originWarehouseId: c.sourceWarehouseId,
+    originWarehouseName: c.sourceWarehouseName,
+    receivingWarehouseId: c.receivingWarehouseId,
+    receivingWarehouseName: c.receivingWarehouseName,
+    lines: prefillLines(kind),
+    memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
+  })
+  router.push({ path: DOC_ROUTE[kind], query: { subcon: prefill } })
+}
+
+function startOnly() {
+  showStartModal.value = false
+  startWorkOrder()
+  successToast(t('Work order started'))
+}
+
 function handlePrimaryAction() {
+  if (primaryAction.value === 'Start work order') {
+    // Only a subcon order has documents to choose between.
+    if (subcon.value) { showStartModal.value = true; return }
+    startWorkOrder()
+    successToast(t('Work order started'))
+    return
+  }
   if (primaryAction.value !== 'Complete work order') return
   if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
   completeWorkOrder()
@@ -1069,6 +1175,29 @@ function suppressFabClick(e: MouseEvent) {
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <!-- Start work order — subcon orders pick which document to raise first. -->
+
+    <StartSubconWorkOrderModal
+
+      v-if="subcon"
+
+      v-model:is-open="showStartModal"
+
+      :scope="subcon.scope"
+
+      :split="subcon.split"
+
+      :method="subcon.method"
+
+      :vendor-name="subcon.vendorName"
+
+      @start="startAndCreate"
+
+      @start-only="startOnly"
+
+    />
+
 
     <CompleteWorkOrderModal
       v-model:is-open="showCompleteModal"

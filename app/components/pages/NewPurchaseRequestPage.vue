@@ -18,8 +18,10 @@ import {
 } from '~/data'
 import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import { decodeSubconPrefill } from '~/data/subcon'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -66,6 +68,33 @@ function productMatches(query: string) {
   const q = query.trim().toLowerCase()
   if (!q) return products
   return products.filter(p => p.name.toLowerCase().includes(q))
+}
+
+// ── Subcon prefill ────────────────────────────────────────────────────────────
+// Opened from "Start work order" on a subcontracting work order, which passes
+// everything this form needs as one `?subcon=` param (see data/subcon.ts). Lines
+// carry their own name/unit/cost because a subcon fee is a non-track service and
+// the apparel components sit outside the stocked catalog — neither resolves
+// through a SKU lookup here.
+const subconPrefill = decodeSubconPrefill(route.query.subcon)
+if (subconPrefill) {
+  requiredDate.value = isoToDMY(subconPrefill.requiredDate)
+  urgency.value = 'High'
+  // This form's WAREHOUSES list is a legacy string array unrelated to the real
+  // warehouse store, so the name is set directly rather than matched against it.
+  warehouse.value = subconPrefill.receivingWarehouseName
+  items.value = subconPrefill.lines.map(l => ({
+    _key: ++_seq,
+    product: l.name,
+    sku: l.sku,
+    description: l.nonTrack ? t('Non-track service — cost only, no stock recorded') : '',
+    qty: l.qty,
+    unit: l.unit,
+    unitCost: l.unitCost,
+    availableQty: 0,
+    productError: false,
+    qtyError: false,
+  }))
 }
 
 const NEW_ROW_KEY = -1
