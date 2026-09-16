@@ -259,6 +259,11 @@ const whReplenishment = computed(() => {
     leadTimeDays: number
     leadTimeTier: string
     leadTimeEstimated: boolean
+    leadTimeSampleSize: number
+    vendorName: string
+    vendorId: string | null
+    lookbackDays: number
+    lookbackUnits: number
     /** What the formula gives, ignoring any override — the placeholder. */
     recommended: number | null
   }> = {}
@@ -276,6 +281,11 @@ const whReplenishment = computed(() => {
       leadTimeDays: row.leadTimeDays,
       leadTimeTier: row.leadTimeTier,
       leadTimeEstimated: row.leadTimeEstimated,
+      leadTimeSampleSize: row.leadTimeSampleSize,
+      vendorName: row.vendor?.name ?? '',
+      vendorId: row.vendor?.id ?? null,
+      lookbackDays: row.velocity.lookbackDays,
+      lookbackUnits: row.velocity.lookbackUnits,
       // No demand basis means no floor to recommend — the same rule the worklist
       // applies, so this table cannot show a number the engine would refuse.
       recommended: velocity > 0 ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays)) : null,
@@ -350,6 +360,36 @@ function whMinStockSub(warehouseId: string): string {
   // shown is still the floor in force, which "not calculated" made sound inert.
   if (r.recommended === null) return 'no sales here'
   return 'calculated'
+}
+
+/**
+ * Which rows have their working shown.
+ *
+ * The product form can afford a permanent disclosure under one field; a table of
+ * nine rows cannot, so the breakdown opens per row and only on request. Same
+ * content and same wording as the form, so a user who learned it in one place
+ * recognises it in the other.
+ */
+const expandedWh = ref<Set<string>>(new Set())
+
+function toggleWhDetails(warehouseId: string): void {
+  const next = new Set(expandedWh.value)
+  next.has(warehouseId) ? next.delete(warehouseId) : next.add(warehouseId)
+  expandedWh.value = next
+}
+
+/** Where this warehouse's lead time came from — measured, estimated, or vendorless. */
+function whLeadTimeLine(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (!r.vendorId) {
+    return `No preferred vendor, so this uses the ${product.value?.category ?? 'category'} `
+      + `default of ${r.leadTimeDays} days.`
+  }
+  if (r.leadTimeEstimated) {
+    return `Lead time is an estimate — ${r.vendorName} has no delivered purchase orders yet.`
+  }
+  return `Lead time measured from ${r.vendorName} — avg of last ${r.leadTimeSampleSize} receipts.`
 }
 
 /** Hover explanation for the safety-days cell — where the value comes from. */
@@ -1233,7 +1273,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="s in pagedWarehouseStock" :key="s.warehouseId" class="pd-tr">
+                  <template v-for="s in pagedWarehouseStock" :key="s.warehouseId">
+                  <tr class="pd-tr">
                     <td class="pd-td">
                       <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
                     </td>
@@ -1295,7 +1336,12 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
                       </template>
                       <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">
-                        {{ whMinStockSub(s.warehouseId) }}
+                        <!-- The provenance word doubles as the disclosure trigger:
+                             it is already the thing a reader questions. -->
+                        <a class="pd-cell-toggle" @click="toggleWhDetails(s.warehouseId)">
+                          {{ whMinStockSub(s.warehouseId) }}
+                          <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                        </a>
                         <a
                           v-if="whEditing && whMinStockIsCustom(s.warehouseId) && whCalculatedHint(s.warehouseId)"
                           class="pd-cell-link"
@@ -1305,6 +1351,48 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
+
+                  <!-- Working shown on request — same three facts, same wording as
+                       the product form's "Why this number?". -->
+                  <tr v-if="expandedWh.has(s.warehouseId)" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
+                    <td class="pd-td pd-td--details" colspan="8">
+                      <div class="pd-why">
+                        <p v-if="whReplenishment[s.warehouseId]?.recommended !== null" class="pd-why-row">
+                          {{ whReplenishment[s.warehouseId]?.velocity.toFixed(2) }}/day ×
+                          ({{ whReplenishment[s.warehouseId]?.leadTimeDays }} days lead time +
+                          {{ whReplenishment[s.warehouseId]?.safetyDays }} safety) =
+                          {{ whReplenishment[s.warehouseId]?.recommended }} {{ s.unit }}
+                        </p>
+                        <p v-else class="pd-why-row">
+                          Nothing sold from {{ s.warehouseName }} in the last
+                          {{ whReplenishment[s.warehouseId]?.lookbackDays }} days, so there is no
+                          demand to calculate a floor from. The {{ s.minStock.toLocaleString('id-ID') }}
+                          {{ s.unit }} shown still applies to low-stock alerts.
+                        </p>
+
+                        <p v-if="whReplenishment[s.warehouseId]?.recommended !== null" class="pd-why-row">
+                          {{ whReplenishment[s.warehouseId]?.lookbackUnits }} {{ s.unit }} sold here over
+                          {{ whReplenishment[s.warehouseId]?.lookbackDays }} days.
+                        </p>
+
+                        <p class="pd-why-row">{{ whLeadTimeLine(s.warehouseId) }}</p>
+
+                        <p v-if="whMinStockIsCustom(s.warehouseId)" class="pd-why-row">
+                          This warehouse uses a figure you set, not the calculation.
+                        </p>
+
+                        <p class="pd-why-row">
+                          <a class="pd-cell-link" @click="router.push('/replenishment-settings#lead-time')">
+                            Lead time defaults
+                          </a>
+                          <a class="pd-cell-link" @click="router.push(`/product-list/${product?.sku}?section=vendors`)">
+                            Vendors
+                          </a>
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -1494,6 +1582,42 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   font-weight: 500;
   white-space: nowrap;
 }
+
+/* The provenance word, made operable. Muted like the text it replaces so the
+   table's quiet does not turn into a column of links. */
+.pd-cell-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--mp-text-subdued, #9ca3af);
+  cursor: pointer;
+}
+.pd-cell-toggle:hover { color: var(--mp-text-default, #374151); }
+
+.pd-tr--details > .pd-td--details { padding: 0; }
+
+/* The detail spans every column, so by default it renders at the far left of a
+   table that is usually scrolled right to reach Min. stock — putting the
+   explanation off-screen exactly when it is opened. Sticking it to the scroll
+   viewport's left edge keeps it read-able at any horizontal position. */
+.pd-why {
+  position: sticky;
+  left: 0;
+  display: inline-block;
+  max-width: 560px;
+  margin: 0 0 12px 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--mp-border-subdued, #e5e7eb);
+  text-align: left;
+  white-space: normal;
+}
+.pd-why-row {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mp-text-subdued, #6b7280);
+}
+.pd-why-row:last-child { margin-bottom: 0; }
 
 .pd-cell-link {
   margin-left: 6px;
