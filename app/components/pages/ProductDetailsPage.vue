@@ -294,13 +294,19 @@ const whReplenishment = computed(() => {
  * the short forms that fit a 130px column.
  */
 /**
- * Annotate the EXCEPTION, not the rule.
+ * Two columns, two rules — because their distributions differ.
  *
- * Labelling every cell "inherited" / "calculated" put the same two words under
- * all nine rows and doubled the table's height to state something true of almost
- * every row — noise, not information. In a table the default is carried once, in
- * the caption above; only a row that DEPARTS from it earns a word of its own.
- * The full arithmetic stays on each cell's hover title either way.
+ * SAFETY DAYS is uniform: every row inherits the same figure unless somebody
+ * overrode that one warehouse. A word on all nine rows would say the same thing
+ * nine times, so only the departure is marked.
+ *
+ * MIN. STOCK is genuinely mixed — 63% of warehouse rows across the catalogue are
+ * demand-calculated and 37% have no sales to calculate from, never lopsided per
+ * product. With no dominant state a blank cell does not read as "calculated", it
+ * reads as "missing", and marking only some rows leaves the column ragged. So
+ * every row states its own provenance in one word.
+ *
+ * The full arithmetic stays on each cell's hover title in both columns.
  */
 function whSafetyIsCustom(warehouseId: string): boolean {
   return whReplenishment.value[warehouseId]?.safetyDaysSource === 'sku-warehouse'
@@ -335,14 +341,15 @@ function whSafetySub(warehouseId: string): string {
 function whMinStockSub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  // Two genuine departures: a floor somebody typed, and one that could not be
-  // calculated at all. Everything else is the documented default.
   if (whMinStockIsCustom(warehouseId)) {
     const calc = whCalculatedHint(warehouseId)
     return calc ? `custom · ${calc}` : 'custom'
   }
-  if (r.recommended === null) return 'not calculated'
-  return ''
+  // "no sales here" rather than "not calculated": the old wording described what
+  // the SYSTEM did not do, when the fact worth having is WHY — and the number
+  // shown is still the floor in force, which "not calculated" made sound inert.
+  if (r.recommended === null) return 'no sales here'
+  return 'calculated'
 }
 
 /** Hover explanation for the safety-days cell — where the value comes from. */
@@ -1176,9 +1183,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
             <p v-if="pagedWarehouseStock.length" class="pd-table-caption">
-              Min. stock is calculated as daily sales × (lead time + safety days), per warehouse.
-              Figures with no note are calculated or inherited; a figure you set is marked
-              <span class="pd-caption-mark">custom</span> and shows what the calculation would give.
+              Min. stock is calculated per warehouse as daily sales × (lead time + safety days).
+              Leave a field empty to keep it calculated or inherited; type to set this
+              warehouse's own, and it will be marked <span class="pd-caption-mark">custom</span>.
             </p>
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
