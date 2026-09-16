@@ -517,6 +517,11 @@ const MULTI_CATEGORIES: Record<string, string[]> = {
 // available > max_demand even if formula_reserved grows to floor(new_onHand/3).
 // Cannot import outgoing.ts here (circular dep). Validated by tests/data-integrity.spec.ts.
 const MIN_ONHAND_OVERRIDE: Record<string, number> = {
+  // ── Subcontracting scenario: BOM #10087 transfers 500 m / 20 kg / 2.000 pcs
+  //    out of Gudang Jakarta Pusat, so that warehouse has to actually hold them. ──
+  'wh-001::FAB-KTN-01': 2_000,
+  'wh-001::THR-JHT-02': 120,
+  'wh-001::BTN-STD-04': 12_000,
   // ── pairs from earlier sessions ───────────────────────────────────────────
   'wh-008::2102': 9,   // pre-shipped seed order out-sh-001
   'wh-002::2102': 9,

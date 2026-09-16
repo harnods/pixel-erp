@@ -33,6 +33,7 @@ import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
@@ -46,6 +47,7 @@ const router = useRouter()
 const route = useRoute()
 
 const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === props.orderId))
+const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 // ── Subcontracting ───────────────────────────────────────────────────────────
 // Present only on a Subcontracting work order. The documents it raises are the
 // substance of the arrangement, so they get their own section rather than being
@@ -93,6 +95,20 @@ const subconCostLines = computed(() => {
   const w = wo.value
   if (!c || !w) return []
   const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+
+  // A Subcontracting BOM defines its own services — those are THE subcon cost for
+  // this work order, and they win. The scope-derived pair below is only the
+  // fallback for a BOM that predates the Subcon cost section.
+  const fromBom = bom.value?.subconCost ?? []
+  if (fromBom.length) {
+    return fromBom.map(l => ({
+      account: l.name,
+      driver: t(l.costDriver),
+      chargedBy: c.vendorName,
+      amount: l.amount * factor,
+    }))
+  }
+
   return [
     {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
@@ -132,7 +148,6 @@ const subconSourceLabel = computed(() => {
     : t('Sourced by the subcon vendor')
 })
 
-const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
@@ -155,8 +170,12 @@ const bottomTabs = computed(() =>
 const activeBottomTab = ref('Partial production')
 
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
-const topTabs = ['Overview', 'Material consume & return'] as const
-type TopTab = typeof topTabs[number]
+// A subcon work order has no in-house consumption to record: the materials go to
+// the vendor on a transfer and come back as finished output on a receipt, so the
+// partial consume/return flow does not apply and its tab is not offered.
+const ALL_TOP_TABS = ['Overview', 'Material consume & return'] as const
+type TopTab = typeof ALL_TOP_TABS[number]
+const topTabs = computed<readonly TopTab[]>(() => (subcon.value ? ['Overview'] : ALL_TOP_TABS))
 const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -211,6 +230,37 @@ function consumedFor(productId: string): number {
     .filter(r => r.productId === productId)
     .reduce((s, r) => s + r.qty, 0))
 }
+/**
+ * Subcon: the figure beside each raw material is what was SENT to the vendor, not
+ * what was consumed — the work happens at the vendor, so the company never
+ * consumes these itself. It is read off the warehouse transfers this work order
+ * raised, so the number always matches what was actually transferred rather than
+ * what the BOM planned.
+ *
+ * Only `resupply` moves company stock: on `basic` the vendor uses its own, and on
+ * `dropship` a third party ships direct, so neither has a quantity to report.
+ */
+const sentToVendorBySku = computed<Record<string, number>>(() => {
+  const c = subcon.value
+  if (!c || c.method !== 'resupply') return {}
+  const transferIds = (c.raisedDocuments ?? [])
+    .filter(d => d.route === '/warehouse-transfers')
+    .map(d => d.id)
+  const totals: Record<string, number> = {}
+  for (const id of transferIds) {
+    const transfer = warehouseTransfers.find(t => t.id === id)
+    for (const line of transfer?.lines ?? []) {
+      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
+    }
+  }
+  return totals
+})
+
+/** True when this work order reports sent-to-vendor instead of consumed qty. */
+const reportsSentQty = computed(() => !!subcon.value)
+/** …and actually has a quantity to report (resupply only). */
+const sendsCompanyStock = computed(() => subcon.value?.method === 'resupply')
+
 // Actual start/end shown only when the work order has reached that stage.
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
@@ -423,7 +473,9 @@ function handlePrimaryAction() {
     return
   }
   if (primaryAction.value !== 'Complete work order') return
-  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  // The unconsumed-material guard is about in-house consumption; a subcon order
+  // has none, so it completes without it.
+  if (!subcon.value && remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
   completeWorkOrder()
 }
 
@@ -829,7 +881,9 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                  <!-- Subcon reports what LEFT for the vendor; a normal work
+                       order reports what was consumed in-house. -->
+                  <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -842,7 +896,11 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
+                  <td class="wod-td wod-td--num">
+                    <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</template>
+                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(r.needed) }}</template>
+                    <span v-else class="wod-muted">—</span>
+                  </td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
@@ -1505,7 +1563,8 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-status { font-size: var(--mp-font-sizes-md); }
 .wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
 .wod-subcon-status--done { color: var(--mp-text-link); }
-.wod-subcon-muted { color: var(--mp-text-secondary); }
+.wod-subcon-muted,
+.wod-muted { color: var(--mp-text-secondary); }
 .wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .wod-subcon-status--blocked { color: var(--mp-text-secondary); }
 
