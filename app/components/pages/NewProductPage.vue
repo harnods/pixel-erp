@@ -731,46 +731,44 @@ onUnmounted(() => { footerObserver?.disconnect() })
                    are required (Batch Attribute PRD stories 5, 6). Not wrapped in one
                    MpFormControl: it hands its id to the child control, and three selects
                    sharing an id would share one popover. -->
-              <div
-                v-if="isBatchTrackedForm" class="np-toggle-fields"
-                :class="css({ display: 'flex', flexDirection: 'column', gap: '2' })"
-              >
-                <p :class="css({ fontSize: 'md', color: 'var(--mp-colors-text-default, #232933)' })">{{ t('Batch attributes') }}</p>
-                <div
-                  v-for="row in attributeRows" :key="row.id"
-                  :class="css({ display: 'flex', alignItems: 'center', gap: '6' })"
-                >
-                  <MpAutocomplete
-                    :id="`np-batch-attribute-${row.id}`" v-model="row.key" class="np-field-270"
-                    :data="attributeOptionsFor(row)" label-prop="label" value-prop="value"
-                    :placeholder="t('Select attribute')" use-portal is-full-width
-                    :is-invalid="!!attributeError && !row.key" @update:model-value="attributeError = ''"
-                  />
-                  <MpCheckbox
-                    :id="`np-batch-attribute-required-${row.id}`" :is-checked="row.required"
-                    @change="row.required = !row.required"
-                  >{{ t('Required') }}</MpCheckbox>
-                  <!-- rule/remove-icon-tooltip. The last row has no remove: a batch-tracked
-                       product always keeps at least one attribute. -->
-                  <MpTooltip
-                    v-if="attributeRows.length > 1" :id="`np-batch-attribute-remove-tt-${row.id}`"
-                    :label="t('Remove')" placement="top" use-portal
-                  >
-                    <MpButton
-                      variant="ghost" is-rounded left-icon="minus-circular"
-                      :aria-label="t('Remove')" @click="removeAttributeRow(row.id)"
+              <div v-if="isBatchTrackedForm" class="np-toggle-fields np-attr-block">
+                <!-- Sub-heading + its description, like the other form sub-sections. -->
+                <h3 class="np-attr-title">{{ t('Batch attributes') }}</h3>
+                <p class="np-attr-desc">{{ t('Up to 3 attributes recorded on every batch') }}</p>
+                <div v-for="(row, i) in attributeRows" :key="row.id" class="np-attr-row">
+                  <!-- One field per row, one column wide like the row above. The
+                       MpFormControl hands its id to the select, so each row's popover
+                       still has an id of its own. -->
+                  <MpFormControl :id="`np-batch-attribute-${row.id}`" class="np-field-270">
+                    <MpFormLabel>{{ t('Attribute') }} {{ i + 1 }}</MpFormLabel>
+                    <MpAutocomplete
+                      v-model="row.key"
+                      :data="attributeOptionsFor(row)" label-prop="label" value-prop="value"
+                      :placeholder="t('Select attribute')" use-portal is-full-width
+                      :is-invalid="!!attributeError && !row.key" @update:model-value="attributeError = ''"
                     />
-                  </MpTooltip>
+                  </MpFormControl>
+                  <div class="np-attr-actions">
+                    <MpCheckbox
+                      :id="`np-batch-attribute-required-${row.id}`" :is-checked="row.required"
+                      @change="row.required = !row.required"
+                    >{{ t('Required') }}</MpCheckbox>
+                    <!-- rule/remove-icon-tooltip. The last row has no remove: a batch-tracked
+                         product always keeps at least one attribute. -->
+                    <MpTooltip
+                      v-if="attributeRows.length > 1" :id="`np-batch-attribute-remove-tt-${row.id}`"
+                      :label="t('Remove')" placement="top" use-portal
+                    >
+                      <MpButton
+                        variant="ghost" is-rounded left-icon="minus-circular"
+                        :aria-label="t('Remove')" @click="removeAttributeRow(row.id)"
+                      />
+                    </MpTooltip>
+                  </div>
                 </div>
-                <!-- The inline error replaces the caption (uxw-mekari-erp-terms). -->
-                <p
-                  v-if="attributeError" role="alert"
-                  :class="css({ fontSize: 'sm', color: 'var(--mp-colors-text-critical, #d93b3b)' })"
-                >{{ attributeError }}</p>
-                <p v-else :class="css({ fontSize: 'sm', color: 'var(--mp-colors-text-secondary, #626b79)' })">
-                  {{ t('Up to 3 attributes recorded on every batch') }}
-                </p>
-                <div v-if="attributeRows.length < MAX_BATCH_ATTRIBUTES">
+                <!-- Inline error, below the rows it refers to (rule/form-errors-inline). -->
+                <p v-if="attributeError" role="alert" class="np-attr-error">{{ attributeError }}</p>
+                <div v-if="attributeRows.length < MAX_BATCH_ATTRIBUTES" class="np-attr-add">
                   <MpButton variant="ghost" is-rounded left-icon="add" @click="addAttributeRow">{{ t('Add attribute') }}</MpButton>
                 </div>
               </div>
@@ -1061,6 +1059,31 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-photo-col { flex-shrink: 0; width: 270px; display: flex; flex-direction: column; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
+/* ── Batch attributes block ──
+   Sub-heading 14px semibold like the other sub-sections; 20px between stacked fields
+   (docs/patterns/Form.md) and 24px between a field and its trailing controls. */
+/* The toggle block stacks its rows 12px apart; a sub-section wants the repo's 24px,
+   so add the remainder above the heading. */
+.np-attr-block { display: flex; flex-direction: column; margin-top: var(--mp-spacing-3); }
+.np-attr-title {
+  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+}
+.np-attr-desc {
+  margin: var(--mp-spacing-1) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary);
+}
+.np-attr-row + .np-attr-row { margin-top: var(--mp-spacing-5); }
+.np-attr-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.np-attr-add { margin-top: var(--mp-spacing-5); }
+
+/* The field carries a label now, so its trailing controls sit on the control's line
+   (a box as tall as the control) rather than the row's middle. */
+.np-attr-row { display: flex; align-items: flex-end; gap: var(--mp-spacing-6); }
+.np-attr-actions {
+  display: flex; align-items: center; gap: var(--mp-spacing-6);
+  height: var(--mp-sizes-9, 36px);
+}
 
 /* Radio group */
 .np-radio-group { display: flex; gap: var(--mp-spacing-6); align-items: center; }
