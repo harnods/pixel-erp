@@ -23,8 +23,10 @@ import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import { formatDate } from '~/utils/date'
 import {
   subconOrders, SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL,
+  overdueOrders, ordersDueWithin, componentsAtVendor, custodyBalance, orderLateDays,
   type SubconOrder, type SubconMethod, type SubconOrderStatus,
 } from '~/data/subcon'
+import { formatIDR } from '~/utils/currency'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -62,6 +64,42 @@ const statusFilter = ref('')
 // ─── Rows / table state ────────────────────────────────────────────────────────
 const previewMode = ref<'data' | 'empty'>('data')
 const rows = computed<SubconOrder[]>(() => (previewMode.value === 'empty' ? [] : subconOrders))
+
+/**
+ * Summary bar — the four things that go wrong on subcon work, in the order you
+ * would want to hear them: the vendor is late, the vendor is nearly late, your
+ * stock is sitting at the vendor's site, and output is still owed back.
+ *
+ * Follows the purchase-invoices stats bar exactly (title / period / figure /
+ * count link). The figures are counts and quantities rather than money because a
+ * subcon order carries no invoiced value of its own — the money on it is the
+ * component stock in the vendor's custody, which is the one card that shows IDR.
+ *
+ * Every card is empty-safe: the preview's empty state zeroes them out rather
+ * than reporting stale figures against a table showing nothing.
+ */
+const hasData = computed(() => previewMode.value !== 'empty')
+
+const overdue = computed(() => (hasData.value ? overdueOrders() : []))
+const overdueWorst = computed(() =>
+  overdue.value.reduce((worst, o) => Math.max(worst, orderLateDays(o)), 0))
+
+const dueSoon = computed(() => (hasData.value ? ordersDueWithin(7) : []))
+
+const atVendor = computed(() => (hasData.value ? componentsAtVendor() : []))
+const atVendorValue = computed(() => atVendor.value.reduce((sum, l) => sum + l.balanceValue, 0))
+const atVendorOrders = computed(() => new Set(atVendor.value.map(l => l.orderId)).size)
+
+/** Ordered but not yet returned by the vendor — output still owed. */
+const awaitingReturn = computed(() =>
+  hasData.value ? subconOrders.filter(o => o.stage < 5 && o.receivedQty < o.qty) : [])
+const awaitingReturnQty = computed(() =>
+  awaitingReturn.value.reduce((sum, o) => sum + (o.qty - o.receivedQty), 0))
+
+/** Pluralised count line under each figure — "1 order" / "4 orders". */
+function countLabel(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? t(one) : t(many)}`
+}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -148,6 +186,52 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @sort="toggleSort"
     @clear-filters="clearFilters"
   >
+    <!-- ── Summary ── -->
+    <template #stats>
+      <div class="stats-section">
+
+        <!-- The vendor has missed the date it promised the goods back. -->
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Overdue') }}</div>
+          <div class="stat-period">{{ t('Past promised return date') }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--danger': overdue.length > 0 }">{{ overdue.length }}</div>
+          <span class="stat-link">
+            {{ overdueWorst > 0
+              ? `${t('Up to')} ${overdueWorst} ${overdueWorst === 1 ? t('day late') : t('days late')}`
+              : t('None late') }}
+          </span>
+        </div>
+
+        <!-- Not late yet, but close enough to chase. -->
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Due this week') }}</div>
+          <div class="stat-period">{{ t('Next 7 days') }}</div>
+          <div class="stat-amount">{{ dueSoon.length }}</div>
+          <span class="stat-link">{{ countLabel(dueSoon.length, 'order', 'orders') }}</span>
+        </div>
+
+        <!-- Company stock physically held at a vendor's site — the money card. -->
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Components at vendor') }}</div>
+          <div class="stat-period">{{ t('Sent, not yet consumed') }}</div>
+          <div class="stat-amount">{{ formatIDR(atVendorValue) }}</div>
+          <span class="stat-link">
+            {{ countLabel(atVendor.length, 'component', 'components') }} ·
+            {{ countLabel(atVendorOrders, 'order', 'orders') }}
+          </span>
+        </div>
+
+        <!-- Output the vendor still owes back. -->
+        <div class="stat-card">
+          <div class="stat-title">{{ t('Awaiting return') }}</div>
+          <div class="stat-period">{{ t('Output still with vendors') }}</div>
+          <div class="stat-amount">{{ awaitingReturnQty.toLocaleString('id-ID') }}</div>
+          <span class="stat-link">{{ countLabel(awaitingReturn.length, 'order', 'orders') }}</span>
+        </div>
+
+      </div>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
@@ -271,6 +355,57 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+/* ── Summary bar ────────────────────────────────────────────────────────────
+   Same card anatomy as the purchase-invoices stats bar, so the two indexes read
+   as one family: title, period, figure, count line, dividers between cards. */
+.stats-section {
+  display: flex;
+  gap: var(--mp-spacing-6);
+  align-items: flex-start;
+}
+.stat-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+  padding-right: var(--mp-spacing-6);
+  align-self: stretch;
+}
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+  white-space: nowrap;
+}
+.stat-period {
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm, 16px);
+  white-space: nowrap;
+}
+.stat-amount {
+  font-size: var(--mp-font-sizes-xl, 20px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-2xl, 32px);
+  white-space: nowrap;
+}
+.stat-amount--danger { color: var(--mp-text-danger); }
+/* Not a link — these figures have no drill-through yet, so the line is plain
+   text rather than styling something unclickable as though it were a link. */
+.stat-link {
+  display: inline-flex;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-md);
+  white-space: nowrap;
+}
+
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }

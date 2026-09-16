@@ -769,8 +769,42 @@ export function methodBreakdown(orders: SubconOrder[]): string {
     .join(' · ')
 }
 
+/**
+ * Past the date the vendor promised the goods back and still in flight.
+ *
+ * Derived from `promisedDate` rather than the seeded `lateDays`, so an order
+ * created through the app — which has no late-day count until something sets one
+ * — is counted the moment its promised date passes, the same as a seeded one.
+ */
 export function overdueOrders(): SubconOrder[] {
-  return subconOrders.filter(o => o.lateDays > 0)
+  return subconOrders.filter(o =>
+    o.stage < 5 && !!o.promisedDate && o.promisedDate < TODAY_ISO,
+  )
+}
+
+/** How many days past the promised date an order is — 0 when it is not late. */
+export function orderLateDays(order: SubconOrder): number {
+  if (!order.promisedDate || order.promisedDate >= TODAY_ISO) return 0
+  const ms = Date.parse(TODAY_ISO) - Date.parse(order.promisedDate)
+  return Math.max(0, Math.round(ms / 86_400_000))
+}
+
+/** Still in flight and due back within the next `days` — the near-term watch list. */
+export function ordersDueWithin(days: number): SubconOrder[] {
+  const horizon = new Date(Date.parse(TODAY_ISO) + days * 86_400_000)
+    .toISOString().slice(0, 10)
+  return subconOrders.filter(o =>
+    o.stage < 5 && !!o.promisedDate && o.promisedDate >= TODAY_ISO && o.promisedDate <= horizon,
+  )
+}
+
+/**
+ * Components sitting in a vendor's custody — sent out, not yet consumed into
+ * output or returned. This is the company's stock that is physically somewhere
+ * else, which is the exposure the index needs to surface.
+ */
+export function componentsAtVendor(): SubconCustodyLine[] {
+  return subconCustody.filter(l => custodyBalance(l) > 0)
 }
 
 export function pendingApprovalOrders(): SubconOrder[] {
