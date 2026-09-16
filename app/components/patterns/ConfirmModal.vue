@@ -16,11 +16,16 @@ withDefaults(defineProps<{
   isOpen: boolean
   title: string
   description?: string
+  /** Optional detail lines listed under the description — one per affected record,
+   *  so a confirmation about several things stays scannable instead of running
+   *  the same sentence together N times. */
+  items?: string[]
   confirmLabel?: string
   cancelLabel?: string
   isDanger?: boolean
 }>(), {
   description: '',
+  items: () => [],
   confirmLabel: 'Delete',
   cancelLabel: 'Cancel',
   isDanger: true,
@@ -50,6 +55,9 @@ function confirm() { emit('confirm'); close() }
       <MpModalHeader>{{ title }}</MpModalHeader>
       <MpModalBody>
         <MpText v-if="description">{{ description }}</MpText>
+        <ul v-if="items.length" class="cm-items">
+          <li v-for="item in items" :key="item">{{ item }}</li>
+        </ul>
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup>
@@ -61,3 +69,16 @@ function confirm() { emit('confirm'); close() }
     <MpModalOverlay />
   </MpModal>
 </template>
+
+<style scoped>
+/* The global reset strips list-style, so the marker is set back explicitly. */
+.cm-items {
+  list-style: disc outside;
+  margin: var(--mp-spacing-3) 0 0;
+  padding-left: var(--mp-spacing-5);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+}
+.cm-items li { display: list-item; }
+.cm-items li + li { margin-top: var(--mp-spacing-1); }
+</style>

@@ -345,6 +345,9 @@ function onCancel() { router.push('/purchase-deliveries') }
 // Existing batches from another vendor — one confirmation for all of them (story 10, rule 2).
 const mismatchOpen = ref(false)
 const mismatchText = ref('')
+/** One line per batch when several mismatch; empty for a single one, which keeps
+ *  the PRD's sentence whole rather than splitting it into a one-item list. */
+const mismatchItems = ref<string[]>([])
 
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
@@ -352,9 +355,18 @@ function onSave() {
   const mismatches = deliveryVendorMismatches(items.value.filter(isBatchLine).map(lineBatchInput), vendorId.value)
   if (mismatches.length) {
     const deliveryVendor = vendors.find(v => v.id === vendorId.value)?.name ?? ''
-    mismatchText.value = mismatches
-      .map(m => `${m.batchNo} (${m.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', m.vendorName).replace('{deliveryVendor}', deliveryVendor)}`)
-      .join(' ')
+    const one = mismatches[0]!
+    if (mismatches.length === 1) {
+      // One batch keeps the PRD's sentence exactly as written.
+      mismatchText.value = `${one.batchNo} (${one.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', one.vendorName).replace('{deliveryVendor}', deliveryVendor)}`
+      mismatchItems.value = []
+    } else {
+      // Repeating that sentence per batch buries the list. The shared half is said
+      // once, and each batch contributes only what differs — its own vendor.
+      mismatchText.value = t('These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.')
+        .replace('{deliveryVendor}', deliveryVendor)
+      mismatchItems.value = mismatches.map(m => `${m.batchNo} (${m.productName}) — ${m.vendorName}`)
+    }
     mismatchOpen.value = true
     return
   }
@@ -860,7 +872,8 @@ function commitSave() {
 
     <ConfirmModal
       :is-open="mismatchOpen" :title="t('Use batches from another vendor?')" :description="mismatchText"
-      :confirm-label="t('Use batches')" :is-danger="false"
+      :items="mismatchItems"
+      :confirm-label="t('Save delivery')" :is-danger="false"
       @update:is-open="(v) => { mismatchOpen = v }" @confirm="commitSave"
     />
   </div>

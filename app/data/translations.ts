@@ -3554,6 +3554,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "This product does not use Attribute {attribute}": "Produk ini tidak menggunakan atribut {attribute}",
   "Attribute {attribute} must be filled": "Atribut {attribute} harus diisi",
   "This batch is recorded with vendor {batchVendor}, while this transaction is from {deliveryVendor}. The vendor of the batch will not be changed.": "Batch ini tercatat dengan vendor {batchVendor}, sedangkan transaksi ini berasal dari {deliveryVendor}. Vendor pada batch tidak akan diubah.",
+  "These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.": "Batch berikut tercatat dengan vendor yang berbeda dari transaksi ini ({deliveryVendor}). Vendor pada batch tidak akan diubah.",
+  "Save delivery": "Simpan pengiriman",
 
   // ── Access gate (Google @mekari.com login) ──────────────────────────────────
   "Sign in with your @mekari.com Google account to continue.":
