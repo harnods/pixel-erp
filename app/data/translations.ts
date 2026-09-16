@@ -2034,6 +2034,23 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
+  // D13 — product level is a derived rollup; the setup default is a separate field.
+  'Across': 'Di',
+  'warehouses': 'gudang',
+  'Breakdown': 'Rincian',
+  'Hide breakdown': 'Sembunyikan rincian',
+  'Appears once this product is stocked in a warehouse.': 'Muncul setelah produk ini ada stoknya di gudang.',
+  'Edit per warehouse': 'Atur per gudang',
+  'no sales here': 'belum ada penjualan di sini',
+  'set for this warehouse': 'diatur untuk gudang ini',
+  'Default min. stock': 'Stok minimum standar',
+  'Calculated per warehouse': 'Dihitung per gudang',
+  'Leave empty and each warehouse calculates its own from its sales.':
+    'Kosongkan dan tiap gudang menghitung sendiri dari penjualannya.',
+  "Total of every warehouse's minimum stock. Set the figure on each warehouse — this total follows them, and is never used to trigger a reorder on its own.":
+    'Total stok minimum semua gudang. Atur angkanya di tiap gudang — total ini mengikuti, dan tidak pernah dipakai sendiri untuk memicu pemesanan.',
+  'A starting figure for warehouses that have no minimum stock of their own yet. A warehouse that sets its own always wins. This is not part of the total above.':
+    'Angka awal untuk gudang yang belum punya stok minimum sendiri. Gudang yang mengatur sendiri selalu menang. Ini bukan bagian dari total di atas.',
   'Why this number?': 'Kenapa angka ini?',
   'Hide details': 'Sembunyikan detail',
   'Covers': 'Mencakup',
@@ -2100,6 +2117,23 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'covers': 'mencakup',
   'your busiest of': 'gudang tersibuk dari',
   'Use recommended': 'Pakai rekomendasi',
+  // D13 — product level is a derived rollup; the setup default is a separate field.
+  'Across': 'Di',
+  'warehouses': 'gudang',
+  'Breakdown': 'Rincian',
+  'Hide breakdown': 'Sembunyikan rincian',
+  'Appears once this product is stocked in a warehouse.': 'Muncul setelah produk ini ada stoknya di gudang.',
+  'Edit per warehouse': 'Atur per gudang',
+  'no sales here': 'belum ada penjualan di sini',
+  'set for this warehouse': 'diatur untuk gudang ini',
+  'Default min. stock': 'Stok minimum standar',
+  'Calculated per warehouse': 'Dihitung per gudang',
+  'Leave empty and each warehouse calculates its own from its sales.':
+    'Kosongkan dan tiap gudang menghitung sendiri dari penjualannya.',
+  "Total of every warehouse's minimum stock. Set the figure on each warehouse — this total follows them, and is never used to trigger a reorder on its own.":
+    'Total stok minimum semua gudang. Atur angkanya di tiap gudang — total ini mengikuti, dan tidak pernah dipakai sendiri untuk memicu pemesanan.',
+  'A starting figure for warehouses that have no minimum stock of their own yet. A warehouse that sets its own always wins. This is not part of the total above.':
+    'Angka awal untuk gudang yang belum punya stok minimum sendiri. Gudang yang mengatur sendiri selalu menang. Ini bukan bagian dari total di atas.',
   'Why this number?': 'Kenapa angka ini?',
   'Hide details': 'Sembunyikan detail',
   'Covers': 'Mencakup',

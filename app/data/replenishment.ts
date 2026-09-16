@@ -23,6 +23,7 @@
  */
 import { warehouses } from './warehouses'
 import { productBySku, warehouseProducts } from './inventory'
+import { getProductWarehouseStock } from './productDetails'
 import { getWarehouseDetail } from './warehouseDetails'
 import { getWarehouseConfig } from './warehouseConfig'
 import { receipts } from './receipts'
@@ -885,6 +886,106 @@ export function replenishmentWarehouses() {
   return warehouses.filter(
     (w) => !w.isDefault && w.status === 'active' && getWarehouseConfig(w.id).replenishmentEnabled,
   )
+}
+
+// ── Product-level rollup (PRD decision D13, US-024 AC-04 / VR-02) ───────────
+
+export interface WarehouseMinStock {
+  warehouseId: string
+  warehouseName: string
+  /** The floor actually in force here — what the warehouse table shows. */
+  value: number
+  source: 'sku-warehouse' | 'sku' | 'calculated' | 'stored'
+  /** What the formula gives; null when the warehouse has no demand to compute from. */
+  calculated: number | null
+  velocity: number
+  leadTimeDays: number
+  safetyDays: number
+}
+
+export interface MinStockRollup {
+  /** Σ of every warehouse's effective reorder point (D13). Display only. */
+  total: number
+  perWarehouse: WarehouseMinStock[]
+  /** Warehouses whose figure is a stored floor rather than a calculated one. */
+  notCalculatedCount: number
+}
+
+/**
+ * Every warehouse's effective minimum stock for a SKU, and their sum.
+ *
+ * Decision D13 fixes the direction of travel: the WAREHOUSE is the source of
+ * truth and the only replenishment trigger, and the product-level number is a
+ * DERIVED rollup — Σ effective warehouse reorder points — that aggregates
+ * bottom-up and never pushes back down.
+ *
+ * It is display-only and never a trigger, because stock is not fungible across
+ * locations: holding more than the company-wide total says nothing about whether
+ * Surabaya is about to run out, and treating the sum as a threshold would hide
+ * exactly the per-warehouse stockout the feature exists to catch (US-025, no
+ * pooling).
+ *
+ * One function, read by both the product page and the warehouse table, so the
+ * total can never disagree with the column it is a sum of.
+ */
+export function warehouseMinStockRollup(
+  sku: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+  asOf: string = REPL_ASOF_ISO,
+): MinStockRollup {
+  const perWarehouse: WarehouseMinStock[] = []
+
+  for (const stock of getProductWarehouseStock(sku)) {
+    const wh = warehouses.find((w) => w.id === stock.warehouseId)
+    if (!wh || !getWarehouseConfig(wh.id).replenishmentEnabled) continue
+
+    const row = buildRow(sku, stock.warehouseId, cfg, asOf)
+    const velocity = row.velocity.avgDailySales
+    const calculated = velocity > 0
+      ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays))
+      : null
+
+    // A warehouse with no demand has no calculated floor, but the stored
+    // min. stock is still what low-stock alerts enforce there — so that is its
+    // effective value, and it belongs in the sum.
+    const source: WarehouseMinStock['source'] =
+      row.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse'
+      : row.reorderPointSource === 'sku' ? 'sku'
+      : calculated !== null ? 'calculated'
+      : 'stored'
+    const value = source === 'stored' ? stock.minStock : row.reorderPoint
+
+    perWarehouse.push({
+      warehouseId: stock.warehouseId,
+      warehouseName: stock.warehouseName,
+      value,
+      source,
+      calculated,
+      velocity,
+      leadTimeDays: row.leadTimeDays,
+      safetyDays: row.safetyDays,
+    })
+  }
+
+  return {
+    total: perWarehouse.reduce((sum, w) => sum + w.value, 0),
+    perWarehouse,
+    notCalculatedCount: perWarehouse.filter((w) => w.source === 'stored').length,
+  }
+}
+
+/**
+ * Whether a hand-set warehouse floor sits materially below what demand justifies
+ * (US-024 VR-03).
+ *
+ * Not an error — a buyer may know something the history does not. But a manual
+ * floor well under the computed one is how a busy location quietly stops being
+ * flagged, so it is surfaced rather than left to be discovered at the stockout.
+ */
+export function isManualFloorTooLow(w: WarehouseMinStock, tolerancePct = 20): boolean {
+  if (w.source !== 'sku-warehouse' && w.source !== 'sku') return false
+  if (w.calculated === null || w.calculated <= 0) return false
+  return w.value < w.calculated * (1 - tolerancePct / 100)
 }
 
 // ── SKU-level minimum stock recommendation (PRD §2.2 item 3, US-024 AC-03) ───

@@ -24,7 +24,9 @@ import {
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
-import { buildRow, invalidateReplenishmentCaches } from '~/data/replenishment'
+import {
+  buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, warehouseMinStockRollup,
+} from '~/data/replenishment'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
@@ -260,6 +262,7 @@ const whReplenishment = computed(() => {
     leadTimeTier: string
     leadTimeEstimated: boolean
     leadTimeSampleSize: number
+    manualTooLow: boolean
     vendorName: string
     vendorId: string | null
     lookbackDays: number
@@ -269,9 +272,13 @@ const whReplenishment = computed(() => {
   }> = {}
   if (!sku) return out
 
+  // Same function the product page sums, so the column and the rollup above it
+  // cannot drift (D13 / US-024 AC-04).
+  const roll = warehouseMinStockRollup(sku)
   for (const s of warehouseStock.value) {
     const row = buildRow(sku, s.warehouseId)
     const velocity = row.velocity.avgDailySales
+    const rollRow = roll.perWarehouse.find((w) => w.warehouseId === s.warehouseId)
     out[s.warehouseId] = {
       effective: row.reorderPoint,
       source: row.reorderPointSource,
@@ -289,6 +296,9 @@ const whReplenishment = computed(() => {
       // No demand basis means no floor to recommend — the same rule the worklist
       // applies, so this table cannot show a number the engine would refuse.
       recommended: velocity > 0 ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays)) : null,
+      // US-024 VR-03 — a hand-set floor well under what demand justifies is how a
+      // busy warehouse quietly stops being flagged.
+      manualTooLow: rollRow ? isManualFloorTooLow(rollRow) : false,
     }
   }
   return out
@@ -1335,6 +1345,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <template v-else>
                         {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
                       </template>
+                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">
+                        below calculated
+                      </span>
                       <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">
                         <!-- The provenance word doubles as the disclosure trigger:
                              it is already the thing a reader questions. -->
@@ -1625,6 +1638,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   cursor: pointer;
 }
 .pd-cell-link:hover { text-decoration: underline; }
+
+/* A hand-set floor materially under the calculated one. Amber, not red: it is a
+   judgement the buyer is allowed to make, not an error. */
+.pd-cell-warn {
+  display: block;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--mp-text-warning, #b45309);
+}
 
 .pd-cell-sub {
   display: block;
