@@ -82,6 +82,12 @@ const activityEntries = computed(() => [{
 
 // ── Destructive delete → confirm modal (rule/btn-danger-confirm) ───────────────
 const deleteOpen = ref(false)
+
+const router = useRouter()
+/** Open the delivery form against this order, so it can prefill from it. */
+function createPurchaseDelivery() {
+  router.push({ path: '/purchase-deliveries/new', query: { fromPo: props.orderId } })
+}
 function confirmDelete() {
   toast.notify({ variant: 'success', title: 'Purchase order deleted', rootProps: { class: 'toast-enterprise' } })
   closePurchaseOrder?.()
@@ -608,6 +614,9 @@ function goBack() { closePurchaseOrder?.() }
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             </template>
             <MpPopoverList>
+              <!-- The vendor delivers against this order; each delivery produces
+                   finished goods on the work order it came from. -->
+              <MpPopoverListItem v-if="!isRejected" @click="createPurchaseDelivery">Create purchase delivery</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected">Edit</MpPopoverListItem>
               <MpPopoverListItem v-if="!isAwaitingApproval && !isRejected">Set as recurring</MpPopoverListItem>
               <MpPopoverListItem @click="duplicatePurchaseOrder?.(props.orderId, rejectionBanner)">Duplicate</MpPopoverListItem>

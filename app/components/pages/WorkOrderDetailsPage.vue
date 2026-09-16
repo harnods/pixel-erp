@@ -22,7 +22,7 @@ import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrde
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
-  encodeSubconPrefill, subconVendorWarehouse,
+  encodeSubconPrefill, subconVendorWarehouse, RAISED_ELSEWHERE,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -879,6 +879,8 @@ function suppressFabClick(e: MouseEvent) {
                 >
                   {{ step.raised.length ? t('Raised')
                     : step.kind === 'receipt' ? t('On vendor return')
+                    : step.kind === 'purchaseOrder' ? t('From the purchase request')
+                    : step.kind === 'purchaseDelivery' ? t('On vendor delivery')
                     : subconStarted ? t('Ready to raise') : t('Waiting for start') }}
                 </span>
               </td>
@@ -887,7 +889,7 @@ function suppressFabClick(e: MouseEvent) {
                    receipt is raised on the order, not here. -->
               <td class="wod-subcon-td wod-subcon-td--action">
                 <MpButton
-                  v-if="subconStarted && step.kind !== 'receipt'"
+                  v-if="subconStarted && !RAISED_ELSEWHERE.includes(step.kind)"
                   variant="secondary"
                   is-rounded
                   @click="createDocument(step.kind)"

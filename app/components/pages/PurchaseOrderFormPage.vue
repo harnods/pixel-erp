@@ -13,6 +13,7 @@ import type { DataInterface } from '@mekari/pixel3'
 import { MpAutocomplete } from '@mekari/pixel3'
 import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
+import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -249,17 +250,22 @@ function goBack() {
 }
 
 /**
- * Duplicating → actually create the new order (status resets to "awaiting
- * approval") and jump straight to its detail page. A plain "new PO" is left
- * as a no-op close for now (this prototype doesn't persist fresh drafts).
+ * Create the order. Two entry points actually persist:
+ *  • duplicating an existing order, and
+ *  • raising one FROM purchase requests — which is a real document in a chain
+ *    (request → order → delivery), so it cannot stay a no-op close: the delivery
+ *    it leads to has to have an order to be raised against.
+ * A blank "new PO" with neither is still a no-op close (nothing to build from).
  */
 function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null {
-  if (!props.duplicateOrderId || !source.value) return null
+  const isDuplicate = !!props.duplicateOrderId && !!source.value
+  if (!isDuplicate && !fromPr.value) return null
   const newId: string = nextPoId()
+  const vendorSource = source.value?.vendor ?? { id: '', name: vendor.value }
   const newOrder: PurchaseOrder = {
     id: newId,
-    number: nextPoNumber(source.value.number),
-    vendor: { id: source.value.vendor.id, name: vendor.value },
+    number: nextPoNumber(source.value?.number ?? purchaseOrders[0]?.number ?? 'PO-2026-0000'),
+    vendor: { id: vendorSource.id, name: vendor.value || vendorSource.name },
     date: dmyToIso(txDate.value),
     dueDate: dmyToIso(dueDate.value),
     total: grandTotal.value,
@@ -272,6 +278,18 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     ...overrides,
   }
   purchaseOrders.push(newOrder)
+
+  // Raised from purchase requests that belong to a subcon work order → link the
+  // order back, so that work order's Documents table can follow the chain past
+  // the request it started from.
+  for (const prId of props.purchaseRequestIds ?? []) {
+    const wo = workOrderForDocument(prId)
+    if (!wo) continue
+    recordSubconDocument(wo.id, {
+      kind: 'purchaseOrder', id: newId, number: newOrder.number, route: '/purchase-orders',
+    })
+    break
+  }
   return newId
 }
 

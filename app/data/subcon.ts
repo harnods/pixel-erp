@@ -94,6 +94,8 @@ export type SubconDocKind =
   | 'rawPr'         // raw material bought from a 3rd party, shipped to the subcon (CID)
   | 'rawTransfer'   // company raw material → subcon vendor
   | 'purchasePr'    // the in-house half of a split, bought normally into your warehouse
+  | 'purchaseOrder' // the PR, approved and ordered from the vendor
+  | 'purchaseDelivery' // the vendor's delivery back — each one produces FG
   | 'receipt'       // goods receipt back from the vendor
 
 export interface SubconDocStep {
@@ -143,6 +145,16 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
     title: 'Standard purchase request',
     detail: 'In-house portion of the split → your own warehouse',
   },
+  purchaseOrder: {
+    tag: 'PR', module: 'Purchases',
+    title: 'Purchase order',
+    detail: 'Raised from the subcon purchase request — the order placed with the vendor',
+  },
+  purchaseDelivery: {
+    tag: 'Receipt', module: 'Purchases',
+    title: 'Purchase delivery',
+    detail: "The vendor's delivery back — each one produces finished goods against the work order",
+  },
   receipt: {
     tag: 'Receipt', module: 'Warehouse',
     title: 'Goods receipt',
@@ -178,6 +190,9 @@ export function buildDocumentPlan(
     if (method === 'resupply') kinds.push('rawTransfer')
     kinds.push('processPr')
   }
+  // The service PR does not end the chain: it is ordered, and the vendor delivers
+  // against that order. Each delivery produces finished goods on the work order.
+  kinds.push('purchaseOrder', 'purchaseDelivery')
   kinds.push('receipt')
 
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
@@ -258,6 +273,14 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
   return attempt(raw) ?? attempt(decodeURIComponent(raw))
 }
 
+/**
+ * Documents raised from their own parent document, not from the work order: the
+ * goods receipt comes on the vendor's return, the purchase order from the
+ * purchase request, and the delivery from that order. The work order lists them
+ * but never offers a Create button for them.
+ */
+export const RAISED_ELSEWHERE: SubconDocKind[] = ['receipt', 'purchaseOrder', 'purchaseDelivery']
+
 /** Which documents a work order can raise the moment it starts. The goods
  *  receipt is deliberately excluded — it is raised when the vendor returns the
  *  goods, not when the order begins. */
@@ -266,7 +289,7 @@ export function raisableDocuments(
   split: SubconSplit,
   method: SubconMethod,
 ): SubconDocStep[] {
-  return buildDocumentPlan(scope, split, method).filter(d => d.kind !== 'receipt')
+  return buildDocumentPlan(scope, split, method).filter(d => !RAISED_ELSEWHERE.includes(d.kind))
 }
 
 // ── Subcon vendors ────────────────────────────────────────────────────────────

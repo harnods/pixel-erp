@@ -13,6 +13,11 @@ import { purchaseRequests } from '~/data/purchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
 
+// Create a purchase order from this request — the shell already owns the flow
+// (it jumps to Purchase orders with the form pre-loaded from these request ids).
+const createPurchaseOrderFromRequests = inject<(ids: string[]) => void>('createPurchaseOrderFromRequests')
+function createPurchaseOrder() { createPurchaseOrderFromRequests?.([props.orderId]) }
+
 const { t } = useLocale()
 
 // Title-bar icon actions (Task + Comment) — a purchase request has an approval flow.
@@ -344,7 +349,7 @@ function goBack() { router.push('/purchase-requests') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create purchase order') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createPurchaseOrder">{{ t('Create purchase order') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>

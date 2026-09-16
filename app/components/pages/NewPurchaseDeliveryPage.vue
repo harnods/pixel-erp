@@ -23,9 +23,12 @@ import {
   vendors, products, purchaseDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
-import type { PurchaseDelivery } from '~/data/types'
+import { addPurchaseDelivery } from '~/data/purchaseDeliveries'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import { recordSubconDocument, recordSubconProduction, workOrderForDocument } from '~/data/workOrders'
+import { SUBCON_VENDORS } from '~/data/subcon'
+import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -48,7 +51,17 @@ function toTagData(values: string[]): DataInterface[] {
 // ── Header fields ─────────────────────────────────────────────────────────────
 const vendorId      = ref('')
 const vendorError   = ref(false)
-const vendorOptions = vendors.map(v => ({ id: v.id, name: v.name }))
+/**
+ * Vendor options. Subcon vendors are merged in at the VIEW layer rather than
+ * added to the `vendors` store: two seed generators index that array modulo its
+ * length, so growing it would reshuffle purchase orders and invoices away from
+ * the data they were tuned against.
+ */
+const vendorOptions = computed(() => [
+  ...vendors.map(v => ({ id: v.id, name: v.name })),
+  ...SUBCON_VENDORS.filter(v => v.role === 'subcon').map(v => ({ id: v.id, name: v.name })),
+])
+function vendorNameOf(id: string) { return vendorOptions.value.find(v => v.id === id)?.name ?? '' }
 
 const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
@@ -100,6 +113,49 @@ interface LineItem {
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
+
+// ── Subcon prefill (?fromPo) ──────────────────────────────────────────────────
+// Opened from a purchase order's "Create purchase delivery". If that order came
+// from a subcon work order, the delivery is what actually PRODUCES the finished
+// good — so it opens with the output line and the quantity still outstanding,
+// and several deliveries can close one work order out together.
+const route = useRoute()
+const subconWorkOrder = computed(() => {
+  const poId = route.query.fromPo
+  return typeof poId === 'string' ? workOrderForDocument(poId) : undefined
+})
+const fromPurchaseOrderId = computed(() =>
+  typeof route.query.fromPo === 'string' ? route.query.fromPo : '')
+
+/** What the work order still needs produced — the cap on this delivery. */
+const subconOverDeliverError = ref('')
+
+const outstandingFg = computed(() => {
+  const wo = subconWorkOrder.value
+  return wo ? Math.max(0, wo.plannedQty - wo.producedQty) : 0
+})
+
+onMounted(() => {
+  const wo = subconWorkOrder.value
+  if (!wo) return
+  const output = catalogProduct(billOfMaterials.find(b => b.id === wo.bomId)?.finishedGoodId ?? '')
+  const vendor = vendorOptions.value.find(v => v.name === wo.subcon?.vendorName)
+  if (vendor) vendorId.value = vendor.id
+  if (!output) return
+  items.value = [{
+    _key: ++_seq,
+    product: output.name,
+    sku: output.sku,
+    description: `${t('Produced against')} ${wo.number}`,
+    qty: outstandingFg.value,
+    unit: output.unit,
+    unitPrice: 0,
+    discountPct: 0,
+    taxLabel: 'PPN 11%',
+    productError: false,
+    qtyError: false,
+  }]
+})
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
@@ -234,6 +290,19 @@ function validate(): boolean {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
   })
+
+  // A subcon delivery produces finished goods, so it cannot deliver more than the
+  // work order still needs — otherwise a second delivery would over-produce it.
+  if (subconWorkOrder.value) {
+    const delivered = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
+    if (delivered > outstandingFg.value) {
+      items.value.forEach(it => { it.qtyError = true })
+      subconOverDeliverError.value = `${t('This work order still needs')} ${outstandingFg.value} ${t('to be produced')}`
+      ok = false
+    } else {
+      subconOverDeliverError.value = ''
+    }
+  }
   return ok
 }
 
@@ -253,18 +322,34 @@ function onCancel() { router.push('/purchase-deliveries') }
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
-  const vendor = vendors.find(v => v.id === vendorId.value)!
-  const delivery: PurchaseDelivery = {
-    id: nextDeliveryId(),
-    number: nextDeliveryNumber(),
-    vendor: { id: vendor.id, name: vendor.name },
+  // A subcon vendor is not in the `vendors` store (see vendorOptions), so the
+  // name is resolved off the merged option list rather than the store alone.
+  // addPurchaseDelivery() rather than a raw push: it is the store's own creator
+  // and it PERSISTS, so the delivery (and anything linking to it) survives a
+  // refresh and its id is never handed out twice.
+  const delivery = addPurchaseDelivery({
+    vendor: { id: vendorId.value, name: vendorNameOf(vendorId.value) },
     date: dmyToIso(txDate.value),
     fulfillmentStatus: 'in transit',
     billingStatus: 'unbilled',
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
+  })
+
+  // A subcon delivery is the moment finished goods actually exist: record it on
+  // the work order and add its quantity to what has been produced. The work order
+  // stays "partially produced" until the deliveries add up to the planned qty.
+  const wo = subconWorkOrder.value
+  if (wo) {
+    recordSubconDocument(wo.id, {
+      kind: 'purchaseDelivery',
+      id: delivery.id,
+      // Same label the delivery's own detail page uses.
+      number: `${t('Purchase Delivery')} #${delivery.number}`,
+      route: '/purchase-deliveries',
+    })
+    recordSubconProduction(wo.id, items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0))
   }
-  purchaseDeliveries.push(delivery)
   toast.notify({ variant: 'success', title: t('Purchase delivery created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/purchase-deliveries/${delivery.id}`)
 }
@@ -398,6 +483,12 @@ function onSave() {
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
 
+        <!-- Produced against a subcon work order: say how much is still outstanding. -->
+        <MpBanner v-if="subconOverDeliverError" variant="danger" align-items="center" class="si-items-error-banner">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Delivery exceeds what is still needed') }}</MpBannerTitle>
+          <MpBannerDescription>{{ subconOverDeliverError }}</MpBannerDescription>
+        </MpBanner>
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
           <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>

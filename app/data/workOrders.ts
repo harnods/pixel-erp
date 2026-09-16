@@ -252,6 +252,32 @@ export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocum
   persistWorkOrders()
 }
 
+/**
+ * The work order a document was raised from, found by that document's id. Lets a
+ * downstream form (purchase order, purchase delivery) rediscover the work order
+ * from its own parent document, so the link does not have to be threaded through
+ * every query string in the chain.
+ */
+export function workOrderForDocument(documentId: string): WorkOrder | undefined {
+  return workOrders.find(w => (w.subcon?.raisedDocuments ?? []).some(d => d.id === documentId))
+}
+
+/**
+ * Record finished goods produced by a vendor delivery. Each delivery adds to the
+ * work order's produced quantity; the order stays `partially produced` until the
+ * total reaches what was planned, so several deliveries can close it out
+ * together.
+ */
+export function recordSubconProduction(workOrderId: string, qty: number): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo || qty <= 0) return
+  wo.producedQty = Math.min(wo.plannedQty, wo.producedQty + qty)
+  if (wo.status === 'not started' || wo.status === 'in progress' || wo.status === 'partially produced') {
+    wo.status = wo.producedQty >= wo.plannedQty ? 'partially completed' : 'partially produced'
+  }
+  persistWorkOrders()
+}
+
 /** Create a new work order from the New work order form — must reference an existing BOM. */
 export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number'>): WorkOrder {
   const n = woAddSeq++
