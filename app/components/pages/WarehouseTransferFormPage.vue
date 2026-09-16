@@ -375,6 +375,9 @@ function prefillFromMisplaced() {
  * `productBySku` comes back empty for exactly the rows this flow creates.
  */
 const subconSource = ref<ReturnType<typeof decodeSubconPrefill>>(null)
+/** SKU → outstanding qty for the originating subcon work order. */
+const subconMaxBySku = ref<Record<string, number>>({})
+const subconFullySent = ref(false)
 
 function prefillFromSubcon(): boolean {
   const p = decodeSubconPrefill(route.query.subcon)
@@ -386,6 +389,14 @@ function prefillFromSubcon(): boolean {
   if (p.destinationWarehouseId) destId.value = p.destinationWarehouseId
   memo.value = p.memo
 
+  // Cap each line at the work order's outstanding quantity, so a second transfer
+  // cannot send more than the order still requires.
+  subconMaxBySku.value = Object.fromEntries(
+    p.lines.filter(l => typeof l.maxQty === 'number').map(l => [l.sku, l.maxQty as number]),
+  )
+  // Nothing outstanding — the work order has already had everything transferred.
+  // Say so, rather than opening an empty table the operator has to interpret.
+  subconFullySent.value = p.lines.length === 0
   rows.value = p.lines.map(l => {
     const known = productBySku(l.sku)
     return {
@@ -431,11 +442,24 @@ async function handleSave() {
     if (isBatchTrackedSku(row.sku)) {
       if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || t('You must fill in batch details for all batch-tracked products') }
       else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
+      else if (typeof subconMaxBySku.value[row.sku] === 'number' && batchTotal(row) > subconMaxBySku.value[row.sku]!) {
+        row.qtyError = true; valid = false
+        formError.value = formError.value
+          || `${t('Transfer qty cannot exceed what the work order still needs')} (${subconMaxBySku.value[row.sku]} ${row.unit} ${t('outstanding')})`
+      }
       else row.qtyError = false
     } else {
       const qty = Number(row.qty)
+      const outstanding = subconMaxBySku.value[row.sku]
       if (!qty || qty < 1) { row.qtyError = true; valid = false }
       else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
+      // Outstanding beats stock as a limit: there may be plenty on hand, but the
+      // work order only still needs so much.
+      else if (typeof outstanding === 'number' && qty > outstanding) {
+        row.qtyError = true; valid = false
+        formError.value = formError.value
+          || `${t('Transfer qty cannot exceed what the work order still needs')} (${outstanding} ${row.unit} ${t('outstanding')})`
+      }
       else {
         row.qtyError = false
         if (isSerialTrackedSku(row.sku)) {
@@ -598,6 +622,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
           <button class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
         </div>
+
+        <!-- Nothing outstanding on the originating work order: say so, rather
+             than opening an empty table the operator has to interpret. -->
+        <MpBanner v-if="subconFullySent" variant="info" class="wtf-subcon-banner">
+          <MpBannerDescription>
+            {{ t('Every component this work order needs has already been transferred. Add products below only if you are sending extra.') }}
+          </MpBannerDescription>
+        </MpBanner>
 
         <!-- Product table -->
         <div class="wtf-table-section">
@@ -987,6 +1019,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-import-btn:hover { opacity: 0.9; }
 
 /* ── Table ─────────────────────────────────────────────────────────────────── */
+.wtf-subcon-banner { margin-bottom: var(--mp-spacing-4); }
 .wtf-table-section { margin-top: var(--mp-spacing-5); }
 .wtf-table-scroll { overflow-x: auto; }
 .wtf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 860px; }

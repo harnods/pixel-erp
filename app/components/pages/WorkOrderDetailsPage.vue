@@ -394,9 +394,18 @@ function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
 
   if (kind === 'transfer' || kind === 'rawTransfer') {
     const components = kind === 'rawTransfer' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
-    return components.map(r => ({
-      name: r.product, sku: r.sku, qty: r.needed, unit: r.unit, unitCost: r.purchaseCost,
-    }))
+    // A second transfer carries what is still OUTSTANDING, not the full BOM
+    // quantity again — otherwise re-opening the form offers to send everything a
+    // second time. Lines already fully sent drop out entirely.
+    return components
+      .map(r => {
+        const remaining = Math.max(0, r.needed - (sentToVendorBySku.value[r.sku] ?? 0))
+        return {
+          name: r.product, sku: r.sku, qty: remaining, unit: r.unit,
+          unitCost: r.purchaseCost, maxQty: remaining,
+        }
+      })
+      .filter(l => l.qty > 0)
   }
 
   // A component PR / raw PR buys the components from a third party instead.

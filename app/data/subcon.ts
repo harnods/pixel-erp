@@ -207,6 +207,12 @@ export interface SubconPrefillLine {
   unitCost: number
   /** A service line — carries cost, never stock. */
   nonTrack?: boolean
+  /**
+   * Most that may still be moved for this line — the work order's outstanding
+   * quantity (needed minus already sent). The form validates against it, so a
+   * second transfer cannot over-send what the order actually requires.
+   */
+  maxQty?: number
 }
 
 export interface SubconDocPrefill {
