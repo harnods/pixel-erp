@@ -24,6 +24,9 @@ import {
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { buildRow, invalidateReplenishmentCaches } from '~/data/replenishment'
+import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
+import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
@@ -226,29 +229,129 @@ const pagedWarehouseStock = computed(() => {
   return warehouseStock.value.slice(start, start + whPerPage.value)
 })
 
-// Min. stock is the only figure here a person SETS — on hand, reserved, available
-// and in transit are all measured by the warehouse, so they stay read only. Edits
-// are held in a draft until Save: min. stock drives low-stock counts and
-// replenishment, so a half-typed number shouldn't take effect on the way to the
-// right one.
+/**
+ * Replenishment settings at the WAREHOUSE grain (PRD US-024, US-011 AC-02).
+ *
+ * This is the grain the PRD actually specifies — "Reorder point, settings,
+ * demand, lead time, worklist and netting are all at the item × warehouse
+ * grain" (decision D2). A SKU selling 3/day in Jakarta and 0.2/day in Medan
+ * genuinely needs different floors, and a product-level number cannot express
+ * that. The product form sets the SKU-level DEFAULT; this table overrides it per
+ * location, which is the precedence chain's top tier.
+ *
+ * Safety days is the input; min. stock is what it works out to, because the PRD
+ * defines them as one quantity: "Reorder Point = MINIMUM STOCK THRESHOLD =
+ * avg daily demand × (lead time + safety days)".
+ */
+const whReplenishment = computed(() => {
+  // The engine reads its settings from localStorage, which Vue cannot track, so
+  // without this the table would keep showing the pre-save values after an edit —
+  // the same stale-read that once made the worklist tab badge disagree with its
+  // own list. `writeStore` bumps this on every save.
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  const out: Record<string, {
+    effective: number
+    source: string
+    safetyDays: number
+    safetyDaysSource: string
+    velocity: number
+    leadTimeDays: number
+    leadTimeTier: string
+    leadTimeEstimated: boolean
+    /** What the formula gives, ignoring any override — the placeholder. */
+    recommended: number | null
+  }> = {}
+  if (!sku) return out
+
+  for (const s of warehouseStock.value) {
+    const row = buildRow(sku, s.warehouseId)
+    const velocity = row.velocity.avgDailySales
+    out[s.warehouseId] = {
+      effective: row.reorderPoint,
+      source: row.reorderPointSource,
+      safetyDays: row.safetyDays,
+      safetyDaysSource: row.safetyDaysSource,
+      velocity,
+      leadTimeDays: row.leadTimeDays,
+      leadTimeTier: row.leadTimeTier,
+      leadTimeEstimated: row.leadTimeEstimated,
+      // No demand basis means no floor to recommend — the same rule the worklist
+      // applies, so this table cannot show a number the engine would refuse.
+      recommended: velocity > 0 ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays)) : null,
+    }
+  }
+  return out
+})
+
+/** Per-row explanation for the min-stock cell, shown on hover. */
+function whMinStockTitle(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (r.recommended === null) {
+    return 'No sales in this warehouse yet, so there is nothing to calculate a floor from. '
+      + 'The stored min. stock still applies to low-stock alerts — type a figure to set it deliberately.'
+  }
+  const lead = r.leadTimeEstimated ? `${r.leadTimeDays} days lead time (estimated)` : `${r.leadTimeDays} days lead time`
+  const sum = `${r.velocity.toFixed(2)}/day × (${lead} + ${r.safetyDays} safety) = ${r.recommended}`
+  return r.source === 'calculated' || r.source === 'none'
+    ? `Calculated: ${sum}`
+    : `Set by you. Calculated would be ${r.recommended} — ${sum}`
+}
+
+// On hand, reserved, available and in transit are all MEASURED by the warehouse,
+// so they stay read only. Safety days and min. stock are decisions, so they are
+// the two editable columns. Edits are held in a draft until Save — both drive
+// low-stock alerts and the replenishment worklist, so a half-typed number
+// shouldn't take effect on the way to the right one.
 const whEditing = ref(false)
 const whMinDraft = reactive<Record<string, string>>({})
+const whSafetyDraft = reactive<Record<string, string>>({})
+
 function startEditMinStock() {
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
-  for (const s of warehouseStock.value) whMinDraft[s.warehouseId] = String(s.minStock)
+  for (const id of Object.keys(whSafetyDraft)) delete whSafetyDraft[id]
+  const sku = product.value?.sku
+  for (const s of warehouseStock.value) {
+    const override = sku ? getSkuWarehouseOverride(sku, s.warehouseId) : {}
+    // Only an OVERRIDE prefills. An inherited or calculated value shows as the
+    // placeholder, so leaving the box alone keeps it inherited rather than
+    // silently pinning today's number as a permanent override.
+    whMinDraft[s.warehouseId] = override.reorderPoint !== undefined ? String(override.reorderPoint) : ''
+    whSafetyDraft[s.warehouseId] = override.safetyDays !== undefined ? String(override.safetyDays) : ''
+  }
   whEditing.value = true
 }
+
 function saveMinStock() {
-  if (!product.value) return
+  const sku = product.value?.sku
+  if (!sku) return
+
   for (const s of warehouseStock.value) {
-    const cleaned = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
-    // A cleared field means "I didn't finish typing", not "no floor" — leave the
-    // warehouse as it was. Zero is still settable by typing it.
-    if (cleaned === '') continue
-    const next = Number(cleaned)
-    if (next === s.minStock) continue
-    setWarehouseMinStock(s.warehouseId, product.value.sku, next)
+    const rec = whReplenishment.value[s.warehouseId]
+    const minRaw = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
+    const safetyRaw = (whSafetyDraft[s.warehouseId] ?? '').replace(/\D/g, '')
+
+    // Empty means INHERIT, so it clears the override rather than storing a value.
+    // Passing undefined is how replenishmentSettings clears a key.
+    const safetyDays = safetyRaw === '' ? undefined : Number(safetyRaw)
+    const typedMin = minRaw === '' ? null : Number(minRaw)
+    // Accepting the calculated figure leaves it calculated, so it keeps tracking
+    // demand instead of freezing at today's number.
+    const reorderPoint = typedMin === null || typedMin === rec?.recommended ? undefined : typedMin
+
+    saveSkuWarehouseOverride(sku, s.warehouseId, { safetyDays, reorderPoint })
+
+    // Keep the legacy per-warehouse minStock in step. It feeds the low-stock
+    // counts on the Products and warehouse screens and in Cowork, which read
+    // `minStock` rather than the engine — without this the same product would
+    // show one floor here and a different one there.
+    if (typedMin !== null && typedMin !== s.minStock) {
+      setWarehouseMinStock(s.warehouseId, sku, typedMin)
+    }
   }
+
+  invalidateReplenishmentCaches()
   whEditing.value = false
 }
 
@@ -1024,7 +1127,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <col style="width: 110px" />
                   <col style="width: 110px" />
                   <col style="width: 110px" />
-                  <col style="width: 110px" />
+                  <col style="width: 120px" />
+                  <col style="width: 130px" />
                   <col style="width: 90px" />
                 </colgroup>
                 <thead>
@@ -1034,6 +1138,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
                     <th class="pd-th pd-th--num">In transit qty</th>
+                    <!-- The input comes before the number it produces. -->
+                    <th class="pd-th pd-th--num">Safety days</th>
                     <th class="pd-th pd-th--num">Min. stock</th>
                     <th class="pd-th">Unit</th>
                   </tr>
@@ -1047,16 +1153,59 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
+
+                    <!-- Safety days — the decision. Placeholder shows what this
+                         warehouse inherits, so an untouched box means inherit. -->
                     <td class="pd-td pd-td--num">
+                      <MpInput
+                        v-if="whEditing"
+                        :id="`pd-wh-safety-${s.warehouseId}`"
+                        v-model="whSafetyDraft[s.warehouseId]"
+                        type="number"
+                        :placeholder="String(whReplenishment[s.warehouseId]?.safetyDays ?? '')"
+                        :aria-label="`Safety days for ${s.warehouseName}`"
+                        :class="css({ width: '88px' })"
+                      />
+                      <template v-else>
+                        {{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}
+                        <span
+                          v-if="whReplenishment[s.warehouseId] && whReplenishment[s.warehouseId]!.safetyDaysSource !== 'sku-warehouse'"
+                          class="pd-cell-sub"
+                        >inherited</span>
+                      </template>
+                    </td>
+
+                    <!-- Min. stock — what safety days works out to, per the PRD's
+                         "Reorder Point = MINIMUM STOCK THRESHOLD". Calculated
+                         unless someone overwrote it. -->
+                    <td class="pd-td pd-td--num" :title="whMinStockTitle(s.warehouseId)">
                       <MpInput
                         v-if="whEditing"
                         :id="`pd-wh-min-stock-${s.warehouseId}`"
                         v-model="whMinDraft[s.warehouseId]"
                         type="number"
+                        :placeholder="whReplenishment[s.warehouseId]?.recommended !== null ? String(whReplenishment[s.warehouseId]?.recommended ?? '') : '—'"
                         :aria-label="`Min. stock for ${s.warehouseName}`"
                         :class="css({ width: '88px' })"
                       />
-                      <template v-else>{{ s.minStock.toLocaleString('id-ID') }}</template>
+                      <!--
+                        Three provenances, never conflated. Showing "—" for a
+                        warehouse with no sales would be honest about the
+                        CALCULATION but wrong about the FLOOR: the stored
+                        min. stock is what the low-stock alerts on the Products
+                        and warehouse screens actually enforce, so the number in
+                        force is shown and labelled as not demand-derived.
+                      -->
+                      <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
+                        {{ s.minStock.toLocaleString('id-ID') }}
+                        <span class="pd-cell-sub">not calculated — no sales here</span>
+                      </template>
+                      <template v-else>
+                        {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
+                        <span class="pd-cell-sub">
+                          {{ whReplenishment[s.warehouseId]?.source === 'calculated' ? 'calculated' : 'set by you' }}
+                        </span>
+                      </template>
                     </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
@@ -1233,6 +1382,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-search-clear:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors WarehouseDetailsPage's tab tables) ── */
+/* Where a number came from, under the number itself — muted so the figure still
+   reads first and the provenance is there when questioned. */
+.pd-cell-sub {
+  display: block;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--mp-text-subdued, #9ca3af);
+}
 .pd-table-scroll { overflow-x: auto; }
 .pd-table { width: 100%; min-width: max-content; border-collapse: collapse; }
 .pd-th {
