@@ -842,18 +842,21 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
                 <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
-                  <ul v-if="selectedTeams.length" class="setup-user-list">
-                    <li v-for="tm in selectedTeams" :key="tm.id" class="setup-user-row">
-                      <span class="setup-user-info">
-                        <span class="setup-user-name">{{ tm.name }}</span>
-                      </span>
-                      <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
-                        <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
-                          <MpIcon name="minus-circular" size="md" />
-                        </button>
-                      </MpTooltip>
-                    </li>
-                  </ul>
+                  <template v-if="selectedTeams.length">
+                    <h4 class="setup-teams-title">{{ t('Selected teams') }}</h4>
+                    <ul class="setup-user-list">
+                      <li v-for="tm in selectedTeams" :key="tm.id" class="setup-user-row">
+                        <span class="setup-user-info">
+                          <span class="setup-user-name">{{ tm.name }}</span>
+                        </span>
+                        <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
+                          <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
+                            <MpIcon name="minus-circular" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </li>
+                    </ul>
+                  </template>
                   <p v-else class="setup-access-empty">{{ t('No team selected') }}</p>
                   <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="teamDrawerOpen = true">{{ t('Select team') }}</MpButton>
                 </div>
@@ -1603,9 +1606,10 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
    list: name + (−) remove + "Remove" tooltip), not a chip/pill grid. */
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
-.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); max-width: 320px; }
-.setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }
-.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
+.setup-teams-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.setup-user-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); column-gap: var(--mp-spacing-4); row-gap: 0; }
+.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0; padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }

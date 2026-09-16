@@ -501,6 +501,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No team selected': 'Belum ada tim dipilih',
   'Select team': 'Pilih tim',
   'Select teams': 'Pilih tim',
+  'Selected teams': 'Tim terpilih',
   'Teams': 'Tim',
   'No teams selected': 'Belum ada tim dipilih',
   'Pick which team(s) can access this module.': 'Pilih tim yang bisa mengakses modul ini.',
