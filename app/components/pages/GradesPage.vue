@@ -39,8 +39,8 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import { successToast } from '~/utils/toasts'
 import { useGradeModal } from '~/composables/useGradeModal'
 import {
-  grades, activeGrades, gradeById, gradeActivityFor, nextGradeRank,
-  createGrade, updateGrade, setGradeStatus, deleteGrade,
+  grades, activeGrades, gradeById, gradeActivityFor,
+  createGrade, updateGrade, setGradeStatus, deleteGrade, reorderGrades,
   GRADE_NAME_MAX, GRADE_DESCRIPTION_MAX, MIN_ACTIVE_GRADES,
   type Grade, type GradeError,
 } from '~/data/grades'
@@ -80,6 +80,22 @@ const {
     && (!status || row.status === status),
 })
 
+// ── Reorder (drag) ─────────────────────────────────────────────────────────────
+// Dragging sets the rank, so it is only offered while the list IS in rank order:
+// another sort, a search, a status filter or a second page would all make the drop
+// position mean something different from where the row lands.
+const canReorder = computed(() =>
+  sortKey.value === 'rank' && sortDir.value === 'asc'
+  && !search.value.trim() && !statusFilter.value && total.value <= perPage.value,
+)
+function onReorder(from: number, to: number) {
+  const ids = paginated.value.map((g) => g.id)
+  const [moved] = ids.splice(from, 1)
+  if (!moved) return
+  ids.splice(to, 0, moved)
+  reorderGrades(ids)
+}
+
 const statusOptions = [
   { value: 'active', label: t('Active') },
   { value: 'inactive', label: t('Inactive') },
@@ -104,7 +120,6 @@ const nameError = ref('')
 const descriptionError = ref('')
 const formError = ref('')
 const isSaving = ref(false)
-const formRank = computed(() => editing.value?.rank ?? nextGradeRank())
 
 watch(formOpen, (open) => {
   if (!open) return
@@ -293,6 +308,7 @@ const asGrade = (row: unknown) => row as Grade
     :has-active-search="!!search.trim()"
     :has-active-filter="!!statusFilter"
     filter-empty-label="grade"
+    :sortable-rows="canReorder"
     bulk-label="grade"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -300,6 +316,7 @@ const asGrade = (row: unknown) => row as Grade
     @sort-change="setSort"
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
+    @reorder="onReorder"
   >
     <!-- ── Filter bar ── -->
     <template #filters>
@@ -413,12 +430,6 @@ const asGrade = (row: unknown) => row as Grade
               :is-invalid="!!nameError" @input="nameError = ''"
             />
             <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
-          </MpFormControl>
-
-          <MpFormControl id="grade-rank">
-            <MpFormLabel>{{ t('Rank') }}</MpFormLabel>
-            <MpInput :model-value="String(formRank)" is-read-only />
-            <p class="grade-caption">{{ t("Set automatically and can't be changed") }}</p>
           </MpFormControl>
 
           <MpFormControl id="grade-description" :is-invalid="!!descriptionError">

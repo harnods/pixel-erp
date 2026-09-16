@@ -201,6 +201,42 @@ export function createGrade(input: { name: string; description?: string }, by = 
   return { ok: true, value: { ...grade } }
 }
 
+/** Reorder the list: `orderedIds` is every non-deleted grade, best rank first.
+ *  Ranks are reassigned 1..N to match, and deleted grades are pushed past them so a
+ *  rank is still never shared. Batches reference a grade by id, so reordering only
+ *  changes the order grades are listed and offered in. */
+export function reorderGrades(orderedIds: string[], by = CURRENT_USER): DataResult<Grade[], GradeError> {
+  const live = store.filter((g) => !g.deleted)
+  const ordered = orderedIds.map((id) => live.find((g) => g.id === id)).filter((g): g is Grade => !!g)
+  if (ordered.length !== live.length) return { ok: false, errors: [{ code: 'not-found' }] }
+
+  const previous = new Map(live.map((g) => [g.id, g.rank]))
+  ordered.forEach((g, i) => { g.rank = i + 1 })
+  let next = ordered.length
+  for (const g of store) if (g.deleted) g.rank = (next += 1)
+
+  // Each moved grade logs its own rank change, so the trail shows up in that row's
+  // activity log — where anyone asking "why did this move?" actually looks.
+  const moved = ordered.filter((g) => previous.get(g.id) !== g.rank)
+  if (!moved.length) return { ok: true, value: ordered.map((g) => ({ ...g })) }
+
+  const at = now()
+  for (const g of moved) {
+    g.updatedAt = at
+    g.updatedBy = by
+    log({
+      activity: 'Updated grade order',
+      gradeId: g.id,
+      details: [
+        { label: 'Grade', value: g.name },
+        { label: 'Rank', value: `${previous.get(g.id)} → ${g.rank}` },
+      ],
+    }, [], by)
+  }
+  persistGrades()
+  return { ok: true, value: ordered.map((g) => ({ ...g })) }
+}
+
 /** Update a grade's name and/or description. Rank has no setter — it can't change. */
 export function updateGrade(
   id: string,

@@ -35,6 +35,8 @@
 import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 import { columnWidth, type ColumnKind } from './columnWidths'
+import { TransitionGroup } from 'vue'
+import { usePointerSortable } from '~/composables/usePointerSortable'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
 const slots = useSlots()
@@ -77,6 +79,11 @@ const props = withDefaults(defineProps<{
   sortDir?: 'asc' | 'desc'
   hasCheckbox?: boolean
   hasAiChat?: boolean
+  /** Drag-to-reorder rows (rule/dnd-live-sortable): adds a leading drag-handle column
+   *  and emits `reorder` live as the row moves. Only switch it on when the displayed
+   *  order IS the stored order — no search, no other sort, one page — or the drop
+   *  position means nothing. */
+  sortableRows?: boolean
   /** Show skeleton placeholder rows instead of data (e.g. first load) */
   loading?: boolean
   /** True when a text search is active. */
@@ -152,7 +159,32 @@ const emit = defineEmits<{
   clearSearch: []
   clearAll: []
   selectionChange: [count: number]
+  /** Live during a drag (rule/dnd-live-sortable reorders as you move, never on drop). */
+  reorder: [from: number, to: number]
 }>()
+
+// ── Drag to reorder ────────────────────────────────────────────────────────────
+// Pointer-based, handle-initiated, live — never native HTML5 DnD.
+const { dragIndex, ghost, start: sortableStart } = usePointerSortable({
+  axis: 'y',
+  itemSelector: 'tr.erp-tr',
+  move: (from, to) => emit('reorder', from, to),
+})
+// The lifted ghost is a clone of the row itself: its cells already carry the
+// resolved column widths, so the floating copy lines up with the table it left.
+const ghostHtml = ref('')
+function startRowDrag(index: number, e: PointerEvent) {
+  const tr = (e.currentTarget as HTMLElement).closest('tr.erp-tr') as HTMLTableRowElement | null
+  if (tr) {
+    const clone = tr.cloneNode(true) as HTMLTableRowElement
+    Array.from(tr.cells).forEach((cell, i) => {
+      const target = clone.cells[i]
+      if (target) target.style.width = `${cell.getBoundingClientRect().width}px`
+    })
+    ghostHtml.value = clone.outerHTML
+  }
+  sortableStart(index, e)
+}
 
 // Column width resolution (source of truth = columnWidths.ts):
 //  • explicit `width`  → pinned exactly (min = max = width). Escape hatch /
@@ -456,6 +488,7 @@ const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
 
 const totalCols = computed(() =>
   props.columns.length +
+  (props.sortableRows ? 1 : 0) +
   (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
   (props.hasAiChat ? 1 : 0)
 )
@@ -497,6 +530,7 @@ const bulkCountLabel = computed(() => {
         <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
              Skipped on the full empty state so the table fits the container (no scroll). -->
         <colgroup v-if="!isFullEmpty">
+          <col v-if="sortableRows" class="erp-col-drag" />
           <!-- Flexible spacer — the ONLY auto-width column, so table-layout:fixed
                hands it all the leftover width and every real column (incl. actions)
                keeps its declared width. Effect: the trailing action group + [...] are
@@ -548,6 +582,7 @@ const bulkCountLabel = computed(() => {
 
           <!-- Normal column headers -->
           <tr v-else>
+            <th v-if="sortableRows" class="erp-th erp-th--drag" />
             <template v-for="(col, ci) in columns" :key="col.key">
             <th v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
             <th
@@ -635,8 +670,10 @@ const bulkCountLabel = computed(() => {
           </tr>
         </thead>
 
-        <!-- ── Body ── -->
-        <tbody>
+        <!-- ── Body ── The sortable table swaps the tbody for a TransitionGroup so
+             siblings FLIP-slide as a row is dragged (rule/dnd-live-sortable); every
+             other table keeps the plain tbody it has always rendered. -->
+        <component :is="sortableRows ? TransitionGroup : 'tbody'" v-bind="sortableRows ? { tag: 'tbody', name: 'erp-row' } : {}">
 
           <!-- Data rows (hidden on first load; frozen during a pagination change) -->
           <template v-if="!loading">
@@ -644,10 +681,19 @@ const bulkCountLabel = computed(() => {
               v-for="(row, ri) in displayRows"
               :key="ri"
               class="erp-tr"
-              :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
+              :class="{ 'erp-tr--align-top': tallRows?.has(ri), 'erp-tr--dragging': dragIndex === ri }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
             >
+              <!-- Drag handle — the ONLY drag start (rule/dnd-live-sortable). -->
+              <td v-if="sortableRows" class="erp-td erp-td--drag">
+                <span
+                  class="erp-drag-handle"
+                  aria-label="Drag to reorder"
+                  @pointerdown="startRowDrag(ri, $event)"
+                ><MpIcon name="drag" size="sm" /></span>
+              </td>
+
               <!-- Data cells — checkbox merges into the first column's cell -->
               <template v-for="(col, ci) in columns" :key="col.key">
               <td v-if="showSpacer && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
@@ -752,7 +798,7 @@ const bulkCountLabel = computed(() => {
           </template>
 
           <!-- Empty state -->
-          <tr v-else-if="displayRows.length === 0">
+          <tr v-else-if="displayRows.length === 0" key="erp-empty">
             <td
               class="erp-td erp-td--empty"
               :colspan="totalCols"
@@ -775,7 +821,7 @@ const bulkCountLabel = computed(() => {
             </td>
           </tr>
 
-        </tbody>
+        </component>
       </table>
     </div>
 
@@ -824,10 +870,55 @@ const bulkCountLabel = computed(() => {
       </div>
     </Teleport>
 
+    <!-- Floating ghost — the lifted row follows the cursor (rule/dnd-live-sortable). -->
+    <Teleport to="body">
+      <table
+        v-if="ghost && ghostHtml"
+        class="erp-drag-ghost"
+        :style="{ left: `${ghost.x}px`, top: `${ghost.y}px`, width: `${ghost.w}px` }"
+      >
+        <tbody v-html="ghostHtml" />
+      </table>
+    </Teleport>
+
   </div>
 </template>
 
 <style scoped>
+/* ── Drag to reorder (rule/dnd-live-sortable) ── */
+.erp-col-drag { width: var(--mp-sizes-11, 44px); min-width: var(--mp-sizes-11, 44px); }
+.erp-th--drag { padding: 0; }
+.erp-td--drag { padding: 0; text-align: center; }
+.erp-drag-handle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-11, 44px); height: var(--mp-sizes-10, 40px);
+  color: var(--mp-colors-icon-default); opacity: 0.75;
+  cursor: grab; touch-action: none; user-select: none;
+}
+.erp-drag-handle:active { cursor: grabbing; }
+/* The row's own slot becomes the dashed drop-slot while it travels. */
+.erp-tr--dragging > .erp-td {
+  background: var(--mp-background-brand-subtle, #f0f7f4);
+  outline: 1px dashed var(--mp-border-brand, #04925e);
+  outline-offset: -1px;
+}
+.erp-tr--dragging > .erp-td > * { visibility: hidden; }
+/* Siblings FLIP-slide to open the gap. */
+.erp-row-move { transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1); }
+</style>
+
+<style>
+/* Unscoped: the ghost is Teleported to <body>, so scoped selectors miss it. */
+.erp-drag-ghost {
+  position: fixed; z-index: 1300; margin: 0;
+  border-collapse: collapse; table-layout: fixed;
+  background: var(--mp-background-primary, #fff);
+  pointer-events: none;
+  transform: rotate(-1.5deg) scale(1.02);
+  /* pixel-police-allow-shadow: the transient lift is a sanctioned exception */
+  box-shadow: 0 10px 20px -8px rgba(8, 13, 14, 0.25);
+}
+.erp-drag-ghost td { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); }
 /* ─── Layout ──────────────────────────────────────────────────────────────── */
 
 .erp-table-page {
