@@ -142,6 +142,12 @@ function archiveBatch() {
   successToast(t('Batch archived'))
   router.push({ path: `/product-list/${sku.value}`, query: { section: 'batches' } })
 }
+function unarchiveBatch() {
+  const b = batch.value
+  if (!b) return
+  const result = setBatchArchived(sku.value, b.id, false)
+  if (result.ok) successToast(t('Batch unarchived'))
+}
 
 // ── Activity log ───────────────────────────────────────────────────────────────
 const CHANGE_LABELS: Record<string, string> = { batchNo: 'Number', description: 'Description' }
@@ -270,7 +276,10 @@ const pagedWarehouseStock = computed(() => {
             <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
             <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
             <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="archiveOpen = true">Archive</MpPopoverListItem>
+            <!-- Restoring is benign, so it acts straight away; archiving confirms first
+                 (the Grades Deactivate/Activate pair sets the same precedent). -->
+            <MpPopoverListItem v-if="batch?.archived" @click="unarchiveBatch">Unarchive</MpPopoverListItem>
+            <MpPopoverListItem v-else :class="css({ color: 'var(--mp-text-critical)' })" @click="archiveOpen = true">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>

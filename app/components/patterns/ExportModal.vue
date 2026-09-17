@@ -19,6 +19,9 @@ const props = withDefaults(defineProps<{
   open: boolean
   title: string                    // e.g. "Export sales invoices"
   entityLabel: string              // e.g. "sales invoices" (for the scope radio labels)
+  /** A caption under the scope options, for when the count doesn't match the list
+   *  the user is looking at (e.g. a system row that can't be exported). */
+  scopeNote?: string
   columns: ExportColumn[]          // flat list; rendered into a 3-col grid
   customFields?: string[]
   total: number                    // count for "All"
@@ -151,6 +154,7 @@ function onExport() {
                 <span>{{ t('Selected') }} {{ selectedCount ?? 0 }} {{ entityLabel }}</span>
               </label>
             </div>
+            <p v-if="scopeNote" class="export-scope-note">{{ scopeNote }}</p>
           </div>
 
           <!-- Select columns -->
@@ -274,6 +278,11 @@ function onExport() {
   cursor: default;
 }
 
+.export-scope-note {
+  margin-top: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
 .export-col-search {
   display: flex;
   align-items: center;

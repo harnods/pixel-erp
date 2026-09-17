@@ -3523,6 +3523,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Download error file": "Download file error",
   "Import again": "Impor ulang",
   "Archive batch?": "Arsipkan batch?",
+  "Batch unarchived": "Arsip batch berhasil dibatalkan",
+  "The Unassigned batch isn't exported — it can't be imported back.": "Batch Unassigned tidak diekspor — batch ini tidak dapat diimpor kembali.",
   "Archive batch": "Arsipkan batch",
   "Archived batches are hidden from the product's batch list and can't be used in new transactions. Stock and history are kept.": "Batch yang diarsipkan disembunyikan dari daftar batch produk dan tidak dapat digunakan di transaksi baru. Stok dan riwayat tetap tersimpan.",
   "Batch archived": "Batch berhasil diarsipkan",

@@ -1031,6 +1031,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       :open="batchExportOpen"
       title="Export batches"
       entity-label="batches"
+      scope-note="The Unassigned batch isn't exported — it can't be imported back."
       :columns="batchExportColumns"
       :total="batchUpdateTemplateRows([product.sku]).length"
       @close="batchExportOpen = false"
