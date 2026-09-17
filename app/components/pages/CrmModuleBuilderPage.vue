@@ -913,7 +913,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <template #cell-type="{ row }">
                 <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
-              <template #cell-createdBy="{ row }">{{ t((row as unknown as DealProperty).isDefault ? 'Default' : (row as unknown as DealProperty).system ? 'System' : 'You') }}</template>
+              <template #cell-createdBy="{ row }">{{ t(((row as unknown as DealProperty).isDefault || (row as unknown as DealProperty).system) ? 'System' : 'You') }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
               <!-- Default properties (from the master library) + related lists are non-editable. -->
