@@ -2058,6 +2058,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Min. stock by category': 'Stok minimum per kategori',
   'Not set': 'Belum diatur',
   'Other categories': 'Kategori lainnya',
+  'Safety days default': 'Standar hari cadangan',
+  'Min. stock default': 'Standar stok minimum',
   'none': 'tidak ada',
   'Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.':
     'Tambahan hari cadangan di atas waktu tunggu vendor. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya.',
@@ -2169,6 +2171,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Min. stock by category': 'Stok minimum per kategori',
   'Not set': 'Belum diatur',
   'Other categories': 'Kategori lainnya',
+  'Safety days default': 'Standar hari cadangan',
+  'Min. stock default': 'Standar stok minimum',
   'none': 'tidak ada',
   'Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.':
     'Tambahan hari cadangan di atas waktu tunggu vendor. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya.',

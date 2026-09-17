@@ -66,10 +66,10 @@ function save() {
     return
   }
   for (const [label, value] of [
-    [t('Safety days'), draft.safetyDaysGlobal],
+    [t('Safety days default'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
     [t('Fallback lead time'), draft.fallbackLeadTimeDays],
-    [t('Min. stock'), draft.minStockGlobal],
+    [t('Min. stock default'), draft.minStockGlobal],
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
@@ -272,7 +272,7 @@ const BOUNDARY_OPTIONS = [
       -->
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Safety days') }}</span>
+          <span class="rs-label-text">{{ t('Safety days default') }}</span>
           <span class="rs-label-desc">{{ t('Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.') }}</span>
         </div>
         <div class="rs-control">
@@ -321,7 +321,7 @@ const BOUNDARY_OPTIONS = [
 
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Min. stock') }}</span>
+          <span class="rs-label-text">{{ t('Min. stock default') }}</span>
           <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.') }}</span>
         </div>
         <div class="rs-control">
