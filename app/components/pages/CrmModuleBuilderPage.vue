@@ -213,11 +213,11 @@ function removeStage(id: string) {
 // themselves are shared pipeline structure, only their visibility is per-view.
 interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay; hiddenStageIds: string[] }
 const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
-// Load saved views from the module's store (name + per-view hidden stages). The
-// per-view card display is session-local for now; it seeds from the module display.
+// Load saved views from the module's store (name + per-view hidden stages + the
+// per-view board display). Filters are session-local for now.
 const pipeViews = ref<PipeBoardView[]>(
-  (stores.value.views?.length ? stores.value.views : [{ id: 'default', name: 'Default view', hiddenStageIds: [] }])
-    .map((v) => ({ id: v.id, name: v.name, filters: emptyPipelineView(), display: baseDisplay(), hiddenStageIds: [...v.hiddenStageIds] })),
+  (stores.value.views?.length ? stores.value.views : [{ id: 'default', name: 'Default view', hiddenStageIds: [], display: baseDisplay() }])
+    .map((v) => ({ id: v.id, name: v.name, filters: emptyPipelineView(), display: v.display ? clone(v.display) : baseDisplay(), hiddenStageIds: [...v.hiddenStageIds] })),
 )
 const activePipeViewId = ref('default')
 const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
@@ -697,7 +697,7 @@ function saveChanges() {
     s.persistDisplay()
     // Persist saved views (name + per-view hidden stages) so the module's Kanban
     // board can render one tab per view and apply each view's stage visibility.
-    s.views.splice(0, s.views.length, ...pipeViews.value.map((v) => ({ id: v.id, name: v.name, hiddenStageIds: [...v.hiddenStageIds] })))
+    s.views.splice(0, s.views.length, ...pipeViews.value.map((v) => ({ id: v.id, name: v.name, hiddenStageIds: [...v.hiddenStageIds], display: clone(v.display) })))
     s.persistViews()
     Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
     s.persistSetup()

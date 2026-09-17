@@ -59,7 +59,7 @@ function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
   return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
 }
 // Card field / display toggles from the module builder's right-hand panel.
-const cardFieldOn = (key: string) => dealPipelineDisplay.cardFields.some((f) => f.key === key && f.on)
+const cardFieldOn = (key: string) => activeViewDisplay.value.cardFields.some((f) => f.key === key && f.on)
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
@@ -121,6 +121,12 @@ watch(pipelineViewTabs, (tabs) => {
   if (!tabs.some((v) => v.id === activePipelineViewId.value)) activePipelineViewId.value = tabs[0]?.id ?? 'default'
 }, { immediate: true })
 const activePipelineViewIndex = computed(() => Math.max(0, pipelineViewTabs.value.findIndex((v) => v.id === activePipelineViewId.value)))
+// The active view's board display (total/card fields/aging/color) drives the
+// board; falls back to the module's shared display for the default/legacy case.
+const activeViewDisplay = computed(() => {
+  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
+  return v?.display ?? dealPipelineDisplay
+})
 const hiddenDealStages = computed<Set<DealStage>>(() => {
   const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
   const stages = dealPipelines.find((p) => p.id === 'default')?.stages ?? dealPipelines[0]?.stages ?? []
@@ -614,7 +620,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             v-for="col in boardColumns"
             :key="col.stage"
             class="kcol"
-            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: dealPipelineDisplay.colorColumns }"
+            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: activeViewDisplay.colorColumns }"
             @dragover.prevent="dragOverStage = col.stage"
             @dragleave="dragOverStage === col.stage && (dragOverStage = null)"
             @drop="onDrop(col.stage)"
@@ -644,7 +650,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
                 <div v-if="cardFieldOn('dealValue')" class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
                 <p v-if="cardFieldOn('date') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
                 <p v-if="cardFieldOn('note') && d.description" class="deal__sub deal__note">{{ d.description }}</p>
-                <div v-if="cardFieldOn('owner') || (dealPipelineDisplay.showAging && isDealOpen(d))" class="deal__foot">
+                <div v-if="cardFieldOn('owner') || (activeViewDisplay.showAging && isDealOpen(d))" class="deal__foot">
                   <span v-if="cardFieldOn('owner')" class="deal__owner">
                     <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
@@ -654,7 +660,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
-            <footer v-if="dealPipelineDisplay.stageTotal" class="kcol__foot">
+            <footer v-if="activeViewDisplay.stageTotal" class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>

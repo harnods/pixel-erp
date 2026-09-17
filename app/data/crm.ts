@@ -1299,9 +1299,19 @@ export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-d
  *  (Settings ▸ Deals ▸ Pipeline). Each view can hide stages independently; the
  *  module's Kanban board renders one tab per view. The first ('default') is the
  *  built-in Default view (all stages shown). Persisted per module. */
-export interface DealPipelineView { id: string; name: string; hiddenStageIds: string[] }
-const DEAL_PIPELINE_VIEWS_SEED: DealPipelineView[] = [{ id: 'default', name: 'Default view', hiddenStageIds: [] }]
-export const dealPipelineViews = reactive<DealPipelineView[]>(load('crm-deal-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED))
+export interface DealPipelineView { id: string; name: string; hiddenStageIds: string[]; display: DealPipelineDisplay }
+const DEAL_PIPELINE_VIEWS_SEED: DealPipelineView[] = [
+  { id: 'default', name: 'Default view', hiddenStageIds: [], display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)) },
+]
+/** Back-fill `display` (per-view board config) for views saved before it existed,
+ *  seeding from the module's shared display so nothing visually changes on upgrade. */
+function backfillViewDisplays(views: DealPipelineView[], fallback: DealPipelineDisplay): DealPipelineView[] {
+  for (const v of views) { if (!v.display) v.display = JSON.parse(JSON.stringify(fallback)) }
+  return views
+}
+export const dealPipelineViews = reactive<DealPipelineView[]>(
+  backfillViewDisplays(load('crm-deal-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED), dealPipelineDisplay),
+)
 export function persistDealPipelineViews() { saveSnapshot('crm-deal-pipeline-views-v1', dealPipelineViews) }
 
 /** Deals module Setup-tab settings (base currency, default close date). */
@@ -1690,7 +1700,9 @@ export const servicePipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v1', [servicePipelineDisplay]) }
 
-export const servicePipelineViews = reactive<DealPipelineView[]>(load('crm-service-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED))
+export const servicePipelineViews = reactive<DealPipelineView[]>(
+  backfillViewDisplays(load('crm-service-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED), servicePipelineDisplay),
+)
 export function persistServicePipelineViews() { saveSnapshot('crm-service-pipeline-views-v1', servicePipelineViews) }
 
 const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
@@ -1804,6 +1816,8 @@ function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
   const cfg = genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
   // Back-fill `views` for snapshots saved before per-view boards existed.
   if (!Array.isArray(cfg.views)) cfg.views = JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED))
+  // Back-fill each view's `display` (added after views), seeding from module display.
+  backfillViewDisplays(cfg.views, cfg.display)
   return cfg
 }
 /** Discard an in-memory (unsaved) scratch config — used for the 'new' module id so a
