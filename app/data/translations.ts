@@ -751,6 +751,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Continue': 'Lanjutkan',
   'Done': 'Selesai',
   'View': 'Lihat',
+  'New view': 'View',
+  'Default view': 'View default',
   'Show': 'Tampilkan',
   'View details': 'Lihat detail',
   'View product': 'Lihat produk',

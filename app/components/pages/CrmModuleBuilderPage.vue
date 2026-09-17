@@ -40,6 +40,7 @@ import {
   type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
+import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
 import { successToast, infoToast } from '~/utils/toasts'
@@ -206,6 +207,30 @@ function removeStage(id: string) {
 const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(stores.value.display)))
 const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
+
+// ── Board saved VIEWS — a view = a named record filter over the Kanban board.
+//    Starts with a single "Default view" (all records); "+ New view" opens the
+//    All-filters drawer to define which records a new custom view shows. ──
+interface PipeBoardView { id: string; name: string; filters: CrmDealsFiltersValue }
+const pipeViews = ref<PipeBoardView[]>([{ id: 'default', name: t('Default view'), filters: emptyCrmDealsFilters() }])
+const activePipeViewId = ref('default')
+const pipeViewOptions = computed(() => pipeViews.value.map((v) => ({ value: v.id, label: v.name })))
+const newViewOpen = ref(false)
+const newViewDraft = ref<CrmDealsFiltersValue>(emptyCrmDealsFilters())
+let pipeViewSeq = 0
+function saveNewView(filters: CrmDealsFiltersValue) {
+  const id = `view-${++pipeViewSeq}`
+  pipeViews.value.push({ id, name: `${t('View')} ${pipeViews.value.length}`, filters })
+  activePipeViewId.value = id
+}
+// Owner / customer options for the New view filter drawer, from the live deals DB.
+const pipeOwnerOptions = computed(() => [...new Set(deals.map((d) => d.owner))].sort())
+const pipeCustomerOptions = computed(() => [...new Set(deals.map((d) => d.company))].sort())
+const pipeFilterColumns = computed(() => [
+  { key: 'name', label: t('Deal name') },
+  { key: 'company', label: t('Customer') },
+  { key: 'owner', label: t('Owner') },
+])
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
@@ -936,6 +961,21 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
+              <!-- View bar — saved-view selector + New view (opens All-filters drawer) -->
+              <div class="pipe-viewbar">
+                <div class="filter-left">
+                  <ErpFilterSelect
+                    id="pipe-view-select"
+                    :model-value="activePipeViewId"
+                    :placeholder="t('View')"
+                    :options="pipeViewOptions"
+                    :is-clearable="false"
+                    @update:model-value="(v: string) => (activePipeViewId = v)"
+                  />
+                  <MpButton variant="secondary" is-rounded left-icon="add" @click="newViewDraft = emptyCrmDealsFilters(); newViewOpen = true">{{ t('New view') }}</MpButton>
+                </div>
+              </div>
+
               <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
@@ -1043,6 +1083,18 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   </section>
                 </aside>
               </div>
+
+              <!-- New view — All-filters drawer defining which records the view shows -->
+              <CrmDealsFiltersDrawer
+                id="pipe-new-view"
+                :is-open="newViewOpen"
+                :model-value="newViewDraft"
+                :columns="pipeFilterColumns"
+                :owner-options="pipeOwnerOptions"
+                :customer-options="pipeCustomerOptions"
+                @update:is-open="newViewOpen = $event"
+                @apply="saveNewView"
+              />
             </template>
           </div>
 
@@ -1479,6 +1531,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
   color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+/* View bar above the board — saved-view selector + New view button. */
+.pipe-viewbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
