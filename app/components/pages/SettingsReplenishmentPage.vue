@@ -186,6 +186,22 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
+          <span class="rs-label-desc">
+            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.') }}
+          </span>
+        </div>
+        <div class="rs-control">
+          <MpInputGroup v-if="isEditing" id="rs-coldstart">
+            <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '96px' })" />
+            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+          </MpInputGroup>
+          <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
+        </div>
+      </div>
+
       <!-- ── Safety days ── -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('Safety days') }}</h3>
 
@@ -485,33 +501,6 @@ const BOUNDARY_OPTIONS = [
             :class="css({ width: '96px' })"
           />
           <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
-        </div>
-      </div>
-
-      <!-- ── New products (cold-start) ──
-        No demand is ever guessed for a new product. Below the threshold a product
-        has no recommendation until it either builds real sales history or a buyer
-        enters an expected daily demand for it by hand (from the product's own
-        replenishment settings) — so a product that may never sell is never given
-        a fabricated order. -->
-      <h3 class="rs-sub rs-sub--spaced">{{ t('New products (cold-start)') }}</h3>
-      <p class="rs-hint">
-        {{ t('A product with less sales history than the threshold is never given a guessed demand. It goes to Needs setup until it builds enough real sales, or someone enters an expected daily demand for that specific product by hand.') }}
-      </p>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
-          <span class="rs-label-desc">
-            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.') }}
-          </span>
-        </div>
-        <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-coldstart">
-            <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
         </div>
       </div>
 
