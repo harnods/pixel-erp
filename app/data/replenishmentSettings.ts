@@ -14,7 +14,7 @@
  *   lookbackDays      SKU-warehouse → SKU → category → global
  *   maxLevel          SKU-warehouse → SKU → none
  *   tracked           SKU-warehouse → SKU → tracked by default
- *   manualDemand      SKU-warehouse → SKU → category average → none
+ *   manualDemand      SKU-warehouse → SKU → none (no category seed; else Needs setup)
  *   manualLeadTime    SKU-warehouse → SKU → (engine: derived ladder)
  *
  * NOTE on reorderPoint: this module returns only the OVERRIDE. The computed
@@ -82,7 +82,7 @@ export interface EffectiveReplenishmentSettings {
   tracked: boolean
   trackedSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'default'>
   manualDailyDemand: number | null
-  manualDailyDemandSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'category' | 'none'>
+  manualDailyDemandSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
 }
 
 interface Store {
@@ -101,19 +101,6 @@ function persist(store: Store): void {
 }
 
 const pairKey = (sku: string, warehouseId: string) => `${sku}::${warehouseId}`
-
-/**
- * Category fallback demand for cold-start SKUs with no manual value of their own.
- * Read from config, which ships EMPTY — an unconfigured tenant has no average to
- * inherit, so its cold-start SKUs correctly land in "Needs setup" (US-003 AC-03)
- * instead of getting a made-up number.
- */
-export function categoryDailyDemand(
-  category: string,
-  cfg: ReplenishmentConfig = getReplenishmentConfig(),
-): number | null {
-  return cfg.coldStartCategoryDemand[category] ?? null
-}
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
@@ -190,12 +177,14 @@ export function effectiveSettings(
     ? 'sku-warehouse' as const
     : skuLevel.tracked !== undefined ? 'sku' as const : 'default' as const
 
-  const catDemand = categoryDailyDemand(category, cfg)
-  const manualDailyDemand = pair.manualDailyDemand ?? skuLevel.manualDailyDemand ?? catDemand ?? null
+  // Only an explicit per-SKU / per-warehouse figure counts now — there is no
+  // per-category demand seed (removed so a never-sold or dead-stock product is
+  // never given a fabricated demand; it goes to Needs setup instead).
+  const manualDailyDemand = pair.manualDailyDemand ?? skuLevel.manualDailyDemand ?? null
   const manualDailyDemandSource = pair.manualDailyDemand !== undefined
     ? 'sku-warehouse' as const
     : skuLevel.manualDailyDemand !== undefined ? 'sku' as const
-    : catDemand !== null ? 'category' as const : 'none' as const
+    : 'none' as const
 
   return {
     reorderPointOverride,

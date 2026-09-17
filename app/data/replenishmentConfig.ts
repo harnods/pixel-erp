@@ -86,18 +86,6 @@ export interface ReplenishmentConfig {
   safetyDaysByCategory: Record<string, number>
   /** Below this many days of movement history a SKU is "cold start" (US-003). */
   coldStartMinDays: number
-  /**
-   * Expected units/day per category — the seed a cold-start SKU (no history, or
-   * thinner than `coldStartMinDays`) uses instead of a computed velocity, so its
-   * reorder point is still demand × (lead + safety) and never a directly-seeded
-   * min stock (D17). It is the ONLY user-entered demand value (D16); everything
-   * else is computed from sales history.
-   *
-   * A category left UNSET has no average to inherit, which is exactly US-003
-   * AC-03: its cold-start SKUs land in "Needs setup" rather than receive a
-   * fabricated quantity. Overridable per SKU×warehouse.
-   */
-  coldStartCategoryDemand: Record<string, number>
   reorderBoundary: ReplBoundaryMode
   /** FSN classification window, in days (US-012). */
   fsnWindowDays: number
@@ -158,17 +146,6 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Accessory: 5,
   },
   coldStartMinDays: 14,
-  // Expected daily demand for a brand-new / thin-history SKU, per category — the
-  // ONLY user-entered demand value (D16/D17). Min stock is ALWAYS computed
-  // (demand × (lead + safety)); for cold-start SKUs the demand comes from here.
-  // Seeded only for the fast consumables where a daily rate is honest; the slow,
-  // expensive equipment categories are deliberately left unset, so their new SKUs
-  // route to "Needs setup" rather than carry a fabricated rate (US-003 CON-02).
-  coldStartCategoryDemand: {
-    'Green Beans': 3,
-    'Roasted Beans': 2,
-    Accessory: 2,
-  },
   reorderBoundary: 'inclusive',
   fsnWindowDays: 90,
   fsnFastPct: 60,
@@ -201,7 +178,6 @@ export function getReplenishmentConfig(): ReplenishmentConfig {
     ...saved,
     // Nested values must merge, not replace, or a partial save drops categories.
     safetyDaysByCategory: { ...REPL_DEFAULTS.safetyDaysByCategory, ...(saved.safetyDaysByCategory ?? {}) },
-    coldStartCategoryDemand: { ...REPL_DEFAULTS.coldStartCategoryDemand, ...(saved.coldStartCategoryDemand ?? {}) },
     coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
     lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
     leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },

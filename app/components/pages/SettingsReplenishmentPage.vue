@@ -116,11 +116,6 @@ function save() {
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
         .map(([k, v]) => [k, Math.max(0, Number(v))]),
     ),
-    coldStartCategoryDemand: Object.fromEntries(
-      Object.entries(draft.coldStartCategoryDemand)
-        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
-        .map(([k, v]) => [k, Math.max(0, Number(v))]),
-    ),
     leadTimeByCategory: Object.fromEntries(
       Object.entries(draft.leadTimeByCategory)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
@@ -557,19 +552,21 @@ const BOUNDARY_OPTIONS = [
       </div>
 
       <!-- ── New products (cold-start) ──
-        A clearly separate section (D16): the demand SEED is the ONLY user-entered
-        demand value, scoped to new products, and it feeds the same computed
-        reorder point as everything else. It is not a min-stock default. -->
+        No demand is ever guessed for a new product. Below the threshold a product
+        has no recommendation until it either builds real sales history or a buyer
+        enters an expected daily demand for it by hand (from the product's own
+        replenishment settings) — so a product that may never sell is never given
+        a fabricated order. -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('New products (cold-start)') }}</h3>
       <p class="rs-hint">
-        {{ t('Until a product has enough sales history, its demand is taken from these per-category seeds. The moment it crosses the history threshold the system switches to its real sales automatically — no action needed. Leave a category empty and its new products go to Needs setup instead of receiving an estimate.') }}
+        {{ t('A product with less sales history than the threshold is never given a guessed demand. It goes to Needs setup until it builds enough real sales, or someone enters an expected daily demand for that specific product by hand.') }}
       </p>
 
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
           <span class="rs-label-desc">
-            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it uses the seed below.') }}
+            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.') }}
           </span>
         </div>
         <div class="rs-control">
@@ -578,34 +575,6 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
-        </div>
-      </div>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Expected daily demand') }}</span>
-          <span class="rs-label-desc">{{ t('New products only. Average daily demand per category, until real sales take over.') }}</span>
-        </div>
-        <div class="rs-control">
-          <div v-if="isEditing" class="rs-cat-grid">
-            <div v-for="cat in categories" :key="`cs-${cat}`" class="rs-cat-row">
-              <span class="rs-cat-name">{{ cat }}</span>
-              <MpInput
-                :id="`rs-cs-input-${cat}`"
-                v-model="draft.coldStartCategoryDemand[cat]"
-                type="number"
-                step="0.1"
-                :placeholder="t('None')"
-                :class="css({ width: '96px' })"
-              />
-            </div>
-          </div>
-          <span v-else class="rs-value">
-            {{ categories.filter(c => committed.coldStartCategoryDemand[c] !== undefined).length
-              ? categories.filter(c => committed.coldStartCategoryDemand[c] !== undefined)
-                  .map(c => `${c} ${committed.coldStartCategoryDemand[c]}/day`).join('   ')
-              : t('Not set — new products go to Needs setup') }}
-          </span>
         </div>
       </div>
 

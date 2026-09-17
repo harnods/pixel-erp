@@ -55,7 +55,6 @@ const velocityNote = computed(() => {
       return `Sales over ${windows}, weighted ${weights}`
     }
     case 'manual-sku': return 'Entered by hand (cold start)'
-    case 'manual-category': return 'Category average (cold start)'
     default: return 'No sales history yet'
   }
 })

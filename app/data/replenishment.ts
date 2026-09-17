@@ -55,21 +55,21 @@ import {
 // ── Velocity (OD-002 / OD-009) ───────────────────────────────────────────────
 
 /**
- * Which of the three demand cases fired (US-002 AC-04/05, US-003).
+ * Which demand case fired (US-002 AC-04/05, US-003).
  *
- *   computed        — history ≥ cold-start threshold: averaged from real sales.
- *   manual-category — cold start, using the per-category demand SEED (D17).
- *   manual-sku      — cold start, using a per-item manual demand override.
- *   none            — cold start with no seed and no override ⇒ Needs setup.
+ *   computed   — history ≥ cold-start threshold: averaged from real sales.
+ *   manual-sku — cold start, using a per-item manual demand a buyer entered.
+ *   none       — cold start with no manual demand ⇒ Needs setup.
  *
- * `manual-category` and `manual-sku` are both "seed" cases in the PRD's two-way
- * split; the finer names let the trust drawer say which one, and let graduation
- * off the seed be silent (a SKU crossing the threshold simply returns `computed`
- * on the next run — no stored number to unwind).
+ * There is deliberately NO per-category demand seed: a never-sold or dead-stock
+ * product must never be given a fabricated demand, so with no real sales and no
+ * explicit manual figure it goes to Needs setup rather than an invented quantity.
+ * Graduation off a manual figure is silent — a SKU crossing the threshold simply
+ * returns `computed` on the next run, no stored number to unwind.
  */
-export type ReplDemandSource = 'computed' | 'manual-sku' | 'manual-category' | 'none'
+export type ReplDemandSource = 'computed' | 'manual-sku' | 'none'
 
-/** The PRD's two-way label for `ReplDemandSource` — 'seed' folds both manual tiers. */
+/** Two-way label for `ReplDemandSource` — 'seed' = a hand-entered cold-start figure. */
 export function demandBasisOf(source: ReplDemandSource): 'computed' | 'seed' | 'none' {
   if (source === 'computed') return 'computed'
   if (source === 'none') return 'none'
@@ -154,19 +154,16 @@ export function velocityFor(
 
   if (coldStart) {
     // Zero OR thin history (US-002 AC-04): never compute a velocity off too-few
-    // points. Use the cold-start seed — a per-item manual figure if one was set,
-    // else the per-category demand seed (D17). With neither, report nothing and
-    // let the caller route this to "Needs setup" (US-003 AC-03).
+    // points, and never guess from a category seed. Use a per-item manual figure
+    // only if a buyer entered one; otherwise report nothing and let the caller
+    // route this to "Needs setup" (US-003 AC-03) rather than invent demand for a
+    // product that may never sell.
     const manual = settings.manualDailyDemand
-    const source: ReplDemandSource = manual === null
-      ? 'none'
-      : settings.manualDailyDemandSource === 'category' ? 'manual-category' : 'manual-sku'
+    const source: ReplDemandSource = manual === null ? 'none' : 'manual-sku'
     const thin = series.historyDays > 0
     const reason = source === 'manual-sku'
       ? `Cold start (${series.historyDays}d history) — manual ${manual}/day for this item`
-      : source === 'manual-category'
-        ? `Cold start (${series.historyDays}d history) — ${productBySku(sku)?.category || 'category'} demand seed, ${manual}/day`
-        : `Cold start (${thin ? `only ${series.historyDays}d history` : 'no history'}) and no demand seed — needs setup`
+      : `Cold start (${thin ? `only ${series.historyDays}d history` : 'no history'}) and no manual demand — needs setup`
     return {
       avgDailySales: manual ?? 0,
       source,

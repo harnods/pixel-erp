@@ -3934,6 +3934,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Volatility threshold': 'Ambang fluktuasi',
   'Cold-start demand by category': 'Permintaan produk baru per kategori',
   'New products (cold-start)': 'Produk baru (cold-start)',
+  'A product with less sales history than the threshold is never given a guessed demand. It goes to Needs setup until it builds enough real sales, or someone enters an expected daily demand for that specific product by hand.':
+    'Produk dengan riwayat penjualan kurang dari batas tidak pernah diberi perkiraan permintaan. Produk masuk ke Perlu disiapkan sampai punya cukup penjualan nyata, atau seseorang mengisi perkiraan permintaan harian untuk produk itu secara manual.',
+  'Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.':
+    'Jumlah hari riwayat penjualan yang dibutuhkan produk sebelum dihitung dari penjualannya sendiri. Di bawah ini, produk masuk ke Perlu disiapkan kecuali permintaannya diisi manual.',
   'Until a product has enough sales history, its demand is taken from these per-category seeds. The moment it crosses the history threshold the system switches to its real sales automatically — no action needed. Leave a category empty and its new products go to Needs setup instead of receiving an estimate.':
     'Sebelum sebuah produk punya cukup riwayat penjualan, permintaannya diambil dari nilai awal per kategori ini. Begitu melewati batas riwayat, sistem otomatis beralih ke penjualan sebenarnya — tanpa perlu tindakan. Kosongkan satu kategori dan produk barunya masuk ke Perlu disiapkan, bukan diberi perkiraan.',
   'Days of sales history a product needs before it is measured from its own sales. Below this, it uses the seed below.':
