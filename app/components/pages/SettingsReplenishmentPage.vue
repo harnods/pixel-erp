@@ -254,8 +254,8 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <!-- ── Safety and order coverage ── -->
-      <h3 class="rs-sub rs-sub--spaced">{{ t('Safety and order coverage') }}</h3>
+      <!-- ── Safety days ── -->
+      <h3 class="rs-sub rs-sub--spaced">{{ t('Safety days') }}</h3>
 
       <!--
         One list per policy, with the company fallback as its LAST ROW.
@@ -303,6 +303,19 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
+      <!--
+        There is deliberately NO "min. stock default" field (D16/D17). Min stock
+        is a DERIVED OUTPUT — demand × (lead + safety) — never a typed-in default.
+        A default here would reintroduce manual reorder points and silently fight
+        the engine. Cold-start SKUs are handled by the demand SEED below, not by a
+        seeded min stock.
+      -->
+
+      <!-- ── Reorder point & coverage ──
+        Order coverage sizes each order; the boundary decides whether a product
+        exactly at its reorder point is due. Both belong to the reorder-point
+        decision, separate from the safety-days buffer above. -->
+      <h3 class="rs-sub rs-sub--spaced">{{ t('Reorder point & coverage') }}</h3>
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Order coverage') }}</span>
@@ -338,18 +351,6 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <!--
-        There is deliberately NO "min. stock default" field (D16/D17). Min stock
-        is a DERIVED OUTPUT — demand × (lead + safety) — never a typed-in default.
-        A default here would reintroduce manual reorder points and silently fight
-        the engine. Cold-start SKUs are handled by the demand SEED below, not by a
-        seeded min stock.
-      -->
-
-      <!-- ── Reorder point ──
-        Its own section: a worklist trigger rule, not a sizing input like safety
-        days or order coverage. -->
-      <h3 class="rs-sub rs-sub--spaced">{{ t('Reorder point') }}</h3>
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Reorder-point boundary') }}</span>
