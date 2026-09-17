@@ -7,8 +7,8 @@
  * by the engine, so there is no second copy of a policy to drift.
  *
  * Precedence:
- *   reorderPoint      SKU-warehouse → SKU → (engine: velocity × (lead + safety))
- *                     → category min stock → global min stock  (US-024 AC-03)
+ *   reorderPoint      SKU-warehouse → SKU → (engine: velocity × (lead + safety));
+ *                     no history + no cold-start demand seed ⇒ Needs setup (D17)
  *   safetyDays        SKU-warehouse → SKU → warehouse → category → global
  *   coverageDays      SKU-warehouse → SKU → category → global
  *   lookbackDays      SKU-warehouse → SKU → category → global
@@ -25,7 +25,6 @@ import {
   coverageDaysForCategory,
   getReplenishmentConfig,
   lookbackDaysForCategory,
-  minStockForCategory,
   safetyDaysForCategory,
   type ReplenishmentConfig,
 } from './replenishmentConfig'
@@ -78,7 +77,6 @@ export interface EffectiveReplenishmentSettings {
    * null when neither the category nor the company sets one, which correctly
    * leaves such a warehouse with no floor rather than an invented zero.
    */
-  categoryMinStock: number | null
   manualLeadTimeDays: number | null
   manualLeadTimeSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
   tracked: boolean
@@ -177,8 +175,6 @@ export function effectiveSettings(
     : skuLevel.lookbackDays !== undefined ? 'sku' as const
     : catLookback !== undefined ? 'category' as const : 'global' as const
 
-  const categoryMinStock = minStockForCategory(category, cfg)
-
   const maxLevel = pair.maxLevel ?? skuLevel.maxLevel ?? null
   const maxLevelSource = pair.maxLevel !== undefined
     ? 'sku-warehouse' as const
@@ -212,7 +208,6 @@ export function effectiveSettings(
     lookbackDaysSource,
     maxLevel,
     maxLevelSource,
-    categoryMinStock,
     manualLeadTimeDays,
     manualLeadTimeSource,
     tracked,
@@ -226,6 +221,22 @@ export function effectiveSettings(
 export function overrideCount(): number {
   const store = load()
   return Object.keys(store.bySkuWarehouse).length + Object.keys(store.bySku).length
+}
+
+/**
+ * How many SKU / SKU-warehouse rows set their own safety days (D16 loophole).
+ *
+ * The settings page shows this beside the company safety-days default, because a
+ * global edit that "does nothing" is almost always the cascade working as
+ * designed — a downstream override wins (D14). Surfacing the count answers the
+ * question ("why didn't my change move anything?") before it is asked.
+ */
+export function safetyDaysOverrideCount(): number {
+  const store = load()
+  let n = 0
+  for (const o of Object.values(store.bySku)) if (o.safetyDays !== undefined) n++
+  for (const o of Object.values(store.bySkuWarehouse)) if (o.safetyDays !== undefined) n++
+  return n
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────

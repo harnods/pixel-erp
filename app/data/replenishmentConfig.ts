@@ -81,31 +81,21 @@ export interface ReplenishmentConfig {
   leadTimeOutlierCapDays: number
   /** Tier 3 of the lead-time ladder — a per-category default (US-001 AC-04). */
   leadTimeByCategory: Record<string, number>
-  /**
-   * Minimum stock for a warehouse that has NOTHING to calculate from — no sales
-   * history, so no velocity, so no demand-derived floor (US-024 AC-03's category
-   * tier; D13's "seed for warehouses with no computed value").
-   *
-   * It sits AFTER the calculation, not before it: a category figure that
-   * outranked real demand would switch the engine off for every product in that
-   * category. 0 means "no floor", which is a legitimate answer for a category
-   * nobody stocks speculatively.
-   */
-  minStockByCategory: Record<string, number>
-  /** Last resort when the category has no figure either. 0 = none. */
-  minStockGlobal: number
   /** Fallback buffer, in days, when no category or SKU override applies. */
   safetyDaysGlobal: number
   safetyDaysByCategory: Record<string, number>
   /** Below this many days of movement history a SKU is "cold start" (US-003). */
   coldStartMinDays: number
   /**
-   * Expected units/day per category, used for cold-start SKUs that have no manual
-   * demand of their own (US-003 AC-01 "inherit a category average").
+   * Expected units/day per category — the seed a cold-start SKU (no history, or
+   * thinner than `coldStartMinDays`) uses instead of a computed velocity, so its
+   * reorder point is still demand × (lead + safety) and never a directly-seeded
+   * min stock (D17). It is the ONLY user-entered demand value (D16); everything
+   * else is computed from sales history.
    *
-   * Empty by default and deliberately so: a tenant that has configured nothing has
-   * no category average to inherit, which is exactly US-003 AC-03 — those SKUs must
-   * land in "Needs setup" rather than receive a fabricated quantity.
+   * A category left UNSET has no average to inherit, which is exactly US-003
+   * AC-03: its cold-start SKUs land in "Needs setup" rather than receive a
+   * fabricated quantity. Overridable per SKU×warehouse.
    */
   coldStartCategoryDemand: Record<string, number>
   reorderBoundary: ReplBoundaryMode
@@ -158,18 +148,6 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Equipment: 21,
     Accessory: 10,
   },
-  // Sized to a few weeks of the slow trickle these categories sell at when they
-  // have no history — enough that a new location is not left at zero, small
-  // enough that it is cheap to be wrong.
-  minStockByCategory: {
-    'Green Beans': 20,
-    'Roasted Beans': 15,
-    'Espresso Machine': 2,
-    Grinder: 3,
-    Equipment: 3,
-    Accessory: 12,
-  },
-  minStockGlobal: 0,
   safetyDaysGlobal: 7,
   safetyDaysByCategory: {
     'Green Beans': 10,
@@ -180,7 +158,17 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Accessory: 5,
   },
   coldStartMinDays: 14,
-  coldStartCategoryDemand: {},
+  // Expected daily demand for a brand-new / thin-history SKU, per category — the
+  // ONLY user-entered demand value (D16/D17). Min stock is ALWAYS computed
+  // (demand × (lead + safety)); for cold-start SKUs the demand comes from here.
+  // Seeded only for the fast consumables where a daily rate is honest; the slow,
+  // expensive equipment categories are deliberately left unset, so their new SKUs
+  // route to "Needs setup" rather than carry a fabricated rate (US-003 CON-02).
+  coldStartCategoryDemand: {
+    'Green Beans': 3,
+    'Roasted Beans': 2,
+    Accessory: 2,
+  },
   reorderBoundary: 'inclusive',
   fsnWindowDays: 90,
   fsnFastPct: 60,
@@ -217,7 +205,6 @@ export function getReplenishmentConfig(): ReplenishmentConfig {
     coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
     lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
     leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },
-    minStockByCategory: { ...REPL_DEFAULTS.minStockByCategory, ...(saved.minStockByCategory ?? {}) },
     windows: saved.windows?.length ? saved.windows : REPL_DEFAULTS.windows,
   }
 }
@@ -270,20 +257,6 @@ export function coverageDaysForCategory(category: string, cfg: ReplenishmentConf
 /** Demand lookback window for a category, falling back to the global value (US-002 VR-01). */
 export function lookbackDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
   return cfg.lookbackDaysByCategory[category] ?? cfg.lookbackDays
-}
-
-/**
- * The floor a warehouse falls back to when it has no sales to calculate from
- * (US-024 AC-03). Returns null when neither the category nor the company sets
- * one, which correctly leaves such a warehouse with no floor at all.
- */
-export function minStockForCategory(
-  category: string,
-  cfg: ReplenishmentConfig = getReplenishmentConfig(),
-): number | null {
-  const cat = cfg.minStockByCategory[category]
-  if (cat !== undefined && cat > 0) return cat
-  return cfg.minStockGlobal > 0 ? cfg.minStockGlobal : null
 }
 
 /** Tier 3 of the lead-time ladder — the category default (US-001 AC-04). */

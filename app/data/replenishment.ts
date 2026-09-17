@@ -54,7 +54,27 @@ import {
 
 // ── Velocity (OD-002 / OD-009) ───────────────────────────────────────────────
 
+/**
+ * Which of the three demand cases fired (US-002 AC-04/05, US-003).
+ *
+ *   computed        — history ≥ cold-start threshold: averaged from real sales.
+ *   manual-category — cold start, using the per-category demand SEED (D17).
+ *   manual-sku      — cold start, using a per-item manual demand override.
+ *   none            — cold start with no seed and no override ⇒ Needs setup.
+ *
+ * `manual-category` and `manual-sku` are both "seed" cases in the PRD's two-way
+ * split; the finer names let the trust drawer say which one, and let graduation
+ * off the seed be silent (a SKU crossing the threshold simply returns `computed`
+ * on the next run — no stored number to unwind).
+ */
 export type ReplDemandSource = 'computed' | 'manual-sku' | 'manual-category' | 'none'
+
+/** The PRD's two-way label for `ReplDemandSource` — 'seed' folds both manual tiers. */
+export function demandBasisOf(source: ReplDemandSource): 'computed' | 'seed' | 'none' {
+  if (source === 'computed') return 'computed'
+  if (source === 'none') return 'none'
+  return 'seed'
+}
 
 export interface VelocityWindowResult {
   days: number
@@ -81,6 +101,8 @@ export interface VelocityResult {
   lookbackUnits: number
   /** Days whose qty was pulled back to the outlier cap (US-002 AC-03). */
   dampedDays: number
+  /** Plain-language account of which case fired — shown in the trust drawer. */
+  reason: string
 }
 
 /**
@@ -131,12 +153,20 @@ export function velocityFor(
   const citations = demandWindow(sku, warehouseId, evidenceDays, asOf).docs
 
   if (coldStart) {
-    // No history to compute from — use a manual figure if someone supplied one,
-    // otherwise report nothing and let the caller route this to "Needs setup".
+    // Zero OR thin history (US-002 AC-04): never compute a velocity off too-few
+    // points. Use the cold-start seed — a per-item manual figure if one was set,
+    // else the per-category demand seed (D17). With neither, report nothing and
+    // let the caller route this to "Needs setup" (US-003 AC-03).
     const manual = settings.manualDailyDemand
     const source: ReplDemandSource = manual === null
       ? 'none'
       : settings.manualDailyDemandSource === 'category' ? 'manual-category' : 'manual-sku'
+    const thin = series.historyDays > 0
+    const reason = source === 'manual-sku'
+      ? `Cold start (${series.historyDays}d history) — manual ${manual}/day for this item`
+      : source === 'manual-category'
+        ? `Cold start (${series.historyDays}d history) — ${productBySku(sku)?.category || 'category'} demand seed, ${manual}/day`
+        : `Cold start (${thin ? `only ${series.historyDays}d history` : 'no history'}) and no demand seed — needs setup`
     return {
       avgDailySales: manual ?? 0,
       source,
@@ -150,6 +180,7 @@ export function velocityFor(
       lookbackDays,
       lookbackUnits: 0,
       dampedDays: 0,
+      reason,
     }
   }
 
@@ -159,9 +190,15 @@ export function velocityFor(
     // The spec's own rule: total sold in the window ÷ the window, with single-day
     // spikes damped first so one promo cannot set the reorder point for months.
     const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
+    // Divide by the days actually available, not the raw window, when history is
+    // shorter than the window (US-002 AC-05) — otherwise a product live for 30 of
+    // a 60-day window reads at half its true rate. `win.units` already sums only
+    // real days, so this only corrects the divisor.
+    const availableDays = Math.min(win.days, series.historyDays)
+    const perDay = availableDays > 0 ? win.units / availableDays : 0
     return {
-      avgDailySales: win.perDay,
-      source: win.perDay > 0 ? 'computed' : 'none',
+      avgDailySales: perDay,
+      source: perDay > 0 ? 'computed' : 'none',
       historyDays: series.historyDays,
       coldStart: false,
       windows: windowResults,
@@ -169,9 +206,12 @@ export function velocityFor(
       volatile,
       citations,
       mode: 'lookback',
-      lookbackDays: win.days,
+      lookbackDays: availableDays,
       lookbackUnits: win.units,
       dampedDays: win.dampedDays,
+      reason: perDay > 0
+        ? `Averaged ${win.units} sold over ${availableDays} days of sales`
+        : `No sales in the last ${availableDays} days`,
     }
   }
 
@@ -198,6 +238,9 @@ export function velocityFor(
     lookbackDays,
     lookbackUnits: 0,
     dampedDays: 0,
+    reason: avgDailySales > 0
+      ? `Weighted blend of ${windowResults.map((w) => `${w.days}d`).join('/')} windows`
+      : 'No sales in the weighted windows',
   }
 }
 
@@ -437,11 +480,15 @@ export function isSuppressed(
 
 export interface ReorderPointResult {
   value: number
-  source: 'sku-warehouse' | 'sku' | 'calculated' | 'category' | 'none'
+  source: 'sku-warehouse' | 'sku' | 'calculated' | 'none'
 }
 
 /**
- * Reorder point = velocity × (lead + safety), unless overridden.
+ * Reorder point = velocity × (lead + safety), unless overridden. Min stock is
+ * ALWAYS this computation — there is NO direct category/global min-stock seed
+ * (D17). A cold-start SKU is not an exception: it still computes, using the
+ * per-category cold-start DEMAND seed (resolved in `velocityFor`) in place of a
+ * measured velocity. One formula, one cold-start path, zero manual reorder points.
  *
  * Deliberately NOT seeded from `WarehouseStockItem.minStock`. That field averages
  * 96 units against an average available qty of 11, so 264 of the seed's 270 pairs
@@ -451,8 +498,9 @@ export interface ReorderPointResult {
  * feature simply computes its own trigger, which is also the textbook definition
  * and what TS-001's "accept the system-suggested default" implies.
  *
- * With no velocity there is no demand to protect against, so there is no reorder
- * point and the SKU is not due — which is the correct answer, not a gap.
+ * With no velocity AND no cold-start seed there is no demand to protect against,
+ * so there is no reorder point and the SKU is routed to Needs setup — the correct
+ * answer, not a fabricated floor.
  */
 export function resolveReorderPoint(
   settings: EffectiveReplenishmentSettings,
@@ -465,15 +513,9 @@ export function resolveReorderPoint(
       source: settings.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse' : 'sku',
     }
   }
-  // No demand to calculate from — fall to the category/company floor (US-024
-  // AC-03). This tier sits AFTER the calculation, never before it: a category
-  // figure that outranked real demand would switch the engine off for every
-  // product in that category.
-  if (velocity <= 0) {
-    return settings.categoryMinStock !== null
-      ? { value: settings.categoryMinStock, source: 'category' }
-      : { value: 0, source: 'none' }
-  }
+  // No demand (neither measured nor a cold-start seed) ⇒ no reorder point (D17).
+  // The SKU is routed to Needs setup upstream; nothing is invented here.
+  if (velocity <= 0) return { value: 0, source: 'none' }
   return { value: Math.ceil(velocity * (leadDays + settings.safetyDays)), source: 'calculated' }
 }
 
@@ -903,7 +945,7 @@ export interface WarehouseMinStock {
   warehouseName: string
   /** The floor actually in force here — what the warehouse table shows. */
   value: number
-  source: 'sku-warehouse' | 'sku' | 'calculated' | 'category' | 'stored'
+  source: 'sku-warehouse' | 'sku' | 'calculated' | 'stored'
   /** What the formula gives; null when the warehouse has no demand to compute from. */
   calculated: number | null
   velocity: number
@@ -1018,14 +1060,15 @@ export function warehouseMinStockRollup(
       ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays))
       : null
 
-    // A warehouse with no demand has no calculated floor, but the stored
-    // min. stock is still what low-stock alerts enforce there — so that is its
-    // effective value, and it belongs in the sum.
+    // A warehouse with no demand has no calculated floor (no category seed exists
+    // any more — D17). The legacy stored min. stock is still what the low-stock
+    // alerts on the Products and warehouse screens enforce, so for this
+    // display-only rollup that is its effective value, labelled as not
+    // demand-derived.
     const source: WarehouseMinStock['source'] =
       row.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse'
       : row.reorderPointSource === 'sku' ? 'sku'
       : calculated !== null ? 'calculated'
-      : row.reorderPointSource === 'category' ? 'category'
       : 'stored'
     const value = source === 'stored' ? stock.minStock : row.reorderPoint
 

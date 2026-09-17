@@ -22,9 +22,7 @@ import {
 import {
   saveSkuWarehouseOverride, saveSkuOverride, resetReplenishmentSettings,
 } from '~/data/replenishmentSettings'
-import { getReplenishmentConfig, REPL_DEFAULTS, minStockForCategory } from '~/data/replenishmentConfig'
-import { effectiveSettings } from '~/data/replenishmentSettings'
-import { productBySku } from '~/data/inventory'
+import { getReplenishmentConfig, REPL_DEFAULTS } from '~/data/replenishmentConfig'
 import { warehouseProducts } from '~/data/inventory'
 import { getProductWarehouseStock } from '~/data/productDetails'
 
@@ -275,68 +273,62 @@ describe('every warehouse always resolves to an effective value (D15)', () => {
   })
 })
 
-describe('a warehouse with no sales falls to the category floor (US-024 AC-03)', () => {
-  it('resolves category → global rather than leaving no floor', () => {
-    const sku = multiWarehouseSku()
-    const category = productBySku(sku)?.category ?? ''
-    const expected = minStockForCategory(category, cfg)
-    expect(expected).not.toBeNull()
+describe('min stock is always computed — there is no category floor (D17)', () => {
+  /** Any (sku, warehouse) whose rollup row has no calculated figure — no sales
+   *  and no cold-start seed, so the reorder point cannot be computed. */
+  function noSalesRow(): { sku: string; warehouseId: string } | null {
+    for (const wh of replenishmentWarehouses()) {
+      for (const p of warehouseProducts(wh.id)) {
+        const row = warehouseMinStockRollup(p.sku, cfg).perWarehouse
+          .find((w) => w.warehouseId === wh.id)
+        if (row && row.calculated === null) return { sku: p.sku, warehouseId: wh.id }
+      }
+    }
+    return null
+  }
 
+  it('a warehouse with no computed figure falls to the legacy stored floor, never a category seed', () => {
+    const sku = multiWarehouseSku()
     for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
       if (w.calculated !== null) continue
-      expect(w.source).toBe('category')
-      expect(w.value).toBe(expected)
-    }
-  })
-
-  it('the category floor sits AFTER the calculation, never before it', () => {
-    // A category figure that outranked real demand would switch the engine off
-    // for every product in that category — the failure this ordering prevents.
-    const sku = multiWarehouseSku()
-    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
-      if (w.calculated === null) continue
-      expect(w.source).not.toBe('category')
-      // Where demand exists, the demand-derived figure wins.
-      expect(w.value).toBe(w.calculated)
-    }
-  })
-
-  it('an explicit override still beats the category floor', () => {
-    const sku = multiWarehouseSku()
-    const noSales = warehouseMinStockRollup(sku, cfg).perWarehouse.find((w) => w.calculated === null)
-    expect(noSales).toBeTruthy()
-
-    saveSkuWarehouseOverride(sku, noSales!.warehouseId, { reorderPoint: 3 })
-    invalidateReplenishmentCaches()
-
-    const after = warehouseMinStockRollup(sku, cfg).perWarehouse
-      .find((w) => w.warehouseId === noSales!.warehouseId)!
-    expect(after.value).toBe(3)
-    expect(after.source).toBe('sku-warehouse')
-  })
-
-  it('no category and no global figure means no floor, not a fabricated zero', () => {
-    const bare = { ...REPL_DEFAULTS, minStockByCategory: {}, minStockGlobal: 0 }
-    const sku = multiWarehouseSku()
-    for (const w of warehouseMinStockRollup(sku, bare).perWarehouse) {
-      if (w.calculated !== null) continue
-      // Falls through to the stored legacy floor, and is labelled as such.
+      // The only non-computed source left is 'stored' — the legacy min. stock the
+      // low-stock alerts still enforce. 'category' no longer exists.
       expect(w.source).toBe('stored')
     }
   })
 
-  it('every warehouse still resolves to something (D15 read-model)', () => {
+  it('where demand exists (measured OR seeded) the computed figure wins', () => {
     const sku = multiWarehouseSku()
     for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
-      expect(['sku-warehouse', 'sku', 'calculated', 'category', 'stored']).toContain(w.source)
+      if (w.calculated === null) continue
+      expect(w.source).toBe('calculated')
+      expect(w.value).toBe(w.calculated)
+    }
+  })
+
+  it('an explicit override still beats everything', () => {
+    const target = noSalesRow() ?? { sku: multiWarehouseSku(), warehouseId: replenishmentWarehouses()[0]!.id }
+    saveSkuWarehouseOverride(target.sku, target.warehouseId, { reorderPoint: 3 })
+    invalidateReplenishmentCaches()
+
+    const after = warehouseMinStockRollup(target.sku, cfg).perWarehouse
+      .find((w) => w.warehouseId === target.warehouseId)!
+    expect(after.value).toBe(3)
+    expect(after.source).toBe('sku-warehouse')
+  })
+
+  it('every warehouse still resolves to a finite value (D15 read-model)', () => {
+    const sku = multiWarehouseSku()
+    for (const w of warehouseMinStockRollup(sku, cfg).perWarehouse) {
+      expect(['sku-warehouse', 'sku', 'calculated', 'stored']).toContain(w.source)
       expect(Number.isFinite(w.value)).toBe(true)
     }
   })
 
-  it('effectiveSettings exposes the category floor for the engine to use', () => {
-    const sku = multiWarehouseSku()
-    const wh = warehouseMinStockRollup(sku, cfg).perWarehouse[0]!
-    const settings = effectiveSettings(sku, wh.warehouseId, cfg)
-    expect(settings.categoryMinStock).toBe(minStockForCategory(productBySku(sku)?.category ?? '', cfg))
+  it('the config carries no direct min-stock seed any more (D17)', () => {
+    expect('minStockByCategory' in REPL_DEFAULTS).toBe(false)
+    expect('minStockGlobal' in REPL_DEFAULTS).toBe(false)
+    const cfgSrc = readFileSync(join(process.cwd(), 'app/data/replenishmentConfig.ts'), 'utf8')
+    expect(cfgSrc).not.toMatch(/minStockByCategory|minStockGlobal|minStockForCategory/)
   })
 })

@@ -17,6 +17,7 @@ import {
   REPL_DEFAULTS, type ReplenishmentConfig,
 } from '~/data/replenishmentConfig'
 import { recalculateReplenishment, invalidateReplenishmentCaches } from '~/data/replenishment'
+import { safetyDaysOverrideCount } from '~/data/replenishmentSettings'
 import { CATALOG } from '~/data/catalog'
 
 const { t } = useLocale()
@@ -42,6 +43,13 @@ const categories = [...new Set(CATALOG.map((c) => c.category))].sort()
 const weightTotal = computed(() => draft.windows.reduce((s, w) => s + Number(w.weightPct || 0), 0))
 const weightsOk = computed(() => weightTotal.value === 100)
 const fsnBandsOk = computed(() => Number(draft.fsnFastPct) > Number(draft.fsnSlowPct))
+
+/** How many SKU/warehouse rows override safety days — so editing the company
+ *  default and seeing nothing move is explained (the override wins, D14). */
+const safetyOverrides = computed(() => {
+  void committed.value // recompute after a save
+  return safetyDaysOverrideCount()
+})
 
 function startEdit() {
   Object.assign(draft, cloneConfig(committed.value))
@@ -69,7 +77,6 @@ function save() {
     [t('Safety days default'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
     [t('Default lead time'), draft.fallbackLeadTimeDays],
-    [t('Min. stock default'), draft.minStockGlobal],
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
@@ -104,9 +111,8 @@ function save() {
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
     leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
     leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
-    minStockGlobal: Number(draft.minStockGlobal),
-    minStockByCategory: Object.fromEntries(
-      Object.entries(draft.minStockByCategory)
+    coldStartCategoryDemand: Object.fromEntries(
+      Object.entries(draft.coldStartCategoryDemand)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
         .map(([k, v]) => [k, Math.max(0, Number(v))]),
     ),
@@ -243,22 +249,6 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
-          <span class="rs-label-desc">
-            {{ t('A product with less sales history than this cannot be given a calculated quantity.') }}
-          </span>
-        </div>
-        <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-coldstart">
-            <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
-        </div>
-      </div>
-
       <!-- ── Safety and reorder point ── -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('Safety and reorder point') }}</h3>
 
@@ -274,6 +264,9 @@ const BOUNDARY_OPTIONS = [
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Safety days default') }}</span>
           <span class="rs-label-desc">{{ t('Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.') }}</span>
+          <span v-if="safetyOverrides > 0" class="rs-label-note">
+            {{ safetyOverrides }} {{ t('warehouse/product overrides — those keep their own value when you change this') }}
+          </span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">
@@ -319,40 +312,13 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Min. stock default') }}</span>
-          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.') }}</span>
-        </div>
-        <div class="rs-control">
-          <div v-if="isEditing" class="rs-cat-grid">
-            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
-              <span class="rs-cat-name">{{ cat }}</span>
-              <MpInputGroup :id="`rs-minstock-cat-${cat}`">
-                <MpInput
-                  :id="`rs-minstock-cat-input-${cat}`"
-                  v-model="draft.minStockByCategory[cat]"
-                  type="number"
-                  :placeholder="String(draft.minStockGlobal)"
-                  :class="css({ width: '84px' })"
-                />
-              </MpInputGroup>
-            </div>
-            <div class="rs-cat-row rs-cat-row--fallback">
-              <span class="rs-cat-name">{{ t('Other categories') }}</span>
-              <MpInputGroup id="rs-minstock-global">
-                <MpInput id="rs-minstock-global-input" v-model="draft.minStockGlobal" type="number" :class="css({ width: '84px' })" />
-              </MpInputGroup>
-            </div>
-          </div>
-          <span v-else class="rs-value">
-            {{ categories.map(c => `${c} ${committed.minStockByCategory[c] ?? committed.minStockGlobal}`).join('   ') }}
-            &nbsp;·&nbsp; {{ t('Other categories') }}
-            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('none') }}
-          </span>
-        </div>
-      </div>
-
+      <!--
+        There is deliberately NO "min. stock default" field (D16/D17). Min stock
+        is a DERIVED OUTPUT — demand × (lead + safety) — never a typed-in default.
+        A default here would reintroduce manual reorder points and silently fight
+        the engine. Cold-start SKUs are handled by the demand SEED below, not by a
+        seeded min stock.
+      -->
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Reorder-point boundary') }}</span>
@@ -546,14 +512,35 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <!-- ── Cold-start category demand ── -->
-      <h3 class="rs-sub rs-sub--spaced">{{ t('Cold-start demand by category') }}</h3>
+      <!-- ── New products (cold-start) ──
+        A clearly separate section (D16): the demand SEED is the ONLY user-entered
+        demand value, scoped to new products, and it feeds the same computed
+        reorder point as everything else. It is not a min-stock default. -->
+      <h3 class="rs-sub rs-sub--spaced">{{ t('New products (cold-start)') }}</h3>
       <p class="rs-hint">
-        {{ t('New products with too little history inherit these figures. Leave a category empty and its new products go to Needs setup instead of receiving an estimate.') }}
+        {{ t('Until a product has enough sales history, its demand is taken from these per-category seeds. The moment it crosses the history threshold the system switches to its real sales automatically — no action needed. Leave a category empty and its new products go to Needs setup instead of receiving an estimate.') }}
       </p>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
+          <span class="rs-label-desc">
+            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it uses the seed below.') }}
+          </span>
+        </div>
+        <div class="rs-control">
+          <MpInputGroup v-if="isEditing" id="rs-coldstart">
+            <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '96px' })" />
+            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+          </MpInputGroup>
+          <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
+        </div>
+      </div>
+
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Expected daily demand') }}</span>
+          <span class="rs-label-desc">{{ t('New products only. Average daily demand per category, until real sales take over.') }}</span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">
@@ -647,6 +634,12 @@ const BOUNDARY_OPTIONS = [
 .rs-label { display: flex; flex-direction: column; }
 .rs-label-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .rs-label-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.rs-label-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-warning, #9a6700);
+}
 .rs-control { min-width: 0; }
 .rs-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 

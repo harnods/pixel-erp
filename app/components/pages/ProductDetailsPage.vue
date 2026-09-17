@@ -381,11 +381,10 @@ function whMinStockSub(warehouseId: string): string {
     return calc ? `custom · ${calc}` : 'custom'
   }
   // "no sales here" rather than "not calculated": the old wording described what
-  // the SYSTEM did not do, when the fact worth having is WHY — and the number
-  // shown is still the floor in force, which "not calculated" made sound inert.
-  // A warehouse with no sales now falls to the category floor rather than the
-  // legacy stored figure, so say which of the two it landed on.
-  if (r.recommended === null) return r.source === 'category' ? 'category default' : 'no sales here'
+  // the SYSTEM did not do, when the fact worth having is WHY. With no sales there
+  // is no computed reorder point (min stock is always computed — D17); the number
+  // shown is the legacy stored floor the low-stock alerts still enforce.
+  if (r.recommended === null) return 'no sales here'
   return 'calculated'
 }
 
@@ -439,11 +438,9 @@ function whMinStockTitle(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
   if (r.recommended === null) {
-    return r.source === 'category'
-      ? 'Not enough sales history in this warehouse yet, so it uses the category minimum from '
-        + 'Settings › Replenishment. It switches to a calculated figure once this product has been moving here long enough.'
-      : 'Not enough sales history here and no category minimum set, so the stored figure applies. '
-        + 'Type one here, or set a category minimum in Settings › Replenishment.'
+    return 'Not enough sales history here yet, so there is no calculated minimum — min. stock is always '
+      + 'demand × (lead + safety). The stored figure applies until this product has been moving here long '
+      + 'enough, or set a cold-start demand seed for its category in Settings › Replenishment.'
   }
   const lead = r.leadTimeEstimated ? `${r.leadTimeDays} days lead time (estimated)` : `${r.leadTimeDays} days lead time`
   const sum = `${r.velocity.toFixed(2)}/day × (${lead} + ${r.safetyDays} safety) = ${r.recommended}`
@@ -516,9 +513,10 @@ function applyBulk(): void {
  * Hand the selected warehouses back to the cascade — the explicit counterpart to
  * filling a box, so "make these inherit again" is one deliberate action.
  *
- * What they return TO depends on the warehouse: a calculated floor where there
- * are sales to compute from, the category default where there are none. There is
- * no product-level default to fall back to any more.
+ * What they return TO depends on the field: safety days falls back to its
+ * inherited default (warehouse → category → company); min. stock returns to the
+ * calculated figure where there are sales, or the stored floor where there are
+ * none. There is no product-level or category min-stock default any more (D17).
  */
 function clearBulk(): void {
   for (const id of whSelected.value) {
@@ -1400,7 +1398,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   @click="clearBulk"
                 >Clear</button>
                 <span class="pd-bulk-hint">
-                  Fill either box. Clear returns them to calculated, or the category default.
+                  Fill either box. Clear returns min. stock to calculated, and safety days to its inherited default.
                 </span>
               </template>
               <span v-else class="pd-bulk-hint">
@@ -1453,7 +1451,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         Min. stock
                         <MpTooltip
                           id="pd-th-minstock-tip"
-                          label="Calculated from this warehouse's own sales: daily average × (lead time + safety days). Where a warehouse has no sales history to average, it uses the category minimum from Settings › Replenishment instead."
+                          label="Calculated from this warehouse's own sales: daily average × (lead time + safety days). A warehouse with no sales history yet has no calculated minimum — it falls to its stored figure until sales build up, or a cold-start demand seed is set for the category in Settings › Replenishment."
                           placement="top" use-portal
                         >
                           <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
