@@ -51,6 +51,7 @@ export * from './inboundSync'
 // ── Replenishment (vendor terms → demand → recommendation → draft PO) ───────
 export * from './productUnits'
 export * from './vendorItems'
+export * from './vendorSuppliedProducts'
 export * from './replenishmentConfig'
 export * from './replenishmentSettings'
 export * from './demandHistory'

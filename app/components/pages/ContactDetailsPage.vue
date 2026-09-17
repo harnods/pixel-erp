@@ -10,10 +10,11 @@
  * Route: /{customers|vendors|other-contacts}/:id — the first segment only picks
  * the breadcrumb; the record is the same either way.
  */
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
+  MpInput, MpAutocomplete,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -23,8 +24,10 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { salesInvoices } from '~/data/salesInvoices'
-import { vendorItemsForVendor } from '~/data/vendorItems'
+import { vendorItemsForVendor, upsertVendorItem } from '~/data/vendorItems'
+import { supplementalSupply } from '~/data/vendorSuppliedProducts'
 import { productBySku } from '~/data/inventory'
+import { CATALOG } from '~/data/catalog'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ orderId: string }>()
@@ -109,25 +112,122 @@ function formatDate(iso: string): string {
 // is a product this supplier is set up to sell us, carrying the agreed minimum
 // order quantity and unit price. Operating-expense vendors (logistics, utilities,
 // rent, software) supply no catalogue product, so their list is empty by design.
-const vendorProducts = computed(() => {
+// The engine (vendorItems) is a reactive array; upsertVendorItem mutates it, so
+// this recomputes after every add/edit without extra plumbing.
+const vendorEngineRows = computed(() => {
   const masterId = contact.value?.vendorMasterId
-  if (!masterId) return []
-  return vendorItemsForVendor(masterId)
-    .filter((vi) => vi.active !== false)
-    .map((vi) => ({
-      id: vi.id,
-      sku: vi.sku,
-      name: productBySku(vi.sku)?.name ?? vi.sku,
-      moq: vi.moq,
-      unitCost: vi.unitCost,
-      purchaseUnit: vi.purchaseUnit,
-      isPreferred: vi.isPreferred,
-    }))
-    // Preferred line first, then by product name — the same order the buyer reads
-    // a price list in.
-    .sort((a, b) =>
-      Number(b.isPreferred) - Number(a.isPreferred) || a.name.localeCompare(b.name))
+  return masterId
+    ? vendorItemsForVendor(masterId).filter((vi) => vi.active !== false)
+    : []
 })
+
+// Editing writes to the engine store (which the replenishment rule reads), so it
+// is offered only where that store backs the list — the coffee/packaging/
+// equipment suppliers. The two demo distributors (CT007, V008) show a supplemental
+// read-only price list and can't be edited here.
+const usingSupplemental = computed(() =>
+  vendorEngineRows.value.length === 0
+  && supplementalSupply(contact.value?.vendorMasterId ?? contact.value?.id ?? '').length > 0)
+const canEditProducts = computed(() =>
+  !!contact.value?.vendorMasterId && !usingSupplemental.value)
+
+const vendorProducts = computed(() => {
+  const c = contact.value
+  if (!c) return []
+  const masterId = c.vendorMasterId
+
+  let rows = vendorEngineRows.value.map((vi) => ({
+    id: vi.id,
+    sku: vi.sku,
+    name: productBySku(vi.sku)?.name ?? vi.sku,
+    moq: vi.moq,
+    packSize: vi.packSize,
+    unitCost: vi.unitCost,
+    purchaseUnit: vi.purchaseUnit,
+  }))
+
+  // Fall back to the demo-only supplemental list for the distributor / logistics
+  // vendors the engine doesn't cover (keyed by master id, or contact id when a
+  // contact has no master link).
+  if (!rows.length) {
+    rows = supplementalSupply(masterId ?? c.id).map((s) => ({
+      id: `sup-${masterId ?? c.id}-${s.sku}`,
+      sku: s.sku,
+      name: productBySku(s.sku)?.name ?? s.sku,
+      moq: s.moq,
+      packSize: s.packSize,
+      unitCost: s.unitCost,
+      purchaseUnit: s.purchaseUnit,
+    }))
+  }
+
+  return rows.sort((a, b) => a.name.localeCompare(b.name))
+})
+
+// ── Add / edit products supplied (writes to the engine store) ─────────────────
+const productsEditing = ref(false)
+// Per-SKU drafts of the three editable fields, held until Save.
+const prodDraft = reactive<Record<string, { moq: string; packSize: string; unitCost: string }>>({})
+
+function startEditProducts(): void {
+  for (const k of Object.keys(prodDraft)) delete prodDraft[k]
+  for (const p of vendorProducts.value) {
+    prodDraft[p.sku] = { moq: String(p.moq), packSize: String(p.packSize), unitCost: String(p.unitCost) }
+  }
+  productsEditing.value = true
+}
+function cancelEditProducts(): void {
+  productsEditing.value = false
+  showAddRow.value = false
+}
+function saveProducts(): void {
+  const masterId = contact.value?.vendorMasterId
+  if (!masterId) return
+  for (const p of vendorProducts.value) {
+    const d = prodDraft[p.sku]
+    if (!d) continue
+    const moq = Math.max(0, Math.round(Number(d.moq) || 0))
+    const packSize = Math.max(1, Math.round(Number(d.packSize) || 1))
+    const unitCost = Math.max(0, Math.round(Number(d.unitCost) || 0))
+    if (moq === p.moq && packSize === p.packSize && unitCost === p.unitCost) continue
+    upsertVendorItem({ vendorId: masterId, sku: p.sku, moq, packSize, unitCost })
+  }
+  productsEditing.value = false
+  showAddRow.value = false
+  toast.notify({ variant: 'success', title: t('Products updated'), maxWidth: 'max-content' })
+}
+
+// Add a product this vendor supplies — picks from the catalogue SKUs not already
+// linked, and captures the same three fields the replenishment rule reads.
+const showAddRow = ref(false)
+const addForm = reactive({ sku: '', moq: '1', packSize: '1', unitCost: '' })
+const availableSkus = computed(() => {
+  const taken = new Set(vendorProducts.value.map((p) => p.sku))
+  return CATALOG.filter((c) => !taken.has(c.sku)).map((c) => ({ label: `${c.name} (${c.sku})`, value: c.sku }))
+})
+function openAddRow(): void {
+  addForm.sku = ''
+  addForm.moq = '1'
+  addForm.packSize = '1'
+  addForm.unitCost = ''
+  showAddRow.value = true
+}
+function confirmAddProduct(): void {
+  const masterId = contact.value?.vendorMasterId
+  if (!masterId || !addForm.sku) {
+    toast.notify({ variant: 'error', title: t('Choose a product to add.'), maxWidth: 'max-content' })
+    return
+  }
+  upsertVendorItem({
+    vendorId: masterId,
+    sku: addForm.sku,
+    moq: Math.max(0, Math.round(Number(addForm.moq) || 0)),
+    packSize: Math.max(1, Math.round(Number(addForm.packSize) || 1)),
+    unitCost: addForm.unitCost === '' ? undefined : Math.max(0, Math.round(Number(addForm.unitCost))),
+  })
+  showAddRow.value = false
+  toast.notify({ variant: 'success', title: t('Product added'), maxWidth: 'max-content' })
+}
 /** Related-records column width — from the shared standard, never hardcoded.
  *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
 function colStyle(kind: ColumnKind) {
@@ -326,39 +426,100 @@ function confirmDelete() {
           <!-- ─────────── Products (vendors only) ─────────── -->
           <MpTabPanel v-if="isVendor" value="products">
             <section class="cd-section cd-section--last">
-              <h2 class="cd-section-title">{{ t('Products supplied') }}</h2>
-              <table v-if="vendorProducts.length" class="cd-table">
+              <div class="cd-section-head">
+                <h2 class="cd-section-title cd-section-title--inline">{{ t('Products supplied') }}</h2>
+                <div v-if="canEditProducts" class="cd-prod-actions">
+                  <template v-if="productsEditing">
+                    <MpButton variant="ghost" size="sm" is-rounded @click="cancelEditProducts">{{ t('Cancel') }}</MpButton>
+                    <MpButton variant="primary" size="sm" is-rounded @click="saveProducts">{{ t('Save changes') }}</MpButton>
+                  </template>
+                  <template v-else>
+                    <MpButton variant="ghost" size="sm" is-rounded @click="startEditProducts">
+                      <MpIcon name="edit" size="sm" /> {{ t('Edit') }}
+                    </MpButton>
+                    <MpButton variant="secondary" size="sm" is-rounded @click="openAddRow">
+                      + {{ t('Product') }}
+                    </MpButton>
+                  </template>
+                </div>
+              </div>
+              <!-- MOQ is the minimum the replenishment rule ever orders; the purchase
+                   multiple ("kelipatan pembelian") is what it rounds the quantity up to. -->
+              <p class="cd-prod-hint">{{ t('Replenishment never orders below the MOQ, and rounds each order up to the purchase multiple.') }}</p>
+
+              <table v-if="vendorProducts.length || showAddRow" class="cd-table">
                 <colgroup>
                   <col :style="colStyle('name')" />
                   <col :style="colStyle('number')" />
                   <col />
+                  <col />
                   <col :style="colStyle('unit')" />
                   <col :style="colStyle('amount')" />
-                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>{{ t('Product') }}</th>
                     <th>{{ t('SKU') }}</th>
                     <th class="cd-td--right">{{ t('MOQ') }}</th>
+                    <th class="cd-td--right">{{ t('Purchase multiple') }}</th>
                     <th>{{ t('Purchase unit') }}</th>
-                    <th class="cd-td--right">{{ t('Price') }}</th>
-                    <th />
+                    <th class="cd-td--right">{{ t('Last Price') }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="p in vendorProducts" :key="p.id">
                     <td>
                       <a class="cd-link" @click="router.push(`/product-list/${p.sku}`)">{{ p.name }}</a>
-                      <MpBadge v-if="p.isPreferred" for="tableStatus" type="completed" class="cd-product-badge">
-                        {{ t('Preferred') }}
-                      </MpBadge>
                     </td>
                     <td>{{ p.sku }}</td>
-                    <td class="cd-td--right">{{ p.moq.toLocaleString('id-ID') }}</td>
+                    <td class="cd-td--right">
+                      <MpInput
+                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-moq-${p.sku}`"
+                        v-model="prodDraft[p.sku]!.moq" type="number" :class="css({ width: '84px' })"
+                      />
+                      <template v-else>{{ p.moq.toLocaleString('id-ID') }}</template>
+                    </td>
+                    <td class="cd-td--right">
+                      <MpInput
+                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-pack-${p.sku}`"
+                        v-model="prodDraft[p.sku]!.packSize" type="number" :class="css({ width: '84px' })"
+                      />
+                      <template v-else>{{ p.packSize.toLocaleString('id-ID') }}</template>
+                    </td>
                     <td>{{ p.purchaseUnit }}</td>
-                    <td class="cd-td--right">{{ formatIDR(p.unitCost) }}</td>
-                    <td />
+                    <td class="cd-td--right">
+                      <MpInput
+                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-cost-${p.sku}`"
+                        v-model="prodDraft[p.sku]!.unitCost" type="number" :class="css({ width: '132px' })"
+                      />
+                      <template v-else>{{ formatIDR(p.unitCost) }}</template>
+                    </td>
+                  </tr>
+
+                  <!-- Add-product row -->
+                  <tr v-if="showAddRow" class="cd-add-row">
+                    <td>
+                      <MpAutocomplete
+                        id="cd-add-sku" v-model="addForm.sku" :data="availableSkus"
+                        label-prop="label" value-prop="value" is-searchable use-portal is-full-width
+                        :placeholder="t('Choose a product')"
+                      />
+                    </td>
+                    <td>{{ addForm.sku || '—' }}</td>
+                    <td class="cd-td--right">
+                      <MpInput id="cd-add-moq" v-model="addForm.moq" type="number" :class="css({ width: '84px' })" />
+                    </td>
+                    <td class="cd-td--right">
+                      <MpInput id="cd-add-pack" v-model="addForm.packSize" type="number" :class="css({ width: '84px' })" />
+                    </td>
+                    <td>—</td>
+                    <td class="cd-td--right">
+                      <div class="cd-add-actions">
+                        <MpInput id="cd-add-cost" v-model="addForm.unitCost" type="number" :placeholder="t('Price')" :class="css({ width: '132px' })" />
+                        <MpButton variant="primary" size="sm" is-rounded @click="confirmAddProduct">{{ t('Add') }}</MpButton>
+                        <MpButton variant="ghost" size="sm" is-rounded @click="showAddRow = false">{{ t('Cancel') }}</MpButton>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -529,6 +690,10 @@ function confirmDelete() {
 .cd-link { color: var(--mp-text-link); cursor: pointer; }
 .cd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cd-product-badge { margin-left: 8px; vertical-align: middle; }
+.cd-prod-actions { margin-left: auto; display: flex; gap: var(--mp-spacing-2); }
+.cd-prod-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-4); }
+.cd-add-row td { vertical-align: top; }
+.cd-add-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); }
 
 .cd-empty {
   margin: 0; display: flex; align-items: center; gap: var(--mp-spacing-2);
