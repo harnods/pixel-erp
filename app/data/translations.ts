@@ -3822,6 +3822,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'The lookback window must be at least 1 day.': 'Periode ke belakang minimal 1 hari.',
   'How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due.':
     'Berapa hari permintaan yang harus dipenuhi tiap pesanan. Menentukan jumlah, bukan kapan produk perlu dipesan.',
+  'How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due. Leave a category blank and it uses Other categories.':
+    'Berapa hari permintaan yang harus dipenuhi tiap pesanan. Menentukan jumlah, bukan kapan produk perlu dipesan. Kosongkan satu kategori dan kategori itu memakai Kategori lainnya.',
   'How many days each order should cover. Sizes the quantity; it never changes when this product becomes due.':
     'Berapa hari yang harus dipenuhi tiap pesanan. Menentukan jumlah, bukan kapan produk perlu dipesan.',
   'how much each order covers — not part of the trigger':

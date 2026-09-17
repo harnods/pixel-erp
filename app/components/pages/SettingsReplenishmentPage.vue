@@ -111,6 +111,11 @@ function save() {
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
     leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
     leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
+    coverageDaysByCategory: Object.fromEntries(
+      Object.entries(draft.coverageDaysByCategory)
+        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
+        .map(([k, v]) => [k, Math.max(0, Number(v))]),
+    ),
     coldStartCategoryDemand: Object.fromEntries(
       Object.entries(draft.coldStartCategoryDemand)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
@@ -301,14 +306,35 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Order coverage') }}</span>
-          <span class="rs-label-desc">{{ t('How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due.') }}</span>
+          <span class="rs-label-desc">{{ t('How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due. Leave a category blank and it uses Other categories.') }}</span>
         </div>
         <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-coverage">
-            <MpInput id="rs-coverage-input" v-model="draft.coverageDaysGlobal" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.coverageDaysGlobal }} {{ t('days') }}</span>
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
+              <span class="rs-cat-name">{{ cat }}</span>
+              <MpInputGroup :id="`rs-coverage-cat-${cat}`">
+                <MpInput
+                  :id="`rs-coverage-cat-input-${cat}`"
+                  v-model="draft.coverageDaysByCategory[cat]"
+                  type="number"
+                  :placeholder="String(draft.coverageDaysGlobal)"
+                  :class="css({ width: '84px' })"
+                />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row rs-cat-row--fallback">
+              <span class="rs-cat-name">{{ t('Other categories') }}</span>
+              <MpInputGroup id="rs-coverage">
+                <MpInput id="rs-coverage-input" v-model="draft.coverageDaysGlobal" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ categories.map(c => `${c} ${committed.coverageDaysByCategory[c] ?? committed.coverageDaysGlobal}d`).join('   ') }}
+            &nbsp;·&nbsp; {{ t('Other categories') }} {{ committed.coverageDaysGlobal }}d
+          </span>
         </div>
       </div>
 
