@@ -3921,6 +3921,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Window': 'Periode',
   'Cold-start threshold': 'Batas produk baru',
   'Safety and reorder point': 'Pengaman dan titik pemesanan ulang',
+  'Safety and order coverage': 'Pengaman dan cakupan pesanan',
   'Safety days by category': 'Hari pengaman per kategori',
   'Reorder-point boundary': 'Batas titik pemesanan ulang',
   'Movement classification (FSN)': 'Klasifikasi pergerakan (FSN)',
