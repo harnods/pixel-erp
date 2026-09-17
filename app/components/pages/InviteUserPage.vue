@@ -352,6 +352,11 @@ function goBack() { router.push('/users-and-roles') }
                           <li v-for="p in permissionsFor(role)" :key="p">{{ t(p) }}</li>
                         </ul>
 
+                        <!-- CRM record scope is managed in CRM, not limited here. -->
+                        <p v-if="role.id === 'crm' && !roleFullAccess[role.id]" class="inv-crm-note">
+                          {{ t('New activated users only get access to their own records.') }}
+                        </p>
+
                         <!-- Default sales / purchasing authority -->
                         <div v-if="role.authorityGroup" class="inv-subgroup">
                           <span class="inv-subgroup-label">{{ t(role.authorityGroup.label) }}</span>
@@ -584,6 +589,13 @@ function goBack() { router.push('/users-and-roles') }
   color: var(--mp-text-secondary);
 }
 
+.inv-crm-note {
+  margin: var(--mp-spacing-3) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-md);
+}
+.inv-permissions--indented + .inv-crm-note { margin-left: var(--mp-spacing-4); }
 .inv-subgroup { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .inv-subgroup-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .inv-subgroup-options { display: flex; align-items: center; gap: var(--mp-spacing-5, 20px); flex-wrap: wrap; }

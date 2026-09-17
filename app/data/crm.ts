@@ -1020,13 +1020,18 @@ export interface CrmTeam {
 }
 
 const TEAMS_SEED: CrmTeam[] = [
-  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], adminIds: ['EMP-0001'], modules: ['deals'], status: 'active', createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
-  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        adminIds: ['EMP-0005'], modules: [],        status: 'active', createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-01', name: 'Sales',            description: 'Owns the deal pipeline and closes accounts',       memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0008', 'EMP-0002'], adminIds: ['EMP-0001'],            modules: ['deals'], status: 'active',   createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing',        description: 'Generates and nurtures new leads',                 memberIds: ['EMP-0005', 'EMP-0007', 'EMP-0009'],            adminIds: ['EMP-0005'],            modules: [],        status: 'active',   createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-03', name: 'Enterprise Sales', description: 'Named accounts and large-deal pursuits',           memberIds: ['EMP-0012', 'EMP-0010', 'EMP-0015'],            adminIds: ['EMP-0012'],            modules: ['deals'], status: 'active',   createdAt: '2026-07-20T11:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-04T16:00:00', updatedBy: 'Hendra Gunawan' },
+  { id: 'TEAM-04', name: 'Customer Success',  description: 'Onboards and retains existing customers',          memberIds: ['EMP-0004', 'EMP-0013', 'EMP-0011'],            adminIds: ['EMP-0004'],            modules: [],        status: 'active',   createdAt: '2026-08-01T09:30:00', createdBy: 'Dewi Lestari', updatedAt: '2026-09-01T10:20:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-05', name: 'Partnerships',      description: 'Channel and reseller relationships',              memberIds: ['EMP-0002', 'EMP-0016'],                       adminIds: ['EMP-0002'],            modules: ['deals'], status: 'active',   createdAt: '2026-08-10T13:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-08-30T09:00:00', updatedBy: 'Anita Wijaya' },
+  { id: 'TEAM-06', name: 'Inbound SDR',       description: 'Qualifies inbound leads for the sales teams',      memberIds: ['EMP-0008', 'EMP-0009'],                       adminIds: ['EMP-0008'],            modules: [],        status: 'inactive', createdAt: '2026-08-18T08:45:00', createdBy: 'Dewi Lestari', updatedAt: '2026-09-03T15:10:00', updatedBy: 'Dewi Lestari' },
 ]
 
-// Storage key bumped to v2 — the Team shape gained status/adminIds/createdAt.
-export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v2', TEAMS_SEED))
-export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
+// Storage key bumped to v3 — the seed gained more Teams (Enterprise Sales,
+// Customer Success, Partnerships, Inbound SDR) for a fuller demo roster.
+export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v3', TEAMS_SEED))
+export function persistCrmTeams() { saveSnapshot('crm-teams-v3', crmTeams) }
 
 /** Member picker options — active employees as { id, name, subtitle=jobPosition }. */
 export const crmTeamMemberOptions = computed(() =>
@@ -2273,6 +2278,10 @@ export type CrmPermControl =
   | { type: 'checkbox'; label: string; key: string; sublabel?: string }
 export interface CrmPermGroup { group: string; subtitle?: string; controls: CrmPermControl[] }
 
+// Per-user CRM access, aligned to PRD §5.5.1 (V1 "pragmatic prototype" subset).
+// Scopes are All vs Only-my for now ("Own Teams" is a PRD future). Reassign
+// ownership and per-report scope/granularity are PRD-future and intentionally
+// omitted here. Settings-page groups gate the CRM Settings sidebar + actions.
 export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
   { group: 'Records', subtitle: 'Deals and custom module records', controls: [
     { type: 'access',     label: 'Record access', allLabel: 'All records', mineLabel: 'Only my records', allKey: 'deals.readAll', mineKey: 'deals.readMine' },
@@ -2290,19 +2299,28 @@ export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
     { type: 'checkbox',   sublabel: 'Export', label: 'Can export companies data', key: 'companies.export' },
   ] },
   { group: 'Reports', controls: [
-    { type: 'checkbox', label: 'Can view report', key: 'reports.view' },
+    { type: 'checkbox', label: 'Can view reports', key: 'reports.view' },
+    { type: 'checkbox', sublabel: 'Export', label: 'Can export reports', key: 'reports.export' },
   ] },
   { group: 'Settings / Company profile', controls: [
     { type: 'checkbox', label: 'Can view company profile', key: 'settingsCompany.view' },
   ] },
+  { group: 'Settings / Users', controls: [
+    { type: 'checkbox', label: 'Can view users list', key: 'settingsUsers.view' },
+  ] },
   { group: 'Settings / Teams', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit', 'settingsTeams.delete', 'settingsTeams.assign'] },
+    { type: 'checkbox',   label: 'Can view teams', key: 'settingsTeams.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit teams', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit'] },
   ] },
-  { group: 'Settings / Deals', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit', capabilityKeys: ['settingsDeal.edit'] },
+  { group: 'Settings / Modules', controls: [
+    { type: 'checkbox',   label: 'Can view module management', key: 'settingsModules.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit custom modules', capabilityKeys: ['settingsModules.edit'] },
   ] },
-  { group: 'Settings / Custom module', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsCustom.create', 'settingsCustom.edit'] },
+  { group: 'Settings / ERP conversion', controls: [
+    { type: 'checkbox',   label: 'Can view ERP conversion settings', key: 'settingsConversion.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit ERP conversion settings', capabilityKeys: ['settingsConversion.edit'] },
+    { type: 'checkbox',   label: 'Can convert to Sales Quote', key: 'conversion.quote' },
+    { type: 'checkbox',   label: 'Can convert to Sales Order', key: 'conversion.order' },
   ] },
 ]
 export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.controls.flatMap((c) =>
@@ -2316,11 +2334,19 @@ export function emptyPermSet(): CrmPermSet {
 export function fullPermSet(): CrmPermSet {
   return Object.fromEntries(CRM_PERM_KEYS.map((k) => [k, true]))
 }
-/** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
+/** Baseline for a newly-activated user, per PRD §5.5.1 default column:
+ *  Own-records scope, can create & edit, no export; can view reports; Teams and
+ *  Module Management viewable but not editable; convert to Sales Order allowed. */
 export function defaultPermSet(): CrmPermSet {
   const s = emptyPermSet()
-  // Read-only baseline: sees all records + contacts + companies, no create/edit/export.
-  for (const k of ['deals.readAll', 'contacts.readAll', 'companies.readAll']) s[k] = true
+  for (const k of [
+    'deals.readMine', 'deals.create', 'deals.edit',
+    'contacts.readMine', 'contacts.create', 'contacts.edit',
+    'companies.readMine', 'companies.create', 'companies.edit',
+    'reports.view',
+    'settingsTeams.view', 'settingsModules.view',
+    'conversion.order',
+  ]) s[k] = true
   return s
 }
 // ── Shared per-user permission store ────────────────────────────────────────
@@ -2332,10 +2358,26 @@ export const crmUserPermSet = reactive<Record<string, CrmPermSet>>(
     ? (() => { try { return JSON.parse(localStorage.getItem(CRM_PERMS_KEY) || '{}') } catch { return {} } })()
     : {},
 )
-/** CU id for an owner name (CU01 = first owner = workspace owner, full access). */
+/** CRM Settings › Users roster — the ERP accounts granted a CRM access mode. A
+ *  superset of the deal owners (CRM_OWNERS) plus other CRM-eligible staff. Each
+ *  maps to an employees.ts person by name; `id` (CU..) keys the per-user perm
+ *  store. Rizal Candra is the account owner (super admin, full CRM access). */
+export interface CrmSettingsUser { id: string; name: string; erpRole: string; status: 'active' | 'invited' | 'inactive'; joinDate: string }
+export const CRM_SETTINGS_USERS: CrmSettingsUser[] = [
+  { id: 'CU01', name: 'Rizal Candra',     erpRole: 'Account owner', status: 'active',   joinDate: '2024-01-08' },
+  { id: 'CU02', name: 'Dewi Lestari',     erpRole: 'CRM Manager',   status: 'active',   joinDate: '2024-02-14' },
+  { id: 'CU03', name: 'Fajar Nugroho',    erpRole: 'Sales',         status: 'active',   joinDate: '2024-03-02' },
+  { id: 'CU04', name: 'Anita Wijaya',     erpRole: 'Sales',         status: 'active',   joinDate: '2024-05-20' },
+  { id: 'CU05', name: 'Putri Ayu',        erpRole: 'Marketing',     status: 'active',   joinDate: '2025-01-13' },
+  { id: 'CU06', name: 'Rio Firmansyah',   erpRole: 'Sales',         status: 'active',   joinDate: '2025-03-04' },
+  { id: 'CU07', name: 'Maya Kusuma',      erpRole: 'Marketing',     status: 'invited',  joinDate: '2026-09-10' },
+  { id: 'CU08', name: 'Hendra Gunawan',   erpRole: 'Sales Manager', status: 'active',   joinDate: '2024-08-19' },
+  { id: 'CU09', name: 'Clara Tanuwijaya', erpRole: 'Sales',         status: 'inactive', joinDate: '2024-11-05' },
+  { id: 'CU10', name: 'Ratna Sari',       erpRole: 'Sales',         status: 'active',   joinDate: '2025-06-22' },
+]
+/** CU id for a roster user name (CU01 = Rizal Candra = account owner). */
 export function crmUserId(name: string): string {
-  const i = CRM_OWNERS.indexOf(name)
-  return `CU${String((i < 0 ? 0 : i) + 1).padStart(2, '0')}`
+  return CRM_SETTINGS_USERS.find((u) => u.name === name)?.id ?? 'CU00'
 }
 /** The workspace owner — the signed-in user (Rizal Candra, COO). Always has full
  *  CRM access; can't be restricted via the Manage-access drawer. */
@@ -2364,6 +2406,18 @@ export function can(key: string): boolean { return !!currentUserPerms()[key] }
 export function canEditModule(m: CrmModule): boolean {
   if (m.system) return true
   return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || m.createdBy === CRM_CURRENT_USER
+}
+
+/** Can the acting user open "Manage CRM access" (edit another user's permissions)?
+ *  Per PRD §5.5.3, Edit User Access requires an ERP Owner/Ultimate role — here the
+ *  workspace owner (Rizal) is the account owner and can always manage access. */
+export function canManageUserAccess(): boolean {
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER
+}
+/** Can the acting user assign users to Teams? Requires Create/Edit Teams
+ *  permission (which includes editing team members), or workspace-owner. */
+export function canAssignTeamMembers(): boolean {
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || can('settingsTeams.edit') || can('settingsTeams.create')
 }
 
 /** One-line summary of a permission set for the User & roles index. */
