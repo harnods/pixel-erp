@@ -16,6 +16,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
+import { shortfallLinesForRequest, shortfallLinesForProduct } from '~/data/stockRequests'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
 import { resolveMisplacedSerials } from '~/data/wmsStockAdjustments'
@@ -326,6 +327,51 @@ function prefill() {
 // originating count once this transfer actually saves — see handleSave().
 const fromAdjustmentId = ref<string | null>(null)
 const fromSerials = ref<string[]>([])
+/**
+ * Prefill from a stock request shortfall — "Create warehouse transfer" on the
+ * Stock requests detail (per destination-warehouse group) or the product
+ * grouping's row/bulk action.
+ *   ?fromStockRequest=<id>[&warehouse=<whId>]  one request, optionally one group
+ *   ?fromComponent=<ids>                       components across open requests
+ *
+ * The DESTINATION is known — it is where the material is needed — so it is filled
+ * in. The origin is not: which warehouse can spare the stock is the operator's
+ * call, so that field is deliberately left for them to pick.
+ *
+ * Returns true when it handled the query, so the misplaced-serial prefill is skipped.
+ */
+function prefillFromStockRequest(): boolean {
+  const q = route.query
+  const lines = typeof q.fromStockRequest === 'string'
+    ? shortfallLinesForRequest(q.fromStockRequest, typeof q.warehouse === 'string' ? q.warehouse : undefined)
+    : typeof q.fromComponent === 'string'
+      ? q.fromComponent.split(',').filter(Boolean).flatMap(id => shortfallLinesForProduct(id))
+      : []
+  if (!lines.length) return false
+
+  // One transfer moves stock to ONE destination; if the scope spans several,
+  // take the first and leave the rest to their own transfer.
+  const destinationId = lines[0]!.destinationWarehouseId
+  if (destinationId) destId.value = destinationId
+  const scoped = destinationId ? lines.filter(l => l.destinationWarehouseId === destinationId) : lines
+
+  rows.value = scoped.map((l) => {
+    const row = makeRow(l.sku)
+    row.qty = String(l.qty)
+    if (!row.unit) row.unit = l.unit
+    return row
+  })
+
+  // Batch/serial-tracked lines take their final qty from the picks the operator
+  // makes after choosing an origin, so the qty column reads "—" until then. Put
+  // the needed amounts in the memo so the number the request actually asked for
+  // is never lost — same idea as prefillFromMisplaced() below.
+  const requests = [...new Set(scoped.map(l => l.requestNumber))].join(', ')
+  const needed = scoped.map(l => `${l.qty} ${l.unit} ${l.product}`).join(', ')
+  memo.value = `${t('Covers the shortfall on stock request')} ${requests} — ${needed}.`
+  return true
+}
+
 function prefillFromMisplaced() {
   const q = route.query
   if (!q.lines || typeof q.lines !== 'string') return
@@ -351,7 +397,7 @@ function prefillFromMisplaced() {
 }
 onMounted(() => {
   if (isEdit.value) prefill()
-  else prefillFromMisplaced()
+  else if (!prefillFromStockRequest()) prefillFromMisplaced()
 })
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────

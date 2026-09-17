@@ -3740,4 +3740,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Stock request': 'Permintaan stok',
   'Request no.': 'No. permintaan',
   'to transfer': 'perlu ditransfer',
+  'Covers the shortfall on stock request': 'Menutupi kekurangan pada permintaan stok',
 }

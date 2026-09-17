@@ -243,12 +243,17 @@ function reserve(req: StockRequest) {
   }
   toast.notify({ variant: 'success', title: `${qty} ${t('unit reserved for')} ${req.workOrderNumber}`, maxWidth: 'max-content' })
 }
-function createWarehouseTransfer(ids: string[]) {
-  router.push({ path: '/warehouse-transfers/new', query: { fromStockRequest: ids.join(',') } })
+// The two groupings raise documents from different scopes, so they pass
+// different params: a transaction row carries a request id, a product row
+// carries the component whose demand is short across every open request.
+function createWarehouseTransfer(query: Record<string, string>) {
+  router.push({ path: '/warehouse-transfers/new', query })
 }
-function createPurchaseRequest(ids: string[]) {
-  router.push({ path: '/purchase-requests/new', query: { fromStockRequest: ids.join(',') } })
+function createPurchaseRequest(query: Record<string, string>) {
+  router.push({ path: '/purchase-requests/new', query })
 }
+const byRequest = (requestId: string) => ({ fromStockRequest: requestId })
+const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
 function reject(req: StockRequest) {
   if (!rejectRequest(req.id)) return
   toast.notify({ variant: 'success', title: `${req.workOrderNumber} ${t('request rejected')}`, maxWidth: 'max-content' })
@@ -352,8 +357,8 @@ const exportColumns = computed(() => {
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem @click="createPurchaseRequest(selectedSkuIds(selectedRows as Set<number>))">{{ t('Create purchase request') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createWarehouseTransfer(selectedSkuIds(selectedRows as Set<number>))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createPurchaseRequest(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create purchase request') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createWarehouseTransfer(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -497,8 +502,8 @@ const exportColumns = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <!-- SKU row — raise one document for this component, or open its work orders -->
           <MpPopoverList v-if="view === 'product'">
-            <MpPopoverListItem @click="createPurchaseRequest([sku(row).productId])">{{ t('Create purchase request') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createWarehouseTransfer([sku(row).productId])">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
             <MpPopoverListItem @click="toggleExpand(sku(row).productId)">{{ expanded[sku(row).productId] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
           </MpPopoverList>
 
@@ -508,8 +513,8 @@ const exportColumns = computed(() => {
               <MpPopoverListItem @click="viewDetails(wo(row).id)">{{ t('View details') }}</MpPopoverListItem>
               <template v-if="!wo(row).rejected && wo(row).status !== 'reserved' && wo(row).status !== 'issued / picked'">
                 <MpPopoverListItem @click="reserve(wo(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="createWarehouseTransfer([wo(row).id])">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="createPurchaseRequest([wo(row).id])">{{ t('Request purchase') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="createWarehouseTransfer(byRequest(wo(row).id))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="createPurchaseRequest(byRequest(wo(row).id))">{{ t('Request purchase') }}</MpPopoverListItem>
               </template>
             </MpPopoverList>
             <template v-if="canReject(wo(row))">

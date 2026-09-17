@@ -671,3 +671,67 @@ export function raiseStockRequestForWorkOrder(
   persistStockRequests()
   return { request, created: true, reservedProducts, reservedQty, shortProducts }
 }
+
+// ── Prefill for the documents a shortfall leads to ─────────────────────────────
+
+/** One line a purchase request / warehouse transfer should be prefilled with. */
+export interface ShortfallLine {
+  /** request this shortfall came from — for the memo on the raised document */
+  requestNumber: string
+  productId: string
+  product: string
+  sku: string
+  unit: string
+  /** qty missing at the destination — what has to be bought or moved in */
+  qty: number
+  destinationWarehouse: string
+  destinationWarehouseId: string
+}
+
+function toShortfallLine(line: StockRequestLine, req: StockRequest): ShortfallLine {
+  return {
+    requestNumber: req.number,
+    productId: line.productId,
+    product: line.product,
+    sku: line.sku,
+    unit: line.unit,
+    qty: lineToTransfer(line),
+    destinationWarehouse: line.destinationWarehouse,
+    destinationWarehouseId: line.destinationWarehouseId,
+  }
+}
+
+/**
+ * The short lines of one request — what a purchase request or transfer raised
+ * from it should carry. Pass `warehouseId` to scope to a single destination
+ * group, which is how a warehouse transfer is raised (one document, one
+ * destination).
+ */
+export function shortfallLinesForRequest(requestId: string, warehouseId?: string): ShortfallLine[] {
+  const req = stockRequests.find(r => r.id === requestId)
+  if (!req || req.rejected) return []
+  return req.lines
+    .filter(l => lineToTransfer(l) > 0)
+    .filter(l => !warehouseId || l.destinationWarehouseId === warehouseId)
+    .map(l => toShortfallLine(l, req))
+}
+
+/**
+ * The short lines for one component across every open request — the product
+ * grouping's counterpart, so one document covers the whole demand. Same
+ * destination warehouse merges into a single line.
+ */
+export function shortfallLinesForProduct(productId: string): ShortfallLine[] {
+  const byWarehouse = new Map<string, ShortfallLine>()
+  for (const req of stockRequests) {
+    if (req.rejected) continue
+    for (const line of req.lines) {
+      if (line.productId !== productId || lineToTransfer(line) <= 0) continue
+      const key = line.destinationWarehouseId || line.destinationWarehouse
+      const existing = byWarehouse.get(key)
+      if (existing) existing.qty += lineToTransfer(line)
+      else byWarehouse.set(key, toShortfallLine(line, req))
+    }
+  }
+  return [...byWarehouse.values()]
+}

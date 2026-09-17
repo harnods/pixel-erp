@@ -64,6 +64,7 @@ const warehouseGroups = computed(() => {
   }
   return [...byWarehouse.entries()].map(([warehouse, groupLines]) => ({
     warehouse,
+    warehouseId: groupLines[0]?.destinationWarehouseId ?? '',
     lines: groupLines,
     /** total still missing at this warehouse — 0 means no transfer is needed */
     toTransfer: groupLines.reduce((sum, l) => sum + lineToTransfer(l), 0),
@@ -111,12 +112,13 @@ function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisp
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
 }
 
-/** A transfer is raised per destination warehouse — the group carries the scope. */
-function createWarehouseTransfer(warehouse?: string) {
+/** A transfer is raised per destination warehouse — the group carries the scope,
+ *  so the form is prefilled with just that warehouse's short lines. */
+function createWarehouseTransfer(warehouseId?: string) {
   if (!req.value) return
   router.push({
     path: '/warehouse-transfers/new',
-    query: { fromStockRequest: req.value.id, ...(warehouse ? { destination: warehouse } : {}) },
+    query: { fromStockRequest: req.value.id, ...(warehouseId ? { warehouse: warehouseId } : {}) },
   })
 }
 function createPurchaseRequest() {
@@ -244,7 +246,7 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
             <button
               v-if="!req.rejected && g.toTransfer > 0"
               class="btn-enterprise btn-enterprise--secondary"
-              @click="createWarehouseTransfer(g.warehouse)"
+              @click="createWarehouseTransfer(g.warehouseId)"
             >{{ t('Create warehouse transfer') }}</button>
           </div>
         </div>
