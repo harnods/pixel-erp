@@ -548,14 +548,15 @@ const integrations: Integration[] = [
           <template #cell-teams="{ row }">
             <span
               v-if="(row as CrmUser).empId && canAssignTeamMembers() && (row as CrmUser).status === 'active'"
-              class="cell-link"
+              class="cell-teams-link"
               role="button"
               tabindex="0"
+              :aria-label="`${t('Assign to team')} · ${(row as CrmUser).name}`"
               @click.stop="openAssignTeam(row as CrmUser)"
               @keydown.enter.stop="openAssignTeam(row as CrmUser)"
             >
               <ErpTagList v-if="(row as CrmUser).teams.length" :tags="(row as CrmUser).teams" />
-              <span v-else>{{ t('Assign to team') }}</span>
+              <span v-else class="cell-teams-empty">{{ t('Assign to team') }}</span>
             </span>
             <ErpTagList v-else-if="(row as CrmUser).teams.length" :tags="(row as CrmUser).teams" />
             <span v-else>—</span>
@@ -863,6 +864,18 @@ const integrations: Integration[] = [
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Team cell — the WHOLE cell is the click target (opens Assign-to-team), so a
+   click anywhere in the column works, not just exactly on a chip. */
+.cell-teams-link {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1);
+  width: 100%; min-height: var(--mp-sizes-8, 32px);
+  margin: calc(-1 * var(--mp-spacing-1)) calc(-1 * var(--mp-spacing-2));
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  border-radius: var(--mp-radii-md, 6px); cursor: pointer;
+}
+.cell-teams-link:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); }
+.cell-teams-empty { color: var(--mp-colors-text-link, #165082); }
+.cell-teams-link:hover .cell-teams-empty { text-decoration: underline; text-underline-offset: 2px; }
 .cru-action--danger :deep(*), .cru-action--danger { color: var(--mp-colors-text-danger, #a8352d); }
 
 /* Accessible-modules tag chips (Teams table) */
