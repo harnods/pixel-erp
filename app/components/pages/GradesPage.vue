@@ -247,7 +247,7 @@ function confirmDelete() {
 /** The most recent change across the list — the provenance line that opens the log
  *  (rule/activity-log-trigger: the line IS the affordance, click the thing it says). */
 const lastUpdated = computed(() =>
-  grades().reduce<Grade | null>((latest, g) => (!latest || g.updatedAt > latest.updatedAt ? g : latest), null),
+  rows.value.reduce<Grade | null>((latest, g) => (!latest || g.updatedAt > latest.updatedAt ? g : latest), null),
 )
 // The Last updated column is gone, so the list's own log opens from the link above
 // the table and carries every grade's entries together, newest first.
@@ -263,7 +263,7 @@ const listActivityEntries = computed<ActivityEntry[]>(() => {
   // from the record itself so the trail still starts at creation
   // (rule/activity-log-entries).
   const created = new Set(gradeActivity().filter(e => e.activity === 'Created grade').map(e => e.gradeId))
-  const seeded = grades()
+  const seeded = rows.value
     .filter(g => !created.has(g.id))
     .map(g => ({
       date: g.createdAt,
