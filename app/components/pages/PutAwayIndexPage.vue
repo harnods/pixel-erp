@@ -48,12 +48,12 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',            label: 'Put-away no.',      width: '180px', sortType: 'text' },
-  { key: 'receivingTaskNos',  label: 'Receiving task no.', width: '240px' },
-  { key: 'warehouseName',     label: 'Warehouse',         width: '180px', sortType: 'text' },
-  { key: 'assignee',          label: 'Assignee',          width: '160px', sortType: 'text' },
-  { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'status',            label: 'Status',            width: '160px', sortType: 'text' },
+  { key: 'taskNo',            label: 'Put-away no.',      kind: 'number', sortType: 'text' },
+  { key: 'receivingTaskNos',  label: 'Receiving task no.', kind: 'number' },
+  { key: 'warehouseName',     label: 'Warehouse',         kind: 'name', sortType: 'text' },
+  { key: 'assignee',          label: 'Assignee',          kind: 'name', sortType: 'text' },
+  { key: 'itemQty',           label: 'Items',             align: 'right', sortType: 'number' },
+  { key: 'status',            label: 'Status',            kind: 'status', sortType: 'text' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
@@ -283,6 +283,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
+    <!-- NOTE: no Delivery document column here, unlike the receiving and shipping
+         indexes. One put-away can cover SEVERAL inbounds (receivingTaskIds is a
+         list), so there is no single posting document to attach to the task — the
+         document belongs to each receiving task, and that index shows it. -->
     <template #cell-receivingTaskNos="{ value, row }">
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
@@ -357,8 +361,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal id="pa-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pa-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
       <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>

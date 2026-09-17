@@ -42,15 +42,15 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',       label: 'Number',            width: '260px', sortType: 'text' },
-  { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
-  { key: 'vendor',           label: 'Vendor',            width: '200px', sortType: 'text' },
-  { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
+  { key: 'purchaseNo',       label: 'Number',            kind: 'number', sortType: 'text' },
+  { key: 'warehouseName',    label: 'Warehouse',         kind: 'name', sortType: 'text' },
+  { key: 'vendor',           label: 'Vendor',            kind: 'name', sortType: 'text' },
+  { key: 'status',           label: 'Status',            kind: 'status', sortType: 'text' },
   { key: 'icons',            label: '',                  width: '100px', noHeader: true },
-  { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
-  { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
-  { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right', sortType: 'number' },
-  { key: 'estimatedArrival', label: 'Estimated arrival', width: '150px', sortType: 'date' },
+  { key: 'trackingNos',      label: 'Tracking no.',      kind: 'number' },
+  { key: 'skuQty',           label: 'SKU qty',           align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',      label: 'Purchase qty',      align: 'right', sortType: 'number' },
+  { key: 'estimatedArrival', label: 'Estimated arrival', kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
@@ -623,9 +623,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal
-    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -648,9 +647,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Close confirmation modal (partial reception → accept as final) ── -->
-  <MpModal
-    id="rcv-close-modal" :is-open="closeModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-close-modal" :is-open="closeModalOpen" size="md" :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -669,9 +667,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
-  <MpModal
-    id="rcv-delete-modal" :is-open="deleteModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="closeDeleteModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -689,9 +686,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Edit tracking no. modal (supports multiple) ── -->
-  <MpModal
-    id="rcv-tracking-modal" :is-open="trackingModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeTrackingModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="rcv-tracking-modal" :is-open="trackingModalOpen" size="md" :is-keep-alive="false" @close="closeTrackingModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Edit tracking no.') }}<MpModalCloseButton /></MpModalHeader>

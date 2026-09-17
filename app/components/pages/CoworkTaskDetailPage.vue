@@ -17,7 +17,7 @@ import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
   getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
-  agentForTaskTitle, agentForModule, COWORK_SKILLS,
+  agentForTaskTitle, agentForModule, getAgent, COWORK_SKILLS,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -227,6 +227,13 @@ async function downloadPdf() {
 
 // ── Open chat about this result ───────────────────────────────────────────────
 const airene = useAireneBridge()
+
+// Several agents can collaborate on a task (multi-agent room) — shown together.
+const taskAgents = computed(() => {
+  const ids = task.value?.agentIds
+  if (ids?.length) return ids.map((id) => getAgent(id)).filter(Boolean)
+  return taskAgent.value ? [taskAgent.value] : []
+})
 function buildChatContext(): string {
   const p = plan.value
   if (!p || !task.value) return ''
@@ -238,7 +245,6 @@ function buildChatContext(): string {
     if (a.briefing.findings?.length) { lines.push('Key findings:'); for (const f of a.briefing.findings) lines.push(`- ${f.title}: ${f.detail}`) }
   }
   if (a?.actionItems?.length) { lines.push('Action items:'); for (const it of a.actionItems) lines.push(`- ${it.title} (owner ${it.owner}, due ${it.due}): ${it.detail}`) }
-  if (a?.email) lines.push(`Email draft — to ${a.email.to}, subject "${a.email.subject}": ${a.email.body}`)
   if (a?.spreadsheet) lines.push(`Spreadsheet "${a.spreadsheet.title}" columns: ${a.spreadsheet.columns.join(', ')}; ${a.spreadsheet.rows.length} rows.`)
   // Attach the underlying ERP data for the modules this task touches, so the user
   // can drill into details the result only summarised — e.g. an employee's profile
@@ -336,15 +342,15 @@ function taskAgentIds(): string[] {
   const mods = task.value?.modules?.length ? task.value.modules : (task.value?.module ? [task.value.module] : [])
   return [...new Set(mods.map((m) => agentForModule(m)?.id).filter(Boolean))] as string[]
 }
-function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds()) }
+function openChat() { airene.openWithContext(buildChatContext(), task.value?.title ?? 'Task result', buildChatSuggestions(), taskAgentIds(), task.value?.id) }
 
 // Output chips reflect what was actually produced (the run's artifacts), so they
 // always match the result; before any run, fall back to the task's chosen outputs.
-const ARTIFACT_LABEL: Record<string, string> = { briefing: 'Briefing summary', actionItems: 'Action items', email: 'Email draft', spreadsheet: 'Spreadsheet', pdf: 'PDF report' }
+const ARTIFACT_LABEL: Record<string, string> = { briefing: 'Briefing summary', actionItems: 'Action items', spreadsheet: 'Spreadsheet', pdf: 'PDF report' }
 const outputLabels = computed(() => {
   const a = plan.value?.artifacts as Record<string, unknown> | undefined
   if (a) {
-    const keys = Object.keys(a).filter((k) => a[k])
+    const keys = Object.keys(a).filter((k) => a[k] && k !== 'email')
     if (keys.length) return keys.map((k) => ARTIFACT_LABEL[k] ?? k)
   }
   return task.value?.outputs?.length ? task.value.outputs : ['Briefing summary']
@@ -411,9 +417,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div v-if="taskAgent" class="ctd-agent">
-            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
-            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          <div v-if="taskAgents.length" class="ctd-agents">
+            <div v-for="a in taskAgents" :key="a!.id" class="ctd-agent">
+              <img class="ctd-agent__av" :src="a!.avatar" :alt="a!.name" loading="lazy">
+              <span class="ctd-agent__name">{{ a!.name }}</span>
+            </div>
           </div>
           <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
@@ -460,9 +468,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div v-if="taskAgent" class="ctd-agent">
-            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
-            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          <div v-if="taskAgents.length" class="ctd-agents">
+            <div v-for="a in taskAgents" :key="a!.id" class="ctd-agent">
+              <img class="ctd-agent__av" :src="a!.avatar" :alt="a!.name" loading="lazy">
+              <span class="ctd-agent__name">{{ a!.name }}</span>
+            </div>
           </div>
           <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
@@ -589,15 +599,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               </div>
             </template>
 
-            <template v-if="plan.artifacts?.email">
-              <p class="ctd-sec">Email draft</p>
-              <div class="ctd-email">
-                <p class="ctd-email__row"><span class="ctd-email__k">To</span> {{ plan.artifacts.email.to }}</p>
-                <p class="ctd-email__row"><span class="ctd-email__k">Subject</span> {{ plan.artifacts.email.subject }}</p>
-                <pre class="ctd-email__body">{{ plan.artifacts.email.body }}</pre>
-              </div>
-            </template>
-
             <template v-if="plan.artifacts?.spreadsheet">
               <p class="ctd-sec">{{ plan.artifacts.spreadsheet.title || 'Spreadsheet' }}</p>
               <div class="ctd-table-wrap">
@@ -659,8 +660,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+.ctd-agents { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
 .ctd-agent { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
-.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; background: transparent; }
 .ctd-agent__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .ctd-freq { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ctd-freq__row { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

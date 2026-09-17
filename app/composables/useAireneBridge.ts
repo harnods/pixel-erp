@@ -1,8 +1,27 @@
 import { ref } from 'vue'
+import type { ChatCard } from '~/data/coworkGoals'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
+  /** Structured half of an agent's reply — a plan, a pushback, a list of tools
+   *  to connect. The prose lives in `text`; anything the user must act on
+   *  renders as a card beneath it. See `ChatCard` in `data/coworkGoals.ts`. */
+  card?: ChatCard
+  /** Short "what I did" line for an assistant reply — shown as the collapsible
+   *  "Done ›" reasoning header above the answer. */
+  reasoning?: string
+  /** Multi-agent rooms: the agent that authored this assistant turn (id from
+   *  `coworkAgents`). When set, the message shows that agent's avatar + name so a
+   *  room with several agents reads like a group chat. Absent = the room's single
+   *  active agent (plain answer, no name). */
+  agentId?: string
+  /** Record chips shown beneath a message — a linked ERP record (work order,
+   *  sales order, …). Clicking navigates to it. */
+  attachments?: { label: string; sublabel?: string; icon?: string; to: string }[]
+  /** Suggestion chips shown beneath an agent's message (e.g. "Prepare an
+   *  executive summary") — clicking sends the text as the next turn. */
+  suggestions?: string[]
 }
 
 /**
@@ -37,6 +56,9 @@ const pendingLabel = ref('')
 // Suggested follow-up prompts tailored to the opened context (e.g. referencing
 // the actual overdue customer or late employee in a task result).
 const pendingSuggestions = ref<string[]>([])
+// The Cowork task the context came from (when opened from a task result), so the
+// saved chat room can be labelled and picked back up on the Cowork › Chats page.
+const pendingTaskId = ref('')
 // When true, the next send starts a fresh chat first (e.g. a prompt from search).
 const pendingFresh = ref(false)
 // Open a specific persisted chat session by id (e.g. a "recent chat" from search).
@@ -60,6 +82,7 @@ export function useAireneBridge() {
     pendingGround,
     pendingLabel,
     pendingSuggestions,
+    pendingTaskId,
     openSessionSignal,
     pendingSessionId,
     // Actions any component can call
@@ -74,11 +97,13 @@ export function useAireneBridge() {
     },
     /** Open the chat with a grounding context but no message sent yet. `agents`
      *  restricts (and defaults) the agent switcher — e.g. the agents that own the
-     *  task this chat is about. One agent → locked; multiple → switchable. */
-    openWithContext(ground: string, label: string, suggestions: string[] = [], agents: string[] = []) {
+     *  task this chat is about. One agent → locked; multiple → switchable.
+     *  `taskId` tags the saved room with the Cowork task it came from. */
+    openWithContext(ground: string, label: string, suggestions: string[] = [], agents: string[] = [], taskId = '') {
       pendingGround.value = ground
       pendingLabel.value = label
       pendingSuggestions.value = suggestions
+      pendingTaskId.value = taskId
       restrictAgents.value = agents
       if (agents.length) activeAgentId.value = agents[0]!
       openContextSignal.value++

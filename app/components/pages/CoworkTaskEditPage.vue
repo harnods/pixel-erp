@@ -43,7 +43,6 @@ const MODELS = [
 const OUTPUTS = [
   { id: 'briefing', name: 'Briefing summary' },
   { id: 'action-items', name: 'Action items' },
-  { id: 'email', name: 'Email draft' },
   { id: 'spreadsheet', name: 'Spreadsheet' },
   { id: 'pdf', name: 'PDF report' },
 ]

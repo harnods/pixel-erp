@@ -23,6 +23,8 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions, getDimensionById } from '~/data/dimensions'
 import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment, type MisplacedSerial } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
@@ -30,6 +32,7 @@ import { putAwayTasks } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { pickingTasks } from '~/data/pickingTasks'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
+import { assigneeDisplayName } from '~/data/users'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -45,6 +48,12 @@ const { activeScenario } = useScenario()
 const hideCosting = computed(() => isWmsRecord.value || activeScenario.value.startsWith('WMS'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
+}
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 // Also true for 'closed' — closing discards a.lines, so there's no real
 // counted data left to show either, same as a task that never started.
@@ -463,7 +472,7 @@ const activityEntries = computed(() => {
       { label: t('Transaction date'), value: formatDateLong(a.date) },
       { label: t('Warehouse'), value: a.warehouseName },
       ...(a.kind !== 'count' ? [{ label: t('Category'), value: a.category }] : []),
-      ...(!isWmsRecord.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
+      ...(!hideCosting.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
       ...(isWmsCount.value && a.assignee ? [{ label: t('Assignee'), value: a.assignee }] : []),
       ...(isWmsCount.value && a.startDate ? [{ label: t('Start date'), value: formatDateTimeLong(a.startDate) }] : []),
       ...(isWmsCount.value && a.endDate ? [{ label: t('End date'), value: formatDateTimeLong(a.endDate) }] : []),
@@ -711,7 +720,9 @@ onUnmounted(() => {
             </ContentList>
           </div>
           <div class="content-list-col">
-            <ContentList :label="t('Assignee')" :value="adjustment.assignee || '—'" />
+            <!-- Unassigned when the person has left the company: the name is still
+                 stamped on the task, but nobody is responsible for it any more. -->
+            <ContentList :label="t('Assignee')" :value="assigneeDisplayName(adjustment.assignee) || t('Unassigned')" />
           </div>
         </template>
 
@@ -719,7 +730,7 @@ onUnmounted(() => {
         <template v-else>
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(adjustment.date)" />
-            <ContentList v-if="!isWmsRecord" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
+            <ContentList v-if="!hideCosting" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="adjustment.number" />
@@ -963,6 +974,7 @@ onUnmounted(() => {
                 </template>
                 <th v-else class="detail-th detail-th--num">{{ t('Qty in/out') }}</th>
                 <th class="detail-th">{{ t('Unit') }}</th>
+                <th v-if="!isCount && showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
                 <th v-if="!hideCosting" class="detail-th detail-th--num">{{ t('Average cost') }}</th>
               </tr>
             </thead>
@@ -1006,6 +1018,9 @@ onUnmounted(() => {
                   <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 </template>
                 <td class="detail-td">{{ item.unit }}</td>
+                <td v-if="!isCount && showDimensionsColumn" class="detail-td">
+                  <ErpLineDimensionsView :values="dimensionValuesFor(item.dimensions)" />
+                </td>
                 <td v-if="!hideCosting" class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
             </tbody>
@@ -1157,7 +1172,7 @@ onUnmounted(() => {
                 <th class="detail-th">{{ t('Date') }}</th>
                 <th class="detail-th">{{ t('Warehouse') }}</th>
                 <th class="detail-th">{{ t('Category') }}</th>
-                <th class="detail-th">{{ t('Account') }}</th>
+                <th v-if="!hideCosting" class="detail-th">{{ t('Account') }}</th>
                 <th class="detail-th">{{ t('Status') }}</th>
               </tr>
             </thead>
@@ -1169,7 +1184,7 @@ onUnmounted(() => {
                 <td class="detail-td">{{ formatDateLong(linkedStockCount.date) }}</td>
                 <td class="detail-td">{{ linkedStockCount.warehouseName }}</td>
                 <td class="detail-td">{{ linkedStockCount.category }}</td>
-                <td class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
+                <td v-if="!hideCosting" class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
                 <td class="detail-td"><ErpStatusBadge :status="linkedStockCount.status" /></td>
               </tr>
             </tbody>
@@ -1296,9 +1311,8 @@ onUnmounted(() => {
     />
 
     <!-- Cancel stock adjustment -->
-    <MpModal
-      id="sad-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel stock adjustment?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1316,9 +1330,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Close task (WMS cycle count) -->
-    <MpModal
-      id="sad-close" :is-open="closeOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-close" :is-open="closeOpen" size="md" :is-keep-alive="false" @close="closeOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1336,9 +1349,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Start-counting blocked: an inbound/outbound task sharing a SKU is still in progress -->
-    <MpModal
-      id="sad-start-blocked" :is-open="startBlockedOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-start-blocked" :is-open="startBlockedOpen" size="md" :is-keep-alive="false" @close="startBlockedOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cannot start counting yet') }}<MpModalCloseButton /></MpModalHeader>
@@ -1360,9 +1372,8 @@ onUnmounted(() => {
 
     <!-- Approve with misplaced serials still unresolved — a reminder, not a
          blocker: the manager can approve now and reconcile the bins after. -->
-    <MpModal
-      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md" :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Misplaced serial numbers not resolved') }}<MpModalCloseButton /></MpModalHeader>
@@ -1442,7 +1453,7 @@ onUnmounted(() => {
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; padding-right: 34px; }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1477,7 +1488,7 @@ onUnmounted(() => {
 .detail-loc-search-wrap { position: relative; display: flex; align-items: center; }
 .detail-loc-search-icon { position: absolute; left: var(--mp-spacing-3); color: var(--mp-icon-subtle); pointer-events: none; flex-shrink: 0; }
 .detail-loc-search { height: 36px; padding: 0 var(--mp-spacing-3) 0 calc(var(--mp-spacing-3) + 16px + var(--mp-spacing-2)); padding-right: 30px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; width: 240px; box-sizing: border-box; }
-.detail-loc-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-loc-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-loc-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn--overlay { position: absolute; right: var(--mp-spacing-3, 12px); top: 50%; transform: translateY(-50%); }
 .detail-td--empty { padding: 0; }

@@ -456,24 +456,6 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
     <!-- ── Footer action bar ── -->
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <!-- Print (secondary dropdown) -->
-      <MpPopover id="prd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            {{ t('Print') }}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
-
       <!-- Create purchase receiving (primary split button) — hidden once every SKU
            is already covered by a receiving task; Edit/Close live in the dropdown. -->
       <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
@@ -514,9 +496,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
 
     <!-- ── Close receipt confirmation modal ── -->
-    <MpModal
-      id="prd-close-modal" :is-open="closeModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="dismissCloseModal"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="prd-close-modal" :is-open="closeModalOpen" size="md" :is-keep-alive="false" @close="dismissCloseModal"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -580,7 +561,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

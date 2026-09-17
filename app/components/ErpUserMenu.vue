@@ -66,10 +66,6 @@
             <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row" @click="toggleProductMenu(); onClosePopover()">
-            <span class="user-menu__label">{{ t('Show ERP Menu') }}</span>
-            <span v-if="showProductMenu" class="user-menu__value">{{ t('On') }}</span>
-          </button>
           <button type="button" class="user-menu__row" @click="view = 'scenario'">
             <span class="user-menu__label">{{ t('Scenario') }}</span>
             <span class="user-menu__value">{{ t(migrationScenario) }}</span>
@@ -80,7 +76,7 @@
             <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row">
+          <button type="button" class="user-menu__row" @click="signOutAndReload(onClosePopover)">
             <span class="user-menu__label">{{ t('Sign out') }}</span>
           </button>
         </nav>
@@ -177,6 +173,21 @@
             />
           </button>
         </nav>
+
+        <!-- An operator with line-manager access gets the manager-only task actions
+             (Change assignee). Only meaningful in the Ops scenarios, where the
+             signed-in user is an operator — a manager already has them. -->
+        <nav v-if="isWarehouseOperator" class="user-menu__group">
+          <div class="user-menu__row">
+            <MpCheckbox
+              id="user-menu-lm-access"
+              :is-checked="hasLmAccess"
+              @change="setLmAccess(!hasLmAccess)"
+            >
+              {{ t('Line manager access') }}
+            </MpCheckbox>
+          </div>
+        </nav>
       </template>
 
       <!-- ── Scenario: pick the demo storyline ─────────────── -->
@@ -224,6 +235,7 @@ import {
   MpAvatar,
   MpText,
   MpIcon,
+  MpCheckbox,
 } from "@mekari/pixel3";
 import { picForWarehouse } from "~/data/warehouses";
 import { resetDb } from "~/data/persist";
@@ -270,9 +282,11 @@ function onPopoverClose() {
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
+// Line-manager access — an add-on grant on an operator account, not a role. In the
+// Ops scenarios the signed-in user IS an operator, so this is what decides whether
+// they get manager-only actions such as changing a task's assignee.
+const { hasLmAccess, setLmAccess, isWarehouseOperator } = useLineManagerAccess();
 const { navigate } = useNavigation();
-// Product-switcher rail visibility (top-right "Show ERP Menu" toggle).
-const { showProductMenu, toggleProductMenu } = useProductMenu();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned
 // warehouse's PIC) — Budi Santoso for Ops 1, Agus Firmansyah for Ops 2. ERP and
@@ -317,6 +331,15 @@ function selectMigrationScenario(scenario: MigrationScenario, closePopover: () =
 async function resetData(closePopover: () => void) {
   resetDb();
   await clearDynamicAnnotations().catch(() => {});
+  closePopover();
+  if (import.meta.client) window.location.reload();
+}
+
+// End the @mekari.com session and return to the login screen. Reloading drops all
+// in-memory app state and lets the access gate re-resolve as anonymous.
+const { signOut } = useAuth();
+async function signOutAndReload(closePopover: () => void) {
+  await signOut();
   closePopover();
   if (import.meta.client) window.location.reload();
 }

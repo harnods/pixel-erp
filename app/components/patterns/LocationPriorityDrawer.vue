@@ -64,7 +64,7 @@ async function save() {
 
 <template>
   <Transition name="lp">
-    <div v-if="isOpen" class="lp-overlay" @click.self="close">
+    <div v-if="isOpen" class="lp-overlay">
       <div class="lp-panel" role="dialog" aria-label="Storage location priority">
 
         <!-- Header -->

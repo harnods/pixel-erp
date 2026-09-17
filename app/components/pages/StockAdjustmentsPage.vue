@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch, inject } from 'vue'
 import {
   MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
@@ -36,6 +36,9 @@ import {
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 import { useScenario } from '~/composables/useScenario'
+import { assigneeDisplayName } from '~/data/users'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { cycleCountDocumentFor } from '~/data/deliveryDocuments'
 
 const route = useRoute()
 const router = useRouter()
@@ -81,19 +84,37 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
-  { key: 'number',        label: 'Number',       width: '230px', sortable: true, sortType: 'text' },
-  { key: 'date',          label: 'Date',         width: '130px', sortable: true, sortType: 'date' },
-  { key: 'warehouseName', label: 'Warehouse',    width: '200px', sortType: 'text' },
-  { key: 'category',      label: 'Category',     width: '170px', sortType: 'text' },
-  { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
-  { key: 'tags',          label: 'Tags',         width: '200px' },
-  { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
-  { key: 'totalSku',      label: 'Total SKU',    width: '110px', sortType: 'number', align: 'right' },
-  { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
-  { key: 'endDate',       label: 'End date',     width: '200px', sortType: 'date' },
-  { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
-  { key: 'status',        label: 'Status',       width: '130px', sortType: 'text' },
+  { key: 'number',        label: 'Number',       kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'date',          label: 'Date',         kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'warehouseName', label: 'Warehouse',    kind: 'name', sortType: 'text' },
+  { key: 'category',      label: 'Category',     sortType: 'text' },
+  { key: 'account',       label: 'Account',      kind: 'name', sortType: 'text' },
+  { key: 'tags',          label: 'Tags',         kind: 'tags' },
+  { key: 'lastUpdated',   label: 'Last updated', kind: 'date' },
+  { key: 'totalSku',      label: 'Total SKU',    sortType: 'number', align: 'right' },
+  { key: 'startDate',     label: 'Start date',   kind: 'date', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',     kind: 'date', sortType: 'date' },
+  { key: 'assignee',      label: 'Assignee',     kind: 'name', sortType: 'text' },
+  // Same "which document posted this?" column as the Shipping / receiving / put-away
+  // indexes. A cycle count's poster is the ERP Stock Count that approving it creates
+  // — a real link (linkedCycleCountId), not a binding, so an unapproved count shows
+  // nothing rather than a fabricated number.
+  { key: 'deliveryDoc',   label: 'Transaction document', kind: 'name', sortType: 'text' },
+  { key: 'status',        label: 'Status',       kind: 'status', sortType: 'text' },
 ]
+
+// WMS Standalone has no costing and no journal entry, so an adjustment there posts
+// to no account at all — Account isn't a column the user can fill in, it's ERP-only
+// data. Hidden from the table AND from the column-settings menu, so it can't be
+// switched back on into an empty column.
+const hideAccount = computed(() => activeScenario.value.startsWith('WMS'))
+
+// The posted Stock Count, shown only on a COUNTED cycle count — a count that is
+// still Open or In progress has counted nothing to post.
+function countedDocFor(row: StockAdjustment) {
+  if (row.status !== 'counted') return undefined
+  return cycleCountDocumentFor(row.id)
+}
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on. "Last updated" is opt-in
@@ -107,21 +128,26 @@ const colVis = reactive<Record<string, boolean>>({
 const visibleColumns = computed(() =>
   columns.filter(c =>
     colVis[c.key]
-    && !(kindFilter.value && c.key === 'account')
+    && !((kindFilter.value || hideAccount.value) && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
     && !(kindFilter.value === 'count' && c.key === 'tags')
     && !(kindFilter.value === 'count' && !isAwaiting.value && c.key === 'date')
     && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
     && !(c.key === 'totalSku' && currentPageKey.value !== 'Cycle counts')
+    // Cycle counts only: on the ERP stock-adjustment list the row IS the document,
+    // so pointing it at itself would be circular.
+    && !(c.key === 'deliveryDoc' && currentPageKey.value !== 'Cycle counts')
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
-const columnItems = [
+const columnItems = computed(() => [
   { key: 'number', label: 'Number', disabled: true },
   { key: 'memo', label: 'Memo' },
-  ...columns.slice(1).map(c => ({ key: c.key, label: c.label })),
-]
+  ...columns.slice(1)
+    .filter(c => !(hideAccount.value && c.key === 'account'))
+    .map(c => ({ key: c.key, label: c.label })),
+])
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────
@@ -138,6 +164,10 @@ const isAnyAwaiting = computed(() => isAwaiting.value || isCycleAwaiting.value)
 const showCheckbox = computed(() => !(isAnyAwaiting.value && viewAs.value === 'user'))
 const actionsWidth = computed(() => {
   if (!isAnyAwaiting.value) return undefined
+  // Cycle counts hide the approval-log and comments icons, so the ERP width leaves
+  // ~100px of dead space between Status and Approve — wide enough that the button
+  // stops reading as this row's action. Sized to what each flavor actually renders.
+  if (isCycleAwaiting.value) return viewAs.value === 'manager' ? '140px' : '76px'
   return viewAs.value === 'manager' ? '236px' : '148px'
 })
 
@@ -157,6 +187,18 @@ function setDemoState(s: DemoState) {
 
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
+// Mirror the Warehouse filter up so [...slug].vue can scope the "Recommended for
+// counting today" banner (and the tab badges) to the warehouse(s) actually on
+// screen — otherwise the banner names SKUs from warehouses the table is hiding.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+// Published for [...slug].vue, which renders the recommendation banner and the tab
+// badges from it. Deferred to the next tick on purpose: this ref is a parent
+// dependency, so writing it inline (during this child's own update) re-renders the
+// parent mid-update and REMOUNTS this page — the fresh copy starts with an empty
+// filter, which looks exactly like "the checkbox doesn't work".
+watch(warehouseFilter, (v) => { nextTick(() => { activeWarehouseFilter.value = [...v] }) })
+onMounted(() => { nextTick(() => { activeWarehouseFilter.value = [...warehouseFilter.value] }) })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const categoryFilter = ref<string[]>([])
 const statusFilter = ref<string[]>([])
 const assigneeFilter = ref<string[]>([])
@@ -425,7 +467,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in whOptions" :key="opt.value" class="checkbox-filter-item">
+              <div v-for="opt in whOptions" :key="opt.value" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-wh-${opt.value}`"
                   :is-checked="warehouseFilter.includes(opt.value)"
@@ -434,7 +476,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt.label }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -452,7 +494,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt" class="checkbox-filter-item">
+              <div v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-cat-${opt}`"
                   :is-checked="categoryFilter.includes(opt)"
@@ -461,7 +503,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -479,7 +521,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
-              <label v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
+              <div v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
                 <MpCheckbox
                   :id="`sa-status-${opt.value}`"
                   :is-checked="statusFilter.includes(opt.value)"
@@ -488,7 +530,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 >
                   {{ opt.label }}
                 </MpCheckbox>
-              </label>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -585,7 +627,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </span>
     </template>
 
-    <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
+    <!-- A task whose assignee has left the company reads as Unassigned, so it's
+         visible as something a manager still has to hand over. -->
+    <!-- Transaction document — the ERP Stock Count that approving this count posted. -->
+    <template #cell-deliveryDoc="{ row }">
+      <a
+        v-if="countedDocFor(row as unknown as StockAdjustment)"
+        class="cell-link cell-text"
+        @click.stop="router.push(deliveryDocumentRoute(countedDocFor(row as unknown as StockAdjustment)!))"
+      >{{ countedDocFor(row as unknown as StockAdjustment)!.number }}</a>
+      <span v-else>—</span>
+    </template>
+
+    <template #cell-assignee="{ value }">
+      <span :class="{ 'sa-unassigned': !assigneeDisplayName(value as string) }">
+        {{ assigneeDisplayName(value as string) || t('Unassigned') }}
+      </span>
+    </template>
 
     <template #cell-totalSku="{ row }">{{ adjustmentLineItems(row as unknown as StockAdjustment).length }}</template>
 
@@ -744,9 +802,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Cancel confirmation ── -->
-  <MpModal
-    id="sa-cancel" :is-open="cancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="sa-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ cancelIds.length > 1 ? cancelIds.length + ' ' + t('stock adjustments') : t('stock adjustment') }}?<MpModalCloseButton /></MpModalHeader>
@@ -764,9 +821,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Close task confirmation (Cycle counts) ── -->
-  <MpModal
-    id="sa-close" :is-open="closeOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="sa-close" :is-open="closeOpen" size="md" :is-keep-alive="false" @close="closeOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ closeIds.length > 1 ? `${t('Close')} ${closeIds.length} ${t('count tasks')}?` : t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
@@ -926,6 +982,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 
 /* Awaiting approval row actions */
+.sa-unassigned { color: var(--mp-text-subtle); }
 .sa-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
 .sa-approval-actions .row-kebab { margin-left: 0; }
 .row-icon-ghost {

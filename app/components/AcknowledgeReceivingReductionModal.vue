@@ -20,7 +20,7 @@ function rowBadge(t: ReceivingAllocTask): string {
 </script>
 
 <template>
-  <MpModal id="ack-recv-alloc-modal" :is-open="open" size="lg" :is-keep-alive="false" @close="emit('close')">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ack-recv-alloc-modal" :is-open="open" size="lg" :is-keep-alive="false" @close="emit('close')">
     <MpModalContent>
       <MpModalHeader>
         Review this reduction

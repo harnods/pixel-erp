@@ -20,7 +20,11 @@ Other live references:
 [CreateReceiptPage.vue](../../app/components/pages/CreateReceiptPage.vue),
 [WarehouseTransferFormPage.vue](../../app/components/pages/WarehouseTransferFormPage.vue),
 [StockInOutFormPage.vue](../../app/components/pages/StockInOutFormPage.vue),
-[ManageBatchDrawer.vue](../../app/components/patterns/ManageBatchDrawer.vue).
+[ManageBatchDrawer.vue](../../app/components/patterns/ManageBatchDrawer.vue),
+[CustomRoleDrawer.vue](../../app/components/patterns/CustomRoleDrawer.vue) — a
+**permission matrix**: a feature rail beside a checkbox grid, sharing one header
+row. Left- (not centre-) align the action columns so every body checkbox sits
+directly under its column's select-all box.
 
 > **⚠️ The 40px row height is load-bearing — this is the #1 mistake.**
 > The editable `<td>` has `padding: 0` and the input must **fill the full cell

@@ -55,7 +55,7 @@ function toISODate(display: string) {
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
 function goExpenses() {
-  router.push({ path: '/expenses', query: { tab: 'Review files' } })
+  router.push({ path: '/expenses', query: { tab: 'Dropbox' } })
 }
 
 // ── The file under review + its position in the queue ("3 of 5") ─────────────
@@ -533,10 +533,22 @@ function skipWithoutSaving() {
 // Seed the initial scenario. Runs here, after every ref applyScenario touches
 // has been declared — calling it up beside the scenario refs would hit the
 // payment refs before their initializers have run.
+// For a real user-uploaded file, override the header fields with its own OCR
+// data instead of the scenario dummy values. Seed rows (no uploadedAt) keep
+// their scenario data. Amount is derived from line items here, so it's left alone.
+function applyRealData() {
+  const rf = reviewFile.value
+  if (!rf?.uploadedAt) return
+  if (rf.beneficiary?.name) beneficiary.value = rf.beneficiary.name
+  if (rf.date) transactionDate.value = toDisplayDate(rf.date)
+  if (rf.number) transactionNo.value = rf.number
+}
+
 applyScenario(scenario.value)
+applyRealData()
 
 // Re-seed whenever the route points at a different file.
-watch(() => props.orderId, () => applyScenario(scenario.value))
+watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData() })
 </script>
 
 <template>
@@ -651,7 +663,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
               <ErpStatusBadge :status="expenseStatus" badge-for="additionalInformation" />
             </div>
             <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
-              {{ moreInfoOpen ? t('Less info') : t('Add more info') }}
+              {{ moreInfoOpen ? t('Show less') : t('Show more') }}
             </button>
           </div>
 
@@ -889,7 +901,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                 </thead>
                 <tbody>
                   <tr v-for="row in rows" :key="row.id" class="ex-tr">
-                    <td class="ex-td ex-td--drag ex-td--border"><MpIcon name="drag" size="sm" /></td>
+                    <td class="ex-td ex-td--drag ex-td--border"><div class="ex-cell-center"><MpIcon name="drag" size="sm" /></div></td>
                     <td class="ex-td ex-td--input ex-td--border" :class="{ 'ex-td--error': row.accountError }">
                       <MpTooltip
                         v-if="row.accountError" :id="`br-account-tooltip-${row.id}`"
@@ -941,9 +953,11 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                         </div>
                       </td>
                       <td class="ex-td ex-td--del">
-                        <MpButton class="ex-del-btn" :aria-label="t('Remove')" @click="removeRow(row.id)">
-                          <MpIcon name="minus-circular" size="sm" />
-                        </MpButton>
+                        <div class="ex-cell-center">
+                          <MpButton class="ex-del-btn" :aria-label="t('Remove')" @click="removeRow(row.id)">
+                            <MpIcon name="minus-circular" size="sm" />
+                          </MpButton>
+                        </div>
                       </td>
                     </template>
                   </tr>
@@ -952,74 +966,75 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
             </div>
           </div>
 
-          <!-- Totals -->
-          <div class="br-totals">
-            <div class="ex-total-row">
-              <span class="ex-total-label">{{ t('Subtotal') }}</span>
-              <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
-            </div>
-            <div v-if="hasTax" class="ex-total-row">
-              <span class="ex-total-label">{{ taxLabel }}</span>
-              <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
-            </div>
-            <div class="ex-total-rule" />
-            <div class="ex-total-row">
-              <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
-              <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
-            </div>
-          </div>
         </div>
 
-        <!-- ══ Section: Additional info ══ -->
+        <!-- ══ Bottom: Additional info notes (left) + Totals (right) ══ -->
         <div class="br-section">
-          <div class="br-section-header">
-            <div class="br-section-titlerow">
-              <h2 class="br-section-title">{{ t('Additional info') }}</h2>
+          <div class="rv-bottom">
+            <div class="rv-notes">
+              <!-- Memo -->
+              <div class="ex-section">
+                <MpFormControl id="br-memo">
+                  <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+                  <MpTextarea id="br-memo-textarea" v-model="memo" is-full-width :rows="4" />
+                </MpFormControl>
+                <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
+              </div>
+
+              <!-- Attachment -->
+              <div class="ex-section ex-attachment-section">
+                <div class="ex-section-label">{{ t('Attachment') }}</div>
+                <div class="ex-attachment">
+                  <MpUpload
+                    id="br-attachment-upload"
+                    class="ex-attachment-upload"
+                    :class="{ 'ex-attachment-upload--dragover': formDragOver }"
+                    accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
+                    is-multiple is-full-width
+                    :placeholder="t('or drag and drop here')"
+                    :button-text="t('Choose file')"
+                    @change="onFormFileChange"
+                    @dragover.prevent="formDragOver = true"
+                    @dragleave.prevent="formDragOver = false"
+                    @drop.prevent="onFormFileDrop"
+                  />
+                  <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction') }}</p>
+                  <!-- The reviewed document itself is always attached to the expense -->
+                  <MpUploadList
+                    v-if="reviewFile"
+                    id="br-source-file"
+                    :title="reviewFile.file" status="success" subtitle="128 KB"
+                    :icon-name="fileIconName(reviewFile.file)"
+                  />
+                  <MpUploadList
+                    v-for="f in formAttachedFiles" :key="f.name"
+                    :id="`br-attachment-file-${f.name}`"
+                    :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
+                    :icon-name="fileIconName(f.name)"
+                    is-show-remove-button
+                    @remove="removeFormFile(f.name)"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <!-- Memo -->
-          <div class="ex-section">
-            <MpFormControl id="br-memo">
-              <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-              <MpTextarea id="br-memo-textarea" v-model="memo" is-full-width :rows="4" />
-            </MpFormControl>
-            <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
-          </div>
-
-          <!-- Attachment -->
-          <div class="ex-section ex-attachment-section">
-            <div class="ex-section-label">{{ t('Attachment') }}</div>
-            <div class="ex-attachment">
-              <MpUpload
-                id="br-attachment-upload"
-                class="ex-attachment-upload"
-                :class="{ 'ex-attachment-upload--dragover': formDragOver }"
-                accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
-                is-multiple is-full-width
-                :placeholder="t('or drag and drop here')"
-                :button-text="t('Choose file')"
-                @change="onFormFileChange"
-                @dragover.prevent="formDragOver = true"
-                @dragleave.prevent="formDragOver = false"
-                @drop.prevent="onFormFileDrop"
-              />
-              <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction') }}</p>
-              <!-- The reviewed document itself is always attached to the expense -->
-              <MpUploadList
-                v-if="reviewFile"
-                id="br-source-file"
-                :title="reviewFile.file" status="success" subtitle="128 KB"
-                :icon-name="fileIconName(reviewFile.file)"
-              />
-              <MpUploadList
-                v-for="f in formAttachedFiles" :key="f.name"
-                :id="`br-attachment-file-${f.name}`"
-                :title="f.name" status="success" :subtitle="formatFileSize(f.size)"
-                :icon-name="fileIconName(f.name)"
-                is-show-remove-button
-                @remove="removeFormFile(f.name)"
-              />
+            <!-- Totals -->
+            <div class="rv-totals">
+              <div class="br-totals">
+                <div class="ex-total-row">
+                  <span class="ex-total-label">{{ t('Subtotal') }}</span>
+                  <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
+                </div>
+                <div v-if="hasTax" class="ex-total-row">
+                  <span class="ex-total-label">{{ taxLabel }}</span>
+                  <span class="ex-total-amt">{{ formatIDR(taxAmount) }}</span>
+                </div>
+                <div class="ex-total-rule" />
+                <div class="ex-total-row">
+                  <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
+                  <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1147,7 +1162,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -1182,7 +1197,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   cursor: pointer;
   color: var(--mp-icon-default);
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), queue below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -1191,13 +1206,13 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   outline: none;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 /* The detail pages cap this list at 5 recent records; the review queue is a
    fixed run the user works through in order, so every file stays listed and
@@ -1215,10 +1230,10 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 /* Not in the detail-page pattern — the queue has a "current" file the title
    bar is already counting, so it's marked here too. */
-.detail-jump-item--active { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item--active { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -1256,17 +1271,17 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
    Combined / By orders toggle (PickingTaskDetailsPage.vue, CreatePickingPage.vue),
    and the same one InvoiceReviewPage/ReceiptReviewPage/UnclassifiedReviewPage
    use via FileReviewShell.vue. */
-.detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; }
+.detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full); padding: 2px; }
 .detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
 .detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
-.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-default, #e3e7e9); }
 
 .br-unreadable-banner { flex-shrink: 0; }
 
 /* Document preview — Fit hugs the panel width, 100% overflows and scrolls */
 .br-preview {
-  flex-shrink: 0; background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  flex-shrink: 0; background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
   overflow: auto;
 }
 .br-preview-img { display: block; width: 100%; height: auto; }
@@ -1278,15 +1293,15 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 }
 .ex-divider::after {
   content: ''; display: block; width: 2px; height: var(--mp-spacing-10, 40px);
-  background: var(--mp-border-default); border-radius: var(--mp-radii-full);
+  background: var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full);
 }
-.ex-divider:hover::after { background: var(--mp-border-bold); }
+.ex-divider:hover::after { background: var(--mp-border-bold, #8c9596); }
 
 /* ── Right panel ──────────────────────────────────────────────────────────── */
 .ex-right {
   --ex-field-width: 318px;
   flex: 1; min-width: 0; overflow-y: auto;
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   border-radius: var(--mp-radii-xl, 12px) 0 0 var(--mp-radii-xl, 12px);
   padding: var(--mp-spacing-6);
   container-type: inline-size;
@@ -1312,7 +1327,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.br-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-default); }
+.br-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; color: var(--mp-text-default); }
 
 /* ── Airene match hint — same treatment as NewProductPage's .np-ai-banner:
    the strip tucks under the field it annotates and shares its rounded bottom. ── */
@@ -1362,7 +1377,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
    side. .br-section's 12px flex gap is cancelled so it doesn't stack onto the
    grid's own 20px padding-top and push the rule off-centre. */
 .ex-section-divider {
-  border-bottom: 1px dashed var(--mp-border-default);
+  border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-5, 20px);
   margin-bottom: calc(-1 * var(--mp-spacing-3));
 }
@@ -1406,15 +1421,15 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   margin-left: var(--mp-spacing-8);
 }
 .br-match-card {
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md); overflow: hidden;
 }
 /* Header — a 60px band split source | connector | destination. Each half is a
    flex-1 column so the connector always lands on the card's centre line. */
 .br-match-head {
   display: flex; align-items: stretch; min-height: 60px;
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-head-col { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 1 1 0; min-width: 0; }
 .br-match-head-col--src { padding: var(--mp-spacing-2) var(--mp-spacing-3); }
@@ -1460,7 +1475,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   flex: 1 1 0; min-width: 0;
   display: flex; flex-direction: column;
   padding: var(--mp-spacing-4) 38px var(--mp-spacing-4) var(--mp-spacing-6);
-  border-right: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .br-match-body-title {
   margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
@@ -1500,7 +1515,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 }
 
 /* ── Line-items table (from NewExpensePage) ───────────────────────────────── */
-.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table-scroll { overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-drag { width: 44px; }
@@ -1512,38 +1527,48 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .ex-th--drag, .ex-th--del { padding: 0; }
 .ex-td {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  /* A taller cell (wrapped text, error tooltip, etc.) must not pull the row's
+     other cells to its vertical center — everything pins to the top instead. */
+  vertical-align: top;
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
-.ex-td--drag { padding: 0; text-align: center; vertical-align: middle; color: var(--mp-text-placeholder); cursor: grab; }
-.ex-td--input { padding: 0; vertical-align: middle; }
+.ex-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
+.ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']), .ex-td--input :deep([class*='datepicker']) { border-radius: 0; border-color: transparent; }
 .ex-td--input .ex-datepicker { width: 100%; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
-.ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--del { padding: 0; text-align: center; }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']),
 .ex-td--error :deep([class*='input']) { background: transparent; }
 .ex-error-tooltip-wrap { display: block; width: 100%; }
 .ex-error-tooltip-wrap :deep([class*='tooltip__trigger']) { display: block; width: 100%; }
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
-.ex-lineitems-table .ex-td--amount { padding: 0; }
-.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+.ex-lineitems-table .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.ex-lineitems-table .ex-td--amount { padding: 0; position: relative; }
+/* Pins the drag/delete control to the first row's height instead of drifting
+   to the vertical center of a taller row. */
+.ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
+/* inset:0 (not height:100%) fills the full — possibly taller — row height.
+   align-items:stretch then lets .ex-amount-prefix (auto cross-size) grow to
+   match, while the input keeps its own fixed height and simply docks to the
+   top (a flex item with a definite cross size doesn't stretch). */
+.ex-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .ex-amount-prefix {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
 }
@@ -1554,9 +1579,12 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger); }
+.ex-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger); }
 
 /* ── Totals ───────────────────────────────────────────────────────────────── */
+.rv-bottom { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); flex-wrap: wrap; }
+.rv-notes  { display: flex; flex-direction: column; gap: 20px; flex: 1 1 380px; min-width: 320px; }
+.rv-totals { flex: 0 0 428px; max-width: 100%; display: flex; flex-direction: column; }
 .br-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-4); }
 .ex-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); }
 .ex-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
@@ -1564,7 +1592,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-total-label--strong, .ex-total-amt--strong {
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.ex-total-rule { border-top: 1px solid var(--mp-border-default); }
+.ex-total-rule { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 
 /* ── Memo / Attachment ────────────────────────────────────────────────────── */
 .ex-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; }

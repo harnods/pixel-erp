@@ -283,7 +283,7 @@ function onContinue() {
     <!-- ── Imported COA preview drawer ── -->
     <Teleport to="body">
       <Transition name="coa-dw">
-        <div v-if="previewOpen" class="coa-dw-overlay" @click.self="previewOpen = false">
+        <div v-if="previewOpen" class="coa-dw-overlay">
           <aside class="coa-dw-panel" role="dialog" :aria-label="t('Imported chart of accounts')">
             <header class="coa-dw-header">
               <MpText weight="semiBold">{{ t('Imported chart of accounts') }}</MpText>

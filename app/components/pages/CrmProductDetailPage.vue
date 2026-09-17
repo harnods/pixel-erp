@@ -29,7 +29,7 @@ const product = computed(() => getProductDetail(props.orderId))
         <h1 class="detail-title">{{ product.name }}</h1>
       </div>
       <div class="detail-bar-right">
-        <button class="crm-btn crm-btn--secondary" type="button" @click="soon('Edit product')">Edit</button>
+        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit product')">Edit</button>
       </div>
     </header>
 
@@ -67,8 +67,6 @@ const product = computed(() => getProductDetail(props.orderId))
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); line-height: 16px; color: var(--mp-text-link, #165082); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; color: var(--mp-text-default); }
 .detail-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
-.crm-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; white-space: nowrap; border: 1px solid transparent; }
-.crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default); }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0; padding: var(--mp-spacing-6); }
 .pd-section-title { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

@@ -5,18 +5,21 @@ import {
   MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip,
-  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   css, toast,
 } from '@mekari/pixel3'
 import type jsPDF from 'jspdf'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue'
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { bills, deleteBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions, getDimensionById } from '~/data/dimensions'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -24,6 +27,12 @@ const router = useRouter()
 const route = useRoute()
 
 const bill = computed(() => bills.find((b) => b.id === props.orderId) ?? null)
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('expenses').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
+}
 
 // "Set as recurring" isn't built yet — kept in the Actions popover markup below
 // (per design) but hidden until the feature ships.
@@ -52,15 +61,33 @@ function openPdfPreview() {
   pdfPreviewOpen.value = true
 }
 
-// ── Delete confirmation (same modal pattern as BillsIndexPage's bulk delete) ──
-const deleteModalOpen = ref(false)
+// ── Delete confirmation — shared ConfirmModal (rule/btn-danger-confirm) ──
+const deleteOpen = ref(false)
 function confirmDelete() {
   if (!bill.value) return
   deleteBills([bill.value.id])
-  deleteModalOpen.value = false
   toast.notify({ variant: 'success', title: `1 ${t('expense')} ${t('deleted')}` })
   goExpenses()
 }
+
+// ── Activity log — audit trail built from the bill's own data (rule/activity-log-entries).
+// No real audit store in the prototype, so a single "Created" entry describes the record. ──
+const activityOpen = ref(false)
+const activityEntries = computed<ActivityEntry[]>(() => {
+  const b = bill.value
+  if (!b) return []
+  return [{
+    date: b.date,
+    user: 'System',
+    activity: t('Created'),
+    details: [
+      { label: t('Transaction no.'), value: `${t('Expense')} #${String(b.number).padStart(5, '0')}` },
+      { label: t('Transaction date'), value: formatDateLong(b.date) },
+      { label: t('Vendor'), value: b.beneficiary.name },
+      { label: t('Amount'), value: formatIDR(b.total) },
+    ],
+  }]
+})
 
 // Awaiting-approval — same pattern as the Purchase Order detail page: a primary
 // Approve action instead of the usual payment actions. The Awaiting Approval tab
@@ -169,21 +196,17 @@ function goExpenses() {
           <ErpStatusBadge :status="displayStatus" size="md" badge-for="additionalInformation" />
           <MpPopover id="bd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch expense')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch expense')">
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-                    </svg>
-                  </button>
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                    <MpIcon name="close" size="sm" />
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
@@ -307,17 +330,21 @@ function goExpenses() {
               <th class="detail-th">{{ t('Account') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
               <th class="detail-th">{{ t('Tax') }}</th>
+              <th v-if="showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
               <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody class="detail-items-body">
             <tr v-if="!bill.lineItems?.length">
-              <td class="detail-td detail-td--muted" colspan="4">{{ t('No accounts.') }}</td>
+              <td class="detail-td detail-td--muted" :colspan="showDimensionsColumn ? 5 : 4">{{ t('No accounts.') }}</td>
             </tr>
             <tr v-for="(li, i) in bill.lineItems" :key="i" class="detail-item-row">
               <td class="detail-td">{{ li.account }}</td>
               <td class="detail-td">{{ li.description || '—' }}</td>
               <td class="detail-td">{{ li.tax }}</td>
+              <td v-if="showDimensionsColumn" class="detail-td">
+                <ErpLineDimensionsView :values="dimensionValuesFor(li.dimensions)" />
+              </td>
               <td class="detail-td detail-td--num">{{ formatIDR(li.amount) }}</td>
             </tr>
           </tbody>
@@ -388,6 +415,9 @@ function goExpenses() {
         </div>
       </section>
 
+      <!-- Created / Last updated — opens the activity log (rule/activity-log-trigger) -->
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Created by') }} System {{ t('on') }} {{ formatDateLong(bill.date) }}</a>
+
       <!-- ── Payment tab — same tab-selected state (blue) as the creation page's payment tab ── -->
       <MpTabs v-if="showPaymentTab" id="bd-tabs" :default-value="0" variant-color="blue" class="detail-tabs">
         <MpTabList>
@@ -429,20 +459,18 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary btn-enterprise" @click="openPdfPreview">{{ t('Print PDF') }}</button>
+      <button class="btn-enterprise btn-enterprise--secondary" @click="openPdfPreview">{{ t('Print PDF') }}</button>
 
-      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="detail-btn detail-btn--secondary btn-enterprise">
+      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="btn-enterprise btn-enterprise--secondary">
         <MpIcon name="pay-brand" size="md" />
         {{ t('Pay with Mekari Pay') }}
       </button>
 
       <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn btn-enterprise" :class="isAwaitingApproval ? 'detail-btn--secondary' : 'detail-btn--primary'">
+          <button class="btn-enterprise" :class="isAwaitingApproval ? 'btn-enterprise--secondary' : 'btn-enterprise--primary'">
             {{ t('Actions') }}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <MpIcon name="chevrons-down" size="sm" />
           </button>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -460,7 +488,7 @@ function goExpenses() {
                 <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
               </span>
             </MpTooltip>
-            <MpPopoverListItem v-else @click="deleteModalOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+            <MpPopoverListItem v-else @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -475,33 +503,24 @@ function goExpenses() {
       @close="pdfPreviewOpen = false"
     />
 
-    <!-- ── Delete confirmation modal (same pattern as BillsIndexPage's bulk delete) ── -->
-    <MpModal
-      id="bd-delete-modal"
-      :is-open="deleteModalOpen"
-      size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
-      :is-keep-alive="false"
-      @close="deleteModalOpen = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>
-          {{ t('Delete') }} {{ t('Expense') }} #{{ String(bill.number).padStart(5, '0') }}?
-          <MpModalCloseButton />
-        </MpModalHeader>
-        <MpModalBody>
-          {{ t('Deleted expenses cannot be restored.') }}
-        </MpModalBody>
-        <MpModalFooter>
-          <div class="bd-delete-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
+    <!-- ── Delete confirmation — shared ConfirmModal (rule/btn-danger-confirm) ── -->
+    <ConfirmModal
+      v-model:is-open="deleteOpen"
+      :title="t('Delete bill?')"
+      :description="t('Deleted bill cannot be restored.')"
+      :confirm-label="t('Delete bill')"
+      @confirm="confirmDelete"
+    />
+
+    <!-- ── Activity log — opened from the Created/updated link (rule/activity-log-modal) ── -->
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`${t('Expense')} #${String(bill.number).padStart(5, '0')}`"
+      :updated-by="'System'"
+      :updated-at="bill.date"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
   </div>
 
   <!-- Not found fallback -->
@@ -530,12 +549,12 @@ function goExpenses() {
 
 /* ── Jump-to-transaction switcher (title-bar chevron) — mirrors OutgoingOrderDetailsPage ── */
 .detail-jump-chevron {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-7, 28px) !important; min-width: 0 !important;
+  background: none !important; border: none !important; padding: 0 !important; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered) !important; }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
@@ -544,16 +563,17 @@ function goExpenses() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+/* search/select focus = neutral slate ring, never brand-green (rule/select-active-neutral) */
+.detail-jump-search:focus { border-color: var(--mp-colors-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596); outline: none; }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
-  border: none; background: none; cursor: pointer;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
+  border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -700,39 +720,15 @@ function goExpenses() {
   padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage);
 }
 
-.detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
+/* ── Created / Last updated link → activity log ── */
+.detail-updated {
+  margin: 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
-.detail-btn--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
-}
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
-.detail-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.detail-btn--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .detail-actions-delete-tt-wrap { display: block; width: 100%; }
 .detail-actions-delete-tt-wrap :deep(button[disabled]) { pointer-events: none; }
-
-/* ── Delete confirmation modal footer ── */
-.bd-delete-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 /* Clickable payment Number → payment (Spend money) detail. Plain span styled as a
    link (project rule: not MpTextlink, to keep table cells aligned). */

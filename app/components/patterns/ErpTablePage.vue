@@ -34,6 +34,7 @@
 
 import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
+import { columnWidth, type ColumnKind } from './columnWidths'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
 const slots = useSlots()
@@ -42,6 +43,13 @@ const { t } = useLocale()
 export interface TableColumn {
   key: string
   label: string
+  /** Semantic width class — the SOURCE OF TRUTH for column widths. Sets a
+   *  consistent [min,max] range per type (see columnWidths.ts + the design doc).
+   *  Prefer this over `width` for every semantic column so widths stay uniform
+   *  across all tables. `width` still wins if both are set (escape hatch). */
+  kind?: ColumnKind
+  /** Explicit fixed width. Use ONLY for layout-only columns (e.g. a 40px icon)
+   *  or as an escape hatch; semantic columns should use `kind` instead. */
   width?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
@@ -52,6 +60,11 @@ export interface TableColumn {
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
   noSkeleton?: boolean // skip the loading skeleton bar — use for layout-only columns (spacer, action columns)
+  /** Marks a trailing action column (e.g. an Approve + icon-button group) that must
+   *  hug the right edge next to the sticky [...] column. The flexible spacer is then
+   *  placed BEFORE this column instead of before the actions slot, so the whole action
+   *  group is pushed right with no gap. Only the first flagged column matters. */
+  isTrailingAction?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -81,8 +94,8 @@ const props = withDefaults(defineProps<{
   /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
    *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
   bulkLabelPlural?: string
-  /** Override the sticky actions column width (default 52px, fits a single kebab
-   *  button) — use when the #actions slot renders more than that (several buttons
+  /** Override the sticky actions column width (default 44px, fits a single 38px kebab
+   *  button + 3px each side) — use when the #actions slot renders more than that (several buttons
    *  in a row, or a kebab plus a labeled button like "Reconcile"). */
   actionsWidth?: string
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
@@ -98,6 +111,16 @@ const props = withDefaults(defineProps<{
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
   stickyActions?: boolean
+  /** Keep the actions kebab top-aligned on tall (multi-line) rows instead of the
+   *  default vertical-centering — use when a column can wrap to many lines (e.g.
+   *  a long tag list), where a centered kebab drifts far from the row's first
+   *  line. Off by default (see DimensionsIndexPage.vue for the one table that
+   *  opts in). */
+  actionsAlignTop?: boolean
+  /** Remove the row hover background. Use for a purely read-only table that has NO
+   *  row [...] actions and no clickable row — nothing to hover-target, so the grey
+   *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
+  noRowHover?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -116,6 +139,7 @@ const props = withDefaults(defineProps<{
   filterEmptyLabel: undefined,
   lastColumnFlexible: false,
   stickyActions: true,
+  actionsAlignTop: false,
 })
 
 const emit = defineEmits<{
@@ -130,14 +154,20 @@ const emit = defineEmits<{
   selectionChange: [count: number]
 }>()
 
-// Column width — pinned to `col.width` exactly (width + minWidth), unless this is
-// the last column AND the page opted into `lastColumnFlexible`, in which case only
-// `minWidth` is set so it can grow into leftover table width instead of staying
-// fixed. See the `lastColumnFlexible` prop doc above.
-function colStyle(col: TableColumn, ci: number) {
-  if (!col.width) return {}
-  if (props.lastColumnFlexible && ci === props.columns.length - 1) return { minWidth: col.width }
-  return { width: col.width, minWidth: col.width }
+// Column width resolution (source of truth = columnWidths.ts):
+//  • explicit `width`  → pinned exactly (min = max = width). Escape hatch /
+//    layout-only columns (e.g. a 40px icon column). Kept for backward compat.
+//  • `kind` (or unset) → the standard [minWidth, maxWidth] range for that type.
+//    Under table-layout:auto the column grows to fill up to `maxWidth` and never
+//    shrinks below `minWidth`; the flexible spacer soaks up any remainder so the
+//    caps hold and the sticky actions column stays flush right.
+function colStyle(col: TableColumn) {
+  // After first measurement: exact px from the distribution (table-layout:fixed).
+  const w = resolvedWidths.value[col.key]
+  if (w != null) { const p = `${w}px`; return { width: p, minWidth: p, maxWidth: p } }
+  // Fallback before measurement (SSR / first paint): pinned width, or the kind range.
+  if (col.width) return { width: col.width, minWidth: col.width, maxWidth: col.width }
+  return columnWidth(col.kind)
 }
 
 // ERP column sort: picking the already-active direction clears the sort (back to
@@ -339,7 +369,51 @@ function updateRowAlignment() {
   tallRows.value = next
 }
 
+// ── Column width distribution ────────────────────────────────────────────────
+// CSS table cells don't honour max-width under table-layout:auto (long content
+// blows past the cap), so we keep table-layout:fixed and compute exact px widths
+// here: every column starts at its `min`, then shares the leftover container width
+// growing toward its `max` (proportional to remaining capacity). Anything left
+// over after all columns hit their max is soaked up by the flexible spacer column,
+// so the caps hold and the sticky actions column stays flush right. See colStyle +
+// columnWidths.ts + docs/patterns/ErpTablePage.md.
+const resolvedWidths = ref<Record<string, number>>({})
+function px(v?: string) { const n = parseFloat(v ?? ''); return Number.isFinite(n) ? n : 0 }
+function computeWidths() {
+  const wrap = tableWrapperEl.value
+  if (!wrap) return
+  const cols = props.columns
+  if (!cols.length) { resolvedWidths.value = {}; return }
+  const ranges = cols.map(c => {
+    if (c.width) { const w = px(c.width); return { min: w, max: w } }
+    const r = columnWidth(c.kind); return { min: px(r.minWidth), max: px(r.maxWidth) }
+  })
+  const actionsW = slots.actions ? px(actionsColWidth.value) : 0
+  const widths = ranges.map(r => r.min)
+  let avail = wrap.clientWidth - widths.reduce((s, w) => s + w, 0) - actionsW
+  for (let guard = 0; guard < 8 && avail > 0.5; guard++) {
+    const growers = ranges.map((r, i) => ({ i, cap: r.max - widths[i] })).filter(g => g.cap > 0.5)
+    const totalCap = growers.reduce((s, g) => s + g.cap, 0)
+    if (totalCap <= 0.5) break
+    const give = Math.min(avail, totalCap)
+    let used = 0
+    for (const g of growers) {
+      const add = Math.min(give * (g.cap / totalCap), ranges[g.i].max - widths[g.i])
+      widths[g.i] += add; used += add
+    }
+    avail -= used
+    if (used < 0.5) break
+  }
+  const map: Record<string, number> = {}
+  cols.forEach((c, i) => { map[c.key] = Math.round(widths[i]) })
+  // Skip the write when nothing changed — avoids a ResizeObserver feedback loop.
+  const prev = resolvedWidths.value
+  const same = Object.keys(map).length === Object.keys(prev).length && cols.every(c => prev[c.key] === map[c.key])
+  if (!same) resolvedWidths.value = map
+}
+
 function refresh() {
+  computeWidths()
   checkOverflow()
   updateRowAlignment()
 }
@@ -364,15 +438,31 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
 
 // ─── Bulk bar ─────────────────────────────────────────────────────────────────
 
+// A flexible spacer column soaks up leftover table width so semantic columns hold
+// their max width (table-layout:auto would otherwise stretch them to fill) and the
+// sticky actions [...] column stays flush at the right edge. Present whenever an
+// actions slot exists. Positioned right BEFORE the first trailing-action column (so
+// an action button-group hugs the right edge next to [...]), else after all data
+// columns (right before the actions slot). Collapses to 0 when the table overflows.
+const spacerBeforeIndex = computed(() => {
+  const i = props.columns.findIndex(c => c.isTrailingAction)
+  return i === -1 ? props.columns.length : i
+})
+// Whether ANY action column sits flush right — the sticky [...] actions slot OR a
+// trailing-action column (e.g. a "View details" button). Either way we insert the
+// single flexible spacer so the action column is always pushed to the far right.
+const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAction))
+const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
+
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 1 : 0) +
+  (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
   (props.hasAiChat ? 1 : 0)
 )
 
-// Sticky actions column width — the actionsWidth prop, else the 52px default
+// Sticky actions column width — the actionsWidth prop, else the 44px default
 // (kept in script so the <col> inline style carries no hardcoded px).
-const actionsColWidth = computed(() => props.actionsWidth ?? '52px')
+const actionsColWidth = computed(() => props.actionsWidth ?? '44px')
 
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
@@ -383,7 +473,7 @@ const bulkCountLabel = computed(() => {
 </script>
 
 <template>
-  <div class="erp-table-page">
+  <div class="erp-table-page" :class="{ 'erp-table-page--no-row-hover': noRowHover }">
 
     <!-- ── Stats bar ── -->
     <div v-if="$slots.stats" class="erp-stats-bar">
@@ -399,7 +489,7 @@ const bulkCountLabel = computed(() => {
     <div
       ref="tableWrapperEl"
       class="erp-table-wrapper"
-      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
       :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
@@ -407,11 +497,17 @@ const bulkCountLabel = computed(() => {
         <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
              Skipped on the full empty state so the table fits the container (no scroll). -->
         <colgroup v-if="!isFullEmpty">
-          <col
-            v-for="(col, ci) in columns"
-            :key="col.key"
-            :style="colStyle(col, ci)"
-          />
+          <!-- Flexible spacer — the ONLY auto-width column, so table-layout:fixed
+               hands it all the leftover width and every real column (incl. actions)
+               keeps its declared width. Effect: the trailing action group + [...] are
+               always pinned to the far right edge. Collapses to 0 on overflow. It is
+               placed before the first trailing-action column (spacerBeforeIndex), else
+               right before the actions slot. -->
+          <template v-for="(col, ci) in columns" :key="col.key">
+            <col v-if="showSpacer && ci === spacerBeforeIndex" class="erp-col-spacer" />
+            <col :style="colStyle(col)" />
+          </template>
+          <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
           <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
@@ -452,9 +548,9 @@ const bulkCountLabel = computed(() => {
 
           <!-- Normal column headers -->
           <tr v-else>
+            <template v-for="(col, ci) in columns" :key="col.key">
+            <th v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-th erp-th--spacer" />
             <th
-              v-for="(col, ci) in columns"
-              :key="col.key"
               class="erp-th"
               :class="{
                 'erp-th--sortable': col.sortable && !col.sortType,
@@ -464,7 +560,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--fixed':    col.isFixed,
               }"
               :data-col="col.key"
-              :style="colStyle(col, ci)"
+              :style="colStyle(col)"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
               <span class="th-inner">
@@ -518,6 +614,10 @@ const bulkCountLabel = computed(() => {
                 </MpPopover>
               </span>
             </th>
+            </template>
+
+            <!-- Flexible spacer th (no trailing-action column → sits before the actions slot) -->
+            <th v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
 
             <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
@@ -549,9 +649,9 @@ const bulkCountLabel = computed(() => {
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
+              <template v-for="(col, ci) in columns" :key="col.key">
+              <td v-if="showSpacer && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
-                v-for="(col, ci) in columns"
-                :key="col.key"
                 class="erp-td"
                 :class="{
                   'erp-td--right':  col.align === 'right',
@@ -577,6 +677,10 @@ const bulkCountLabel = computed(() => {
                   <template v-if="typeof row[col.key] !== 'boolean'">{{ row[col.key] }}</template>
                 </slot>
               </td>
+              </template>
+
+              <!-- Flexible spacer td (no trailing-action column → sits before the actions slot) -->
+              <td v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
 
               <!-- Actions td — sticky right -->
               <td
@@ -615,9 +719,9 @@ const bulkCountLabel = computed(() => {
           <!-- Skeleton rows — first load (alone) OR pagination change (appended below data) -->
           <template v-if="showSkeleton">
             <tr v-for="n in 3" :key="`sk-${n}`" class="erp-tr erp-tr--skeleton">
+              <template v-for="(col, ci) in columns" :key="col.key">
+              <td v-if="showSpacer && !loading && ci === spacerBeforeIndex" class="erp-td erp-td--spacer" />
               <td
-                v-for="col in columns"
-                :key="col.key"
                 class="erp-td"
                 :class="{
                   'erp-td--right':  col.align === 'right',
@@ -634,6 +738,8 @@ const bulkCountLabel = computed(() => {
                   :width="col.align === 'right' ? '56px' : '72px'"
                 />
               </td>
+              </template>
+              <td v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
               <!-- match data-row columns during pagination; hidden on first load -->
               <td
                 v-if="$slots.actions && !loading"
@@ -767,23 +873,30 @@ const bulkCountLabel = computed(() => {
   height: 10px;
 }
 .erp-table-wrapper::-webkit-scrollbar-track {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .erp-table-wrapper::-webkit-scrollbar-thumb {
-  background: var(--mp-border-bold);
+  background: var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-full, 999px);
-  border: 2px solid var(--mp-background-neutral-subtle);
+  border: 2px solid var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .erp-table-wrapper::-webkit-scrollbar-thumb:hover {
-  background: var(--mp-text-subtle);
+  background: var(--mp-text-subtle, #656f80);
 }
 
 /* ─── Table base ──────────────────────────────────────────────────────────── */
 
 .erp-table {
   width: 100%;
-  min-width: max-content;     /* force overflow so sticky works */
-  table-layout: fixed;        /* honour column widths; prevent content from expanding cells */
+  /* table-layout:fixed so declared column widths hold exactly and long content
+     ellipsizes/wraps instead of blowing past the column's cap (auto layout ignores
+     cell max-width). Exact px widths come from the JS distribution (computeWidths):
+     each column grows from its min toward its max, and the flexible spacer column
+     soaks up any remainder so caps hold and the sticky actions column stays flush
+     right. When columns' min-widths exceed the container the table overflows and the
+     wrapper scrolls (sticky columns keep working). */
+  table-layout: fixed;
+  min-width: max-content;     /* force overflow so sticky works when mins don't fit */
   border-collapse: collapse;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -800,7 +913,7 @@ const bulkCountLabel = computed(() => {
 
 /*
  * Figma spec → Pixel 3 2.4 Enterprise mapping:
- *   background : var(--mp-background-neutral-subtle)
+ *   background : var(--mp-background-neutral-subtle, #f8f9f9)
  *   height     : var(--mp-sizes-7)         (28px)
  *   padding    : var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2)
  *   font       : var(--mp-font-sizes-sm) / var(--mp-font-weights-semi-bold), uppercase
@@ -822,14 +935,14 @@ const bulkCountLabel = computed(() => {
   overflow: hidden;
   line-height: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   font-style: normal;
   text-transform: uppercase;
   letter-spacing: var(--mp-letter-spacings-normal);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   text-align: left;
   white-space: nowrap;
   user-select: none;
@@ -854,7 +967,9 @@ const bulkCountLabel = computed(() => {
 .erp-cell-check {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
+  /* checkbox → cell content is 12px, same as MpCheckbox's built-in box→label gap
+     (rule/checkbox-gap-12) */
+  gap: var(--mp-spacing-3);
   width: 100%;
   min-width: 0;
 }
@@ -868,13 +983,26 @@ const bulkCountLabel = computed(() => {
    (and therefore "last") element child, so it wrongly inherits flex-shrink
    and gets crushed. Pin the checkbox to its natural size unconditionally. */
 .erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
+/* The row-select MpCheckbox carries no label, but its root still reserves the
+   built-in 12px box→label gap — combined with .erp-cell-check's own 12px that
+   doubled the box→content gap to 24px. Zero the empty checkbox's internal gap so
+   the single 12px comes only from .erp-cell-check (rule/checkbox-gap-12). */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { gap: 0; }
+.erp-cell-check > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
+
+/* Header select-all checkbox — same fix as the body cell: the empty label reserves
+   the built-in box→label gap, so zero it + hide the label; the single 12px between
+   the box and the column label then comes from .th-inner (8px) + 4px (rule/
+   checkbox-gap-12). */
+.th-inner > [data-pixel-component="MpCheckbox"] { gap: 0; flex: 0 0 auto; margin-right: var(--mp-spacing-1); }
+.th-inner > [data-pixel-component="MpCheckbox"] :deep(.mp-checkbox__label) { display: none; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
   display: inline-block;        /* honour the cell's text-align (right/center cols) */
   vertical-align: middle;
   background-image: none !important;
-  background-color: var(--mp-border-default) !important;
+  background-color: var(--mp-border-default, #e3e7e9) !important;
   animation: none !important;
 }
 
@@ -883,7 +1011,7 @@ const bulkCountLabel = computed(() => {
   cursor: pointer;
 }
 .erp-th--sortable:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
 /* Sticky right column — shift by 28px when AI column is present */
@@ -897,18 +1025,33 @@ const bulkCountLabel = computed(() => {
 }
 
 /* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop).
-   Default 52px (not --mp-sizes-11/44px) — matches the kebab-only pages that already
-   hardcode actions-width="52px" (BillsIndexPage, BillsReviewFilesPage), now the default
-   for every other kebab-only table too instead of each page redeclaring it.
+   Default 44px — a single 38px kebab button + 3px each side. Every kebab-only table
+   uses this default; a page only overrides actionsWidth when its #actions slot holds
+   more than one button.
    max-width pins this too: table-layout:fixed distributes any leftover table width
    (when column widths sum to less than the container, e.g. narrow tables like
    WarehousesPage) proportionally across EVERY column, including ones with an
    explicit width/min-width — without max-width the actions column silently grows
-   past 52px right along with the rest. */
+   past 44px right along with the rest. */
 .erp-th--actions {
-  width: var(--erp-actions-width, 52px);
-  min-width: var(--erp-actions-width, 52px);
-  max-width: var(--erp-actions-width, 52px);
+  width: var(--erp-actions-width, 44px);
+  min-width: var(--erp-actions-width, 44px);
+  max-width: var(--erp-actions-width, 44px);
+}
+
+/* Flexible spacer column — the only auto-width column, so table-layout:fixed
+   hands it ALL the leftover width (every real column, incl. actions, keeps its
+   declared width). This pins the actions [...] column to the far-right edge on
+   wide tables. It has no min-width, so on horizontal overflow it collapses to 0
+   and the actions column sits flush after the last data column. Empty + not
+   sticky; only the row separator (inherited border) crosses it. */
+.erp-col-spacer {
+  width: auto;
+}
+.erp-th--spacer,
+.erp-td--spacer {
+  padding: 0;
+  min-width: 0;
 }
 
 /* AI chat header column */
@@ -919,7 +1062,7 @@ const bulkCountLabel = computed(() => {
   width: var(--mp-sizes-7);
   min-width: var(--mp-sizes-7);
   padding: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
 /* Sort arrows */
@@ -944,13 +1087,13 @@ const bulkCountLabel = computed(() => {
 }
 .erp-th:hover .erp-sort-btn,
 .erp-sort-btn--active { visibility: visible; }
-.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered); }
+.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .erp-sort-btn--active { color: var(--mp-text-selected, var(--mp-text-default)); }
 /* popover option row: icon + label */
 .erp-sort-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); text-transform: none; width: 100%; }
 .erp-sort-check-tt { margin-left: auto; display: inline-flex; }
 .erp-sort-check { color: var(--mp-text-selected); }
-.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default, #e3e7e9); }
 
 .sort-arrows {
   display: inline-flex;
@@ -976,12 +1119,19 @@ const bulkCountLabel = computed(() => {
  */
 
 .erp-tr {
-  background: var(--mp-background-neutral);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .erp-tr:hover .erp-td {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
 }
+/* Read-only tables with no row actions opt out of the hover highlight
+   (rule/table-no-hover-no-actions). !important so it always beats the base
+   .erp-tr:hover .erp-td rule regardless of scoped-selector specificity/order. */
+.erp-table-page--no-row-hover .erp-tr:hover .erp-td {
+  background: var(--mp-background-neutral, #ffffff) !important;
+}
+.erp-table-page--no-row-hover .erp-tr { cursor: default; }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 
@@ -1002,11 +1152,9 @@ const bulkCountLabel = computed(() => {
 .erp-tr--align-top .erp-td {
   vertical-align: top;
 }
-/* ...except the actions cell — a single kebab/button reads oddly pinned to the top
-   of a tall row, so it stays vertically centred regardless of row height. */
-.erp-tr--align-top .erp-td--actions {
-  vertical-align: middle;
-}
+/* The actions cell always top-aligns regardless of row height (see
+   `.erp-td--actions` below) — the old opt-in `actionsAlignTop`/`.actions-align-top`
+   override is now a no-op since top-align became the unconditional default. */
 
 /* Right-aligned cells — flip padding */
 .erp-td--right {
@@ -1030,20 +1178,22 @@ const bulkCountLabel = computed(() => {
 /* Sticky separator border only when the table actually overflows horizontally */
 .erp-table-wrapper.is-overflowing .erp-th--fixed,
 .erp-table-wrapper.is-overflowing .erp-td--fixed {
-  box-shadow: inset 1px 0 0 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 0 0 var(--mp-border-default, #e3e7e9);
 }
 .has-ai .erp-td--fixed {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
-   Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
+/* Actions cell — the 38px icon button sits in a 44px column: 3px left/right padding
+   (38 + 3 + 3 = 44), and the button ALWAYS top-aligns (top padding unchanged at 2px).
+   Width overridable via --erp-actions-width. */
 .erp-td--actions {
-  width: var(--erp-actions-width, 52px);
-  min-width: var(--erp-actions-width, 52px);
-  max-width: var(--erp-actions-width, 52px);
-  text-align: right;
-  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
+  width: var(--erp-actions-width, 44px);
+  min-width: var(--erp-actions-width, 44px);
+  max-width: var(--erp-actions-width, 44px);
+  text-align: center;
+  vertical-align: top;
+  padding: var(--mp-sizes-0\.5, 2px) 3px;
 }
 
 /* AI chat cell */
@@ -1107,8 +1257,8 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   gap: var(--mp-spacing-2);
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-2xl, 24px);
   box-shadow: var(--mp-shadows-lg);
 }
@@ -1211,12 +1361,14 @@ const bulkCountLabel = computed(() => {
 /* ── Bulk selection bar ──────────────────────────────────────────────────────── */
 .erp-tr-bulk .erp-th--bulk {
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   text-transform: none;
   letter-spacing: normal;
   font-weight: var(--mp-font-weights-regular);
 }
 
+/* The bulk bar sits in the header row — it must NOT make the header taller. Keep it
+   at the 28px header height; the sm action button is constrained to fit (erp.css). */
 .erp-bulk-bar {
   display: flex;
   align-items: center;
@@ -1260,8 +1412,8 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   justify-content: center;
   padding: 0 var(--mp-spacing-1);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-sm);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);

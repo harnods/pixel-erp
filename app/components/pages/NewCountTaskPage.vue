@@ -222,7 +222,13 @@ function confirmLocSelection() {
   locationDrawerOpen.value = false
 }
 function removeLoc(locId: string) { selectedLocations.value = selectedLocations.value.filter(l => l.locId !== locId) }
-function removeLocRow(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
+function removeFromLocation(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
+/** The row's delete button. A product in one location goes straight away; one
+ *  held in several is a task-wide removal, so it asks first (see below). */
+function removeLocRow(loc: LocEntry, sku: string) {
+  if (locsWithSku(sku).length > 1) { removeSkuTarget.value = sku; return }
+  removeFromLocation(loc, sku)
+}
 
 // ── Removing a product that's counted in more than one location ──────────────
 // A product can sit in several of this task's locations. Removing it is then a
@@ -236,10 +242,6 @@ function locsWithSku(sku: string): LocEntry[] {
 const removeSkuLocations = computed(() =>
   removeSkuTarget.value ? locsWithSku(removeSkuTarget.value).map(l => l.fullPath) : [],
 )
-function requestRemoveLocRow(loc: LocEntry, sku: string) {
-  if (locsWithSku(sku).length > 1) { removeSkuTarget.value = sku; return }
-  removeLocRow(loc, sku)
-}
 function confirmRemoveSku() {
   const sku = removeSkuTarget.value
   if (!sku) return
@@ -532,7 +534,7 @@ async function handleSave() {
                       <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
                       <td class="scf-td" />
                       <td class="scf-td scf-td--del">
-                        <button class="scf-del-btn" type="button" @click="requestRemoveLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                        <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
                       </td>
                     </tr>
                   </tbody>
@@ -650,9 +652,8 @@ async function handleSave() {
 
     <!-- Removing a product counted in several locations — a task-wide action, so
          name the locations and let the button say what it actually does. -->
-    <MpModal
-      id="nct-remove-sku" :is-open="!!removeSkuTarget" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="removeSkuTarget = null"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="nct-remove-sku" :is-open="!!removeSkuTarget" size="md" :is-keep-alive="false" @close="removeSkuTarget = null"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Remove this product from the count?') }}<MpModalCloseButton /></MpModalHeader>
@@ -676,7 +677,7 @@ async function handleSave() {
 
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
-      <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
+      <div v-if="locationDrawerOpen" class="loc-spd-overlay">
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>
@@ -855,6 +856,7 @@ async function handleSave() {
 .loc-spd-close:hover { background: var(--mp-background-neutral-hovered); }
 .loc-spd-search-wrap { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); position: relative; }
 .loc-spd-search-input { width: 100%; height: 36px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; box-sizing: border-box; padding-right: 34px; }
+.loc-spd-search-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;

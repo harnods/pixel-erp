@@ -39,15 +39,16 @@ Component path: `app/components/patterns/ErpTablePage.vue`
 >   single-line row renders at this 40px baseline; taller content can grow the row.
 > * Default body-cell vertical padding is **10px top/bottom**
 >   (`var(--mp-spacing-2\.5)`).
-> * Icon action cells are the exception: they use **2px top/bottom** so a 36px icon
->   button fits inside the 40px baseline row.
+> * Icon action cells are the exception: they use **reduced top/bottom padding** so a
+>   **38px** icon button (the ERP-standard icon-button size — see the Actions column
+>   below) fits inside the 40px baseline row.
 > * Vertical alignment: **single-line → middle, taller row → top** (see below).
 
 ## Cell content rules
 
 * **Default vertical padding is 10px** (`var(--mp-spacing-2.5)`) — both text-only
-    and multi-line rows. Action/icon cells may use 2px top/bottom to fit a 36px
-    icon button in the 40px baseline.
+    and multi-line rows. Action/icon cells may use reduced top/bottom padding to fit a
+    **38px** icon button (the ERP-standard icon-button size) in the 40px baseline.
 * **Vertical alignment is conditional.** Single-line rows: `vertical-align: middle`,
     40px baseline. When a row grows beyond 40px because it contains a **description**,
     **caption**, **tags**, an **avatar/photo**, or other taller content, the whole row
@@ -141,8 +142,11 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
     the table (styled `::-webkit-scrollbar` + `scrollbar-width: thin`), so users
     without a trackpad can always drag to scroll left/right (instead of an auto-hiding
     overlay bar).
-* The table uses `min-width: max-content` so wide column definitions can create the
-    horizontal overflow needed for sticky behaviour.
+* The table uses `table-layout: auto` with per-column min/max widths (see the width
+    standard above). When the columns' min-widths exceed the container the table
+    grows past 100% and the wrapper scrolls, giving the horizontal overflow needed
+    for sticky behaviour; otherwise columns grow to their max and the flexible
+    spacer column soaks up the rest.
 * If `hasAiChat` is enabled, the AI column is the outermost sticky-right column
     (`right: 0`, width 28px). The actions/fixed column shifts left by 28px.
 * If the action slot contains more than one kebab/icon button, set `actionsWidth`
@@ -153,21 +157,53 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 
 ***
 
-## Standard Columns
+## Column width standard — SOURCE OF TRUTH
+
+> **This is the single source of truth for ERP table column widths.** Every table
+> in the repo must use it so a "date" column is the same width everywhere, a "name"
+> column the same, and so on. The same values live in code at
+> [`columnWidths.ts`](../../app/components/patterns/columnWidths.ts) — keep the two
+> in sync.
+>
+> **How to apply:** set the column's `kind` (NOT a hand-picked pixel `width`):
+> ```ts
+> const columns: TableColumn[] = [
+>   { key: 'date',   label: 'Date',   kind: 'date',   sortType: 'date' },
+>   { key: 'number', label: 'Number', kind: 'number', sortType: 'text' },
+>   { key: 'vendor', label: 'Vendor', kind: 'name',   sortType: 'text' },
+>   { key: 'amount', label: 'Total',  kind: 'amount', align: 'right', sortType: 'number' },
+> ]
+> ```
+
+Each `kind` defines a **[min, max]** width range. The column grows to use available
+width up to its **max** and never shrinks below its **min**; the table's flexible
+spacer column absorbs any width beyond the maxes so the caps hold and the sticky
+actions `[...]` column stays flush right. Fixed types set min = max.
+
+| `kind` | Min width | Max width | Use for |
+| ------ | --------- | --------- | ------- |
+| `date` | **160px** | **160px** (fixed) | Any date column (created, transaction, etc.) — `DD/MM/YYYY` |
+| `number` | **160px** | **240px** | Document / transaction number (often a link) |
+| `name` | **240px** | **280px** | Vendor / customer / beneficiary / warehouse / product — any entity name |
+| `status` | **128px** | **160px** | Status column rendered with a badge (`ErpStatusBadge`) |
+| `amount` | **160px** | **240px** | Any monetary amount (balance due, total, price) — right-aligned, IDR |
+| `tags` | **160px** | **240px** | Tag chips (`ErpTagList`) |
+| `unit` | **128px** | **128px** (fixed) | Unit of measurement (pcs, kg, …) |
+| `address` | **200px** | **240px** | Address, or any content that can wrap to multiple lines |
+| `default` (unset) | **160px** | **240px** | Anything not covered above |
+
+**Non-semantic columns** keep an explicit `width` instead of a `kind`:
 
 | Column | Width | Align | Notes |
 | ------ | ----- | ----- | ----- |
-| Checkbox | — | — | Rendered **inside the first column's cell** (select-all in the header, per-row in the body) via `has-checkbox`. Not a separate column. |
-| Date | 120px (**140px** for running-balance ledger tables) | left | `DD/MM/YYYY`. Use **140px** on transaction ledgers where a prominent linked **Number** column follows immediately (e.g. Cash management → Account transactions / Bank statement) so the date isn't cramped against the link. Plain index pages stay 120px. |
-| Document number | 200px | left | link style |
-| Attachment | 40px | center | `noHeader: true`, `MpIcon name="attachment"` |
-| Customer / Vendor | 240px | left |  |
-| Due date | 108px | left | `DD/MM/YYYY` |
-| Status | 160px | left | `ErpStatusBadge` + optional sub-label |
-| Balance due | 160px | right | IDR format |
-| Total | 160px | right | IDR format |
-| Tags | 160px | left | `MpBadge for="additionalInformation"` |
-| Actions | 44px | center | `MpButton variant="tertiary" left-icon="more-vertical"`, sticky right |
+| Checkbox | — | — | Rendered **inside the first column's cell** via `has-checkbox`. Not a separate column. |
+| Attachment / icon | 40px | center | `noHeader: true`, `width: '40px'` |
+| Due date | use `kind: 'date'` | left | (a date → follows the `date` standard) |
+| Actions `[...]` | 44px (default) | center, top | Sticky right kebab: a 38px icon button + 3px each side, always top-aligned. Override `actionsWidth` only if the slot holds multiple buttons |
+
+> Setting an explicit `width` on a **semantic** column is an escape hatch — avoid
+> it. If a column genuinely needs a different width, prefer adding/adjusting a
+> `kind` here so every table benefits and stays consistent.
 
 ***
 
@@ -195,13 +231,32 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 interface TableColumn {
   key: string
   label: string
-  width?: string
+  kind?: ColumnKind   // SOURCE OF TRUTH for width — see the column-width standard above
+  width?: string      // explicit fixed width; escape hatch / layout-only columns only
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
-  isFixed?: boolean   // sticky right (for a data column; actions are always sticky)
-  noHeader?: boolean  // render empty <th> — use for icon-only columns (e.g. attachment)
+  sortType?: 'text' | 'number' | 'date'
+  isFixed?: boolean          // sticky right (for a data column; actions are always sticky)
+  isTrailingAction?: boolean // action button-group column that must hug the right edge
+                             // next to [...] — the flexible spacer is placed before it
+  noHeader?: boolean         // render empty <th> — use for icon-only columns (e.g. attachment)
+  noSkeleton?: boolean       // skip the loading skeleton bar — layout-only / action columns
 }
 ```
+
+**Width resolution order** (`colStyle`): explicit `width` → pinned exactly (min =
+max = width); otherwise the `kind`'s range (or `default` when `kind` is unset). The
+table uses `table-layout: auto` so these min/max ranges are honoured, plus a
+flexible spacer column that soaks up leftover width — keeping the caps intact and
+the sticky actions `[...]` column flush right. The spacer sits before the first
+`isTrailingAction` column when present, else right before the actions slot.
+
+**The action column is ALWAYS flush right, pushed by exactly one spacer column** —
+whether that action is the `[...]` kebab (`#actions` slot) OR a trailing button such
+as "View details" (`isTrailingAction: true`). The spacer is inserted whenever there
+is an `#actions` slot **or** any `isTrailingAction` column, so a table with only a
+"View details" button (no kebab) still pushes it to the far right. Give the
+trailing-action column `align: 'right'` so the button hugs the edge inside its cell.
 
 ## Slots
 
@@ -229,7 +284,74 @@ interface TableColumn {
 | `pageChange` | `number` | New page number |
 | `perPageChange` | `number` | New rows-per-page value |
 | `sort` | `string` | Column key to sort by |
+| `sortChange` | `(key: string, dir: 'asc' \| 'desc')` | Column header sort-direction option clicked |
+| `selectionChange` | `number` | Bulk-select checkbox count changed |
+| `hideColumn` | `string` (column `key`) | Column header's own "Hide column" option clicked — see **Column visibility** below |
 | `clearFilters` | — | Inline empty-state "Clear all filters" link clicked — the page resets its search/filters |
+
+***
+
+## Column visibility (show/hide columns)
+
+Any column can be user-hideable via the shared **`ColumnSettingsMenu`** (the
+filter bar's gear icon, `rule/filter-bar-icon-group`) — used to let a page ship a
+column that's hidden by default (e.g. a secondary "Last updated" column) without
+permanently removing it from the table.
+
+There are **two entry points**, both driving the same state:
+
+1. **The gear icon** (`ColumnSettingsMenu` in the filter bar's icon group) — a
+   checklist of every column; toggling a box shows/hides it. The **first
+   (identifying) column is `disabled`** — it can never be hidden.
+2. **The column header's own menu** — clicking a header's sort-options caret
+   includes a **"Hide column"** item, emitted as `@hide-column` on
+   `ErpTablePage`. This is a quick way to hide a column you're looking at
+   without opening the gear popover; there's no per-header "show" — a hidden
+   column only comes back via the gear checklist.
+
+### Wiring (mirrors `DimensionsIndexPage.vue`'s "Last updated" column)
+
+```ts
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+
+const columns: TableColumn[] = [
+  { key: 'name',        label: 'Name',         kind: 'name', sortable: true },
+  // ...
+  { key: 'lastUpdated', label: 'Last updated', kind: 'date' },
+]
+
+// Hidden by default — only 'lastUpdated' starts unchecked.
+const columnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map((c) => [c.key, c.key !== 'lastUpdated'])),
+)
+// items for the gear popover — disable the first (identifying) column.
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+// what actually renders — filter down to the visible set.
+const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
+```
+
+```vue
+<ErpTablePage
+  :columns="visibleColumns"
+  ...
+  @hide-column="hideColumn"
+>
+  <template #filters>
+    ...
+    <div class="filter-btn-group">
+      <ColumnSettingsMenu id="my-page-columns" :items="columnItems" :visibility="columnVisibility" />
+      <!-- Export, etc. — same rounded-ghost icon group -->
+    </div>
+  </template>
+</ErpTablePage>
+```
+
+**Rules:**
+- Pass `:columns="visibleColumns"` (the filtered computed), never the raw `columns` array, or a hidden column still renders.
+- `columnVisibility` is a plain reactive map mutated in place by `ColumnSettingsMenu` — don't recreate it on every render.
+- Wire `@hide-column="hideColumn"` on `ErpTablePage` even if you don't expect users to use the header's hide option — it's part of the standard header menu and silently no-ops without a listener.
+- Default a column to hidden by seeding `columnVisibility` with `false` for that key (as above) — don't hide it with a `v-if` on the column def, which would also drop it from the gear checklist.
 
 ***
 
@@ -335,10 +457,13 @@ When a table row expands to reveal a detail sub-panel (e.g. Warehouse detail →
 
 Follows Mekari's [empty state inside an index view](https://docs.mekari.design/skills/mekari-taste/references/index-view.html#empty-state-inside-an-index-view).
 
+Every table renders one of these — **never a blank table** (`rule/table-empty-state`).
+Both variants use the **same illustration** so the two states read consistently.
+
 | Variant | When | What | How |
 | ------- | ---- | ---- | --- |
-| **Full** (illustrated) | List has **never** had data | Illustration + title + helper text + **CTA** (create first record) | Provide via the **`#empty`** slot (per module) |
-| **Inline** (minimal) | Search/filter eliminated all results | **No illustration** — "No results found" + "Try adjusting your filters." + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
+| **Full** (default) | List has **never** had data (no filter/search active) | Illustration + title + helper text + **secondary CTA** (create first record, gated to the create permission) | Provide via the **`#empty`** slot (per module) |
+| **Inline** (filtered) | Search/filter eliminated all results | **Same illustration** + "\"{search}\" not found" / "No {label} match your filters" + **"Clear all filters"** link | **Built in.** Pass **`:has-active-filter="true"`** when a filter/search is active; the link emits **`clearFilters`** |
 
 **Full empty-state copy — fixed format (use everywhere):**
 
@@ -442,7 +567,7 @@ Mark as completed · Duplicate · *(divider)* · Share via WhatsApp · Share via
 >
   <template #filters>
     <MpInputGroup id="search">...</MpInputGroup>
-    <MpSelect id="filter">...</MpSelect>
+    <ErpFilterSelect id="filter" placeholder="Status" :model-value="statusFilter" :options="statusOptions" @update:model-value="v => (statusFilter = v)" /> <!-- never MpSelect (rule/select-erpfilterselect) -->
     <MpButton variant="primary" style="margin-left: auto">Create</MpButton>
   </template>
 
@@ -487,5 +612,5 @@ new Intl.DateTimeFormat('id-ID', {
 * [ErpFilterBar.md](ErpFilterBar.md) — `#filters` slot layout + real index-page pattern
 * [ErpPagination.md](ErpPagination.md) — built-in pagination bar
 * [ErpStatusBadge.md](ErpStatusBadge.md) — status cell rendering
-* [page-recipes.md](page-recipes.md) — full index-page recipe
+* [index-page-format.md](index-page-format.md) — full index-page recipe
 * [docs/README.md](../README.md) — docs home

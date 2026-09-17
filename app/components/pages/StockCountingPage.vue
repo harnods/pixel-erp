@@ -954,12 +954,14 @@ onUnmounted(() => {
                         <td v-else class="sc-td sc-td--action" />
 
                         <td class="sc-td sc-td--del">
-                          <button v-if="isOpenForEditing" class="sc-del-row-btn" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
+                          <template v-if="isOpenForEditing">
+                          <button class="sc-del-row-btn" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                               <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
                               <path d="M5 8H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
                           </button>
+                          </template>
                         </td>
                       </tr>
 
@@ -1010,11 +1012,10 @@ onUnmounted(() => {
   </div>
 
   <!-- ── Finish counting confirmation ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="sco-confirm"
     :is-open="showConfirm"
     size="md"
-    is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
   >
@@ -1046,7 +1047,7 @@ onUnmounted(() => {
 
   <!-- ── Add location drawer ── -->
   <Transition name="sc-loc-drw">
-    <div v-if="locDrawerOpen" class="loc-drw-overlay" @click.self="locDrawerOpen = false">
+    <div v-if="locDrawerOpen" class="loc-drw-overlay">
       <div class="loc-drw-panel" role="dialog" :aria-label="t('Add location')">
         <div class="loc-drw-header">
           <span class="loc-drw-title">{{ t('Add location') }}</span>

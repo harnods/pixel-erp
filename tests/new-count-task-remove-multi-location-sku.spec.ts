@@ -56,7 +56,7 @@ describe('NewCountTaskPage — removing a product held in several locations', ()
     seedThreeLocations(vm)
     await flushPromises()
 
-    vm.requestRemoveLocRow(vm.selectedLocations[0], SHARED_SKU)
+    vm.removeLocRow(vm.selectedLocations[0], SHARED_SKU)
     await flushPromises()
 
     // Nothing removed yet — the operator hasn't confirmed.
@@ -79,7 +79,7 @@ describe('NewCountTaskPage — removing a product held in several locations', ()
     seedThreeLocations(vm)
     await flushPromises()
 
-    vm.requestRemoveLocRow(vm.selectedLocations[0], SHARED_SKU)
+    vm.removeLocRow(vm.selectedLocations[0], SHARED_SKU)
     vm.confirmRemoveSku()
     await flushPromises()
 
@@ -98,7 +98,7 @@ describe('NewCountTaskPage — removing a product held in several locations', ()
     vm.bySkuSelected = [SHARED_SKU, OTHER_SKU]
     await flushPromises()
 
-    vm.requestRemoveLocRow(vm.selectedLocations[0], SHARED_SKU)
+    vm.removeLocRow(vm.selectedLocations[0], SHARED_SKU)
     vm.confirmRemoveSku()
     await flushPromises()
 
@@ -113,7 +113,7 @@ describe('NewCountTaskPage — removing a product held in several locations', ()
     seedThreeLocations(vm)
     await flushPromises()
 
-    vm.requestRemoveLocRow(vm.selectedLocations[0], SHARED_SKU)
+    vm.removeLocRow(vm.selectedLocations[0], SHARED_SKU)
     vm.removeSkuTarget = null
     await flushPromises()
 
@@ -126,7 +126,7 @@ describe('NewCountTaskPage — removing a product held in several locations', ()
     seedThreeLocations(vm)
     await flushPromises()
 
-    vm.requestRemoveLocRow(vm.selectedLocations[0], OTHER_SKU)
+    vm.removeLocRow(vm.selectedLocations[0], OTHER_SKU)
     await flushPromises()
 
     expect(vm.removeSkuTarget).toBe(null)

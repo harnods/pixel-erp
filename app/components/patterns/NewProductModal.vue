@@ -116,9 +116,8 @@ function save() {
 </script>
 
 <template>
-  <MpModal
-    id="wms-new-product" :is-open="open" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="close"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="wms-new-product" :is-open="open" size="md" :is-keep-alive="false" @close="close"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('New product') }}<MpModalCloseButton /></MpModalHeader>

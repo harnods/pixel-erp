@@ -17,6 +17,9 @@ export function useTableState<T>(
   options?: {
     perPage?: number
     filterFn?: (row: T, search: string, status: string) => boolean
+    /** Explicit initial sort. When omitted, the table defaults to newest-first
+     *  (date-descending) if rows carry a `date` field — latest always on top. */
+    defaultSort?: { key: string; dir: 'asc' | 'desc' }
   },
 ) {
   const perPage = ref(options?.perPage ?? 25)
@@ -24,8 +27,8 @@ export function useTableState<T>(
   const search = ref('')
   const statusFilter = ref('')
   const currentPage = ref(1)
-  const sortKey = ref('')
-  const sortDir = ref<'asc' | 'desc'>('asc')
+  const sortKey = ref(options?.defaultSort?.key ?? '')
+  const sortDir = ref<'asc' | 'desc'>(options?.defaultSort?.dir ?? 'asc')
 
   // Reset to page 1 whenever filters or per-page changes
   watch([search, statusFilter, perPage], () => { currentPage.value = 1 })
@@ -38,7 +41,19 @@ export function useTableState<T>(
   })
 
   const sorted = computed(() => {
-    if (!sortKey.value) return filtered.value
+    // No explicit sort → default to newest-first (latest on top) when the rows
+    // are dated; otherwise keep the source order. (rule/table-default-newest-first)
+    if (!sortKey.value) {
+      const rows = filtered.value
+      if (rows.length && rows[0] != null && 'date' in (rows[0] as Record<string, unknown>)) {
+        return [...rows].sort((a, b) =>
+          String((b as Record<string, unknown>).date ?? '').localeCompare(
+            String((a as Record<string, unknown>).date ?? ''), undefined, { numeric: true },
+          ),
+        )
+      }
+      return rows
+    }
     return [...filtered.value].sort((a, b) => {
       const av = (a as Record<string, unknown>)[sortKey.value]
       const bv = (b as Record<string, unknown>)[sortKey.value]

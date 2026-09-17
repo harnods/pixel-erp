@@ -509,22 +509,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="ood-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            {{ t('Print') }}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print sales order') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="linkedDelivery.length">{{ t('Print delivery note') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
       <!-- Create picking — split button; the chevron holds order-level actions
            (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
       <template v-if="canPickOrder(order)">
@@ -598,9 +582,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     />
 
     <!-- ── Direct-to-packing modal — marketplace orders only ── -->
-    <MpModal
-      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md" :is-keep-alive="false" @close="closeDirectPacking"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Create packing?') }}<MpModalCloseButton /></MpModalHeader>
@@ -632,7 +615,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </MpModal>
 
     <!-- ── Cancel order confirmation ── -->
-    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
@@ -678,7 +661,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

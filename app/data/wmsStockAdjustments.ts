@@ -164,11 +164,24 @@ function generate(count = 24): StockAdjustment[] {
       { sku: '3006', qty: 0, prevQty: 14, location: 'Bin 01' },
     ]
   }
+
+  // Demo scenario — the assignee has LEFT THE COMPANY. The name stays stamped on
+  // the record (that's the history), but it no longer resolves to a company user,
+  // so every Assignee cell reads "Unassigned" and the task surfaces as work a
+  // warehouse manager still has to hand over. Reassigning is the Edit form: pick
+  // a team member, save, and the task is theirs.
+  //
+  // Stamped on the multi-bin task above rather than a bare one, because saving a
+  // reassignment requires the task to have locations with products — a task with
+  // no lines can't be saved at all, so it couldn't be reassigned either.
+  if (multiBinDemo) {
+    multiBinDemo.assignee = 'Bagus Hartono'
+  }
   return out
 }
 
-// Bumped to v8 — adds the multi-bin Open count task demo above.
-const KEY = 'wms-stock-adjustments-v8'
+// Bumped to v9 — adds the departed-assignee Open count task demo above.
+const KEY = 'wms-stock-adjustments-v9'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 

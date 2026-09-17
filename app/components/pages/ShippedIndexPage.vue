@@ -11,6 +11,7 @@ import { useTableState } from '~/composables/useTableState'
 import { listShipments, DELIVERY_COURIERS } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
+import { assigneeDisplayName } from '~/data/users'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -68,13 +69,13 @@ const baseRows = computed<Row[]>(() => {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'shipmentNo',      label: t('Shipment no.'),      width: '180px', sortType: 'text' },
-  { key: 'transactionDate', label: t('Date'),              width: '170px', sortType: 'date' },
-  { key: 'warehouseName',   label: t('Warehouse'),         width: '180px', sortType: 'text' },
-  { key: 'courier',         label: t('Courier'),           width: '160px', sortType: 'text' },
-  { key: 'assignee',        label: t('Assignee'),          width: '160px', sortType: 'text' },
-  { key: 'deliveryCount',   label: t('Delivery qty'),      width: '120px', align: 'right', sortType: 'number' },
-  { key: 'status',          label: t('Status'),            width: '130px', sortType: 'text' },
+  { key: 'shipmentNo',      label: t('Shipment no.'),      kind: 'number', sortType: 'text' },
+  { key: 'transactionDate', label: t('Date'),              kind: 'date',   sortType: 'date' },
+  { key: 'warehouseName',   label: t('Warehouse'),         kind: 'name',   sortType: 'text' },
+  { key: 'courier',         label: t('Courier'),           kind: 'name',   sortType: 'text' },
+  { key: 'assignee',        label: t('Assignee'),          kind: 'name',   sortType: 'text' },
+  { key: 'deliveryCount',   label: t('Delivery qty'),      align: 'right', sortType: 'number' },
+  { key: 'status',          label: t('Status'),            kind: 'status', sortType: 'text' },
 ]
 // Column show/hide — Shipment no. stays on; the sort menu's "Hide column" flips these off,
 // the ColumnSettings menu turns them back on.
@@ -341,7 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Assignee / Warehouse — View details chip on hover ── -->
     <template #cell-courier="{ value }">{{ value || '—' }}</template>
-    <template #cell-assignee="{ value }">{{ value || '—' }}</template>
+    <template #cell-assignee="{ value }">{{ assigneeDisplayName(value as string) || t('Unassigned') }}</template>
     <template #cell-warehouseName="{ value, row }">
       <a class="cell-link cell-text shp-warehouse" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">{{ value }}</a>
     </template>

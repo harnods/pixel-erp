@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
 } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -10,9 +11,16 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
+import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesOrderFiltersDrawer, { emptySalesOrderFilters, type SalesOrderFiltersValue } from '~/components/patterns/SalesOrderFiltersDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesOrders } from '~/data'
+import { salesOrders, awaitingSalesOrders } from '~/data'
+import { salesOrderCompletionRows, type SalesOrderCompletionRow } from '~/data/salesOrders'
 import type { SalesOrder } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -20,14 +28,14 @@ const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',         label: t('Date'),        width: '120px',                                sortType: 'date'   },
-  { key: 'number',       label: t('Number'),      width: '200px', sortable: true,                sortType: 'number' },
-  { key: 'customerName', label: t('Customer'),    width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'dueDate',      label: t('Due date'),    width: '120px',                                sortType: 'date'   },
-  { key: 'status',       label: t('Status'),      width: '180px',                                sortType: 'text'   },
-  { key: 'balanceDue',   label: t('Balance due'), width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'total',        label: t('Total'),       width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'tags',         label: t('Tags'),        width: '160px'                                 },
+  { key: 'date',         label: t('Date'),        kind: 'date',                                sortType: 'date'   },
+  { key: 'number',       label: t('Number'),      kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                sortType: 'date'   },
+  { key: 'status',       label: t('Status'),      kind: 'status',                                sortType: 'text'   },
+  { key: 'balanceDue',   label: t('Balance due'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',        label: t('Total'),       kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'tags',         label: t('Tags'),        kind: 'tags'                                 },
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
@@ -36,10 +44,14 @@ type Row = SalesOrder & { customerName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) filters to the approval queue; same table.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : salesOrders.map(so => ({ ...so, customerName: so.customer.name })),
+    : (isAwaiting.value ? awaitingSalesOrders() : salesOrders).map(so => ({ ...so, customerName: so.customer.name })),
 )
 
 // ─── "All filters" drawer — a second, independent filter layer, ANDed with the
@@ -110,11 +122,18 @@ const {
 
 watch(appliedFilters, () => setPage(1))
 
-const isDrawerFilterActive = computed(() => {
+const activeFilterCount = computed(() => {
   const f = appliedFilters
-  return !!f.keyword || !!f.transactionDate || !!f.dueDate || f.status.length > 0
-    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '' || f.tags.length > 0
+  let n = 0
+  if (f.keyword) n++
+  if (f.transactionDate) n++
+  if (f.dueDate) n++
+  if (f.status.length > 0) n++
+  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
+  if (f.tags.length > 0) n++
+  return n
 })
+const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All status" entry; clearing (x) resets to show-all.
@@ -124,10 +143,6 @@ const statusOptions = [
   { label: t('Closed'),              value: 'closed'              },
   { label: t('Voided'),              value: 'voided'              },
 ]
-
-const statusLabel = computed(
-  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
-)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
@@ -159,11 +174,72 @@ function viewDetails(id: string) {
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── Export / Copy link / Share via email (shared patterns) ────────────────────
+const exportOpen = ref(false)
+const copyOpen = ref(false)
+const copyItems = ref<{ title: string; subtitle?: string; url: string }[]>([])
+const shareOpen = ref(false)
+const shareTitle = ref('')
+const shareSubject = ref('')
+const shareAttachment = ref('')
+function recordLink(id: string) { return `https://mkrierp.id/${id}` }
+function openExport() { exportOpen.value = true }
+function openCopyLinks(rs: Row[]) {
+  copyItems.value = rs.map(r => ({ title: `${t('Sales Order')} #${r.number}`, subtitle: r.customerName, url: recordLink(r.id) }))
+  copyOpen.value = true
+}
+function openShare(r: Row) {
+  shareTitle.value = `${t('Sales Order')} #${r.number}`
+  shareSubject.value = `${t('Sales Order')} #${r.number}`
+  shareAttachment.value = `${r.number}.pdf`
+  shareOpen.value = true
+}
+const exportColumns = computed(() => [
+  ...columns
+    .filter(c => c.label && !c.noHeader)
+    .map(c => ({ key: c.key, label: c.label, ...(c.key === 'number' ? { required: true } : {}) })),
+  { key: 'warehouse', label: t('Warehouse') },
+  { key: 'referenceNo', label: t('Reference no.') },
+  { key: 'message', label: t('Message') },
+  { key: 'memo', label: t('Memo') },
+])
+
+// ─── Mark as completed — only Open / Partially processed can be completed ───────
+// (Closed/Voided never show the menu item; see the kebab v-if.)
+function canMarkCompleted(status: string) { return status === 'open' || status === 'partially processed' }
+const markCompleteOpen = ref(false)
+const markCompleteNumber = ref<number | string>('')
+const markCompleteRows = ref<SalesOrderCompletionRow[]>([])
+function openMarkComplete(row: Row) {
+  markCompleteNumber.value = row.number
+  markCompleteRows.value = salesOrderCompletionRows(row)
+  markCompleteOpen.value = true
+}
+function confirmMarkComplete() {
+  toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
+}
+
+// ─── Bulk delete — Delete (with confirmation) from the bulk Actions menu ─────────
+const bulkDeleteOpen = ref(false)
+const bulkSelectedCount = ref(0)
+function openBulkDelete(count: number) {
+  bulkSelectedCount.value = count
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = bulkSelectedCount.value
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('1 sales order deleted') : `${n} ${t('sales orders deleted')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
 </script>
 
 <template>
@@ -188,75 +264,52 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @clear-filters="clearFilters"
   >
 
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ count }">
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary) -->
+      <MpPopover id="so-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+        <MpPopoverTrigger>
+          <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent class="erp-dropdown-menu">
+          <MpPopoverList>
+            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: status select (MpSelect + MpPopover) + All filters -->
+      <!-- Left: Status select + All filters -->
       <div class="filter-left">
-        <MpPopover id="so-status-filter" is-close-on-select>
-          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
-               value is picked → @clear resets to show-all. -->
-          <MpPopoverTrigger>
-            <MpSelect
-              id="so-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <!-- min-width = MpSelect width (160px) so the dropdown matches the select;
-               width:max-content lets it hug/grow when an option is longer. -->
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value || 'all'"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="so-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
 
-        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
-          <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
-        </button>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
       <div class="filter-right">
-        <div class="filter-btn-group">
-          <!-- Airene -->
-          <MpTooltip id="tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-          <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-            </svg>
-          </button>
+        <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip :label="t('Ask Airene')" placement="bottom">
+            <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
-          <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
-          <!-- Export -->
-          <MpTooltip id="tt-export" :label="t('Export')" placement="bottom" use-portal>
-          <button class="filter-icon-btn" :aria-label="t('Export')">
-            <MpIcon name="download" size="md" />
-          </button>
+          <MpTooltip :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="openExport" />
           </MpTooltip>
-        </div>
+        </MpButtonGroup>
 
-        <!-- Pill search -->
+        <!-- Pill search (sanctioned ErpFilterBar pill; icons are MpIcon) -->
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input
             v-model="search"
             class="filter-search-input"
@@ -264,9 +317,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             :placeholder="t('Search...')"
           />
           <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-            </svg>
+            <MpIcon name="close" size="sm" />
           </button>
         </div>
       </div>
@@ -279,12 +330,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Cell: Number — "View details" on row hover (record has a detail page) ── -->
     <template #cell-number="{ row, value }">
-      <a class="cell-link cell-text cell-number" @click.stop="viewDetails((row as Row).id)">{{ t('Sales Order') }} #{{ value }}</a>
+      <span class="cell-link cell-text cell-number" @click.stop="viewDetails((row as Row).id)">{{ t('Sales Order') }} #{{ value }}</span>
     </template>
 
     <!-- ── Cell: Customer — "Open preview" on row hover (customer/vendor always previewable) ── -->
     <template #cell-customerName="{ value }">
-      <a class="cell-link cell-text" @click.stop>{{ value }}</a>
+      <span class="cell-link cell-text" @click.stop>{{ value }}</span>
     </template>
 
     <!-- ── Cell: Due date ── -->
@@ -320,12 +371,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No sales orders') }}</p>
         <p class="empty-full-desc">{{ t('Sales orders will appear here.') }}</p>
-        <button class="empty-cta">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          {{ t('New sales order') }}
-        </button>
+        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/sales-orders/new')">{{ t('New sales order') }}</MpButton>
       </div>
     </template>
 
@@ -334,13 +380,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #actions="{ row }">
       <MpPopover :id="`so-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <!-- min-width 160px, width hugs content, labels never wrap -->
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -348,7 +388,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             <MpPopoverListItem @click="viewDetails((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Create sales delivery') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Mark as completed') }}</MpPopoverListItem>
+            <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
+            <MpPopoverListItem v-if="canMarkCompleted((row as Row).status)" @click="openMarkComplete(row as Row)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
@@ -377,35 +418,28 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     @apply="applyDrawerFilters"
   />
 
-  <!-- ── Prototype preview FAB (bottom-right): toggle data vs empty-state view ── -->
-  <div class="preview-fab-wrap">
-    <MpPopover id="preview-fab" placement="top-end" use-portal :is-keep-alive="false">
-      <MpPopoverTrigger>
-        <button class="preview-fab" :aria-label="t('Preview options')">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M2 12C2 12 5 5 12 5C19 5 22 12 22 12C22 12 19 19 12 19C5 19 2 12 2 12Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
-      </MpPopoverTrigger>
-      <MpPopoverContent is-dark is-close-on-select :class="css({ minWidth: '220px' })">
-        <MpPopoverList>
-          <MpPopoverListItem
-            :class="css({ color: 'white', _hover: { background: 'transparent' } })"
-            @click="previewMode = 'data'"
-          >
-            {{ t('View table with data') }}
-          </MpPopoverListItem>
-          <MpPopoverListItem
-            :class="css({ color: 'white', _hover: { background: 'transparent' } })"
-            @click="previewMode = 'empty'"
-          >
-            {{ t('View empty state') }}
-          </MpPopoverListItem>
-        </MpPopoverList>
-      </MpPopoverContent>
-    </MpPopover>
-  </div>
+  <ExportModal :open="exportOpen" :title="t('Export sales orders')" entity-label="sales orders" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
+  <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
+  <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <MarkSalesOrderCompletedModal
+    v-model:is-open="markCompleteOpen"
+    :order-number="markCompleteNumber"
+    :rows="markCompleteRows"
+    @confirm="confirmMarkComplete"
+  />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="t('Delete sales orders?')"
+    :description="bulkSelectedCount === 1
+      ? t('1 sales order will be permanently deleted. This cannot be undone.')
+      : `${bulkSelectedCount} ${t('sales orders will be permanently deleted. This cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
+
+  <ScenarioFab v-model="previewMode" />
 </template>
 
 <style scoped>
@@ -437,29 +471,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   background: var(--mp-background-neutral-hovered);
   color: var(--mp-text-default);
 }
-
-/* ── Prototype preview FAB ──────────────────────────────────────────────── */
-.preview-fab-wrap {
-  position: fixed;
-  right: var(--mp-spacing-6);
-  bottom: var(--mp-spacing-6);
-  z-index: 1000;
-}
-.preview-fab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-12, 48px);
-  height: var(--mp-sizes-12, 48px);
-  border: none;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse);
-  color: var(--mp-text-inverse);
-  box-shadow: var(--mp-shadows-lg);
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-.preview-fab:hover { transform: scale(1.05); }
 
 /* ── Full empty state ───────────────────────────────────────────────────── */
 .empty-full {
@@ -530,15 +541,18 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information));
-  border-color: var(--mp-border-selected, var(--mp-border-information));
-  color: var(--mp-text-selected, var(--mp-text-information));
+  background: var(--mp-background-neutral-subtle);
+  border-color: var(--mp-colors-border-bold, #8c9596);
+  color: var(--mp-text-default);
 }
 
 .filter-btn-group {
   display: flex;
   align-items: center;
 }
+/* icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8 */
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
 
 .filter-icon-btn {
   display: flex;

@@ -120,7 +120,7 @@ function applyFilter() {
 
 <template>
   <Transition name="ef-filters">
-    <div v-if="isOpen" class="ef-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="ef-filters-overlay">
       <div class="ef-filters-panel" role="dialog" aria-label="All filters">
         <header class="ef-filters-header">
           <span class="ef-filters-title">All filters</span>
@@ -240,7 +240,7 @@ function applyFilter() {
 .ef-filters-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .ef-filters-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ef-filters-close {
@@ -248,7 +248,7 @@ function applyFilter() {
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
 }
-.ef-filters-close:hover { background: var(--mp-background-neutral-hovered); }
+.ef-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .ef-filters-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: var(--mp-spacing-4); }
 
 /* Blank slate */
@@ -259,22 +259,22 @@ function applyFilter() {
 
 /* Scopes — no box, just a bottom-border separator between rows */
 .ef-scopes { display: flex; flex-direction: column; }
-.ef-scope { border-bottom: 1px solid var(--mp-border-default); }
+.ef-scope { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ef-scope-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) 0; background: transparent; border: none; cursor: pointer; text-align: left; }
 .ef-scope-head-text { display: flex; flex-direction: column; min-width: 0; }
 .ef-scope-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ef-scope-preview { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ef-scope-actions { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
 .ef-scope-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--mp-radii-md); color: var(--mp-text-secondary); cursor: pointer; }
-.ef-scope-icon:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.ef-scope-icon:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 .ef-scope-chevron { transition: transform 150ms; }
 .ef-scope-chevron--open { transform: rotate(180deg); }
 .ef-scope-panel { padding: 0 0 var(--mp-spacing-3); }
-.ef-scope-search { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); color: var(--mp-text-subtle); }
+.ef-scope-search { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); color: var(--mp-text-subtle); }
 .ef-scope-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
 .ef-scope-search-input::placeholder { color: var(--mp-text-placeholder); }
 .ef-scope-option { padding: var(--mp-spacing-2) 0; }
-.ef-scope-option--all { border-bottom: 1px solid var(--mp-border-default); margin-top: var(--mp-spacing-1); }
+.ef-scope-option--all { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 .ef-scope-list { max-height: 220px; overflow-y: auto; }
 .ef-scope-empty { margin: 0; padding: var(--mp-spacing-4) 0; text-align: center; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
@@ -286,12 +286,12 @@ function applyFilter() {
   background: var(--mp-background-neutral, #fff); cursor: pointer;
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.ef-add-btn:hover { background: var(--mp-background-neutral-subtle); }
-.ef-add-search { display: flex; align-items: center; gap: var(--mp-spacing-2); margin: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); color: var(--mp-text-subtle); }
+.ef-add-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.ef-add-search { display: flex; align-items: center; gap: var(--mp-spacing-2); margin: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); color: var(--mp-text-subtle); }
 
 .ef-filters-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .ef-footer-right { display: flex; gap: var(--mp-spacing-3); }
 </style>

@@ -6,7 +6,12 @@
  * A module-level ref makes it a shared singleton across components. Persisted to
  * localStorage so the choice survives a refresh (this is an SPA — ssr:false).
  */
-export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM";
+// Explicit (not auto-imported) so composables that build on this one can be
+// imported directly — e.g. from a unit test, or from a page that imports rather
+// than relies on Nuxt's auto-import.
+import { ref } from "vue";
+
+export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM" | "BUZZ";
 
 const STORAGE_KEY = "erp-active-scenario";
 

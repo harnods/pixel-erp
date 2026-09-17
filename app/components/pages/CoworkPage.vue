@@ -16,7 +16,7 @@
  */
 import { h, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea,
+  MpButton, MpBadge, MpIcon, MpProgress, MpSpinner, MpToggle, MpSkeleton, MpSelect, MpInput, MpTextarea, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   css, toast,
@@ -32,10 +32,13 @@ import {
   coworkTasks, coworkConnections, coworkAgents, coworkSkills,
   COWORK_CATALOG, COWORK_BUILTIN, COWORK_CONNECTION_CATEGORIES,
   addTask, updateTask, deleteTask, getTask, taskHasRun, getOrCreateDraftTask,
-  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection,
+  setTaskScheduleEnabled, setConnection, addCoworkConnection, removeCoworkConnection, connectionScopes, connectionAuthMode,
   addSkill, removeSkill,
+  agentVisibleToCurrentUser, agentHasAutoAction, canArchiveAgent, duplicateAgent, archiveAgent, restoreAgent, tasksUsingAgent,
   type CoworkTask, type CoworkModule, type CoworkCadence, type CoworkConnection, type CoworkConnectionCategory, type CoworkCatalogItem, type CoworkAgent, type CoworkSkill, type CoworkSkillAction,
 } from '~/data/cowork'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import SkillCreateDrawer from '~/components/patterns/SkillCreateDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -296,12 +299,6 @@ async function downloadPdf() {
   }
   doc.save(`${(p.title || 'cowork').replace(/\s+/g, '-').toLowerCase()}.pdf`)
 }
-function copyEmail() {
-  const e = plan.value?.artifacts?.email
-  if (!e) return
-  navigator.clipboard?.writeText(`To: ${e.to}\nSubject: ${e.subject}\n\n${e.body}`)
-  toast.notify({ variant: 'success', title: 'Email copied' })
-}
 
 // Open a task on its detail page (run history + result live there).
 function openTaskDetail(task: CoworkTask) {
@@ -365,7 +362,6 @@ const activeSourceNames = computed(() => sourceConnections.value.filter((s) => i
 const OUTPUTS = [
   { id: 'briefing', name: 'Briefing summary' },
   { id: 'action-items', name: 'Action items' },
-  { id: 'email', name: 'Email draft' },
   { id: 'spreadsheet', name: 'Spreadsheet' },
   { id: 'pdf', name: 'PDF report' },
   { id: 'slack', name: 'Slack message', disabled: true },
@@ -507,9 +503,40 @@ function disconnectConnection(c: CoworkConnection) {
   setConnection(c.id, false)
   toast.notify({ variant: 'success', title: `${c.name} disconnected` })
 }
-function connectFake(c: CoworkConnection) {
-  setConnection(c.id, true)
-  toast.notify({ variant: 'success', title: `${c.name} connected` })
+// ── Connect consent (a Claude-style OAuth "authorize" screen, per provider) ──
+const consentConn = ref<CoworkConnection | null>(null)
+const consentOpen = ref(false)
+const consentBusy = ref(false)
+const consentScopes = computed(() => (consentConn.value ? connectionScopes(consentConn.value) : []))
+const consentAuth = computed(() => (consentConn.value ? connectionAuthMode(consentConn.value) : 'oauth'))
+function openConsent(c: CoworkConnection) { consentConn.value = c; consentBusy.value = false; consentOpen.value = true }
+function cancelConsent() { if (consentBusy.value) return; consentOpen.value = false; consentConn.value = null }
+const consentReal = computed(() => consentConn.value?.provider === 'google' && google.isConfigured.value)
+async function authorizeConsent() {
+  const c = consentConn.value
+  if (!c || consentBusy.value) return
+  consentBusy.value = true
+  // Real Google OAuth when a client ID is configured; otherwise land it via the
+  // simulated round-trip so every app can be connected in the prototype.
+  if (c.provider === 'google' && google.isConfigured.value) {
+    try {
+      const { sample } = await google.connect(c.scope!)
+      setConnection(c.id, true)
+      if (sample) connSample[c.id] = sample
+      toast.notify({ variant: 'success', title: `${c.name} connected` })
+      consentOpen.value = false; consentConn.value = null
+    } catch {
+      toast.notify({ variant: 'error', title: `Couldn't connect ${c.name}`, description: 'Please try again.' })
+    } finally {
+      consentBusy.value = false
+    }
+    return
+  }
+  window.setTimeout(() => {
+    setConnection(c.id, true)
+    toast.notify({ variant: 'success', title: `${c.name} connected` })
+    consentOpen.value = false; consentConn.value = null; consentBusy.value = false
+  }, 900)
 }
 function addConnection() { openMcpModal() }
 
@@ -548,6 +575,7 @@ const mcpOpen = ref(false)
 const mcpUrl = ref('')
 const mcpName = ref('')
 const mcpAuth = ref<'OAuth' | 'API key' | 'None'>('OAuth')
+const mcpApiKey = ref('')
 const mcpAdvanced = ref(false)
 const mcpClientId = ref('')
 const mcpClientSecret = ref('')
@@ -558,6 +586,7 @@ const mcpRedirectUrl = computed(() =>
 const mcpUrlValid = computed(() => /^https?:\/\/.+\..+/.test(mcpUrl.value.trim()))
 function openMcpModal() {
   mcpUrl.value = ''; mcpName.value = ''; mcpAuth.value = 'OAuth'; mcpAdvanced.value = false
+  mcpApiKey.value = ''
   mcpClientId.value = ''; mcpClientSecret.value = ''; mcpScope.value = ''; mcpError.value = ''
   mcpOpen.value = true
 }
@@ -660,22 +689,88 @@ watch([section, agentGridEl], async () => {
 }, { immediate: true })
 onBeforeUnmount(() => agentRo?.disconnect())
 
-// One flat list — an agent is shown only if it's visible to the current user
-// (shared with everyone, or the user is on its people list).
-const visibleAgents = computed(() => coworkAgents.filter((a) =>
-  a.visibilityEveryone || (a.visibilityEmployees ?? []).includes(CURRENT_USER_ID)))
+// ── Agents index: search + filters + sort (AG-20/21) ──
+const agentSearch = ref('')
+const agentTypeFilter = ref<'all' | 'curated' | 'custom'>('all')
+const agentStatusFilter = ref<'active' | 'draft' | 'archived'>('active')
+const agentCanUseFilter = ref(false)
+const agentTypeOptions = [
+  { value: 'all', label: 'All types' }, { value: 'curated', label: 'Curated' }, { value: 'custom', label: 'Custom' },
+]
+const agentTypeLabel = computed(() => agentTypeOptions.find((o) => o.value === agentTypeFilter.value)?.label ?? 'All types')
+// Status filter — no "All statuses" option (per request): default is published+draft.
+const agentStatusOptions = [
+  { value: 'active', label: 'Published & draft' }, { value: 'draft', label: 'Draft' }, { value: 'archived', label: 'Archived' },
+]
+const agentStatusLabel = computed(() => agentStatusOptions.find((o) => o.value === agentStatusFilter.value)?.label ?? 'Published & draft')
+
+// One flat list — an agent is shown only if it's visible to the current user.
+const visibleAgents = computed(() => {
+  const q = agentSearch.value.trim().toLowerCase()
+  let list = coworkAgents.filter((a) => agentVisibleToCurrentUser(a))
+  // Status filter — "Published & draft" (default, hides archived), "Draft", or "Archived".
+  if (agentStatusFilter.value === 'active') list = list.filter((a) => a.status !== 'archived')
+  else list = list.filter((a) => a.status === agentStatusFilter.value)
+  if (agentTypeFilter.value !== 'all') list = list.filter((a) => (a.type ?? 'curated') === agentTypeFilter.value)
+  if (agentCanUseFilter.value) list = list.filter((a) => agentVisibleToCurrentUser(a))
+  if (q) list = list.filter((a) => a.name.toLowerCase().includes(q) || (a.description ?? '').toLowerCase().includes(q))
+  // Sort: pinned → recently used → A–Z.
+  return [...list].sort((a, b) => {
+    if (!!b.pinned !== !!a.pinned) return a.pinned ? -1 : 1
+    const at = a.lastUsedAt ?? '', bt = b.lastUsedAt ?? ''
+    if (at !== bt) return bt.localeCompare(at)
+    return a.name.localeCompare(b.name)
+  })
+})
 const agentFiller = computed(() => {
   const rem = visibleAgents.value.length % agentCols.value
   return rem === 0 ? 0 : agentCols.value - rem
 })
+function agentBadge(a: CoworkAgent): { label: string; cls: string } {
+  if (a.id === 'airene') return { label: 'Default', cls: 'cw-abadge--brand' }
+  return a.type === 'custom' ? { label: 'Custom', cls: '' } : { label: 'Curated', cls: 'cw-abadge--info' }
+}
+function lastUsedLabel(a: CoworkAgent): string {
+  if (!a.lastUsedAt) return ''
+  const then = new Date(a.lastUsedAt + 'T00:00:00').getTime()
+  const days = Math.max(0, Math.round((Date.now() - then) / 86400000))
+  if (days <= 0) return 'Used today'
+  if (days === 1) return 'Used yesterday'
+  if (days < 7) return `Used ${days} days ago`
+  if (days < 30) return `Used ${Math.floor(days / 7)}w ago`
+  return `Used ${Math.floor(days / 30)}mo ago`
+}
 function openAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}`) }
+function openAgentUsage(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}?tab=usage`) }
 function editAgent(a: CoworkAgent) { router.push(`/cowork-agents/${a.id}/edit`) }
 function newAgent() { router.push('/cowork-agents/new') }
+function chatAgent(a: CoworkAgent) { toast.notify({ variant: 'success', title: `Opening a chat with ${a.name}` }) }
+function duplicateAgentAction(a: CoworkAgent) {
+  const c = duplicateAgent(a.id)
+  if (c) { toast.notify({ variant: 'success', title: 'Agent duplicated' }); router.push(`/cowork-agents/${c.id}/edit`) }
+}
+function restoreAgentAction(a: CoworkAgent) { restoreAgent(a.id); toast.notify({ variant: 'success', title: 'Agent restored' }) }
+// Archive confirmation (with impact)
+const archiveTarget = ref<CoworkAgent | null>(null)
+const archiveModalOpen = ref(false)
+const archiveDesc = computed(() => {
+  const n = archiveTarget.value ? tasksUsingAgent(archiveTarget.value).length : 0
+  const tasks = n
+    ? `${n} scheduled task${n === 1 ? '' : 's'} using this agent will be paused, and it'll be removed from the New chat picker.`
+    : 'It will be hidden from everyone and removed from the New chat picker.'
+  return `${tasks} Open chats stay readable but can't send new messages. Nothing is deleted — you can restore this agent anytime.`
+})
+function askArchive(a: CoworkAgent) { archiveTarget.value = a; archiveModalOpen.value = true }
+function confirmArchive() {
+  if (!archiveTarget.value) return
+  const { paused } = archiveAgent(archiveTarget.value.id)
+  toast.notify({ variant: 'success', title: 'Agent archived', description: paused ? `${paused} scheduled task${paused === 1 ? '' : 's'} paused.` : undefined })
+  archiveTarget.value = null
+}
 
 function toggleConnection(c: CoworkConnection) {
   if (c.connected) { disconnectConnection(c); return }
-  if (c.provider === 'google') connectGoogle(c)
-  else connectFake(c)
+  openConsent(c) // consent screen → connect (real Google OAuth on authorize when configured)
 }
 function manageConnection(c: CoworkConnection) {
   infoToast(`Manage ${c.name} — coming soon`)
@@ -719,9 +814,16 @@ const skillSections = computed<SkillSection[]>(() => {
 })
 
 function openSkill(s: CoworkSkill) { router.push(`/cowork-skills/${s.id}`) }
-function deleteSkillById(s: CoworkSkill) {
+// Delete a custom skill — always via a confirmation dialog (destructive).
+const deleteSkillTarget = ref<CoworkSkill | null>(null)
+const deleteSkillOpen = ref(false)
+function deleteSkillById(s: CoworkSkill) { deleteSkillTarget.value = s; deleteSkillOpen.value = true }
+function confirmDeleteSkill() {
+  const s = deleteSkillTarget.value
+  if (!s) return
   removeSkill(s.id)
-  toast.notify({ variant: 'success', title: 'Skill deleted' })
+  toast.notify({ variant: 'success', title: `“${s.name}” deleted` })
+  deleteSkillTarget.value = null
 }
 
 // ── Create / edit skill modal (AI-generate from a prompt, or upload a .md) ─────
@@ -788,6 +890,66 @@ function saveSkill() {
   closeSkillModal()
 }
 
+// ── Import skills from a Git repository (real fetch → preview → import) ─────────
+interface ImportedSkill { name: string; description: string; module?: CoworkModule; markdown: string; path: string }
+const importOpen = ref(false)
+const importRepo = ref('')
+const importBusy = ref(false)
+const importError = ref('')
+const importSkills = ref<ImportedSkill[]>([])
+const importSel = ref<Set<string>>(new Set())
+const importMeta = ref<{ repo: string; path: string; truncated: boolean } | null>(null)
+// "Create with AI" — a chat drawer where you ask an agent to draft a skill,
+// then review/edit its Markdown and save.
+const createAIOpen = ref(false)
+function openCreateAI() { createAIOpen.value = true }
+function onCreateAISave(s: { name: string; description: string; module?: CoworkModule; actions: string[]; markdown: string }) {
+  addSkill({
+    name: s.name.trim(), description: s.description.trim(), module: s.module,
+    actions: (s.actions.length ? s.actions : ['Run skill']).map((label) => ({ id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label })),
+    markdown: s.markdown, source: 'custom', createdAt: new Date().toISOString(),
+  })
+  toast.notify({ variant: 'success', title: 'Skill created' })
+  createAIOpen.value = false
+}
+function openImport() {
+  importOpen.value = true; importRepo.value = ''; importError.value = ''
+  importSkills.value = []; importSel.value = new Set(); importMeta.value = null; importBusy.value = false
+}
+async function fetchRepo() {
+  const repo = importRepo.value.trim()
+  if (!repo) { importError.value = 'Enter a repository URL'; return }
+  importBusy.value = true; importError.value = ''; importSkills.value = []; importMeta.value = null
+  try {
+    const res = await $fetch<{ error?: string; repo: string; path: string; truncated: boolean; skills: ImportedSkill[] }>(
+      '/api/cowork/import-skills', { method: 'POST', body: { repo } })
+    if (res.error) { importError.value = res.error; return }
+    importSkills.value = res.skills
+    importSel.value = new Set(res.skills.map((s) => s.path))
+    importMeta.value = { repo: res.repo, path: res.path, truncated: res.truncated }
+  } catch (e: any) {
+    importError.value = e?.data?.error || 'Could not reach that repository. Check the URL points to a public repo.'
+  } finally { importBusy.value = false }
+}
+function toggleImport(path: string, on: boolean) {
+  const s = new Set(importSel.value); on ? s.add(path) : s.delete(path); importSel.value = s
+}
+const importSelCount = computed(() => importSel.value.size)
+function doImport() {
+  if (!importSkills.value.length) { importError.value = 'Fetch a repository first, then choose which skills to import.'; return }
+  const chosen = importSkills.value.filter((s) => importSel.value.has(s.path))
+  if (!chosen.length) { importError.value = 'Select at least one skill to import.'; return }
+  for (const s of chosen) {
+    addSkill({
+      name: s.name, description: s.description, module: s.module,
+      actions: [{ id: 'run-skill', label: 'Run skill' }], markdown: s.markdown, source: 'custom',
+      createdAt: new Date().toISOString(),
+    })
+  }
+  toast.notify({ variant: 'success', title: `Imported ${chosen.length} skill${chosen.length > 1 ? 's' : ''}` })
+  importOpen.value = false
+}
+
 // Leaving a section (clicking a submenu item) closes any open task workspace.
 watch(() => route.path, (n, o) => { if (openTaskId.value && n !== o) backToIndex() })
 
@@ -799,8 +961,12 @@ function handleQueryTriggers() {
   if (q.focus === '1') { focusPrompt(); router.replace({ path: '/cowork', query: {} }) }
   if (q.add === '1' && section.value === 'Connections') { addConnection(); router.replace({ path: '/cowork-connections', query: {} }) }
   if (q.new === '1' && section.value === 'Agents') { newAgent(); router.replace({ path: '/cowork-agents', query: {} }) }
-  // Create skill is not available yet — show a coming-soon notice instead of the modal.
-  if (q.new === '1' && section.value === 'Skills') { infoToast('Create skill — coming soon'); router.replace({ path: '/cowork-skills', query: {} }) }
+  // Create skill: dropdown in the title bar routes here with ?new=import | ai.
+  if (section.value === 'Skills' && (q.new === 'import' || q.new === 'ai' || q.new === '1')) {
+    if (q.new === 'import') openImport()
+    else openCreateAI()
+    router.replace({ path: '/cowork-skills', query: {} })
+  }
 }
 watch(() => route.fullPath, handleQueryTriggers)
 
@@ -906,19 +1072,6 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <ErpStatusBadge :status="a.priority.toLowerCase()" :label="a.priority" />
               </li>
             </ul>
-          </template>
-
-          <!-- Email draft -->
-          <template v-if="plan?.artifacts?.email">
-            <div class="cw-art-head cw-mt-24">
-              <p class="cw-eyebrow" style="margin:0">Email draft</p>
-              <MpButton is-rounded variant="tertiary" size="sm" @click="copyEmail"><MpIcon name="copy" size="sm" /> Copy</MpButton>
-            </div>
-            <div class="cw-email">
-              <p class="cw-email__row"><span class="cw-email__k">To</span> {{ plan.artifacts.email.to }}</p>
-              <p class="cw-email__row"><span class="cw-email__k">Subject</span> {{ plan.artifacts.email.subject }}</p>
-              <pre class="cw-email__body">{{ plan.artifacts.email.body }}</pre>
-            </div>
           </template>
 
           <!-- Spreadsheet -->
@@ -1336,7 +1489,27 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="connGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Agents) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'conn-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': connCols }">
+                  <div v-for="n in connCols" :key="'conn-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head">
+                        <MpSkeleton class="cw-skeleton" width="36px" height="36px" rounded="md" duration="0s" />
+                        <MpSkeleton class="cw-skeleton" width="96px" height="16px" rounded="sm" duration="0s" />
+                      </div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="150px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="connGridEl" class="cw-conn-sections">
             <section v-for="sec in connSections" :key="sec.category" class="cw-conn-section">
               <h2 class="cw-conn-cat-title">{{ sec.category }}</h2>
               <div class="cw-conn-clip">
@@ -1388,37 +1561,121 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           </div>
         </section>
 
-        <!-- ── Agents ── -->
         <!-- ── Agents (one flat grid, filtered by visibility) ── -->
         <section v-else-if="section === 'Agents'" class="cw-agents">
-          <div ref="agentGridEl" class="cw-conn-clip">
-            <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
-              <div v-for="a in visibleAgents" :key="a.id" class="cw-agent-cell" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
-                <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
-                <div class="cw-agent-main">
-                  <p class="cw-agent-name">{{ a.name }}</p>
-                  <p class="cw-agent-desc">{{ a.description }}</p>
-                </div>
-                <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '160px' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem @click="openAgent(a)">View details</MpPopoverListItem>
-                      <MpPopoverListItem @click="editAgent(a)">Edit agent</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
+          <!-- Filter bar: type + status + toggles (left) · search (right) -->
+          <div class="cw-filter">
+            <div class="cw-filter__left">
+              <MpPopover id="cw-agent-type" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-agent-type-sel" placeholder="Type" :model-value="agentTypeFilter" :class="css({ width: '150px' })" @mousedown.prevent>
+                    <option :value="agentTypeFilter">{{ agentTypeLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in agentTypeOptions" :key="o.value" :is-active="o.value === agentTypeFilter" @click="agentTypeFilter = o.value as any">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+              <MpPopover id="cw-agent-status" is-close-on-select>
+                <MpPopoverTrigger>
+                  <MpSelect id="cw-agent-status-sel" placeholder="Status" :model-value="agentStatusFilter" :class="css({ width: '180px' })" @mousedown.prevent>
+                    <option :value="agentStatusFilter">{{ agentStatusLabel }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem v-for="o in agentStatusOptions" :key="o.value" :is-active="o.value === agentStatusFilter" @click="agentStatusFilter = o.value as any">{{ o.label }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+            <div class="cw-filter__right">
+              <div class="cw-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="agentSearch" class="cw-search__input" type="text" placeholder="Search agents...">
+                <button v-if="agentSearch" class="cw-search__clear" type="button" aria-label="Clear search" @click="agentSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                </button>
               </div>
-              <div v-for="n in agentFiller" :key="'agent-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
             </div>
           </div>
+
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Tasks/Schedule) -->
+          <div v-if="loading" class="cw-conn-clip">
+            <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+              <div v-for="n in 6" :key="'agent-sk-' + n" class="cw-agent-cell cw-agent-cell--sk">
+                <MpSkeleton class="cw-skeleton" width="72px" height="72px" rounded="md" duration="0s" />
+                <div class="cw-agent-main">
+                  <MpSkeleton class="cw-skeleton" width="72px" height="18px" rounded="sm" duration="0s" />
+                  <MpSkeleton class="cw-skeleton" width="140px" height="16px" rounded="sm" duration="0s" />
+                  <MpSkeleton class="cw-skeleton" width="200px" height="14px" rounded="sm" duration="0s" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty state (no agents at all) -->
+          <div v-else-if="!coworkAgents.filter((a) => agentVisibleToCurrentUser(a)).length" class="cw-agents-empty">
+            <MpIcon name="magic" size="lg" />
+            <p class="cw-agents-empty__title">No agents yet</p>
+            <p class="cw-agents-empty__caption">Start from a curated agent, or build one from scratch.</p>
+            <MpButton is-rounded variant="secondary" @click="newAgent">Create agent</MpButton>
+          </div>
+
+          <template v-else>
+            <div ref="agentGridEl" class="cw-conn-clip">
+              <div class="cw-conn-grid" :style="{ '--cols': agentCols }">
+                <div v-for="a in visibleAgents" :key="a.id" class="cw-agent-cell" :class="{ 'is-archived': a.status === 'archived' }" role="button" tabindex="0" @click="openAgent(a)" @keydown.enter="openAgent(a)">
+                  <img class="cw-agent-avatar" :src="a.avatar" :alt="a.name" loading="lazy">
+                  <div class="cw-agent-main">
+                    <div class="cw-agent-badges">
+                      <span class="cw-abadge" :class="agentBadge(a).cls">{{ agentBadge(a).label }}</span>
+                      <span v-if="a.status === 'draft'" class="cw-abadge cw-abadge--warn">Draft</span>
+                      <span v-if="a.status === 'archived'" class="cw-abadge cw-abadge--warn">Archived</span>
+                      <span v-if="agentHasAutoAction(a)" class="cw-abadge cw-abadge--auto"><MpIcon name="magic" size="sm" /> Auto</span>
+                    </div>
+                    <p class="cw-agent-name">{{ a.name }}</p>
+                    <p class="cw-agent-desc">{{ a.description }}</p>
+                    <p v-if="lastUsedLabel(a)" class="cw-agent-lastused">{{ lastUsedLabel(a) }}</p>
+                  </div>
+                  <MpPopover :id="'cw-agent-menu-' + a.id" is-close-on-select use-portal placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <button class="cw-agent-kebab" type="button" :aria-label="'Manage ' + a.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '170px' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click.stop="chatAgent(a)">Chat</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgent(a)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="editAgent(a)">Edit agent</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="duplicateAgentAction(a)">Duplicate</MpPopoverListItem>
+                        <MpPopoverListItem @click.stop="openAgentUsage(a)">View usage</MpPopoverListItem>
+                        <MpPopoverListItem v-if="a.status === 'archived'" @click.stop="restoreAgentAction(a)">Restore agent</MpPopoverListItem>
+                        <MpPopoverListItem v-else-if="canArchiveAgent(a.id)" @click.stop="askArchive(a)">Archive agent</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </div>
+                <div v-for="n in agentFiller" :key="'agent-filler-' + n" class="cw-agent-cell cw-agent-cell--filler" aria-hidden="true" />
+              </div>
+            </div>
+            <p v-if="!visibleAgents.length" class="cw-muted cw-conn-noresult">No agents match your filters.</p>
+          </template>
+
+          <ConfirmModal
+            v-model:is-open="archiveModalOpen"
+            title="Archive agent?"
+            :description="archiveDesc"
+            confirm-label="Archive agent"
+            :is-danger="true"
+            @confirm="confirmArchive"
+          />
         </section>
 
         <!-- ── Skills ── -->
         <section v-else-if="section === 'Skills'" class="cw-connections">
-          <!-- Filter bar: search (right) — same pattern as Connections -->
+          <!-- Filter bar: search (right) — Create dropdown lives in the page title bar -->
           <div class="cw-filter">
             <div class="cw-filter__left" />
             <div class="cw-filter__right">
@@ -1432,7 +1689,24 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
             </div>
           </div>
 
-          <div ref="skillGridEl" class="cw-conn-sections">
+          <!-- First-load skeleton — solid, no shimmer (ERP guideline; mirrors Connections) -->
+          <div v-if="loading" class="cw-conn-sections">
+            <section v-for="s in 2" :key="'skill-sk-sec-' + s" class="cw-conn-section">
+              <MpSkeleton class="cw-skeleton cw-conn-sk-title" width="110px" height="16px" rounded="sm" duration="0s" />
+              <div class="cw-conn-clip">
+                <div class="cw-conn-grid" :style="{ '--cols': skillCols }">
+                  <div v-for="n in skillCols" :key="'skill-sk-' + s + '-' + n" class="cw-conn-cell">
+                    <div class="cw-conn-main">
+                      <div class="cw-conn-head"><MpSkeleton class="cw-skeleton" width="120px" height="16px" rounded="sm" duration="0s" /></div>
+                      <MpSkeleton class="cw-skeleton cw-conn-sk-desc" width="160px" height="13px" rounded="sm" duration="0s" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-else ref="skillGridEl" class="cw-conn-sections">
             <section v-for="sec in skillSections" :key="sec.key" class="cw-conn-section">
               <h2 v-if="sec.title" class="cw-conn-cat-title">{{ sec.title }}</h2>
               <div class="cw-conn-clip">
@@ -1445,14 +1719,14 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                       </div>
                       <p class="cw-conn-desc">{{ s.description }}</p>
                     </div>
-                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select placement="bottom-end">
+                    <MpPopover :id="'cw-skill-menu-' + s.id" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
                         <button class="cw-conn-action is-connected" type="button" :aria-label="'Manage ' + s.name" @click.stop><MpIcon name="menu-kebab" size="md" /></button>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '160px' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="openSkill(s)">View details</MpPopoverListItem>
-                          <MpPopoverListItem v-if="s.source === 'custom'" @click="deleteSkillById(s)">Delete</MpPopoverListItem>
+                          <MpPopoverListItem @click.stop="openSkill(s)">View details</MpPopoverListItem>
+                          <MpPopoverListItem v-if="s.source === 'custom'" @click.stop="deleteSkillById(s)">Delete</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1464,6 +1738,15 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
             <p v-if="!skillSections.length" class="cw-muted cw-conn-noresult">No skills match “{{ skillSearch }}”.</p>
           </div>
+
+          <ConfirmModal
+            v-model:is-open="deleteSkillOpen"
+            title="Delete this skill?"
+            :description="deleteSkillTarget ? `“${deleteSkillTarget.name}” will be removed from Cowork and detached from any agents using it. This can't be undone.` : ''"
+            confirm-label="Delete skill"
+            :is-danger="true"
+            @confirm="confirmDeleteSkill"
+          />
         </section>
     </template>
 
@@ -1471,7 +1754,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
     <input ref="localFileInput" type="file" multiple class="cw-hidden-file" @change="onLocalFiles" />
 
     <!-- ── Custom MCP server modal ── -->
-    <MpModal id="cw-mcp-modal" :is-open="mcpOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeMcpModal">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-mcp-modal" :is-open="mcpOpen" size="md" :is-keep-alive="false" @close="closeMcpModal">
       <MpModalContent>
         <MpModalHeader>
           <span class="mcp-title">Custom MCP server <MpBadge for="additionalInformation" type="announcement" size="sm">Beta</MpBadge></span>
@@ -1498,32 +1781,45 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
               <option value="None">None</option>
             </select>
           </div>
-          <p class="mcp-help">You will be redirected to the third party website to complete authentication when you connect.</p>
+          <!-- OAuth: redirect note + pre-registered app advanced settings -->
+          <template v-if="mcpAuth === 'OAuth'">
+            <p class="mcp-help">You will be redirected to the third-party website to sign in and approve access when you connect.</p>
+            <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
+              <span>Advanced settings</span>
+              <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
+            </button>
+            <div v-if="mcpAdvanced" class="mcp-adv">
+              <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
 
-          <!-- Advanced settings accordion -->
-          <button class="mcp-adv-toggle" type="button" @click="mcpAdvanced = !mcpAdvanced">
-            <span>Advanced settings</span>
-            <MpIcon :name="mcpAdvanced ? 'caret-up' : 'caret-down'" size="sm" />
-          </button>
-          <div v-if="mcpAdvanced" class="mcp-adv">
-            <p class="mcp-help mcp-help--adv">For MCP servers that require you to pre-register your own OAuth application, enter your client ID and client secret below. Use the redirect URL shown here when registering your app. Check the MCP provider’s documentation to learn more.</p>
+              <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
+              <div class="mcp-input-wrap mcp-input-wrap--readonly">
+                <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
+                <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              </div>
 
-            <label class="mcp-label" for="mcp-redirect">Redirect URL</label>
-            <div class="mcp-input-wrap mcp-input-wrap--readonly">
-              <input id="mcp-redirect" :value="mcpRedirectUrl" class="mcp-input" type="text" readonly />
-              <button class="mcp-copy" type="button" aria-label="Copy redirect URL" @click="copyRedirectUrl"><MpIcon name="copy" size="sm" /></button>
+              <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
+              <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+
+              <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
+              <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
+
+              <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
+              <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
+              <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
             </div>
+          </template>
 
-            <label class="mcp-label" for="mcp-cid">OAuth Client ID (optional)</label>
-            <input id="mcp-cid" v-model="mcpClientId" class="mcp-input mcp-input--plain" type="text" />
+          <!-- API key: a secret token sent as an Authorization header -->
+          <template v-else-if="mcpAuth === 'API key'">
+            <label class="mcp-label" for="mcp-apikey">API key</label>
+            <input id="mcp-apikey" v-model="mcpApiKey" class="mcp-input mcp-input--plain" type="password" placeholder="sk-…" />
+            <p class="mcp-help">Paste the API key or bearer token from your MCP provider. It is sent as an <code>Authorization: Bearer</code> header on every request and stored encrypted.</p>
+          </template>
 
-            <label class="mcp-label" for="mcp-secret">OAuth Client Secret (optional)</label>
-            <input id="mcp-secret" v-model="mcpClientSecret" class="mcp-input mcp-input--plain" type="password" />
-
-            <label class="mcp-label" for="mcp-scope">Scope (optional)</label>
-            <input id="mcp-scope" v-model="mcpScope" class="mcp-input mcp-input--plain" type="text" />
-            <p class="mcp-help">Space-separated scopes to include in the authorization request. Leave blank to use server defaults.</p>
-          </div>
+          <!-- None: public server -->
+          <template v-else>
+            <p class="mcp-help">This server requires no authentication — anyone with the URL can call it. Only add servers you fully trust.</p>
+          </template>
 
           <!-- Trust warning -->
           <div class="mcp-warn">
@@ -1541,8 +1837,89 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
       <MpModalOverlay />
     </MpModal>
 
+    <!-- ── Import skills from a repository ── -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-import-modal" :is-open="importOpen" size="md" :is-keep-alive="false" @close="importOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Import skills from a repository<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="imp-sub">Paste a public Git repository. We read its Markdown skill files (from <code>skills/</code>, <code>.claude/skills/</code>, or the repo root) so you can review and import them as Custom skills.</p>
+          <label class="mcp-label" for="imp-url">Repository URL</label>
+          <div class="imp-row">
+            <input id="imp-url" v-model="importRepo" class="mcp-input mcp-input--plain" type="url" placeholder="https://github.com/owner/repo" @keydown.enter.prevent="fetchRepo">
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="fetchRepo"><MpSpinner v-if="importBusy" size="sm" /><span v-else>Fetch</span></button>
+          </div>
+          <p v-if="importError" class="cw-form-error">{{ importError }}</p>
+
+          <template v-if="importSkills.length">
+            <div class="imp-meta">
+              <span>{{ importSelCount }} of {{ importSkills.length }} selected from <strong>{{ importMeta?.repo }}</strong></span>
+              <span v-if="importMeta?.truncated" class="cw-muted">· showing the first {{ importSkills.length }}</span>
+            </div>
+            <ul class="imp-list">
+              <li v-for="s in importSkills" :key="s.path" class="imp-item">
+                <MpCheckbox :is-checked="importSel.has(s.path)" @update:is-checked="(v: boolean) => toggleImport(s.path, v)">
+                  {{ s.name }}<span v-if="s.module" class="imp-item__mod">{{ s.module }}</span>
+                  <template #description>
+                    <span v-if="s.description" class="imp-item__desc">{{ s.description }}</span>
+                    <span class="imp-item__path">{{ s.path }}</span>
+                  </template>
+                </MpCheckbox>
+              </li>
+            </ul>
+            <p class="imp-note">Imported skills land under <strong>Custom</strong> and stay off until you enable them on an agent — nothing runs automatically.</p>
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="importOpen = false">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" @click="doImport">Import{{ importSelCount ? ` ${importSelCount} skill${importSelCount === 1 ? '' : 's'}` : '' }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Create a skill with AI (chat + editable Markdown preview) ── -->
+    <SkillCreateDrawer v-model:open="createAIOpen" @save="onCreateAISave" />
+
+    <!-- ── Connect consent (OAuth-style authorize screen, per provider) ── -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-consent-modal" :is-open="consentOpen" size="md" :is-keep-alive="false" @close="cancelConsent">
+      <MpModalContent>
+        <MpModalHeader>
+          <span class="cwc-consent-head">
+            <img v-if="consentConn && !connLogoFailed[consentConn.id]" class="cwc-consent-logo" :src="consentConn.logo || `/connectors/${consentConn.id}.png`" :alt="consentConn.name" @error="connLogoFailed[consentConn.id] = true">
+            <span v-else-if="consentConn" class="cwc-consent-logo cwc-consent-logo--mono" :style="{ background: consentConn.color || '#3a4749' }">{{ connLogo(consentConn.name) }}</span>
+            Connect {{ consentConn?.name }}
+          </span>
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="cwc-consent-sub">Mekari Cowork wants to access your <strong>{{ consentConn?.name }}</strong> account. It will be able to:</p>
+          <ul class="cwc-consent-scopes">
+            <li v-for="(s, i) in consentScopes" :key="i" class="cwc-consent-scope">
+              <MpIcon name="check" size="sm" class="cwc-consent-ico" />
+              <span>{{ s.label }}</span>
+            </li>
+          </ul>
+          <p class="cwc-consent-note">
+            <template v-if="consentAuth === 'first_party'">Signed in with your Mekari account — no extra steps.</template>
+            <template v-else-if="consentAuth === 'api_key'">You'll enter an API key from {{ consentConn?.name }} to finish.</template>
+            <template v-else>You'll be redirected to {{ consentConn?.name }} to sign in and approve access.</template>
+          </p>
+          <p class="cwc-consent-trust">You can choose which tools stay enabled after connecting. Only connect apps you trust.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton is-rounded variant="ghost" @click="cancelConsent">Cancel</MpButton>
+            <MpButton is-rounded variant="primary" :is-loading="consentBusy" @click="authorizeConsent">{{ consentBusy ? 'Connecting…' : `Continue with ${consentConn?.name}` }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
     <!-- ── Create / edit skill modal ── -->
-    <MpModal id="cw-skill-modal" :is-open="skillOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeSkillModal">
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cw-skill-modal" :is-open="skillOpen" size="md" :is-keep-alive="false" @close="closeSkillModal">
       <MpModalContent>
         <MpModalHeader>
           <span class="mcp-title">Create skill</span>
@@ -1708,8 +2085,8 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-card__cta { margin-top: auto; display: inline-flex; align-items: center; gap: 4px; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); padding-top: var(--mp-spacing-2); }
 
 /* Recent list */
-.cw-list { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
-.cw-list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); border: none; border-top: 1px solid var(--mp-border-default); cursor: pointer; font-family: inherit; text-align: left; }
+.cw-list { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
+.cw-list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); border: none; border-top: 1px solid var(--mp-border-default, #e3e7e9); cursor: pointer; font-family: inherit; text-align: left; }
 .cw-list-row:first-child { border-top: none; }
 .cw-list-row:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .cw-list-row__main { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
@@ -1722,14 +2099,17 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
 .cw-filter__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cw-filter__right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.cw-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.cw-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .cw-search__input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
 .cw-search__input::placeholder { color: var(--mp-text-placeholder); }
 .cw-search__clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary); border-radius: 999px; }
-.cw-search__clear:hover { background: var(--mp-background-neutral-hovered); }
+.cw-search__clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* First-load skeleton — solid, no shimmer/animation (ERP guideline). */
-.cw-skeleton { background-image: none !important; background-color: var(--mp-border-default) !important; animation: none !important; }
+.cw-skeleton { background-image: none !important; background-color: var(--mp-border-default, #e3e7e9) !important; animation: none !important; }
+.cw-conn-sk-title { display: block; margin-bottom: var(--mp-spacing-4, 16px); }
+.cw-conn-sk-desc { margin-top: var(--mp-spacing-2, 8px); }
 
 /* Multiple module badges (multi-source task) wrap within the cell. */
 .cw-modules { display: inline-flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
@@ -1737,13 +2117,13 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-table-wrap { overflow-x: auto; }
 .cw-table { width: 100%; border-collapse: collapse; }
 .cw-table thead th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle, #f8f9f9); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); white-space: nowrap; }
-.cw-table tbody td { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; }
-.cw-th-actions, .cw-td-actions { width: 52px; text-align: right; }
+.cw-table tbody td { padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; }
+.cw-th-actions, .cw-td-actions { width: 44px; text-align: right; }
 .cw-cell-link { color: var(--mp-text-link, #165082); cursor: pointer; font-weight: var(--mp-font-weights-regular); }
 .cw-cell-link:hover { text-decoration: underline; }
 .cw-cell-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cw-kebab { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-md); color: var(--mp-text-secondary); cursor: pointer; }
-.cw-kebab:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
+.cw-kebab:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default); }
 
 /* ── Connections marketplace (Figma 1612:33080) ── */
 .cw-connections { display: flex; flex-direction: column; }
@@ -1802,13 +2182,53 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-agent-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary, #3a4749); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cw-agent-kebab { position: absolute; top: var(--mp-spacing-4, 16px); right: var(--mp-spacing-4, 16px); display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md, 6px); color: var(--mp-icon-default, #536062); cursor: pointer; }
 .cw-agent-kebab:hover { background: var(--mp-background-neutral-subtle, #f1f3f4); }
+.cw-agent-cell.is-archived { opacity: 0.62; }
+.cw-agent-cell--sk { cursor: default; }
+/* Agent card badges */
+.cw-agent-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.cw-abadge { font-size: 11px; font-weight: 600; border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); display: inline-flex; align-items: center; gap: 3px; }
+.cw-abadge--info { color: #165082; background: #e7f0f7; }
+.cw-abadge--warn { color: #b54708; background: #fdf1e6; }
+.cw-abadge--brand { color: #0a6e4e; background: #e7f5ef; }
+.cw-abadge--auto { color: #6941C6; background: #f4f0fb; }
+.cw-agent-lastused { margin: 0; font-size: 12px; color: var(--mp-text-secondary); }
+/* Agents empty state */
+.cw-agents-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-16, 64px) var(--mp-spacing-6); color: var(--mp-text-secondary); text-align: center; }
+.cw-agents-empty__title { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: 600; color: var(--mp-text-default); }
+.cw-agents-empty__caption { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Connect consent modal ── */
+.cwc-consent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.cwc-consent-logo { width: 28px; height: 28px; border-radius: var(--mp-radii-md, 6px); object-fit: contain; background: #fff; flex: 0 0 auto; }
+.cwc-consent-logo--mono { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; }
+.cwc-consent-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-scopes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.cwc-consent-scope { display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); }
+.cwc-consent-ico { flex: 0 0 auto; margin-top: 1px; color: var(--mp-icon-success, #0a6e4e); }
+.cwc-consent-note { margin: var(--mp-spacing-5, 20px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.cwc-consent-trust { margin: var(--mp-spacing-2, 8px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+
+/* ── Import skills modal ── */
+.imp-sub { margin: 0 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-md, 14px); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
+.imp-row { display: flex; gap: var(--mp-spacing-2, 8px); align-items: center; }
+.imp-row .mcp-input { flex: 1; }
+.imp-meta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: var(--mp-spacing-5, 20px) 0 var(--mp-spacing-2, 8px); font-size: 13px; color: var(--mp-text-default); }
+.imp-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 12px); overflow-y: auto; max-height: 320px; }
+.imp-item { padding: var(--mp-spacing-3, 12px); }
+.imp-item + .imp-item { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+/* The label + description live inside MpCheckbox (correct 12px gap, top align). */
+.imp-item :deep(.mp-checkbox__label), .imp-item :deep([data-pixel-component="MpCheckboxLabel"]) { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.imp-item__mod { margin-left: var(--mp-spacing-2, 8px); font-size: 11px; font-weight: 600; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f1f3f4); border-radius: var(--mp-radii-full, 999px); padding: 2px 8px; }
+.imp-item__desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.imp-item__path { display: block; margin-top: 4px; font-size: 11px; color: var(--mp-text-placeholder, #6e7a7c); font-family: ui-monospace, monospace; }
+.imp-note { margin: var(--mp-spacing-3, 12px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 
 /* ── Custom MCP server modal ── */
 .mcp-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
 .mcp-subtitle { margin: 0 0 var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #3a4749); }
 .mcp-label { display: block; margin: var(--mp-spacing-4, 16px) 0 var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default, #080d0e); }
 .mcp-input-wrap { position: relative; display: flex; align-items: center; }
-.mcp-input { width: 100%; height: 40px; padding: 0 var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-form, #d0d5dd); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); outline: none; }
+.mcp-input { width: 100%; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3, 12px); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md, 8px); background: var(--mp-background-neutral, #fff); font-family: inherit; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); outline: none; }
 .mcp-input:focus { border-color: #2f6feb; box-shadow: 0 0 0 3px rgba(47,111,235,0.12); }
 .mcp-input-wrap.is-valid .mcp-input { border-color: #2f6feb; padding-right: 36px; }
 .mcp-valid-icon { position: absolute; right: 10px; color: #2f6feb; }
@@ -1845,10 +2265,10 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-soon { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }
 .cw-src__row.is-disabled .cw-src__name { color: var(--mp-text-secondary); }
 .cw-art-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-6); margin-bottom: var(--mp-spacing-3); }
-.cw-email { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-xl, 12px); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); }
+.cw-email { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-xl, 12px); padding: var(--mp-spacing-4); background: var(--mp-background-neutral, #fff); }
 .cw-email__row { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cw-email__k { display: inline-block; min-width: 56px; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-semi-bold); }
-.cw-email__body { margin: var(--mp-spacing-3) 0 0; padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); white-space: pre-wrap; }
+.cw-email__body { margin: var(--mp-spacing-3) 0 0; padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default, #e3e7e9); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-default); white-space: pre-wrap; }
 .cw-conn-lead { margin-bottom: var(--mp-spacing-4); }
 .cw-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); font-family: inherit; padding: 0; margin-bottom: var(--mp-spacing-4); }
 .cw-back:hover { color: var(--mp-text-default); }
@@ -1867,15 +2287,15 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .cw-step__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-side__title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-sources, .cw-prepared, .cw-summary, .cw-findings { list-style: none; margin: 0; padding: 0; }
-.cw-source { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); }
+.cw-source { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); }
 .cw-source:last-child { border-bottom: none; }
-.cw-prepared__item { display: flex; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.cw-prepared__item { display: flex; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cw-prepared__item:last-child { border-bottom: none; }
 .cw-prepared__item :deep(svg) { color: var(--mp-text-secondary); flex-shrink: 0; }
-.cw-summary__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.cw-summary__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cw-summary__row:last-child { border-bottom: none; }
 .cw-summary__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cw-finding { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default); }
+.cw-finding { padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cw-finding:last-child { border-bottom: none; }
 
 @media (max-width: 900px) {
