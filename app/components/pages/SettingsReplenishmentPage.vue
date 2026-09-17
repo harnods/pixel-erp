@@ -384,36 +384,38 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Receipts to average') }}</span>
-          <span class="rs-label-desc">{{ t('How many of the most recent delivered orders a measured lead time averages.') }}</span>
-        </div>
-        <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-lead-samples">
-            <MpInput id="rs-lead-samples-input" v-model="draft.leadTimeSampleCount" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.leadTimeSampleCount }} {{ t('receipts') }}</span>
-        </div>
-      </div>
-
       <!--
-        The lead-time twin of "Cold-start threshold": the confidence GATE that
-        decides measure-vs-fall-back, so it gets its own field with a matching
-        "below this →" description rather than being buried beside the sample size.
+        The two numbers are one range: a measured lead time averages the most
+        recent receipts, and needs a minimum before it's trusted. Kept as one
+        field — as separate fields "average 5" and "minimum 2" read as a
+        contradiction, when they are just the max and min of the same sample.
       -->
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Minimum to trust') }}</span>
-          <span class="rs-label-desc">{{ t('Delivered orders a vendor\'s product needs before its lead time is measured from them. Below this, it uses the default lead time above.') }}</span>
+          <span class="rs-label-text">{{ t('Receipts to average') }}</span>
+          <span class="rs-label-desc">{{ t('A measured lead time averages a vendor product\'s most recent delivered orders — at most the maximum, and at least the minimum before it\'s trusted. Fewer than the minimum falls back to the default lead time above; extra orders beyond the maximum are ignored.') }}</span>
         </div>
         <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-lead-min">
-            <MpInput id="rs-lead-min-input" v-model="draft.leadTimeMinSamples" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.leadTimeMinSamples }} {{ t('receipts') }}</span>
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div class="rs-cat-row">
+              <span class="rs-cat-name">{{ t('At least (to trust)') }}</span>
+              <MpInputGroup id="rs-lead-min">
+                <MpInput id="rs-lead-min-input" v-model="draft.leadTimeMinSamples" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row">
+              <span class="rs-cat-name">{{ t('At most (recency cap)') }}</span>
+              <MpInputGroup id="rs-lead-samples">
+                <MpInput id="rs-lead-samples-input" v-model="draft.leadTimeSampleCount" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('receipts') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ t('The last') }} {{ committed.leadTimeMinSamples }}–{{ committed.leadTimeSampleCount }} {{ t('receipts') }}
+            <span class="rs-value-sub">· {{ t('below') }} {{ committed.leadTimeMinSamples }} {{ t('uses the default lead time') }}</span>
+          </span>
         </div>
       </div>
 
@@ -652,6 +654,7 @@ const BOUNDARY_OPTIONS = [
 }
 .rs-control { min-width: 0; }
 .rs-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.rs-value-sub { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 
 .rs-windows { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rs-window-row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
