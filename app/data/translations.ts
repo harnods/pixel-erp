@@ -3724,6 +3724,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Receipts to average': 'Penerimaan yang dirata-rata',
   'How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.':
     'Berapa pesanan terakhir yang dirata-rata untuk mengukur waktu tunggu, dan paling sedikit berapa sebelum memakai nilai cadangan.',
+  'How many of the most recent delivered orders a measured lead time averages.':
+    'Berapa banyak pesanan terkirim terakhir yang dirata-rata untuk mengukur waktu tunggu.',
+  'Delivered orders a vendor\'s product needs before its lead time is measured from them. Below this, it uses the default lead time above.':
+    'Jumlah pesanan terkirim yang dibutuhkan sebuah produk vendor sebelum waktu tunggunya diukur dari data itu. Di bawah ini, sistem memakai standar waktu tunggu di atas.',
+  'A gap between a purchase order and its receipt longer than this is dropped as an outlier, so one abnormal delivery cannot distort the average.':
+    'Jeda antara pesanan pembelian dan penerimaannya yang lebih lama dari ini dibuang sebagai pencilan, agar satu pengiriman tak wajar tidak merusak rata-rata.',
   'Average the last': 'Rata-rata dari',
   'Minimum to trust': 'Minimum agar dipercaya',
   'Ignore gaps over': 'Abaikan jeda lebih dari',
