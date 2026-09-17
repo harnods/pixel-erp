@@ -23,6 +23,8 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { salesInvoices } from '~/data/salesInvoices'
+import { vendorItemsForVendor } from '~/data/vendorItems'
+import { productBySku } from '~/data/inventory'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ orderId: string }>()
@@ -45,15 +47,23 @@ const listSlug = computed(() => {
 })
 const listLabel = computed(() => LISTS[listSlug.value]!.label)
 
+// A vendor contact gets a Products tab (the price list we buy at); customers and
+// other contacts don't, so it is inserted only when the role is present.
+const isVendor = computed(() => contact.value?.types.includes('vendor') ?? false)
+
 // ── Tab persistence via ?tab= so back/forward restores the tab ───────────────
-const TAB_NAMES = ['details', 'transactions', 'files']
+const TAB_NAMES = computed(() =>
+  isVendor.value
+    ? ['details', 'products', 'transactions', 'files']
+    : ['details', 'transactions', 'files'],
+)
 const activeTabIndex = computed({
   get(): number {
-    const idx = TAB_NAMES.indexOf(route.query.tab as string)
+    const idx = TAB_NAMES.value.indexOf(route.query.tab as string)
     return idx >= 0 ? idx : 0
   },
   set(idx: number) {
-    router.replace({ query: { ...route.query, tab: TAB_NAMES[idx] ?? 'details' } })
+    router.replace({ query: { ...route.query, tab: TAB_NAMES.value[idx] ?? 'details' } })
   },
 })
 
@@ -93,6 +103,31 @@ const transactions = computed(() => {
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+
+// ── Products tab — what this vendor supplies, with MOQ and price ──────────────
+// Joined from the vendor master via `vendorMasterId` (see contacts.ts): each row
+// is a product this supplier is set up to sell us, carrying the agreed minimum
+// order quantity and unit price. Operating-expense vendors (logistics, utilities,
+// rent, software) supply no catalogue product, so their list is empty by design.
+const vendorProducts = computed(() => {
+  const masterId = contact.value?.vendorMasterId
+  if (!masterId) return []
+  return vendorItemsForVendor(masterId)
+    .filter((vi) => vi.active !== false)
+    .map((vi) => ({
+      id: vi.id,
+      sku: vi.sku,
+      name: productBySku(vi.sku)?.name ?? vi.sku,
+      moq: vi.moq,
+      unitCost: vi.unitCost,
+      purchaseUnit: vi.purchaseUnit,
+      isPreferred: vi.isPreferred,
+    }))
+    // Preferred line first, then by product name — the same order the buyer reads
+    // a price list in.
+    .sort((a, b) =>
+      Number(b.isPreferred) - Number(a.isPreferred) || a.name.localeCompare(b.name))
+})
 /** Related-records column width — from the shared standard, never hardcoded.
  *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
 function colStyle(kind: ColumnKind) {
@@ -165,6 +200,7 @@ function confirmDelete() {
 
         <MpTabList>
           <MpTab id="cd-tab-details" value="details">{{ t('Contact details') }}</MpTab>
+          <MpTab v-if="isVendor" id="cd-tab-products" value="products">{{ t('Products') }}</MpTab>
           <MpTab id="cd-tab-transactions" value="transactions">{{ t('Transactions') }}</MpTab>
           <MpTab id="cd-tab-files" value="files">{{ t('Files') }}</MpTab>
         </MpTabList>
@@ -285,6 +321,49 @@ function confirmDelete() {
               </section>
 
             </div>
+          </MpTabPanel>
+
+          <!-- ─────────── Products (vendors only) ─────────── -->
+          <MpTabPanel v-if="isVendor" value="products">
+            <section class="cd-section cd-section--last">
+              <h2 class="cd-section-title">{{ t('Products supplied') }}</h2>
+              <table v-if="vendorProducts.length" class="cd-table">
+                <colgroup>
+                  <col :style="colStyle('name')" />
+                  <col :style="colStyle('number')" />
+                  <col />
+                  <col :style="colStyle('unit')" />
+                  <col :style="colStyle('amount')" />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>{{ t('Product') }}</th>
+                    <th>{{ t('SKU') }}</th>
+                    <th class="cd-td--right">{{ t('MOQ') }}</th>
+                    <th>{{ t('Purchase unit') }}</th>
+                    <th class="cd-td--right">{{ t('Price') }}</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="p in vendorProducts" :key="p.id">
+                    <td>
+                      <a class="cd-link" @click="router.push(`/product-list/${p.sku}`)">{{ p.name }}</a>
+                      <MpBadge v-if="p.isPreferred" for="tableStatus" type="completed" class="cd-product-badge">
+                        {{ t('Preferred') }}
+                      </MpBadge>
+                    </td>
+                    <td>{{ p.sku }}</td>
+                    <td class="cd-td--right">{{ p.moq.toLocaleString('id-ID') }}</td>
+                    <td>{{ p.purchaseUnit }}</td>
+                    <td class="cd-td--right">{{ formatIDR(p.unitCost) }}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="cd-empty">{{ t('This vendor supplies no catalogue products yet.') }}</p>
+            </section>
           </MpTabPanel>
 
           <!-- ─────────── Transactions ─────────── -->
@@ -449,6 +528,7 @@ function confirmDelete() {
 
 .cd-link { color: var(--mp-text-link); cursor: pointer; }
 .cd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cd-product-badge { margin-left: 8px; vertical-align: middle; }
 
 .cd-empty {
   margin: 0; display: flex; align-items: center; gap: var(--mp-spacing-2);

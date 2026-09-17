@@ -1,5 +1,7 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { vendors } from './vendors'
+import type { Vendor } from './types'
 
 /**
  * Contact master — the Contacts module's record: one company/person the business
@@ -70,6 +72,13 @@ export interface Contact {
   updatedBy: string
   /** ISO timestamp of the last edit. */
   updatedAt: string
+  /**
+   * Link to the purchasing vendor master (`vendors.ts`, `V0NN`) when this contact
+   * is a supplier we buy from. It's the join that lets the vendor detail page show
+   * the products this vendor supplies with their MOQ and price (`vendorItems.ts`).
+   * Absent on customers and on vendor contacts with no procurement record.
+   */
+  vendorMasterId?: string
 }
 
 /** The joined 22-digit NITKU shown on the detail page (empty when no NPWP). */
@@ -180,7 +189,40 @@ const SEED: Contact[] = [
 SEED[6]!.types = ['customer', 'vendor']
 SEED[8]!.types = ['other']
 
-const STORE_KEY = 'contacts-v1'
+// ── Purchasing vendors as contacts ────────────────────────────────────────────
+// The suppliers we BUY from live in the vendor master (`vendors.ts`, V0NN) because
+// purchase orders and AP reference them there. The Contacts module is where a user
+// looks a vendor up, so each supplier is also surfaced here as a vendor-type
+// contact linked back by `vendorMasterId` — that link is what lets the detail page
+// list the products a vendor supplies with their MOQ and price. Built from the
+// master rather than retyped, so the two never drift.
+const SUPPLIER_GROUP: Record<Vendor['id'], string> = {
+  V001: 'Green bean supplier', V002: 'Green bean supplier', V003: 'Green bean supplier',
+  V004: 'Green bean supplier', V005: 'Green bean supplier',
+  V006: 'Packaging supplier', V007: 'Equipment supplier',
+  V008: 'Logistics', V009: 'Utilities', V010: 'Utilities',
+  V011: 'Property', V012: 'Software',
+}
+function supplierContact(v: Vendor, index: number): Contact {
+  return {
+    ...blank(),
+    id: `CT${String(100 + index + 1).padStart(3, '0')}`,
+    types: ['vendor'],
+    displayName: v.name,
+    companyName: v.name,
+    emails: v.email ? [v.email] : [],
+    phone: v.phone ?? '',
+    billingAddress: v.city ? `${v.city}, Indonesia` : '',
+    shippingAddress: v.city ? `${v.city}, Indonesia` : '',
+    groups: [SUPPLIER_GROUP[v.id] ?? 'Supplier'],
+    vendorMasterId: v.id,
+    updatedAt: '2026-01-13T09:00:00+07:00',
+  }
+}
+SEED.push(...vendors.map(supplierContact))
+
+// Bumped to v2 — the purchasing vendors now seed into the contacts store.
+const STORE_KEY = 'contacts-v2'
 
 export const contacts = reactive<Contact[]>(
   loadSnapshot<Contact>(STORE_KEY) ?? SEED.map((c) => ({ ...c, banks: c.banks.map((b) => ({ ...b })) })),

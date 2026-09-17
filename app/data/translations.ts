@@ -978,6 +978,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Team': 'Tim',
   'Transactions': 'Transaksi',
   'Details': 'Detail',
+  // ── Vendor detail — Products supplied (MOQ + price) ─────────────────────────
+  'Products supplied': 'Produk yang dipasok',
+  'Purchase unit': 'Satuan pembelian',
+  'Price': 'Harga',
+  'Preferred': 'Utama',
+  'This vendor supplies no catalogue products yet.': 'Vendor ini belum memasok produk katalog.',
 
   // ── WMS statuses ────────────────────────────────────────────────────────────
   'Draft': 'Draf',
