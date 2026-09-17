@@ -28,7 +28,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
-import { isProductBatchTracked } from '~/data/productDetails'
+import { getProductBatches, isProductBatchTracked } from '~/data/productDetails'
 import {
   VENDOR_MISMATCH_COPY, checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
   type DeliveryBatchAllocation, type DeliveryBatchLine, type SavedDeliveryBatch,
@@ -153,17 +153,23 @@ function otherNewBatchNos(item: LineItem): string[] {
 const batchDrawerModel = computed<CommittedBatch[]>(() => {
   const item = batchDrawerItem.value
   if (!item) return []
-  return item.batches.map(b => ({
-    key: b.key,
-    ...(b.batchId ? { batchId: b.batchId } : {}),
-    batchNo: b.batchNo,
-    expiryDate: b.attributes?.expiry_date ?? '',
-    desc: '',
-    onHand: 0,
-    counted: b.qty,
-    unit: item.unit,
-    attributes: { ...b.attributes },
-  }))
+  const records = getProductBatches(item.sku)
+  return item.batches.map(b => {
+    // An existing batch reads its description from the record; a new one carries
+    // what was typed for it, so reopening the drawer shows both.
+    const record = b.batchId ? records.find(r => r.id === b.batchId) : undefined
+    return {
+      key: b.key,
+      ...(b.batchId ? { batchId: b.batchId } : {}),
+      batchNo: b.batchNo,
+      expiryDate: b.attributes?.expiry_date ?? '',
+      desc: record ? record.description : (b.description ?? ''),
+      onHand: 0,
+      counted: b.qty,
+      unit: item.unit,
+      attributes: { ...(record?.attributes ?? {}), ...b.attributes },
+    }
+  })
 })
 
 function onBatchesSaved(batches: CommittedBatch[]) {
@@ -175,6 +181,7 @@ function onBatchesSaved(batches: CommittedBatch[]) {
     batchNo: b.batchNo.trim(),
     qty: b.counted ?? 0,
     attributes: { ...b.attributes },
+    ...(b.batchId ? {} : { description: b.desc ?? '' }),
     // A vendor the user moved off the delivery's stops following it (story 10, rule 1).
     vendorEdited: !b.batchId && !!b.attributes?.supplier && b.attributes.supplier !== vendorId.value,
   }))

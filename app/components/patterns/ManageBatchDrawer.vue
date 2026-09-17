@@ -158,7 +158,9 @@ function seedRows(): void {
     rows.value = props.modelValue.map((b, i) => ({
       ...b,
       desc: b.desc || (props.kind === 'purchase-delivery' ? '' : DEMO_DESCS[i % DEMO_DESCS.length]!),
-      isNew: false,
+      // A delivery's batch without an id hasn't been created yet — reopening the
+      // drawer must keep it editable, not freeze it into a read-only row.
+      isNew: props.kind === 'purchase-delivery' && !b.batchId,
       expiryDisplay: b.expiryDate && expiryPrecision(b.expiryDate) === 'month'
         ? `${b.expiryDate.split('-')[1]}/${b.expiryDate.split('-')[0]}`
         : isoToDisplay(b.expiryDate),
@@ -244,17 +246,22 @@ function attrText(row: WorkRow, key: BatchAttributeKey) {
   if (key === 'grade') return gradeOptions.value.find(g => g.value === v)?.label ?? v
   return v
 }
-/** Story 10 rules 2 + 3, shown against an existing batch the delivery reuses. */
-function deliveryVendorNote(row: WorkRow): string {
-  if (!deliveryUsesVendor.value || row.isNew) return ''
+/** Story 10 rules 2 + 3, shown against an existing batch the delivery reuses — as an
+ *  icon in the Vendor cell with the sentence in its tooltip, so the row keeps one
+ *  line. A mismatch is a warning; a batch with no vendor yet is just information. */
+function deliveryVendorNote(row: WorkRow): { kind: 'warning' | 'info'; text: string } | null {
+  if (!deliveryUsesVendor.value || row.isNew) return null
   const supplier = row.attributes?.supplier
-  if (!supplier) return 'No vendor yet. It gets this delivery’s vendor when you save'
+  if (!supplier) return { kind: 'info', text: 'No vendor yet. It gets this delivery’s vendor when you save' }
   if (props.vendorId && supplier !== props.vendorId) {
-    return VENDOR_MISMATCH_COPY
-      .replace('{batchVendor}', vendorName(supplier))
-      .replace('{deliveryVendor}', vendorName(props.vendorId))
+    return {
+      kind: 'warning',
+      text: VENDOR_MISMATCH_COPY
+        .replace('{batchVendor}', vendorName(supplier))
+        .replace('{deliveryVendor}', vendorName(props.vendorId)),
+    }
   }
-  return ''
+  return null
 }
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
@@ -1294,9 +1301,8 @@ function fmtNum(n: number | null): string {
           <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery }">
             <colgroup>
               <col class="mbd-col-batch" />
-              <!-- A delivery reads Description then Expiry date; the WMS kinds keep their
-                   own order (date first). -->
-              <col v-if="isDelivery" class="mbd-col-desc" />
+              <!-- A delivery shows its description under the batch number; the WMS kinds
+                   keep their own Description column after the date. -->
               <col class="mbd-col-expiry" />
               <col v-if="!isDelivery" class="mbd-col-desc" />
               <col v-for="k in deliveryAttrKeys" :key="k" class="mbd-col-attr" />
@@ -1311,7 +1317,6 @@ function fmtNum(n: number | null): string {
             <thead>
               <tr>
                 <th class="mbd-th">Batch</th>
-                <th v-if="isDelivery" class="mbd-th">Description</th>
                 <th class="mbd-th">Expiry date</th>
                 <th v-if="!isDelivery" class="mbd-th">Description</th>
                 <th v-for="k in deliveryAttrKeys" :key="k" class="mbd-th">{{ attrLabel(k) }}</th>
@@ -1327,8 +1332,9 @@ function fmtNum(n: number | null): string {
             <tbody>
               <template v-for="row in displayRows" :key="row.key">
               <tr class="mbd-tr" :class="{ 'mbd-tr--scanned': lastScannedKey === row.key }">
-                <!-- BATCH -->
-                <td v-if="row.isNew" class="mbd-td mbd-td--input">
+                <!-- BATCH — a delivery carries the description under the number, so the
+                     batch reads as one unit (number, then what it is). -->
+                <td v-if="row.isNew" class="mbd-td mbd-td--input" :class="{ 'mbd-td--stack': isDelivery }">
                   <input
                     class="mbd-cell-input"
                     type="text"
@@ -1336,22 +1342,23 @@ function fmtNum(n: number | null): string {
                     :value="row.batchNo"
                     @input="row.batchNo = ($event.target as HTMLInputElement).value"
                   />
+                  <input
+                    v-if="isDelivery"
+                    class="mbd-cell-input mbd-cell-input--sub"
+                    type="text"
+                    placeholder="Description"
+                    :value="row.desc"
+                    @input="row.desc = ($event.target as HTMLInputElement).value"
+                  />
                 </td>
-                <td v-else class="mbd-td mbd-td--muted">{{ row.batchNo }}</td>
+                <td v-else class="mbd-td mbd-td--muted">
+                  <span class="mbd-batch-no">{{ row.batchNo }}</span>
+                  <span v-if="isDelivery && row.desc" class="mbd-batch-desc">{{ row.desc }}</span>
+                </td>
 
-                <!-- DESCRIPTION + EXPIRY DATE — a delivery reads description first and
-                     its expiry carries the Date/Month precision switch (A2). -->
+                <!-- EXPIRY DATE — a delivery's expiry carries the Date/Month precision
+                     switch (A2); its description sits under the batch number. -->
                 <template v-if="isDelivery">
-                  <td v-if="row.isNew" class="mbd-td mbd-td--input">
-                    <input
-                      class="mbd-cell-input"
-                      type="text"
-                      placeholder="Description"
-                      :value="row.desc"
-                      @input="row.desc = ($event.target as HTMLInputElement).value"
-                    />
-                  </td>
-                  <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
                   <td v-if="row.isNew" class="mbd-td mbd-td--input mbd-td--datepicker">
                     <!-- Pixel's input-with-prefix: the addon switches this batch's expiry
                          precision (A2), the same control the batch form uses. -->
@@ -1425,10 +1432,21 @@ function fmtNum(n: number | null): string {
                     use-portal is-full-width
                     @update:model-value="setRowAttr(row, k, String($event ?? ''))"
                   />
-                  <template v-else>
-                    <span>{{ attrText(row, k) }}</span>
-                    <span v-if="k === 'supplier' && deliveryVendorNote(row)" class="mbd-attr-note">{{ deliveryVendorNote(row) }}</span>
-                  </template>
+                  <span v-else class="mbd-attr-value">
+                    {{ attrText(row, k) }}
+                    <!-- Same shape as the batches table's near-expiry warning: icon in the
+                         cell, the sentence in its tooltip. -->
+                    <MpTooltip
+                      v-if="k === 'supplier' && deliveryVendorNote(row)"
+                      :id="`mbd-tt-vendor-${row.key}`" :label="deliveryVendorNote(row)!.text"
+                      placement="top" use-portal
+                    >
+                      <span
+                        class="mbd-attr-flag" :class="`mbd-attr-flag--${deliveryVendorNote(row)!.kind}`"
+                        :aria-label="deliveryVendorNote(row)!.text" @click.stop
+                      ><MpIcon :name="deliveryVendorNote(row)!.kind === 'warning' ? 'warning-triangle' : 'info'" size="sm" /></span>
+                    </MpTooltip>
+                  </span>
                 </td>
 
                 <!-- LOCATION (picking only) — read-only, the batch's fixed bin -->
@@ -1784,8 +1802,8 @@ function fmtNum(n: number | null): string {
 .mbd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .mbd-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .mbd-close {
@@ -1794,7 +1812,7 @@ function fmtNum(n: number | null): string {
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.mbd-close:hover { background: var(--mp-background-neutral-hovered); }
+.mbd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Content area ────────────────────────────────────────────────────────────── */
 .mbd-content {
@@ -1807,18 +1825,18 @@ function fmtNum(n: number | null): string {
 .mbd-info-bar {
   display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
 }
 .mbd-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 1; min-width: 0; }
 .mbd-info-thumb {
   width: 40px; height: 40px; border-radius: var(--mp-radii-md);
   object-fit: cover; flex-shrink: 0;
-  border: 1px solid var(--mp-border-subtle);
-  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-subtle, #e5e7e7);
+  background: var(--mp-background-neutral, #ffffff);
 }
-.mbd-info-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.mbd-info-thumb--empty { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .mbd-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -1836,13 +1854,13 @@ function fmtNum(n: number | null): string {
 .mbd-filter-left {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
 }
-.mbd-popover-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-1) 0; }
+.mbd-popover-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-1) 0; }
 .mbd-popover-add-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .mbd-progress-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md);
+  background: var(--mp-background-neutral, #ffffff); font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default); cursor: pointer;
 }
 .mbd-progress-btn svg { color: var(--mp-icon-default); }
@@ -1850,7 +1868,7 @@ function fmtNum(n: number | null): string {
 .mbd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px);
   color: var(--mp-icon-default);
 }
 .mbd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -1862,12 +1880,12 @@ function fmtNum(n: number | null): string {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .mbd-table-wrap {
   flex: 0 1 auto; min-height: 0;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: auto;
 }
@@ -1892,15 +1910,15 @@ function fmtNum(n: number | null): string {
 .mbd-col-pa-loc  { width: 300px; }
 
 /* ── Put-away inline split-row table ──────────────────────────────────────────── */
-.mbd-table--putaway .mbd-th { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--putaway .mbd-th { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .mbd-table--putaway .mbd-th:last-child { border-right: none; }
-.mbd-table--putaway .mbd-td { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--putaway .mbd-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .mbd-table--putaway .mbd-td:last-child { border-right: none; }
 .mbd-td--merged { border-left: none; }
 .mbd-td--pa-loc  { padding: 0; background: var(--mp-background-neutral, #fff); }
-.mbd-td--pa-loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-td--pa-loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .mbd-td--pa-qty  { padding: 0; background: var(--mp-background-neutral, #fff); }
-.mbd-td--pa-qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-td--pa-qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .mbd-pa-loc-trigger {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text;
@@ -1913,7 +1931,7 @@ function fmtNum(n: number | null): string {
 .mbd-pa-loc-input::placeholder { color: var(--mp-text-placeholder); }
 .mbd-pa-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .mbd-pa-loc-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.mbd-pa-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+.mbd-pa-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default, #e3e7e9); }
 .mbd-pa-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 .mbd-th {
   height: var(--mp-sizes-7, 28px);
@@ -1922,7 +1940,7 @@ function fmtNum(n: number | null): string {
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .mbd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
@@ -1931,17 +1949,17 @@ function fmtNum(n: number | null): string {
 .mbd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  border-right: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .mbd-td:last-child { border-right: none; }
 .mbd-td--muted { color: var(--mp-text-secondary); }
 @keyframes mbd-scan-flash {
   0%   { background: var(--mp-background-success-subtle, #f0fdf4); }
   20%  { background: var(--mp-background-success-subtle, #f0fdf4); }
-  100% { background: var(--mp-background-neutral-subtle); }
+  100% { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 }
 .mbd-tr--scanned .mbd-td { animation: mbd-scan-flash 1s ease-out forwards; }
 
@@ -1967,7 +1985,7 @@ function fmtNum(n: number | null): string {
 .mbd-td--input { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
 .mbd-td--input:focus-within::after {
   content: ''; position: absolute; inset: 0;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   z-index: 2; pointer-events: none;
 }
 
@@ -1975,7 +1993,7 @@ function fmtNum(n: number | null): string {
 .mbd-td--counted { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
 .mbd-td--counted:focus-within::after {
   content: ''; position: absolute; inset: 0;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   z-index: 2; pointer-events: none;
 }
 
@@ -2023,19 +2041,19 @@ function fmtNum(n: number | null): string {
 
 /* Remove button — 44px enforced by table-layout: fixed on the col */
 .mbd-td--del {
-  padding: 0; text-align: center; background: var(--mp-background-neutral-subtle);
+  padding: 0; text-align: center; background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .mbd-del-btn {
   display: flex; align-items: center; justify-content: center;
   width: 44px; height: var(--mp-sizes-10, 40px);
   border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
 }
-.mbd-del-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
+.mbd-del-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-danger, #dc2626); }
 
 /* When any column has split rows, all columns get left/right borders; no outer borders */
-.mbd-table--split .mbd-th { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--split .mbd-th { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .mbd-table--split .mbd-th:last-child { border-right: none; }
-.mbd-table--split .mbd-td { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--split .mbd-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .mbd-table--split .mbd-td:last-child { border-right: none; }
 
 /* Pagination row — white bg, no gray */
@@ -2060,7 +2078,7 @@ function fmtNum(n: number | null): string {
 .mbd-td--select-cell { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
 .mbd-td--select-cell:focus-within::after {
   content: ''; position: absolute; inset: 0;
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   z-index: 2; pointer-events: none;
 }
 .mbd-td--select-empty { background: var(--mp-background-neutral, #fff); }
@@ -2070,7 +2088,7 @@ function fmtNum(n: number | null): string {
   padding: 0 var(--mp-spacing-3);
   cursor: pointer; background: transparent; border: none;
 }
-.mbd-batch-trigger:hover { background: var(--mp-background-neutral-subtle); }
+.mbd-batch-trigger:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .mbd-batch-placeholder { color: var(--mp-text-placeholder); font-size: var(--mp-font-sizes-md); }
 .mbd-batch-chevron { color: var(--mp-icon-default); flex-shrink: 0; }
 
@@ -2104,8 +2122,8 @@ function fmtNum(n: number | null): string {
 .mbd-loc2-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .mbd-loc2-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .mbd-loc2-content {
@@ -2120,12 +2138,12 @@ function fmtNum(n: number | null): string {
 .mbd-loc2-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-  background: var(--mp-background-stage);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-stage, #ffffff);
 }
 .mbd-loc-section-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.mbd-loc-section-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
-.mbd-loc-tbl-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
+.mbd-loc-section-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default, #e3e7e9); }
+.mbd-loc-tbl-wrap { border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md); overflow: hidden; }
 .mbd-loc-tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .mbd-loc-col-qty { width: 80px; }
 .mbd-loc-col-del { width: 36px; }
@@ -2133,16 +2151,16 @@ function fmtNum(n: number | null): string {
   height: 28px; padding: 0 var(--mp-spacing-2); text-align: left;
   font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase; white-space: nowrap;
-  background: var(--mp-background-neutral); border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .mbd-loc-th--num { text-align: right; }
 .mbd-loc-th--del { padding: 0; }
-.mbd-loc-tr .mbd-loc-td { border-bottom: 1px solid var(--mp-border-default); }
+.mbd-loc-tr .mbd-loc-td { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .mbd-loc-tr:last-child .mbd-loc-td { border-bottom: none; }
-.mbd-loc-td { background: var(--mp-background-neutral); padding: 0; vertical-align: middle; }
-.mbd-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-loc-td { background: var(--mp-background-neutral, #ffffff); padding: 0; vertical-align: middle; }
+.mbd-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .mbd-loc-td--qty { text-align: right; }
-.mbd-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .mbd-loc-td--del { text-align: center; }
 .mbd-loc-trigger { display: flex; align-items: center; height: 36px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
 .mbd-loc-input {
@@ -2167,12 +2185,26 @@ function fmtNum(n: number | null): string {
 
 /* Footer */
 .mbd-col-attr { width: var(--mp-sizes-44, 176px); }
-.mbd-attr-note { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
+.mbd-attr-value { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.mbd-attr-flag { display: inline-flex; align-items: center; flex-shrink: 0; cursor: default; }
+.mbd-attr-flag--warning { color: var(--mp-icon-warning, #b76e00); }
+.mbd-attr-flag--info { color: var(--mp-text-secondary); }
 .mbd-delivery-error { flex-shrink: 0; margin: 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 /* Purchase delivery adds Vendor + Grade columns — widen so they scroll rather than
    squeeze the text columns into each other (rule/table-form-cell-no-border keeps the
    controls borderless; the cell draws the border). */
 .mbd-table--delivery { min-width: 1460px; }
+/* With no Description column, the batch column is the flexible one that absorbs the
+   leftover width under table-layout:fixed (see .mbd-col-desc for why one must). */
+.mbd-table--delivery .mbd-col-batch { width: auto; }
+.mbd-batch-no { display: block; }
+.mbd-batch-desc {
+  display: block; margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal;
+}
+/* A new delivery row stacks Batch no. over Description in one cell, split by a hairline. */
+.mbd-td--stack { vertical-align: top; }
+.mbd-cell-input--sub { border-top: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-sm); }
 /* The prefix chip eats ~88px of the field, so this kind's expiry column needs room
    for the chip AND the whole date; the WMS kinds keep the narrower 172px. */
 .mbd-table--delivery .mbd-col-expiry { width: 264px; }
@@ -2190,7 +2222,7 @@ function fmtNum(n: number | null): string {
 .mbd-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-  background: var(--mp-background-stage);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-stage, #ffffff);
 }
 </style>

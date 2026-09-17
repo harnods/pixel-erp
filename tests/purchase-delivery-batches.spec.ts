@@ -102,4 +102,13 @@ describe('saving', () => {
     expect(batches.find((b) => b.batchNo === 'Batch #001')?.attributes.supplier).toBe('V003')
     if (result.ok) expect(result.batches.map((b) => [b.batchNo, b.qty])).toEqual([['PO-LOT-1', 2], ['Batch #003', 2], ['Batch #001', 2]])
   })
+
+  it('creates a new batch with the description typed for it', () => {
+    const result = api.commitDeliveryBatches({ sku: '1001', productName: 'Gayo', qty: 1, batches: [
+      { ...newRow('a', 'PO-LOT-DESC', 1, { supplier: 'V001' }), description: '  Fresh harvest, sorted  ' },
+    ] }, 'V001')
+
+    expect(result.ok).toBe(true)
+    expect(api.getProductBatches('1001').find((b) => b.batchNo === 'PO-LOT-DESC')?.description).toBe('Fresh harvest, sorted')
+  })
 })

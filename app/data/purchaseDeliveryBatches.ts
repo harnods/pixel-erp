@@ -30,6 +30,8 @@ export interface DeliveryBatchAllocation {
   qty: number
   /** New batch only — attribute values as stored (ISO dates, vendor id, grade id). */
   attributes?: Partial<Record<BatchAttributeKey, string>>
+  /** New batch only — the description it is created with. */
+  description?: string
   /** New batch only — the user set this batch's vendor themselves, so it no longer
    *  follows the delivery's vendor. */
   vendorEdited?: boolean
@@ -155,7 +157,7 @@ export function commitDeliveryBatches(
       continue
     }
     const attributes: BatchAttributeInput = { ...b.attributes }
-    const created = createBatch(line.sku, { batchNo: b.batchNo, attributes }, by)
+    const created = createBatch(line.sku, { batchNo: b.batchNo, description: b.description?.trim() || undefined, attributes }, by)
     if (created.ok) saved.push({ batchId: created.value.id, batchNo: created.value.batchNo, qty: b.qty })
     else errors[b.key] = created.errors
   }
