@@ -2057,6 +2057,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Default safety days': 'Hari cadangan standar',
   'Min. stock by category': 'Stok minimum per kategori',
   'Not set': 'Belum diatur',
+  'Other categories': 'Kategori lainnya',
+  'none': 'tidak ada',
+  'Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.':
+    'Tambahan hari cadangan di atas waktu tunggu vendor. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya.',
+  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung stok minimum. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya; isi 0 dan gudang tersebut tidak punya stok minimum sama sekali.',
   'blank = no minimum': 'kosong = tanpa minimum',
   'Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. Set 0 and those warehouses get no minimum at all — they are not flagged for reorder until they have enough sales history.':
     'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, atau tidak ada penjualan dalam periode ke belakang, dan kategorinya tidak punya angka sendiri. Isi 0 dan gudang tersebut tidak punya stok minimum sama sekali — tidak akan ditandai untuk pemesanan sampai riwayat penjualannya cukup.',
@@ -2162,6 +2168,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Default safety days': 'Hari cadangan standar',
   'Min. stock by category': 'Stok minimum per kategori',
   'Not set': 'Belum diatur',
+  'Other categories': 'Kategori lainnya',
+  'none': 'tidak ada',
+  'Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.':
+    'Tambahan hari cadangan di atas waktu tunggu vendor. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya.',
+  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.':
+    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung stok minimum. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya; isi 0 dan gudang tersebut tidak punya stok minimum sama sekali.',
   'blank = no minimum': 'kosong = tanpa minimum',
   'Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. Set 0 and those warehouses get no minimum at all — they are not flagged for reorder until they have enough sales history.':
     'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, atau tidak ada penjualan dalam periode ke belakang, dan kategorinya tidak punya angka sendiri. Isi 0 dan gudang tersebut tidak punya stok minimum sama sekali — tidak akan ditandai untuk pemesanan sampai riwayat penjualannya cukup.',

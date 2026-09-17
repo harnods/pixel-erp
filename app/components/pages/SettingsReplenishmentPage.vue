@@ -262,17 +262,46 @@ const BOUNDARY_OPTIONS = [
       <!-- ── Safety and reorder point ── -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('Safety and reorder point') }}</h3>
 
+      <!--
+        One list per policy, with the company fallback as its LAST ROW.
+        These were four fields: a company value and a by-category grid for each.
+        Splitting them made the fallback a separate concept you had to hold in
+        your head — and left an honest question unanswerable at a glance ("does
+        the company figure ever actually apply?"). As the row after the named
+        categories, it answers itself: it is what anything not listed above uses.
+      -->
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Safety days') }}</span>
-          <span class="rs-label-desc">{{ t('Extra days of cover added on top of lead time.') }}</span>
+          <span class="rs-label-desc">{{ t('Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.') }}</span>
         </div>
         <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-safety">
-            <MpInput id="rs-safety-input" v-model="draft.safetyDaysGlobal" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.safetyDaysGlobal }} {{ t('days') }}</span>
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
+              <span class="rs-cat-name">{{ cat }}</span>
+              <MpInputGroup :id="`rs-cat-${cat}`">
+                <MpInput
+                  :id="`rs-cat-input-${cat}`"
+                  v-model="draft.safetyDaysByCategory[cat]"
+                  type="number"
+                  :placeholder="String(draft.safetyDaysGlobal)"
+                  :class="css({ width: '84px' })"
+                />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row rs-cat-row--fallback">
+              <span class="rs-cat-name">{{ t('Other categories') }}</span>
+              <MpInputGroup id="rs-safety">
+                <MpInput id="rs-safety-input" v-model="draft.safetyDaysGlobal" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ categories.map(c => `${c} ${committed.safetyDaysByCategory[c] ?? committed.safetyDaysGlobal}d`).join('   ') }}
+            &nbsp;·&nbsp; {{ t('Other categories') }} {{ committed.safetyDaysGlobal }}d
+          </span>
         </div>
       </div>
 
@@ -292,53 +321,8 @@ const BOUNDARY_OPTIONS = [
 
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Safety days by category') }}</span>
-          <span class="rs-label-desc">{{ t('Overrides the company value for a whole category.') }}</span>
-        </div>
-        <div class="rs-control">
-          <div v-if="isEditing" class="rs-cat-grid">
-            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
-              <span class="rs-cat-name">{{ cat }}</span>
-              <MpInputGroup :id="`rs-cat-${cat}`">
-                <MpInput
-                  :id="`rs-cat-input-${cat}`"
-                  v-model="draft.safetyDaysByCategory[cat]"
-                  type="number"
-                  :placeholder="String(draft.safetyDaysGlobal)"
-                  :class="css({ width: '84px' })"
-                />
-                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-              </MpInputGroup>
-            </div>
-          </div>
-          <span v-else class="rs-value">
-            {{ categories.map(c => `${c} ${committed.safetyDaysByCategory[c] ?? committed.safetyDaysGlobal}d`).join('   ') }}
-          </span>
-        </div>
-      </div>
-
-      <!-- The company floor sits BEFORE its by-category overrides, mirroring how
-           Safety days is laid out — and because the category field's placeholder
-           quotes this value, it has to be visible to make sense of. -->
-      <div class="rs-field">
-        <div class="rs-label">
           <span class="rs-label-text">{{ t('Min. stock') }}</span>
-          <span class="rs-label-desc">{{ t('Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. Set 0 and those warehouses get no minimum at all — they are not flagged for reorder until they have enough sales history.') }}</span>
-        </div>
-        <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-minstock-global">
-            <MpInput id="rs-minstock-global-input" v-model="draft.minStockGlobal" type="number" :class="css({ width: '96px' })" />
-          </MpInputGroup>
-          <span v-else class="rs-value">
-            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('Not set') }}
-          </span>
-        </div>
-      </div>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Min. stock by category') }}</span>
-          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Set 0 and those warehouses get none.') }}</span>
+          <span class="rs-label-desc">{{ t('Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.') }}</span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">
@@ -354,10 +338,17 @@ const BOUNDARY_OPTIONS = [
                 />
               </MpInputGroup>
             </div>
+            <div class="rs-cat-row rs-cat-row--fallback">
+              <span class="rs-cat-name">{{ t('Other categories') }}</span>
+              <MpInputGroup id="rs-minstock-global">
+                <MpInput id="rs-minstock-global-input" v-model="draft.minStockGlobal" type="number" :class="css({ width: '84px' })" />
+              </MpInputGroup>
+            </div>
           </div>
           <span v-else class="rs-value">
             {{ categories.map(c => `${c} ${committed.minStockByCategory[c] ?? committed.minStockGlobal}`).join('   ') }}
-            <template v-if="!committed.minStockGlobal"> · {{ t('blank = no minimum') }}</template>
+            &nbsp;·&nbsp; {{ t('Other categories') }}
+            {{ committed.minStockGlobal > 0 ? committed.minStockGlobal : t('none') }}
           </span>
         </div>
       </div>
@@ -665,6 +656,13 @@ const BOUNDARY_OPTIONS = [
 .rs-total--bad { color: var(--mp-text-danger); }
 
 .rs-cat-grid { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.rs-cat-row--fallback {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--mp-border-subdued, #e5e7eb);
+}
+.rs-cat-row--fallback .rs-cat-name { font-style: normal; color: var(--mp-text-subdued, #6b7280); }
+
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rs-cat-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); width: 160px; }
 
