@@ -40,7 +40,7 @@ import {
   type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
-import CrmDealsFiltersDrawer, { emptyCrmDealsFilters, type CrmDealsFiltersValue } from '~/components/patterns/CrmDealsFiltersDrawer.vue'
+import CrmPipelineViewDrawer, { emptyPipelineView, type CrmPipelineViewValue } from '~/components/patterns/CrmPipelineViewDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
 import { successToast, infoToast } from '~/utils/toasts'
@@ -204,43 +204,48 @@ function removeStage(id: string) {
 
 // ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
 //    changes applies it. Drives which fields show on cards + stage/column props. ──
-const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(stores.value.display)))
-const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
-const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
-
-// ── Board saved VIEWS — a view = a named record filter over the Kanban board.
-//    Starts with a single "Default view" (all records); "+ New view" opens the
-//    All-filters drawer to define which records a new custom view shows. ──
-interface PipeBoardView { id: string; name: string; filters: CrmDealsFiltersValue }
-const pipeViews = ref<PipeBoardView[]>([{ id: 'default', name: t('Default view'), filters: emptyCrmDealsFilters() }])
+// ── Board saved VIEWS — a view = a named record filter PLUS its own board
+//    display config (stage + card properties). Starts with one "Default view"
+//    (all records, the module's stored display); "+ New view" opens the drawer
+//    to name a view and pick which records it shows. Switching views swaps the
+//    Stage/Card properties panel to that view's own config. ──
+interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay }
+const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
+const pipeViews = ref<PipeBoardView[]>([
+  { id: 'default', name: t('Default view'), filters: emptyPipelineView(), display: baseDisplay() },
+])
 const activePipeViewId = ref('default')
+const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
 const pipeViewOptions = computed(() => pipeViews.value.map((v) => ({ value: v.id, label: v.name })))
+
+// The active view's display drives the board + the Stage/Card properties panel.
+const disp = computed<DealPipelineDisplay>(() => activePipeView.value.display)
+const enabledCardFields = computed(() => disp.value.cardFields.filter((f) => f.on))
+const ownerFieldOn = computed(() => disp.value.cardFields.some((f) => f.key === 'owner' && f.on))
+
 const newViewOpen = ref(false)
-const newViewDraft = ref<CrmDealsFiltersValue>(emptyCrmDealsFilters())
+const newViewDraft = ref<CrmPipelineViewValue>(emptyPipelineView())
 let pipeViewSeq = 0
-function saveNewView(filters: CrmDealsFiltersValue) {
+function saveNewView(v: CrmPipelineViewValue) {
   const id = `view-${++pipeViewSeq}`
-  pipeViews.value.push({ id, name: `${t('View')} ${pipeViews.value.length}`, filters })
+  // New view inherits the default view's display as a starting point; it can then
+  // be configured independently in the Stage/Card properties panel.
+  pipeViews.value.push({ id, name: v.name.trim() || `${t('View')} ${pipeViews.value.length}`, filters: v, display: baseDisplay() })
   activePipeViewId.value = id
 }
 // Owner / customer options for the New view filter drawer, from the live deals DB.
 const pipeOwnerOptions = computed(() => [...new Set(deals.map((d) => d.owner))].sort())
 const pipeCustomerOptions = computed(() => [...new Set(deals.map((d) => d.company))].sort())
-const pipeFilterColumns = computed(() => [
-  { key: 'name', label: t('Deal name') },
-  { key: 'company', label: t('Customer') },
-  { key: 'owner', label: t('Owner') },
-])
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
 const { dragIndex: fieldDragIndex, ghost: fieldGhost, start: fieldStart } = usePointerSortable({
   axis: 'y', itemSelector: '.pipe-side-row--drag',
   move: (from, to) => {
-    const arr = [...disp.cardFields]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); disp.cardFields = arr
+    const arr = [...disp.value.cardFields]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); disp.value.cardFields = arr
   },
 })
-const draggedField = computed(() => (fieldDragIndex.value !== null ? disp.cardFields[fieldDragIndex.value] : null))
+const draggedField = computed(() => (fieldDragIndex.value !== null ? disp.value.cardFields[fieldDragIndex.value] : null))
 
 // ── "+ Add property" to the Kanban card (Pipeline ▸ Card properties) ──
 // A two-pane drawer (same as Access "Select users"); adds picked deal properties
@@ -251,25 +256,25 @@ const cardPropsDrawerOpen = ref(false)
 // "Deal value" doesn't also appear as its property twin.
 const cardPropOptions = computed(() => {
   const byId = new Map<string, { id: string; name: string; subtitle?: string; icon?: string }>()
-  const labels = new Set(disp.cardFields.map((f) => t(f.label).toLowerCase()))
-  for (const f of disp.cardFields) byId.set(f.key, { id: f.key, name: t(f.label) })
+  const labels = new Set(disp.value.cardFields.map((f) => t(f.label).toLowerCase()))
+  for (const f of disp.value.cardFields) byId.set(f.key, { id: f.key, name: t(f.label) })
   for (const p of propList.value) {
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
     byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })
   }
   return [...byId.values()]
 })
-const cardPropSelected = computed(() => disp.cardFields.map((f) => f.key))
+const cardPropSelected = computed(() => disp.value.cardFields.map((f) => f.key))
 function onCardPropsSaved(ids: string[]) {
   const idSet = new Set(ids)
   // Keep still-selected fields (preserving order + on/off state); append new picks.
-  const kept = disp.cardFields.filter((f) => idSet.has(f.key))
+  const kept = disp.value.cardFields.filter((f) => idSet.has(f.key))
   const keptKeys = new Set(kept.map((f) => f.key))
   const added = ids.filter((id) => !keptKeys.has(id)).map((id) => {
     const p = propList.value.find((x) => x.id === id)
     return { key: id, label: p ? p.name : id, on: true }
   })
-  disp.cardFields = [...kept, ...added]
+  disp.value.cardFields = [...kept, ...added]
   cardPropsDrawerOpen.value = false
 }
 
@@ -673,7 +678,7 @@ function saveChanges() {
     const s = stores.value
     s.pipelines.splice(0, s.pipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
     s.persistPipelines()
-    Object.assign(s.display, JSON.parse(JSON.stringify(disp)))
+    Object.assign(s.display, JSON.parse(JSON.stringify(pipeViews.value[0]!.display)))
     s.persistDisplay()
     Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
     s.persistSetup()
@@ -972,7 +977,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     :is-clearable="false"
                     @update:model-value="(v: string) => (activePipeViewId = v)"
                   />
-                  <MpButton variant="secondary" is-rounded left-icon="add" @click="newViewDraft = emptyCrmDealsFilters(); newViewOpen = true">{{ t('New view') }}</MpButton>
+                  <MpButton variant="secondary" is-rounded left-icon="add" @click="newViewDraft = emptyPipelineView(); newViewOpen = true">{{ t('New view') }}</MpButton>
                 </div>
               </div>
 
@@ -1084,12 +1089,11 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                 </aside>
               </div>
 
-              <!-- New view — All-filters drawer defining which records the view shows -->
-              <CrmDealsFiltersDrawer
+              <!-- New view — names the view + defines which records it shows -->
+              <CrmPipelineViewDrawer
                 id="pipe-new-view"
                 :is-open="newViewOpen"
                 :model-value="newViewDraft"
-                :columns="pipeFilterColumns"
                 :owner-options="pipeOwnerOptions"
                 :customer-options="pipeCustomerOptions"
                 @update:is-open="newViewOpen = $event"
