@@ -10,6 +10,7 @@ import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
   MpDatePicker, MpAutocomplete, MpTooltip,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import {
@@ -301,6 +302,7 @@ function onSave() {
                   </MpTooltip>
                   <MpPopover
                     v-else
+                    :id="`f-product-pop-${item._key}`"
                     is-manual :is-open="openProductRow === item._key" is-close-on-select
                     use-portal :is-keep-alive="false" placement="bottom-start" is-adaptive-width
                     @close="openProductRow = null"
@@ -354,6 +356,7 @@ function onSave() {
               <tr class="si-tr">
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
+                    id="f-product-pop-new"
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
                     use-portal :is-keep-alive="false" placement="bottom-start" is-adaptive-width
                     @close="openProductRow = null"
