@@ -31,8 +31,8 @@ import { lineItemsForReceipt } from './receiptLineItems'
 import { receivedSummaryForReceipt } from './receivingTasks'
 import { shiftDays } from './master'
 import {
-  REPL_ASOF_ISO, getReplenishmentConfig, normalizeWindowWeights,
-  type ReplBoundaryMode, type ReplDemandMode, type ReplenishmentConfig,
+  REPL_ASOF_ISO, getReplenishmentConfig,
+  type ReplBoundaryMode, type ReplenishmentConfig,
 } from './replenishmentConfig'
 import { effectiveSettings, type EffectiveReplenishmentSettings } from './replenishmentSettings'
 import { bumpReplenishmentRevision, replenishmentRevision } from './replenishmentStore'
@@ -76,31 +76,22 @@ export function demandBasisOf(source: ReplDemandSource): 'computed' | 'seed' | '
   return 'seed'
 }
 
-export interface VelocityWindowResult {
-  days: number
-  units: number
-  weightPct: number
-  perDay: number
-  modelledDays: number
-}
-
 export interface VelocityResult {
   avgDailySales: number
   source: ReplDemandSource
   historyDays: number
   coldStart: boolean
-  windows: VelocityWindowResult[]
   cv: number
   volatile: boolean
   citations: DemandDoc[]
-  /** Which rule produced avgDailySales — shown in the trust drawer. */
-  mode: ReplDemandMode
-  /** Window actually averaged over in `lookback` mode (US-002 AC-01). */
+  /** Window actually averaged over — capped at the days of history (US-002 AC-01/05). */
   lookbackDays: number
   /** Units summed over that window, after damping. */
   lookbackUnits: number
   /** Days whose qty was pulled back to the outlier cap (US-002 AC-03). */
   dampedDays: number
+  /** How many days in the window were modelled rather than backed by a real doc. */
+  modelledDays: number
   /** Plain-language account of which case fired — shown in the trust drawer. */
   reason: string
 }
@@ -108,19 +99,15 @@ export interface VelocityResult {
 /**
  * Average daily sales.
  *
- * Two rules, because the PRD specifies two and they disagree. §2.2 and US-002
- * define demand as a flat average over ONE lookback window ("total issued/sold
- * qty ÷ lookback days", default 60) and the worked example in §2.4 computes
- * exactly that; US-004 keeps the configurable 7/14/30 windows with weights
- * totalling 100. `lookback` is the default because it is what the calculation
- * spec — the part the reorder point is defined against — actually says. The
- * weighted rule is preserved under `demandMode: 'weighted-windows'` for a
- * business whose demand shifted recently and should be read that way.
+ * One rule (§2.2 / US-002): a flat average over a single lookback window —
+ * "total issued/sold qty ÷ lookback days", default 60 — which is what the
+ * calculation spec and the §2.4 worked example compute. (An earlier weighted
+ * 7/14/30-day variant was removed; demand is measured one way now.)
  *
- * Cold start short-circuits BEFORE any computation, in either mode. That single
- * ordering is what makes "never a fabricated quantity" (US-003 CON-02)
- * enforceable rather than aspirational: there is no code path that returns a
- * computed velocity for a SKU with less than the configured minimum history.
+ * Cold start short-circuits BEFORE any computation. That single ordering is what
+ * makes "never a fabricated quantity" (US-003 CON-02) enforceable rather than
+ * aspirational: there is no code path that returns a computed velocity for a SKU
+ * with less than the configured minimum history.
  */
 export function velocityFor(
   sku: string,
@@ -132,25 +119,11 @@ export function velocityFor(
   const settings = effectiveSettings(sku, warehouseId, cfg)
   const coldStart = series.historyDays < cfg.coldStartMinDays
 
-  const windows = normalizeWindowWeights(cfg.windows)
-  const windowResults: VelocityWindowResult[] = windows.map((w) => {
-    const win = demandWindow(sku, warehouseId, w.days, asOf)
-    return {
-      days: w.days,
-      units: win.units,
-      weightPct: w.weightPct,
-      perDay: win.perDay,
-      modelledDays: win.modelledDays,
-    }
-  })
-
   const lookbackDays = settings.lookbackDays
-  const usingLookback = cfg.demandMode === 'lookback'
-  // Citations and volatility read the window the number is actually built from,
-  // so the trust drawer never cites documents outside the averaged period.
-  const evidenceDays = usingLookback ? lookbackDays : Math.max(...windows.map((w) => w.days))
-  const cv = demandCv(sku, warehouseId, evidenceDays, asOf)
-  const citations = demandWindow(sku, warehouseId, evidenceDays, asOf).docs
+  // Citations and volatility read the window the number is built from, so the
+  // trust drawer never cites documents outside the averaged period.
+  const cv = demandCv(sku, warehouseId, lookbackDays, asOf)
+  const citations = demandWindow(sku, warehouseId, lookbackDays, asOf).docs
 
   if (coldStart) {
     // Zero OR thin history (US-002 AC-04): never compute a velocity off too-few
@@ -169,75 +142,41 @@ export function velocityFor(
       source,
       historyDays: series.historyDays,
       coldStart: true,
-      windows: windowResults,
       cv,
       volatile: false,
       citations,
-      mode: cfg.demandMode,
       lookbackDays,
       lookbackUnits: 0,
       dampedDays: 0,
+      modelledDays: 0,
       reason,
     }
   }
 
-  const volatile = cv > cfg.volatileCvThreshold
-
-  if (usingLookback) {
-    // The spec's own rule: total sold in the window ÷ the window, with single-day
-    // spikes damped first so one promo cannot set the reorder point for months.
-    const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
-    // Divide by the days actually available, not the raw window, when history is
-    // shorter than the window (US-002 AC-05) — otherwise a product live for 30 of
-    // a 60-day window reads at half its true rate. `win.units` already sums only
-    // real days, so this only corrects the divisor.
-    const availableDays = Math.min(win.days, series.historyDays)
-    const perDay = availableDays > 0 ? win.units / availableDays : 0
-    return {
-      avgDailySales: perDay,
-      source: perDay > 0 ? 'computed' : 'none',
-      historyDays: series.historyDays,
-      coldStart: false,
-      windows: windowResults,
-      cv,
-      volatile,
-      citations,
-      mode: 'lookback',
-      lookbackDays: availableDays,
-      lookbackUnits: win.units,
-      dampedDays: win.dampedDays,
-      reason: perDay > 0
-        ? `Averaged ${win.units} sold over ${availableDays} days of sales`
-        : `No sales in the last ${availableDays} days`,
-    }
-  }
-
-  // Weighted mode: cap each window at a multiple of the longest window's rate, so
-  // a spike inside the 7-day window cannot drag the blend up for weeks.
-  const baseRate = demandWindow(sku, warehouseId, evidenceDays, asOf).perDay
-  const cap = baseRate > 0 ? baseRate * 3 : Number.POSITIVE_INFINITY
-
-  const avgDailySales = windowResults.reduce(
-    (sum, w) => sum + Math.min(w.perDay, cap) * (w.weightPct / 100),
-    0,
-  )
-
+  // The spec's rule: total sold in the window ÷ the window, with single-day spikes
+  // damped first so one promo cannot set the reorder point for months.
+  const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
+  // Divide by the days actually available, not the raw window, when history is
+  // shorter than the window (US-002 AC-05) — otherwise a product live for 30 of a
+  // 60-day window reads at half its true rate. `win.units` already sums only real
+  // days, so this only corrects the divisor.
+  const availableDays = Math.min(win.days, series.historyDays)
+  const perDay = availableDays > 0 ? win.units / availableDays : 0
   return {
-    avgDailySales,
-    source: avgDailySales > 0 ? 'computed' : 'none',
+    avgDailySales: perDay,
+    source: perDay > 0 ? 'computed' : 'none',
     historyDays: series.historyDays,
     coldStart: false,
-    windows: windowResults,
     cv,
-    volatile,
+    volatile: cv > cfg.volatileCvThreshold,
     citations,
-    mode: 'weighted-windows',
-    lookbackDays,
-    lookbackUnits: 0,
-    dampedDays: 0,
-    reason: avgDailySales > 0
-      ? `Weighted blend of ${windowResults.map((w) => `${w.days}d`).join('/')} windows`
-      : 'No sales in the weighted windows',
+    lookbackDays: availableDays,
+    lookbackUnits: win.units,
+    dampedDays: win.dampedDays,
+    modelledDays: win.modelledDays,
+    reason: perDay > 0
+      ? `Averaged ${win.units} sold over ${availableDays} days of sales`
+      : `No sales in the last ${availableDays} days`,
   }
 }
 
@@ -777,7 +716,7 @@ export function buildRow(
   const trace: { label: string; value: string }[] = [
     {
       label: 'Average daily sales',
-      value: velocity.mode === 'lookback' && velocity.lookbackDays > 0
+      value: velocity.lookbackDays > 0 && velocity.lookbackUnits > 0
         ? `${velocity.lookbackUnits} ${product?.unit ?? ''} ÷ ${velocity.lookbackDays} days = ${velocity.avgDailySales.toFixed(2)}/day`
         : `${velocity.avgDailySales.toFixed(2)} ${product?.unit ?? ''}/day`,
     },

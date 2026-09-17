@@ -20,18 +20,6 @@ const STORAGE_KEY = 'erp-db:replenishment-config'
 export type ReplBoundaryMode = 'inclusive' | 'exclusive'
 
 /**
- * How average daily demand is measured.
- *
- * The PRD specifies both and they disagree: §2.2 / US-002 define it as a flat
- * average over one lookback window (default 60 days), while US-004 keeps the
- * configurable 7/14/30 windows with weights totalling 100. `lookback` is the
- * default because it is what the calculation spec and the worked example in §2.4
- * actually compute; `weighted-windows` preserves US-004's recency weighting for
- * businesses whose demand moved recently and should be read that way.
- */
-export type ReplDemandMode = 'lookback' | 'weighted-windows'
-
-/**
  * How an order's SIZE is decided once a SKU is due (PRD decision D9).
  *
  * `coverage-days` orders enough to cover lead + safety + N more days of demand;
@@ -41,24 +29,13 @@ export type ReplDemandMode = 'lookback' | 'weighted-windows'
  */
 export type ReplOrderSizing = 'coverage-days' | 'max-level'
 
-export interface ReplWindowWeight {
-  /** Trailing window length in days. */
-  days: number
-  /** Share of the blended velocity, in percent. All windows must total 100. */
-  weightPct: number
-}
-
 export interface ReplenishmentConfig {
-  /** Flat lookback average (spec §2.2) vs US-004's weighted windows. */
-  demandMode: ReplDemandMode
   /**
    * How far back to average sales for average daily demand, in days (US-002).
    * The spec's primary demand input: avg daily demand = qty in window ÷ window.
    */
   lookbackDays: number
   lookbackDaysByCategory: Record<string, number>
-  /** Recency-weighted windows — recent demand counts for more (OD-009). */
-  windows: ReplWindowWeight[]
   /**
    * Demand samples above this multiple of the window median are pulled back to it
    * before averaging, so a promo spike or a bulk return cannot distort the average
@@ -104,14 +81,8 @@ export interface ReplenishmentConfig {
 }
 
 export const REPL_DEFAULTS: ReplenishmentConfig = {
-  demandMode: 'lookback',
   lookbackDays: 60,
   lookbackDaysByCategory: {},
-  windows: [
-    { days: 7, weightPct: 50 },
-    { days: 14, weightPct: 30 },
-    { days: 30, weightPct: 20 },
-  ],
   demandOutlierCapMultiple: 4,
   orderSizing: 'coverage-days',
   coverageDaysGlobal: 30,
@@ -181,7 +152,6 @@ export function getReplenishmentConfig(): ReplenishmentConfig {
     coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
     lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
     leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },
-    windows: saved.windows?.length ? saved.windows : REPL_DEFAULTS.windows,
   }
 }
 
@@ -191,30 +161,6 @@ export function saveReplenishmentConfig(cfg: ReplenishmentConfig): void {
 
 export function resetReplenishmentConfig(): void {
   clearStore(STORAGE_KEY)
-}
-
-/** Weights total exactly 100, every window is a positive whole number of days, no duplicates. */
-export function windowWeightsValid(windows: ReplWindowWeight[]): boolean {
-  if (!windows.length) return false
-  if (windows.some((w) => !Number.isInteger(w.days) || w.days <= 0)) return false
-  if (new Set(windows.map((w) => w.days)).size !== windows.length) return false
-  return windows.reduce((s, w) => s + w.weightPct, 0) === 100
-}
-
-/**
- * Scale weights to total 100 rather than rejecting them, so no caller can ever
- * produce a silently-wrong velocity. `windowWeightsValid` is the separate
- * predicate a settings form validates against before saving.
- */
-export function normalizeWindowWeights(windows: ReplWindowWeight[]): ReplWindowWeight[] {
-  const usable = windows.filter((w) => Number.isInteger(w.days) && w.days > 0)
-  if (!usable.length) return REPL_DEFAULTS.windows
-  const sum = usable.reduce((s, w) => s + w.weightPct, 0)
-  if (sum <= 0) {
-    const even = 100 / usable.length
-    return usable.map((w) => ({ days: w.days, weightPct: even }))
-  }
-  return usable.map((w) => ({ days: w.days, weightPct: (w.weightPct / sum) * 100 }))
 }
 
 /** Safety days for a category, falling back to the global value. */

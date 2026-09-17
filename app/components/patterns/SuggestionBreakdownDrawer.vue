@@ -49,11 +49,8 @@ const velocityNote = computed(() => {
   const row = props.row
   if (!row) return ''
   switch (row.velocity.source) {
-    case 'computed': {
-      const windows = row.velocity.windows.map((w) => `${w.days}d`).join(' / ')
-      const weights = row.velocity.windows.map((w) => `${Math.round(w.weightPct)}%`).join(' / ')
-      return `Sales over ${windows}, weighted ${weights}`
-    }
+    case 'computed':
+      return `Averaged over the last ${row.velocity.lookbackDays} days of sales`
     case 'manual-sku': return 'Entered by hand (cold start)'
     default: return 'No sales history yet'
   }
@@ -65,12 +62,8 @@ const documents = computed(() => {
   return [...docs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
 })
 
-const modelledDays = computed(() =>
-  props.row?.velocity.windows.reduce((max, w) => Math.max(max, w.modelledDays), 0) ?? 0,
-)
-const longestWindow = computed(() =>
-  props.row?.velocity.windows.reduce((max, w) => Math.max(max, w.days), 0) ?? 0,
-)
+const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
+const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
 </script>
 
 <template>

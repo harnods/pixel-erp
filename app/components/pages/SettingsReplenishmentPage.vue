@@ -7,13 +7,12 @@
  * draft, an explicit Edit mode, and Cancel/Save changes shown only while editing.
  *
  * Validation follows DESIGN.md: Save changes is NEVER disabled — clicking it with
- * bad input shows an inline error instead. The velocity weights carry a live total
- * so the user sees the problem before they click.
+ * bad input shows an inline error instead.
  */
 import { ref, reactive, computed } from 'vue'
 import { toast, css, MpIcon, MpInput, MpInputGroup, MpInputRightAddon, MpSelect, MpToggle } from '@mekari/pixel3'
 import {
-  getReplenishmentConfig, saveReplenishmentConfig, windowWeightsValid,
+  getReplenishmentConfig, saveReplenishmentConfig,
   REPL_DEFAULTS, type ReplenishmentConfig,
 } from '~/data/replenishmentConfig'
 import { recalculateReplenishment, invalidateReplenishmentCaches } from '~/data/replenishment'
@@ -40,8 +39,6 @@ const error = ref('')
 
 const categories = [...new Set(CATALOG.map((c) => c.category))].sort()
 
-const weightTotal = computed(() => draft.windows.reduce((s, w) => s + Number(w.weightPct || 0), 0))
-const weightsOk = computed(() => weightTotal.value === 100)
 const fsnBandsOk = computed(() => Number(draft.fsnFastPct) > Number(draft.fsnSlowPct))
 
 /** How many SKU/warehouse rows override safety days — so editing the company
@@ -65,10 +62,6 @@ function cancel() {
 
 function save() {
   // Validate on click, never by disabling the button.
-  if (!windowWeightsValid(draft.windows.map((w) => ({ days: Number(w.days), weightPct: Number(w.weightPct) })))) {
-    error.value = t('Velocity weights must total 100%, and each window must be a positive number of days.')
-    return
-  }
   if (!fsnBandsOk.value) {
     error.value = t('The Fast threshold must be higher than the Slow threshold.')
     return
@@ -96,7 +89,6 @@ function save() {
 
   const next: ReplenishmentConfig = {
     ...draft,
-    windows: draft.windows.map((w) => ({ days: Number(w.days), weightPct: Number(w.weightPct) })),
     safetyDaysGlobal: Number(draft.safetyDaysGlobal),
     lookbackDays: Number(draft.lookbackDays),
     coverageDaysGlobal: Number(draft.coverageDaysGlobal),
@@ -145,12 +137,6 @@ function resetToDefaults() {
   error.value = ''
 }
 
-const DEMAND_MODE_OPTIONS = [
-  // The spec's own rule (§2.2) leads; US-004's weighting stays available for a
-  // business whose demand shifted recently and should be read that way.
-  { id: 'lookback', name: 'Average over one lookback window' },
-  { id: 'weighted-windows', name: 'Weighted 7/14/30-day windows' },
-]
 const BOUNDARY_OPTIONS = [
   { id: 'inclusive', name: 'Reorder at or below the reorder point' },
   { id: 'exclusive', name: 'Reorder only below the reorder point' },
@@ -188,26 +174,6 @@ const BOUNDARY_OPTIONS = [
 
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Demand rule') }}</span>
-          <span class="rs-label-desc">{{ t('How average daily demand is measured.') }}</span>
-        </div>
-        <div class="rs-control">
-          <MpSelect
-            v-if="isEditing"
-            id="rs-demand-mode"
-            v-model="draft.demandMode"
-            :class="css({ width: '280px' })"
-          >
-            <option v-for="o in DEMAND_MODE_OPTIONS" :key="o.id" :value="o.id">{{ t(o.name) }}</option>
-          </MpSelect>
-          <span v-else class="rs-value">
-            {{ t(DEMAND_MODE_OPTIONS.find(o => o.id === committed.demandMode)?.name ?? committed.demandMode) }}
-          </span>
-        </div>
-      </div>
-
-      <div class="rs-field">
-        <div class="rs-label">
           <span class="rs-label-text">{{ t('Lookback window') }}</span>
           <span class="rs-label-desc">{{ t('How far back sales are averaged to get demand per day.') }}</span>
         </div>
@@ -217,35 +183,6 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.lookbackDays }} {{ t('days') }}</span>
-        </div>
-      </div>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Velocity windows') }}</span>
-          <span class="rs-label-desc">{{ t('Recent demand is weighted more heavily than older demand.') }}</span>
-        </div>
-        <div class="rs-control">
-          <div v-if="isEditing" class="rs-windows">
-            <div v-for="(w, i) in draft.windows" :key="i" class="rs-window-row">
-              <span class="rs-window-label">{{ t('Window') }} {{ i + 1 }}</span>
-              <MpInputGroup :id="`rs-window-days-${i}`">
-                <MpInput :id="`rs-window-days-input-${i}`" v-model="w.days" type="number" :class="css({ width: '84px' })" />
-                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-              </MpInputGroup>
-              <MpInputGroup :id="`rs-window-weight-${i}`">
-                <MpInput :id="`rs-window-weight-input-${i}`" v-model="w.weightPct" type="number" :class="css({ width: '76px' })" />
-                <MpInputRightAddon>%</MpInputRightAddon>
-              </MpInputGroup>
-            </div>
-            <p class="rs-total" :class="{ 'rs-total--bad': !weightsOk }">
-              {{ t('Total') }} {{ weightTotal }}%
-              <span v-if="!weightsOk"> — {{ t('weights must total 100%') }}</span>
-            </p>
-          </div>
-          <span v-else class="rs-value">
-            {{ committed.windows.map(w => `${w.days}d · ${w.weightPct}%`).join('   ') }}
-          </span>
         </div>
       </div>
 

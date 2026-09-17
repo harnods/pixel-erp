@@ -16,7 +16,7 @@ import {
   suggestedRawQty, applyMoqAndPack, isSuppressed, daysOfCover, resolveReorderPoint,
 } from '~/data/replenishment'
 import {
-  REPL_DEFAULTS, windowWeightsValid, normalizeWindowWeights, safetyDaysForCategory,
+  REPL_DEFAULTS, safetyDaysForCategory,
 } from '~/data/replenishmentConfig'
 import type { VendorItem } from '~/data/vendorItems'
 import type { EffectiveReplenishmentSettings } from '~/data/replenishmentSettings'
@@ -237,29 +237,6 @@ describe('resolveReorderPoint', () => {
 })
 
 describe('config validation', () => {
-  it('accepts the shipped defaults', () => {
-    expect(windowWeightsValid(REPL_DEFAULTS.windows)).toBe(true)
-  })
-
-  it('rejects weights that do not total 100', () => {
-    expect(windowWeightsValid([{ days: 7, weightPct: 50 }, { days: 30, weightPct: 40 }])).toBe(false)
-  })
-
-  it('rejects non-positive or duplicate windows', () => {
-    expect(windowWeightsValid([{ days: 0, weightPct: 100 }])).toBe(false)
-    expect(windowWeightsValid([{ days: 7, weightPct: 50 }, { days: 7, weightPct: 50 }])).toBe(false)
-  })
-
-  it('normalizes any weighting to total 100 so velocity is never silently wrong', () => {
-    const out = normalizeWindowWeights([{ days: 7, weightPct: 3 }, { days: 30, weightPct: 1 }])
-    expect(out.reduce((s, w) => s + w.weightPct, 0)).toBeCloseTo(100)
-    expect(out[0]!.weightPct).toBeCloseTo(75)
-  })
-
-  it('falls back to defaults when every window is unusable', () => {
-    expect(normalizeWindowWeights([{ days: -1, weightPct: 100 }])).toEqual(REPL_DEFAULTS.windows)
-  })
-
   it('resolves safety days by category, then global', () => {
     expect(safetyDaysForCategory('Green Beans')).toBe(REPL_DEFAULTS.safetyDaysByCategory['Green Beans'])
     expect(safetyDaysForCategory('Nonexistent category')).toBe(REPL_DEFAULTS.safetyDaysGlobal)

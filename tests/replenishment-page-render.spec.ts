@@ -142,26 +142,24 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
   it('mounts read-only, then reveals the editor', async () => {
     const wrapper = await mountLoaded(SettingsReplenishmentPage)
     expect(wrapper.text()).toContain('Replenishment settings')
-    expect(wrapper.text()).toContain('Velocity windows')
+    expect(wrapper.text()).toContain('Lookback window')
     // Not editing yet, so no Save button.
     expect(wrapper.text()).not.toContain('Save changes')
 
     await wrapper.findAll('button').find((b) => b.text().includes('Edit'))!.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('Save changes')
-    // Defaults are valid, so the live weight total reads 100%.
-    expect(wrapper.text()).toContain('Total 100%')
   })
 
-  it('shows an inline error instead of disabling Save when weights are wrong', async () => {
+  it('shows an inline error instead of disabling Save when a rule is invalid', async () => {
     const wrapper = await mountLoaded(SettingsReplenishmentPage)
     await wrapper.findAll('button').find((b) => b.text().includes('Edit'))!.trigger('click')
     await nextTick()
 
-    // Break the weights.
-    const weightInput = wrapper.find('#rs-window-weight-input-0 input, input#rs-window-weight-input-0')
-    expect(weightInput.exists()).toBe(true)
-    await weightInput.setValue('10')
+    // Break the FSN bands: Fast must stay above Slow.
+    const fastInput = wrapper.find('input#rs-fast-input')
+    expect(fastInput.exists()).toBe(true)
+    await fastInput.setValue('5') // below the Slow default (10)
     await nextTick()
 
     const save = wrapper.findAll('button').find((b) => b.text().includes('Save changes'))!
@@ -169,6 +167,6 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     expect(save.attributes('disabled')).toBeUndefined()
     await save.trigger('click')
     await nextTick()
-    expect(wrapper.text()).toContain('must total 100%')
+    expect(wrapper.text()).toContain('must be higher than the Slow threshold')
   })
 })
