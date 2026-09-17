@@ -3766,6 +3766,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Oversold': 'Terjual lebih',
   'No vendor': 'Tanpa vendor',
   'Volatile': 'Fluktuatif',
+  'Provisional': 'Sementara',
   'Volatile demand': 'Permintaan fluktuatif',
   'On order': 'Dalam pemesanan',
   'No recent sales': 'Belum ada penjualan terbaru',

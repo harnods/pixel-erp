@@ -55,36 +55,32 @@ import {
 // ── Velocity (OD-002 / OD-009) ───────────────────────────────────────────────
 
 /**
- * Which demand case fired (US-002 AC-04/05, US-003).
+ * Which demand case fired (US-002).
  *
- *   computed   — history ≥ cold-start threshold: averaged from real sales.
- *   manual-sku — cold start, using a per-item manual demand a buyer entered.
- *   none       — cold start with no manual demand ⇒ Needs setup.
+ *   computed — averaged from real sales (whether mature or provisional).
+ *   none     — no sales yet ⇒ demand 0 ⇒ the SKU drops out of the worklist.
  *
- * There is deliberately NO per-category demand seed: a never-sold or dead-stock
- * product must never be given a fabricated demand, so with no real sales and no
- * explicit manual figure it goes to Needs setup rather than an invented quantity.
- * Graduation off a manual figure is silent — a SKU crossing the threshold simply
- * returns `computed` on the next run, no stored number to unwind.
+ * Demand is ALWAYS computed from sales history (D18): there is no category seed
+ * and no manual demand entry. A SKU with no sales has demand 0 and simply never
+ * appears on "To order"; its first sale is used immediately (as a provisional
+ * launch figure). Needs-setup is now only about a missing LEAD TIME, never demand.
  */
-export type ReplDemandSource = 'computed' | 'manual-sku' | 'none'
-
-/** Two-way label for `ReplDemandSource` — 'seed' = a hand-entered cold-start figure. */
-export function demandBasisOf(source: ReplDemandSource): 'computed' | 'seed' | 'none' {
-  if (source === 'computed') return 'computed'
-  if (source === 'none') return 'none'
-  return 'seed'
-}
+export type ReplDemandSource = 'computed' | 'none'
 
 export interface VelocityResult {
   avgDailySales: number
   source: ReplDemandSource
   historyDays: number
-  coldStart: boolean
+  /**
+   * Within the launch window (≤ cold-start days since first sale, and has sales).
+   * The figure is real but early, so coverage is capped to 0 downstream and the
+   * recommendation is flagged "provisional" (D18 / §2.7).
+   */
+  provisional: boolean
   cv: number
   volatile: boolean
   citations: DemandDoc[]
-  /** Window actually averaged over — capped at the days of history (US-002 AC-01/05). */
+  /** Window actually averaged over — days since first sale, capped at the lookback (US-002 AC-01/05). */
   lookbackDays: number
   /** Units summed over that window, after damping. */
   lookbackUnits: number
@@ -97,17 +93,17 @@ export interface VelocityResult {
 }
 
 /**
- * Average daily sales.
+ * Average daily sales (D18 / D19).
  *
- * One rule (§2.2 / US-002): a flat average over a single lookback window —
- * "total issued/sold qty ÷ lookback days", default 60 — which is what the
- * calculation spec and the §2.4 worked example compute. (An earlier weighted
- * 7/14/30-day variant was removed; demand is measured one way now.)
+ * One rule: a flat average, `total sold ÷ days-since-first-sale` capped at the
+ * lookback window (default 60). Anchoring the denominator on the first SALE — not
+ * the fixed window and not the product's created date — means a brand-new fast
+ * mover reads at its real early rate instead of being diluted toward zero, while
+ * a never-sold or dead-stock SKU reads 0 and drops off the worklist on its own.
  *
- * Cold start short-circuits BEFORE any computation. That single ordering is what
- * makes "never a fabricated quantity" (US-003 CON-02) enforceable rather than
- * aspirational: there is no code path that returns a computed velocity for a SKU
- * with less than the configured minimum history.
+ * No cold-start short-circuit, no category seed, no manual demand: a SKU with no
+ * sales returns demand 0 (source 'none'); a SKU still inside its launch window
+ * returns a real but `provisional` figure that the caller sizes with coverage 0.
  */
 export function velocityFor(
   sku: string,
@@ -117,66 +113,47 @@ export function velocityFor(
 ): VelocityResult {
   const series = demandSeries(sku, warehouseId, asOf)
   const settings = effectiveSettings(sku, warehouseId, cfg)
-  const coldStart = series.historyDays < cfg.coldStartMinDays
-
   const lookbackDays = settings.lookbackDays
+
   // Citations and volatility read the window the number is built from, so the
   // trust drawer never cites documents outside the averaged period.
   const cv = demandCv(sku, warehouseId, lookbackDays, asOf)
   const citations = demandWindow(sku, warehouseId, lookbackDays, asOf).docs
 
-  if (coldStart) {
-    // Zero OR thin history (US-002 AC-04): never compute a velocity off too-few
-    // points, and never guess from a category seed. Use a per-item manual figure
-    // only if a buyer entered one; otherwise report nothing and let the caller
-    // route this to "Needs setup" (US-003 AC-03) rather than invent demand for a
-    // product that may never sell.
-    const manual = settings.manualDailyDemand
-    const source: ReplDemandSource = manual === null ? 'none' : 'manual-sku'
-    const thin = series.historyDays > 0
-    const reason = source === 'manual-sku'
-      ? `Cold start (${series.historyDays}d history) — manual ${manual}/day for this item`
-      : `Cold start (${thin ? `only ${series.historyDays}d history` : 'no history'}) and no manual demand — needs setup`
-    return {
-      avgDailySales: manual ?? 0,
-      source,
-      historyDays: series.historyDays,
-      coldStart: true,
-      cv,
-      volatile: false,
-      citations,
-      lookbackDays,
-      lookbackUnits: 0,
-      dampedDays: 0,
-      modelledDays: 0,
-      reason,
-    }
-  }
-
-  // The spec's rule: total sold in the window ÷ the window, with single-day spikes
-  // damped first so one promo cannot set the reorder point for months.
+  // Flat average with single-day spikes damped first, so one promo cannot set the
+  // reorder point for months.
   const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
-  // Divide by the days actually available, not the raw window, when history is
-  // shorter than the window (US-002 AC-05) — otherwise a product live for 30 of a
-  // 60-day window reads at half its true rate. `win.units` already sums only real
-  // days, so this only corrects the divisor.
-  const availableDays = Math.min(win.days, series.historyDays)
+  // Denominator = days since the SKU's FIRST SALE, capped at the lookback (D18).
+  // `series.historyDays` is days since first sale; capping keeps a mature SKU on
+  // the window and a brand-new fast mover on its true early rate. `win.units`
+  // already sums only real days, so this is purely the correct divisor.
+  const daysSinceFirstSale = series.historyDays
+  const availableDays = Math.min(win.days, daysSinceFirstSale)
   const perDay = availableDays > 0 ? win.units / availableDays : 0
+  const hasSales = win.units > 0
+
+  // Provisional launch window (§2.7): has sales, but still within the first N days
+  // since first sale. The figure is real but early — coverage is capped to 0 by
+  // the caller and the recommendation is flagged "provisional".
+  const provisional = hasSales && daysSinceFirstSale <= cfg.coldStartMinDays
+
   return {
     avgDailySales: perDay,
     source: perDay > 0 ? 'computed' : 'none',
     historyDays: series.historyDays,
-    coldStart: false,
+    provisional,
     cv,
-    volatile: cv > cfg.volatileCvThreshold,
+    volatile: perDay > 0 && cv > cfg.volatileCvThreshold,
     citations,
     lookbackDays: availableDays,
     lookbackUnits: win.units,
     dampedDays: win.dampedDays,
     modelledDays: win.modelledDays,
-    reason: perDay > 0
-      ? `Averaged ${win.units} sold over ${availableDays} days of sales`
-      : `No sales in the last ${availableDays} days`,
+    reason: perDay <= 0
+      ? 'No sales yet — excluded until its first sale'
+      : provisional
+        ? `Provisional — ${win.units} sold over ${availableDays} days since first sale`
+        : `Averaged ${win.units} sold over ${availableDays} days of sales`,
   }
 }
 
@@ -638,6 +615,8 @@ export interface WorklistRow {
     volatile: boolean
     leadTimeEstimated: boolean
     mutedButActive: boolean
+    /** Within the launch window — demand is real but early, coverage forced to 0 (§2.7). */
+    provisional: boolean
   }
   /** Sort score — urgency, never shown as a column. */
   urgency: number
@@ -683,7 +662,10 @@ export function buildRow(
   // reach the UI with a zero quantity, so no rendering mistake can ever surface
   // a fabricated figure.
   const canRecommend = hasDemandBasis && !leadTimeMissing
-  const coverageDays = settings.coverageDays
+  // Provisional launch window (§2.7 / US-008 AC-06): force coverage to 0 so the
+  // order-up-to level collapses to the reorder point — a launch spike tops up to
+  // the trigger, never to a full coverage horizon.
+  const coverageDays = velocity.provisional ? 0 : settings.coverageDays
   const usingMaxLevel = settings.maxLevel !== null
   // The order-up-to level: a units ceiling when one is set (US-011 AC-03),
   // otherwise the demand that lead + safety + coverage days represents.
@@ -758,10 +740,11 @@ export function buildRow(
   }
 
   // ── Bucketing ──
-  const demandMissing = velocity.coldStart && velocity.source === 'none'
+  // Demand never sends a row to Needs setup any more (D18): 0 sales → demand 0 →
+  // the row simply is not due and drops off "To order". Needs setup is only about
+  // a missing LEAD TIME (no PO→GR history), which a buyer must resolve by hand.
   const missing: string[] = []
   if (!vendorItem) missing.push('Vendor')
-  if (demandMissing) missing.push('Sales history')
   if (leadTimeMissing) missing.push('Lead time')
 
   const dueForReorder = settings.tracked
@@ -771,9 +754,9 @@ export function buildRow(
 
   let bucket: WorklistBucket
   if (!settings.tracked) bucket = 'not-tracked'
-  // US-003 AC-01/AC-02: either gap routes here. An ESTIMATED lead time is not a
-  // gap — it resolved, it is simply tagged — so it must not land in Needs setup.
-  else if (demandMissing || leadTimeMissing) bucket = 'needs-setup'
+  // Only a missing lead time routes here now. An ESTIMATED lead time is not a gap
+  // — it resolved, it is simply tagged — so it must not land in Needs setup.
+  else if (leadTimeMissing) bucket = 'needs-setup'
   else if (dueForReorder && !vendorItem) bucket = 'no-vendor'
   else if (dueForReorder) bucket = 'reorder'
   else bucket = 'covered'
@@ -835,6 +818,7 @@ export function buildRow(
       volatile: velocity.volatile,
       leadTimeEstimated,
       mutedButActive,
+      provisional: velocity.provisional,
     },
     urgency,
     asOf,

@@ -54,13 +54,16 @@ describe('planPurchaseRequests — grouping', () => {
   })
 
   it('needs-setup rows are skipped and reported, never silently dropped', () => {
+    // Under D18 Needs setup can be empty (only a missing lead time lands there),
+    // so this guards the contract for whatever rows do exist: a needs-setup row is
+    // never planned into a PR, and is reported as skipped with that reason.
     const rows = [...worklist.rows, ...worklist.needsSetup]
     const plan = planPurchaseRequests(rows)
     const planned = new Set(plan.groups.flatMap((g) => g.lines.map((l) => `${l.sku}::${l.warehouseId}`)))
     for (const row of worklist.needsSetup) {
       expect(planned.has(`${row.sku}::${row.warehouseId}`)).toBe(false)
+      expect(plan.skipped.some((s) => s.reason === 'needs-setup')).toBe(true)
     }
-    expect(plan.skipped.some((s) => s.reason === 'needs-setup')).toBe(true)
     expect(prSkipReasonLabel('needs-setup')).toBeTruthy()
   })
 

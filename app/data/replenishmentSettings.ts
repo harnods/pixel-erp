@@ -8,13 +8,12 @@
  *
  * Precedence:
  *   reorderPoint      SKU-warehouse → SKU → (engine: velocity × (lead + safety));
- *                     no history + no cold-start demand seed ⇒ Needs setup (D17)
+ *                     no sales ⇒ demand 0 ⇒ reorder point 0, drops out (D18)
  *   safetyDays        SKU-warehouse → SKU → warehouse → category → global
  *   coverageDays      SKU-warehouse → SKU → category → global
  *   lookbackDays      SKU-warehouse → SKU → category → global
  *   maxLevel          SKU-warehouse → SKU → none
  *   tracked           SKU-warehouse → SKU → tracked by default
- *   manualDemand      SKU-warehouse → SKU → none (no category seed; else Needs setup)
  *   manualLeadTime    SKU-warehouse → SKU → (engine: derived ladder)
  *
  * NOTE on reorderPoint: this module returns only the OVERRIDE. The computed
@@ -49,8 +48,6 @@ export interface ReplenishmentOverride {
   maxLevel?: number
   /** false = muted from the worklist (US-013). Never deletes or hides from search. */
   tracked?: boolean
-  /** Units/day entered by hand for a cold-start SKU (US-003 AC-01). */
-  manualDailyDemand?: number
   /** Days entered by hand when the PO→receipt ladder resolves to nothing (US-003 AC-02). */
   manualLeadTimeDays?: number
   updatedBy?: string
@@ -81,8 +78,6 @@ export interface EffectiveReplenishmentSettings {
   manualLeadTimeSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
   tracked: boolean
   trackedSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'default'>
-  manualDailyDemand: number | null
-  manualDailyDemandSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
 }
 
 interface Store {
@@ -177,15 +172,6 @@ export function effectiveSettings(
     ? 'sku-warehouse' as const
     : skuLevel.tracked !== undefined ? 'sku' as const : 'default' as const
 
-  // Only an explicit per-SKU / per-warehouse figure counts now — there is no
-  // per-category demand seed (removed so a never-sold or dead-stock product is
-  // never given a fabricated demand; it goes to Needs setup instead).
-  const manualDailyDemand = pair.manualDailyDemand ?? skuLevel.manualDailyDemand ?? null
-  const manualDailyDemandSource = pair.manualDailyDemand !== undefined
-    ? 'sku-warehouse' as const
-    : skuLevel.manualDailyDemand !== undefined ? 'sku' as const
-    : 'none' as const
-
   return {
     reorderPointOverride,
     reorderPointSource,
@@ -201,8 +187,6 @@ export function effectiveSettings(
     manualLeadTimeSource,
     tracked,
     trackedSource,
-    manualDailyDemand,
-    manualDailyDemandSource,
   }
 }
 

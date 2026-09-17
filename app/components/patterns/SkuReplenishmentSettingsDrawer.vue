@@ -29,7 +29,6 @@ const safetyDays = ref('')
 const maxLevel = ref('')
 const coverageDays = ref('')
 const manualLeadTime = ref('')
-const manualDemand = ref('')
 const tracked = ref(true)
 const error = ref('')
 
@@ -48,7 +47,6 @@ watch(() => props.isOpen, (open) => {
   maxLevel.value = override.maxLevel !== undefined ? String(override.maxLevel) : ''
   coverageDays.value = override.coverageDays !== undefined ? String(override.coverageDays) : ''
   manualLeadTime.value = override.manualLeadTimeDays !== undefined ? String(override.manualLeadTimeDays) : ''
-  manualDemand.value = override.manualDailyDemand !== undefined ? String(override.manualDailyDemand) : ''
   tracked.value = row.fsn.tracked
   error.value = ''
 })
@@ -73,11 +71,10 @@ function save() {
   const max = maxLevel.value === '' ? null : Number(maxLevel.value)
   const coverage = coverageDays.value === '' ? null : Number(coverageDays.value)
   const lead = manualLeadTime.value === '' ? null : Number(manualLeadTime.value)
-  const demand = manualDemand.value === '' ? null : Number(manualDemand.value)
 
   for (const [label, value] of [
     [t('Reorder point'), rop], [t('Safety days'), safety],
-    [t('Max level'), max], [t('Expected daily demand'), demand],
+    [t('Max level'), max],
   ] as const) {
     if (value !== null && (Number.isNaN(value) || value < 0)) {
       error.value = `${label} ${t('must be a whole number of 0 or more')}`
@@ -99,7 +96,6 @@ function save() {
     maxLevel: max ?? undefined,
     coverageDays: coverage ?? undefined,
     manualLeadTimeDays: lead ?? undefined,
-    manualDailyDemand: demand ?? undefined,
     tracked: tracked.value ? undefined : false,
   })
 
@@ -196,17 +192,6 @@ function save() {
             </MpInputGroup>
             <span class="rp-set-hint">
               {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.') }}
-            </span>
-          </MpFormControl>
-
-          <MpFormControl v-if="row.velocity.coldStart" id="rp-set-demand-fc">
-            <MpFormLabel>{{ t('Expected daily demand') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-demand-g">
-              <MpInput id="rp-set-demand" v-model="manualDemand" type="number" />
-              <MpInputRightAddon>{{ row.unit }}/{{ t('day') }}</MpInputRightAddon>
-            </MpInputGroup>
-            <span class="rp-set-hint">
-              {{ t('This product has') }} {{ row.velocity.historyDays }} {{ t('days of history, too little to estimate demand. Set a figure to include it in the worklist.') }}
             </span>
           </MpFormControl>
         </div>

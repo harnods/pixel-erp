@@ -580,6 +580,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         <MpBadge v-if="(row as any).flags.volatile" for="additionalInformation" type="information">
           {{ t('Volatile') }}
         </MpBadge>
+        <MpBadge v-if="(row as any).flags.provisional" for="additionalInformation" type="information">
+          {{ t('Provisional') }}
+        </MpBadge>
       </div>
     </template>
 

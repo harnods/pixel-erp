@@ -48,12 +48,10 @@ const SOURCE_LABEL: Record<string, string> = {
 const velocityNote = computed(() => {
   const row = props.row
   if (!row) return ''
-  switch (row.velocity.source) {
-    case 'computed':
-      return `Averaged over the last ${row.velocity.lookbackDays} days of sales`
-    case 'manual-sku': return 'Entered by hand (cold start)'
-    default: return 'No sales history yet'
-  }
+  if (row.velocity.source !== 'computed') return 'No sales yet — excluded until its first sale'
+  return row.velocity.provisional
+    ? `Provisional — averaged over ${row.velocity.lookbackDays} days since first sale`
+    : `Averaged over the last ${row.velocity.lookbackDays} days of sales`
 })
 
 /** Real documents behind the demand figure, newest first, capped for the panel. */

@@ -36,7 +36,6 @@ function settings(patch: Partial<EffectiveReplenishmentSettings> = {}): Effectiv
     safetyDays: 7, safetyDaysSource: 'global',
     maxLevel: null, maxLevelSource: 'none',
     tracked: true, trackedSource: 'default',
-    manualDailyDemand: null, manualDailyDemandSource: 'none',
     ...patch,
   }
 }

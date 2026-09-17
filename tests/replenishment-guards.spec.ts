@@ -20,6 +20,7 @@ import {
 } from '~/data/replenishmentSettings'
 import { buildRow, replenishmentWorklist } from '~/data/replenishment'
 import { REPL_DEFAULTS } from '~/data/replenishmentConfig'
+import { REPL_COLD_START_SKUS } from '~/data/demandHistory'
 
 const SKU = '1101'          // Roasted Beans House Blend Medium — a reliable fast mover
 const WH = 'wh-001'
@@ -158,16 +159,30 @@ describe('override precedence (US-011, US-024)', () => {
     expect(overrideCount()).toBe(0)
   })
 
-  it('a manual cold-start demand lifts a needs-setup row into the worklist', () => {
-    const setup = replenishmentWorklist('all').needsSetup
-    expect(setup.length).toBeGreaterThan(0)
-    const target = setup[0]!
-    expect(target.suggestion.purchaseQty).toBe(0)
+  it('missing demand never routes to Needs setup (D18) — only missing lead time does', () => {
+    // A 0-sales SKU resolves to demand 0 → reorder point 0 → it drops out of the
+    // worklist entirely; it is never forced into Needs setup for demand, and any
+    // Needs-setup rows that do exist are there for a missing lead time.
+    const list = replenishmentWorklist('all')
+    for (const row of list.needsSetup) {
+      expect(row.missing).not.toContain('Sales history')
+      expect(row.missing).toContain('Lead time')
+    }
+  })
 
-    saveSkuWarehouseOverride(target.sku, target.warehouseId, { manualDailyDemand: 2 })
-    const row = buildRow(target.sku, target.warehouseId)
-    expect(row.velocity.source).toBe('manual-sku')
-    expect(row.velocity.avgDailySales).toBe(2)
-    expect(row.bucket).not.toBe('needs-setup')
+  it('a provisional (launch-window) SKU tops up only to its reorder point (D18 / §2.7)', () => {
+    // A SKU with sales but still inside its cold-start window is "provisional":
+    // coverage is forced to 0, so the order-up-to target collapses onto the
+    // reorder point rather than a full coverage horizon.
+    const provisional = REPL_COLD_START_SKUS
+      .flatMap((sku) => ['wh-001', 'wh-002', 'wh-003'].map((wh) => buildRow(sku, wh)))
+      .find((r) => r.flags.provisional)
+
+    expect(provisional, 'no provisional row found in the seed').toBeTruthy()
+    const r = provisional!
+    expect(r.velocity.source).toBe('computed')
+    expect(r.velocity.avgDailySales).toBeGreaterThan(0)
+    // Coverage 0 ⇒ order-up-to target = velocity × (lead + safety) = the reorder point.
+    expect(Math.round(r.suggestion.targetQty)).toBe(r.reorderPoint)
   })
 })
