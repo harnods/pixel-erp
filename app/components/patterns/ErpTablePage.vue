@@ -640,9 +640,10 @@ const bulkCountLabel = computed(() => {
 
           <!-- Data rows (hidden on first load; frozen during a pagination change) -->
           <template v-if="!loading">
+            <!-- The v-for wraps BOTH the data row and the optional #row-extra child
+                 rows, so the slot sees this row's `row`/`ri`. -->
+            <template v-for="(row, ri) in displayRows" :key="ri">
             <tr
-              v-for="(row, ri) in displayRows"
-              :key="ri"
               class="erp-tr"
               :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
@@ -714,6 +715,20 @@ const bulkCountLabel = computed(() => {
                 </button>
               </td>
             </tr>
+
+            <!-- Row extra — optional child rows an accordion table renders directly
+                 under its parent row (e.g. Stock requests › SKU view, one row per
+                 work order). Absent on every table that doesn't use the slot, so
+                 nothing changes for them. `colspan` is the full column count so a
+                 consumer can either mirror the parent's columns cell-for-cell or
+                 span the whole width — or mirror it cell-for-cell using `columns`
+                 + `showSpacer` (the <colgroup> then aligns the child cells to the
+                 header automatically, as long as the cell COUNT matches). -->
+            <slot
+              name="row-extra" :row="row" :index="ri"
+              :total-cols="totalCols" :columns="columns" :show-spacer="showSpacer"
+            />
+            </template>
           </template>
 
           <!-- Skeleton rows — first load (alone) OR pagination change (appended below data) -->

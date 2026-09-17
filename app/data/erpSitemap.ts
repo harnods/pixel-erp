@@ -77,6 +77,8 @@ export const BUILT_KEYS = new Set<string>([
   'Couriers',
   'Warehouse transfers',
   'Stock adjustments',
+  'Stock requests',
+  'Production settings',
   'Cycle counts',
   'Work orders',
   'Bill of materials',
@@ -225,6 +227,21 @@ const ACTIONS: Record<string, EntityAction[]> = {
   ],
   'Couriers': [
     a('Add', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+  ],
+  'Production settings': [
+    a('Set reservation method', 'built', 'One-step / Two-step (PRD UC-00 S-1)'),
+    a('Allow partial production', 'built', 'work order start gate'),
+    a('Allow backdate', 'built'),
+  ],
+  'Stock requests': [
+    a('By product view', 'built'), a('By transaction view', 'built'),
+    a('Details', 'built', 'stock request detail — summary, per-component readiness, reserve/transfer/purchase'),
+    a('Open work order', 'built'),
+    a('Reserve stock', 'built', 'per-line all-or-nothing against destination stock'),
+    a('Create purchase request', 'partial', 'opens the PR form, does not prefill lines'),
+    a('Create warehouse transfer', 'partial', 'opens the transfer form, does not prefill lines'),
+    a('Reject request', 'built', 'additional / adjustment requests only'),
+    a('Export', 'built'),
   ],
   'Warehouse transfers': [
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Duplicate', 'built'),
@@ -383,6 +400,7 @@ export const SITEMAP: SitemapModule[] = [
       }),
       leaf('Warehouse transfers'),
       leaf('Stock adjustments'),
+      leaf('Stock requests'),
       leaf('Cycle counts'),
       leaf('Storage locations'),
     ],

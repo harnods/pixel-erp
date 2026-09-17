@@ -851,9 +851,15 @@ ERP override wins.
   secondary CTA that creates the first record, gated to the create permission). The
   **filtered/search-empty** state is rendered automatically by `ErpTablePage` — the
   **same illustration** with "…not found / no … match your filters" + a *Clear all
-  filters* link — so both empty states read consistently. *Don't:* leave the built-in
-  bare "No data yet" fallback (it has no illustration/CTA); don't hand-roll a separate
-  empty state or a different illustration. **Source:** `docs/patterns/ErpTablePage.md`
+  filters* link — so both empty states read consistently. **Exception — no create
+  path:** when the record type is raised by another transaction and has no create
+  action at all (e.g. Warehouses › **Stock requests**, raised by a work order), the
+  full empty state is illustration + title + caption and **omits the CTA** — there is
+  nothing for it to create, and a button that only navigates elsewhere reads as a
+  create affordance that isn't one. Everything else about the state is unchanged.
+  *Don't:* leave the built-in bare "No data yet" fallback (it has no
+  illustration/CTA); don't hand-roll a separate empty state or a different
+  illustration. **Source:** `docs/patterns/ErpTablePage.md`
   › Empty state. **Lint:** review.
 - **`rule/skeleton-solid-static`** — *Do:* loading skeletons are **solid and static** —
   **no shimmer gradient, no animation**. Every `<MpSkeleton>` gets **`duration="0s"`**

@@ -451,6 +451,27 @@ When a table row expands to reveal a detail sub-panel (e.g. Warehouse detail →
 > to inline *show-more* cells (e.g. a "+N more" chips toggle inside one cell) — those
 > keep their own button and the row keeps its primary action (e.g. navigate to detail).
 
+### `#row-extra` — child rows under a parent row
+
+When the expansion is a set of **child rows** (not a detail panel), render them
+through the **`#row-extra`** slot instead of hand-rolling a second table. It is
+emitted directly after each data row and receives `row`, `index` and `totalCols`:
+
+```vue
+<template #row-extra="{ row, totalCols }">
+  <tr v-for="child in (expanded[row.id] ? row.children : [])" :key="child.id" class="my-child">
+    <td :colspan="totalCols" class="my-child-cell">…</td>
+  </tr>
+</template>
+```
+
+* The slot renders nothing for tables that don't use it, so it costs existing
+  tables nothing.
+* Keep the `<td>` a **real table cell** — `display: flex` on it drops the cell out
+  of the table layout and the `colspan` collapses to one column's width. Put the
+  flex on an inner `<div>`.
+* Used by **Stock requests › By SKU / product** (one child row per work order).
+
 ***
 
 ## Empty state — two variants

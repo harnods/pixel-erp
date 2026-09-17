@@ -28,6 +28,15 @@ import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
+import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
+import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
+import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
+import {
+  raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, isFullyReserved,
+  reservedForWorkOrder, reserveWorkOrderProducts, unreserveWorkOrderProducts,
+  type UnreserveDisposition,
+} from '~/data/stockRequests'
+import { STAFF, TODAY_ISO } from '~/data/master'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -127,6 +136,112 @@ const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
+
+// ── Material reservation (PRD UC-00 … UC-04) ────────────────────────────────────
+// The work order and the Stock requests dashboard read the SAME request row, so a
+// reservation made on either surface is immediately true on the other.
+
+// C-4 — a saved work order has raised a stock request carrying its component
+// lines. Seeded work orders predate that, so the row is created on first open.
+function syncStockRequest() {
+  const w = wo.value
+  if (!w || rawMaterials.value.length === 0) return
+  // "Product components must be reserved" off → work orders raise no request.
+  if (!reservationEnabled()) return
+  // Seeded work orders predate the save-time hook (C-4) — back-fill their request
+  // on first open, using the same builder so nothing can diverge. Already-reserved
+  // state is untouched: raising is idempotent and never auto-reserves here.
+  raiseStockRequestForWorkOrder({
+    workOrderId: w.id,
+    workOrderNumber: w.number,
+    requestor: STAFF[0]!,
+    requestDate: w.planStartDate || TODAY_ISO,
+    lines: rawMaterials.value.map(r => ({
+      productId: r.productId,
+      product: r.product,
+      sku: r.sku,
+      unit: r.unit,
+      qty: r.needed,
+      requiredDate: w.planStartDate || TODAY_ISO,
+      destinationWarehouse: r.warehouse,
+      destinationWarehouseId: warehouses.find(w => w.name === r.warehouse)?.id ?? '',
+    })),
+  }, { autoReserve: false })
+}
+onMounted(syncStockRequest)
+watch(() => wo.value?.id, syncStockRequest)
+
+const stockRequest = computed(() => wo.value ? requestForWorkOrder(wo.value.id) : undefined)
+const reservationLines = computed(() => stockRequest.value?.lines ?? [])
+const materialReadiness = computed(() => reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
+
+// S-2 — under Two-step, EVERY reservation entry point is hidden (not disabled)
+// and an info badge points to Stock requests instead.
+const reservationOn = computed(() => reservationEnabled())
+const canReserveHere = computed(() => reservationOnWorkOrder())
+// D-6 — unreserve is allowed only while Not started; starting locks it.
+const notStarted = computed(() => wo.value?.status === 'not started')
+const hasReservation = computed(() => reservationLines.value.some(l => l.reserved > 0))
+const showReservationMenu = computed(() => canReserveHere.value && rawMaterials.value.length > 0)
+
+const reserveOpen = ref(false)
+const unreserveOpen = ref(false)
+
+function onReserve(productIds: string[]) {
+  if (!wo.value) return
+  const r = reserveWorkOrderProducts(wo.value.id, productIds)
+  reserveOpen.value = false
+  if (r.reservedProducts === 0) {
+    toast.notify({ variant: 'error', title: t('Nothing could be reserved — warehouse stock does not cover any selected component in full'), maxWidth: 'max-content' })
+    return
+  }
+  // C-3 — say which case applied when only part of the selection went through.
+  const title = r.skippedProducts > 0
+    ? `${r.reservedProducts} ${t('component(s) reserved')} · ${r.skippedProducts} ${t('left as a request to the stockist')}`
+    : `${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`
+  toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
+}
+
+function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
+  if (!wo.value) return
+  const released = unreserveWorkOrderProducts(wo.value.id, payload.productIds, payload.disposition)
+  unreserveOpen.value = false
+  if (released === 0) return
+  const where = payload.disposition === 'return-to-warehouse'
+    ? t('returned to warehouse')
+    : t('charged to production cost')
+  toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
+}
+
+// Reserved qty per component — shown in the Raw materials table.
+function reservedFor(productId: string): number {
+  return wo.value ? reservedForWorkOrder(wo.value.id, productId) : 0
+}
+
+// ── D-8 / UC-04 — the start gate ───────────────────────────────────────────────
+// Start requires full reservation unless "Allow partial production" is on.
+const startBlocked = computed(() => {
+  if (!reservationEnabled() || productionSettings.allowStartWithLimitedStock) return false
+  return wo.value ? !isFullyReserved(wo.value.id) : false
+})
+
+function startWorkOrder() {
+  const w = wo.value
+  if (!w) return
+  if (startBlocked.value) {
+    toast.notify({
+      variant: 'error',
+      title: t('Reserve every component before starting, or allow starting with limited stock in Production settings'),
+      maxWidth: 'max-content',
+    })
+    return
+  }
+  w.status = 'in progress'
+  w.startDate = TODAY_ISO
+  persistWorkOrders()
+  toast.notify({ variant: 'success', title: `${w.number} ${t('started')}`, maxWidth: 'max-content' })
+}
+
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
 
 // ── Complete work order — blocked by unconsumed raw material qty ────────────
@@ -208,6 +323,7 @@ function onAutoConsumeAndComplete() {
   completeWorkOrder()
 }
 function handlePrimaryAction() {
+  if (wo.value?.status === 'not started') { startWorkOrder(); return }
   if (primaryAction.value !== 'Complete work order') return
   if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
   completeWorkOrder()
@@ -435,6 +551,22 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
+        <!-- D-4 — ONE Reservation action opening Reserve / Unreserve; separate
+             buttons are deliberately not used. S-2 — hidden entirely (not
+             disabled) when the method is Two-step. -->
+        <MpPopover v-if="showReservationMenu" id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--secondary">{{ t('Reservation') }}</button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="reserveOpen = true">{{ t('Reserve') }}</MpPopoverListItem>
+              <!-- D-6 — unreserve exists only while the work order has not started -->
+              <MpPopoverListItem v-if="notStarted && hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
         <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
     </header>
@@ -495,10 +627,18 @@ function suppressFabClick(e: MouseEvent) {
       <!-- ── Raw materials ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
-          <h2 class="wod-section-title">{{ t('Raw materials') }}</h2>
+          <h2 class="wod-section-title">
+            {{ t('Raw materials') }}
+            <ErpStatusBadge v-if="materialReadiness" :status="materialReadiness" size="sm" />
+          </h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.raw">
+          <!-- S-2 — Two-step: no reservation happens here, so say where it does. -->
+          <p v-if="reservationOn && !canReserveHere" class="wod-reserve-note">
+            <MpIcon name="information" size="sm" />
+            {{ t('Reservation via Stock requests only (PPIC / stockist)') }}
+          </p>
           <div class="wod-table-scroll">
             <table class="wod-table">
               <thead>
@@ -507,6 +647,7 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
+                  <th v-if="reservationOn" class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
@@ -520,6 +661,7 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
+                  <td v-if="reservationOn" class="wod-td wod-td--num">{{ num(reservedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
@@ -944,16 +1086,36 @@ function suppressFabClick(e: MouseEvent) {
       </div>
     </header>
   </div>
+
+  <!-- ── Reserve / Unreserve (UC-02 / UC-03) ── -->
+  <ReserveMaterialsModal
+    id="wod-reserve" :is-open="reserveOpen"
+    :work-order-number="wo?.number ?? ''" :lines="reservationLines"
+    @close="reserveOpen = false" @reserve="onReserve"
+  />
+  <UnreserveMaterialsModal
+    id="wod-unreserve" :is-open="unreserveOpen"
+    :work-order-number="wo?.number ?? ''" :lines="reservationLines"
+    @close="unreserveOpen = false" @unreserve="onUnreserve"
+  />
 </template>
 
 <style scoped>
+/* Material readiness note + badge (PRD UC-00 S-2, UC-02) */
+.wod-section-title { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.wod-reserve-note {
+  display: flex; align-items: center; gap: var(--mp-spacing-1);
+  margin: 0 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #3a4749);
+}
+
 /* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
    1400) — without this it'd render behind that modal instead of on top of it. */
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
-.wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
+.wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-4); }
 .wod-bottom-tab {
   position: relative; background: none; border: none; padding: var(--mp-spacing-2) 0; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
@@ -987,8 +1149,8 @@ function suppressFabClick(e: MouseEvent) {
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
 .filter-search-input {
@@ -1017,13 +1179,13 @@ function suppressFabClick(e: MouseEvent) {
   cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -1037,8 +1199,8 @@ function suppressFabClick(e: MouseEvent) {
 /* ── Top-level tabs (Overview / Material consume & return) ──────────────────── */
 .detail-toptabs {
   flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5);
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-toptab {
   position: relative; background: none; border: none; padding: var(--mp-spacing-3) 0; cursor: pointer;
@@ -1060,20 +1222,20 @@ function suppressFabClick(e: MouseEvent) {
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
 .detail-btn--icon { padding-left: var(--mp-spacing-3); }
-.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
+.detail-btn--secondary { background: var(--mp-background-neutral, #ffffff); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
+.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .detail-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
 .detail-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
 
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 
 /* ── Sections ────────────────────────────────────────────────────────────── */
-.wod-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default); }
+.wod-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
 .wod-section:first-child { padding-top: 0; }
 .wod-section--last { border-bottom: none; }
 .wod-section-head {
@@ -1114,8 +1276,8 @@ function suppressFabClick(e: MouseEvent) {
 /* ── Read-only tables (borderless ERP style) ─────────────────────────────── */
 .wod-table-scroll {
   overflow-x: auto;
-  border-top: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-table { width: 100%; border-collapse: collapse; table-layout: auto; min-width: max-content; }
 /* Main output + Other outputs share the same fixed column widths (via matching
@@ -1124,16 +1286,16 @@ function suppressFabClick(e: MouseEvent) {
 .wod-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .wod-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .wod-tr:last-child .wod-td { border-bottom: none; }
 .wod-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
@@ -1142,7 +1304,7 @@ function suppressFabClick(e: MouseEvent) {
 .wod-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* production cost repeated sub-headers */
-.wod-subhead-row .wod-th { border-top: 1px solid var(--mp-border-default); }
+.wod-subhead-row .wod-th { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .wod-table tbody tr:first-child .wod-th { border-top: none; }
 
 /* line status text */

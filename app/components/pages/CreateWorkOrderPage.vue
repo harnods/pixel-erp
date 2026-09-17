@@ -22,6 +22,9 @@ import { workOrderLinks } from '~/data/workOrderLinks'
 import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
+import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
+import { productionSettings, reservationEnabled } from '~/data/productionSettings'
+import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
@@ -409,16 +412,78 @@ function saveWorkOrder() {
     materialReservations: buildMaterialReservations(),
   })
 }
+/**
+ * C-4 — saving a work order pushes a stock request carrying its component lines,
+ * so it is on the warehouse's dashboard immediately. C-3 — under One-step, lines
+ * the destination warehouse covers in full reserve straight away; the toast says
+ * which case applied.
+ */
+function raiseStockRequest(wo: { id: string; number: string }) {
+  if (!reservationEnabled()) return
+  const planStart = parseDateRange(planDates.value).start
+  // The row's Required date is the picker's DISPLAY value (DD/MM/YYYY); every date
+  // stored on a request is ISO, so normalise before handing it over.
+  const toIso = (display: string): string => {
+    const m = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : (display || planStart)
+  }
+  const filled = rawRows.value.filter(r => r.productId && num(r.needed) > 0)
+  const lines = filled.map(r => {
+    const p = catalogProduct(r.productId)
+    return {
+      productId: r.productId,
+      product: p?.name ?? '—',
+      sku: p?.sku ?? '—',
+      unit: r.unit || p?.unit || 'Unit',
+      qty: num(r.needed),
+      requiredDate: toIso(r.requiredDate),
+      // Each line keeps its own destination — the detail page groups by it so one
+      // warehouse transfer can cover a whole group.
+      destinationWarehouse: warehouses.find(w => w.id === r.warehouseId)?.name ?? t('Unassigned warehouse'),
+      destinationWarehouseId: r.warehouseId,
+    }
+  })
+  if (!lines.length) return
+
+  const result = raiseStockRequestForWorkOrder({
+    workOrderId: wo.id,
+    workOrderNumber: wo.number,
+    requestor: STAFF[0]!,
+    requestDate: planStart,
+    lines,
+  }, { autoReserve: productionSettings.reservationMethod === 'one-step' })
+
+  if (!result.created) return
+  if (result.reservedProducts > 0) {
+    const tail = result.shortProducts > 0
+      ? ` · ${result.shortProducts} ${t('sent to the stockist as a request')}`
+      : ''
+    toast.notify({
+      variant: 'success',
+      title: `${result.reservedProducts} ${t('component(s) reserved automatically')}${tail}`,
+      maxWidth: 'max-content',
+    })
+  } else {
+    toast.notify({
+      variant: 'success',
+      title: `${t('Stock request sent to the warehouse')} (${lines.length} ${lines.length === 1 ? t('component') : t('components')})`,
+      maxWidth: 'max-content',
+    })
+  }
+}
+
 function handleSave() {
   if (!validate()) return
   const wo = saveWorkOrder()
   toast.notify({ variant: 'success', title: t('Work order saved') })
+  raiseStockRequest(wo)
   router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 function handleSaveDraft() {
   if (!validate()) return
   const wo = saveWorkOrder()
   toast.notify({ variant: 'success', title: t('Work order saved as draft') })
+  raiseStockRequest(wo)
   router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 
@@ -977,7 +1042,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -995,20 +1060,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 .detail-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s;
+  background: var(--mp-background-stage, #ffffff); border-top: 1px solid transparent; transition: border-top-color 0.15s;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Body / sections ─────────────────────────────────────────────────────── */
 .wo-body { display: flex; flex-direction: column; }
-.wo-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default); }
+.wo-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
 .wo-section:first-child { padding-top: 0; }
 .wo-section--last { border-bottom: none; }
 .wo-section-title {
@@ -1065,8 +1130,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
    lines come from the cells — no outer box or rounded corners. */
 .wo-table-scroll {
   overflow-x: auto;
-  border-top: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wo-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: max-content; }
 .wo-th {
@@ -1075,7 +1140,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .wo-th--right { text-align: right; }
 /* Action/button icon column — fixed 44px, pinned to the right edge of the table
@@ -1094,21 +1159,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
      cell borders exactly and read the same whether the column is pinned (scrolled)
      or not — so it's the SINGLE divider here and the neighbouring cell drops its
      own border-right below (otherwise the two stack into a bolder 2px line). */
-  box-shadow: inset 1px 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 var(--mp-border-default, #e3e7e9);
 }
 /* Cell immediately left of the sticky action column: no right border, so the
    sticky column's 1px inset shadow is the only line at that boundary. */
 .wo-th:nth-last-child(2), .wo-td:nth-last-child(2) { border-right: none; }
-.wo-th--del { background: var(--mp-background-neutral-subtle); }
-.wo-td--del { background: var(--mp-background-neutral); }
+.wo-th--del { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.wo-td--del { background: var(--mp-background-neutral, #ffffff); }
 .wo-td {
   /* vertical padding kept under the 38px input-control height so read-only text
      cells don't out-tall the inputs — the inputs define the row height and fill it,
      matching the barang-masuk/new create table. */
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: middle;
-  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); border-right: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .wo-td:last-child { border-right: none; }
 .wo-tr:last-child .wo-td { border-bottom: none; }
@@ -1130,7 +1195,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
 }
-.wo-del-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.wo-del-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-critical); }
 
 /* Loading skeleton bar (shown in each cell while the selected BOM's data loads) */
 .wo-skel {
@@ -1138,7 +1203,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   height: 14px;
   width: 70%;
   border-radius: var(--mp-radii-sm, 4px);
-  background: linear-gradient(90deg, var(--mp-border-default) 25%, var(--mp-background-neutral-subtle) 37%, var(--mp-border-default) 63%);
+  background: linear-gradient(90deg, var(--mp-border-default, #e3e7e9) 25%, var(--mp-background-neutral-subtle) 37%, var(--mp-border-default) 63%);
   background-size: 400% 100%;
   animation: wo-skel-shimmer 1.4s ease infinite;
 }

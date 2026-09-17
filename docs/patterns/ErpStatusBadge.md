@@ -25,11 +25,11 @@ The `status` prop is **case-insensitive**. Unknown statuses fall back to `type="
 
 | Badge type | Colour | Statuses |
 |---|---|---|
-| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success` |
-| `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress` |
+| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success`, `reserved` |
+| `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress`, `requested` |
 | `critical` | red | `overdue`, `rejected`, `failed`, `expired`, `error` |
-| `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started` |
-| `information` | blue | `partially processed`, `new`, `beta`, `vip`, `featured` |
+| `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started`, `issued / picked` |
+| `information` | blue | `partially processed`, `partially reserved`, `new`, `beta`, `vip`, `featured` |
 
 ---
 

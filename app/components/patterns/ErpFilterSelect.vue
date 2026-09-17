@@ -12,7 +12,11 @@ import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
-type Opt = { value: string; label: string }
+/** A menu option. `description` is optional — when present the menu renders it
+ *  under the label (settings selects whose choices need explaining, e.g.
+ *  Production settings › Reservation method). The trigger always shows the label
+ *  alone. */
+type Opt = { value: string; label: string; description?: string }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -77,7 +81,13 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             :is-active="o.value === modelValue"
             @mousedown.prevent
             @click="pick(o.value)"
-          >{{ o.label }}</MpPopoverListItem>
+          >
+            <span v-if="o.description" class="efs-opt">
+              <span class="efs-opt-label">{{ o.label }}</span>
+              <span class="efs-opt-desc">{{ o.description }}</span>
+            </span>
+            <template v-else>{{ o.label }}</template>
+          </MpPopoverListItem>
           <div v-if="!filtered.length" class="efs-empty">No results</div>
         </MpPopoverList>
       </MpPopoverContent>
@@ -90,6 +100,11 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </template>
 
 <style scoped>
+/* Option with an explainer line (optional `description` on the option). */
+.efs-opt { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); white-space: normal; }
+.efs-opt-label { color: var(--mp-colors-text-default, #080d0e); }
+.efs-opt-desc { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+
 .efs { position: relative; display: inline-flex; }
 .efs-trigger {
   /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):

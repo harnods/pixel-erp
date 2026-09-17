@@ -117,6 +117,8 @@ const pageRegistry: Record<string, Component> = {
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock requests':    defineAsyncComponent(() => import('~/components/pages/StockRequestsPage.vue')),
+  'Production settings': defineAsyncComponent(() => import('~/components/pages/ProductionSettingsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
@@ -223,6 +225,8 @@ const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/Bil
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
 const PurchaseRequestsPage = asyncPage(() => import('~/components/pages/PurchaseRequestsPage.vue'))
+const StockRequestsPage = asyncPage(() => import('~/components/pages/StockRequestsPage.vue'))
+const StockRequestDetailsPage = asyncPage(() => import('~/components/pages/StockRequestDetailsPage.vue'))
 const PurchaseRequestsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseRequestsAwaitingApprovalPage.vue'))
 const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
@@ -663,6 +667,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
     return { component: NewMaterialRecordPage, id: segs[1]! }
   }
+  // /stock-requests/:requestId → the ONE stock request detail page. The product
+  // grouping on the index is an aggregate across requests, not a record, so it has
+  // no detail of its own. The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'stock-requests') {
+    return { component: StockRequestDetailsPage, id: segs[1] }
+  }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
@@ -991,6 +1001,8 @@ const pageTabs: Record<string, string[]> = {
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  // Stock requests (PRD UC-11 W-4): Requested = rows not fully covered (default), All = everything.
+  'Stock requests':    ['Requested', 'All'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
@@ -1281,6 +1293,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+  },
+  // One component serves both tabs — it reads ?tab= to switch between
+  // "Requested" (rows not fully covered) and "All" (PRD UC-11 W-4).
+  'Stock requests': {
+    'Requested': StockRequestsPage,
+    'All': StockRequestsPage,
   },
   // One shared component drives all three tabs; the tab is passed as a prop.
   'Production request': {

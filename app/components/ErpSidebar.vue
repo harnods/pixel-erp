@@ -493,6 +493,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
+          { label: 'Stock requests' },
           { label: 'Cycle counts' },
         ],
         [
@@ -656,6 +657,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     // Siblings, mirroring the ERP "WMS" group — "Stock adjustments" is the full
     // ledger (same page/content as ERP's), "Cycle counts" is the WMS count-task flow.
     { name: 'Stock adjustments', icon: 'table-view-list' },
+    // Raised by work orders that need raw materials reserved out of warehouse stock.
+    { name: 'Stock requests', icon: 'inventory' },
     { name: 'Cycle counts', icon: 'chart-of-account' },
     // Promoted out of Settings — storage locations are day-to-day warehouse
     // structure in WMS Standalone, not configuration.
