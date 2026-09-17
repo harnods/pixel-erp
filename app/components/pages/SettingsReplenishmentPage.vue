@@ -68,7 +68,7 @@ function save() {
   for (const [label, value] of [
     [t('Safety days default'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
-    [t('Fallback lead time'), draft.fallbackLeadTimeDays],
+    [t('Default lead time'), draft.fallbackLeadTimeDays],
     [t('Min. stock default'), draft.minStockGlobal],
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
@@ -373,13 +373,20 @@ const BOUNDARY_OPTIONS = [
       <!-- ── Lead time (US-001) ── -->
       <h3 id="lead-time" class="rs-sub rs-sub--spaced">{{ t('Lead time') }}</h3>
       <p class="rs-hint">
-        {{ t('Lead time is measured from each vendor\'s delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor\'s own average, then the category below, then the company fallback.') }}
+        {{ t('Lead time is measured from each vendor\'s delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor\'s own average, then the default below.') }}
       </p>
 
+      <!--
+        Same merge as safety days and min. stock above: the company fallback is
+        the LAST ROW of the category list, not a field of its own. With all six
+        categories filled it can never fire, so as a separate field it read as a
+        live setting that does nothing; as the row after the named categories it
+        reads as what it is — what anything not listed above would use.
+      -->
       <div class="rs-field">
         <div class="rs-label">
-          <span class="rs-label-text">{{ t('Lead time by category') }}</span>
-          <span class="rs-label-desc">{{ t('Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.') }}</span>
+          <span class="rs-label-text">{{ t('Default lead time') }}</span>
+          <span class="rs-label-desc">{{ t('Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all. Leave a category blank and it uses Other categories.') }}</span>
         </div>
         <div class="rs-control">
           <div v-if="isEditing" class="rs-cat-grid">
@@ -396,24 +403,18 @@ const BOUNDARY_OPTIONS = [
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
             </div>
+            <div class="rs-cat-row rs-cat-row--fallback">
+              <span class="rs-cat-name">{{ t('Other categories') }}</span>
+              <MpInputGroup id="rs-fallback-lead">
+                <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
           </div>
           <span v-else class="rs-value">
             {{ categories.map(c => `${c} ${committed.leadTimeByCategory[c] ?? committed.fallbackLeadTimeDays}d`).join('   ') }}
+            &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ committed.fallbackLeadTimeDays }}d
           </span>
-        </div>
-      </div>
-
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Fallback lead time') }}</span>
-          <span class="rs-label-desc">{{ t('The last resort, when the category above has no value either.') }}</span>
-        </div>
-        <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-fallback-lead">
-            <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.fallbackLeadTimeDays }} {{ t('days') }}</span>
         </div>
       </div>
 

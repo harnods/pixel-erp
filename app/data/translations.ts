@@ -2093,11 +2093,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
     'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
   'Set preferred vendor': 'Tentukan vendor utama',
   'Category defaults': 'Standar kategori',
-  'Lead time by category': 'Waktu tunggu per kategori',
-  'Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.':
-    'Dipakai untuk produk yang vendornya belum punya pesanan diterima, atau yang belum punya vendor utama.',
-  'The last resort, when the category above has no value either.':
-    'Pilihan terakhir, saat kategori di atas juga tidak punya nilai.',
+  'Default lead time': 'Standar waktu tunggu',
+  'Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all. Leave a category blank and it uses Other categories.':
+    'Dipakai untuk produk yang vendornya belum punya pesanan diterima, atau yang belum punya vendor utama. Kosongkan satu kategori dan kategori itu memakai Kategori lainnya.',
   'Receipts to average': 'Penerimaan yang dirata-rata',
   'How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.':
     'Berapa pesanan terakhir yang dirata-rata untuk mengukur waktu tunggu, dan paling sedikit berapa sebelum memakai nilai cadangan.',
@@ -2107,8 +2105,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'ignoring gaps over': 'mengabaikan jeda lebih dari',
   'at least': 'minimal',
   'receipts': 'penerimaan',
-  "Lead time is measured from each vendor's delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor's own average, then the category below, then the company fallback.":
-    'Waktu tunggu diukur dari pesanan pembelian tiap vendor yang sudah diterima. Pengaturan ini hanya berlaku saat riwayatnya belum cukup untuk diukur, dengan urutan: rata-rata vendor itu sendiri, lalu kategori di bawah, lalu nilai cadangan perusahaan.',
+  "Lead time is measured from each vendor's delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor's own average, then the default below.":
+    'Waktu tunggu diukur dari pesanan pembelian tiap vendor yang sudah diterima. Pengaturan ini hanya dipakai saat riwayatnya belum cukup untuk diukur, dengan urutan: rata-rata vendor itu sendiri, lalu standar di bawah ini.',
   'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
   'has no delivered purchase orders yet. It sharpens once they do.':
     'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',
@@ -2140,97 +2138,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Demand history': 'Riwayat permintaan',
   // ── Replenishment v2 — Purchase Request flow, coverage days, derived lead time.
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
-  'Sales history': 'Riwayat penjualan',
-  // Product form — safety days is the input, min. stock is the recommendation.
-  'days lead time': 'hari waktu tunggu',
-  'safety': 'cadangan',
-  'covers': 'mencakup',
-  'your busiest of': 'gudang tersibuk dari',
-  'Use recommended': 'Pakai rekomendasi',
-  // D13 — product level is a derived rollup; the setup default is a separate field.
-  'Due in': 'Perlu dipesan di',
-  'of': 'dari',
-  'suggested in total': 'disarankan secara total',
-  'Which warehouses?': 'Gudang mana?',
-  'Hide': 'Sembunyikan',
-  'Nothing to reorder right now.': 'Tidak ada yang perlu dipesan saat ini.',
-  'Open replenishment': 'Buka replenishment',
-  'Min. stock per warehouse': 'Stok minimum per gudang',
-  'Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum — stock in one warehouse cannot cover a shortage in another.':
-    'Tiap gudang punya stok minimum sendiri dan menentukan sendiri perlu memesan atau tidak. Tidak ada stok minimum tingkat perusahaan — stok di satu gudang tidak bisa menutup kekurangan di gudang lain.',
-  'Across': 'Di',
-  'warehouses': 'gudang',
-  'Breakdown': 'Rincian',
-  'Hide breakdown': 'Sembunyikan rincian',
-  'Appears once this product is stocked in a warehouse.': 'Muncul setelah produk ini ada stoknya di gudang.',
-  'Edit per warehouse': 'Atur per gudang',
-  'no sales here': 'belum ada penjualan di sini',
-  'set for this warehouse': 'diatur untuk gudang ini',
-  'Default min. stock': 'Stok minimum standar',
-  'Default safety days': 'Hari cadangan standar',
-  'Min. stock by category': 'Stok minimum per kategori',
-  'Not set': 'Belum diatur',
-  'Other categories': 'Kategori lainnya',
-  'Safety days default': 'Standar hari cadangan',
-  'Min. stock default': 'Standar stok minimum',
-  'none': 'tidak ada',
-  'Extra days of cover on top of the vendor lead time. Leave a category blank and it uses Other categories.':
-    'Tambahan hari cadangan di atas waktu tunggu vendor. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya.',
-  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Leave a category blank and it uses Other categories; set 0 and those warehouses get no minimum at all.':
-    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung stok minimum. Kosongkan sebuah kategori dan kategori itu memakai Kategori lainnya; isi 0 dan gudang tersebut tidak punya stok minimum sama sekali.',
-  'blank = no minimum': 'kosong = tanpa minimum',
-  'Used when a warehouse has less sales history than the cold-start threshold, or no sales in the lookback window, and its category sets no figure of its own. Set 0 and those warehouses get no minimum at all — they are not flagged for reorder until they have enough sales history.':
-    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, atau tidak ada penjualan dalam periode ke belakang, dan kategorinya tidak punya angka sendiri. Isi 0 dan gudang tersebut tidak punya stok minimum sama sekali — tidak akan ditandai untuk pemesanan sampai riwayat penjualannya cukup.',
-  'Used where a warehouse has less sales history than the cold-start threshold, so there is nothing to calculate a minimum from. Set 0 and those warehouses get none.':
-    'Dipakai saat riwayat penjualan gudang lebih pendek dari ambang cold-start, sehingga tidak ada dasar untuk menghitung stok minimum. Isi 0 dan gudang tersebut tidak punya stok minimum.',
-  'category default': 'standar kategori',
-  'from the category or company default.': 'dari standar kategori atau perusahaan.',
-  'Extra cover beyond the vendor lead time, for warehouses that have not set their own. Each warehouse can override it on the Stock by warehouses tab.':
-    'Cadangan tambahan di luar waktu tunggu vendor, untuk gudang yang belum mengatur sendiri. Tiap gudang bisa menimpanya di tab Stok per gudang.',
-  'Calculated per warehouse': 'Dihitung per gudang',
-  'Leave empty and each warehouse calculates its own from its sales.':
-    'Kosongkan dan tiap gudang menghitung sendiri dari penjualannya.',
-  "Total of every warehouse's minimum stock. Set the figure on each warehouse — this total follows them, and is never used to trigger a reorder on its own.":
-    'Total stok minimum semua gudang. Atur angkanya di tiap gudang — total ini mengikuti, dan tidak pernah dipakai sendiri untuk memicu pemesanan.',
-  'A starting figure for warehouses that have no minimum stock of their own yet. A warehouse that sets its own always wins. This is not part of the total above.':
-    'Angka awal untuk gudang yang belum punya stok minimum sendiri. Gudang yang mengatur sendiri selalu menang. Ini bukan bagian dari total di atas.',
-  'Why this number?': 'Kenapa angka ini?',
-  'Hide details': 'Sembunyikan detail',
-  'Covers': 'Mencakup',
-  'Extra cover beyond the vendor lead time, on top of however long delivery takes.':
-    'Cadangan tambahan di luar waktu tunggu vendor, di atas berapa pun lama pengiriman.',
-  'Leave empty to inherit': 'Kosongkan untuk mengikuti',
-  'No preferred vendor yet, so this uses your': 'Belum ada vendor utama, jadi ini memakai',
-  'default of': 'standar',
-  'Set one and the lead time comes from their actual deliveries.':
-    'Tentukan vendor utama dan waktu tunggu akan diambil dari pengiriman mereka yang sebenarnya.',
-  'Set preferred vendor': 'Tentukan vendor utama',
-  'Category defaults': 'Standar kategori',
-  'Lead time by category': 'Waktu tunggu per kategori',
-  'Used for a product whose vendor has no delivered orders yet, or which has no preferred vendor at all.':
-    'Dipakai untuk produk yang vendornya belum punya pesanan diterima, atau yang belum punya vendor utama.',
-  'The last resort, when the category above has no value either.':
-    'Pilihan terakhir, saat kategori di atas juga tidak punya nilai.',
-  'Receipts to average': 'Penerimaan yang dirata-rata',
-  'How many of the most recent delivered orders a measured lead time averages, and the fewest it will settle for before falling back.':
-    'Berapa pesanan terakhir yang dirata-rata untuk mengukur waktu tunggu, dan paling sedikit berapa sebelum memakai nilai cadangan.',
-  'Average the last': 'Rata-rata dari',
-  'Minimum to trust': 'Minimum agar dipercaya',
-  'Ignore gaps over': 'Abaikan jeda lebih dari',
-  'ignoring gaps over': 'mengabaikan jeda lebih dari',
-  'at least': 'minimal',
-  'receipts': 'penerimaan',
-  "Lead time is measured from each vendor's delivered purchase orders. These settings only apply when there is not enough history to measure, in this order: the vendor's own average, then the category below, then the company fallback.":
-    'Waktu tunggu diukur dari pesanan pembelian tiap vendor yang sudah diterima. Pengaturan ini hanya berlaku saat riwayatnya belum cukup untuk diukur, dengan urutan: rata-rata vendor itu sendiri, lalu kategori di bawah, lalu nilai cadangan perusahaan.',
-  'Lead time is an estimate': 'Waktu tunggu masih perkiraan',
-  'has no delivered purchase orders yet. It sharpens once they do.':
-    'belum punya pesanan pembelian yang diterima. Akan lebih akurat setelah ada.',
-  'Lead time measured from': 'Waktu tunggu diukur dari',
-  'Calculated from sales history and your vendor lead time once this product starts moving. Set a figure now if you already know it.':
-    'Dihitung dari riwayat penjualan dan waktu tunggu vendor setelah produk ini mulai bergerak. Isi sekarang jika Anda sudah tahu angkanya.',
-  'at PO': 'saat PO',
-  'Pack of': 'Kelipatan',
-  'Order up to max level': 'Pesan sampai level maksimum',
   'Request to purchase': 'Ajukan pembelian',
   'Create purchase request': 'Buat permintaan pembelian',
   'purchase requests': 'permintaan pembelian',
@@ -2297,7 +2204,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Keywords': 'Kata kunci',
   'Signals': 'Sinyal',
   'Reset filter': 'Atur ulang filter',
-  'Apply': 'Terapkan',
   'At or below reorder point': 'Pada atau di bawah titik pemesanan ulang',
   'Cover shorter than lead time': 'Ketahanan lebih pendek dari waktu tunggu',
   'Missing demand, lead time or vendor': 'Permintaan, waktu tunggu, atau vendor belum lengkap',
@@ -2377,7 +2283,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Safety and reorder point': 'Pengaman dan titik pemesanan ulang',
   'Safety days by category': 'Hari pengaman per kategori',
   'Reorder-point boundary': 'Batas titik pemesanan ulang',
-  'Fallback lead time': 'Waktu tunggu cadangan',
   'Movement classification (FSN)': 'Klasifikasi pergerakan (FSN)',
   'Classification window': 'Periode klasifikasi',
   'Class thresholds': 'Ambang kelas',
