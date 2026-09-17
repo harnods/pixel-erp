@@ -445,7 +445,7 @@ function confirmDelete() {
               </div>
               <!-- MOQ is the minimum the replenishment rule ever orders; the purchase
                    multiple ("kelipatan pembelian") is what it rounds the quantity up to. -->
-              <p class="cd-prod-hint">{{ t('Replenishment never orders below the MOQ, and rounds each order up to the purchase multiple.') }}</p>
+              <p class="cd-prod-hint">{{ t('Replenishment never orders below the MOQ, and rounds each order up to the purchase multiplier.') }}</p>
 
               <table v-if="vendorProducts.length || showAddRow" class="cd-table">
                 <colgroup>
@@ -461,7 +461,7 @@ function confirmDelete() {
                     <th>{{ t('Product') }}</th>
                     <th>{{ t('SKU') }}</th>
                     <th class="cd-td--right">{{ t('MOQ') }}</th>
-                    <th class="cd-td--right">{{ t('Purchase multiple') }}</th>
+                    <th class="cd-td--right">{{ t('Purchase multiplier') }}</th>
                     <th>{{ t('Purchase unit') }}</th>
                     <th class="cd-td--right">{{ t('Last Price') }}</th>
                   </tr>

@@ -981,12 +981,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // ── Vendor detail — Products supplied (MOQ + price) ─────────────────────────
   'Products supplied': 'Produk yang dipasok',
   'Purchase unit': 'Satuan pembelian',
-  'Purchase multiple': 'Kelipatan pembelian',
+  'Purchase multiplier': 'Kelipatan pembelian',
   'Price': 'Harga',
   'Last Price': 'Harga terakhir',
   'Preferred': 'Utama',
   'This vendor supplies no catalogue products yet.': 'Vendor ini belum memasok produk katalog.',
-  'Replenishment never orders below the MOQ, and rounds each order up to the purchase multiple.':
+  'Replenishment never orders below the MOQ, and rounds each order up to the purchase multiplier.':
     'Pengisian ulang tidak pernah memesan di bawah MOQ, dan membulatkan tiap pesanan ke atas sesuai kelipatan pembelian.',
   'Product added': 'Produk berhasil ditambahkan',
   'Choose a product': 'Pilih produk',
