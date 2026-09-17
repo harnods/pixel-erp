@@ -454,7 +454,7 @@ function close() { emit('close') }
                                   />
                                   <span class="crd-crm-access-label">
                                     {{ t('Full access as Administrator') }}
-                                    <span class="crd-crm-access-hint">{{ t('Unchecked: access scoped to their own records.') }}</span>
+                                    <span class="crd-crm-access-hint">{{ t('New activated users only get access to their own records.') }}</span>
                                   </span>
                                 </label>
                               </div>
